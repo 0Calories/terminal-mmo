@@ -27,7 +27,13 @@ import type {
 	PendingRespawn,
 	Projectile,
 } from './types';
-import { makeFieldZone, spawnMonster, type World, type Zone } from './world';
+import {
+	makeFieldZone,
+	makeTownZone,
+	spawnMonster,
+	type World,
+	type Zone,
+} from './world';
 
 /** The single-player game: the client's Player + the World of Zones. A thin
  * bundle — Player and World stay independent (player.ts / world.ts). */
@@ -36,20 +42,53 @@ export interface GameState {
 	world: World;
 }
 
-/** A fresh single-player game: one starter Field, Player at spawn. */
+/** A fresh single-player game: the World's Zones (a starter Field + the Town
+ * hub), Player spawned in the Field. */
 export function createGame(seed = 1): GameState {
 	const field = makeFieldZone('field-01');
+	const town = makeTownZone('town-01');
 	const player = spawnPlayerState(field.id, SPAWN.x, SPAWN.y, seed);
-	return { player, world: { zones: { [field.id]: field }, tick: 0 } };
+	return {
+		player,
+		world: { zones: { [field.id]: field, [town.id]: town }, tick: 0 },
+	};
 }
 
-// TODO(M1): Town + portal (#2, #3).
+// TODO(M1): portal connecting the Field and Town (#3).
 
 /** Advance the active Zone + the Player one tick. Deterministic given inputs. */
 export function step(game: GameState, input: Input, dtMs: number): GameState {
 	const dt = Math.min(dtMs / 1000, PHYS.maxDt);
 	const zone = game.world.zones[game.player.zoneId];
 	const t = zone.terrain;
+
+	// Portal entry (story 14): standing on a Portal + the interact intent transitions
+	// the Avatar to the target Zone at its arrival point. Handled first, so the
+	// transition tick runs no movement/combat; persistent state (progress,
+	// inventory, RNG) carries over untouched.
+	if (input.interact) {
+		const here = entityBox(game.player.avatar);
+		const portal = zone.portals.find((p) => aabbOverlap(here, p));
+		if (portal) {
+			const avatar: Entity = {
+				...game.player.avatar,
+				x: portal.arrival.x,
+				y: portal.arrival.y,
+				vx: 0,
+				vy: 0,
+				onGround: false,
+			};
+			const dest = game.world.zones[portal.target];
+			const log = [...game.player.log.slice(-5), `Entered the ${dest.type}.`];
+			const player: PlayerState = {
+				...game.player,
+				avatar,
+				zoneId: portal.target,
+				log,
+			};
+			return { player, world: { ...game.world, tick: game.world.tick + 1 } };
+		}
+	}
 
 	// --- avatar movement ---
 	const pCtl: Control = { moveX: input.moveX, jump: input.jump };

@@ -53,6 +53,10 @@ export const PROGRESSION = { levelCap: 30 } as const;
 
 export const SPAWN = { x: 10, y: GROUND_TOP - BOX.h } as const;
 
+// Town — a small, walkable plaza (the safe social hub). Narrower than the Field
+// and free of scattered platforms, so it reads as a distinct, tidy interior.
+export const TOWN = { w: 80 } as const;
+
 // Monster respawn — a dead Field Monster reappears at its spawn point after this
 // delay (seconds, counted down by dt so it's deterministic — story 20).
 export const RESPAWN = { delaySec: 5 } as const;

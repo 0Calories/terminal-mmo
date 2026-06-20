@@ -2,9 +2,10 @@
 // (CONTEXT: Zone); the World is every Zone, advanced by a shared tick. This is
 // server-authoritative in M2; here it also drives the single-player loop.
 
-import { BOX, GROUND_TOP, MONSTER, SHOOTER } from './constants';
-import { makeStarterField } from './terrain';
+import { BOX, GROUND_TOP, MONSTER, SHOOTER, SPAWN, TOWN } from './constants';
+import { makeStarterField, makeTownTerrain } from './terrain';
 import type {
+	Box,
 	Entity,
 	EntityType,
 	PendingRespawn,
@@ -15,6 +16,13 @@ import type {
 
 export type ZoneId = string;
 export type ZoneType = 'field' | 'town';
+
+/** A connection between Zones (CONTEXT: Zone — Zones connect via portals). A
+ * trigger box that, on entry, moves the Avatar to `target` at `arrival`. */
+export interface Portal extends Box {
+	target: ZoneId;
+	arrival: { x: number; y: number };
+}
 
 /** A discrete, bounded area of the World: solid Terrain + the Monsters in it.
  * Two kinds (CONTEXT: Zone) — combat Fields and safe Towns. */
@@ -28,6 +36,7 @@ export interface Zone {
 	spawns: SpawnPoint[]; // fixed Monster spawn points (story 20)
 	respawns: PendingRespawn[]; // dead Monsters awaiting their respawn timer
 	nextMonsterId: number; // id source for respawned Monsters
+	portals: Portal[]; // connections to other Zones (story 14)
 }
 
 /** The whole World: every Zone keyed by id, plus a shared sim tick. */
@@ -93,5 +102,43 @@ export function makeFieldZone(id: ZoneId, seed = 1337): Zone {
 		spawns,
 		respawns: [],
 		nextMonsterId: mid,
+		// a Portal back to the Town hub, near the Field entrance (story 14)
+		portals: [
+			{
+				x: 24,
+				y: GROUND_TOP - 7,
+				w: 4,
+				h: 7,
+				target: 'town-01',
+				arrival: { x: 12, y: GROUND_TOP - BOX.h },
+			},
+		],
+	};
+}
+
+/** The Town: a safe social hub (CONTEXT: Town). No Monsters, no spawn points —
+ * so no combat can ever occur here — just hand-authored, walkable Terrain. */
+export function makeTownZone(id: ZoneId): Zone {
+	return {
+		id,
+		type: 'town',
+		terrain: makeTownTerrain(),
+		monsters: [],
+		projectiles: [],
+		nextProjectileId: 1,
+		spawns: [],
+		respawns: [],
+		nextMonsterId: 1,
+		// a Portal back out to the Field, off to the right of the plaza (story 14)
+		portals: [
+			{
+				x: TOWN.w - 16,
+				y: GROUND_TOP - 7,
+				w: 4,
+				h: 7,
+				target: 'field-01',
+				arrival: { x: SPAWN.x, y: SPAWN.y },
+			},
+		],
 	};
 }

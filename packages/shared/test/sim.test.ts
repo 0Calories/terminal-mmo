@@ -63,6 +63,7 @@ function adjacentGame(monsterHp?: number): GameState {
 		nextProjectileId: 1,
 		spawns: [],
 		respawns: [],
+		portals: [],
 		nextMonsterId: 3,
 	};
 	const player: PlayerState = {
@@ -105,6 +106,7 @@ function shooterGame(gap: number): GameState {
 		nextProjectileId: 1,
 		spawns: [],
 		respawns: [],
+		portals: [],
 		nextMonsterId: 3,
 	};
 	const player: PlayerState = {
@@ -167,6 +169,7 @@ test('a projectile overlapping the Avatar damages it and applies i-frames', () =
 		nextProjectileId: 2,
 		spawns: [],
 		respawns: [],
+		portals: [],
 		nextMonsterId: 3,
 	};
 	const before = avatar.hp;
@@ -208,6 +211,7 @@ function fieldSpawnGame(monsterHp: number): GameState {
 		nextProjectileId: 1,
 		spawns: [spawn],
 		respawns: [],
+		portals: [],
 		nextMonsterId: 3,
 	};
 	const player: PlayerState = {
@@ -285,6 +289,7 @@ test("only the active Zone ticks; the Avatar's persistent state lives above it",
 		nextProjectileId: 1,
 		spawns: [],
 		respawns: [],
+		portals: [],
 		nextMonsterId: 100,
 	};
 	let g = createGame();

@@ -13,7 +13,7 @@ import {
 } from '@opentui/core';
 import { COLORS } from './theme';
 
-const HINT = 'move ←/→ a/d  jump ␣/↑  attack j/x  quit q';
+const HINT = 'move ←/→ a/d  jump ␣/↑  attack j/x  interact e  quit q';
 const Z = 10; // draw above the playfield (zIndex 0)
 
 export class Hud {
