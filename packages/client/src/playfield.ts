@@ -24,6 +24,7 @@ import {
 	type RenderableOptions,
 	type RenderContext,
 } from '@opentui/core';
+import { type CameraState, initCameraState, stepCamera } from './camera';
 import { PALETTE, spriteFor } from './sprites';
 import { COLORS as C } from './theme';
 
@@ -74,7 +75,11 @@ function drawText(
 	}
 }
 
-function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
+function drawPlayfield(
+	buf: OptimizedBuffer,
+	game: GameState,
+	cam: { x: number; y: number },
+) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
 	const sw = buf.width;
@@ -82,24 +87,21 @@ function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
 	const p = player.avatar;
 	const ww = zone.terrain.w;
 	const wh = zone.terrain.h;
-	const cam = {
-		x: Math.max(
-			0,
-			Math.min(Math.round(p.x + BOX.w / 2 - sw / 2), Math.max(0, ww - sw)),
-		),
-		y: Math.max(
-			0,
-			Math.min(Math.round(p.y + BOX.h / 2 - sh / 2), Math.max(0, wh - sh)),
-		),
-	};
+
+	// Terrain + world-fixed geometry (portals) sample the integer grid, so they
+	// scroll on a whole-cell camera. Entities below round relative to the FLOAT
+	// `cam` instead, so a camera-pinned Avatar renders at a stable cell rather
+	// than bouncing ±1 from double-rounding (see camera.ts).
+	const camX = Math.round(cam.x);
+	const camY = Math.round(cam.y);
 
 	buf.clear(C.bg);
 
 	// terrain (visible cells only)
 	for (let sy = 0; sy < sh; sy++) {
-		const wy = sy + cam.y;
+		const wy = sy + camY;
 		for (let sx = 0; sx < sw; sx++) {
-			const wx = sx + cam.x;
+			const wx = sx + camX;
 			if (
 				isSolid(zone.terrain, wx, wy) &&
 				wx >= 0 &&
@@ -118,8 +120,8 @@ function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
 	for (const pr of zone.portals) {
 		for (let yy = 0; yy < pr.h; yy++) {
 			for (let xx = 0; xx < pr.w; xx++) {
-				const px = pr.x + xx - cam.x;
-				const py = pr.y + yy - cam.y;
+				const px = pr.x + xx - camX;
+				const py = pr.y + yy - camY;
 				if (px >= 0 && px < sw && py >= 0 && py < sh)
 					buf.setCellWithAlphaBlending(px, py, '▒', C.portal, C.transparent);
 			}
@@ -130,8 +132,8 @@ function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
 		const label = `↵ e  enter the ${dest.charAt(0).toUpperCase()}${dest.slice(1)}`;
 		drawText(
 			buf,
-			Math.round(onPortal.x - cam.x),
-			Math.round(onPortal.y - cam.y) - 1,
+			Math.round(onPortal.x) - camX,
+			Math.round(onPortal.y) - camY - 1,
 			label,
 			C.portal,
 			sw,
@@ -179,11 +181,29 @@ export class PlayfieldRenderable extends Renderable {
 	/** Latest simulation state to draw; the frame loop sets this each tick. */
 	game: GameState | null = null;
 
+	// Dead-band camera state, carried across frames (view-only — see camera.ts).
+	private camState: CameraState = initCameraState();
+
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
 		super(ctx, { width: '100%', height: '100%', live: true, ...options });
 	}
 
 	protected renderSelf(buffer: OptimizedBuffer): void {
-		if (this.game) drawPlayfield(buffer, this.game);
+		if (!this.game) return;
+		const zone = activeZone(this.game.world, this.game.player.zoneId);
+		const a = this.game.player.avatar;
+		this.camState = stepCamera(
+			this.camState,
+			this.game.player.zoneId,
+			a.x,
+			a.y,
+			{
+				sw: buffer.width,
+				sh: buffer.height,
+				ww: zone.terrain.w,
+				wh: zone.terrain.h,
+			},
+		);
+		if (this.camState.cam) drawPlayfield(buffer, this.game, this.camState.cam);
 	}
 }
