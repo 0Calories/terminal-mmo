@@ -1,0 +1,14 @@
+{
+  "name": "@mmo/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@mmo/shared": "workspace:*",
+    "@opentui/core": "^0.4.1"
+  }
+}
