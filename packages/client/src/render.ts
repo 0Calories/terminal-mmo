@@ -2,17 +2,13 @@ import type { Entity, GameState } from '@mmo/shared';
 import { activeZone, BOX, COMBAT, isSolid, meleeHitbox } from '@mmo/shared';
 import type { OptimizedBuffer } from '@opentui/core';
 import { RGBA } from '@opentui/core';
-import { SPRITE_H, SPRITE_W, spriteFor } from './sprites';
-
-const SPRITE_OFFX = Math.floor((SPRITE_W - BOX.w) / 2);
+import { PALETTE, spriteFor } from './sprites';
 
 const C = {
 	bg: RGBA.fromInts(16, 18, 26, 255),
 	terrainFg: RGBA.fromInts(70, 82, 104, 255),
 	terrainBg: RGBA.fromInts(34, 40, 54, 255),
 	transparent: RGBA.fromInts(0, 0, 0, 0),
-	player: RGBA.fromInts(255, 150, 40, 255),
-	monster: RGBA.fromInts(220, 90, 90, 255),
 	hurt: RGBA.fromInts(255, 240, 120, 255),
 	melee: RGBA.fromInts(255, 245, 200, 255),
 	hud: RGBA.fromInts(232, 232, 238, 255),
@@ -21,11 +17,6 @@ const C = {
 	dim: RGBA.fromInts(150, 156, 168, 255),
 };
 
-function colorFor(e: Entity): RGBA {
-	if (e.hurtT > 0.3) return C.hurt;
-	return e.type === 'player' ? C.player : C.monster;
-}
-
 function drawSprite(
 	buf: OptimizedBuffer,
 	e: Entity,
@@ -33,19 +24,24 @@ function drawSprite(
 	sw: number,
 	sh: number,
 ) {
-	const art = spriteFor(e.type, e.facing);
-	const sx = Math.round(e.x - SPRITE_OFFX - cam.x);
-	const sy = Math.round(e.y - cam.y);
-	const fg = colorFor(e);
-	for (let ry = 0; ry < SPRITE_H; ry++) {
+	const sprite = spriteFor(e.type);
+	const glyphs = sprite.rows(e.facing);
+	const keys = sprite.colorKeys(e.facing);
+	// Anchor per-sprite: centred horizontally, feet aligned to the box bottom.
+	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2) - cam.x);
+	const sy = Math.round(e.y + BOX.h - sprite.h - cam.y);
+	const hurt = e.hurtT > 0.3; // state-driven tint, overrides the art's colour
+	for (let ry = 0; ry < sprite.h; ry++) {
 		const py = sy + ry;
 		if (py < 1 || py >= sh) continue; // top row reserved for HUD
-		const row = art[ry];
-		for (let rx = 0; rx < SPRITE_W; rx++) {
+		const row = glyphs[ry];
+		const krow = keys[ry];
+		for (let rx = 0; rx < sprite.w; rx++) {
 			const ch = row[rx];
 			if (ch === ' ') continue;
 			const px = sx + rx;
 			if (px < 0 || px >= sw) continue;
+			const fg = hurt ? C.hurt : (PALETTE[krow[rx]] ?? C.hud);
 			buf.setCellWithAlphaBlending(px, py, ch, fg, C.transparent);
 		}
 	}
