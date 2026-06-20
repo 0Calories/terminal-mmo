@@ -132,7 +132,10 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		const engaged = m.type === 'shooter' && adx < SHOOTER.aggro;
 		let moveX: -1 | 0 | 1;
 		if (m.type === 'chaser' && adx < MONSTER.chaserAggro)
-			moveX = dx > 0 ? 1 : -1;
+			// hold inside the deadzone so facing doesn't flip-flop frame to frame
+			// when the Avatar is right on top of the chaser (stepEntity only
+			// rewrites facing when moveX !== 0, so holding retains it for free)
+			moveX = adx < MONSTER.chaserDeadzone ? 0 : dx > 0 ? 1 : -1;
 		else if (engaged)
 			moveX = adx < SHOOTER.keepDist ? (dx > 0 ? -1 : 1) : 0; // back off / hold
 		else moveX = m.facing;

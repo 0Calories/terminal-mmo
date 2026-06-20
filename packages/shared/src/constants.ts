@@ -29,6 +29,10 @@ export const MONSTER = {
 	chaserHp: 24,
 	chaserSpeed: 12,
 	chaserAggro: 22, // horizontal distance at which a chaser starts chasing
+	// Once within this distance a chaser holds position instead of homing in on
+	// the exact Avatar x. Without it, `dx` flips sign every frame when the Avatar
+	// is on top of the chaser, flipping its facing each frame — visible jitter.
+	chaserDeadzone: 2,
 	contactDamage: 6,
 } as const;
 
