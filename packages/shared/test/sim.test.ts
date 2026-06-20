@@ -61,6 +61,9 @@ function adjacentGame(monsterHp?: number): GameState {
 		monsters: [m],
 		projectiles: [],
 		nextProjectileId: 1,
+		spawns: [],
+		respawns: [],
+		nextMonsterId: 3,
 	};
 	const player: PlayerState = {
 		avatar: spawnAvatar(20, y),
@@ -100,6 +103,9 @@ function shooterGame(gap: number): GameState {
 		monsters: [m],
 		projectiles: [],
 		nextProjectileId: 1,
+		spawns: [],
+		respawns: [],
+		nextMonsterId: 3,
 	};
 	const player: PlayerState = {
 		avatar: spawnAvatar(40, y),
@@ -159,6 +165,9 @@ test('a projectile overlapping the Avatar damages it and applies i-frames', () =
 		monsters: [],
 		projectiles: [proj],
 		nextProjectileId: 2,
+		spawns: [],
+		respawns: [],
+		nextMonsterId: 3,
 	};
 	const before = avatar.hp;
 	const g = step(
@@ -183,6 +192,88 @@ test('a projectile overlapping the Avatar damages it and applies i-frames', () =
 	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(0);
 });
 
+// player adjacent to a low-hp Field monster bound to spawn point 0, so killing
+// it exercises the spawn-point → respawn machinery.
+function fieldSpawnGame(monsterHp: number): GameState {
+	const y = GROUND_TOP - BOX.h;
+	const spawn = { type: 'chaser' as const, x: 20 + BOX.w, y };
+	const m = spawnMonster('chaser', 2, spawn.x, spawn.y, 0);
+	m.hp = monsterHp; // killable; maxHp stays at the chaser baseline
+	const zone: Zone = {
+		id: 'field-01',
+		type: 'field',
+		terrain: makeStarterField(),
+		monsters: [m],
+		projectiles: [],
+		nextProjectileId: 1,
+		spawns: [spawn],
+		respawns: [],
+		nextMonsterId: 3,
+	};
+	const player: PlayerState = {
+		avatar: spawnAvatar(20, y),
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		zoneId: zone.id,
+		log: [],
+		nextId: 1,
+		rngState: 1,
+	};
+	return { player, world: { zones: { [zone.id]: zone }, tick: 0 } };
+}
+
+const ATTACK: Input = { moveX: 0, jump: false, attack: true };
+
+test('makeFieldZone seeds Monsters from fixed spawn points', () => {
+	const zone = activeZone(createGame().world, 'field-01');
+	expect(zone.spawns.length).toBe(zone.monsters.length);
+	expect(zone.monsters.every((m, i) => m.spawnIndex === i)).toBe(true);
+	expect(zone.respawns.length).toBe(0);
+});
+
+test('killing a Field monster schedules a respawn at its spawn point', () => {
+	const g = step(fieldSpawnGame(4), ATTACK, 16);
+	const zone = activeZone(g.world, g.player.zoneId);
+	expect(zone.monsters.length).toBe(0);
+	expect(zone.respawns.length).toBe(1);
+	expect(zone.respawns[0].spawnIndex).toBe(0);
+});
+
+test('a scheduled respawn restores the monster at full HP at its spawn point', () => {
+	let g = step(fieldSpawnGame(4), ATTACK, 16); // kill → schedule
+	expect(activeZone(g.world, g.player.zoneId).monsters.length).toBe(0);
+	let respawned = false;
+	for (let i = 0; i < 300 && !respawned; i++) {
+		g = step(g, IDLE, 50);
+		const zone = activeZone(g.world, g.player.zoneId);
+		if (zone.monsters.length === 1) {
+			respawned = true;
+			const m = zone.monsters[0];
+			expect(m.hp).toBe(MONSTER.chaserHp); // full HP
+			expect(m.hp).toBe(m.maxHp);
+			expect(m.x).toBe(20 + BOX.w); // at the spawn point
+			expect(m.y).toBe(GROUND_TOP - BOX.h);
+			expect(m.spawnIndex).toBe(0);
+			expect(zone.respawns.length).toBe(0);
+		}
+	}
+	expect(respawned).toBe(true); // count returned to baseline
+});
+
+test('respawn scheduling + timing is deterministic', () => {
+	let a = step(fieldSpawnGame(4), ATTACK, 16);
+	let b = step(fieldSpawnGame(4), ATTACK, 16);
+	for (let i = 0; i < 300; i++) {
+		a = step(a, IDLE, 50);
+		b = step(b, IDLE, 50);
+	}
+	const za = activeZone(a.world, a.player.zoneId);
+	const zb = activeZone(b.world, b.player.zoneId);
+	expect(zb.monsters.length).toBe(za.monsters.length);
+	expect(zb.monsters[0]?.x).toBe(za.monsters[0]?.x);
+	expect(zb.respawns.length).toBe(za.respawns.length);
+});
+
 test("only the active Zone ticks; the Avatar's persistent state lives above it", () => {
 	// a second, dormant Field the Player is not in
 	const dormant: Zone = {
@@ -192,6 +283,9 @@ test("only the active Zone ticks; the Avatar's persistent state lives above it",
 		monsters: [spawnMonster('chaser', 99, 60, GROUND_TOP - BOX.h)],
 		projectiles: [],
 		nextProjectileId: 1,
+		spawns: [],
+		respawns: [],
+		nextMonsterId: 100,
 	};
 	let g = createGame();
 	g = {

@@ -36,6 +36,22 @@ export interface Entity {
 	maxHp: number;
 	hurtT: number; // remaining invulnerability (seconds)
 	attackT: number; // remaining attack cooldown (seconds)
+	spawnIndex?: number; // index into its Zone's spawns[], if Field-spawned
+}
+
+/** A fixed point in a Field where a Monster spawns and respawns (CONTEXT: Field
+ * — Monsters spawn at fixed points and respawn on a timer, story 20). */
+export interface SpawnPoint {
+	type: EntityType;
+	x: number;
+	y: number;
+}
+
+/** A Monster death awaiting respawn: a fresh Monster appears at spawns[spawnIndex]
+ * once `remaining` (seconds, counted down by dt) reaches zero. */
+export interface PendingRespawn {
+	spawnIndex: number;
+	remaining: number;
 }
 
 export interface Box {

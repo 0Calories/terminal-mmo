@@ -53,4 +53,8 @@ export const PROGRESSION = { levelCap: 30 } as const;
 
 export const SPAWN = { x: 10, y: GROUND_TOP - BOX.h } as const;
 
+// Monster respawn — a dead Field Monster reappears at its spawn point after this
+// delay (seconds, counted down by dt so it's deterministic — story 20).
+export const RESPAWN = { delaySec: 5 } as const;
+
 export const XP_PER_KILL = 12;

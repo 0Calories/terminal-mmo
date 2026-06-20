@@ -8,6 +8,7 @@ import {
 	COMBAT,
 	MONSTER,
 	PHYS,
+	RESPAWN,
 	SHOOTER,
 	SPAWN,
 	XP_PER_KILL,
@@ -18,8 +19,15 @@ import { type PlayerState, spawnPlayerState } from './player';
 import { applyXp, maxHpForLevel } from './progression';
 import { projectileBox, spawnProjectile, stepProjectile } from './projectile';
 import { isSolid } from './terrain';
-import type { Control, Entity, Facing, Input, Projectile } from './types';
-import { makeFieldZone, type World, type Zone } from './world';
+import type {
+	Control,
+	Entity,
+	Facing,
+	Input,
+	PendingRespawn,
+	Projectile,
+} from './types';
+import { makeFieldZone, spawnMonster, type World, type Zone } from './world';
 
 /** The single-player game: the client's Player + the World of Zones. A thin
  * bundle — Player and World stay independent (player.ts / world.ts). */
@@ -35,7 +43,7 @@ export function createGame(seed = 1): GameState {
 	return { player, world: { zones: { [field.id]: field }, tick: 0 } };
 }
 
-// TODO(M1): monster respawn timers (#5); Town + portal (#2, #3).
+// TODO(M1): Town + portal (#2, #3).
 
 /** Advance the active Zone + the Player one tick. Deterministic given inputs. */
 export function step(game: GameState, input: Input, dtMs: number): GameState {
@@ -65,6 +73,11 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	// a fresh shot doesn't travel or hit on the same tick it's fired)
 	const fired: Projectile[] = [];
 	let nextProjectileId = zone.nextProjectileId;
+
+	// respawns scheduled by this tick's deaths; merged with carried-over timers
+	// below (so a fresh kill always waits the full delay — cf. projectiles).
+	let nextMonsterId = zone.nextMonsterId;
+	const respawns: PendingRespawn[] = [];
 
 	// --- monsters ---
 	const monsters: Entity[] = [];
@@ -134,7 +147,28 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 			const item = { ...roll.item, id: nextId++ };
 			inventory = [...inventory, item];
 			log.push(`Looted ${item.rarity} ${item.base}.`);
+			// Field-spawned Monsters respawn at their point after a delay (story 20)
+			if (m.spawnIndex !== undefined)
+				respawns.push({
+					spawnIndex: m.spawnIndex,
+					remaining: RESPAWN.delaySec,
+				});
 		}
+	}
+
+	// --- respawn timers --- tick down carried-over timers; due ones spawn a
+	// fresh full-HP Monster at its point. Done after the death loop, so this
+	// tick's new timers aren't decremented until the next tick.
+	for (const r of zone.respawns) {
+		const remaining = r.remaining - dt;
+		if (remaining > 0) {
+			respawns.push({ ...r, remaining });
+			continue;
+		}
+		const s = zone.spawns[r.spawnIndex];
+		monsters.push(
+			spawnMonster(s.type, nextMonsterId++, s.x, s.y, r.spawnIndex),
+		);
 	}
 
 	// --- projectiles --- advance existing shots, resolve Avatar hits, then add
@@ -177,7 +211,14 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		nextId,
 		rngState,
 	};
-	const newZone: Zone = { ...zone, monsters, projectiles, nextProjectileId };
+	const newZone: Zone = {
+		...zone,
+		monsters,
+		projectiles,
+		nextProjectileId,
+		respawns,
+		nextMonsterId,
+	};
 	const world: World = {
 		zones: { ...game.world.zones, [zone.id]: newZone },
 		tick: game.world.tick + 1,

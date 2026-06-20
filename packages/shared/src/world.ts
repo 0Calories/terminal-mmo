@@ -4,7 +4,14 @@
 
 import { BOX, GROUND_TOP, MONSTER, SHOOTER } from './constants';
 import { makeStarterField } from './terrain';
-import type { Entity, EntityType, Projectile, Terrain } from './types';
+import type {
+	Entity,
+	EntityType,
+	PendingRespawn,
+	Projectile,
+	SpawnPoint,
+	Terrain,
+} from './types';
 
 export type ZoneId = string;
 export type ZoneType = 'field' | 'town';
@@ -18,6 +25,9 @@ export interface Zone {
 	monsters: Entity[];
 	projectiles: Projectile[];
 	nextProjectileId: number; // id source for Projectiles (cf. PlayerState.nextId)
+	spawns: SpawnPoint[]; // fixed Monster spawn points (story 20)
+	respawns: PendingRespawn[]; // dead Monsters awaiting their respawn timer
+	nextMonsterId: number; // id source for respawned Monsters
 }
 
 /** The whole World: every Zone keyed by id, plus a shared sim tick. */
@@ -36,6 +46,7 @@ export function spawnMonster(
 	id: number,
 	x: number,
 	y: number,
+	spawnIndex?: number,
 ): Entity {
 	// per-archetype base stats; shooters are frailer + slower than chasers
 	const hp = type === 'shooter' ? SHOOTER.hp : MONSTER.chaserHp;
@@ -54,6 +65,7 @@ export function spawnMonster(
 		maxHp: hp,
 		hurtT: 0,
 		attackT: 0,
+		spawnIndex,
 	};
 }
 
@@ -61,13 +73,16 @@ export function spawnMonster(
  * mix of melee chasers and ranged shooters so positioning matters (story 19). */
 export function makeFieldZone(id: ZoneId, seed = 1337): Zone {
 	const terrain = makeStarterField(seed);
-	const monsters: Entity[] = [];
-	let mid = 2; // the Avatar is id 1
+	const spawns: SpawnPoint[] = [];
 	for (let i = 0; i < 8; i++) {
 		const x = 40 + i * 22;
 		const type: EntityType = i % 3 === 2 ? 'shooter' : 'chaser';
-		monsters.push(spawnMonster(type, mid++, x, GROUND_TOP - BOX.h));
+		spawns.push({ type, x, y: GROUND_TOP - BOX.h });
 	}
+	let mid = 2; // the Avatar is id 1
+	const monsters = spawns.map((s, i) =>
+		spawnMonster(s.type, mid++, s.x, s.y, i),
+	);
 	return {
 		id,
 		type: 'field',
@@ -75,5 +90,8 @@ export function makeFieldZone(id: ZoneId, seed = 1337): Zone {
 		monsters,
 		projectiles: [],
 		nextProjectileId: 1,
+		spawns,
+		respawns: [],
+		nextMonsterId: mid,
 	};
 }
