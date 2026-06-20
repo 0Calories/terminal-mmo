@@ -15,9 +15,10 @@ export interface Control {
 	jump: boolean;
 }
 
-/** A Player's intent for one tick (movement + attack). */
+/** A Player's intent for one tick (movement + attack + portal entry). */
 export interface Input extends Control {
 	attack: boolean;
+	enter?: boolean; // stand on a Portal + this intent to travel between Zones
 }
 
 export type EntityType = 'player' | 'chaser' | 'shooter';

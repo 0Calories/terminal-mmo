@@ -9,7 +9,15 @@
 // Per ADR 0005 this layer draws ONLY the world; the HUD/log/hint chrome lives in
 // hud.ts as layout-driven renderables that overlay this node (see Hud).
 import type { Entity, GameState } from '@mmo/shared';
-import { activeZone, BOX, COMBAT, isSolid, meleeHitbox } from '@mmo/shared';
+import {
+	aabbOverlap,
+	activeZone,
+	BOX,
+	COMBAT,
+	entityBox,
+	isSolid,
+	meleeHitbox,
+} from '@mmo/shared';
 import {
 	type OptimizedBuffer,
 	Renderable,
@@ -49,6 +57,23 @@ function drawSprite(
 	}
 }
 
+function drawText(
+	buf: OptimizedBuffer,
+	x: number,
+	y: number,
+	text: string,
+	fg: typeof C.hud,
+	sw: number,
+	sh: number,
+) {
+	if (y < 0 || y >= sh) return;
+	for (let i = 0; i < text.length; i++) {
+		const px = x + i;
+		if (px < 0 || px >= sw) continue;
+		buf.setCellWithAlphaBlending(px, y, text[i], fg, C.transparent);
+	}
+}
+
 function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
@@ -84,6 +109,34 @@ function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
 			)
 				buf.setCell(sx, sy, '█', C.terrainFg, C.terrainBg);
 		}
+	}
+
+	// portals: a shimmering gateway glyph over their footprint, drawn behind the
+	// Sprites so the Avatar stands in front of the door (story 14). An enter
+	// prompt floats above the one the Avatar is currently standing on.
+	const onPortal = zone.portals.find((pr) => aabbOverlap(entityBox(p), pr));
+	for (const pr of zone.portals) {
+		for (let yy = 0; yy < pr.h; yy++) {
+			for (let xx = 0; xx < pr.w; xx++) {
+				const px = pr.x + xx - cam.x;
+				const py = pr.y + yy - cam.y;
+				if (px >= 0 && px < sw && py >= 0 && py < sh)
+					buf.setCellWithAlphaBlending(px, py, '▒', C.portal, C.transparent);
+			}
+		}
+	}
+	if (onPortal) {
+		const dest = game.world.zones[onPortal.target]?.type ?? 'zone';
+		const label = `↵ e  enter the ${dest.charAt(0).toUpperCase()}${dest.slice(1)}`;
+		drawText(
+			buf,
+			Math.round(onPortal.x - cam.x),
+			Math.round(onPortal.y - cam.y) - 1,
+			label,
+			C.portal,
+			sw,
+			sh,
+		);
 	}
 
 	// entities, z-ordered by y; player drawn last (on top)

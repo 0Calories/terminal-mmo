@@ -62,6 +62,34 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	const zone = game.world.zones[game.player.zoneId];
 	const t = zone.terrain;
 
+	// Portal entry (story 14): standing on a Portal + the enter intent transitions
+	// the Avatar to the target Zone at its arrival point. Handled first, so the
+	// transition tick runs no movement/combat; persistent state (progress,
+	// inventory, RNG) carries over untouched.
+	if (input.enter) {
+		const here = entityBox(game.player.avatar);
+		const portal = zone.portals.find((p) => aabbOverlap(here, p));
+		if (portal) {
+			const avatar: Entity = {
+				...game.player.avatar,
+				x: portal.arrival.x,
+				y: portal.arrival.y,
+				vx: 0,
+				vy: 0,
+				onGround: false,
+			};
+			const dest = game.world.zones[portal.target];
+			const log = [...game.player.log.slice(-5), `Entered the ${dest.type}.`];
+			const player: PlayerState = {
+				...game.player,
+				avatar,
+				zoneId: portal.target,
+				log,
+			};
+			return { player, world: { ...game.world, tick: game.world.tick + 1 } };
+		}
+	}
+
 	// --- avatar movement ---
 	const pCtl: Control = { moveX: input.moveX, jump: input.jump };
 	let avatar = stepEntity(t, game.player.avatar, pCtl, dt).e;
