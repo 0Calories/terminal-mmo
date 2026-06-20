@@ -1,14 +1,18 @@
 import { Sprite } from './sprite';
 
-// Claude-style block-art Avatar: a rounded sunburst creature with eye-holes
-// (the background shows through) and two little feet. Block Elements
-// (U+2580–259F) read as filled pixels; the silhouette is left-right symmetric,
-// so both facings render identically.
+// "Claude-buddy" Avatar: a rounded, bottom-heavy creature with two dark eye-dots
+// and four little feet. Block Elements (U+2580–259F) read as filled pixels; the
+// silhouette and eyes are left-right symmetric, so both facings render
+// identically. The `colors` grid darkens the two eye cells (`k`); every other
+// cell falls back to the body key (`p`).
 const GLYPH = `
-·▖·█·▗·
-·▚███▞·
-▗█▟█▙█▖
-▝█████▘
-·▐▌·▐▌·`;
+·▐▛███▜▌·
+▝▜█████▛▘
+··▘▘·▝▝··`;
 
-export const player = new Sprite(GLYPH, { defaultKey: 'p' });
+const COLORS = `
+·ppppppp·
+ppppppppp
+··pp·pp··`;
+
+export const player = new Sprite(GLYPH, { defaultKey: 'p', colors: COLORS });

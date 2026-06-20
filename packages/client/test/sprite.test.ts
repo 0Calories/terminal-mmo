@@ -49,17 +49,18 @@ test('throws when defaultKey is not a single char', () => {
 
 // --- Golden art (pins the live sprite art so accidental edits are caught) ---
 
-const PLAYER = [' ▖ █ ▗ ', ' ▚███▞ ', '▗█▟█▙█▖', '▝█████▘', ' ▐▌ ▐▌ '];
+const PLAYER = [' ▐▛███▜▌ ', '▝▜█████▛▘', '  ▘▘ ▝▝  '];
 const CHASER_RIGHT = ['▚ ▟▙ ▞ ', '▟████▙ ', '▞▛▛▛▛▌ ', '▐▟▟▟▟▖ ', '▞    ▚ '];
 const CHASER_LEFT = [' ▚ ▟▙ ▞', ' ▟████▙', ' ▐▜▜▜▜▚', ' ▗▙▙▙▙▌', ' ▞    ▚'];
 
-test('player art (block sunburst) is symmetric: both facings identical', () => {
+test('player art (Claude buddy) is symmetric: both facings identical', () => {
 	const p = spriteFor('player');
-	expect(p.w).toBe(7);
-	expect(p.h).toBe(5);
+	expect(p.w).toBe(9);
+	expect(p.h).toBe(3);
 	expect(p.rows(1)).toEqual(PLAYER);
 	expect(p.rows(-1)).toEqual(PLAYER);
-	expect(p.colorKeys(1)).toEqual(Array(5).fill('ppppppp'));
+	expect(p.colorKeys(1)[1]).toBe('pppkpkppp'); // two dark eye cells on the body
+	expect(p.colorKeys(-1)[1]).toBe('pppkpkppp'); // eyes symmetric under mirror
 });
 
 test('chaser art (block maw) mirrors and tints its eye cells green', () => {
