@@ -1,7 +1,23 @@
+// PlayfieldRenderable (ADR 0005): the hot, per-frame playfield as a scene-graph
+// node rather than a global post-process hook. `renderSelf` draws terrain +
+// entity Sprites + combat telegraphs imperatively into the screen buffer every
+// frame — the immediate-mode layer that a retained virtual-DOM would only slow
+// down. `live` keeps the renderer drawing each frame so the sim animates
+// continuously; `width/height: '100%'` fills the root so absolute buffer
+// coordinates (the node sits at the origin) match the screen.
+//
+// This is step 1 of ADR 0005: a mechanical, output-preserving extraction of the
+// former `render.ts` `draw()`. The HUD/log/hint are deliberately still drawn
+// here; lifting them out into layout-driven renderables is the next step.
 import type { Entity, GameState } from '@mmo/shared';
 import { activeZone, BOX, COMBAT, isSolid, meleeHitbox } from '@mmo/shared';
-import type { OptimizedBuffer } from '@opentui/core';
-import { RGBA } from '@opentui/core';
+import {
+	type OptimizedBuffer,
+	Renderable,
+	type RenderableOptions,
+	type RenderContext,
+	RGBA,
+} from '@opentui/core';
 import { PALETTE, spriteFor } from './sprites';
 
 const C = {
@@ -47,7 +63,7 @@ function drawSprite(
 	}
 }
 
-export function draw(buf: OptimizedBuffer, game: GameState, fps: number) {
+function drawPlayfield(buf: OptimizedBuffer, game: GameState, fps: number) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
 	const sw = buf.width;
@@ -133,4 +149,19 @@ export function draw(buf: OptimizedBuffer, game: GameState, fps: number) {
 		C.dim,
 		C.bg,
 	);
+}
+
+export class PlayfieldRenderable extends Renderable {
+	/** Latest simulation state to draw; the frame loop sets this each tick. */
+	game: GameState | null = null;
+	/** Smoothed FPS for the HUD readout; set by the frame loop. */
+	fps = 0;
+
+	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
+		super(ctx, { width: '100%', height: '100%', live: true, ...options });
+	}
+
+	protected renderSelf(buffer: OptimizedBuffer): void {
+		if (this.game) drawPlayfield(buffer, this.game, this.fps);
+	}
 }

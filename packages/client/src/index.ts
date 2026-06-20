@@ -7,7 +7,7 @@
 import { createGame, step } from '@mmo/shared';
 import { createCliRenderer } from '@opentui/core';
 import { InputState } from './input';
-import { draw } from './render';
+import { PlayfieldRenderable } from './playfield';
 
 const renderer = await createCliRenderer({
 	targetFps: 60,
@@ -19,6 +19,12 @@ const renderer = await createCliRenderer({
 
 let game = createGame();
 const input = new InputState();
+
+// The playfield is a scene-graph node (ADR 0005), not a post-process hook: it
+// fills the root and draws itself every frame from `game`/`fps`, which the frame
+// loop below keeps current.
+const playfield = new PlayfieldRenderable(renderer);
+renderer.root.add(playfield);
 
 renderer.keyInput.on('keypress', (k) => {
 	if (k.name === 'q') {
@@ -44,6 +50,7 @@ renderer.setFrameCallback(async (dt) => {
 		acc = 0;
 		frames = 0;
 	}
+	playfield.game = game;
+	playfield.fps = fps;
 });
-renderer.addPostProcessFn((buf) => draw(buf, game, fps));
 renderer.start();
