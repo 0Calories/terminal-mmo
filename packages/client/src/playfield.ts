@@ -6,9 +6,8 @@
 // continuously; `width/height: '100%'` fills the root so absolute buffer
 // coordinates (the node sits at the origin) match the screen.
 //
-// This is step 1 of ADR 0005: a mechanical, output-preserving extraction of the
-// former `render.ts` `draw()`. The HUD/log/hint are deliberately still drawn
-// here; lifting them out into layout-driven renderables is the next step.
+// Per ADR 0005 this layer draws ONLY the world; the HUD/log/hint chrome lives in
+// hud.ts as layout-driven renderables that overlay this node (see Hud).
 import type { Entity, GameState } from '@mmo/shared';
 import { activeZone, BOX, COMBAT, isSolid, meleeHitbox } from '@mmo/shared';
 import {
@@ -16,22 +15,9 @@ import {
 	Renderable,
 	type RenderableOptions,
 	type RenderContext,
-	RGBA,
 } from '@opentui/core';
 import { PALETTE, spriteFor } from './sprites';
-
-const C = {
-	bg: RGBA.fromInts(16, 18, 26, 255),
-	terrainFg: RGBA.fromInts(70, 82, 104, 255),
-	terrainBg: RGBA.fromInts(34, 40, 54, 255),
-	transparent: RGBA.fromInts(0, 0, 0, 0),
-	hurt: RGBA.fromInts(255, 240, 120, 255),
-	melee: RGBA.fromInts(255, 245, 200, 255),
-	hud: RGBA.fromInts(232, 232, 238, 255),
-	hudBg: RGBA.fromInts(8, 9, 13, 255),
-	hp: RGBA.fromInts(90, 220, 120, 255),
-	dim: RGBA.fromInts(150, 156, 168, 255),
-};
+import { COLORS as C } from './theme';
 
 function drawSprite(
 	buf: OptimizedBuffer,
@@ -49,7 +35,7 @@ function drawSprite(
 	const hurt = e.hurtT > 0.3; // state-driven tint, overrides the art's colour
 	for (let ry = 0; ry < sprite.h; ry++) {
 		const py = sy + ry;
-		if (py < 1 || py >= sh) continue; // top row reserved for HUD
+		if (py < 0 || py >= sh) continue;
 		const row = glyphs[ry];
 		const krow = keys[ry];
 		for (let rx = 0; rx < sprite.w; rx++) {
@@ -63,7 +49,7 @@ function drawSprite(
 	}
 }
 
-function drawPlayfield(buf: OptimizedBuffer, game: GameState, fps: number) {
+function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
 	const sw = buf.width;
@@ -85,7 +71,7 @@ function drawPlayfield(buf: OptimizedBuffer, game: GameState, fps: number) {
 	buf.clear(C.bg);
 
 	// terrain (visible cells only)
-	for (let sy = 1; sy < sh; sy++) {
+	for (let sy = 0; sy < sh; sy++) {
 		const wy = sy + cam.y;
 		for (let sx = 0; sx < sw; sx++) {
 			const wx = sx + cam.x;
@@ -111,7 +97,7 @@ function drawPlayfield(buf: OptimizedBuffer, game: GameState, fps: number) {
 			for (let xx = 0; xx < hb.w; xx++) {
 				const px = Math.round(hb.x + xx - cam.x);
 				const py = Math.round(hb.y + yy - cam.y);
-				if (px >= 0 && px < sw && py >= 1 && py < sh)
+				if (px >= 0 && px < sw && py >= 0 && py < sh)
 					buf.setCellWithAlphaBlending(
 						px,
 						py,
@@ -124,44 +110,17 @@ function drawPlayfield(buf: OptimizedBuffer, game: GameState, fps: number) {
 	}
 
 	drawSprite(buf, p, cam, sw, sh);
-
-	// HUD
-	for (let x = 0; x < sw; x++) buf.setCell(x, 0, ' ', C.hud, C.hudBg);
-	const hpPct = Math.max(0, Math.round((p.hp / p.maxHp) * 100));
-	const left = ` L${player.progress.level}  HP ${Math.max(0, Math.round(p.hp))}/${p.maxHp} (${hpPct}%)  XP ${player.progress.xp}  Gold ${player.progress.gold}  Items ${player.inventory.length} `;
-	buf.drawText(left, 0, 0, C.hud, C.hudBg);
-	const right = `FPS ${fps}  monsters ${zone.monsters.length} `;
-	buf.drawText(right, Math.max(0, sw - right.length), 0, C.dim, C.hudBg);
-
-	// recent log, bottom-left
-	const lines = player.log.slice(-3);
-	for (let i = 0; i < lines.length; i++) {
-		const ly = sh - lines.length + i;
-		if (ly > 0) buf.drawText(lines[i].slice(0, sw), 1, ly, C.dim, C.bg);
-	}
-
-	// controls hint
-	const hint = 'move ←/→ a/d  jump ␣/↑  attack j/x  quit q';
-	buf.drawText(
-		hint.slice(0, sw),
-		1,
-		sh - lines.length - 1 > 0 ? sh - lines.length - 1 : sh - 1,
-		C.dim,
-		C.bg,
-	);
 }
 
 export class PlayfieldRenderable extends Renderable {
 	/** Latest simulation state to draw; the frame loop sets this each tick. */
 	game: GameState | null = null;
-	/** Smoothed FPS for the HUD readout; set by the frame loop. */
-	fps = 0;
 
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
 		super(ctx, { width: '100%', height: '100%', live: true, ...options });
 	}
 
 	protected renderSelf(buffer: OptimizedBuffer): void {
-		if (this.game) drawPlayfield(buffer, this.game, this.fps);
+		if (this.game) drawPlayfield(buffer, this.game);
 	}
 }
