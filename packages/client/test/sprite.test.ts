@@ -63,6 +63,6 @@ test('every entity type resolves to a sprite', () => {
 	}
 });
 
-test('shooter aliases chaser until it has distinct art (#4)', () => {
-	expect(spriteFor('shooter')).toBe(spriteFor('chaser'));
+test('shooter has its own sprite, distinct from the chaser (#4)', () => {
+	expect(spriteFor('shooter')).not.toBe(spriteFor('chaser'));
 });

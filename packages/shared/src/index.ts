@@ -7,6 +7,7 @@ export * from './loot';
 export * from './physics';
 export * from './player';
 export * from './progression';
+export * from './projectile';
 export * from './rng';
 export * from './sim';
 export * from './terrain';

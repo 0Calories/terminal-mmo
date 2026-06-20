@@ -32,6 +32,23 @@ export const MONSTER = {
 	contactDamage: 6,
 } as const;
 
+// shooter — a ranged Monster that keeps its distance and fires Projectiles
+// (CONTEXT: Combat — ranged is precise; positioning matters). Distances in
+// cells, speeds in cells/second, times in seconds.
+export const SHOOTER = {
+	hp: 16,
+	speed: 9,
+	aggro: 46, // horizontal distance at which it engages + fires
+	keepDist: 20, // retreats if the Avatar comes closer than this
+	fireCooldown: 1.4, // between shots
+	projSpeed: 36, // Projectile horizontal speed
+	projLife: 2.4, // before a Projectile expires
+	projDamage: 7,
+} as const;
+
+// logical Projectile size (small, decoupled from its glyph — ADR 0003)
+export const PROJECTILE = { w: 1, h: 1 } as const;
+
 export const PROGRESSION = { levelCap: 30 } as const;
 
 export const SPAWN = { x: 10, y: GROUND_TOP - BOX.h } as const;

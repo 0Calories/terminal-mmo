@@ -45,6 +45,20 @@ export interface Box {
 	h: number;
 }
 
+/** A travelling damage source fired by a ranged Monster (CONTEXT: Combat —
+ * ranged is precise directional projectiles). Small, straight-line, transient:
+ * it despawns on Terrain, on Avatar overlap, or when its lifetime runs out. */
+export interface Projectile {
+	id: number;
+	x: number;
+	y: number;
+	vx: number;
+	vy: number;
+	life: number; // remaining lifetime (seconds)
+	damage: number;
+	ownerId: number; // the Monster that fired it
+}
+
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 export type Slot = 'weapon' | 'armor' | 'accessory';
 
