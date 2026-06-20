@@ -10,8 +10,14 @@ import { Hud } from './hud';
 import { InputState } from './input';
 import { PlayfieldRenderable } from './playfield';
 
+// Render/sim cadence. The sim is dt-based (@mmo/shared), so this only affects
+// smoothness + CPU, never game speed. Default 120 for high-refresh displays
+// (ProMotion etc.); override with MMO_FPS — e.g. MMO_FPS=60 on a 60Hz panel, or
+// over SSH where the display refresh is unknowable (autodetect parked, #22).
+const RENDER_FPS = Number(process.env.MMO_FPS) || 120;
+
 const renderer = await createCliRenderer({
-	targetFps: 60,
+	targetFps: RENDER_FPS,
 	exitOnCtrlC: true,
 	backgroundColor: '#10121a',
 	// Report press/repeat/RELEASE for continuous held movement (M0 finding).
