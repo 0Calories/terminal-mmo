@@ -252,16 +252,76 @@ oogggoo
 );
 
 export const GALLERY: readonly GalleryEntry[] = [
-	{ category: 'Avatar', label: 'Buddy', note: 'live base Avatar (player.ts)', sprite: player },
-	{ category: 'Avatar', label: 'Sprout', note: 'tiny round blob, leaf bud', sprite: sprout },
-	{ category: 'Avatar', label: 'Scout', note: 'tall, cyan-capped, legs', sprite: scout },
-	{ category: 'Avatar', label: 'Sage', note: 'bell robe + hood, cyan sash', sprite: sage },
-	{ category: 'Avatar', label: 'Knight', note: 'broad helmeted guard, red crest', sprite: knight },
-	{ category: 'Monster', label: 'Slime', note: 'low-level blob, dark eyes', sprite: slime },
-	{ category: 'Monster', label: 'Mushroom', note: 'spotted cap, stub feet', sprite: mushroom },
-	{ category: 'Monster', label: 'Bat', note: 'cave flier, glowing eyes', sprite: bat },
-	{ category: 'Monster', label: 'Ghost', note: 'drifting spectre, cyan hem', sprite: ghost },
-	{ category: 'Monster', label: 'Spider', note: 'four mirrored legs', sprite: spider },
-	{ category: 'Monster', label: 'Golem', note: 'elite stone bruiser', sprite: golem },
-	{ category: 'Monster', label: 'Sentry Eye', note: 'ranged (shooter) candidate', sprite: sentryEye },
+	{
+		category: 'Avatar',
+		label: 'Buddy',
+		note: 'live base Avatar (player.ts)',
+		sprite: player,
+	},
+	{
+		category: 'Avatar',
+		label: 'Sprout',
+		note: 'tiny round blob, leaf bud',
+		sprite: sprout,
+	},
+	{
+		category: 'Avatar',
+		label: 'Scout',
+		note: 'tall, cyan-capped, legs',
+		sprite: scout,
+	},
+	{
+		category: 'Avatar',
+		label: 'Sage',
+		note: 'bell robe + hood, cyan sash',
+		sprite: sage,
+	},
+	{
+		category: 'Avatar',
+		label: 'Knight',
+		note: 'broad helmeted guard, red crest',
+		sprite: knight,
+	},
+	{
+		category: 'Monster',
+		label: 'Slime',
+		note: 'low-level blob, dark eyes',
+		sprite: slime,
+	},
+	{
+		category: 'Monster',
+		label: 'Mushroom',
+		note: 'spotted cap, stub feet',
+		sprite: mushroom,
+	},
+	{
+		category: 'Monster',
+		label: 'Bat',
+		note: 'cave flier, glowing eyes',
+		sprite: bat,
+	},
+	{
+		category: 'Monster',
+		label: 'Ghost',
+		note: 'drifting spectre, cyan hem',
+		sprite: ghost,
+	},
+	{
+		category: 'Monster',
+		label: 'Spider',
+		note: 'four mirrored legs',
+		sprite: spider,
+	},
+	{
+		category: 'Monster',
+		label: 'Golem',
+		note: 'elite stone bruiser',
+		sprite: golem,
+	},
+	{
+		category: 'Monster',
+		label: 'Sentry Eye',
+		note: 'ranged (shooter) candidate',
+		sprite: sentryEye,
+	},
 ];
