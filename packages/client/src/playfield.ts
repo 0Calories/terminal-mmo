@@ -24,6 +24,7 @@ import {
 	type RenderableOptions,
 	type RenderContext,
 } from '@opentui/core';
+import { type CameraState, initCameraState, stepCamera } from './camera';
 import { PALETTE, spriteFor } from './sprites';
 import { COLORS as C } from './theme';
 
@@ -74,7 +75,11 @@ function drawText(
 	}
 }
 
-function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
+function drawPlayfield(
+	buf: OptimizedBuffer,
+	game: GameState,
+	cam: { x: number; y: number },
+) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
 	const sw = buf.width;
@@ -82,16 +87,6 @@ function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
 	const p = player.avatar;
 	const ww = zone.terrain.w;
 	const wh = zone.terrain.h;
-	const cam = {
-		x: Math.max(
-			0,
-			Math.min(Math.round(p.x + BOX.w / 2 - sw / 2), Math.max(0, ww - sw)),
-		),
-		y: Math.max(
-			0,
-			Math.min(Math.round(p.y + BOX.h / 2 - sh / 2), Math.max(0, wh - sh)),
-		),
-	};
 
 	buf.clear(C.bg);
 
@@ -179,11 +174,29 @@ export class PlayfieldRenderable extends Renderable {
 	/** Latest simulation state to draw; the frame loop sets this each tick. */
 	game: GameState | null = null;
 
+	// Dead-band camera state, carried across frames (view-only — see camera.ts).
+	private camState: CameraState = initCameraState();
+
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
 		super(ctx, { width: '100%', height: '100%', live: true, ...options });
 	}
 
 	protected renderSelf(buffer: OptimizedBuffer): void {
-		if (this.game) drawPlayfield(buffer, this.game);
+		if (!this.game) return;
+		const zone = activeZone(this.game.world, this.game.player.zoneId);
+		const a = this.game.player.avatar;
+		this.camState = stepCamera(
+			this.camState,
+			this.game.player.zoneId,
+			a.x,
+			a.y,
+			{
+				sw: buffer.width,
+				sh: buffer.height,
+				ww: zone.terrain.w,
+				wh: zone.terrain.h,
+			},
+		);
+		if (this.camState.cam) drawPlayfield(buffer, this.game, this.camState.cam);
 	}
 }
