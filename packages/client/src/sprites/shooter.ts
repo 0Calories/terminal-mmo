@@ -1,23 +1,22 @@
 import { Sprite } from './sprite';
 
-// Block-art ranged Monster: a hovering, rounded turret with a side barrel —
-// deliberately distinct from the chaser's low, wide maw so the two read apart
-// at a glance (CONTEXT: Monster; story 19). Block Elements (U+2580–259F) flip
-// correctly via Sprite's block-aware mirror, so the barrel swaps sides with
-// facing. The `colors` grid tints the eyes green (`g`) and the barrel gold
-// (`y`); every other cell falls back to the body key `m`.
+// Sentry Eye — the live ranged shooter (#4), matching the design-gallery
+// candidate: a single great hovering eye, black pupil (`k`) ringed by a green
+// iris (`g`) on an off-white body (`o`). Reads instantly as "this one shoots
+// at you," and is unmistakable next to the chaser's low, wide maw (story 19).
+// Block Elements (U+2580–259F) flip correctly via Sprite's block-aware mirror.
 const GLYPH = `
-·▄██▄··
-▟████▙·
-██████▖
-▜████▛·
-·▀▀▀▀··`;
+·▗▄▄▄▖·
+▟█████▙
+██▟█▙██
+▜█████▛
+·▝▀▀▀▘·`;
 
 const COLORS = `
-·······
-··gg···
-·····y·
-·······
-·······`;
+·ooooo·
+oogggoo
+oggkggo
+oogggoo
+·ooooo·`;
 
-export const shooter = new Sprite(GLYPH, { defaultKey: 'm', colors: COLORS });
+export const shooter = new Sprite(GLYPH, { defaultKey: 'o', colors: COLORS });
