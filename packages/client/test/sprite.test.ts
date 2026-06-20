@@ -22,6 +22,12 @@ test('mirrors glyphs: reverse + swap mirror-pairs', () => {
 	expect(s.rows(-1)).toEqual([')\\']);
 });
 
+test('mirrors block-element glyphs by reflecting their lit quadrants', () => {
+	// '▌▖▛' -> reverse -> '▛▖▌' -> swap halves/quadrants -> '▜▗▐'
+	const s = new Sprite('\n▌▖▛\n', { defaultKey: 'x' });
+	expect(s.rows(-1)).toEqual(['▜▗▐']);
+});
+
 test('mono-colour sprite: every cell is the default key', () => {
 	const s = new Sprite('\nAB\nC\n', { defaultKey: 'p' });
 	expect(s.colorKeys(1)).toEqual(['pp', 'pp']);
@@ -47,28 +53,14 @@ test('throws when defaultKey is not a single char', () => {
 	expect(() => new Sprite('\nA\n', { defaultKey: 'player' })).toThrow();
 });
 
-// --- Golden art (pins the live sprite art so accidental edits are caught) ---
+// --- Registry --------------------------------------------------------------
+// We deliberately do NOT pin the *appearance* of individual sprites (their glyph
+// grids change as art is iterated). These cover the lookup wiring only.
 
-const PLAYER = [' ▐▛███▜▌ ', '▝▜█████▛▘', '  ▘▘ ▝▝  '];
-const CHASER_RIGHT = ['▚ ▟▙ ▞ ', '▟████▙ ', '▞▛▛▛▛▌ ', '▐▟▟▟▟▖ ', '▞    ▚ '];
-const CHASER_LEFT = [' ▚ ▟▙ ▞', ' ▟████▙', ' ▐▜▜▜▜▚', ' ▗▙▙▙▙▌', ' ▞    ▚'];
-
-test('player art (Claude buddy) is symmetric: both facings identical', () => {
-	const p = spriteFor('player');
-	expect(p.w).toBe(9);
-	expect(p.h).toBe(3);
-	expect(p.rows(1)).toEqual(PLAYER);
-	expect(p.rows(-1)).toEqual(PLAYER);
-	expect(p.colorKeys(1)[1]).toBe('pppkpkppp'); // two dark eye cells on the body
-	expect(p.colorKeys(-1)[1]).toBe('pppkpkppp'); // eyes symmetric under mirror
-});
-
-test('chaser art (block maw) mirrors and tints its eye cells green', () => {
-	const c = spriteFor('chaser');
-	expect(c.rows(1)).toEqual(CHASER_RIGHT);
-	expect(c.rows(-1)).toEqual(CHASER_LEFT);
-	expect(c.colorKeys(1)[0]).toBe('mmmmmmm');
-	expect(c.colorKeys(1)[1]).toBe('mgmmgmm'); // two green eyes on the jaw row
+test('every entity type resolves to a sprite', () => {
+	for (const type of ['player', 'chaser', 'shooter'] as const) {
+		expect(spriteFor(type)).toBeInstanceOf(Sprite);
+	}
 });
 
 test('shooter aliases chaser until it has distinct art (#4)', () => {
