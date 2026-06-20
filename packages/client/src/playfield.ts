@@ -27,23 +27,26 @@ import {
 	type RenderContext,
 } from '@opentui/core';
 import { type CameraState, initCameraState, stepCamera } from './camera';
-import { PALETTE, spriteFor } from './sprites';
+import type { Sprite } from './sprites';
+import { PALETTE, spriteFor, spriteForNpc } from './sprites';
 import { COLORS as C } from './theme';
 
-function drawSprite(
+// Blit a Sprite's glyph + colour grid into the buffer at a screen anchor (top-
+// left sx, sy), honouring transparency and per-cell palette keys. `hurt` tints
+// every lit cell with the hurt flash. The anchor + facing are the caller's to
+// compute, so this serves both simulated entities and decorative NPCs.
+function blitSprite(
 	buf: OptimizedBuffer,
-	e: Entity,
-	cam: { x: number; y: number },
+	sprite: Sprite,
+	sx: number,
+	sy: number,
+	facing: Entity['facing'],
 	sw: number,
 	sh: number,
+	hurt: boolean,
 ) {
-	const sprite = spriteFor(e.type);
-	const glyphs = sprite.rows(e.facing);
-	const keys = sprite.colorKeys(e.facing);
-	// Anchor per-sprite: centred horizontally, feet aligned to the box bottom.
-	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2) - cam.x);
-	const sy = Math.round(e.y + BOX.h - sprite.h - cam.y);
-	const hurt = e.hurtT > 0.3; // state-driven tint, overrides the art's colour
+	const glyphs = sprite.rows(facing);
+	const keys = sprite.colorKeys(facing);
 	for (let ry = 0; ry < sprite.h; ry++) {
 		const py = sy + ry;
 		if (py < 0 || py >= sh) continue;
@@ -58,6 +61,21 @@ function drawSprite(
 			buf.setCellWithAlphaBlending(px, py, ch, fg, C.transparent);
 		}
 	}
+}
+
+function drawSprite(
+	buf: OptimizedBuffer,
+	e: Entity,
+	cam: { x: number; y: number },
+	sw: number,
+	sh: number,
+) {
+	const sprite = spriteFor(e.type);
+	// Anchor per-sprite: centred horizontally, feet aligned to the box bottom.
+	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2) - cam.x);
+	const sy = Math.round(e.y + BOX.h - sprite.h - cam.y);
+	// state-driven tint, overrides the art's colour
+	blitSprite(buf, sprite, sx, sy, e.facing, sw, sh, e.hurtT > 0.3);
 }
 
 function drawText(
@@ -141,6 +159,21 @@ function drawPlayfield(
 			sw,
 			sh,
 		);
+	}
+
+	// NPCs (Town vendor, story 29): a multi-row Avatar Sprite over the NPC's small
+	// logical footprint (ADR 0003), drawn behind the entity Sprites like portals so
+	// the player stands in front. World-fixed, so it scrolls on the whole-cell grid
+	// (camX/camY). A talk prompt floats above the head of the overlapped NPC.
+	const npcs = zone.npcs ?? [];
+	const onNpc = npcs.find((n) => aabbOverlap(entityBox(p), n));
+	for (const n of npcs) {
+		const sprite = spriteForNpc(n.kind);
+		const sx = Math.round(n.x + Math.floor((n.w - sprite.w) / 2)) - camX;
+		const sy = Math.round(n.y + n.h - sprite.h) - camY;
+		blitSprite(buf, sprite, sx, sy, 1, sw, sh, false);
+		if (n === onNpc)
+			drawText(buf, sx, sy - 1, `↵ e  talk to ${n.name}`, C.vendor, sw, sh);
 	}
 
 	// entities, z-ordered by y; player drawn last (on top)
