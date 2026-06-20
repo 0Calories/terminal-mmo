@@ -18,8 +18,10 @@ import { stepEntity } from './physics';
 import { type PlayerState, spawnPlayerState } from './player';
 import { applyXp, maxHpForLevel } from './progression';
 import { projectileBox, spawnProjectile, stepProjectile } from './projectile';
+import { skillForSlot, skillHitbox, skillUnlocked } from './skills';
 import { isSolid } from './terrain';
 import type {
+	Box,
 	Control,
 	Entity,
 	Facing,
@@ -96,17 +98,39 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	avatar.attackT = Math.max(0, avatar.attackT - dt);
 	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
 
-	// --- avatar attack (resolved against monsters below) ---
-	const attacking = input.attack && avatar.attackT <= 0;
-	if (attacking) avatar = { ...avatar, attackT: 0.35 };
-	const hb = attacking ? meleeHitbox(avatar) : null;
-
 	// player-side consequences accumulate here
 	let progress = game.player.progress;
 	let inventory = game.player.inventory;
 	const log = game.player.log.slice(-5);
 	let nextId = game.player.nextId;
 	let rngState = game.player.rngState;
+
+	// --- avatar attack & skills (resolved against monsters below) ---
+	// A basic swing and a Skill share one hitbox slot for the tick; a fired Skill
+	// overrides the swing. Hits resolve via aabbOverlap in the monster loop.
+	const attacking = input.attack && avatar.attackT <= 0;
+	if (attacking) avatar = { ...avatar, attackT: COMBAT.attackCooldown };
+	let hb: Box | null = attacking ? meleeHitbox(avatar) : null;
+	let hitDamage: number = COMBAT.meleeDamage;
+
+	// Skill cooldowns count down every tick; a key-bound slot fires its Skill if
+	// unlocked + off cooldown, starting a fresh cooldown (story 22).
+	const skillCooldowns: Record<string, number> = {};
+	for (const [id, cd] of Object.entries(game.player.skillCooldowns ?? {}))
+		skillCooldowns[id] = Math.max(0, cd - dt);
+	if (input.skill) {
+		const skill = skillForSlot(game.player.class ?? 'warrior', input.skill);
+		if (
+			skill &&
+			skillUnlocked(skill, progress.level) &&
+			(skillCooldowns[skill.id] ?? 0) <= 0
+		) {
+			skillCooldowns[skill.id] = skill.cooldown;
+			hb = skillHitbox(avatar, skill);
+			hitDamage = skill.damage;
+			log.push(`${skill.name}!`);
+		}
+	}
 
 	// projectiles fired by shooters this tick (spawned after they're stepped, so
 	// a fresh shot doesn't travel or hit on the same tick it's fired)
@@ -160,9 +184,9 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 			}
 		}
 
-		// avatar melee → monster
+		// avatar melee / Skill → monster
 		if (hb && m.hurtT <= 0 && aabbOverlap(hb, entityBox(m))) {
-			m = { ...m, hp: m.hp - 8, hurtT: 0.6 };
+			m = { ...m, hp: m.hp - hitDamage, hurtT: 0.6 };
 		}
 		// monster contact → avatar
 		if (
@@ -252,6 +276,8 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		log,
 		nextId,
 		rngState,
+		class: game.player.class,
+		skillCooldowns,
 	};
 	const newZone: Zone = {
 		...zone,

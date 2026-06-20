@@ -10,6 +10,7 @@ export * from './progression';
 export * from './projectile';
 export * from './rng';
 export * from './sim';
+export * from './skills';
 export * from './terrain';
 export * from './types';
 export * from './world';

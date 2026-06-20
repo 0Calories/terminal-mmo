@@ -4,6 +4,7 @@
 
 import { PHYS } from './constants';
 import { maxHpForLevel } from './progression';
+import type { PlayerClass } from './skills';
 import type { Entity, Item, PlayerProgress } from './types';
 import type { ZoneId } from './world';
 
@@ -15,6 +16,11 @@ export interface PlayerState {
 	log: string[]; // recent events (level ups, loot) for the HUD
 	nextId: number; // ids for looted Items
 	rngState: number; // instanced-loot RNG (CONTEXT: Instanced loot)
+	// playable Class (CONTEXT: Class) — MVP Warrior only. Optional so existing
+	// state literals stay valid; the sim treats absent as 'warrior'.
+	class?: PlayerClass;
+	// remaining cooldown (seconds) per Skill id; absent/0 == ready to fire.
+	skillCooldowns?: Record<string, number>;
 }
 
 /** The Avatar entity (id 1) at a position, with level-1 stats. */
@@ -51,5 +57,7 @@ export function spawnPlayerState(
 		log: ['Welcome. Hunt the chasers (j to attack).'],
 		nextId: 1,
 		rngState: seed,
+		class: 'warrior',
+		skillCooldowns: {},
 	};
 }
