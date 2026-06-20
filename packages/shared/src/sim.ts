@@ -1,15 +1,16 @@
 // sim.ts — orchestration. Advances the Player within the World's active Zone,
 // pure + deterministic given (game, input, dtMs). Game logic lives here and in
 // player.ts / world.ts so the client and (M2) server never diverge.
-import type { Control, Entity, Input } from "./types"
-import { BOX, MONSTER, PHYS, SPAWN, XP_PER_KILL } from "./constants"
-import { isSolid } from "./terrain"
-import { stepEntity } from "./physics"
+
 import { aabbOverlap, entityBox, meleeHitbox } from "./combat"
-import { applyXp, maxHpForLevel } from "./progression"
+import { BOX, MONSTER, PHYS, SPAWN, XP_PER_KILL } from "./constants"
 import { rollItem } from "./loot"
+import { stepEntity } from "./physics"
 import { type PlayerState, spawnPlayerState } from "./player"
-import { type World, type Zone, makeFieldZone } from "./world"
+import { applyXp, maxHpForLevel } from "./progression"
+import { isSolid } from "./terrain"
+import type { Control, Entity, Input } from "./types"
+import { makeFieldZone, type World, type Zone } from "./world"
 
 /** The single-player game: the client's Player + the World of Zones. A thin
  * bundle — Player and World stay independent (player.ts / world.ts). */

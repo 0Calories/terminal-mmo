@@ -1,5 +1,5 @@
-import type { Box, Entity } from "./types"
 import { BOX, COMBAT } from "./constants"
+import type { Box, Entity } from "./types"
 
 /** The logical collision/hit box of an entity (decoupled from its sprite). */
 export function entityBox(e: Entity): Box {

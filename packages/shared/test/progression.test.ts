@@ -1,5 +1,5 @@
-import { test, expect } from "bun:test"
-import { xpToNext, applyXp, maxHpForLevel, PROGRESSION } from "../src"
+import { expect, test } from "bun:test"
+import { applyXp, maxHpForLevel, PROGRESSION, xpToNext } from "../src"
 
 test("xpToNext rises with level and is infinite at the cap", () => {
   expect(xpToNext(1)).toBe(24)

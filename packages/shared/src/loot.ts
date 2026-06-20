@@ -1,5 +1,5 @@
-import type { Item, ItemAffix, Rarity, Slot } from "./types"
 import { rngNext } from "./rng"
+import type { Item, ItemAffix, Rarity, Slot } from "./types"
 
 interface BaseType {
   name: string

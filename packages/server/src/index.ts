@@ -7,7 +7,7 @@
 //
 // The shared package is intentionally the single source of game logic so the
 // server and client never diverge.
-import { createGame, activeZone } from "@mmo/shared"
+import { activeZone, createGame } from "@mmo/shared"
 
 const game = createGame()
 const zone = activeZone(game.world, game.player.zoneId)

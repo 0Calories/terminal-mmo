@@ -1,6 +1,6 @@
-import type { Terrain } from "./types"
-import { WORLD, GROUND_TOP } from "./constants"
+import { GROUND_TOP, WORLD } from "./constants"
 import { rngNext } from "./rng"
+import type { Terrain } from "./types"
 
 /** A cell is solid if out of horizontal bounds (walls), below the world (floor),
  * or marked solid. Above the world is open sky. */
@@ -18,8 +18,7 @@ export function parseTerrain(rows: string[]): Terrain {
   const w = rows.reduce((m, r) => Math.max(m, r.length), 0)
   const cells = new Uint8Array(w * h)
   for (let y = 0; y < h; y++)
-    for (let x = 0; x < rows[y].length; x++)
-      if (rows[y][x] === "#") cells[y * w + x] = 1
+    for (let x = 0; x < rows[y].length; x++) if (rows[y][x] === "#") cells[y * w + x] = 1
   return { w, h, cells }
 }
 

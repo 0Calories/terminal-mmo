@@ -3,10 +3,11 @@
 //
 // All game logic lives in @mmo/shared; this file only does I/O: render, input,
 // and driving the deterministic `step` each frame.
-import { createCliRenderer } from "@opentui/core"
+
 import { createGame, step } from "@mmo/shared"
-import { draw } from "./render"
+import { createCliRenderer } from "@opentui/core"
 import { InputState } from "./input"
+import { draw } from "./render"
 
 const renderer = await createCliRenderer({
   targetFps: 60,

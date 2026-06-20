@@ -8,11 +8,20 @@ type Action = "left" | "right" | "jump" | "attack"
 
 function actionFor(name: string): Action | null {
   switch (name) {
-    case "left": case "a": return "left"
-    case "right": case "d": return "right"
-    case "up": case "space": return "jump"
-    case "j": case "x": return "attack"
-    default: return null
+    case "left":
+    case "a":
+      return "left"
+    case "right":
+    case "d":
+      return "right"
+    case "up":
+    case "space":
+      return "jump"
+    case "j":
+    case "x":
+      return "attack"
+    default:
+      return null
   }
 }
 
