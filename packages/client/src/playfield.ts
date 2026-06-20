@@ -110,6 +110,16 @@ function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
 	}
 
 	drawSprite(buf, p, cam, sw, sh);
+
+	// projectiles: high-contrast glyphs above all Sprites (ADR 0003), drawn last
+	// so nothing occludes an incoming shot. Glyph leans into travel direction.
+	for (const pr of zone.projectiles) {
+		const px = Math.round(pr.x - cam.x);
+		const py = Math.round(pr.y - cam.y);
+		if (px < 0 || px >= sw || py < 0 || py >= sh) continue;
+		const ch = pr.vx < 0 ? '◄' : pr.vx > 0 ? '►' : '●';
+		buf.setCellWithAlphaBlending(px, py, ch, C.projectile, C.transparent);
+	}
 }
 
 export class PlayfieldRenderable extends Renderable {

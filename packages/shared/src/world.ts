@@ -2,9 +2,9 @@
 // (CONTEXT: Zone); the World is every Zone, advanced by a shared tick. This is
 // server-authoritative in M2; here it also drives the single-player loop.
 
-import { BOX, GROUND_TOP, MONSTER } from './constants';
+import { BOX, GROUND_TOP, MONSTER, SHOOTER } from './constants';
 import { makeStarterField } from './terrain';
-import type { Entity, EntityType, Terrain } from './types';
+import type { Entity, EntityType, Projectile, Terrain } from './types';
 
 export type ZoneId = string;
 export type ZoneType = 'field' | 'town';
@@ -16,6 +16,8 @@ export interface Zone {
 	type: ZoneType;
 	terrain: Terrain;
 	monsters: Entity[];
+	projectiles: Projectile[];
+	nextProjectileId: number; // id source for Projectiles (cf. PlayerState.nextId)
 }
 
 /** The whole World: every Zone keyed by id, plus a shared sim tick. */
@@ -35,6 +37,9 @@ export function spawnMonster(
 	x: number,
 	y: number,
 ): Entity {
+	// per-archetype base stats; shooters are frailer + slower than chasers
+	const hp = type === 'shooter' ? SHOOTER.hp : MONSTER.chaserHp;
+	const speed = type === 'shooter' ? SHOOTER.speed : MONSTER.chaserSpeed;
 	return {
 		id,
 		type,
@@ -42,24 +47,33 @@ export function spawnMonster(
 		y,
 		vx: 0,
 		vy: 0,
-		speed: MONSTER.chaserSpeed,
+		speed,
 		facing: 1,
 		onGround: false,
-		hp: MONSTER.chaserHp,
-		maxHp: MONSTER.chaserHp,
+		hp,
+		maxHp: hp,
 		hurtT: 0,
 		attackT: 0,
 	};
 }
 
-/** A combat Field: full-width ground + platforms, with scattered chasers. */
+/** A combat Field: full-width ground + platforms, with scattered Monsters — a
+ * mix of melee chasers and ranged shooters so positioning matters (story 19). */
 export function makeFieldZone(id: ZoneId, seed = 1337): Zone {
 	const terrain = makeStarterField(seed);
 	const monsters: Entity[] = [];
 	let mid = 2; // the Avatar is id 1
 	for (let i = 0; i < 8; i++) {
 		const x = 40 + i * 22;
-		monsters.push(spawnMonster('chaser', mid++, x, GROUND_TOP - BOX.h));
+		const type: EntityType = i % 3 === 2 ? 'shooter' : 'chaser';
+		monsters.push(spawnMonster(type, mid++, x, GROUND_TOP - BOX.h));
 	}
-	return { id, type: 'field', terrain, monsters };
+	return {
+		id,
+		type: 'field',
+		terrain,
+		monsters,
+		projectiles: [],
+		nextProjectileId: 1,
+	};
 }

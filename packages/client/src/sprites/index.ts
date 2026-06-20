@@ -4,6 +4,7 @@
 import type { EntityType } from '@mmo/shared';
 import { chaser } from './chaser';
 import { player } from './player';
+import { shooter } from './shooter';
 import type { Sprite } from './sprite';
 
 // `Record<EntityType, …>` forces every entity type to have art: adding a new
@@ -11,7 +12,7 @@ import type { Sprite } from './sprite';
 const REGISTRY: Record<EntityType, Sprite> = {
 	player,
 	chaser,
-	shooter: chaser, // TODO(M1): distinct shooter art (#4)
+	shooter,
 };
 
 export function spriteFor(type: EntityType): Sprite {

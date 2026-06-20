@@ -3,13 +3,22 @@
 // player.ts / world.ts so the client and (M2) server never diverge.
 
 import { aabbOverlap, entityBox, meleeHitbox } from './combat';
-import { BOX, MONSTER, PHYS, SPAWN, XP_PER_KILL } from './constants';
+import {
+	BOX,
+	COMBAT,
+	MONSTER,
+	PHYS,
+	SHOOTER,
+	SPAWN,
+	XP_PER_KILL,
+} from './constants';
 import { rollItem } from './loot';
 import { stepEntity } from './physics';
 import { type PlayerState, spawnPlayerState } from './player';
 import { applyXp, maxHpForLevel } from './progression';
+import { projectileBox, spawnProjectile, stepProjectile } from './projectile';
 import { isSolid } from './terrain';
-import type { Control, Entity, Input } from './types';
+import type { Control, Entity, Facing, Input, Projectile } from './types';
 import { makeFieldZone, type World, type Zone } from './world';
 
 /** The single-player game: the client's Player + the World of Zones. A thin
@@ -26,8 +35,7 @@ export function createGame(seed = 1): GameState {
 	return { player, world: { zones: { [field.id]: field }, tick: 0 } };
 }
 
-// TODO(M1): shooter archetype + projectiles (#4); monster respawn timers (#5);
-// Town + portal (#2, #3). Chasers-in-one-Field keeps the first slice honest.
+// TODO(M1): monster respawn timers (#5); Town + portal (#2, #3).
 
 /** Advance the active Zone + the Player one tick. Deterministic given inputs. */
 export function step(game: GameState, input: Input, dtMs: number): GameState {
@@ -53,27 +61,48 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	let nextId = game.player.nextId;
 	let rngState = game.player.rngState;
 
+	// projectiles fired by shooters this tick (spawned after they're stepped, so
+	// a fresh shot doesn't travel or hit on the same tick it's fired)
+	const fired: Projectile[] = [];
+	let nextProjectileId = zone.nextProjectileId;
+
 	// --- monsters ---
 	const monsters: Entity[] = [];
 	for (const m0 of zone.monsters) {
 		let m: Entity = { ...m0 };
 		m.hurtT = Math.max(0, m.hurtT - dt);
+		m.attackT = Math.max(0, m.attackT - dt);
 
-		// AI: chase when the Avatar is near, else patrol in the facing direction.
+		// AI: chasers close in when near; shooters keep their distance and fire.
+		// Otherwise both patrol in the facing direction.
 		const dx = avatar.x - m.x;
+		const adx = Math.abs(dx);
+		const engaged = m.type === 'shooter' && adx < SHOOTER.aggro;
 		let moveX: -1 | 0 | 1;
-		if (m.type === 'chaser' && Math.abs(dx) < MONSTER.chaserAggro)
+		if (m.type === 'chaser' && adx < MONSTER.chaserAggro)
 			moveX = dx > 0 ? 1 : -1;
+		else if (engaged)
+			moveX = adx < SHOOTER.keepDist ? (dx > 0 ? -1 : 1) : 0; // back off / hold
 		else moveX = m.facing;
 		const res = stepEntity(t, m, { moveX, jump: false }, dt);
 		m = res.e;
 
 		// patrol turn-around at walls and platform edges
-		if (m.onGround) {
+		if (m.onGround && !engaged) {
 			const lead = moveX >= 0 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x);
 			const footY = Math.ceil(m.y + BOX.h);
 			if (res.hitWall || !isSolid(t, lead, footY))
 				m.facing = m.facing === 1 ? -1 : 1;
+		}
+
+		// an engaged shooter faces the Avatar and fires on cooldown
+		if (engaged) {
+			const dir: Facing = dx >= 0 ? 1 : -1;
+			m.facing = dir;
+			if (m.attackT <= 0) {
+				fired.push(spawnProjectile(nextProjectileId++, m, dir));
+				m = { ...m, attackT: SHOOTER.fireCooldown };
+			}
 		}
 
 		// avatar melee → monster
@@ -108,6 +137,23 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		}
 	}
 
+	// --- projectiles --- advance existing shots, resolve Avatar hits, then add
+	// this tick's fresh shots (so they don't move or hit until next tick).
+	const projectiles: Projectile[] = [];
+	for (const pr0 of zone.projectiles) {
+		const pr = stepProjectile(t, pr0, dt);
+		if (!pr) continue; // despawned on Terrain or lifetime
+		if (
+			avatar.hurtT <= 0 &&
+			aabbOverlap(projectileBox(pr), entityBox(avatar))
+		) {
+			avatar = { ...avatar, hp: avatar.hp - pr.damage, hurtT: COMBAT.iframes };
+			continue; // consumed on hit
+		}
+		projectiles.push(pr);
+	}
+	projectiles.push(...fired);
+
 	// forgiving death: respawn at the Field spawn, full HP, brief invulnerability
 	if (avatar.hp <= 0) {
 		avatar = {
@@ -131,7 +177,7 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		nextId,
 		rngState,
 	};
-	const newZone: Zone = { ...zone, monsters };
+	const newZone: Zone = { ...zone, monsters, projectiles, nextProjectileId };
 	const world: World = {
 		zones: { ...game.world.zones, [zone.id]: newZone },
 		tick: game.world.tick + 1,
