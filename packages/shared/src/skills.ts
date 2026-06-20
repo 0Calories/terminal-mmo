@@ -25,7 +25,7 @@ export interface Skill {
 export const POWER_STRIKE: Skill = {
 	id: 'power-strike',
 	name: 'Power Strike',
-	unlockLevel: 2,
+	unlockLevel: 1, // temporarily L1 so the feel is testable from spawn; bump once signed off
 	cooldown: 2.5,
 	damage: 20,
 	reach: 9,
