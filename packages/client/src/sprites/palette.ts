@@ -6,6 +6,7 @@
 import { RGBA } from '@opentui/core';
 
 export const PALETTE: Record<string, RGBA> = {
-	p: RGBA.fromInts(255, 150, 40, 255), // player
-	m: RGBA.fromInts(220, 90, 90, 255), // monster
+	p: RGBA.fromInts(255, 150, 40, 255), // player body (orange)
+	m: RGBA.fromInts(220, 90, 90, 255), // monster body (red)
+	g: RGBA.fromInts(170, 240, 95, 255), // monster eye-glow (toxic green)
 };

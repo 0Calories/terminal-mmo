@@ -47,13 +47,13 @@ test('throws when defaultKey is not a single char', () => {
 	expect(() => new Sprite('\nA\n', { defaultKey: 'player' })).toThrow();
 });
 
-// --- Golden art (proves the refactor is output-preserving) -----------------
+// --- Golden art (pins the live sprite art so accidental edits are caught) ---
 
-const PLAYER = ['  ___  ', ' /o o\\ ', '( -.- )', ' \\___/ ', ' /   \\ '];
-const CHASER_RIGHT = [' ,---. ', ' |x x| ', '( >w< )', " `-v-' ", ' /   \\ '];
-const CHASER_LEFT = [' .---, ', ' |x x| ', '( >w< )', " `-v-' ", ' /   \\ '];
+const PLAYER = [' ▖ █ ▗ ', ' ▚███▞ ', '▗█▟█▙█▖', '▝█████▘', ' ▐▌ ▐▌ '];
+const CHASER_RIGHT = ['▚ ▟▙ ▞ ', '▟████▙ ', '▞▛▛▛▛▌ ', '▐▟▟▟▟▖ ', '▞    ▚ '];
+const CHASER_LEFT = [' ▚ ▟▙ ▞', ' ▟████▙', ' ▐▜▜▜▜▚', ' ▗▙▙▙▙▌', ' ▞    ▚'];
 
-test('player art is preserved (symmetric: both facings identical)', () => {
+test('player art (block sunburst) is symmetric: both facings identical', () => {
 	const p = spriteFor('player');
 	expect(p.w).toBe(7);
 	expect(p.h).toBe(5);
@@ -62,11 +62,12 @@ test('player art is preserved (symmetric: both facings identical)', () => {
 	expect(p.colorKeys(1)).toEqual(Array(5).fill('ppppppp'));
 });
 
-test('chaser art is preserved and mirrors on the asymmetric row', () => {
+test('chaser art (block maw) mirrors and tints its eye cells green', () => {
 	const c = spriteFor('chaser');
 	expect(c.rows(1)).toEqual(CHASER_RIGHT);
 	expect(c.rows(-1)).toEqual(CHASER_LEFT);
 	expect(c.colorKeys(1)[0]).toBe('mmmmmmm');
+	expect(c.colorKeys(1)[1]).toBe('mgmmgmm'); // two green eyes on the jaw row
 });
 
 test('shooter aliases chaser until it has distinct art (#4)', () => {
