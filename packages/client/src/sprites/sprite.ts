@@ -14,7 +14,12 @@ import type { Facing } from '@mmo/shared';
 /** Author-facing transparent-cell marker; converted to a space at runtime. */
 export const SENTINEL = '·';
 
-/** Glyphs that visually flip when a sprite faces the other way. */
+/** Glyphs that visually flip when a sprite faces the other way. ASCII brackets,
+ *  slashes and quotes pair up the obvious way. The Block Elements (U+2580–259F)
+ *  pair by swapping their left/right halves: a glyph's lit quadrants reflect
+ *  across the vertical axis (TL↔TR, BL↔BR), so e.g. ▌→▐, ▘→▝, ▛→▜. The fully
+ *  symmetric blocks (█ ▀ ▄ space) are their own mirror and need no entry. This
+ *  lets chunky block-art Sprites face left correctly, not just line-art ones. */
 const MIRROR: Record<string, string> = {
 	'(': ')',
 	')': '(',
@@ -28,6 +33,19 @@ const MIRROR: Record<string, string> = {
 	'\\': '/',
 	'`': "'",
 	"'": '`',
+	// Block Elements — half blocks, single quadrants, and three-quadrant blocks.
+	'▌': '▐',
+	'▐': '▌',
+	'▘': '▝',
+	'▝': '▘',
+	'▖': '▗',
+	'▗': '▖',
+	'▛': '▜',
+	'▜': '▛',
+	'▙': '▟',
+	'▟': '▙',
+	'▚': '▞',
+	'▞': '▚',
 };
 
 /** Split a template-literal art block into normalised rows: drop the leading
