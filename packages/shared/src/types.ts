@@ -15,10 +15,12 @@ export interface Control {
 	jump: boolean;
 }
 
-/** A Player's intent for one tick (movement + attack + portal entry). */
+/** A Player's intent for one tick (movement + attack + interact). */
 export interface Input extends Control {
 	attack: boolean;
-	enter?: boolean; // stand on a Portal + this intent to travel between Zones
+	// the umbrella "engage" intent: enter Portals, talk to NPCs, pick up Items,
+	// use objects — whatever the Avatar is standing on or next to.
+	interact?: boolean;
 }
 
 export type EntityType = 'player' | 'chaser' | 'shooter';

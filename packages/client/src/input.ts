@@ -4,7 +4,7 @@ import type { Input } from '@mmo/shared';
 // release events; on terminals without it we time out held keys (the M0 finding).
 const HELD_MS = 220;
 
-type Action = 'left' | 'right' | 'jump' | 'attack' | 'enter';
+type Action = 'left' | 'right' | 'jump' | 'attack' | 'interact';
 
 function actionFor(name: string): Action | null {
 	switch (name) {
@@ -21,7 +21,7 @@ function actionFor(name: string): Action | null {
 		case 'x':
 			return 'attack';
 		case 'e':
-			return 'enter'; // travel through a Portal you're standing on
+			return 'interact'; // enter Portals, talk to NPCs, pick up Items, use objects
 		default:
 			return null;
 	}
@@ -56,7 +56,7 @@ export class InputState {
 			moveX: moveX as -1 | 0 | 1,
 			jump: this.held.has('jump'),
 			attack: this.held.has('attack'),
-			enter: this.held.has('enter'),
+			interact: this.held.has('interact'),
 		};
 	}
 }

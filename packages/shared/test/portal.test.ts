@@ -11,7 +11,12 @@ import {
 	step,
 } from '../src';
 
-const ENTER: Input = { moveX: 0, jump: false, attack: false, enter: true };
+const INTERACT: Input = {
+	moveX: 0,
+	jump: false,
+	attack: false,
+	interact: true,
+};
 
 /** A Player standing on a Portal in a Field that leads to a Town. */
 function portalGame(): GameState {
@@ -52,7 +57,7 @@ function portalGame(): GameState {
 }
 
 test('entering a Portal switches the active Zone and repositions the Avatar', () => {
-	const g = step(portalGame(), ENTER, 16);
+	const g = step(portalGame(), INTERACT, 16);
 	expect(g.player.zoneId).toBe('town-01');
 	expect(g.player.avatar.x).toBe(50);
 	expect(g.player.avatar.y).toBe(GROUND_TOP - BOX.h);
@@ -63,12 +68,12 @@ test('persistent state (progress + inventory) survives a Portal transition', () 
 	before.player.inventory = [
 		{ id: 7, base: 'sword', slot: 'weapon', rarity: 'rare', affixes: [] },
 	];
-	const g = step(before, ENTER, 16);
+	const g = step(before, INTERACT, 16);
 	expect(g.player.progress).toEqual({ level: 3, xp: 17, gold: 42 });
 	expect(g.player.inventory).toEqual(before.player.inventory);
 });
 
-test('no transition without the enter intent, even while on a Portal', () => {
+test('no transition without the interact intent, even while on a Portal', () => {
 	const g = step(portalGame(), { moveX: 0, jump: false, attack: false }, 16);
 	expect(g.player.zoneId).toBe('field-01');
 });
@@ -76,7 +81,7 @@ test('no transition without the enter intent, even while on a Portal', () => {
 test('no transition when the Avatar is not overlapping a Portal', () => {
 	const game = portalGame();
 	game.player.avatar.x = 80; // well clear of the portal at x=20
-	const g = step(game, ENTER, 16);
+	const g = step(game, INTERACT, 16);
 	expect(g.player.zoneId).toBe('field-01');
 });
 
@@ -90,13 +95,13 @@ test('createGame wires a round-trip Portal pair: Field -> Town -> Field', () => 
 
 	// stand on the Field's portal and enter -> Town, at the Town's arrival point
 	g.player.avatar.x = fieldPortal.x;
-	g = step(g, ENTER, 16);
+	g = step(g, INTERACT, 16);
 	expect(g.player.zoneId).toBe('town-01');
 	expect(g.player.avatar.x).toBe(fieldPortal.arrival.x);
 
 	// stand on the Town's portal and enter -> back in the Field, at its arrival
 	g.player.avatar.x = townPortal.x;
-	g = step(g, ENTER, 16);
+	g = step(g, INTERACT, 16);
 	expect(g.player.zoneId).toBe('field-01');
 	expect(g.player.avatar.x).toBe(townPortal.arrival.x);
 });
@@ -105,7 +110,7 @@ test('a Portal transition is deterministic', () => {
 	const run = () => {
 		let g = createGame(7);
 		g.player.avatar.x = activeZone(g.world, 'field-01').portals[0].x;
-		g = step(g, ENTER, 16);
+		g = step(g, INTERACT, 16);
 		return g;
 	};
 	const a = run();
