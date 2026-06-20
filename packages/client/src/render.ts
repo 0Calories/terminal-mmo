@@ -1,7 +1,7 @@
 import { RGBA } from "@opentui/core"
 import type { OptimizedBuffer } from "@opentui/core"
-import type { Entity, WorldState } from "@mmo/shared"
-import { BOX, COMBAT, WORLD, isSolid, meleeHitbox } from "@mmo/shared"
+import type { Entity, GameState } from "@mmo/shared"
+import { BOX, COMBAT, activeZone, isSolid, meleeHitbox } from "@mmo/shared"
 import { SPRITE_H, SPRITE_W, spriteFor } from "./sprites"
 
 const SPRITE_OFFX = Math.floor((SPRITE_W - BOX.w) / 2)
@@ -23,11 +23,11 @@ const C = {
 
 function colorFor(e: Entity): RGBA {
   if (e.hurtT > 0.3) return C.hurt
-  return e.kind === "player" ? C.player : C.monster
+  return e.type === "player" ? C.player : C.monster
 }
 
 function drawSprite(buf: OptimizedBuffer, e: Entity, cam: { x: number; y: number }, sw: number, sh: number) {
-  const art = spriteFor(e.kind, e.facing)
+  const art = spriteFor(e.type, e.facing)
   const sx = Math.round(e.x - SPRITE_OFFX - cam.x)
   const sy = Math.round(e.y - cam.y)
   const fg = colorFor(e)
@@ -45,13 +45,17 @@ function drawSprite(buf: OptimizedBuffer, e: Entity, cam: { x: number; y: number
   }
 }
 
-export function drawWorld(buf: OptimizedBuffer, w: WorldState, fps: number) {
+export function draw(buf: OptimizedBuffer, game: GameState, fps: number) {
+  const { player } = game
+  const zone = activeZone(game.world, player.zoneId)
   const sw = buf.width
   const sh = buf.height
-  const p = w.player
+  const p = player.avatar
+  const ww = zone.terrain.w
+  const wh = zone.terrain.h
   const cam = {
-    x: Math.max(0, Math.min(Math.round(p.x + BOX.w / 2 - sw / 2), Math.max(0, WORLD.w - sw))),
-    y: Math.max(0, Math.min(Math.round(p.y + BOX.h / 2 - sh / 2), Math.max(0, WORLD.h - sh))),
+    x: Math.max(0, Math.min(Math.round(p.x + BOX.w / 2 - sw / 2), Math.max(0, ww - sw))),
+    y: Math.max(0, Math.min(Math.round(p.y + BOX.h / 2 - sh / 2), Math.max(0, wh - sh))),
   }
 
   buf.clear(C.bg)
@@ -61,13 +65,13 @@ export function drawWorld(buf: OptimizedBuffer, w: WorldState, fps: number) {
     const wy = sy + cam.y
     for (let sx = 0; sx < sw; sx++) {
       const wx = sx + cam.x
-      if (isSolid(w.terrain, wx, wy) && wx >= 0 && wx < WORLD.w && wy >= 0 && wy < WORLD.h)
+      if (isSolid(zone.terrain, wx, wy) && wx >= 0 && wx < ww && wy >= 0 && wy < wh)
         buf.setCell(sx, sy, "█", C.terrainFg, C.terrainBg)
     }
   }
 
   // entities, z-ordered by y; player drawn last (on top)
-  const mons = [...w.monsters].sort((a, b) => a.y - b.y)
+  const mons = [...zone.monsters].sort((a, b) => a.y - b.y)
   for (const m of mons) drawSprite(buf, m, cam, sw, sh)
 
   // melee telegraph: flash the arc right after a swing
@@ -88,13 +92,13 @@ export function drawWorld(buf: OptimizedBuffer, w: WorldState, fps: number) {
   // HUD
   for (let x = 0; x < sw; x++) buf.setCell(x, 0, " ", C.hud, C.hudBg)
   const hpPct = Math.max(0, Math.round((p.hp / p.maxHp) * 100))
-  const left = ` L${w.progress.level}  HP ${Math.max(0, Math.round(p.hp))}/${p.maxHp} (${hpPct}%)  XP ${w.progress.xp}  Gold ${w.progress.gold}  Items ${w.inventory.length} `
+  const left = ` L${player.progress.level}  HP ${Math.max(0, Math.round(p.hp))}/${p.maxHp} (${hpPct}%)  XP ${player.progress.xp}  Gold ${player.progress.gold}  Items ${player.inventory.length} `
   buf.drawText(left, 0, 0, C.hud, C.hudBg)
-  const right = `FPS ${fps}  monsters ${w.monsters.length} `
+  const right = `FPS ${fps}  monsters ${zone.monsters.length} `
   buf.drawText(right, Math.max(0, sw - right.length), 0, C.dim, C.hudBg)
 
   // recent log, bottom-left
-  const lines = w.log.slice(-3)
+  const lines = player.log.slice(-3)
   for (let i = 0; i < lines.length; i++) {
     const ly = sh - lines.length + i
     if (ly > 0) buf.drawText(lines[i].slice(0, sw), 1, ly, C.dim, C.bg)

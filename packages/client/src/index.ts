@@ -4,8 +4,8 @@
 // All game logic lives in @mmo/shared; this file only does I/O: render, input,
 // and driving the deterministic `step` each frame.
 import { createCliRenderer } from "@opentui/core"
-import { createWorld, step } from "@mmo/shared"
-import { drawWorld } from "./render"
+import { createGame, step } from "@mmo/shared"
+import { draw } from "./render"
 import { InputState } from "./input"
 
 const renderer = await createCliRenderer({
@@ -16,7 +16,7 @@ const renderer = await createCliRenderer({
   useKittyKeyboard: { events: true },
 })
 
-let world = createWorld()
+let game = createGame()
 const input = new InputState()
 
 renderer.keyInput.on("keypress", (k) => {
@@ -35,7 +35,7 @@ let acc = 0
 let frames = 0
 
 renderer.setFrameCallback(async (dt) => {
-  world = step(world, input.poll(performance.now()), dt)
+  game = step(game, input.poll(performance.now()), dt)
   acc += dt
   frames++
   if (acc >= 500) {
@@ -44,5 +44,5 @@ renderer.setFrameCallback(async (dt) => {
     frames = 0
   }
 })
-renderer.addPostProcessFn((buf) => drawWorld(buf, world, fps))
+renderer.addPostProcessFn((buf) => draw(buf, game, fps))
 renderer.start()
