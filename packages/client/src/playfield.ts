@@ -17,6 +17,8 @@ import {
 	entityBox,
 	isSolid,
 	meleeHitbox,
+	skillForSlot,
+	skillHitbox,
 } from '@mmo/shared';
 import {
 	type OptimizedBuffer,
@@ -158,6 +160,24 @@ function drawPlayfield(buf: OptimizedBuffer, game: GameState) {
 						C.melee,
 						C.transparent,
 					);
+			}
+		}
+	}
+
+	// Skill telegraph: flash the (wider) Skill arc just after it fires. Detected
+	// from the freshly-set cooldown, mirroring the melee flash window.
+	for (let slot = 1; ; slot++) {
+		const skill = skillForSlot(player.class ?? 'warrior', slot);
+		if (!skill) break;
+		const cd = player.skillCooldowns?.[skill.id] ?? 0;
+		if (cd <= skill.cooldown - 0.15) continue;
+		const hb = skillHitbox(p, skill);
+		for (let yy = 0; yy < hb.h; yy++) {
+			for (let xx = 0; xx < hb.w; xx++) {
+				const px = Math.round(hb.x + xx - cam.x);
+				const py = Math.round(hb.y + yy - cam.y);
+				if (px >= 0 && px < sw && py >= 0 && py < sh)
+					buf.setCellWithAlphaBlending(px, py, '✦', C.melee, C.transparent);
 			}
 		}
 	}

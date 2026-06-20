@@ -4,7 +4,7 @@ import type { Input } from '@mmo/shared';
 // release events; on terminals without it we time out held keys (the M0 finding).
 const HELD_MS = 220;
 
-type Action = 'left' | 'right' | 'jump' | 'attack' | 'interact';
+type Action = 'left' | 'right' | 'jump' | 'attack' | 'interact' | 'skill1';
 
 function actionFor(name: string): Action | null {
 	switch (name) {
@@ -22,6 +22,8 @@ function actionFor(name: string): Action | null {
 			return 'attack';
 		case 'e':
 			return 'interact'; // enter Portals, talk to NPCs, pick up Items, use objects
+		case 'k':
+			return 'skill1'; // Class Skill slot 1 (Warrior: Power Strike)
 		default:
 			return null;
 	}
@@ -57,6 +59,7 @@ export class InputState {
 			jump: this.held.has('jump'),
 			attack: this.held.has('attack'),
 			interact: this.held.has('interact'),
+			skill: this.held.has('skill1') ? 1 : undefined,
 		};
 	}
 }

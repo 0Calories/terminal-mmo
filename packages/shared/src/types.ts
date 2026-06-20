@@ -21,6 +21,8 @@ export interface Input extends Control {
 	// the umbrella "engage" intent: enter Portals, talk to NPCs, pick up Items,
 	// use objects — whatever the Avatar is standing on or next to.
 	interact?: boolean;
+	// 1-based slot of a Class Skill to activate this tick (absent == none).
+	skill?: number;
 }
 
 export type EntityType = 'player' | 'chaser' | 'shooter';
