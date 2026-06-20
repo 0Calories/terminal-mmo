@@ -1,8 +1,6 @@
 // Tunable game constants. Implementation detail, not domain vocabulary — the
 // glossary lives in /CONTEXT.md.
 
-export const TICK_HZ = 60; // single-player client sim rate (server is 20Hz in M2)
-
 export const WORLD = { w: 240, h: 40 } as const;
 export const GROUND_TOP = WORLD.h - 3;
 
