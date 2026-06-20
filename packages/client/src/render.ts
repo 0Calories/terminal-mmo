@@ -1,7 +1,7 @@
-import { RGBA } from "@opentui/core"
-import type { OptimizedBuffer } from "@opentui/core"
 import type { Entity, GameState } from "@mmo/shared"
-import { BOX, COMBAT, activeZone, isSolid, meleeHitbox } from "@mmo/shared"
+import { activeZone, BOX, COMBAT, isSolid, meleeHitbox } from "@mmo/shared"
+import type { OptimizedBuffer } from "@opentui/core"
+import { RGBA } from "@opentui/core"
 import { SPRITE_H, SPRITE_W, spriteFor } from "./sprites"
 
 const SPRITE_OFFX = Math.floor((SPRITE_W - BOX.w) / 2)
@@ -26,7 +26,13 @@ function colorFor(e: Entity): RGBA {
   return e.type === "player" ? C.player : C.monster
 }
 
-function drawSprite(buf: OptimizedBuffer, e: Entity, cam: { x: number; y: number }, sw: number, sh: number) {
+function drawSprite(
+  buf: OptimizedBuffer,
+  e: Entity,
+  cam: { x: number; y: number },
+  sw: number,
+  sh: number,
+) {
   const art = spriteFor(e.type, e.facing)
   const sx = Math.round(e.x - SPRITE_OFFX - cam.x)
   const sy = Math.round(e.y - cam.y)
@@ -106,5 +112,11 @@ export function draw(buf: OptimizedBuffer, game: GameState, fps: number) {
 
   // controls hint
   const hint = "move ←/→ a/d  jump ␣/↑  attack j/x  quit q"
-  buf.drawText(hint.slice(0, sw), 1, sh - lines.length - 1 > 0 ? sh - lines.length - 1 : sh - 1, C.dim, C.bg)
+  buf.drawText(
+    hint.slice(0, sw),
+    1,
+    sh - lines.length - 1 > 0 ? sh - lines.length - 1 : sh - 1,
+    C.dim,
+    C.bg,
+  )
 }

@@ -1,9 +1,17 @@
-import { test, expect } from "bun:test"
-import {
-  createGame, step, spawnAvatar, spawnMonster, makeStarterField, activeZone,
-  BOX, GROUND_TOP, XP_PER_KILL, MONSTER,
-} from "../src"
+import { expect, test } from "bun:test"
 import type { GameState, Input, PlayerState, Zone } from "../src"
+import {
+  activeZone,
+  BOX,
+  createGame,
+  GROUND_TOP,
+  MONSTER,
+  makeStarterField,
+  spawnAvatar,
+  spawnMonster,
+  step,
+  XP_PER_KILL,
+} from "../src"
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false }
 
@@ -74,11 +82,17 @@ test("killing a monster grants XP and an instanced loot drop", () => {
 
 test("only the active Zone ticks; the Avatar's persistent state lives above it", () => {
   // a second, dormant Field the Player is not in
-  const dormant: Zone = { id: "field-02", type: "field", terrain: makeStarterField(), monsters: [
-    spawnMonster("chaser", 99, 60, GROUND_TOP - BOX.h),
-  ] }
+  const dormant: Zone = {
+    id: "field-02",
+    type: "field",
+    terrain: makeStarterField(),
+    monsters: [spawnMonster("chaser", 99, 60, GROUND_TOP - BOX.h)],
+  }
   let g = createGame()
-  g = { player: g.player, world: { zones: { ...g.world.zones, [dormant.id]: dormant }, tick: g.world.tick } }
+  g = {
+    player: g.player,
+    world: { zones: { ...g.world.zones, [dormant.id]: dormant }, tick: g.world.tick },
+  }
   const before = g.world.zones["field-02"]
   g = step(g, { moveX: 1, jump: false, attack: false }, 16)
   // dormant Zone untouched (same reference), active Zone advanced

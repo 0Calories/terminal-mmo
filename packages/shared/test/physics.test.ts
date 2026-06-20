@@ -1,6 +1,6 @@
-import { test, expect } from "bun:test"
-import { parseTerrain, stepEntity, spawnAvatar, BOX } from "../src"
+import { expect, test } from "bun:test"
 import type { Control, Entity, Terrain } from "../src"
+import { BOX, parseTerrain, spawnAvatar, stepEntity } from "../src"
 
 const FLAT = parseTerrain([
   "............",
@@ -18,7 +18,16 @@ const FLAT = parseTerrain([
 ])
 const COL = "........#..." // solid column at x=8
 const WALL = parseTerrain([
-  COL, COL, COL, COL, COL, COL, COL, COL, COL, COL,
+  COL,
+  COL,
+  COL,
+  COL,
+  COL,
+  COL,
+  COL,
+  COL,
+  COL,
+  COL,
   "############",
   "############",
 ])

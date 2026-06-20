@@ -1,5 +1,5 @@
-import type { PlayerProgress } from "./types"
 import { PROGRESSION } from "./constants"
+import type { PlayerProgress } from "./types"
 
 /** XP needed to go from `level` to `level + 1`. Infinite at the cap. */
 export function xpToNext(level: number): number {

@@ -27,6 +27,9 @@ bun install            # install workspace deps
 bun test               # run the shared simulation test suite
 bun run typecheck      # typecheck all packages
 bun run dev:client     # play the single-player loop (run in a REAL terminal)
+bun run lint           # lint with Biome
+bun run format         # format in place with Biome
+bun run check          # lint + format + organize imports, write fixes (Biome)
 ```
 
 ## Status: M1 (single-player core loop)

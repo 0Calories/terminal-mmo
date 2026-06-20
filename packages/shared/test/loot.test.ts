@@ -1,5 +1,5 @@
-import { test, expect } from "bun:test"
-import { rollItem, RARITIES, BASES } from "../src"
+import { expect, test } from "bun:test"
+import { BASES, RARITIES, rollItem } from "../src"
 
 test("rollItem is deterministic for a given state", () => {
   const a = rollItem(123, 5)

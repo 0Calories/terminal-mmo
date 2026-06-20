@@ -1,6 +1,6 @@
-import type { Control, Entity, Terrain } from "./types"
 import { BOX, PHYS } from "./constants"
 import { isSolid } from "./terrain"
+import type { Control, Entity, Terrain } from "./types"
 
 /**
  * Advance one entity by one step against the Terrain. Pure: returns a new entity

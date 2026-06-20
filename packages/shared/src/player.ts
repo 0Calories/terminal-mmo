@@ -1,10 +1,11 @@
 // player.ts — the client Player's own state: their Avatar, progression,
 // inventory, and which Zone they occupy. Per-client in M2 — the server owns the
 // consequences (XP/Gold/inventory), the client owns Avatar position (ADR 0001).
-import type { Entity, Item, PlayerProgress } from "./types"
-import type { ZoneId } from "./world"
+
 import { PHYS } from "./constants"
 import { maxHpForLevel } from "./progression"
+import type { Entity, Item, PlayerProgress } from "./types"
+import type { ZoneId } from "./world"
 
 export interface PlayerState {
   avatar: Entity // the in-world character (CONTEXT: Avatar)

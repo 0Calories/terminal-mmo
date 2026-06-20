@@ -1,9 +1,10 @@
 // world.ts — the shared World of Zones. A Zone is the unit of place + simulation
 // (CONTEXT: Zone); the World is every Zone, advanced by a shared tick. This is
 // server-authoritative in M2; here it also drives the single-player loop.
-import type { Entity, EntityType, Terrain } from "./types"
+
 import { BOX, GROUND_TOP, MONSTER } from "./constants"
 import { makeStarterField } from "./terrain"
+import type { Entity, EntityType, Terrain } from "./types"
 
 export type ZoneId = string
 export type ZoneType = "field" | "town"
