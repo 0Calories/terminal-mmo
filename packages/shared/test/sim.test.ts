@@ -92,6 +92,56 @@ test('killing a monster grants XP and an instanced loot drop', () => {
 	expect(g.player.inventory[0].id).toBe(1); // assigned from the Player's nextId
 });
 
+// one chaser sharing the Avatar's x on flat ground, facing right — the
+// on-top-of-you case where naive homing would flip-flop direction each frame.
+function stackedGame(): GameState {
+	const y = GROUND_TOP - BOX.h;
+	const m = spawnMonster('chaser', 2, 40, y);
+	m.onGround = true;
+	m.facing = 1;
+	const zone: Zone = {
+		id: 'field-01',
+		type: 'field',
+		terrain: makeStarterField(),
+		monsters: [m],
+		projectiles: [],
+		nextProjectileId: 1,
+		spawns: [],
+		respawns: [],
+		portals: [],
+		nextMonsterId: 3,
+	};
+	const player: PlayerState = {
+		avatar: spawnAvatar(40, y),
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		zoneId: zone.id,
+		log: [],
+		nextId: 1,
+		rngState: 1,
+	};
+	return { player, world: { zones: { [zone.id]: zone }, tick: 0 } };
+}
+
+test('a chaser inside the deadzone holds position and keeps its facing', () => {
+	let g = stackedGame();
+	const start = activeZone(g.world, g.player.zoneId).monsters[0];
+	expect(start.x).toBe(40); // precondition: stacked on the Avatar (adx 0)
+	for (let i = 0; i < 30; i++) {
+		g = step(g, IDLE, 16);
+		const m = activeZone(g.world, g.player.zoneId).monsters[0];
+		expect(m.x).toBe(40); // never drifts chasing a sub-cell dx
+		expect(m.facing).toBe(1); // never flips frame-to-frame
+	}
+});
+
+test('a chaser outside the deadzone still closes in on the Avatar', () => {
+	// chaser well beyond the deadzone but inside aggro range
+	const g = step(adjacentGame(), IDLE, 16);
+	const m = activeZone(g.world, g.player.zoneId).monsters[0];
+	expect(m.x).toBeLessThan(20 + BOX.w); // moved left toward the Avatar at x=20
+});
+
 // player at x=40, one shooter `gap` cells to the right on flat ground.
 function shooterGame(gap: number): GameState {
 	const y = GROUND_TOP - BOX.h;
