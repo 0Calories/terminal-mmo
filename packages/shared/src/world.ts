@@ -3,7 +3,7 @@
 // server-authoritative in M2; here it also drives the single-player loop.
 
 import { BOX, GROUND_TOP, MONSTER, SHOOTER } from './constants';
-import { makeStarterField } from './terrain';
+import { makeStarterField, makeTownTerrain } from './terrain';
 import type {
 	Entity,
 	EntityType,
@@ -93,5 +93,21 @@ export function makeFieldZone(id: ZoneId, seed = 1337): Zone {
 		spawns,
 		respawns: [],
 		nextMonsterId: mid,
+	};
+}
+
+/** The Town: a safe social hub (CONTEXT: Town). No Monsters, no spawn points —
+ * so no combat can ever occur here — just hand-authored, walkable Terrain. */
+export function makeTownZone(id: ZoneId): Zone {
+	return {
+		id,
+		type: 'town',
+		terrain: makeTownTerrain(),
+		monsters: [],
+		projectiles: [],
+		nextProjectileId: 1,
+		spawns: [],
+		respawns: [],
+		nextMonsterId: 1,
 	};
 }

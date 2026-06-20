@@ -27,7 +27,13 @@ import type {
 	PendingRespawn,
 	Projectile,
 } from './types';
-import { makeFieldZone, spawnMonster, type World, type Zone } from './world';
+import {
+	makeFieldZone,
+	makeTownZone,
+	spawnMonster,
+	type World,
+	type Zone,
+} from './world';
 
 /** The single-player game: the client's Player + the World of Zones. A thin
  * bundle — Player and World stay independent (player.ts / world.ts). */
@@ -36,14 +42,19 @@ export interface GameState {
 	world: World;
 }
 
-/** A fresh single-player game: one starter Field, Player at spawn. */
+/** A fresh single-player game: the World's Zones (a starter Field + the Town
+ * hub), Player spawned in the Field. */
 export function createGame(seed = 1): GameState {
 	const field = makeFieldZone('field-01');
+	const town = makeTownZone('town-01');
 	const player = spawnPlayerState(field.id, SPAWN.x, SPAWN.y, seed);
-	return { player, world: { zones: { [field.id]: field }, tick: 0 } };
+	return {
+		player,
+		world: { zones: { [field.id]: field, [town.id]: town }, tick: 0 },
+	};
 }
 
-// TODO(M1): Town + portal (#2, #3).
+// TODO(M1): portal connecting the Field and Town (#3).
 
 /** Advance the active Zone + the Player one tick. Deterministic given inputs. */
 export function step(game: GameState, input: Input, dtMs: number): GameState {
