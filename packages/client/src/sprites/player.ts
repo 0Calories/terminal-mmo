@@ -1,12 +1,14 @@
 import { Sprite } from './sprite';
 
-// `·` = transparent; `\\` is one literal backslash (template-literal escape).
+// Claude-style block-art Avatar: a rounded sunburst creature with eye-holes
+// (the background shows through) and two little feet. Block Elements
+// (U+2580–259F) read as filled pixels; the silhouette is left-right symmetric,
+// so both facings render identically.
 const GLYPH = `
-··___··
-·/o o\\·
-( -.- )
-·\\___/·
-·/   \\·
-`;
+·▖·█·▗·
+·▚███▞·
+▗█▟█▙█▖
+▝█████▘
+·▐▌·▐▌·`;
 
 export const player = new Sprite(GLYPH, { defaultKey: 'p' });
