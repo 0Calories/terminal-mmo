@@ -20,9 +20,10 @@ function settled(ax: number, ay: number): CameraState {
 
 test('first frame snap-centres on the Avatar', () => {
 	const s = stepCamera(initCameraState(), Z, 100, 20, VIEW);
-	// centre = avatar + half-box; cam = centre - half-screen, rounded + clamped
+	// centre = avatar + half-box; cam = centre - half-screen, clamped (float — the
+	// renderer rounds, not the camera, so a followed Avatar doesn't shimmer)
 	const cx = 100 + BOX.w / 2;
-	expect(s.cam).toEqual({ x: Math.round(cx - 40), y: Math.round(22.5 - 12) });
+	expect(s.cam).toEqual({ x: cx - 40, y: 22.5 - 12 });
 });
 
 test('the camera holds while the Avatar roams inside the dead-band', () => {
@@ -48,7 +49,7 @@ test('the camera scrolls once the Avatar pushes past the band edge', () => {
 	const s = stepCamera(start, Z, 110, 20, VIEW); // cx = 112.5
 	const bandW = VIEW.sw * CAMERA.bandWidthFrac;
 	const rightEdge = (VIEW.sw + bandW) / 2;
-	expect(s.cam?.x).toBe(Math.round(112.5 - rightEdge)); // pinned to band edge
+	expect(s.cam?.x).toBeCloseTo(112.5 - rightEdge); // pinned to band edge
 	expect(s.cam?.x).toBeGreaterThan(50); // scrolled right
 });
 
@@ -66,7 +67,7 @@ test('a teleport-sized jump snap-centres instead of chasing', () => {
 	const s0 = settled(50, 20); // cam centred near x=50
 	const s = stepCamera(s0, Z, 150, 20, VIEW); // +100 cells in one frame
 	const cx = 150 + BOX.w / 2;
-	expect(s.cam?.x).toBe(Math.round(cx - 40)); // re-centred, not band-scrolled
+	expect(s.cam?.x).toBeCloseTo(cx - 40); // re-centred, not band-scrolled
 });
 
 test('walking never trips the teleport snap', () => {
@@ -81,6 +82,23 @@ test('a Zone change snap-centres regardless of position delta', () => {
 	const s0 = settled(100, 20);
 	const s = stepCamera(s0, 'town-01', 100, 20, VIEW); // same pos, new Zone
 	const cx = 100 + BOX.w / 2;
-	expect(s.cam).toEqual({ x: Math.round(cx - 40), y: Math.round(22.5 - 12) });
+	expect(s.cam).toEqual({ x: cx - 40, y: 22.5 - 12 });
 	expect(s.zoneId).toBe('town-01');
+});
+
+test('the Avatar screen column never bounces while walking (no double-round shimmer)', () => {
+	// Regression for the float camera: with a rounded camera, a followed Avatar's
+	// screen column = round(cx - round(cx - edge)) flip-flops ±1 cell frame to
+	// frame. Walking sub-cell to the right, the rendered column must only ever
+	// hold or advance — never jitter backwards.
+	let s = settled(60, 20);
+	let prev = -Infinity;
+	let x = 60;
+	for (let i = 0; i < 400; i++) {
+		x += 0.3; // sub-cell rightward walk
+		s = stepCamera(s, Z, x, 20, VIEW);
+		const screenCol = Math.round(x + BOX.w / 2 - (s.cam?.x ?? 0));
+		expect(screenCol).toBeGreaterThanOrEqual(prev);
+		prev = screenCol;
+	}
 });

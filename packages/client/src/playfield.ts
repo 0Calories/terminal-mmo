@@ -88,13 +88,20 @@ function drawPlayfield(
 	const ww = zone.terrain.w;
 	const wh = zone.terrain.h;
 
+	// Terrain + world-fixed geometry (portals) sample the integer grid, so they
+	// scroll on a whole-cell camera. Entities below round relative to the FLOAT
+	// `cam` instead, so a camera-pinned Avatar renders at a stable cell rather
+	// than bouncing ±1 from double-rounding (see camera.ts).
+	const camX = Math.round(cam.x);
+	const camY = Math.round(cam.y);
+
 	buf.clear(C.bg);
 
 	// terrain (visible cells only)
 	for (let sy = 0; sy < sh; sy++) {
-		const wy = sy + cam.y;
+		const wy = sy + camY;
 		for (let sx = 0; sx < sw; sx++) {
-			const wx = sx + cam.x;
+			const wx = sx + camX;
 			if (
 				isSolid(zone.terrain, wx, wy) &&
 				wx >= 0 &&
@@ -113,8 +120,8 @@ function drawPlayfield(
 	for (const pr of zone.portals) {
 		for (let yy = 0; yy < pr.h; yy++) {
 			for (let xx = 0; xx < pr.w; xx++) {
-				const px = pr.x + xx - cam.x;
-				const py = pr.y + yy - cam.y;
+				const px = pr.x + xx - camX;
+				const py = pr.y + yy - camY;
 				if (px >= 0 && px < sw && py >= 0 && py < sh)
 					buf.setCellWithAlphaBlending(px, py, '▒', C.portal, C.transparent);
 			}
@@ -125,8 +132,8 @@ function drawPlayfield(
 		const label = `↵ e  enter the ${dest.charAt(0).toUpperCase()}${dest.slice(1)}`;
 		drawText(
 			buf,
-			Math.round(onPortal.x - cam.x),
-			Math.round(onPortal.y - cam.y) - 1,
+			Math.round(onPortal.x) - camX,
+			Math.round(onPortal.y) - camY - 1,
 			label,
 			C.portal,
 			sw,

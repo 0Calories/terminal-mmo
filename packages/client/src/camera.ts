@@ -44,7 +44,14 @@ export const initCameraState = (): CameraState => ({
  * Advance the camera one frame. Pure given (state, zone, Avatar pos, view).
  * Snap-cuts on the first frame, a Zone change, or a teleport-sized jump;
  * otherwise scrolls only enough to keep the Avatar inside the dead-band window.
- * Always clamps to world bounds and rounds to whole cells.
+ * Always clamps to world bounds.
+ *
+ * The camera is kept as a FLOAT, not rounded here: the renderer rounds at draw
+ * time (terrain on the integer grid, entities relative to the float camera). If
+ * we rounded the camera too, a followed Avatar would be `round(p.x - round(p.x
+ * - edge))` — two roundings at different sub-cell phases — which bounces ±1 cell
+ * frame to frame (sprite shimmer). Holding the float here makes a pinned Avatar
+ * render at `round(edge)`, dead stable.
  */
 export function stepCamera(
 	state: CameraState,
@@ -57,10 +64,8 @@ export function stepCamera(
 	const cx = avatarX + BOX.w / 2;
 	const cy = avatarY + BOX.h / 2;
 
-	const clampX = (x: number) =>
-		Math.max(0, Math.min(Math.round(x), Math.max(0, ww - sw)));
-	const clampY = (y: number) =>
-		Math.max(0, Math.min(Math.round(y), Math.max(0, wh - sh)));
+	const clampX = (x: number) => Math.max(0, Math.min(x, Math.max(0, ww - sw)));
+	const clampY = (y: number) => Math.max(0, Math.min(y, Math.max(0, wh - sh)));
 
 	const teleported =
 		state.center !== null &&
