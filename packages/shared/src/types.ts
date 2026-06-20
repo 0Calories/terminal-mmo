@@ -80,6 +80,15 @@ export interface Projectile {
 	ownerId: number; // the Monster that fired it
 }
 
+/** A stationary, non-combat Town inhabitant the Avatar can interact with — for
+ * MVP just the vendor (PRD story 29). A trigger Box (like a Portal): standing in
+ * it + the interact intent engages the NPC. */
+export interface Npc extends Box {
+	id: number;
+	kind: 'vendor';
+	name: string;
+}
+
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 export type Slot = 'weapon' | 'armor' | 'accessory';
 

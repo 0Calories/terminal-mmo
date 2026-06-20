@@ -8,6 +8,7 @@ import type {
 	Box,
 	Entity,
 	EntityType,
+	Npc,
 	PendingRespawn,
 	Projectile,
 	SpawnPoint,
@@ -37,6 +38,9 @@ export interface Zone {
 	respawns: PendingRespawn[]; // dead Monsters awaiting their respawn timer
 	nextMonsterId: number; // id source for respawned Monsters
 	portals: Portal[]; // connections to other Zones (story 14)
+	// non-combat interactables — the Town vendor for MVP (story 29). Optional so
+	// existing Zone literals (e.g. in tests) stay valid; absent == none.
+	npcs?: Npc[];
 }
 
 /** The whole World: every Zone keyed by id, plus a shared sim tick. */
@@ -138,6 +142,19 @@ export function makeTownZone(id: ZoneId): Zone {
 				h: 7,
 				target: 'field-01',
 				arrival: { x: SPAWN.x, y: SPAWN.y },
+			},
+		],
+		// the vendor NPC: stands on the plaza, left of centre, where the Avatar can
+		// walk up and sell loot for Gold (story 29).
+		npcs: [
+			{
+				id: 1,
+				kind: 'vendor',
+				name: 'Merchant',
+				x: 32,
+				y: GROUND_TOP - BOX.h,
+				w: 4,
+				h: BOX.h,
 			},
 		],
 	};

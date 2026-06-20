@@ -12,6 +12,7 @@
 // slashes mirror too (so a bow or a pose can face front either way). The
 // optional `colors` grid must match the glyph grid cell-for-cell; each cell is a
 // single-char PALETTE key, with `·`/space falling back to `defaultKey`.
+import { merchant } from './merchant';
 import { player } from './player';
 import { Sprite } from './sprite';
 
@@ -69,27 +70,10 @@ const scout = new Sprite(
 	},
 );
 
-// Sage — a hooded mystic: a bell-shaped robe that narrows to a pointed hood and
-// widens to a hem, off-white cloth cinched by a cyan sash. The tall triangular
-// silhouette (no feet, no buddy-blob) marks the "wise old NPC" — healer, lore
-// vendor, questline anchor.
-const sage = new Sprite(
-	`
-··▟▙··
-·▟██▙·
-▟▛██▜▙
-██████
-▝████▘`,
-	{
-		defaultKey: 'o',
-		colors: `
-··oo··
-·oooo·
-oooooo
-cccccc
-·oooo·`,
-	},
-);
+// Sage — a hooded mystic (bell robe, pointed hood, cyan sash): the "wise old NPC"
+// silhouette. PICKED as the live Town vendor, so its art now lives in merchant.ts
+// and is imported here (cf. the base Buddy ← player.ts) — the gallery and the game
+// can't drift. See the `merchant` entry in GALLERY below.
 
 // Knight — a guard / martial NPC: broad-shouldered and helmeted, a red crest on
 // top, a visor brow for the eyes, and two armoured legs. The widest, heaviest
@@ -272,9 +256,9 @@ export const GALLERY: readonly GalleryEntry[] = [
 	},
 	{
 		category: 'Avatar',
-		label: 'Sage',
-		note: 'bell robe + hood, cyan sash',
-		sprite: sage,
+		label: 'Merchant',
+		note: 'live Town vendor NPC (merchant.ts)',
+		sprite: merchant,
 	},
 	{
 		category: 'Avatar',

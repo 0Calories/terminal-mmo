@@ -13,4 +13,5 @@ export * from './sim';
 export * from './skills';
 export * from './terrain';
 export * from './types';
+export * from './vendor';
 export * from './world';
