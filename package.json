@@ -4,8 +4,8 @@
   "type": "module",
   "workspaces": ["packages/*"],
   "scripts": {
-    "dev": "bun run --filter @mmo/client dev",
-    "dev:client": "bun run --filter @mmo/client dev",
+    "dev": "bun run packages/client/src/index.ts",
+    "dev:client": "bun run packages/client/src/index.ts",
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck"
   },
