@@ -6,6 +6,7 @@
 
 import { createGame, step } from '@mmo/shared';
 import { createCliRenderer } from '@opentui/core';
+import { Hud } from './hud';
 import { InputState } from './input';
 import { PlayfieldRenderable } from './playfield';
 
@@ -20,11 +21,13 @@ const renderer = await createCliRenderer({
 let game = createGame();
 const input = new InputState();
 
-// The playfield is a scene-graph node (ADR 0005), not a post-process hook: it
-// fills the root and draws itself every frame from `game`/`fps`, which the frame
-// loop below keeps current.
+// Scene graph (ADR 0005): the playfield fills the root and draws the world each
+// frame; the HUD overlays it as layout-driven renderables on a higher zIndex.
+// Both are kept current by the frame loop below.
 const playfield = new PlayfieldRenderable(renderer);
 renderer.root.add(playfield);
+const hud = new Hud(renderer);
+hud.attach(renderer.root);
 
 renderer.keyInput.on('keypress', (k) => {
 	if (k.name === 'q') {
@@ -51,6 +54,6 @@ renderer.setFrameCallback(async (dt) => {
 		frames = 0;
 	}
 	playfield.game = game;
-	playfield.fps = fps;
+	hud.update(game, fps);
 });
 renderer.start();
