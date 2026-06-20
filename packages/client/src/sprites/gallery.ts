@@ -28,6 +28,91 @@ export interface GalleryEntry {
 // four little feet. It's imported here (not redefined) so the gallery shows
 // exactly what the game draws. Customization (recolour, hat, nameplate per
 // ADR 0003) layers on top of this single template.
+//
+// The proposals below are all "humans" — players + friendly NPCs — so they share
+// the art style (chunky Block-Element pixels) and the buddy's eye trick: the eyes
+// are NEGATIVE SPACE, the missing quadrant of a `▛`/`▜` pair, never a painted-on
+// cell (painting a second dark cell on the body double-eyes the face). Beyond
+// that the silhouettes diverge freely — short and round, tall and capped,
+// bell-robed, broad-shouldered — so the cast doesn't read as one recolour
+// repeated. Each is left-right symmetric, so both facings render identically.
+
+// Sprout — the smallest, gentlest NPC (starter-town greeter / tutorial guide): a
+// rounded little green blob, no feet, with a two-leaf bud poking up. Mono-green,
+// eyes are the gaps in the `▛██▜` brow.
+const sprout = new Sprite(
+	`
+··▌▐··
+▟▛██▜▙
+▝▀▀▀▀▘`,
+	{ defaultKey: 'f' },
+);
+
+// Scout — an explorer: a taller, slimmer figure than the base buddy under a soft
+// cyan cap, with two little legs. The cap is the headgear layer; the lankier body
+// reads as "out adventuring," good for a player look or a roving quest-giver.
+const scout = new Sprite(
+	`
+··▄▄▄··
+·▟███▙·
+·▐▛█▜▌·
+·▝███▘·
+··▘·▝··`,
+	{
+		defaultKey: 'e',
+		colors: `
+··ccc··
+·ccccc·
+·eeeee·
+·eeeee·
+··e·e··`,
+	},
+);
+
+// Sage — a hooded mystic: a bell-shaped robe that narrows to a pointed hood and
+// widens to a hem, off-white cloth cinched by a cyan sash. The tall triangular
+// silhouette (no feet, no buddy-blob) marks the "wise old NPC" — healer, lore
+// vendor, questline anchor.
+const sage = new Sprite(
+	`
+··▟▙··
+·▟██▙·
+▟▛██▜▙
+██████
+▝████▘`,
+	{
+		defaultKey: 'o',
+		colors: `
+··oo··
+·oooo·
+oooooo
+cccccc
+·oooo·`,
+	},
+);
+
+// Knight — a guard / martial NPC: broad-shouldered and helmeted, a red crest on
+// top, a visor brow for the eyes, and two armoured legs. The widest, heaviest
+// human silhouette — it should feel like it could block a doorway.
+const knight = new Sprite(
+	`
+··▟██▙··
+·▟████▙·
+▟█▛██▜█▙
+████████
+▝██████▘
+·▐█▌▐█▌·`,
+	{
+		defaultKey: 's',
+		colors: `
+··mmmm··
+·ssssss·
+ssssssss
+ssssssss
+·ssssss·
+·ssssss·`,
+	},
+);
 
 // =============================== MONSTERS =================================
 // A Field bestiary — readable at sprite scale, distinct silhouettes, eye-glow
@@ -168,6 +253,10 @@ oogggoo
 
 export const GALLERY: readonly GalleryEntry[] = [
 	{ category: 'Avatar', label: 'Buddy', note: 'live base Avatar (player.ts)', sprite: player },
+	{ category: 'Avatar', label: 'Sprout', note: 'tiny round blob, leaf bud', sprite: sprout },
+	{ category: 'Avatar', label: 'Scout', note: 'tall, cyan-capped, legs', sprite: scout },
+	{ category: 'Avatar', label: 'Sage', note: 'bell robe + hood, cyan sash', sprite: sage },
+	{ category: 'Avatar', label: 'Knight', note: 'broad helmeted guard, red crest', sprite: knight },
 	{ category: 'Monster', label: 'Slime', note: 'low-level blob, dark eyes', sprite: slime },
 	{ category: 'Monster', label: 'Mushroom', note: 'spotted cap, stub feet', sprite: mushroom },
 	{ category: 'Monster', label: 'Bat', note: 'cave flier, glowing eyes', sprite: bat },
