@@ -2,28 +2,28 @@
 // pure + deterministic given (game, input, dtMs). Game logic lives here and in
 // player.ts / world.ts so the client and (M2) server never diverge.
 
-import { aabbOverlap, entityBox, meleeHitbox } from "./combat"
-import { BOX, MONSTER, PHYS, SPAWN, XP_PER_KILL } from "./constants"
-import { rollItem } from "./loot"
-import { stepEntity } from "./physics"
-import { type PlayerState, spawnPlayerState } from "./player"
-import { applyXp, maxHpForLevel } from "./progression"
-import { isSolid } from "./terrain"
-import type { Control, Entity, Input } from "./types"
-import { makeFieldZone, type World, type Zone } from "./world"
+import { aabbOverlap, entityBox, meleeHitbox } from './combat';
+import { BOX, MONSTER, PHYS, SPAWN, XP_PER_KILL } from './constants';
+import { rollItem } from './loot';
+import { stepEntity } from './physics';
+import { type PlayerState, spawnPlayerState } from './player';
+import { applyXp, maxHpForLevel } from './progression';
+import { isSolid } from './terrain';
+import type { Control, Entity, Input } from './types';
+import { makeFieldZone, type World, type Zone } from './world';
 
 /** The single-player game: the client's Player + the World of Zones. A thin
  * bundle — Player and World stay independent (player.ts / world.ts). */
 export interface GameState {
-  player: PlayerState
-  world: World
+	player: PlayerState;
+	world: World;
 }
 
 /** A fresh single-player game: one starter Field, Player at spawn. */
 export function createGame(seed = 1): GameState {
-  const field = makeFieldZone("field-01")
-  const player = spawnPlayerState(field.id, SPAWN.x, SPAWN.y, seed)
-  return { player, world: { zones: { [field.id]: field }, tick: 0 } }
+	const field = makeFieldZone('field-01');
+	const player = spawnPlayerState(field.id, SPAWN.x, SPAWN.y, seed);
+	return { player, world: { zones: { [field.id]: field }, tick: 0 } };
 }
 
 // TODO(M1): shooter archetype + projectiles (#4); monster respawn timers (#5);
@@ -31,96 +31,110 @@ export function createGame(seed = 1): GameState {
 
 /** Advance the active Zone + the Player one tick. Deterministic given inputs. */
 export function step(game: GameState, input: Input, dtMs: number): GameState {
-  const dt = Math.min(dtMs / 1000, PHYS.maxDt)
-  const zone = game.world.zones[game.player.zoneId]
-  const t = zone.terrain
+	const dt = Math.min(dtMs / 1000, PHYS.maxDt);
+	const zone = game.world.zones[game.player.zoneId];
+	const t = zone.terrain;
 
-  // --- avatar movement ---
-  const pCtl: Control = { moveX: input.moveX, jump: input.jump }
-  let avatar = stepEntity(t, game.player.avatar, pCtl, dt).e
-  avatar.attackT = Math.max(0, avatar.attackT - dt)
-  avatar.hurtT = Math.max(0, avatar.hurtT - dt)
+	// --- avatar movement ---
+	const pCtl: Control = { moveX: input.moveX, jump: input.jump };
+	let avatar = stepEntity(t, game.player.avatar, pCtl, dt).e;
+	avatar.attackT = Math.max(0, avatar.attackT - dt);
+	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
 
-  // --- avatar attack (resolved against monsters below) ---
-  const attacking = input.attack && avatar.attackT <= 0
-  if (attacking) avatar = { ...avatar, attackT: 0.35 }
-  const hb = attacking ? meleeHitbox(avatar) : null
+	// --- avatar attack (resolved against monsters below) ---
+	const attacking = input.attack && avatar.attackT <= 0;
+	if (attacking) avatar = { ...avatar, attackT: 0.35 };
+	const hb = attacking ? meleeHitbox(avatar) : null;
 
-  // player-side consequences accumulate here
-  let progress = game.player.progress
-  let inventory = game.player.inventory
-  const log = game.player.log.slice(-5)
-  let nextId = game.player.nextId
-  let rngState = game.player.rngState
+	// player-side consequences accumulate here
+	let progress = game.player.progress;
+	let inventory = game.player.inventory;
+	const log = game.player.log.slice(-5);
+	let nextId = game.player.nextId;
+	let rngState = game.player.rngState;
 
-  // --- monsters ---
-  const monsters: Entity[] = []
-  for (const m0 of zone.monsters) {
-    let m: Entity = { ...m0 }
-    m.hurtT = Math.max(0, m.hurtT - dt)
+	// --- monsters ---
+	const monsters: Entity[] = [];
+	for (const m0 of zone.monsters) {
+		let m: Entity = { ...m0 };
+		m.hurtT = Math.max(0, m.hurtT - dt);
 
-    // AI: chase when the Avatar is near, else patrol in the facing direction.
-    const dx = avatar.x - m.x
-    let moveX: -1 | 0 | 1
-    if (m.type === "chaser" && Math.abs(dx) < MONSTER.chaserAggro) moveX = dx > 0 ? 1 : -1
-    else moveX = m.facing
-    const res = stepEntity(t, m, { moveX, jump: false }, dt)
-    m = res.e
+		// AI: chase when the Avatar is near, else patrol in the facing direction.
+		const dx = avatar.x - m.x;
+		let moveX: -1 | 0 | 1;
+		if (m.type === 'chaser' && Math.abs(dx) < MONSTER.chaserAggro)
+			moveX = dx > 0 ? 1 : -1;
+		else moveX = m.facing;
+		const res = stepEntity(t, m, { moveX, jump: false }, dt);
+		m = res.e;
 
-    // patrol turn-around at walls and platform edges
-    if (m.onGround) {
-      const lead = moveX >= 0 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x)
-      const footY = Math.ceil(m.y + BOX.h)
-      if (res.hitWall || !isSolid(t, lead, footY)) m.facing = m.facing === 1 ? -1 : 1
-    }
+		// patrol turn-around at walls and platform edges
+		if (m.onGround) {
+			const lead = moveX >= 0 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x);
+			const footY = Math.ceil(m.y + BOX.h);
+			if (res.hitWall || !isSolid(t, lead, footY))
+				m.facing = m.facing === 1 ? -1 : 1;
+		}
 
-    // avatar melee → monster
-    if (hb && m.hurtT <= 0 && aabbOverlap(hb, entityBox(m))) {
-      m = { ...m, hp: m.hp - 8, hurtT: 0.6 }
-    }
-    // monster contact → avatar
-    if (m.hp > 0 && avatar.hurtT <= 0 && aabbOverlap(entityBox(avatar), entityBox(m))) {
-      avatar = { ...avatar, hp: avatar.hp - MONSTER.contactDamage, hurtT: 0.6 }
-    }
+		// avatar melee → monster
+		if (hb && m.hurtT <= 0 && aabbOverlap(hb, entityBox(m))) {
+			m = { ...m, hp: m.hp - 8, hurtT: 0.6 };
+		}
+		// monster contact → avatar
+		if (
+			m.hp > 0 &&
+			avatar.hurtT <= 0 &&
+			aabbOverlap(entityBox(avatar), entityBox(m))
+		) {
+			avatar = { ...avatar, hp: avatar.hp - MONSTER.contactDamage, hurtT: 0.6 };
+		}
 
-    if (m.hp > 0) {
-      monsters.push(m)
-    } else {
-      // death → XP (+ level up) and an instanced loot roll into inventory
-      const ap = applyXp(progress, XP_PER_KILL)
-      progress = ap.progress
-      if (ap.leveled > 0) {
-        const mhp = maxHpForLevel(progress.level)
-        avatar = { ...avatar, maxHp: mhp, hp: mhp }
-        log.push(`Level up! Now level ${progress.level}.`)
-      }
-      const roll = rollItem(rngState, progress.level)
-      rngState = roll.state
-      const item = { ...roll.item, id: nextId++ }
-      inventory = [...inventory, item]
-      log.push(`Looted ${item.rarity} ${item.base}.`)
-    }
-  }
+		if (m.hp > 0) {
+			monsters.push(m);
+		} else {
+			// death → XP (+ level up) and an instanced loot roll into inventory
+			const ap = applyXp(progress, XP_PER_KILL);
+			progress = ap.progress;
+			if (ap.leveled > 0) {
+				const mhp = maxHpForLevel(progress.level);
+				avatar = { ...avatar, maxHp: mhp, hp: mhp };
+				log.push(`Level up! Now level ${progress.level}.`);
+			}
+			const roll = rollItem(rngState, progress.level);
+			rngState = roll.state;
+			const item = { ...roll.item, id: nextId++ };
+			inventory = [...inventory, item];
+			log.push(`Looted ${item.rarity} ${item.base}.`);
+		}
+	}
 
-  // forgiving death: respawn at the Field spawn, full HP, brief invulnerability
-  if (avatar.hp <= 0) {
-    avatar = { ...avatar, hp: avatar.maxHp, x: SPAWN.x, y: SPAWN.y, vx: 0, vy: 0, hurtT: 1 }
-    log.push("You fell. Respawned in safety.")
-  }
+	// forgiving death: respawn at the Field spawn, full HP, brief invulnerability
+	if (avatar.hp <= 0) {
+		avatar = {
+			...avatar,
+			hp: avatar.maxHp,
+			x: SPAWN.x,
+			y: SPAWN.y,
+			vx: 0,
+			vy: 0,
+			hurtT: 1,
+		};
+		log.push('You fell. Respawned in safety.');
+	}
 
-  const player: PlayerState = {
-    avatar,
-    progress,
-    inventory,
-    zoneId: game.player.zoneId,
-    log,
-    nextId,
-    rngState,
-  }
-  const newZone: Zone = { ...zone, monsters }
-  const world: World = {
-    zones: { ...game.world.zones, [zone.id]: newZone },
-    tick: game.world.tick + 1,
-  }
-  return { player, world }
+	const player: PlayerState = {
+		avatar,
+		progress,
+		inventory,
+		zoneId: game.player.zoneId,
+		log,
+		nextId,
+		rngState,
+	};
+	const newZone: Zone = { ...zone, monsters };
+	const world: World = {
+		zones: { ...game.world.zones, [zone.id]: newZone },
+		tick: game.world.tick + 1,
+	};
+	return { player, world };
 }
