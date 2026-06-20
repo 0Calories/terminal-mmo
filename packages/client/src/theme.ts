@@ -13,6 +13,7 @@ export const COLORS = {
 	melee: RGBA.fromInts(255, 245, 200, 255),
 	projectile: RGBA.fromInts(255, 120, 80, 255),
 	portal: RGBA.fromInts(180, 130, 255, 255), // gateway shimmer (distinct hue)
+	vendor: RGBA.fromInts(255, 200, 90, 255), // NPC vendor stall + Gold (warm gold)
 	hud: RGBA.fromInts(232, 232, 238, 255),
 	hudBg: RGBA.fromInts(8, 9, 13, 255),
 	hp: RGBA.fromInts(90, 220, 120, 255),
