@@ -6,6 +6,9 @@
 //
 //     bun packages/client/src/sprites/preview.ts
 //
+// The raw exploration scripts these were lifted from live at the repo root as
+// scratch_*.mjs (standalone, runnable with `node`).
+//
 // Authoring: `·` = transparent, `\\` = one backslash, `` \` `` = one backtick
 // (template-literal rules). Block-art figures use Block Elements (U+2580–259F);
 // their colours come from the optional `colors` grid (one palette key per cell).
@@ -67,7 +70,37 @@ psssssp
 	},
 );
 
-// Block-art (the Claude direction). Small 7×5 variants…
+// Block-art (the Claude direction). Early 7×5 passes…
+const playerEyehole = new Sprite(
+	`
+·▖·█·▗·
+·▚███▞·
+▗█▟█▙█▖
+▝█████▘
+·▐▌·▐▌·`,
+	{ defaultKey: 'p' },
+);
+
+const playerRoundBurst = new Sprite(
+	`
+·▗▟█▙▖·
+▗█████▖
+▝████▀▘
+·▜██▛··
+·▐▌▐▌··`,
+	{ defaultKey: 'p' },
+);
+
+const playerBurstHoles = new Sprite(
+	`
+·▗▟█▙▖·
+▗█████▖
+▐▌▐█▌▐▌
+·▜██▛··
+·▐▌▐▌··`,
+	{ defaultKey: 'p' },
+);
+
 const playerBlob = new Sprite(
 	`
 ·▄███▄·
@@ -161,6 +194,53 @@ gmmmmmg
 	},
 );
 
+// Block-art passes. Early 7×5…
+const chaserCorrupted = new Sprite(
+	`
+▚·▟▙·▞·
+▗▜██▛▖·
+▝▙██▟▘·
+▞▝██▘▚·
+▗▘··▝▖·`,
+	{ defaultKey: 'm' },
+);
+
+const chaserSpiked = new Sprite(
+	`
+▚·▟▙·▞·
+▗████▖·
+▜▄██▄▛·
+▗▀██▀▖·
+▘▗▛▜▖▝·`,
+	{
+		defaultKey: 'm',
+		colors: `
+·······
+·······
+·g··g··
+·······
+·······`,
+	},
+);
+
+const chaserGnasher = new Sprite(
+	`
+▗▙··▟▖·
+▟████▙·
+█▄██▄█·
+▚▚▚▚▚▘·
+▗▘·▝▖··`,
+	{
+		defaultKey: 'm',
+		colors: `
+·······
+·······
+g···g··
+·······
+·······`,
+	},
+);
+
 const chaserGlitch = new Sprite(
 	`
 ▚·▗█▖·▞
@@ -179,6 +259,25 @@ const chaserGlitch = new Sprite(
 	},
 );
 
+const chaserMaw = new Sprite(
+	`
+▚·▟▙·▞·
+▟████▙·
+▞▛▛▛▛▌·
+▐▟▟▟▟▖·
+▞····▚·`,
+	{
+		defaultKey: 'm',
+		colors: `
+·······
+·g··g··
+·······
+·······
+·······`,
+	},
+);
+
+// …and the larger 12×7 brutes.
 const chaserBiter = new Sprite(
 	`
 ··▟▖·▟▙·▗▙··
@@ -195,6 +294,50 @@ const chaserBiter = new Sprite(
 ············
 ·gg······gg·
 ·gg······gg·
+············
+············
+············`,
+	},
+);
+
+const chaserGlitchBeast = new Sprite(
+	`
+▚··········▞
+·▚·▗▟██▙▖·▞·
+·▄████████▄·
+▐██████████▌
+·▜████████▛·
+▘▌▘▌▘▌▐▝▐▝▐▝
+·▐·▐·▐▌·▌·▌·`,
+	{
+		defaultKey: 'm',
+		colors: `
+············
+············
+··gg····gg··
+··gg····gg··
+············
+············
+············`,
+	},
+);
+
+const chaserGlitchShard = new Sprite(
+	`
+▚▗▙·▗▌▐▖·▟▖▞
+▗███▙▘▝▟███▖
+▜████··████▛
+▗███▙··▟███▖
+▜████··████▛
+▗▜██▚▌▐▞██▛▖
+▘·▌▌·▘▝·▐▐·▝`,
+	{
+		defaultKey: 'm',
+		colors: `
+············
+············
+···g····g···
+············
 ············
 ············
 ············`,
@@ -249,8 +392,10 @@ const shooterSentinel = new Sprite(
 	},
 );
 
-// ★ = current recommendation for that slot.
+// ★ = current recommendation for that slot. Ordered line-art → early block →
+// refined block, so the progression reads top to bottom.
 export const GALLERY: GalleryEntry[] = [
+	// ---- Player ----
 	{
 		category: 'Player',
 		label: 'current',
@@ -271,6 +416,24 @@ export const GALLERY: GalleryEntry[] = [
 	},
 	{
 		category: 'Player',
+		label: 'eye-hole (block 7×5)',
+		note: 'first block pass — eyes as holes',
+		sprite: playerEyehole,
+	},
+	{
+		category: 'Player',
+		label: 'round-burst (block 7×5)',
+		note: 'P1 — faceless rounded blob',
+		sprite: playerRoundBurst,
+	},
+	{
+		category: 'Player',
+		label: 'burst-holes (block 7×5)',
+		note: 'P2 — hole eyes (read as stripes)',
+		sprite: playerBurstHoles,
+	},
+	{
+		category: 'Player',
 		label: 'blob (block 7×5)',
 		note: 'small rounded Claude blob',
 		sprite: playerBlob,
@@ -287,6 +450,7 @@ export const GALLERY: GalleryEntry[] = [
 		note: 'big rounded creature, cyan eyes',
 		sprite: playerBuddy,
 	},
+	// ---- Chaser ----
 	{
 		category: 'Chaser',
 		label: 'current',
@@ -307,9 +471,33 @@ export const GALLERY: GalleryEntry[] = [
 	},
 	{
 		category: 'Chaser',
+		label: 'corrupted (block 7×5)',
+		note: 'first block pass',
+		sprite: chaserCorrupted,
+	},
+	{
+		category: 'Chaser',
+		label: 'spiked-burst (block 7×5)',
+		note: 'C1 — angular, slit eyes',
+		sprite: chaserSpiked,
+	},
+	{
+		category: 'Chaser',
+		label: 'gnasher (block 7×5)',
+		note: 'C2 — wide gnashing jaw',
+		sprite: chaserGnasher,
+	},
+	{
+		category: 'Chaser',
 		label: 'glitch (block 7×5)',
 		note: 'small spiked burst',
 		sprite: chaserGlitch,
+	},
+	{
+		category: 'Chaser',
+		label: 'maw (block 7×5)',
+		note: 'gnashing-teeth variant',
+		sprite: chaserMaw,
 	},
 	{
 		category: 'Chaser',
@@ -319,10 +507,23 @@ export const GALLERY: GalleryEntry[] = [
 	},
 	{
 		category: 'Chaser',
+		label: 'glitch-beast (block 12×7)',
+		note: 'spiky orb, scattered limbs',
+		sprite: chaserGlitchBeast,
+	},
+	{
+		category: 'Chaser',
+		label: 'glitch-shard (block 12×7)',
+		note: 'cracked / split crystal',
+		sprite: chaserGlitchShard,
+	},
+	{
+		category: 'Chaser',
 		label: 'crawler (block 12×7) ★',
 		note: 'domed shell + skittering legs',
 		sprite: chaserCrawler,
 	},
+	// ---- Shooter ----
 	{
 		category: 'Shooter',
 		label: 'eye sentinel (block 10×7) ★',
