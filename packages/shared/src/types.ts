@@ -20,11 +20,11 @@ export interface Input extends Control {
   attack: boolean
 }
 
-export type EntityKind = "player" | "chaser" | "shooter"
+export type EntityType = "player" | "chaser" | "shooter"
 
 export interface Entity {
   id: number
-  kind: EntityKind
+  type: EntityType
   x: number
   y: number
   vx: number
@@ -68,15 +68,6 @@ export interface PlayerProgress {
   gold: number
 }
 
-/** Full single-player Zone state. (M2 splits authoritative server state out.) */
-export interface WorldState {
-  tick: number
-  terrain: Terrain
-  player: Entity
-  progress: PlayerProgress
-  monsters: Entity[]
-  inventory: Item[]
-  log: string[] // recent events (level ups, loot) for the HUD
-  nextId: number
-  rngState: number // threaded deterministic RNG (CONTEXT: Instanced loot)
-}
+// The runtime state is split across two modules along the authority boundary
+// (ADR 0001): the shared World of Zones lives in world.ts; the client Player's
+// own state lives in player.ts; sim.ts bundles them as GameState.

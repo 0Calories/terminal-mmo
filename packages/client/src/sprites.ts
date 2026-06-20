@@ -1,6 +1,6 @@
 // Visual sprites (ADR 0003): decorative multi-row ASCII art, decoupled from the
 // logical BOX. ~7 wide x 5 tall. Spaces are transparent when drawn.
-import type { EntityKind, Facing } from "@mmo/shared"
+import type { EntityType, Facing } from "@mmo/shared"
 
 export const SPRITE_W = 7
 export const SPRITE_H = 5
@@ -20,12 +20,12 @@ function mirror(rows: string[]): string[] {
   })
 }
 
-const ART: Record<EntityKind, { 1: string[]; "-1": string[] }> = {
+const ART: Record<EntityType, { 1: string[]; "-1": string[] }> = {
   player: { 1: PLAYER, "-1": mirror(PLAYER) },
   chaser: { 1: CHASER, "-1": mirror(CHASER) },
-  shooter: { 1: CHASER, "-1": mirror(CHASER) }, // TODO(M1): distinct shooter art
+  shooter: { 1: CHASER, "-1": mirror(CHASER) }, // TODO(M1): distinct shooter art (#4)
 }
 
-export function spriteFor(kind: EntityKind, facing: Facing): string[] {
-  return ART[kind][facing === 1 ? 1 : "-1"]
+export function spriteFor(type: EntityType, facing: Facing): string[] {
+  return ART[type][facing === 1 ? 1 : "-1"]
 }

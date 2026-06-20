@@ -1,61 +1,87 @@
 import { test, expect } from "bun:test"
 import {
-  createWorld, step, spawnPlayer, spawnMonster, makeStarterField,
+  createGame, step, spawnAvatar, spawnMonster, makeStarterField, activeZone,
   BOX, GROUND_TOP, XP_PER_KILL, MONSTER,
 } from "../src"
-import type { Input, WorldState } from "../src"
+import type { GameState, Input, PlayerState, Zone } from "../src"
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false }
 
-test("createWorld produces a player and chasers at tick 0", () => {
-  const w = createWorld()
-  expect(w.tick).toBe(0)
-  expect(w.player.kind).toBe("player")
-  expect(w.monsters.length).toBe(8)
+test("createGame separates Player state from the World of Zones", () => {
+  const g = createGame()
+  expect(g.world.tick).toBe(0)
+  expect(g.player.avatar.type).toBe("player")
+  expect(g.player.zoneId in g.world.zones).toBe(true)
+  const zone = activeZone(g.world, g.player.zoneId)
+  expect(zone.type).toBe("field")
+  expect(zone.monsters.length).toBe(8)
 })
 
-test("step advances the tick", () => {
-  expect(step(createWorld(), IDLE, 16).tick).toBe(1)
+test("step advances the World tick", () => {
+  expect(step(createGame(), IDLE, 16).world.tick).toBe(1)
 })
 
 test("step is deterministic for identical seed + inputs", () => {
-  let a = createWorld(7)
-  let b = createWorld(7)
+  let a = createGame(7)
+  let b = createGame(7)
   const seq: Input = { moveX: 1, jump: false, attack: true }
   for (let i = 0; i < 40; i++) {
     a = step(a, seq, 16)
     b = step(b, seq, 16)
   }
-  expect(b.player.x).toBe(a.player.x)
-  expect(b.inventory.length).toBe(a.inventory.length)
-  expect(b.progress.xp).toBe(a.progress.xp)
+  expect(b.player.avatar.x).toBe(a.player.avatar.x)
+  expect(b.player.inventory.length).toBe(a.player.inventory.length)
+  expect(b.player.progress.xp).toBe(a.player.progress.xp)
+  expect(activeZone(b.world, b.player.zoneId).monsters.length).toBe(
+    activeZone(a.world, a.player.zoneId).monsters.length,
+  )
 })
 
-// player at x, one chaser directly in front on flat ground
-function adjacentWorld(monsterHp?: number): WorldState {
-  const terrain = makeStarterField()
+// player at x, one chaser directly in front on flat ground, in one Field Zone
+function adjacentGame(monsterHp?: number): GameState {
   const y = GROUND_TOP - BOX.h
   const m = spawnMonster("chaser", 2, 20 + BOX.w, y)
   if (monsterHp !== undefined) {
     m.hp = monsterHp
     m.maxHp = monsterHp
   }
-  return {
-    tick: 0, terrain, player: spawnPlayer(1, 20, y),
-    progress: { level: 1, xp: 0, gold: 0 }, monsters: [m],
-    inventory: [], log: [], nextId: 3, rngState: 1,
+  const zone: Zone = { id: "field-01", type: "field", terrain: makeStarterField(), monsters: [m] }
+  const player: PlayerState = {
+    avatar: spawnAvatar(20, y),
+    progress: { level: 1, xp: 0, gold: 0 },
+    inventory: [],
+    zoneId: zone.id,
+    log: [],
+    nextId: 1,
+    rngState: 1,
   }
+  return { player, world: { zones: { [zone.id]: zone }, tick: 0 } }
 }
 
 test("attacking damages an adjacent monster", () => {
-  const w = step(adjacentWorld(), { moveX: 0, jump: false, attack: true }, 16)
-  expect(w.monsters[0].hp).toBe(MONSTER.chaserHp - 8)
+  const g = step(adjacentGame(), { moveX: 0, jump: false, attack: true }, 16)
+  const zone = activeZone(g.world, g.player.zoneId)
+  expect(zone.monsters[0].hp).toBe(MONSTER.chaserHp - 8)
 })
 
 test("killing a monster grants XP and an instanced loot drop", () => {
-  const w = step(adjacentWorld(4), { moveX: 0, jump: false, attack: true }, 16)
-  expect(w.monsters.length).toBe(0)
-  expect(w.inventory.length).toBe(1)
-  expect(w.progress.xp).toBe(XP_PER_KILL)
-  expect(w.inventory[0].id).toBe(3) // assigned from nextId
+  const g = step(adjacentGame(4), { moveX: 0, jump: false, attack: true }, 16)
+  expect(activeZone(g.world, g.player.zoneId).monsters.length).toBe(0)
+  expect(g.player.inventory.length).toBe(1)
+  expect(g.player.progress.xp).toBe(XP_PER_KILL)
+  expect(g.player.inventory[0].id).toBe(1) // assigned from the Player's nextId
+})
+
+test("only the active Zone ticks; the Avatar's persistent state lives above it", () => {
+  // a second, dormant Field the Player is not in
+  const dormant: Zone = { id: "field-02", type: "field", terrain: makeStarterField(), monsters: [
+    spawnMonster("chaser", 99, 60, GROUND_TOP - BOX.h),
+  ] }
+  let g = createGame()
+  g = { player: g.player, world: { zones: { ...g.world.zones, [dormant.id]: dormant }, tick: g.world.tick } }
+  const before = g.world.zones["field-02"]
+  g = step(g, { moveX: 1, jump: false, attack: false }, 16)
+  // dormant Zone untouched (same reference), active Zone advanced
+  expect(g.world.zones["field-02"]).toBe(before)
+  expect(g.player.zoneId).toBe("field-01")
 })

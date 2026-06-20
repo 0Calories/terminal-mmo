@@ -7,10 +7,11 @@
 //
 // The shared package is intentionally the single source of game logic so the
 // server and client never diverge.
-import { createWorld } from "@mmo/shared"
+import { createGame, activeZone } from "@mmo/shared"
 
-const world = createWorld()
+const game = createGame()
+const zone = activeZone(game.world, game.player.zoneId)
 console.log(
   `@mmo/server placeholder — shared sim loads OK ` +
-    `(tick ${world.tick}, ${world.monsters.length} monsters). Server arrives in M2.`,
+    `(tick ${game.world.tick}, ${zone.monsters.length} monsters in ${zone.id}). Server arrives in M2.`,
 )
