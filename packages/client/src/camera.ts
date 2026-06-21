@@ -74,7 +74,6 @@ export function stepCamera(
 
 	let cam: Cam;
 	if (state.cam === null || zoneId !== state.zoneId || teleported) {
-		// snap-centre on the Avatar
 		cam = { x: clampX(cx - sw / 2), y: clampY(cy - sh / 2) };
 	} else {
 		const bandW = sw * CAMERA.bandWidthFrac;

@@ -1,13 +1,8 @@
 // PlayfieldRenderable (ADR 0005): the hot, per-frame playfield as a scene-graph
-// node rather than a global post-process hook. `renderSelf` draws terrain +
-// entity Sprites + combat telegraphs imperatively into the screen buffer every
-// frame — the immediate-mode layer that a retained virtual-DOM would only slow
-// down. `live` keeps the renderer drawing each frame so the sim animates
-// continuously; `width/height: '100%'` fills the root so absolute buffer
-// coordinates (the node sits at the origin) match the screen.
-//
-// Per ADR 0005 this layer draws ONLY the world; the HUD/log/hint chrome lives in
-// hud.ts as layout-driven renderables that overlay this node (see Hud).
+// node that draws terrain + entity Sprites + combat telegraphs imperatively into
+// the screen buffer every frame. `live` keeps it redrawing so the sim animates;
+// `width/height: '100%'` fills the root so absolute buffer coords match the
+// screen. This layer draws ONLY the world; HUD/log/hint chrome lives in hud.ts.
 import type { Entity, GameState } from '@mmo/shared';
 import {
 	aabbOverlap,
@@ -31,10 +26,10 @@ import type { Sprite } from './sprites';
 import { PALETTE, spriteFor, spriteForNpc } from './sprites';
 import { COLORS as C } from './theme';
 
-// Blit a Sprite's glyph + colour grid into the buffer at a screen anchor (top-
-// left sx, sy), honouring transparency and per-cell palette keys. `hurt` tints
-// every lit cell with the hurt flash. The anchor + facing are the caller's to
-// compute, so this serves both simulated entities and decorative NPCs.
+// Blit a Sprite's glyph + colour grid at a screen anchor (top-left sx, sy),
+// honouring transparency and per-cell palette keys. `hurt` tints every lit cell
+// with the hurt flash. Caller computes anchor + facing, so this serves both
+// simulated entities and decorative NPCs.
 function blitSprite(
 	buf: OptimizedBuffer,
 	sprite: Sprite,
@@ -74,7 +69,6 @@ function drawSprite(
 	// Anchor per-sprite: centred horizontally, feet aligned to the box bottom.
 	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2) - cam.x);
 	const sy = Math.round(e.y + BOX.h - sprite.h - cam.y);
-	// state-driven tint, overrides the art's colour
 	blitSprite(buf, sprite, sx, sy, e.facing, sw, sh, e.hurtT > 0.3);
 }
 
@@ -117,7 +111,6 @@ function drawPlayfield(
 
 	buf.clear(C.bg);
 
-	// terrain (visible cells only)
 	for (let sy = 0; sy < sh; sy++) {
 		const wy = sy + camY;
 		for (let sx = 0; sx < sw; sx++) {
@@ -161,10 +154,9 @@ function drawPlayfield(
 		);
 	}
 
-	// NPCs (Town vendor, story 29): a multi-row Avatar Sprite over the NPC's small
-	// logical footprint (ADR 0003), drawn behind the entity Sprites like portals so
-	// the player stands in front. World-fixed, so it scrolls on the whole-cell grid
-	// (camX/camY). A talk prompt floats above the head of the overlapped NPC.
+	// NPCs (Town vendor, story 29): drawn behind the entity Sprites so the player
+	// stands in front; world-fixed, so they scroll on the whole-cell grid. A talk
+	// prompt floats above the head of the overlapped NPC.
 	const npcs = zone.npcs ?? [];
 	const onNpc = npcs.find((n) => aabbOverlap(entityBox(p), n));
 	for (const n of npcs) {

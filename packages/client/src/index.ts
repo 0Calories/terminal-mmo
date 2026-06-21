@@ -67,7 +67,7 @@ function vendorUnder(g: GameState) {
 }
 
 /** Sell the highlighted Item: pure transaction in @mmo/shared, then fold the new
- * Gold/inventory back into game state for the next tick to carry. */
+ * Gold/inventory back into game state. */
 function sellSelected() {
 	const inv = game.player.inventory;
 	if (inv.length === 0) return;

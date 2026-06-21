@@ -1,8 +1,6 @@
-// Shop overlay (story 29): the Town vendor's sell panel. A modal, layout-driven
-// overlay (like Hud) that lists the Player's inventory with each Item's sale
-// value and a selection caret. Pure view + selection state — the actual
-// transaction (sellItem) and Gold/inventory mutation live in index.ts, which
-// owns game state; this class only renders and tracks which row is selected.
+// Shop overlay (story 29): the Town vendor's modal sell panel. Pure view +
+// selection state — the actual transaction (sellItem) and Gold/inventory
+// mutation live in index.ts, which owns game state.
 import type { GameState } from '@mmo/shared';
 import { saleValue } from '@mmo/shared';
 import {

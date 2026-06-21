@@ -1,10 +1,8 @@
 import { Sprite } from './sprite';
 
-// "Claude-buddy" Avatar: a rounded, bottom-heavy creature with two dark eye-dots
-// and four little feet. Block Elements (U+2580–259F) read as filled pixels; the
-// silhouette and eyes are left-right symmetric, so both facings render
-// identically. The `colors` grid darkens the two eye cells (`k`); every other
-// cell falls back to the body key (`p`).
+// "Claude-buddy" Avatar: rounded, bottom-heavy, two dark eye-dots, four feet.
+// Symmetric, so both facings match. The `colors` grid darkens the eye cells
+// (`k`); every other cell falls back to the body key (`p`).
 const GLYPH = `
 ·▐▛███▜▌·
 ▝▜█████▛▘

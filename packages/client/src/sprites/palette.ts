@@ -1,17 +1,15 @@
 // Base art colours, keyed by the single-char codes used in sprite colour grids
-// (and each sprite's `defaultKey`). This is the swappable layer ADR 0003 calls
-// "region-recolor": same art, different palette. State-driven tints (hurt flash,
-// dimming of overlapped others, combat telegraphs) are NOT here — those depend
-// on entity state, so they live in the renderer.
+// (and each sprite's `defaultKey`). This is ADR 0003's swappable "region-recolor"
+// layer. State-driven tints (hurt flash, dimming, telegraphs) live in the
+// renderer, not here, since they depend on entity state.
 import { RGBA } from '@opentui/core';
 
 export const PALETTE: Record<string, RGBA> = {
 	p: RGBA.fromInts(255, 150, 40, 255), // player body (orange)
 	m: RGBA.fromInts(220, 90, 90, 255), // monster body (red)
 	g: RGBA.fromInts(170, 240, 95, 255), // monster eye-glow (toxic green)
-	// Extended base-art palette: region-recolour options for the candidate
-	// Avatars/Monsters in the design gallery (ADR 0003). Not all are wired into
-	// live entities yet — they exist so proposals render true-to-game.
+	// Extended palette for design-gallery candidates; not all wired into live
+	// entities yet, so proposals still render true-to-game.
 	s: RGBA.fromInts(186, 196, 210, 255), // steel / stone silver
 	w: RGBA.fromInts(150, 96, 52, 255), // wood / mushroom gills brown
 	y: RGBA.fromInts(242, 210, 92, 255), // gold / glow yellow

@@ -1,13 +1,7 @@
-// Sprite design preview — renders every candidate in `gallery.ts` in true
-// colour, both facings side by side, grouped by entity kind. It's a plain
-// stdout/ANSI dump: no renderer, no TTY, no game loop — just run it and look.
-//
+// Sprite design preview — a plain stdout/ANSI dump of every `gallery.ts`
+// candidate in true colour, both facings side by side. No renderer/TTY/game
+// loop; colours come from the real PALETTE (minus renderer-only state tints).
 //     bun packages/client/src/sprites/preview.ts
-//
-// Colours come from the real PALETTE, so what you see is what the game would
-// draw (modulo state tints like the hurt flash, which live in the renderer).
-// Both facings are shown so the block-glyph mirror support is visible at a
-// glance.
 import { GALLERY, type GalleryEntry } from './gallery';
 import { PALETTE } from './palette';
 
@@ -26,7 +20,7 @@ function paint(sprite: GalleryEntry['sprite'], facing: 1 | -1): string[] {
 		for (let x = 0; x < row.length; x++) {
 			const ch = row[x];
 			if (ch === ' ') {
-				out += ' '; // transparent cell
+				out += ' ';
 				continue;
 			}
 			const rgba = PALETTE[keys[y][x]];
@@ -37,8 +31,7 @@ function paint(sprite: GalleryEntry['sprite'], facing: 1 | -1): string[] {
 	});
 }
 
-/** Right-facing and left-facing renders laid side by side, with the label and
- *  note printed to the right of the art. */
+/** Right- and left-facing renders side by side, label/note to the right. */
 function card(entry: GalleryEntry): string {
 	const right = paint(entry.sprite, 1);
 	const left = paint(entry.sprite, -1);
@@ -55,7 +48,6 @@ function card(entry: GalleryEntry): string {
 		const rGap = ' '.repeat(Math.max(0, colW - rVisible));
 		lines.push(`  ${r}${rGap}   ${l}`);
 	}
-	// Attach the label/note to the middle line.
 	const mid = Math.floor(h / 2);
 	const meta = `${BOLD}${entry.label}${RESET}  ${DIM}${entry.note}${RESET}`;
 	lines[mid] = `${lines[mid]}    ${meta}`;

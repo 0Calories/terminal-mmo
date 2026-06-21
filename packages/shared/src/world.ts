@@ -61,7 +61,7 @@ export function spawnMonster(
 	y: number,
 	spawnIndex?: number,
 ): Entity {
-	// per-archetype base stats; shooters are frailer + slower than chasers
+	// shooters are frailer + slower than chasers
 	const hp = type === 'shooter' ? SHOOTER.hp : MONSTER.chaserHp;
 	const speed = type === 'shooter' ? SHOOTER.speed : MONSTER.chaserSpeed;
 	return {

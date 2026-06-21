@@ -21,7 +21,6 @@ test('a projectile travels in its velocity direction over a step', () => {
 });
 
 test('a projectile despawns when it enters solid Terrain', () => {
-	// a wall at column 3; the projectile crosses into it this step
 	const walled = parseTerrain(['   #  ', '   #  ', '   #  ']);
 	const p: Projectile = {
 		id: 1,

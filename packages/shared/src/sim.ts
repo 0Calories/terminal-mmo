@@ -64,10 +64,8 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	const zone = game.world.zones[game.player.zoneId];
 	const t = zone.terrain;
 
-	// Portal entry (story 14): standing on a Portal + the interact intent transitions
-	// the Avatar to the target Zone at its arrival point. Handled first, so the
-	// transition tick runs no movement/combat; persistent state (progress,
-	// inventory, RNG) carries over untouched.
+	// Portal entry (story 14): handled before movement/combat, so the transition
+	// tick runs neither; persistent state (progress, inventory, RNG) carries over.
 	if (input.interact) {
 		const here = entityBox(game.player.avatar);
 		const portal = zone.portals.find((p) => aabbOverlap(here, p));
@@ -92,7 +90,6 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		}
 	}
 
-	// --- avatar movement ---
 	const pCtl: Control = { moveX: input.moveX, jump: input.jump };
 	let avatar = stepEntity(t, game.player.avatar, pCtl, dt).e;
 	avatar.attackT = Math.max(0, avatar.attackT - dt);
@@ -105,7 +102,6 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	let nextId = game.player.nextId;
 	let rngState = game.player.rngState;
 
-	// --- avatar attack & skills (resolved against monsters below) ---
 	// A basic swing and a Skill share one hitbox slot for the tick; a fired Skill
 	// overrides the swing. Hits resolve via aabbOverlap in the monster loop.
 	const attacking = input.attack && avatar.attackT <= 0;
@@ -113,8 +109,7 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	let hb: Box | null = attacking ? meleeHitbox(avatar) : null;
 	let hitDamage: number = COMBAT.meleeDamage;
 
-	// Skill cooldowns count down every tick; a key-bound slot fires its Skill if
-	// unlocked + off cooldown, starting a fresh cooldown (story 22).
+	// A key-bound slot fires its Skill if unlocked + off cooldown (story 22).
 	const skillCooldowns: Record<string, number> = {};
 	for (const [id, cd] of Object.entries(game.player.skillCooldowns ?? {}))
 		skillCooldowns[id] = Math.max(0, cd - dt);
@@ -132,17 +127,12 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		}
 	}
 
-	// projectiles fired by shooters this tick (spawned after they're stepped, so
-	// a fresh shot doesn't travel or hit on the same tick it's fired)
 	const fired: Projectile[] = [];
 	let nextProjectileId = zone.nextProjectileId;
 
-	// respawns scheduled by this tick's deaths; merged with carried-over timers
-	// below (so a fresh kill always waits the full delay — cf. projectiles).
 	let nextMonsterId = zone.nextMonsterId;
 	const respawns: PendingRespawn[] = [];
 
-	// --- monsters ---
 	const monsters: Entity[] = [];
 	for (const m0 of zone.monsters) {
 		let m: Entity = { ...m0 };
@@ -156,9 +146,8 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		const engaged = m.type === 'shooter' && adx < SHOOTER.aggro;
 		let moveX: -1 | 0 | 1;
 		if (m.type === 'chaser' && adx < MONSTER.chaserAggro)
-			// hold inside the deadzone so facing doesn't flip-flop frame to frame
-			// when the Avatar is right on top of the chaser (stepEntity only
-			// rewrites facing when moveX !== 0, so holding retains it for free)
+			// hold inside the deadzone so facing doesn't flip-flop when the Avatar
+			// is on top of the chaser (stepEntity keeps facing when moveX === 0)
 			moveX = adx < MONSTER.chaserDeadzone ? 0 : dx > 0 ? 1 : -1;
 		else if (engaged)
 			moveX = adx < SHOOTER.keepDist ? (dx > 0 ? -1 : 1) : 0; // back off / hold
@@ -222,9 +211,8 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		}
 	}
 
-	// --- respawn timers --- tick down carried-over timers; due ones spawn a
-	// fresh full-HP Monster at its point. Done after the death loop, so this
-	// tick's new timers aren't decremented until the next tick.
+	// Tick down carried-over respawn timers; due ones spawn a fresh full-HP
+	// Monster. After the death loop, so this tick's new timers wait a full tick.
 	for (const r of zone.respawns) {
 		const remaining = r.remaining - dt;
 		if (remaining > 0) {
@@ -237,8 +225,8 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		);
 	}
 
-	// --- projectiles --- advance existing shots, resolve Avatar hits, then add
-	// this tick's fresh shots (so they don't move or hit until next tick).
+	// Advance existing shots and resolve Avatar hits, then add this tick's fresh
+	// shots (so they don't move or hit until next tick).
 	const projectiles: Projectile[] = [];
 	for (const pr0 of zone.projectiles) {
 		const pr = stepProjectile(t, pr0, dt);

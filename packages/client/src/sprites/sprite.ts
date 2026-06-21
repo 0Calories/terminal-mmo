@@ -1,14 +1,14 @@
-// Sprite: the shared machinery for ASCII-art figures (ADR 0003). It owns art
-// parsing, dimensions, mirroring, and per-cell colour *keys* — and nothing
-// about buffers, cameras, screen colour, or entities. That keeps it pure and
-// unit-testable, and lets non-entity art (terrain, buildings, items) reuse it.
+// Sprite: shared machinery for ASCII-art figures (ADR 0003) — art parsing,
+// dimensions, mirroring, and per-cell colour *keys*. Holds nothing about
+// buffers, cameras, screen colour, or entities, so it stays pure, unit-testable,
+// and reusable for non-entity art (terrain, buildings, items).
 //
 // Authoring rules for the glyph/colour template strings:
 //   - Write rows flush-left, one row per line.
-//   - `·` (U+00B7) marks a transparent cell. It's visible in the editor (so the
-//     silhouette reads true) and survives trailing-whitespace trimming; the
-//     constructor maps it to a space (a literal space is transparent too).
-//   - Escape `\` as `\\` and a backtick as `` \` `` (normal template-literal rules).
+//   - `·` (U+00B7) marks a transparent cell — visible in the editor and survives
+//     trailing-whitespace trimming; mapped to a space (a literal space is
+//     transparent too).
+//   - Escape `\` as `\\` and a backtick as `` \` `` (template-literal rules).
 import type { Facing } from '@mmo/shared';
 
 /** Author-facing transparent-cell marker; converted to a space at runtime. */
@@ -33,7 +33,6 @@ const MIRROR: Record<string, string> = {
 	'\\': '/',
 	'`': "'",
 	"'": '`',
-	// Block Elements — half blocks, single quadrants, and three-quadrant blocks.
 	'▌': '▐',
 	'▐': '▌',
 	'▘': '▝',
@@ -48,9 +47,8 @@ const MIRROR: Record<string, string> = {
 	'▞': '▚',
 };
 
-/** Split a template-literal art block into normalised rows: drop the leading
- *  and trailing blank lines (template-literal artifacts) and right-pad ragged
- *  rows so every row is the same (max) width. */
+/** Normalise a template-literal art block: drop leading/trailing blank lines
+ *  (template artifacts) and right-pad ragged rows to a uniform width. */
 function splitTrimPad(art: string): string[] {
 	const lines = art.split('\n');
 	while (lines.length > 0 && lines[0].trim() === '') lines.shift();
@@ -59,8 +57,8 @@ function splitTrimPad(art: string): string[] {
 	return lines.map((l) => l.padEnd(width, ' '));
 }
 
-/** Flip glyph rows for the opposite facing: reverse each row and swap the
- *  glyphs that have a mirror image (brackets, slashes, quotes). */
+/** Flip glyph rows for the opposite facing: reverse each row and swap mirrorable
+ *  glyphs (brackets, slashes, quotes, block elements). */
 function mirrorGlyphs(rows: readonly string[]): string[] {
 	return rows.map((row) => {
 		let out = '';

@@ -1,8 +1,6 @@
-// HUD chrome (ADR 0005, step 2): the stats bar, controls hint, and recent log,
-// lifted out of the playfield into layout-driven renderables. They overlay the
-// full-screen playfield via absolute positioning + a higher zIndex, so the play
-// area keeps its full viewport while Yoga handles placement — no more manual
-// buf.drawText / setCell math. State-driven content is pushed in via update().
+// HUD chrome (ADR 0005, step 2): stats bar, controls hint, and recent log as
+// layout-driven renderables that overlay the full-screen playfield via absolute
+// positioning + a higher zIndex. State-driven content is pushed in via update().
 import type { GameState } from '@mmo/shared';
 import { activeZone, skillForSlot, skillUnlocked } from '@mmo/shared';
 import {
@@ -44,7 +42,7 @@ export class Hud {
 	private readonly log: TextRenderable;
 
 	constructor(ctx: RenderContext) {
-		// Top stats bar: full-width opaque strip, stats left / meta right.
+		// Full-width opaque strip, stats left / meta right.
 		this.topBar = new BoxRenderable(ctx, {
 			position: 'absolute',
 			top: 0,
