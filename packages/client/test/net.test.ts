@@ -18,6 +18,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 		avatars: [
 			{
 				sessionId: 1,
+				handle: 'me',
 				x: 40,
 				y,
 				vx: 0,
@@ -58,6 +59,7 @@ function withOther(): Extract<ServerMessage, { t: 'snapshot' }> {
 	const s = snapshot();
 	s.avatars.push({
 		sessionId: 2,
+		handle: 'rival',
 		x: 70,
 		y,
 		vx: 0,
@@ -78,6 +80,7 @@ test('snapshotToGame carries co-present Avatars into others, excluding own', () 
 	expect(game.others?.length).toBe(1);
 	const other = game.others?.[0];
 	expect(other?.type).toBe('player');
+	expect(other?.name).toBe('rival'); // handle threaded through for the nameplate
 	expect(other?.x).toBe(70);
 	expect(other?.facing).toBe(-1);
 	expect(other?.hp).toBe(30);

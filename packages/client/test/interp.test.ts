@@ -11,6 +11,7 @@ type Snapshot = Extract<ServerMessage, { t: 'snapshot' }>;
 function avatar(sessionId: number, x: number, y: number): AvatarSnapshot {
 	return {
 		sessionId,
+		handle: 'p',
 		x,
 		y,
 		vx: 0,

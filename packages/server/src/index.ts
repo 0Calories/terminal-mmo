@@ -41,7 +41,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 	const msg = decodeClientMessage(raw);
 	const { sessionId } = ws.data;
 	if (msg.t === 'hello') {
-		zone = addAvatar(zone, sessionId);
+		zone = addAvatar(zone, sessionId, msg.handle);
 		sockets.set(sessionId, ws);
 		ws.send(
 			encodeServerMessage({

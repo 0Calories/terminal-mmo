@@ -63,6 +63,25 @@ function drawSprite(
 	blitSprite(buf, sprite, sx, sy, e.facing, sw, sh, e.hurtT > 0.3);
 }
 
+// A Player Avatar's handle, centred over its collision box one row above the
+// Sprite top. Only `others` carry a name (Monsters and the own Avatar don't), so
+// this draws a nameplate for co-present Players only. Plain colour for now;
+// nameplate cosmetics arrive with M3 identity.
+function drawNameplate(
+	buf: OptimizedBuffer,
+	e: Entity,
+	cam: { x: number; y: number },
+	sw: number,
+	sh: number,
+) {
+	if (!e.name) return;
+	const sprite = spriteFor(e.type);
+	const top = Math.round(e.y + BOX.h - sprite.h - cam.y);
+	const cx = e.x + BOX.w / 2 - cam.x;
+	const x = Math.round(cx - e.name.length / 2);
+	drawText(buf, x, top - 1, e.name, C.dim, sw, sh);
+}
+
 function drawText(
 	buf: OptimizedBuffer,
 	x: number,
@@ -160,7 +179,10 @@ function drawPlayfield(
 	// on top of everyone (ADR 0003).
 	const others = game.others ?? [];
 	const sprites = [...zone.monsters, ...others].sort((a, b) => a.y - b.y);
-	for (const e of sprites) drawSprite(buf, e, cam, sw, sh);
+	for (const e of sprites) {
+		drawSprite(buf, e, cam, sw, sh);
+		drawNameplate(buf, e, cam, sw, sh);
+	}
 
 	if (p.attackT > COMBAT.attackCooldown - 0.12) {
 		const hb = meleeHitbox(p);

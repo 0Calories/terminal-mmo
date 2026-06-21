@@ -210,6 +210,7 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 // itself by `sessionId` to reconcile its own HP/respawn.
 export interface AvatarSnapshot {
 	sessionId: number;
+	handle: string; // ephemeral nameplate handle from the handshake
 	x: number;
 	y: number;
 	vx: number;
@@ -265,6 +266,7 @@ const RARITIES: readonly Rarity[] = [
 
 function writeAvatar(w: Writer, a: AvatarSnapshot) {
 	w.u32(a.sessionId);
+	w.str(a.handle);
 	w.f64(a.x);
 	w.f64(a.y);
 	w.f64(a.vx);
@@ -279,6 +281,7 @@ function writeAvatar(w: Writer, a: AvatarSnapshot) {
 function readAvatar(r: Reader): AvatarSnapshot {
 	return {
 		sessionId: r.u32(),
+		handle: r.str(),
 		x: r.f64(),
 		y: r.f64(),
 		vx: r.f64(),

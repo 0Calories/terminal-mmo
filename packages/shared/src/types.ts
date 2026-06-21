@@ -35,6 +35,7 @@ export interface Entity {
 	hurtT: number; // remaining invulnerability, seconds
 	attackT: number; // remaining attack cooldown, seconds
 	spawnIndex?: number; // index into its Zone's spawns[], if Field-spawned
+	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
 }
 
 export interface SpawnPoint {

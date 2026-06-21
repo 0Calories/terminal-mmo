@@ -62,6 +62,7 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 		avatars: [
 			{
 				sessionId: 7,
+				handle: 'neo',
 				x: 12.5,
 				y: 31.25,
 				vx: -22,
