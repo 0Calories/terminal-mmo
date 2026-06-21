@@ -247,13 +247,11 @@ function runNetworked(url: string) {
 		}
 
 		const fps = meter(dt);
-		const game = snapshotToGame(
-			field,
-			predicted,
-			net.sessionId,
-			net.latest,
-			localCd,
-		);
+		// Co-present entities are rendered from the buffer, interpolated ~100 ms in
+		// the past for smooth motion between ticks; the own Avatar stays predicted
+		// (reconciled above against net.latest, not the delayed view).
+		const view = net.sample(performance.now());
+		const game = snapshotToGame(field, predicted, net.sessionId, view, localCd);
 		playfield.game = game;
 		hud.update(game, fps);
 	});
