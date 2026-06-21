@@ -155,8 +155,11 @@ test('NetClient drops the interpolation buffer (and tracks the Zone) on a Zone c
 
 test('NetClient.ingest collects chat lines attributed to the sender handle', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester');
-	net.ingest({ t: 'chat', handle: 'neo', text: 'hi field' }, 1000);
-	net.ingest({ t: 'chat', handle: 'trinity', text: 'hey' }, 1010);
+	net.ingest(
+		{ t: 'chat', sessionId: 1, handle: 'neo', text: 'hi field' },
+		1000,
+	);
+	net.ingest({ t: 'chat', sessionId: 2, handle: 'trinity', text: 'hey' }, 1010);
 	expect(net.chatLog).toEqual(['neo: hi field', 'trinity: hey']);
 	net.close();
 });
@@ -164,11 +167,47 @@ test('NetClient.ingest collects chat lines attributed to the sender handle', () 
 test('NetClient.chatLog is bounded so it cannot grow without limit', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester');
 	for (let i = 0; i < 200; i++)
-		net.ingest({ t: 'chat', handle: 'spammer', text: `msg ${i}` }, 1000 + i);
+		net.ingest(
+			{ t: 'chat', sessionId: 3, handle: 'spammer', text: `msg ${i}` },
+			1000 + i,
+		);
 	expect(net.chatLog.length).toBeLessThanOrEqual(100);
 	// the most recent line is retained
 	expect(net.chatLog.at(-1)).toBe('spammer: msg 199');
 	net.close();
+});
+
+test('NetClient.ingest opens a Speech bubble keyed to the sender, replacing the prior one', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest({ t: 'chat', sessionId: 2, handle: 'rival', text: 'hi' }, 1000);
+	expect(net.bubbles.get(2)?.text).toBe('hi');
+	// A new message from the same sender replaces the text (one bubble per sender).
+	net.ingest({ t: 'chat', sessionId: 2, handle: 'rival', text: 'bye' }, 1100);
+	expect(net.bubbles.get(2)?.text).toBe('bye');
+	expect(net.bubbles.size).toBe(1);
+	net.close();
+});
+
+test('NetClient.decayBubbles expires a bubble after its length-scaled ttl', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest({ t: 'chat', sessionId: 5, handle: 'neo', text: 'gg' }, 1000);
+	net.decayBubbles(2); // 2s elapsed, ttl floor is 3s -> still alive
+	expect(net.bubbles.has(5)).toBe(true);
+	net.decayBubbles(2); // 4s total -> expired
+	expect(net.bubbles.has(5)).toBe(false);
+	net.close();
+});
+
+test('snapshotToGame stamps active bubbles onto the sender entities, incl. own', () => {
+	const field = makeFieldZone('field-01');
+	const predicted = spawnAvatar(33, y);
+	const bubbles = new Map([
+		[1, { text: 'mine', ttl: 3 }],
+		[2, { text: 'theirs', ttl: 3 }],
+	]);
+	const game = snapshotToGame(field, predicted, 1, withOther(), {}, bubbles);
+	expect(game.player.avatar.bubble).toBe('mine');
+	expect(game.others?.[0]?.bubble).toBe('theirs');
 });
 
 test('NetClient.ingest applies the welcome handshake and tracks the latest snapshot', () => {

@@ -302,7 +302,17 @@ function runNetworked(url: string) {
 		// the past for smooth motion between ticks; the own Avatar stays predicted
 		// (reconciled above against net.latest, not the delayed view).
 		const view = net.sample(performance.now());
-		const game = snapshotToGame(zone, predicted, net.sessionId, view, localCd);
+		// Age over-head Speech bubbles by wall time, then stamp the live ones onto
+		// their senders' entities for the playfield to draw (#59, ADR 0007).
+		net.decayBubbles(dt / 1000);
+		const game = snapshotToGame(
+			zone,
+			predicted,
+			net.sessionId,
+			view,
+			localCd,
+			net.bubbles,
+		);
 		playfield.game = game;
 		hud.update(game, fps);
 		hud.updateChat(net.chatLog, chat.open, chat.text);

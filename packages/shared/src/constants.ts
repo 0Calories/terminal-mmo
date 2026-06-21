@@ -60,3 +60,8 @@ export const RESPAWN = { delaySec: 5 } as const;
 export const CHANNEL = { softCap: 50 } as const;
 
 export const XP_PER_KILL = 12;
+
+// Max length of a Chat line, shared by the input cap, the server relay clamp, the
+// chat log, and the over-head Speech bubble (#59, ADR 0007). Kept low enough that a
+// full-length message wraps to a bubble that fits on screen.
+export const CHAT_MAX_LEN = 120;

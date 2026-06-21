@@ -36,6 +36,7 @@ export interface Entity {
 	attackT: number; // remaining attack cooldown, seconds
 	spawnIndex?: number; // index into its Zone's spawns[], if Field-spawned
 	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
+	bubble?: string; // latest Chat line shown as an over-head Speech bubble (#59); render-only
 }
 
 export interface SpawnPoint {

@@ -17,7 +17,15 @@ import {
 	type ServerMessage,
 	type Zone,
 } from '@mmo/shared';
+import { bubbleTtl } from './bubble';
 import { INTERP_DELAY_MS, SnapshotBuffer } from './interp';
+
+// A transient over-head Speech bubble (#59, ADR 0007): the latest Chat line from
+// one sender plus its remaining lifetime, decayed each frame.
+export interface Bubble {
+	text: string;
+	ttl: number; // seconds remaining
+}
 
 type Snapshot = Extract<ServerMessage, { t: 'snapshot' }>;
 
@@ -37,6 +45,10 @@ export class NetClient {
 	// Zone-local chat lines received from the server (#34), each "handle: text",
 	// bounded so an idle session can't accumulate them forever.
 	chatLog: string[] = [];
+	// Active over-head Speech bubbles, keyed by sender sessionId (#59, ADR 0007).
+	// One per sender: a new line replaces the prior text and resets the timer; the
+	// frame callback decays them and the playfield draws each over its sender's sprite.
+	bubbles = new Map<number, Bubble>();
 
 	constructor(url: string, handle: string) {
 		this.ws = new WebSocket(url);
@@ -69,6 +81,11 @@ export class NetClient {
 			this.chatLog.push(`${msg.handle}: ${msg.text}`);
 			if (this.chatLog.length > MAX_CHAT_LOG)
 				this.chatLog.splice(0, this.chatLog.length - MAX_CHAT_LOG);
+			// Open / replace the sender's over-head bubble (#59).
+			this.bubbles.set(msg.sessionId, {
+				text: msg.text,
+				ttl: bubbleTtl(msg.text.length),
+			});
 			return;
 		}
 		// snapshot: on a Zone change, drop the prior Zone's frames — interpolating
@@ -86,6 +103,15 @@ export class NetClient {
 	// the first snapshot. The own Avatar is replaced downstream by local prediction.
 	sample(nowMs: number): Snapshot | null {
 		return this.buffer.sample(nowMs - INTERP_DELAY_MS);
+	}
+
+	// Age every Speech bubble by `dtSec` and drop the expired ones (#59). Called
+	// from the frame callback so timing follows real elapsed time, not tick count.
+	decayBubbles(dtSec: number) {
+		for (const [id, b] of this.bubbles) {
+			b.ttl -= dtSec;
+			if (b.ttl <= 0) this.bubbles.delete(id);
+		}
 	}
 
 	send(msg: ClientMessage) {
@@ -151,7 +177,8 @@ function monsterEntity(m: MonsterSnapshot): Entity {
  * Projectiles, plus the locally-predicted own Avatar carrying server-owned
  * vitals. Co-present Avatars (everyone but `ownSessionId`) ride along in
  * `others` for the playfield to draw. `localSkillCooldowns` are client-predicted
- * (not on the wire).
+ * (not on the wire). `bubbles` stamps each sender's active Speech bubble onto its
+ * entity — own Avatar included, one uniform rule (#59, ADR 0007).
  */
 export function snapshotToGame(
 	field: Zone,
@@ -159,21 +186,29 @@ export function snapshotToGame(
 	ownSessionId: number,
 	snapshot: Snapshot | null,
 	localSkillCooldowns: Record<string, number>,
+	bubbles: ReadonlyMap<number, Bubble> = new Map(),
 ): GameState {
 	const monsters = snapshot ? snapshot.monsters.map(monsterEntity) : [];
 	const projectiles = snapshot ? snapshot.projectiles : [];
 	const others = snapshot
 		? snapshot.avatars
 				.filter((a) => a.sessionId !== ownSessionId)
-				.map(avatarEntity)
+				.map((a) => {
+					const e = avatarEntity(a);
+					const bubble = bubbles.get(a.sessionId)?.text;
+					if (bubble) e.bubble = bubble;
+					return e;
+				})
 		: [];
+	const ownBubble = bubbles.get(ownSessionId)?.text;
+	const avatar = ownBubble ? { ...predicted, bubble: ownBubble } : predicted;
 	const progress = snapshot?.progress ?? { level: 1, xp: 0, gold: 0 };
 	const inventory: Item[] = snapshot?.inventory ?? [];
 	const log = snapshot?.log ?? ['Connecting…'];
 
 	const zone: Zone = { ...field, monsters, projectiles };
 	const player: PlayerState = {
-		avatar: predicted,
+		avatar,
 		progress,
 		inventory,
 		zoneId: field.id,

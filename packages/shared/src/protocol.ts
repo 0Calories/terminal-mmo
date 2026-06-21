@@ -267,7 +267,9 @@ export type ServerMessage =
 	  }
 	// A Zone-local chat line relayed to every session in the sender's Channel,
 	// attributed to the sender's ephemeral handle (#34). Event-driven, not per-tick.
-	| { t: 'chat'; handle: string; text: string };
+	// `sessionId` keys the over-head Speech bubble to the sender's sprite (#59,
+	// ADR 0007) — the handle is a display label, not an identity.
+	| { t: 'chat'; sessionId: number; handle: string; text: string };
 
 const SERVER_TAG = { welcome: 1, snapshot: 2, chat: 3 } as const;
 
@@ -417,6 +419,7 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			break;
 		case 'chat':
 			w.u8(SERVER_TAG.chat);
+			w.u32(msg.sessionId);
 			w.str(msg.handle);
 			w.str(msg.text);
 			break;
@@ -466,7 +469,7 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			};
 		}
 		case SERVER_TAG.chat:
-			return { t: 'chat', handle: r.str(), text: r.str() };
+			return { t: 'chat', sessionId: r.u32(), handle: r.str(), text: r.str() };
 		default:
 			throw new Error(`unknown server message tag ${tag}`);
 	}

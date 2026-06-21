@@ -3,6 +3,8 @@
 // input never sees them and typing can't leak into movement / combat. The caller
 // adapts OpenTUI key events to ChatKey and acts on the returned ChatKeyResult.
 
+import { CHAT_MAX_LEN } from '@mmo/shared';
+
 // The fields of a key event ChatInput cares about. `sequence` is the literal
 // character a printable key produced (OpenTUI's ParsedKey.sequence).
 export interface ChatKey {
@@ -18,7 +20,7 @@ export type ChatKeyResult =
 	| { action: 'edit' } // buffer changed / harmless key, stay open
 	| { action: 'none' }; // chat closed: caller handles the key normally
 
-const MAX_LEN = 200; // matches the server's relay clamp
+const MAX_LEN = CHAT_MAX_LEN; // matches the server's relay clamp (#59, ADR 0007)
 
 export class ChatInput {
 	open = false;

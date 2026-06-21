@@ -79,8 +79,13 @@ test('welcome round-trips the assigned session, zone, and tick rate', () => {
 	expect(decoded).toEqual(msg);
 });
 
-test('chat (server -> client) round-trips the sender handle and text', () => {
-	const msg: ServerMessage = { t: 'chat', handle: 'neo', text: 'gg wp' };
+test('chat (server -> client) round-trips the sender session, handle, and text', () => {
+	const msg: ServerMessage = {
+		t: 'chat',
+		sessionId: 42,
+		handle: 'neo',
+		text: 'gg wp',
+	};
 	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
 });

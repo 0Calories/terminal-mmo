@@ -9,6 +9,7 @@ import {
 	type AvatarIntent,
 	addSession,
 	CHANNEL,
+	CHAT_MAX_LEN,
 	channelOf,
 	createServerWorld,
 	decodeClientMessage,
@@ -28,7 +29,6 @@ import type { ServerWebSocket } from 'bun';
 const PORT = Number(process.env.MMO_PORT) || 8080;
 const TICK_RATE = 20; // Hz (ADR 0002 / PRD cadence)
 const MS_PER_TICK = 1000 / TICK_RATE;
-const MAX_CHAT_LEN = 200; // clamp a chat line before relaying it
 
 interface WsData {
 	sessionId: number;
@@ -74,13 +74,19 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		// Relay a Zone-local line to every session in the sender's Channel (#34),
 		// attributed to the sender's handshake handle. The sender is in its own
 		// Channel, so it sees its own message echoed back.
-		const text = msg.text.trim().slice(0, MAX_CHAT_LEN);
+		const text = msg.text.trim().slice(0, CHAT_MAX_LEN);
 		if (!text) return; // drop empty / whitespace-only lines
 		const me = zoneStateOf(world, sessionId)?.avatars.find(
 			(a) => a.sessionId === sessionId,
 		);
 		if (me === undefined) return; // chat before hello; ignore
-		const frame = encodeServerMessage({ t: 'chat', handle: me.handle, text });
+		// `sessionId` keys the bubble to the sender's sprite client-side (#59).
+		const frame = encodeServerMessage({
+			t: 'chat',
+			sessionId,
+			handle: me.handle,
+			text,
+		});
 		for (const sid of sessionsInChannel(world, sessionId))
 			sockets.get(sid)?.send(frame);
 		return;
