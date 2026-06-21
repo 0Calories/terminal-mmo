@@ -5,6 +5,7 @@
 // else — Monsters, Projectiles, own HP / progress / inventory — is rendered from
 // the server's snapshot.
 import {
+	type AvatarSnapshot,
 	type ClientMessage,
 	decodeServerMessage,
 	type Entity,
@@ -57,6 +58,27 @@ export class NetClient {
 	}
 }
 
+// A co-present Avatar reshaped as a renderable Entity. `speed` is unused by the
+// renderer (physics is server-side); `attackT` is 0 since others' swings aren't
+// telegraphed over the wire — we only draw their pose, position, and hurt flash.
+function avatarEntity(a: AvatarSnapshot): Entity {
+	return {
+		id: a.sessionId,
+		type: 'player',
+		x: a.x,
+		y: a.y,
+		vx: a.vx,
+		vy: a.vy,
+		speed: 0,
+		facing: a.facing,
+		onGround: a.onGround,
+		hp: a.hp,
+		maxHp: a.maxHp,
+		hurtT: a.hurtT,
+		attackT: 0,
+	};
+}
+
 function monsterEntity(m: MonsterSnapshot): Entity {
 	return {
 		id: m.id,
@@ -79,16 +101,24 @@ function monsterEntity(m: MonsterSnapshot): Entity {
  * Reassemble a `GameState` the existing playfield/HUD can render: the static
  * Field (terrain/portals) with the snapshot's authoritative Monsters and
  * Projectiles, plus the locally-predicted own Avatar carrying server-owned
- * vitals. `localSkillCooldowns` are client-predicted (not on the wire).
+ * vitals. Co-present Avatars (everyone but `ownSessionId`) ride along in
+ * `others` for the playfield to draw. `localSkillCooldowns` are client-predicted
+ * (not on the wire).
  */
 export function snapshotToGame(
 	field: Zone,
 	predicted: Entity,
+	ownSessionId: number,
 	snapshot: Snapshot | null,
 	localSkillCooldowns: Record<string, number>,
 ): GameState {
 	const monsters = snapshot ? snapshot.monsters.map(monsterEntity) : [];
 	const projectiles = snapshot ? snapshot.projectiles : [];
+	const others = snapshot
+		? snapshot.avatars
+				.filter((a) => a.sessionId !== ownSessionId)
+				.map(avatarEntity)
+		: [];
 	const progress = snapshot?.progress ?? { level: 1, xp: 0, gold: 0 };
 	const inventory: Item[] = snapshot?.inventory ?? [];
 	const log = snapshot?.log ?? ['Connecting…'];
@@ -108,5 +138,6 @@ export function snapshotToGame(
 	return {
 		player,
 		world: { zones: { [field.id]: zone }, tick: snapshot?.tick ?? 0 },
+		others,
 	};
 }

@@ -52,10 +52,41 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 	};
 }
 
+// A second co-present Avatar (sessionId 2) sharing the Zone with the own one.
+function withOther(): Extract<ServerMessage, { t: 'snapshot' }> {
+	const s = snapshot();
+	s.avatars.push({
+		sessionId: 2,
+		x: 70,
+		y,
+		vx: 0,
+		vy: 0,
+		facing: -1,
+		onGround: true,
+		hp: 30,
+		maxHp: 80,
+		hurtT: 0.5,
+	});
+	return s;
+}
+
+test('snapshotToGame carries co-present Avatars into others, excluding own', () => {
+	const field = makeFieldZone('field-01');
+	const predicted = spawnAvatar(33, y);
+	const game = snapshotToGame(field, predicted, 1, withOther(), {});
+	expect(game.others?.length).toBe(1);
+	const other = game.others?.[0];
+	expect(other?.type).toBe('player');
+	expect(other?.x).toBe(70);
+	expect(other?.facing).toBe(-1);
+	expect(other?.hp).toBe(30);
+	expect(other?.hurtT).toBe(0.5);
+});
+
 test('snapshotToGame renders snapshot monsters/projectiles with the predicted own Avatar', () => {
 	const field = makeFieldZone('field-01');
 	const predicted = { ...spawnAvatar(33, y), facing: -1 as const };
-	const game = snapshotToGame(field, predicted, snapshot(), {});
+	const game = snapshotToGame(field, predicted, 1, snapshot(), {});
 	const zone = game.world.zones['field-01'];
 	// own Avatar position comes from local prediction, not the snapshot
 	expect(game.player.avatar.x).toBe(33);
@@ -66,11 +97,14 @@ test('snapshotToGame renders snapshot monsters/projectiles with the predicted ow
 	expect(zone.monsters[0].type).toBe('chaser');
 	expect(zone.projectiles.length).toBe(1);
 	expect(game.world.tick).toBe(12);
+	// the lone avatar in the snapshot is our own, so no co-present others
+	expect(game.others).toEqual([]);
 });
 
 test('snapshotToGame degrades gracefully before the first snapshot', () => {
 	const field = makeFieldZone('field-01');
-	const game = snapshotToGame(field, spawnAvatar(10, y), null, {});
+	const game = snapshotToGame(field, spawnAvatar(10, y), 1, null, {});
 	expect(game.world.zones['field-01'].monsters.length).toBe(0);
 	expect(game.player.progress.level).toBe(1);
+	expect(game.others).toEqual([]);
 });

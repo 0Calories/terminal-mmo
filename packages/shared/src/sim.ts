@@ -9,6 +9,9 @@ import { type AvatarIntent, type ServerAvatar, stepZone } from './zone';
 export interface GameState {
 	player: PlayerState;
 	world: World;
+	// Co-present Avatars to draw alongside (networked render only; ADR 0003
+	// z-orders them with Monsters, local Avatar on top). Absent offline.
+	others?: Entity[];
 }
 
 export function createGame(seed = 1): GameState {
