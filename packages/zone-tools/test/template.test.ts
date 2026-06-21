@@ -1,0 +1,28 @@
+import { describe, expect, test } from 'bun:test';
+import type { Catalogs } from '@mmo/shared';
+import { parseZone, validateZone } from '@mmo/shared';
+import { newZoneTemplate } from '../src/template';
+
+const catalogs: Catalogs = { monsters: [], npcs: [] };
+
+describe('newZoneTemplate', () => {
+	test('a town template parses and validates clean', () => {
+		const text = newZoneTemplate('town-99', 'town');
+		const zone = parseZone(text, catalogs);
+		expect(zone.id).toBe('town-99');
+		expect(zone.type).toBe('town');
+		expect(validateZone(zone, catalogs)).toEqual([]);
+	});
+
+	test('a field template parses; its only error is the missing spawn', () => {
+		const text = newZoneTemplate('field-99', 'field');
+		const zone = parseZone(text, catalogs);
+		expect(zone.type).toBe('field');
+		const errors = validateZone(zone, catalogs).filter(
+			(d) => d.severity === 'error',
+		);
+		// the one expected, documented next-edit: a field needs at least one spawn
+		expect(errors).toHaveLength(1);
+		expect(errors[0].message).toContain('at least one monster spawn');
+	});
+});
