@@ -16,6 +16,7 @@ import {
 	encodeServerMessage,
 	makeFieldZone,
 	makeTownZone,
+	PROTOCOL_VERSION,
 	removeSession,
 	type ServerWorld,
 	sessionsInChannel,
@@ -26,12 +27,48 @@ import {
 } from '@mmo/shared';
 import type { ServerWebSocket } from 'bun';
 
-const PORT = Number(process.env.MMO_PORT) || 8080;
+// Railway injects PORT; MMO_PORT stays as a local-dev override (ADR 0009).
+const PORT = Number(process.env.PORT) || Number(process.env.MMO_PORT) || 8080;
 const TICK_RATE = 20; // Hz (ADR 0002 / PRD cadence)
 const MS_PER_TICK = 1000 / TICK_RATE;
 
+// Connection caps (ADR 0009). The global cap protects the single-threaded event
+// loop from exhaustion; the per-IP cap blunts single-actor multi-connect floods
+// while staying generous enough not to bounce shared NAT / CGNAT (many real
+// developers behind one IP). Both are SOFT — `X-Forwarded-For` is spoofable;
+// real per-identity limits await the auth branch.
+const MAX_CONNECTIONS = Number(process.env.MMO_MAX_CONN) || 200;
+const MAX_PER_IP = Number(process.env.MMO_MAX_PER_IP) || 10;
+
 interface WsData {
 	sessionId: number;
+	ip: string;
+	// True once this socket has been counted toward the caps, so `close` only
+	// decrements connections it actually admitted (a capped/rejected socket isn't).
+	counted: boolean;
+}
+
+// Live socket accounting for the caps, by the open WebSocket — not the joined
+// sessions in `sockets`, which only populate on `hello` (a socket can sit open
+// pre-handshake). Decremented in `close`.
+let openConnections = 0;
+const perIp = new Map<string, number>();
+
+// The client's apparent IP behind Railway's proxy: the first hop of
+// `X-Forwarded-For` (the proxy hides the socket peer). Spoofable, hence soft.
+function clientIp(req: Request, srv: Bun.Server<WsData>): string {
+	const xff = req.headers.get('x-forwarded-for');
+	if (xff) return xff.split(',')[0].trim();
+	return srv.requestIP(req)?.address ?? 'unknown';
+}
+
+// Refuse a socket with a human reason the client surfaces, then close it (ADR
+// 0009). Used for both cap rejections and the protocol-version gate.
+function reject(ws: ServerWebSocket<WsData>, reason: string) {
+	try {
+		ws.send(encodeServerMessage({ t: 'reject', reason }));
+	} catch {}
+	ws.close();
 }
 
 const START_ZONE = 'field-01';
@@ -54,6 +91,15 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 	const msg = decodeClientMessage(raw);
 	const { sessionId } = ws.data;
 	if (msg.t === 'hello') {
+		// Protocol-version gate (ADR 0009): a stale `bunx` client (cached against a
+		// newer server) is refused loudly rather than left to mis-decode frames.
+		if (msg.protocol !== PROTOCOL_VERSION) {
+			reject(
+				ws,
+				`Your client is out of date — run \`bunx terminal-mmo@latest\` (server protocol v${PROTOCOL_VERSION}, your client v${msg.protocol}).`,
+			);
+			return;
+		}
 		world = addSession(world, sessionId, msg.handle);
 		sockets.set(sessionId, ws);
 		const zoneId = zoneOf(world, sessionId) ?? START_ZONE;
@@ -119,12 +165,36 @@ function tick() {
 const server = Bun.serve<WsData>({
 	port: PORT,
 	fetch(req, srv) {
-		if (srv.upgrade(req, { data: { sessionId: nextSessionId++ } })) return;
-		return new Response('terminal-mmo server — connect over WebSocket', {
-			status: 426,
+		const upgraded = srv.upgrade(req, {
+			data: {
+				sessionId: nextSessionId++,
+				ip: clientIp(req, srv),
+				counted: false,
+			},
 		});
+		if (upgraded) return;
+		// Any plain HTTP GET answers 200 so Railway's healthcheck passes (ADR 0009).
+		const path = new URL(req.url).pathname;
+		if (path === '/health') return new Response('ok');
+		return new Response('terminal-mmo server — connect over WebSocket');
 	},
 	websocket: {
+		// Enforce the connection caps at the socket level, before any handshake.
+		open(ws) {
+			const { ip } = ws.data;
+			const ipCount = perIp.get(ip) ?? 0;
+			if (openConnections >= MAX_CONNECTIONS) {
+				reject(ws, 'Server is full — please try again shortly.');
+				return;
+			}
+			if (ipCount >= MAX_PER_IP) {
+				reject(ws, 'Too many connections from your network.');
+				return;
+			}
+			openConnections++;
+			perIp.set(ip, ipCount + 1);
+			ws.data.counted = true;
+		},
 		message(ws, message) {
 			const bytes =
 				typeof message === 'string'
@@ -137,7 +207,15 @@ const server = Bun.serve<WsData>({
 			}
 		},
 		close(ws) {
-			const { sessionId } = ws.data;
+			const { sessionId, ip, counted } = ws.data;
+			// Release the cap slot only if this socket was admitted (a rejected one
+			// never incremented the counters).
+			if (counted) {
+				openConnections--;
+				const n = (perIp.get(ip) ?? 1) - 1;
+				if (n <= 0) perIp.delete(ip);
+				else perIp.set(ip, n);
+			}
 			sockets.delete(sessionId);
 			intents.delete(sessionId);
 			world = removeSession(world, sessionId);

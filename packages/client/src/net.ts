@@ -14,6 +14,7 @@ import {
 	type Item,
 	type MonsterSnapshot,
 	type PlayerState,
+	PROTOCOL_VERSION,
 	type ServerMessage,
 	type Zone,
 } from '@mmo/shared';
@@ -49,12 +50,21 @@ export class NetClient {
 	// One per sender: a new line replaces the prior text and resets the timer; the
 	// frame callback decays them and the playfield draws each over its sender's sprite.
 	bubbles = new Map<number, Bubble>();
+	// Set when the server refuses the connection (ADR 0009): a protocol-version
+	// mismatch or a connection cap. The caller surfaces this and exits.
+	rejected: string | null = null;
 
-	constructor(url: string, handle: string) {
+	constructor(
+		url: string,
+		handle: string,
+		private onReject: (reason: string) => void = () => {},
+	) {
 		this.ws = new WebSocket(url);
 		this.ws.binaryType = 'arraybuffer';
 		this.ws.onopen = () => {
-			this.ws.send(encodeClientMessage({ t: 'hello', handle }));
+			this.ws.send(
+				encodeClientMessage({ t: 'hello', handle, protocol: PROTOCOL_VERSION }),
+			);
 		};
 		this.ws.onmessage = (ev) => {
 			const msg = decodeServerMessage(new Uint8Array(ev.data as ArrayBuffer));
@@ -75,6 +85,11 @@ export class NetClient {
 			this.zoneId = msg.zoneId;
 			this.tickRate = msg.tickRate;
 			this.ready = true;
+			return;
+		}
+		if (msg.t === 'reject') {
+			this.rejected = msg.reason;
+			this.onReject(msg.reason);
 			return;
 		}
 		if (msg.t === 'chat') {

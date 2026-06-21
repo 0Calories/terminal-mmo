@@ -7,14 +7,37 @@ A persistent PvE side-scrolling MMORPG played entirely in the terminal —
 > [`CONTEXT.md`](./CONTEXT.md) (glossary) · [`docs/PRD.md`](./docs/PRD.md) ·
 > [`docs/adr/`](./docs/adr/) (architecture decisions).
 
+## Play
+
+```bash
+bunx terminal-mmo@latest
+```
+
+That's it — you drop straight into the live, shared World. The client runs on
+[Bun](https://bun.sh) (the renderer is a native library loaded via `bun:ffi`), so
+if you don't have it yet:
+
+```bash
+curl -fsSL https://bun.sh/install | bash   # then: bunx terminal-mmo@latest
+```
+
+> ⚠️ **Alpha.** The World is ephemeral — there is no login and no saved progress
+> yet. When the server restarts, everyone starts fresh. Identity (SSH-key auth)
+> and persistence are the next milestone. See
+> [ADR 0009](./docs/adr/0009-live-hosting-and-bunx-delivery.md).
+
+Environment overrides: `MMO_SERVER=ws://localhost:8080` to point at your own
+server, `MMO_OFFLINE=1` to run the single-player loop with no network.
+
 ## Layout
 
 ```
 packages/
-  shared/   @mmo/shared — deterministic game logic (single source of truth)
-  client/   @mmo/client — OpenTUI terminal client (rendering + input)
-  server/   @mmo/server — placeholder for M2 (multiplayer foundation)
-spike/      M0 OpenTUI go/no-go spike (disposable; see spike/FINDINGS.md)
+  shared/     @mmo/shared — deterministic game logic + wire protocol (single source of truth)
+  client/     @mmo/client — OpenTUI terminal client (rendering + input + netcode)
+  server/     @mmo/server — authoritative Bun WebSocket world (M2)
+  cli/        terminal-mmo — the published bundle for `bunx` (ADR 0009)
+  zone-tools/ @mmo/zone-tools — .zone authoring/validation CLI
 ```
 
 The `shared` package holds all simulation (physics, combat, loot, progression) as
@@ -32,10 +55,12 @@ bun run format         # format in place with Biome
 bun run check          # lint + format + organize imports, write fixes (Biome)
 ```
 
-## Status: M1 (single-player core loop)
+## Status: M2 (multiplayer foundation), going live
 
-Playable: Warrior movement/jumping, forgiving melee, chaser monsters, kill → XP →
-level → instanced loot, forgiving death. No netcode yet (that's M2).
+Playable in a shared World over WebSocket: Warrior movement/jumping, forgiving
+melee, chaser + shooter monsters, kill → XP → level → instanced loot, forgiving
+death, Town + NPC vendor, Zone-local chat with speech bubbles, portal travel.
 
-Stubbed / TODO in M1: shooter archetype + projectiles, monster respawn timers,
-Town + NPC vendor, Warrior skills, multiple Zones.
+Going live now (ADR 0009): the server deploys to Railway and the client ships as
+`bunx terminal-mmo`. This first cut is an **ephemeral, anonymous alpha** — no
+accounts, no persistence. Next milestone: SSH-key identity + saved progress.

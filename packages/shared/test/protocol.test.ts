@@ -5,12 +5,31 @@ import {
 	decodeServerMessage,
 	encodeClientMessage,
 	encodeServerMessage,
+	PROTOCOL_VERSION,
 } from '../src';
 
-test('hello round-trips through encode -> decode', () => {
-	const msg: ClientMessage = { t: 'hello', handle: 'neo' };
+test('hello round-trips the handle + protocol version', () => {
+	const msg: ClientMessage = {
+		t: 'hello',
+		handle: 'neo',
+		protocol: PROTOCOL_VERSION,
+	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
+});
+
+test('a legacy hello (no protocol field) decodes to protocol 0', () => {
+	// Hand-roll a pre-0009 hello: tag(1) + u32 length-prefixed handle, no version.
+	const handle = new TextEncoder().encode('legacy');
+	const buf = new Uint8Array(1 + 4 + handle.length);
+	buf[0] = 1; // CLIENT_TAG.hello
+	new DataView(buf.buffer).setUint32(1, handle.length);
+	buf.set(handle, 5);
+	expect(decodeClientMessage(buf)).toEqual({
+		t: 'hello',
+		handle: 'legacy',
+		protocol: 0,
+	});
 });
 
 test('input round-trips reported kinematics + combat intents', () => {
@@ -142,6 +161,15 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 			},
 		],
 		log: ['Looted rare Iron Sword.', 'Level up! Now level 3.'],
+	};
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('reject round-trips the human-readable reason', () => {
+	const msg: ServerMessage = {
+		t: 'reject',
+		reason: 'client out of date',
 	};
 	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
