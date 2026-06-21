@@ -63,6 +63,28 @@ _Avoid_: City, hub, lobby
 A combat Zone populated by Monsters, where the hunting/progression loop happens.
 _Avoid_: Hunting map, dungeon, level
 
+**Handle**:
+The ephemeral display label a Player is known by in the social layer — painted on
+the nameplate and attributed on each Chat message (set at connection, per ADR
+0006). A *label, not an identity*: it carries no uniqueness guarantee and must
+never be used to address an entity. The session id is identity.
+_Avoid_: Username, nick, name, identity
+
+**Chat**:
+Real-time text communication between Players. The first form is **Zone chat**: a
+message is relayed to every session in the sender's Zone *and* Channel and shown
+in each recipient's chat log, attributed to the sender's Handle. (Whisper and
+emote come later.)
+_Avoid_: Say, talk, message
+
+**Speech bubble**:
+The ephemeral, bordered text that floats above a chatting Avatar's head, showing
+their latest Chat message to everyone who can see that Avatar. A purely
+client-side, decorative rendering of a Chat message (like a Sprite): it attaches
+to the Avatar by session id, tracks the Avatar as it moves, and expires on a
+timer — the chat log stays the durable record.
+_Avoid_: Chat bubble, balloon, callout, tooltip
+
 **Monster**:
 A hostile, server-controlled entity that Players fight for XP and loot. Lives in
 Fields.
