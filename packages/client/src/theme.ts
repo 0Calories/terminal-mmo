@@ -16,4 +16,5 @@ export const COLORS = {
 	hudBg: RGBA.fromInts(8, 9, 13, 255),
 	hp: RGBA.fromInts(90, 220, 120, 255),
 	dim: RGBA.fromInts(150, 156, 168, 255),
+	chat: RGBA.fromInts(120, 200, 235, 255),
 };

@@ -8,8 +8,10 @@ import {
 } from '@opentui/core';
 import { COLORS } from './theme';
 
-const HINT = 'move ←/→ a/d  jump ␣/↑  attack j/x  skill k  interact e  quit q';
+const HINT =
+	'move ←/→ a/d  jump ␣/↑  attack j/x  skill k  interact e  chat ⏎  quit q';
 const Z = 10; // above the playfield (zIndex 0)
+const CHAT_LINES = 4; // recent Zone-chat lines shown above the input
 
 function skillReadout(player: GameState['player']): string {
 	const segs: string[] = [];
@@ -35,6 +37,8 @@ export class Hud {
 	private readonly meta: TextRenderable;
 	private readonly skills: TextRenderable;
 	private readonly log: TextRenderable;
+	private readonly chat: TextRenderable;
+	private readonly chatInput: TextRenderable;
 
 	constructor(ctx: RenderContext) {
 		this.topBar = new BoxRenderable(ctx, {
@@ -84,6 +88,19 @@ export class Hud {
 			bg: COLORS.bg,
 		});
 		this.bottom.add(this.log);
+		// Zone-local chat (#34): received lines, then the active typing line below.
+		this.chat = new TextRenderable(ctx, {
+			content: '',
+			fg: COLORS.chat,
+			bg: COLORS.bg,
+		});
+		this.bottom.add(this.chat);
+		this.chatInput = new TextRenderable(ctx, {
+			content: '',
+			fg: COLORS.melee,
+			bg: COLORS.bg,
+		});
+		this.bottom.add(this.chatInput);
 	}
 
 	attach(parent: Renderable): void {
@@ -100,5 +117,13 @@ export class Hud {
 		this.meta.content = `FPS ${fps}  monsters ${zone.monsters.length} `;
 		this.skills.content = skillReadout(player);
 		this.log.content = player.log.slice(-3).join('\n');
+	}
+
+	// Render the Zone-chat log and, while typing, the active input line with a
+	// cursor. `lines` are pre-formatted "handle: text"; `draft` is the in-progress
+	// message. Driven each frame from NetClient.chatLog + the ChatInput state.
+	updateChat(lines: string[], open: boolean, draft: string): void {
+		this.chat.content = lines.slice(-CHAT_LINES).join('\n');
+		this.chatInput.content = open ? `say> ${draft}█` : '';
 	}
 }

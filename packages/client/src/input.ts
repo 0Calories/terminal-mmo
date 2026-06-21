@@ -47,6 +47,12 @@ export class InputState {
 		if (a) this.held.delete(a);
 	}
 
+	// Drop every held key. Used when handing control to a modal (chat typing) so a
+	// key held at the switch can't stay "down" and move the Avatar on return.
+	clear() {
+		this.held.clear();
+	}
+
 	poll(now: number): Input {
 		if (!this.releaseCapable) {
 			for (const a of [...this.held])
