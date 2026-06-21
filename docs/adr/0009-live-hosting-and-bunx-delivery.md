@@ -34,13 +34,19 @@ not gated behind accounts and a database.
   bundles $5 of usage, which a small single process sits inside). Chosen for
   developer experience on a Bun app over the few-dollars saving of a raw VM.
 
-- **Build & run: Nixpacks + a root `start` script.** Railway autodetects Bun
-  from `bun.lock`, installs the whole workspace (so the server resolves
-  `@mmo/shared`), and runs `bun run packages/server/src/index.ts`. Two fixes the
-  current server needs to survive on Railway: **bind `process.env.PORT`** (Railway
-  injects it; the server reads only `MMO_PORT`/8080 today, so it would be
-  unreachable), and **serve a `200` healthcheck** (a plain HTTP GET returns `426`
-  today, which fails Railway's healthcheck and restart-loops).
+- **Build & run: a `oven/bun` Dockerfile.** Railway builds the image and runs
+  `bun run packages/server/src/index.ts`, healthchecking `/health`. Two fixes the
+  server needed to survive on Railway: **bind `process.env.PORT`** (Railway injects
+  it; the server originally read only `MMO_PORT`/8080, so it was unreachable), and
+  **serve a `200` healthcheck** (a plain HTTP GET returned `426`, which fails
+  Railway's healthcheck and restart-loops).
+
+  > **Nixpacks → Dockerfile.** This started as Nixpacks (autodetect Bun from
+  > `bun.lock`), the lower-ceremony path. It failed at build: Nixpacks' Bun
+  > provider still provisions a Node toolchain, and the Node 18 it selected has
+  > been removed from the pinned nixpkgs (EOL), so the Nix derivation errored. The
+  > `oven/bun` image gives a controlled, Node-free runtime and is portable off
+  > Railway — the Dockerfile fallback this ADR already anticipated.
 
 - **Delivery: `bunx terminal-mmo`, and nothing else, for v0.** The client renders
   through `@opentui/core`, a native Zig library loaded via `bun:ffi` — so it runs
