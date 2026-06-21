@@ -9,6 +9,7 @@ import {
 	type GameState,
 	type Input,
 	makeFieldZone,
+	makeTownZone,
 	PHYS,
 	SPAWN,
 	saleValue,
@@ -17,6 +18,7 @@ import {
 	skillUnlocked,
 	spawnAvatar,
 	step,
+	type Zone,
 } from '@mmo/shared';
 import { createCliRenderer } from '@opentui/core';
 import { Hud } from './hud';
@@ -170,10 +172,20 @@ function runOffline() {
 
 // --- Networked (M2) ---------------------------------------------------------
 
+// The static content (terrain / portals / NPCs) for a Zone id. The server is
+// authoritative over entities; the client only needs the local geometry to
+// predict its own Avatar and draw the playfield.
+function localZone(id: string): Zone {
+	return id === 'town-01' ? makeTownZone(id) : makeFieldZone(id || 'field-01');
+}
+
 function runNetworked(url: string) {
 	const handle = process.env.USER || 'wanderer';
 	const net = new NetClient(url, handle);
-	const field = makeFieldZone('field-01');
+	// The Zone we currently render + predict against; swapped when the server moves
+	// us between Zones (portal travel, death respawn).
+	let zoneId = 'field-01';
+	let zone = localZone(zoneId);
 
 	// Own Avatar, predicted locally for zero input lag; the server corrects vitals
 	// (and snaps position on respawn) via snapshots.
@@ -193,8 +205,26 @@ function runNetworked(url: string) {
 	renderer.setFrameCallback(async (dt) => {
 		const inp = input.poll(performance.now());
 
+		// Follow a server-driven Zone change (portal travel / death respawn): swap the
+		// local Zone and snap the predicted Avatar to the server's arrival position so
+		// it doesn't briefly run in the old Zone before reconciling.
+		if (net.zoneId && net.zoneId !== zoneId) {
+			zoneId = net.zoneId;
+			zone = localZone(zoneId);
+			const arrival = net.ownAvatar();
+			if (arrival)
+				predicted = {
+					...predicted,
+					x: arrival.x,
+					y: arrival.y,
+					vx: 0,
+					vy: 0,
+					onGround: false,
+				};
+		}
+
 		predicted = clientStepAvatar(
-			field.terrain,
+			zone.terrain,
 			predicted,
 			{ moveX: inp.moveX, jump: inp.jump },
 			dt,
@@ -252,7 +282,7 @@ function runNetworked(url: string) {
 		// the past for smooth motion between ticks; the own Avatar stays predicted
 		// (reconciled above against net.latest, not the delayed view).
 		const view = net.sample(performance.now());
-		const game = snapshotToGame(field, predicted, net.sessionId, view, localCd);
+		const game = snapshotToGame(zone, predicted, net.sessionId, view, localCd);
 		playfield.game = game;
 		hud.update(game, fps);
 	});
