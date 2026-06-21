@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { CHAT_MAX_LEN } from '@mmo/shared';
 import { ChatInput } from '../src/chat';
 
 // Drive a sequence of printable characters into an open ChatInput.
@@ -51,4 +52,11 @@ test('while closed, keys pass through as none so play input handles them', () =>
 	const chat = new ChatInput();
 	expect(chat.key({ name: 'd', sequence: 'd' })).toEqual({ action: 'none' });
 	expect(chat.text).toBe('');
+});
+
+test('typing cannot exceed the shared chat cap (#59, ADR 0007)', () => {
+	const chat = new ChatInput();
+	chat.start();
+	type(chat, 'a'.repeat(CHAT_MAX_LEN + 50));
+	expect(chat.text.length).toBe(CHAT_MAX_LEN);
 });

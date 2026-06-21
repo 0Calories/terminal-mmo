@@ -155,8 +155,11 @@ test('NetClient drops the interpolation buffer (and tracks the Zone) on a Zone c
 
 test('NetClient.ingest collects chat lines attributed to the sender handle', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester');
-	net.ingest({ t: 'chat', handle: 'neo', text: 'hi field' }, 1000);
-	net.ingest({ t: 'chat', handle: 'trinity', text: 'hey' }, 1010);
+	net.ingest(
+		{ t: 'chat', sessionId: 1, handle: 'neo', text: 'hi field' },
+		1000,
+	);
+	net.ingest({ t: 'chat', sessionId: 2, handle: 'trinity', text: 'hey' }, 1010);
 	expect(net.chatLog).toEqual(['neo: hi field', 'trinity: hey']);
 	net.close();
 });
@@ -164,7 +167,10 @@ test('NetClient.ingest collects chat lines attributed to the sender handle', () 
 test('NetClient.chatLog is bounded so it cannot grow without limit', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester');
 	for (let i = 0; i < 200; i++)
-		net.ingest({ t: 'chat', handle: 'spammer', text: `msg ${i}` }, 1000 + i);
+		net.ingest(
+			{ t: 'chat', sessionId: 3, handle: 'spammer', text: `msg ${i}` },
+			1000 + i,
+		);
 	expect(net.chatLog.length).toBeLessThanOrEqual(100);
 	// the most recent line is retained
 	expect(net.chatLog.at(-1)).toBe('spammer: msg 199');
