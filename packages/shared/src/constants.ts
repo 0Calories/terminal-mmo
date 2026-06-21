@@ -48,6 +48,10 @@ export const SPAWN = { x: 10, y: GROUND_TOP - BOX.h } as const;
 
 export const TOWN = { w: 80 } as const;
 
+// Inferred-dimension cap for a parsed `.zone` grid (ADR 0008) — guards typos /
+// runaway files. Generous vs the shipped 240×40 Field.
+export const ZONE_MAX = { w: 2000, h: 200 } as const;
+
 // Where a forgiving death drops the Avatar back into Town (story 23) — the Town
 // entrance, matching the Field->Town portal's arrival point.
 export const TOWN_SPAWN = { x: 12, y: GROUND_TOP - BOX.h } as const;
