@@ -247,7 +247,13 @@ function runNetworked(url: string) {
 		}
 
 		const fps = meter(dt);
-		const game = snapshotToGame(field, predicted, net.latest, localCd);
+		const game = snapshotToGame(
+			field,
+			predicted,
+			net.sessionId,
+			net.latest,
+			localCd,
+		);
 		playfield.game = game;
 		hud.update(game, fps);
 	});
