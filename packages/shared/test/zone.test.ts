@@ -161,6 +161,23 @@ test('an Avatar reduced to 0 HP respawns at the safe point at full HP', () => {
 	expect(a.y).toBe(SPAWN.y);
 });
 
+test('stepZone reports the sessions that died this tick in deaths', () => {
+	const av = serverAvatar(7, 20);
+	av.avatar.hp = 1;
+	const m = spawnMonster('chaser', 2, 20, y); // contact finishes the Avatar
+	m.onGround = true;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(next.deaths).toEqual([7]);
+});
+
+test('stepZone reports no deaths when every Avatar survives the tick', () => {
+	const av = serverAvatar(7, 20);
+	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(next.deaths).toEqual([]);
+});
+
 test('stepZone is deterministic for identical state + intents', () => {
 	const mk = () => {
 		const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
@@ -218,4 +235,5 @@ test('snapshotFor carries the zone state + the recipient private fields', () => 
 	expect(snap.avatars.find((s) => s.sessionId === 8)?.handle).toBe('trinity');
 	expect(snap.monsters.length).toBe(1);
 	expect(snap.progress).toEqual({ level: 2, xp: 5, gold: 9 }); // recipient's own
+	expect(snap.zoneId).toBe('field-01'); // the zone the recipient is currently in
 });

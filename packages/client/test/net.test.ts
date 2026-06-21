@@ -15,6 +15,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 	return {
 		t: 'snapshot',
 		tick: 12,
+		zoneId: 'field-01',
 		avatars: [
 			{
 				sessionId: 1,
@@ -135,6 +136,20 @@ test('NetClient samples co-present motion interpolated INTERP_DELAY_MS in the pa
 test('NetClient.sample is null until the first snapshot arrives', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester');
 	expect(net.sample(1000)).toBe(null);
+	net.close();
+});
+
+test('NetClient drops the interpolation buffer (and tracks the Zone) on a Zone change', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest(snapAt(40), 1000); // field-01, avatar at x=40
+	const town = snapAt(12);
+	town.zoneId = 'town-01'; // arrived in a new Zone
+	net.ingest(town, 1050);
+	expect(net.zoneId).toBe('town-01');
+	// No cross-Zone interpolation: sampling midway yields only the new Zone's frame.
+	const view = net.sample(1025 + INTERP_DELAY_MS);
+	expect(view?.zoneId).toBe('town-01');
+	expect(view?.avatars[0].x).toBe(12);
 	net.close();
 });
 

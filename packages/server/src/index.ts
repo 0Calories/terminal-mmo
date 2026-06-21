@@ -1,20 +1,24 @@
 // @mmo/server — the M2 authoritative server (ADR 0006). One Bun WebSocket
-// endpoint runs a single Field Zone's simulation at ~20 Hz over binary frames.
-// It owns every consequence (Monster AI/HP, hit resolution, Avatar HP /
-// death / respawn, loot, XP) but never simulates Avatar physics from input — it
-// trusts the client-reported position (loose bounds clamp only), per ADR 0001.
+// endpoint runs the shared multi-Zone world: a Field and a Town, each ticking its
+// own simulation at ~20 Hz over binary frames. The server owns every consequence
+// (Monster AI/HP, hit resolution, Avatar HP / death / respawn, loot, XP) and which
+// Zone each session occupies (#33), but never simulates Avatar physics from input
+// — it trusts the client-reported position (loose bounds clamp only), per ADR 0001.
 
 import {
 	type AvatarIntent,
-	addAvatar,
+	addSession,
+	createServerWorld,
 	createZoneState,
 	decodeClientMessage,
 	encodeServerMessage,
 	makeFieldZone,
-	removeAvatar,
-	snapshotFor,
-	stepZone,
-	type ZoneState,
+	makeTownZone,
+	removeSession,
+	type ServerWorld,
+	stepServerWorld,
+	worldSnapshotFor,
+	zoneOf,
 } from '@mmo/shared';
 import type { ServerWebSocket } from 'bun';
 
@@ -26,14 +30,21 @@ interface WsData {
 	sessionId: number;
 }
 
-const ZONE_ID = 'field-01';
-let zone: ZoneState = createZoneState(makeFieldZone(ZONE_ID));
+const START_ZONE = 'field-01';
+const TOWN_ZONE = 'town-01';
+let world: ServerWorld = createServerWorld({
+	zones: [
+		createZoneState(makeFieldZone(START_ZONE)),
+		createZoneState(makeTownZone(TOWN_ZONE)),
+	],
+	start: START_ZONE,
+	town: TOWN_ZONE,
+});
 
 let nextSessionId = 1;
 const sockets = new Map<number, ServerWebSocket<WsData>>(); // joined sessions
 const intents = new Map<number, AvatarIntent>(); // latest reported intent
 
-const terrain = zone.zone.terrain;
 const clamp = (v: number, hi: number) =>
 	Number.isFinite(v) ? Math.max(0, Math.min(v, hi)) : 0;
 
@@ -41,21 +52,25 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 	const msg = decodeClientMessage(raw);
 	const { sessionId } = ws.data;
 	if (msg.t === 'hello') {
-		zone = addAvatar(zone, sessionId, msg.handle);
+		world = addSession(world, sessionId, msg.handle);
 		sockets.set(sessionId, ws);
+		const zoneId = zoneOf(world, sessionId) ?? START_ZONE;
 		ws.send(
 			encodeServerMessage({
 				t: 'welcome',
 				sessionId,
-				zoneId: ZONE_ID,
+				zoneId,
 				tickRate: TICK_RATE,
 			}),
 		);
-		console.log(`session ${sessionId} (${msg.handle}) joined ${ZONE_ID}`);
+		console.log(`session ${sessionId} (${msg.handle}) joined ${zoneId}`);
 		return;
 	}
-	// input: trust the reported position with only a loose bounds clamp — the
-	// server never re-simulates Avatar physics.
+	// input: trust the reported position with only a loose bounds clamp (against the
+	// session's current Zone) — the server never re-simulates Avatar physics.
+	const zoneId = zoneOf(world, sessionId);
+	if (zoneId === undefined) return; // input before hello; ignore
+	const terrain = world.zones[zoneId].zone.terrain;
 	intents.set(sessionId, {
 		sessionId,
 		x: clamp(msg.x, terrain.w),
@@ -65,14 +80,15 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		facing: msg.facing,
 		onGround: msg.onGround,
 		attack: msg.attack,
+		interact: msg.interact,
 		skill: msg.skill,
 	});
 }
 
 function tick() {
-	zone = stepZone(zone, [...intents.values()], MS_PER_TICK);
+	world = stepServerWorld(world, [...intents.values()], MS_PER_TICK);
 	for (const [sessionId, ws] of sockets)
-		ws.send(encodeServerMessage(snapshotFor(zone, sessionId)));
+		ws.send(encodeServerMessage(worldSnapshotFor(world, sessionId)));
 }
 
 const server = Bun.serve<WsData>({
@@ -99,8 +115,8 @@ const server = Bun.serve<WsData>({
 			const { sessionId } = ws.data;
 			sockets.delete(sessionId);
 			intents.delete(sessionId);
-			zone = removeAvatar(zone, sessionId);
-			console.log(`session ${sessionId} left ${ZONE_ID}`);
+			world = removeSession(world, sessionId);
+			console.log(`session ${sessionId} left`);
 		},
 	},
 });
@@ -108,5 +124,5 @@ const server = Bun.serve<WsData>({
 setInterval(tick, MS_PER_TICK);
 
 console.log(
-	`@mmo/server ticking ${ZONE_ID} at ${TICK_RATE} Hz on ws://localhost:${server.port}`,
+	`@mmo/server ticking the world at ${TICK_RATE} Hz on ws://localhost:${server.port}`,
 );

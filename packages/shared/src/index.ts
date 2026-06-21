@@ -7,6 +7,7 @@ export * from './progression';
 export * from './projectile';
 export * from './protocol';
 export * from './rng';
+export * from './serverWorld';
 export * from './sim';
 export * from './skills';
 export * from './terrain';

@@ -48,6 +48,10 @@ export const SPAWN = { x: 10, y: GROUND_TOP - BOX.h } as const;
 
 export const TOWN = { w: 80 } as const;
 
+// Where a forgiving death drops the Avatar back into Town (story 23) — the Town
+// entrance, matching the Field->Town portal's arrival point.
+export const TOWN_SPAWN = { x: 12, y: GROUND_TOP - BOX.h } as const;
+
 export const RESPAWN = { delaySec: 5 } as const;
 
 export const XP_PER_KILL = 12;

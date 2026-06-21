@@ -66,6 +66,10 @@ export interface ZoneState {
 	zone: Zone;
 	avatars: ServerAvatar[];
 	tick: number;
+	// Sessions whose Avatar hit 0 HP this tick (transient stepZone output). The
+	// Zone respawns them in place at the safe point; the world layer uses this to
+	// relocate a forgiving death to Town (#33).
+	deaths?: number[];
 }
 
 // One tick of client->server input: the reported Avatar kinematics plus the
@@ -79,6 +83,7 @@ export interface AvatarIntent {
 	facing: Facing;
 	onGround: boolean;
 	attack: boolean;
+	interact?: boolean; // request a Portal transition; resolved by the world layer
 	skill?: number;
 }
 
@@ -318,10 +323,13 @@ export function stepZone(
 	}
 	projectiles.push(...fired);
 
-	// Forgiving death: respawn at the safe point, full HP, brief i-frames.
+	// Forgiving death: respawn at the safe point, full HP, brief i-frames. The
+	// session ids are reported so the world layer can relocate the respawn to Town.
+	const deaths: number[] = [];
 	for (let i = 0; i < avatars.length; i++) {
 		const a = avatars[i].avatar;
 		if (a.hp <= 0) {
+			deaths.push(avatars[i].sessionId);
 			avatars[i] = {
 				...avatars[i],
 				avatar: {
@@ -346,7 +354,7 @@ export function stepZone(
 		respawns,
 		nextMonsterId,
 	};
-	return { zone: newZone, avatars, tick: state.tick + 1 };
+	return { zone: newZone, avatars, tick: state.tick + 1, deaths };
 }
 
 // Award XP (+ any level-up HP bump) and an instanced loot roll to one Avatar.
@@ -412,6 +420,7 @@ export function snapshotFor(
 	return {
 		t: 'snapshot',
 		tick: state.tick,
+		zoneId: state.zone.id,
 		avatars,
 		monsters,
 		projectiles: state.zone.projectiles,

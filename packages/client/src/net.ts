@@ -58,6 +58,12 @@ export class NetClient {
 			this.tickRate = msg.tickRate;
 			this.ready = true;
 		} else {
+			// On a Zone change, drop the prior Zone's frames: interpolating across the
+			// boundary would ease an Avatar between two unrelated coordinate spaces.
+			if (msg.zoneId !== this.zoneId) {
+				this.zoneId = msg.zoneId;
+				this.buffer = new SnapshotBuffer();
+			}
 			this.latest = msg;
 			this.buffer.push(msg, recvTimeMs);
 		}

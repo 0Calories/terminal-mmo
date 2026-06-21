@@ -23,6 +23,7 @@ test('input round-trips reported kinematics + combat intents', () => {
 		facing: -1,
 		onGround: true,
 		attack: true,
+		interact: false,
 		skill: 1,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
@@ -39,6 +40,23 @@ test('input round-trips with no skill intent', () => {
 		facing: 1,
 		onGround: false,
 		attack: false,
+		interact: false,
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('input round-trips the interact (portal) intent', () => {
+	const msg: ClientMessage = {
+		t: 'input',
+		x: 24,
+		y: 30,
+		vx: 0,
+		vy: 0,
+		facing: 1,
+		onGround: true,
+		attack: false,
+		interact: true,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
@@ -59,6 +77,7 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 	const msg: ServerMessage = {
 		t: 'snapshot',
 		tick: 1234,
+		zoneId: 'field-01',
 		avatars: [
 			{
 				sessionId: 7,
@@ -115,6 +134,7 @@ test('snapshot round-trips when the zone is empty', () => {
 	const msg: ServerMessage = {
 		t: 'snapshot',
 		tick: 0,
+		zoneId: 'town-01',
 		avatars: [],
 		monsters: [],
 		projectiles: [],
