@@ -155,9 +155,12 @@ function drawPlayfield(
 			drawText(buf, sx, sy - 1, `↵ e  talk to ${n.name}`, C.vendor, sw, sh);
 	}
 
-	// z-ordered by y; player drawn last (on top)
-	const mons = [...zone.monsters].sort((a, b) => a.y - b.y);
-	for (const m of mons) drawSprite(buf, m, cam, sw, sh);
+	// Co-present Avatars and Monsters share one z-ordered set (by y-position) so
+	// they occlude each other naturally; the local Avatar is still drawn last,
+	// on top of everyone (ADR 0003).
+	const others = game.others ?? [];
+	const sprites = [...zone.monsters, ...others].sort((a, b) => a.y - b.y);
+	for (const e of sprites) drawSprite(buf, e, cam, sw, sh);
 
 	if (p.attackT > COMBAT.attackCooldown - 0.12) {
 		const hb = meleeHitbox(p);
