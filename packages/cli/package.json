@@ -1,6 +1,6 @@
 {
 	"name": "terminal-mmo",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "A persistent PvE side-scrolling MMORPG played entirely in your terminal. Alpha.",
 	"type": "module",
 	"bin": {
