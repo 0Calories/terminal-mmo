@@ -15,6 +15,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 	return {
 		t: 'snapshot',
 		tick: 12,
+		zoneId: 'field-01',
 		avatars: [
 			{
 				sessionId: 1,

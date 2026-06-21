@@ -242,6 +242,7 @@ function runNetworked(url: string) {
 				facing: predicted.facing,
 				onGround: predicted.onGround,
 				attack: inp.attack,
+				interact: inp.interact ?? false,
 				skill: inp.skill,
 			});
 		}

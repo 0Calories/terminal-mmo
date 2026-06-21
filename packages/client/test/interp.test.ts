@@ -48,6 +48,7 @@ function snap(
 	return {
 		t: 'snapshot',
 		tick,
+		zoneId: 'field-01',
 		avatars,
 		monsters,
 		projectiles: [],

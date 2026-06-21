@@ -143,6 +143,7 @@ export type ClientMessage =
 			facing: Facing;
 			onGround: boolean;
 			attack: boolean;
+			interact: boolean;
 			skill?: number;
 	  };
 
@@ -164,6 +165,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.i8(msg.facing);
 			w.bool(msg.onGround);
 			w.bool(msg.attack);
+			w.bool(msg.interact);
 			w.u8(msg.skill ?? 0);
 			break;
 	}
@@ -184,6 +186,7 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			const facing = r.i8() as Facing;
 			const onGround = r.bool();
 			const attack = r.bool();
+			const interact = r.bool();
 			const skill = r.u8();
 			const msg: ClientMessage = {
 				t: 'input',
@@ -194,6 +197,7 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 				facing,
 				onGround,
 				attack,
+				interact,
 			};
 			if (skill !== 0) msg.skill = skill;
 			return msg;
@@ -244,6 +248,7 @@ export type ServerMessage =
 	| {
 			t: 'snapshot';
 			tick: number;
+			zoneId: string;
 			avatars: AvatarSnapshot[];
 			monsters: MonsterSnapshot[];
 			projectiles: Projectile[];
@@ -383,6 +388,7 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 		case 'snapshot':
 			w.u8(SERVER_TAG.snapshot);
 			w.u32(msg.tick);
+			w.str(msg.zoneId);
 			w.u32(msg.avatars.length);
 			for (const a of msg.avatars) writeAvatar(w, a);
 			w.u32(msg.monsters.length);
@@ -414,6 +420,7 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			};
 		case SERVER_TAG.snapshot: {
 			const tick = r.u32();
+			const zoneId = r.str();
 			const avatars: AvatarSnapshot[] = [];
 			for (let i = r.u32(); i > 0; i--) avatars.push(readAvatar(r));
 			const monsters: MonsterSnapshot[] = [];
@@ -432,6 +439,7 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			return {
 				t: 'snapshot',
 				tick,
+				zoneId,
 				avatars,
 				monsters,
 				projectiles,
