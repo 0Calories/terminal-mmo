@@ -1,8 +1,6 @@
 import { expect, test } from 'bun:test';
 import { Sprite, spriteFor } from '../src/sprites';
 
-// --- Sprite machinery ------------------------------------------------------
-
 test('parses art: trims template blank lines, maps sentinel, computes dims', () => {
 	const s = new Sprite('\n·A·\nBBB\n', { defaultKey: 'x' });
 	expect(s.w).toBe(3);
@@ -53,7 +51,6 @@ test('throws when defaultKey is not a single char', () => {
 	expect(() => new Sprite('\nA\n', { defaultKey: 'player' })).toThrow();
 });
 
-// --- Registry --------------------------------------------------------------
 // We deliberately do NOT pin the *appearance* of individual sprites (their glyph
 // grids change as art is iterated). These cover the lookup wiring only.
 

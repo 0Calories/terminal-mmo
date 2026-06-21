@@ -1,8 +1,3 @@
-// PlayfieldRenderable (ADR 0005): the hot, per-frame playfield as a scene-graph
-// node that draws terrain + entity Sprites + combat telegraphs imperatively into
-// the screen buffer every frame. `live` keeps it redrawing so the sim animates;
-// `width/height: '100%'` fills the root so absolute buffer coords match the
-// screen. This layer draws ONLY the world; HUD/log/hint chrome lives in hud.ts.
 import type { Entity, GameState } from '@mmo/shared';
 import {
 	aabbOverlap,
@@ -26,10 +21,6 @@ import type { Sprite } from './sprites';
 import { PALETTE, spriteFor, spriteForNpc } from './sprites';
 import { COLORS as C } from './theme';
 
-// Blit a Sprite's glyph + colour grid at a screen anchor (top-left sx, sy),
-// honouring transparency and per-cell palette keys. `hurt` tints every lit cell
-// with the hurt flash. Caller computes anchor + facing, so this serves both
-// simulated entities and decorative NPCs.
 function blitSprite(
 	buf: OptimizedBuffer,
 	sprite: Sprite,
@@ -66,7 +57,7 @@ function drawSprite(
 	sh: number,
 ) {
 	const sprite = spriteFor(e.type);
-	// Anchor per-sprite: centred horizontally, feet aligned to the box bottom.
+	// Centred horizontally, feet aligned to the box bottom.
 	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2) - cam.x);
 	const sy = Math.round(e.y + BOX.h - sprite.h - cam.y);
 	blitSprite(buf, sprite, sx, sy, e.facing, sw, sh, e.hurtT > 0.3);
@@ -102,10 +93,10 @@ function drawPlayfield(
 	const ww = zone.terrain.w;
 	const wh = zone.terrain.h;
 
-	// Terrain + world-fixed geometry (portals) sample the integer grid, so they
-	// scroll on a whole-cell camera. Entities below round relative to the FLOAT
-	// `cam` instead, so a camera-pinned Avatar renders at a stable cell rather
-	// than bouncing ±1 from double-rounding (see camera.ts).
+	// Terrain + portals sample the integer grid, so they scroll on a whole-cell
+	// camera. Entities round relative to the FLOAT `cam` instead, so a
+	// camera-pinned Avatar renders at a stable cell rather than bouncing ±1 from
+	// double-rounding (see camera.ts).
 	const camX = Math.round(cam.x);
 	const camY = Math.round(cam.y);
 
@@ -126,9 +117,7 @@ function drawPlayfield(
 		}
 	}
 
-	// portals: a shimmering gateway glyph over their footprint, drawn behind the
-	// Sprites so the Avatar stands in front of the door (story 14). An enter
-	// prompt floats above the one the Avatar is currently standing on.
+	// Drawn before the Sprites so the Avatar stands in front of the door.
 	const onPortal = zone.portals.find((pr) => aabbOverlap(entityBox(p), pr));
 	for (const pr of zone.portals) {
 		for (let yy = 0; yy < pr.h; yy++) {
@@ -154,9 +143,7 @@ function drawPlayfield(
 		);
 	}
 
-	// NPCs (Town vendor, story 29): drawn behind the entity Sprites so the player
-	// stands in front; world-fixed, so they scroll on the whole-cell grid. A talk
-	// prompt floats above the head of the overlapped NPC.
+	// Drawn before the entity Sprites so the player stands in front.
 	const npcs = zone.npcs ?? [];
 	const onNpc = npcs.find((n) => aabbOverlap(entityBox(p), n));
 	for (const n of npcs) {
@@ -168,11 +155,10 @@ function drawPlayfield(
 			drawText(buf, sx, sy - 1, `↵ e  talk to ${n.name}`, C.vendor, sw, sh);
 	}
 
-	// entities, z-ordered by y; player drawn last (on top)
+	// z-ordered by y; player drawn last (on top)
 	const mons = [...zone.monsters].sort((a, b) => a.y - b.y);
 	for (const m of mons) drawSprite(buf, m, cam, sw, sh);
 
-	// melee telegraph: flash the arc right after a swing
 	if (p.attackT > COMBAT.attackCooldown - 0.12) {
 		const hb = meleeHitbox(p);
 		for (let yy = 0; yy < hb.h; yy++) {
@@ -191,8 +177,7 @@ function drawPlayfield(
 		}
 	}
 
-	// Skill telegraph: flash the (wider) Skill arc just after it fires. Detected
-	// from the freshly-set cooldown, mirroring the melee flash window.
+	// Detected from the freshly-set cooldown, mirroring the melee flash window.
 	for (let slot = 1; ; slot++) {
 		const skill = skillForSlot(player.class ?? 'warrior', slot);
 		if (!skill) break;
@@ -211,8 +196,7 @@ function drawPlayfield(
 
 	drawSprite(buf, p, cam, sw, sh);
 
-	// projectiles: high-contrast glyphs above all Sprites (ADR 0003), drawn last
-	// so nothing occludes an incoming shot. Glyph leans into travel direction.
+	// Drawn last so nothing occludes an incoming shot.
 	for (const pr of zone.projectiles) {
 		const px = Math.round(pr.x - cam.x);
 		const py = Math.round(pr.y - cam.y);
@@ -223,10 +207,8 @@ function drawPlayfield(
 }
 
 export class PlayfieldRenderable extends Renderable {
-	/** Latest simulation state to draw; the frame loop sets this each tick. */
 	game: GameState | null = null;
 
-	// Dead-band camera state, carried across frames (view-only — see camera.ts).
 	private camState: CameraState = initCameraState();
 
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {

@@ -1,8 +1,5 @@
-// Sprite design gallery — candidate Avatar/Monster designs as real `Sprite`
-// instances (so they render through the live machinery, palette, and mirror).
-// Decision aid only, NOT wired into the entity REGISTRY (`index.ts`). Preview:
+// Candidate sprite designs, NOT wired into the entity REGISTRY. Preview with:
 //     bun packages/client/src/sprites/preview.ts
-// Authoring rules live in sprite.ts.
 import { merchant } from './merchant';
 import { player } from './player';
 import { Sprite } from './sprite';
@@ -14,13 +11,8 @@ export interface GalleryEntry {
 	sprite: Sprite;
 }
 
-// =============================== AVATARS ==================================
-// All "humans" (players + friendly NPCs) share the buddy eye trick: eyes are
-// NEGATIVE SPACE, the missing quadrant of a `▛`/`▜` pair, never a painted cell
-// (painting a second dark cell double-eyes the face). Each is left-right
-// symmetric, so both facings render identically.
-
-// Sprout — tiny green blob NPC, no feet, two-leaf bud; eyes are gaps in `▛██▜`.
+// Humanoid eyes are negative space (the gap in a `▛`/`▜` pair) — painting an
+// explicit dark eye cell double-eyes the face.
 const sprout = new Sprite(
 	`
 ··▌▐··
@@ -29,7 +21,6 @@ const sprout = new Sprite(
 	{ defaultKey: 'f' },
 );
 
-// Scout — taller, slimmer explorer under a cyan cap, with two legs.
 const scout = new Sprite(
 	`
 ··▄▄▄··
@@ -48,10 +39,8 @@ const scout = new Sprite(
 	},
 );
 
-// Sage — hooded mystic, PICKED as the live Town vendor; art now in merchant.ts
-// and imported below so the gallery and game can't drift (cf. Buddy ← player.ts).
-
-// Knight — broad helmeted guard, red crest, visor brow for eyes, two armoured legs.
+// Sage was picked as the live vendor; its art lives in merchant.ts (imported
+// above) so the gallery and game can't drift. Same for Buddy ← player.ts.
 const knight = new Sprite(
 	`
 ··▟██▙··
@@ -72,9 +61,6 @@ ssssssss
 	},
 );
 
-// =============================== MONSTERS =================================
-
-// Slime — low-level blob; rounded dome, two dark eyes, pale shine up top.
 const slime = new Sprite(
 	`
 ·▗▄▄▄▖·
@@ -91,7 +77,6 @@ fkfffkf
 	},
 );
 
-// Mushroom — spotted red cap over a tan face, two dark eyes, stub feet.
 const mushroom = new Sprite(
 	`
 ·▗▟█▙▖·
@@ -110,7 +95,6 @@ wwwwwww
 	},
 );
 
-// Bat — cave flier: spread wings, small body, green glowing eyes; all dark so the eyes pop.
 const bat = new Sprite(
 	`
 ▙▖·▄·▗▟
@@ -125,7 +109,6 @@ kk·k·kk
 	},
 );
 
-// Ghost — drifting spectre: rounded sheet body, hollow eyes, wavy cyan hem.
 const ghost = new Sprite(
 	`
 ·▗▄▄▄▖·
@@ -144,7 +127,6 @@ ooooooo
 	},
 );
 
-// Spider — bulbous body, two green eyes, four splayed legs (slashes mirror with facing).
 const spider = new Sprite(
 	`
 \\··▄··/
@@ -159,7 +141,6 @@ k·kkk·k`,
 	},
 );
 
-// Golem — heavy elite bruiser: blocky stone torso, glowing eyes, stubby legs.
 const golem = new Sprite(
 	`
 ·▟███▙·
@@ -180,8 +161,6 @@ sss·sss
 	},
 );
 
-// Sentry Eye — floating ranged threat (fits the `shooter` archetype, #4): one
-// great eye, black pupil ringed by green iris.
 const sentryEye = new Sprite(
 	`
 ·▗▄▄▄▖·

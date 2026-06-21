@@ -1,16 +1,11 @@
-// projectile.ts — ranged-Monster Projectiles (CONTEXT: Combat). Pure +
-// deterministic, like the rest of @mmo/shared: a Projectile travels in a
-// straight line and despawns on Terrain, on the Avatar, or on lifetime expiry.
 import { BOX, PROJECTILE, SHOOTER } from './constants';
 import { isSolid } from './terrain';
 import type { Box, Entity, Facing, Projectile, Terrain } from './types';
 
-/** The logical hit box of a Projectile (small, decoupled from its glyph). */
 export function projectileBox(p: Projectile): Box {
 	return { x: p.x, y: p.y, w: PROJECTILE.w, h: PROJECTILE.h };
 }
 
-/** Fire a Projectile from a shooter toward `dir`, level with its body centre. */
 export function spawnProjectile(
 	id: number,
 	owner: Entity,
@@ -28,8 +23,7 @@ export function spawnProjectile(
 	};
 }
 
-/** Advance a Projectile one step. Returns null when it despawns — lifetime
- * expired or it entered solid Terrain (which includes the world's bounds). */
+// Returns null on despawn (lifetime expired or entered solid Terrain).
 export function stepProjectile(
 	t: Terrain,
 	p: Projectile,

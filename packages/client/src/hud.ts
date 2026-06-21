@@ -1,6 +1,3 @@
-// HUD chrome (ADR 0005, step 2): stats bar, controls hint, and recent log as
-// layout-driven renderables that overlay the full-screen playfield via absolute
-// positioning + a higher zIndex. State-driven content is pushed in via update().
 import type { GameState } from '@mmo/shared';
 import { activeZone, skillForSlot, skillUnlocked } from '@mmo/shared';
 import {
@@ -12,10 +9,8 @@ import {
 import { COLORS } from './theme';
 
 const HINT = 'move ←/→ a/d  jump ␣/↑  attack j/x  skill k  interact e  quit q';
-const Z = 10; // draw above the playfield (zIndex 0)
+const Z = 10; // above the playfield (zIndex 0)
 
-/** One-line Skill status: per bound slot, the key, name, and whether it's locked
- * (below its unlock level), on cooldown (seconds left), or ready. */
 function skillReadout(player: GameState['player']): string {
 	const segs: string[] = [];
 	for (let slot = 1; ; slot++) {
@@ -42,7 +37,6 @@ export class Hud {
 	private readonly log: TextRenderable;
 
 	constructor(ctx: RenderContext) {
-		// Full-width opaque strip, stats left / meta right.
 		this.topBar = new BoxRenderable(ctx, {
 			position: 'absolute',
 			top: 0,
@@ -68,7 +62,6 @@ export class Hud {
 		this.topBar.add(this.stats);
 		this.topBar.add(this.meta);
 
-		// Bottom-left overlay: controls hint above the recent log.
 		this.bottom = new BoxRenderable(ctx, {
 			position: 'absolute',
 			bottom: 0,
@@ -79,7 +72,6 @@ export class Hud {
 		this.bottom.add(
 			new TextRenderable(ctx, { content: HINT, fg: COLORS.dim, bg: COLORS.bg }),
 		);
-		// Skill cooldown readout (story 22): one line, sits above the log.
 		this.skills = new TextRenderable(ctx, {
 			content: '',
 			fg: COLORS.melee,
@@ -94,13 +86,11 @@ export class Hud {
 		this.bottom.add(this.log);
 	}
 
-	/** Add the HUD overlays to a parent (typically renderer.root). */
 	attach(parent: Renderable): void {
 		parent.add(this.topBar);
 		parent.add(this.bottom);
 	}
 
-	/** Refresh the readouts from the latest simulation state. */
 	update(game: GameState, fps: number): void {
 		const { player } = game;
 		const p = player.avatar;

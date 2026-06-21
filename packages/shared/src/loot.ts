@@ -19,7 +19,6 @@ interface RarityDef {
 	weight: number;
 	affixes: number;
 }
-// Weighted rarity table; affix count rises with rarity (CONTEXT: Item).
 export const RARITIES: RarityDef[] = [
 	{ name: 'common', weight: 60, affixes: 1 },
 	{ name: 'uncommon', weight: 25, affixes: 2 },
@@ -30,9 +29,7 @@ export const RARITIES: RarityDef[] = [
 
 export const AFFIXES = ['str', 'dex', 'int', 'hp', 'crit', 'haste'];
 
-/** Roll one Item: weighted rarity, random base, rarity-many randomized affixes
- * (value scales with level). Pure — threads RNG state. Returned item.id is 0;
- * callers assign a real id. */
+/** Threads RNG state. Returned item.id is 0; callers assign a real id. */
 export function rollItem(
 	state: number,
 	level: number,

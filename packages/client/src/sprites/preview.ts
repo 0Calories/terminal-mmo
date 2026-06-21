@@ -1,6 +1,3 @@
-// Sprite design preview — a plain stdout/ANSI dump of every `gallery.ts`
-// candidate in true colour, both facings side by side. No renderer/TTY/game
-// loop; colours come from the real PALETTE (minus renderer-only state tints).
 //     bun packages/client/src/sprites/preview.ts
 import { GALLERY, type GalleryEntry } from './gallery';
 import { PALETTE } from './palette';
@@ -11,7 +8,6 @@ const DIM = '\x1b[2m';
 const fg = (r: number, g: number, b: number) => `\x1b[38;2;${r};${g};${b}m`;
 const MISSING: [number, number, number] = [120, 120, 120]; // unknown palette key
 
-/** Glyph rows for one facing, each cell wrapped in its palette colour. */
 function paint(sprite: GalleryEntry['sprite'], facing: 1 | -1): string[] {
 	const glyphs = sprite.rows(facing);
 	const keys = sprite.colorKeys(facing);
@@ -31,7 +27,6 @@ function paint(sprite: GalleryEntry['sprite'], facing: 1 | -1): string[] {
 	});
 }
 
-/** Right- and left-facing renders side by side, label/note to the right. */
 function card(entry: GalleryEntry): string {
 	const right = paint(entry.sprite, 1);
 	const left = paint(entry.sprite, -1);
@@ -42,8 +37,7 @@ function card(entry: GalleryEntry): string {
 	for (let y = 0; y < h; y++) {
 		const r = right[y] ?? '';
 		const l = left[y] ?? '';
-		// Pad the right-facing block to colW visible cells; ANSI colour codes
-		// carry no width, so pad by the sprite's known glyph-cell width.
+		// ANSI colour codes carry no width, so pad by glyph-cell width.
 		const rVisible = (glyphRight[y] ?? '').length;
 		const rGap = ' '.repeat(Math.max(0, colW - rVisible));
 		lines.push(`  ${r}${rGap}   ${l}`);

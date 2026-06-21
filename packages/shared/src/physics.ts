@@ -2,14 +2,8 @@ import { BOX, PHYS } from './constants';
 import { isSolid } from './terrain';
 import type { Control, Entity, Terrain } from './types';
 
-/**
- * Advance one entity by one step against the Terrain. Pure: returns a new entity
- * plus whether it bumped a wall (used for monster patrol turn-around).
- *
- * Axis-separated tile collision against the entity's logical BOX. Horizontal
- * speed comes from `entity.speed` so the same function drives Players and
- * Monsters at different speeds; vertical motion is gravity + jump.
- */
+// Axis-separated tile collision against the entity's logical BOX. `hitWall` in
+// the result feeds monster patrol turn-around.
 export function stepEntity(
 	t: Terrain,
 	src: Entity,
@@ -27,7 +21,6 @@ export function stepEntity(
 
 	let hitWall = false;
 
-	// horizontal
 	e.x += e.vx * dt;
 	const top = Math.floor(e.y);
 	const bot = Math.ceil(e.y + BOX.h) - 1;
@@ -51,7 +44,6 @@ export function stepEntity(
 			}
 	}
 
-	// vertical
 	e.vy += PHYS.grav * dt;
 	e.y += e.vy * dt;
 	const l = Math.floor(e.x);
