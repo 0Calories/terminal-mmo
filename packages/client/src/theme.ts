@@ -17,4 +17,9 @@ export const COLORS = {
 	hp: RGBA.fromInts(90, 220, 120, 255),
 	dim: RGBA.fromInts(150, 156, 168, 255),
 	chat: RGBA.fromInts(120, 200, 235, 255),
+	// Over-head Speech bubble (#59, ADR 0007): opaque fill so terrain can't bleed
+	// through, a dim border + tail, and bright text.
+	bubbleFg: RGBA.fromInts(236, 236, 242, 255),
+	bubbleBorder: RGBA.fromInts(120, 200, 235, 255),
+	bubbleBg: RGBA.fromInts(20, 24, 34, 255),
 };

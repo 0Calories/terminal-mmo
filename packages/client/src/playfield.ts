@@ -16,6 +16,7 @@ import {
 	type RenderableOptions,
 	type RenderContext,
 } from '@opentui/core';
+import { layoutBubble } from './bubble';
 import { type CameraState, initCameraState, stepCamera } from './camera';
 import type { Sprite } from './sprites';
 import { PALETTE, spriteFor, spriteForNpc } from './sprites';
@@ -80,6 +81,59 @@ function drawNameplate(
 	const cx = e.x + BOX.w / 2 - cam.x;
 	const x = Math.round(cx - e.name.length / 2);
 	drawText(buf, x, top - 1, e.name, C.dim, sw, sh);
+}
+
+// An over-head Speech bubble for the sender's latest Chat line (#59, ADR 0007):
+// a bordered, opaque box with a downward tail, anchored above the nameplate and
+// re-projected through the camera each frame so it tracks the moving Avatar. The
+// box is x-clamped to the viewport so a full-length message can't clip off-screen.
+function drawSpeechBubble(
+	buf: OptimizedBuffer,
+	e: Entity,
+	cam: { x: number; y: number },
+	sw: number,
+	sh: number,
+) {
+	if (!e.bubble) return;
+	const sprite = spriteFor(e.type);
+	const top = Math.round(e.y + BOX.h - sprite.h - cam.y);
+	const lines = layoutBubble(e.bubble);
+	const innerW = Math.max(...lines.map((l) => l.length));
+	const boxW = innerW + 2;
+	const boxH = lines.length + 2;
+
+	const cx = e.x + BOX.w / 2 - cam.x;
+	// Tail tip sits one row above the nameplate (which is at top - 1); the box bottom
+	// border is just above the tail.
+	const tailY = top - 2;
+	const tailX = Math.round(cx);
+	const topY = tailY - boxH;
+	let left = Math.round(cx - boxW / 2);
+	left = Math.max(0, Math.min(left, sw - boxW)); // keep the whole box on screen
+
+	for (let ry = 0; ry < boxH; ry++) {
+		const py = topY + ry;
+		if (py < 0 || py >= sh) continue;
+		const lastRow = ry === boxH - 1;
+		for (let rx = 0; rx < boxW; rx++) {
+			const px = left + rx;
+			if (px < 0 || px >= sw) continue;
+			const lastCol = rx === boxW - 1;
+			let ch = ' ';
+			let fg = C.bubbleFg;
+			if (ry === 0 || lastRow || rx === 0 || lastCol) {
+				fg = C.bubbleBorder;
+				if (ry === 0) ch = rx === 0 ? '╭' : lastCol ? '╮' : '─';
+				else if (lastRow) ch = rx === 0 ? '╰' : lastCol ? '╯' : '─';
+				else ch = '│';
+			} else {
+				ch = lines[ry - 1]?.[rx - 1] ?? ' ';
+			}
+			buf.setCell(px, py, ch, fg, C.bubbleBg);
+		}
+	}
+	if (tailY >= 0 && tailY < sh && tailX >= 0 && tailX < sw)
+		buf.setCell(tailX, tailY, '▼', C.bubbleBorder, C.bubbleBg);
 }
 
 function drawText(
@@ -220,6 +274,12 @@ function drawPlayfield(
 	}
 
 	drawSprite(buf, p, cam, sw, sh);
+
+	// Final pass after all Sprites + nameplates: over-head Speech bubbles for every
+	// chatter on screen, the local Avatar included (one uniform rule, ADR 0007). An
+	// absent sender simply has no entity here, so its bubble isn't drawn.
+	for (const e of others) drawSpeechBubble(buf, e, cam, sw, sh);
+	drawSpeechBubble(buf, p, cam, sw, sh);
 
 	// Drawn last so nothing occludes an incoming shot.
 	for (const pr of zone.projectiles) {
