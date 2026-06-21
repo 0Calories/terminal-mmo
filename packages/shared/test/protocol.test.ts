@@ -62,6 +62,12 @@ test('input round-trips the interact (portal) intent', () => {
 	expect(decoded).toEqual(msg);
 });
 
+test('chat (client -> server) round-trips the message text', () => {
+	const msg: ClientMessage = { t: 'chat', text: 'hello field 👋' };
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
 test('welcome round-trips the assigned session, zone, and tick rate', () => {
 	const msg: ServerMessage = {
 		t: 'welcome',
@@ -69,6 +75,12 @@ test('welcome round-trips the assigned session, zone, and tick rate', () => {
 		zoneId: 'field-01',
 		tickRate: 20,
 	};
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('chat (server -> client) round-trips the sender handle and text', () => {
+	const msg: ServerMessage = { t: 'chat', handle: 'neo', text: 'gg wp' };
 	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
 });

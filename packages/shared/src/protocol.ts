@@ -145,9 +145,12 @@ export type ClientMessage =
 			attack: boolean;
 			interact: boolean;
 			skill?: number;
-	  };
+	  }
+	// A Zone-local chat line; the server attributes it to the sender's handle and
+	// relays it to the sender's Channel (#34).
+	| { t: 'chat'; text: string };
 
-const CLIENT_TAG = { hello: 1, input: 2 } as const;
+const CLIENT_TAG = { hello: 1, input: 2, chat: 3 } as const;
 
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 	const w = new Writer();
@@ -167,6 +170,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.bool(msg.attack);
 			w.bool(msg.interact);
 			w.u8(msg.skill ?? 0);
+			break;
+		case 'chat':
+			w.u8(CLIENT_TAG.chat);
+			w.str(msg.text);
 			break;
 	}
 	return w.finish();
@@ -202,6 +209,8 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			if (skill !== 0) msg.skill = skill;
 			return msg;
 		}
+		case CLIENT_TAG.chat:
+			return { t: 'chat', text: r.str() };
 		default:
 			throw new Error(`unknown client message tag ${tag}`);
 	}
@@ -255,9 +264,12 @@ export type ServerMessage =
 			progress: PlayerProgress;
 			inventory: Item[];
 			log: string[];
-	  };
+	  }
+	// A Zone-local chat line relayed to every session in the sender's Channel,
+	// attributed to the sender's ephemeral handle (#34). Event-driven, not per-tick.
+	| { t: 'chat'; handle: string; text: string };
 
-const SERVER_TAG = { welcome: 1, snapshot: 2 } as const;
+const SERVER_TAG = { welcome: 1, snapshot: 2, chat: 3 } as const;
 
 const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
 const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory'];
@@ -403,6 +415,11 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			w.u32(msg.log.length);
 			for (const line of msg.log) w.str(line);
 			break;
+		case 'chat':
+			w.u8(SERVER_TAG.chat);
+			w.str(msg.handle);
+			w.str(msg.text);
+			break;
 	}
 	return w.finish();
 }
@@ -448,6 +465,8 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 				log,
 			};
 		}
+		case SERVER_TAG.chat:
+			return { t: 'chat', handle: r.str(), text: r.str() };
 		default:
 			throw new Error(`unknown server message tag ${tag}`);
 	}

@@ -94,6 +94,24 @@ export function zoneStateOf(
 	return loc && world.channels[channelKey(loc.zone, loc.channel)];
 }
 
+// Every session sharing `sessionId`'s current (Zone, Channel) — including itself,
+// so a chat sender receives its own line. Empty if the session is not placed.
+// The primitive for Channel-scoped social broadcast (chat #34, emotes #38): the
+// server relays a chat line to exactly these sockets, so it never crosses into
+// another Channel or Zone (AC: relayed only to the same Zone + Channel).
+export function sessionsInChannel(
+	world: ServerWorld,
+	sessionId: number,
+): number[] {
+	const here = world.location[sessionId];
+	if (!here) return [];
+	const out: number[] = [];
+	for (const [sid, loc] of Object.entries(world.location))
+		if (loc.zone === here.zone && loc.channel === here.channel)
+			out.push(Number(sid));
+	return out;
+}
+
 // Every Channel of a Zone, ordered by Channel index (for inspection / tests).
 export function channelsOf(world: ServerWorld, zone: ZoneId): ZoneState[] {
 	const out: ZoneState[] = [];

@@ -153,6 +153,24 @@ test('NetClient drops the interpolation buffer (and tracks the Zone) on a Zone c
 	net.close();
 });
 
+test('NetClient.ingest collects chat lines attributed to the sender handle', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest({ t: 'chat', handle: 'neo', text: 'hi field' }, 1000);
+	net.ingest({ t: 'chat', handle: 'trinity', text: 'hey' }, 1010);
+	expect(net.chatLog).toEqual(['neo: hi field', 'trinity: hey']);
+	net.close();
+});
+
+test('NetClient.chatLog is bounded so it cannot grow without limit', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	for (let i = 0; i < 200; i++)
+		net.ingest({ t: 'chat', handle: 'spammer', text: `msg ${i}` }, 1000 + i);
+	expect(net.chatLog.length).toBeLessThanOrEqual(100);
+	// the most recent line is retained
+	expect(net.chatLog.at(-1)).toBe('spammer: msg 199');
+	net.close();
+});
+
 test('NetClient.ingest applies the welcome handshake and tracks the latest snapshot', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester');
 	net.ingest(
