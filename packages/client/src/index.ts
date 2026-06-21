@@ -210,7 +210,6 @@ function runNetworked(url: string) {
 	// (and snaps position on respawn) via snapshots.
 	let predicted: Entity = spawnAvatar(SPAWN.x, SPAWN.y);
 	const localCd: Record<string, number> = {}; // predicted skill cooldowns (off-wire)
-	const RECONCILE = 3; // cells of position drift before we snap to the server
 	const SEND_INTERVAL = 1000 / 30; // throttle input reports to ~30 Hz
 	let sendAcc = 0;
 	const chat = new ChatInput(); // Zone-local chat typing mode (#34)
@@ -278,22 +277,18 @@ function runNetworked(url: string) {
 				localCd[skill.id] = skill.cooldown;
 		}
 
-		// Server owns vitals; reconcile HP/i-frames and snap on a large divergence
-		// (respawn teleports the Avatar back to the safe point).
+		// Server owns vitals; reconcile HP/i-frames from snapshots. Position is NOT
+		// reconciled here: per ADR 0001 the client is authoritative over its own
+		// position and the server never re-simulates it, so the snapshot only echoes
+		// back our own position from ~one round-trip ago. Snapping to it would drag
+		// the Avatar backward on every moving frame once RTT is non-trivial (#68).
+		// Server-initiated teleports (respawn, portal) arrive as a Zone change and are
+		// handled by the net.zoneId branch above.
 		const own = net.ownAvatar();
 		if (own) {
 			predicted.hp = own.hp;
 			predicted.maxHp = own.maxHp;
 			predicted.hurtT = own.hurtT;
-			if (
-				Math.abs(own.x - predicted.x) > RECONCILE ||
-				Math.abs(own.y - predicted.y) > RECONCILE
-			) {
-				predicted.x = own.x;
-				predicted.y = own.y;
-				predicted.vx = 0;
-				predicted.vy = 0;
-			}
 		}
 
 		sendAcc += dt;
@@ -315,8 +310,9 @@ function runNetworked(url: string) {
 
 		const fps = meter(dt);
 		// Co-present entities are rendered from the buffer, interpolated ~100 ms in
-		// the past for smooth motion between ticks; the own Avatar stays predicted
-		// (reconciled above against net.latest, not the delayed view).
+		// the past for smooth motion between ticks; the own Avatar stays purely
+		// predicted (only its vitals reconcile against net.latest, never the delayed
+		// view), so local motion is never dragged backward by network latency.
 		const view = net.sample(performance.now());
 		// Age over-head Speech bubbles by wall time, then stamp the live ones onto
 		// their senders' entities for the playfield to draw (#59, ADR 0007).
