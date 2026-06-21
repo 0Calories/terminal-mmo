@@ -6,7 +6,8 @@ import {
 	type ServerMessage,
 	spawnAvatar,
 } from '@mmo/shared';
-import { snapshotToGame } from '../src/net';
+import { INTERP_DELAY_MS } from '../src/interp';
+import { NetClient, snapshotToGame } from '../src/net';
 
 const y = GROUND_TOP - BOX.h;
 
@@ -107,4 +108,42 @@ test('snapshotToGame degrades gracefully before the first snapshot', () => {
 	expect(game.world.zones['field-01'].monsters.length).toBe(0);
 	expect(game.player.progress.level).toBe(1);
 	expect(game.others).toEqual([]);
+});
+
+// The same snapshot with avatar 1 placed at a given x, for interpolation tests.
+function snapAt(x: number): Extract<ServerMessage, { t: 'snapshot' }> {
+	const s = snapshot();
+	s.avatars[0].x = x;
+	return s;
+}
+
+test('NetClient samples co-present motion interpolated INTERP_DELAY_MS in the past', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	// Two 20Hz frames, avatar 1 sliding 40 -> 60 over 50 ms.
+	net.ingest(snapAt(40), 1000);
+	net.ingest(snapAt(60), 1050);
+	// Rendering at now=1125 looks back INTERP_DELAY_MS (100) to t=1025 — halfway
+	// between the two frames — so the avatar is eased to the midpoint.
+	const view = net.sample(1025 + INTERP_DELAY_MS);
+	expect(view?.avatars[0].x).toBe(50);
+	net.close();
+});
+
+test('NetClient.sample is null until the first snapshot arrives', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	expect(net.sample(1000)).toBe(null);
+	net.close();
+});
+
+test('NetClient.ingest applies the welcome handshake and tracks the latest snapshot', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest(
+		{ t: 'welcome', sessionId: 7, zoneId: 'field-01', tickRate: 20 },
+		0,
+	);
+	expect(net.sessionId).toBe(7);
+	expect(net.ready).toBe(true);
+	net.ingest(snapAt(42), 1000);
+	expect(net.latest?.avatars[0].x).toBe(42);
+	net.close();
 });

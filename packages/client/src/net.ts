@@ -17,11 +17,15 @@ import {
 	type ServerMessage,
 	type Zone,
 } from '@mmo/shared';
+import { INTERP_DELAY_MS, SnapshotBuffer } from './interp';
 
 type Snapshot = Extract<ServerMessage, { t: 'snapshot' }>;
 
 export class NetClient {
 	private ws: WebSocket;
+	// Recent snapshots, kept so co-present entities can be rendered ~100 ms in the
+	// past, interpolated between ticks (ADR 0006 cadence).
+	private buffer = new SnapshotBuffer();
 	sessionId = 0;
 	zoneId = '';
 	tickRate = 20;
@@ -36,20 +40,45 @@ export class NetClient {
 		};
 		this.ws.onmessage = (ev) => {
 			const msg = decodeServerMessage(new Uint8Array(ev.data as ArrayBuffer));
-			if (msg.t === 'welcome') {
-				this.sessionId = msg.sessionId;
-				this.zoneId = msg.zoneId;
-				this.tickRate = msg.tickRate;
-				this.ready = true;
-			} else {
-				this.latest = msg;
-			}
+			this.ingest(msg, performance.now());
 		};
+		// Connection failures just mean no fresh snapshots; swallow them so an
+		// unhandled error event can't tear the process down.
+		this.ws.onerror = () => {};
+	}
+
+	// Apply a decoded server message: handshake fields from `welcome`; buffer every
+	// `snapshot` (also keeping `latest`, which the own Avatar reconciles its vitals
+	// against). `recvTimeMs` is the local clock at receipt, passed in by the caller
+	// so the buffer never reads a clock itself and stays deterministically testable.
+	ingest(msg: ServerMessage, recvTimeMs: number) {
+		if (msg.t === 'welcome') {
+			this.sessionId = msg.sessionId;
+			this.zoneId = msg.zoneId;
+			this.tickRate = msg.tickRate;
+			this.ready = true;
+		} else {
+			this.latest = msg;
+			this.buffer.push(msg, recvTimeMs);
+		}
+	}
+
+	// The Zone view to render at local time `nowMs`: co-present entities are eased
+	// INTERP_DELAY_MS in the past for smooth motion between 20 Hz ticks. Null until
+	// the first snapshot. The own Avatar is replaced downstream by local prediction.
+	sample(nowMs: number): Snapshot | null {
+		return this.buffer.sample(nowMs - INTERP_DELAY_MS);
 	}
 
 	send(msg: ClientMessage) {
 		if (this.ready && this.ws.readyState === WebSocket.OPEN)
 			this.ws.send(encodeClientMessage(msg));
+	}
+
+	close() {
+		try {
+			this.ws.close();
+		} catch {}
 	}
 
 	// This session's own Avatar within the latest snapshot, if present.
