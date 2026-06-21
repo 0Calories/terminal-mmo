@@ -8,8 +8,9 @@
 import {
 	type AvatarIntent,
 	addSession,
+	CHANNEL,
+	channelOf,
 	createServerWorld,
-	createZoneState,
 	decodeClientMessage,
 	encodeServerMessage,
 	makeFieldZone,
@@ -19,6 +20,7 @@ import {
 	stepServerWorld,
 	worldSnapshotFor,
 	zoneOf,
+	zoneStateOf,
 } from '@mmo/shared';
 import type { ServerWebSocket } from 'bun';
 
@@ -33,12 +35,10 @@ interface WsData {
 const START_ZONE = 'field-01';
 const TOWN_ZONE = 'town-01';
 let world: ServerWorld = createServerWorld({
-	zones: [
-		createZoneState(makeFieldZone(START_ZONE)),
-		createZoneState(makeTownZone(TOWN_ZONE)),
-	],
+	zones: [makeFieldZone(START_ZONE), makeTownZone(TOWN_ZONE)],
 	start: START_ZONE,
 	town: TOWN_ZONE,
+	cap: CHANNEL.softCap,
 });
 
 let nextSessionId = 1;
@@ -63,14 +63,16 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 				tickRate: TICK_RATE,
 			}),
 		);
-		console.log(`session ${sessionId} (${msg.handle}) joined ${zoneId}`);
+		console.log(
+			`session ${sessionId} (${msg.handle}) joined ${zoneId} (ch ${channelOf(world, sessionId)})`,
+		);
 		return;
 	}
 	// input: trust the reported position with only a loose bounds clamp (against the
-	// session's current Zone) — the server never re-simulates Avatar physics.
-	const zoneId = zoneOf(world, sessionId);
-	if (zoneId === undefined) return; // input before hello; ignore
-	const terrain = world.zones[zoneId].zone.terrain;
+	// session's current Zone/Channel) — the server never re-simulates Avatar physics.
+	const zs = zoneStateOf(world, sessionId);
+	if (zs === undefined) return; // input before hello; ignore
+	const terrain = zs.zone.terrain;
 	intents.set(sessionId, {
 		sessionId,
 		x: clamp(msg.x, terrain.w),

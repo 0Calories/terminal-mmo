@@ -3,8 +3,9 @@ import type { AvatarIntent, ServerWorld } from '../src';
 import {
 	addSession,
 	BOX,
+	channelOf,
+	channelsOf,
 	createServerWorld,
-	createZoneState,
 	GROUND_TOP,
 	makeFieldZone,
 	makeTownZone,
@@ -13,18 +14,18 @@ import {
 	TOWN_SPAWN,
 	worldSnapshotFor,
 	zoneOf,
+	zoneStateOf,
 } from '../src';
 
 const y = GROUND_TOP - BOX.h;
 
-function makeWorld(): ServerWorld {
+// A world with a generous soft cap (single-session tests never split a Channel).
+function makeWorld(cap = 50): ServerWorld {
 	return createServerWorld({
-		zones: [
-			createZoneState(makeFieldZone('field-01')),
-			createZoneState(makeTownZone('town-01')),
-		],
+		zones: [makeFieldZone('field-01'), makeTownZone('town-01')],
 		start: 'field-01',
 		town: 'town-01',
+		cap,
 	});
 }
 
@@ -46,29 +47,30 @@ function holdAt(sessionId: number, x: number, interact = false): AvatarIntent {
 test('addSession places a new session in the start Zone with its handle', () => {
 	const w = addSession(makeWorld(), 7, 'neo');
 	expect(zoneOf(w, 7)).toBe('field-01');
-	const here = w.zones['field-01'].avatars.find((a) => a.sessionId === 7);
+	expect(channelOf(w, 7)).toBe(0);
+	const here = zoneStateOf(w, 7)?.avatars.find((a) => a.sessionId === 7);
 	expect(here?.handle).toBe('neo');
-	expect(w.zones['town-01'].avatars.length).toBe(0);
+	expect(channelsOf(w, 'town-01')[0].avatars.length).toBe(0);
 });
 
-test('stepServerWorld advances every Zone independently each tick', () => {
+test('stepServerWorld advances every Channel independently each tick', () => {
 	let w = addSession(makeWorld(), 7, 'neo');
 	w = stepServerWorld(w, [holdAt(7, 20)], 16);
-	expect(w.zones['field-01'].tick).toBe(1);
-	expect(w.zones['town-01'].tick).toBe(1); // empty Zones still run their own loop
+	expect(channelsOf(w, 'field-01')[0].tick).toBe(1);
+	expect(channelsOf(w, 'town-01')[0].tick).toBe(1); // empty Channels still run their own loop
 });
 
 test('entering a Portal transfers the session to the target Zone at the arrival point', () => {
 	let w = addSession(makeWorld(), 7, 'neo');
-	const fieldPortal = w.zones['field-01'].zone.portals[0];
+	const fieldPortal = channelsOf(w, 'field-01')[0].zone.portals[0];
 	// Stand on the Field->Town portal and press interact.
 	w = stepServerWorld(w, [holdAt(7, fieldPortal.x, true)], 16);
 
 	expect(zoneOf(w, 7)).toBe('town-01');
-	expect(w.zones['field-01'].avatars.some((a) => a.sessionId === 7)).toBe(
-		false,
-	);
-	const moved = w.zones['town-01'].avatars.find((a) => a.sessionId === 7);
+	expect(
+		channelsOf(w, 'field-01')[0].avatars.some((a) => a.sessionId === 7),
+	).toBe(false);
+	const moved = zoneStateOf(w, 7)?.avatars.find((a) => a.sessionId === 7);
 	expect(moved?.avatar.x).toBe(fieldPortal.arrival.x);
 	expect(moved?.avatar.y).toBe(fieldPortal.arrival.y);
 });
@@ -76,7 +78,7 @@ test('entering a Portal transfers the session to the target Zone at the arrival 
 test('a session receives snapshots for only its current Zone', () => {
 	let w = addSession(makeWorld(), 7, 'neo'); // mover
 	w = addSession(w, 8, 'trinity'); // stays in the Field
-	const fieldPortal = w.zones['field-01'].zone.portals[0];
+	const fieldPortal = channelsOf(w, 'field-01')[0].zone.portals[0];
 	w = stepServerWorld(w, [holdAt(7, fieldPortal.x, true), holdAt(8, 60)], 16);
 
 	const moverView = worldSnapshotFor(w, 7);
@@ -91,36 +93,36 @@ test('a session receives snapshots for only its current Zone', () => {
 
 test('progress and inventory survive a Portal transfer', () => {
 	let w = addSession(makeWorld(), 7, 'neo');
-	const before = w.zones['field-01'].avatars[0];
+	const before = channelsOf(w, 'field-01')[0].avatars[0];
 	before.progress = { level: 5, xp: 40, gold: 99 };
 	before.inventory = [
 		{ id: 1, base: 'sword', slot: 'weapon', rarity: 'epic', affixes: [] },
 	];
-	const fieldPortal = w.zones['field-01'].zone.portals[0];
+	const fieldPortal = channelsOf(w, 'field-01')[0].zone.portals[0];
 	w = stepServerWorld(w, [holdAt(7, fieldPortal.x, true)], 16);
 
-	const moved = w.zones['town-01'].avatars.find((a) => a.sessionId === 7);
+	const moved = zoneStateOf(w, 7)?.avatars.find((a) => a.sessionId === 7);
 	expect(moved?.progress).toEqual({ level: 5, xp: 40, gold: 99 });
 	expect(moved?.inventory.length).toBe(1);
 });
 
 test('a forgiving death respawns the Avatar in Town with full HP and no loss', () => {
 	let w = addSession(makeWorld(), 7, 'neo');
-	const av = w.zones['field-01'].avatars[0];
+	const av = channelsOf(w, 'field-01')[0].avatars[0];
 	av.avatar.hp = 1;
 	av.progress = { level: 4, xp: 20, gold: 50 };
 	av.inventory = [
 		{ id: 1, base: 'sword', slot: 'weapon', rarity: 'rare', affixes: [] },
 	];
 	// Stand on a Field Monster so its contact damage finishes the Avatar this tick.
-	const m = w.zones['field-01'].zone.monsters[0];
+	const m = channelsOf(w, 'field-01')[0].zone.monsters[0];
 	w = stepServerWorld(w, [holdAt(7, m.x)], 16);
 
 	expect(zoneOf(w, 7)).toBe('town-01');
-	expect(w.zones['field-01'].avatars.some((a) => a.sessionId === 7)).toBe(
-		false,
-	);
-	const moved = w.zones['town-01'].avatars.find((a) => a.sessionId === 7);
+	expect(
+		channelsOf(w, 'field-01')[0].avatars.some((a) => a.sessionId === 7),
+	).toBe(false);
+	const moved = zoneStateOf(w, 7)?.avatars.find((a) => a.sessionId === 7);
 	expect(moved?.avatar.hp).toBe(moved?.avatar.maxHp); // full HP
 	expect(moved?.avatar.x).toBe(TOWN_SPAWN.x);
 	expect(moved?.progress).toEqual({ level: 4, xp: 20, gold: 50 }); // no XP/Gold loss
@@ -130,22 +132,105 @@ test('a forgiving death respawns the Avatar in Town with full HP and no loss', (
 test('stepServerWorld is deterministic for an identical world + intents', () => {
 	const run = () => {
 		const w = addSession(makeWorld(), 7, 'neo');
-		const portal = w.zones['field-01'].zone.portals[0];
+		const portal = channelsOf(w, 'field-01')[0].zone.portals[0];
 		return stepServerWorld(w, [holdAt(7, portal.x, true)], 16);
 	};
 	const a = run();
 	const b = run();
 	expect(zoneOf(b, 7)).toBe(zoneOf(a, 7));
-	const am = a.zones['town-01'].avatars.find((x) => x.sessionId === 7);
-	const bm = b.zones['town-01'].avatars.find((x) => x.sessionId === 7);
+	const am = zoneStateOf(a, 7)?.avatars.find((x) => x.sessionId === 7);
+	const bm = zoneStateOf(b, 7)?.avatars.find((x) => x.sessionId === 7);
 	expect(bm?.avatar.x).toBe(am?.avatar.x);
 	expect(bm?.avatar.y).toBe(am?.avatar.y);
 });
 
-test('removeSession drops a disconnected session from its Zone and the map', () => {
+test('removeSession drops a disconnected session from its Channel and the map', () => {
 	let w = addSession(makeWorld(), 7, 'neo');
 	w = removeSession(w, 7);
 	expect(zoneOf(w, 7)).toBeUndefined();
-	expect(w.zones['field-01'].avatars.length).toBe(0);
+	expect(channelsOf(w, 'field-01')[0].avatars.length).toBe(0);
 	expect(removeSession(w, 99)).toBe(w); // unknown session is a no-op
+});
+
+// --- Automatic Channel routing (#39) ----------------------------------------
+
+test('fills a Channel to the soft cap, then routes the next entrant to a new Channel', () => {
+	let w = makeWorld(2); // soft cap of 2 per Channel
+	w = addSession(w, 1, 'a');
+	w = addSession(w, 2, 'b');
+	w = addSession(w, 3, 'c'); // past the cap -> a fresh Channel
+
+	expect(channelOf(w, 1)).toBe(0);
+	expect(channelOf(w, 2)).toBe(0);
+	expect(channelOf(w, 3)).toBe(1);
+
+	const channels = channelsOf(w, 'field-01');
+	expect(channels.length).toBe(2);
+	expect(channels[0].avatars.length).toBe(2);
+	expect(channels[1].avatars.length).toBe(1);
+});
+
+test('Players in different Channels of one Zone cannot see each other', () => {
+	let w = makeWorld(1); // each Channel holds one
+	w = addSession(w, 1, 'a');
+	w = addSession(w, 2, 'b');
+	expect(channelOf(w, 1)).toBe(0);
+	expect(channelOf(w, 2)).toBe(1);
+
+	// Both are in field-01, but presence is scoped to the Channel.
+	const view1 = worldSnapshotFor(w, 1);
+	expect(view1.zoneId).toBe('field-01');
+	expect(view1.avatars.map((a) => a.sessionId)).toEqual([1]);
+
+	const view2 = worldSnapshotFor(w, 2);
+	expect(view2.zoneId).toBe('field-01');
+	expect(view2.avatars.map((a) => a.sessionId)).toEqual([2]);
+});
+
+test('Channel routing is deterministic for the same join sequence', () => {
+	const route = () => {
+		let w = makeWorld(2);
+		w = addSession(w, 1, 'a');
+		w = addSession(w, 2, 'b');
+		w = addSession(w, 3, 'c');
+		return [channelOf(w, 1), channelOf(w, 2), channelOf(w, 3)];
+	};
+	expect(route()).toEqual(route());
+	expect(route()).toEqual([0, 0, 1]);
+});
+
+test('a cross-Zone relocation re-routes into a Channel of the destination under the cap', () => {
+	let w = makeWorld(1); // each Channel holds one
+	w = addSession(w, 1, 'a'); // field-01#0
+	w = addSession(w, 2, 'b'); // field-01#1 (field#0 is full)
+	expect(channelOf(w, 1)).toBe(0);
+	expect(channelOf(w, 2)).toBe(1);
+
+	// Both stand on the (static, per-Channel-identical) Field->Town portal.
+	const portalX = channelsOf(w, 'field-01')[0].zone.portals[0].x;
+	w = stepServerWorld(
+		w,
+		[holdAt(1, portalX, true), holdAt(2, portalX, true)],
+		16,
+	);
+
+	expect(zoneOf(w, 1)).toBe('town-01');
+	expect(zoneOf(w, 2)).toBe('town-01');
+	// They spill across Town Channels (cap 1); ordering is deterministic by session.
+	expect(channelOf(w, 1)).toBe(0);
+	expect(channelOf(w, 2)).toBe(1);
+	expect(channelsOf(w, 'town-01').length).toBe(2);
+});
+
+test('a leaver frees a slot the next entrant backfills (lowest Channel with room)', () => {
+	let w = makeWorld(2);
+	w = addSession(w, 1, 'a'); // field#0
+	w = addSession(w, 2, 'b'); // field#0 (now full)
+	w = addSession(w, 3, 'c'); // field#1
+	w = removeSession(w, 1); // field#0 has room again
+
+	w = addSession(w, 4, 'd'); // backfills the lowest Channel with room
+	expect(channelOf(w, 4)).toBe(0);
+	expect(channelsOf(w, 'field-01')[0].avatars.length).toBe(2);
+	expect(channelsOf(w, 'field-01')[1].avatars.length).toBe(1);
 });
