@@ -86,8 +86,8 @@ test('Power Strike fires at its unlock level, hitting harder than a basic swing'
 });
 
 test('Power Strike cannot re-fire while on cooldown', () => {
-	let g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16); // fires
-	g = step(g, POWER, 16); // pressed again, still on cooldown
+	let g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16);
+	g = step(g, POWER, 16); // pressed again while on cooldown
 	const cd = g.player.skillCooldowns?.[POWER_STRIKE.id] ?? 0;
 	// cooldown ticked down rather than reset to full — proves it did not re-fire
 	expect(cd).toBeGreaterThan(0);
@@ -95,7 +95,7 @@ test('Power Strike cannot re-fire while on cooldown', () => {
 });
 
 test('Power Strike re-fires once its cooldown elapses', () => {
-	let g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16); // fires
+	let g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16);
 	// idle long enough for the cooldown to expire (dt clamped to 0.05s/tick)
 	for (let i = 0; i < 80; i++) g = step(g, IDLE, 50);
 	expect(g.player.skillCooldowns?.[POWER_STRIKE.id] ?? 0).toBe(0);

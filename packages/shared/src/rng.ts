@@ -1,5 +1,5 @@
-// Deterministic, pure PRNG (mulberry32). State is threaded explicitly so loot
-// and spawns are reproducible — every call returns the value AND the next state.
+// mulberry32. State is threaded explicitly (each call returns value AND next
+// state) so loot and spawns stay deterministic / reproducible.
 
 export interface Rng {
 	value: number; // in [0, 1)
@@ -15,7 +15,6 @@ export function rngNext(state: number): Rng {
 	return { value, state: s };
 }
 
-/** Draw an integer in [0, n). */
 export function rngInt(state: number, n: number): Rng {
 	const r = rngNext(state);
 	return { value: Math.floor(r.value * n), state: r.state };

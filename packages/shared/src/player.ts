@@ -1,7 +1,3 @@
-// player.ts — the client Player's own state: their Avatar, progression,
-// inventory, and which Zone they occupy. Per-client in M2 — the server owns the
-// consequences (XP/Gold/inventory), the client owns Avatar position (ADR 0001).
-
 import { PHYS } from './constants';
 import { maxHpForLevel } from './progression';
 import type { PlayerClass } from './skills';
@@ -9,21 +5,18 @@ import type { Entity, Item, PlayerProgress } from './types';
 import type { ZoneId } from './world';
 
 export interface PlayerState {
-	avatar: Entity; // the in-world character (CONTEXT: Avatar)
+	avatar: Entity;
 	progress: PlayerProgress;
 	inventory: Item[];
-	zoneId: ZoneId; // which Zone the Avatar currently occupies
-	log: string[]; // recent events (level ups, loot) for the HUD
-	nextId: number; // ids for looted Items
-	rngState: number; // instanced-loot RNG (CONTEXT: Instanced loot)
-	// playable Class (CONTEXT: Class) — MVP Warrior only. Optional so existing
-	// state literals stay valid; the sim treats absent as 'warrior'.
-	class?: PlayerClass;
-	// remaining cooldown (seconds) per Skill id; absent/0 == ready to fire.
-	skillCooldowns?: Record<string, number>;
+	zoneId: ZoneId;
+	log: string[];
+	nextId: number; // id source for looted Items
+	rngState: number;
+	class?: PlayerClass; // sim treats absent as 'warrior'
+	skillCooldowns?: Record<string, number>; // seconds per Skill id; absent/0 == ready
 }
 
-/** The Avatar entity (id 1) at a position, with level-1 stats. */
+// the Avatar is always entity id 1
 export function spawnAvatar(x: number, y: number): Entity {
 	return {
 		id: 1,
@@ -42,7 +35,6 @@ export function spawnAvatar(x: number, y: number): Entity {
 	};
 }
 
-/** A fresh Player placed at (x, y) in the given Zone. */
 export function spawnPlayerState(
 	zoneId: ZoneId,
 	x: number,

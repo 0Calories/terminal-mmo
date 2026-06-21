@@ -1,7 +1,3 @@
-// world.ts — the shared World of Zones. A Zone is the unit of place + simulation
-// (CONTEXT: Zone); the World is every Zone, advanced by a shared tick. This is
-// server-authoritative in M2; here it also drives the single-player loop.
-
 import { BOX, GROUND_TOP, MONSTER, SHOOTER, SPAWN, TOWN } from './constants';
 import { makeStarterField, makeTownTerrain } from './terrain';
 import type {
@@ -18,38 +14,31 @@ import type {
 export type ZoneId = string;
 export type ZoneType = 'field' | 'town';
 
-/** A connection between Zones (CONTEXT: Zone — Zones connect via portals). A
- * trigger box that, on entry, moves the Avatar to `target` at `arrival`. */
+/** A trigger box that, on entry, moves the Avatar to `target` at `arrival`. */
 export interface Portal extends Box {
 	target: ZoneId;
 	arrival: { x: number; y: number };
 }
 
-/** A discrete, bounded area of the World: solid Terrain + the Monsters in it.
- * Two kinds (CONTEXT: Zone) — combat Fields and safe Towns. */
 export interface Zone {
 	id: ZoneId;
 	type: ZoneType;
 	terrain: Terrain;
 	monsters: Entity[];
 	projectiles: Projectile[];
-	nextProjectileId: number; // id source for Projectiles (cf. PlayerState.nextId)
-	spawns: SpawnPoint[]; // fixed Monster spawn points (story 20)
-	respawns: PendingRespawn[]; // dead Monsters awaiting their respawn timer
-	nextMonsterId: number; // id source for respawned Monsters
-	portals: Portal[]; // connections to other Zones (story 14)
-	// non-combat interactables — the Town vendor for MVP (story 29). Optional so
-	// existing Zone literals (e.g. in tests) stay valid; absent == none.
+	nextProjectileId: number;
+	spawns: SpawnPoint[];
+	respawns: PendingRespawn[];
+	nextMonsterId: number;
+	portals: Portal[];
 	npcs?: Npc[];
 }
 
-/** The whole World: every Zone keyed by id, plus a shared sim tick. */
 export interface World {
 	zones: Record<ZoneId, Zone>;
 	tick: number;
 }
 
-/** The Zone a given id refers to. */
 export function activeZone(world: World, zoneId: ZoneId): Zone {
 	return world.zones[zoneId];
 }
@@ -61,7 +50,6 @@ export function spawnMonster(
 	y: number,
 	spawnIndex?: number,
 ): Entity {
-	// per-archetype base stats; shooters are frailer + slower than chasers
 	const hp = type === 'shooter' ? SHOOTER.hp : MONSTER.chaserHp;
 	const speed = type === 'shooter' ? SHOOTER.speed : MONSTER.chaserSpeed;
 	return {
@@ -82,8 +70,6 @@ export function spawnMonster(
 	};
 }
 
-/** A combat Field: full-width ground + platforms, with scattered Monsters — a
- * mix of melee chasers and ranged shooters so positioning matters (story 19). */
 export function makeFieldZone(id: ZoneId, seed = 1337): Zone {
 	const terrain = makeStarterField(seed);
 	const spawns: SpawnPoint[] = [];
@@ -106,7 +92,6 @@ export function makeFieldZone(id: ZoneId, seed = 1337): Zone {
 		spawns,
 		respawns: [],
 		nextMonsterId: mid,
-		// a Portal back to the Town hub, near the Field entrance (story 14)
 		portals: [
 			{
 				x: 24,
@@ -120,8 +105,6 @@ export function makeFieldZone(id: ZoneId, seed = 1337): Zone {
 	};
 }
 
-/** The Town: a safe social hub (CONTEXT: Town). No Monsters, no spawn points —
- * so no combat can ever occur here — just hand-authored, walkable Terrain. */
 export function makeTownZone(id: ZoneId): Zone {
 	return {
 		id,
@@ -133,7 +116,6 @@ export function makeTownZone(id: ZoneId): Zone {
 		spawns: [],
 		respawns: [],
 		nextMonsterId: 1,
-		// a Portal back out to the Field, off to the right of the plaza (story 14)
 		portals: [
 			{
 				x: TOWN.w - 16,
@@ -144,8 +126,6 @@ export function makeTownZone(id: ZoneId): Zone {
 				arrival: { x: SPAWN.x, y: SPAWN.y },
 			},
 		],
-		// the vendor NPC: stands on the plaza, left of centre, where the Avatar can
-		// walk up and sell loot for Gold (story 29).
 		npcs: [
 			{
 				id: 1,

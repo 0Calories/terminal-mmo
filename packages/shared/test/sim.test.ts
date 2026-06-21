@@ -136,7 +136,6 @@ test('a chaser inside the deadzone holds position and keeps its facing', () => {
 });
 
 test('a chaser outside the deadzone still closes in on the Avatar', () => {
-	// chaser well beyond the deadzone but inside aggro range
 	const g = step(adjacentGame(), IDLE, 16);
 	const m = activeZone(g.world, g.player.zoneId).monsters[0];
 	expect(m.x).toBeLessThan(20 + BOX.w); // moved left toward the Avatar at x=20
@@ -179,7 +178,7 @@ test('a shooter with the Avatar in range fires a projectile and goes on cooldown
 });
 
 test('a shooter on cooldown does not fire again', () => {
-	let g = step(shooterGame(30), IDLE, 16); // first shot
+	let g = step(shooterGame(30), IDLE, 16);
 	const first = activeZone(g.world, g.player.zoneId).projectiles.length;
 	g = step(g, IDLE, 16); // still on cooldown
 	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(first);
@@ -241,8 +240,7 @@ test('a projectile overlapping the Avatar damages it and applies i-frames', () =
 	);
 	expect(g.player.avatar.hp).toBe(before - SHOOTER.projDamage);
 	expect(g.player.avatar.hurtT).toBeGreaterThan(0);
-	// the projectile is consumed on hit
-	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(0);
+	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(0); // consumed on hit
 });
 
 // player adjacent to a low-hp Field monster bound to spawn point 0, so killing
@@ -294,7 +292,7 @@ test('killing a Field monster schedules a respawn at its spawn point', () => {
 });
 
 test('a scheduled respawn restores the monster at full HP at its spawn point', () => {
-	let g = step(fieldSpawnGame(4), ATTACK, 16); // kill → schedule
+	let g = step(fieldSpawnGame(4), ATTACK, 16);
 	expect(activeZone(g.world, g.player.zoneId).monsters.length).toBe(0);
 	let respawned = false;
 	for (let i = 0; i < 300 && !respawned; i++) {
@@ -303,7 +301,7 @@ test('a scheduled respawn restores the monster at full HP at its spawn point', (
 		if (zone.monsters.length === 1) {
 			respawned = true;
 			const m = zone.monsters[0];
-			expect(m.hp).toBe(MONSTER.chaserHp); // full HP
+			expect(m.hp).toBe(MONSTER.chaserHp);
 			expect(m.hp).toBe(m.maxHp);
 			expect(m.x).toBe(20 + BOX.w); // at the spawn point
 			expect(m.y).toBe(GROUND_TOP - BOX.h);
@@ -311,7 +309,7 @@ test('a scheduled respawn restores the monster at full HP at its spawn point', (
 			expect(zone.respawns.length).toBe(0);
 		}
 	}
-	expect(respawned).toBe(true); // count returned to baseline
+	expect(respawned).toBe(true);
 });
 
 test('respawn scheduling + timing is deterministic', () => {
@@ -352,7 +350,7 @@ test("only the active Zone ticks; the Avatar's persistent state lives above it",
 	};
 	const before = g.world.zones['field-02'];
 	g = step(g, { moveX: 1, jump: false, attack: false }, 16);
-	// dormant Zone untouched (same reference), active Zone advanced
+	// dormant Zone untouched (same reference)
 	expect(g.world.zones['field-02']).toBe(before);
 	expect(g.player.zoneId).toBe('field-01');
 });

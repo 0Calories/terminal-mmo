@@ -1,25 +1,12 @@
-// Sprite: the shared machinery for ASCII-art figures (ADR 0003). It owns art
-// parsing, dimensions, mirroring, and per-cell colour *keys* — and nothing
-// about buffers, cameras, screen colour, or entities. That keeps it pure and
-// unit-testable, and lets non-entity art (terrain, buildings, items) reuse it.
-//
-// Authoring rules for the glyph/colour template strings:
-//   - Write rows flush-left, one row per line.
-//   - `·` (U+00B7) marks a transparent cell. It's visible in the editor (so the
-//     silhouette reads true) and survives trailing-whitespace trimming; the
-//     constructor maps it to a space (a literal space is transparent too).
-//   - Escape `\` as `\\` and a backtick as `` \` `` (normal template-literal rules).
 import type { Facing } from '@mmo/shared';
 
-/** Author-facing transparent-cell marker; converted to a space at runtime. */
+// `·` (U+00B7) marks a transparent cell: visible in the editor and survives
+// trailing-whitespace trimming, unlike a literal space (also transparent).
 export const SENTINEL = '·';
 
-/** Glyphs that visually flip when a sprite faces the other way. ASCII brackets,
- *  slashes and quotes pair up the obvious way. The Block Elements (U+2580–259F)
- *  pair by swapping their left/right halves: a glyph's lit quadrants reflect
- *  across the vertical axis (TL↔TR, BL↔BR), so e.g. ▌→▐, ▘→▝, ▛→▜. The fully
- *  symmetric blocks (█ ▀ ▄ space) are their own mirror and need no entry. This
- *  lets chunky block-art Sprites face left correctly, not just line-art ones. */
+// Block Elements (U+2580–259F) mirror by swapping lit quadrants across the
+// vertical axis (TL↔TR, BL↔BR): e.g. ▌→▐, ▘→▝, ▛→▜. Fully symmetric blocks
+// (█ ▀ ▄ space) are self-mirrors and omitted.
 const MIRROR: Record<string, string> = {
 	'(': ')',
 	')': '(',
@@ -33,7 +20,6 @@ const MIRROR: Record<string, string> = {
 	'\\': '/',
 	'`': "'",
 	"'": '`',
-	// Block Elements — half blocks, single quadrants, and three-quadrant blocks.
 	'▌': '▐',
 	'▐': '▌',
 	'▘': '▝',
@@ -48,9 +34,6 @@ const MIRROR: Record<string, string> = {
 	'▞': '▚',
 };
 
-/** Split a template-literal art block into normalised rows: drop the leading
- *  and trailing blank lines (template-literal artifacts) and right-pad ragged
- *  rows so every row is the same (max) width. */
 function splitTrimPad(art: string): string[] {
 	const lines = art.split('\n');
 	while (lines.length > 0 && lines[0].trim() === '') lines.shift();
@@ -59,8 +42,6 @@ function splitTrimPad(art: string): string[] {
 	return lines.map((l) => l.padEnd(width, ' '));
 }
 
-/** Flip glyph rows for the opposite facing: reverse each row and swap the
- *  glyphs that have a mirror image (brackets, slashes, quotes). */
 function mirrorGlyphs(rows: readonly string[]): string[] {
 	return rows.map((row) => {
 		let out = '';
@@ -69,8 +50,8 @@ function mirrorGlyphs(rows: readonly string[]): string[] {
 	});
 }
 
-/** Flip colour-key rows for the opposite facing: reverse only — keys carry no
- *  orientation, they just need to stay aligned to the mirrored glyphs. */
+// Colour keys carry no orientation, so mirroring is a plain reverse to keep
+// them aligned to the mirrored glyphs.
 function reverseRows(rows: readonly string[]): string[] {
 	return rows.map((row) => {
 		let out = '';
@@ -80,11 +61,9 @@ function reverseRows(rows: readonly string[]): string[] {
 }
 
 export interface SpriteOptions {
-	/** Single-char palette key applied to every cell with no explicit colour. */
 	defaultKey: string;
-	/** Optional colour-key grid, aligned cell-for-cell to the glyph grid. Each
-	 *  cell is a single-char palette key; `·`/space fall back to `defaultKey`.
-	 *  Omit for a mono-colour sprite. Must match the glyph grid's dimensions. */
+	/** Colour-key grid aligned cell-for-cell to the glyph grid; `·`/space fall
+	 *  back to `defaultKey`. Must match the glyph grid's dimensions. */
 	colors?: string;
 }
 
@@ -132,12 +111,10 @@ export class Sprite {
 		this.colorLeft = reverseRows(colorRows);
 	}
 
-	/** Glyph rows for the given facing (transparent cells are spaces). */
 	rows(facing: Facing = 1): readonly string[] {
 		return facing === 1 ? this.glyphRight : this.glyphLeft;
 	}
 
-	/** Colour-key rows for the given facing, aligned cell-for-cell to `rows`. */
 	colorKeys(facing: Facing = 1): readonly string[] {
 		return facing === 1 ? this.colorRight : this.colorLeft;
 	}

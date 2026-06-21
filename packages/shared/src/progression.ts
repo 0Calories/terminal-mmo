@@ -1,18 +1,16 @@
 import { PROGRESSION } from './constants';
 import type { PlayerProgress } from './types';
 
-/** XP needed to go from `level` to `level + 1`. Infinite at the cap. */
+// Infinity at the cap, so the level-up loop can never advance past it.
 export function xpToNext(level: number): number {
 	if (level >= PROGRESSION.levelCap) return Infinity;
 	return 20 + level * level * 4;
 }
 
-/** Max HP for a given level (levels give baseline power — ADR/PRD progression). */
 export function maxHpForLevel(level: number): number {
 	return 80 + (level - 1) * 12;
 }
 
-/** Apply XP, rolling over into as many levels as it earns (capped). Pure. */
 export function applyXp(
 	p: PlayerProgress,
 	amount: number,

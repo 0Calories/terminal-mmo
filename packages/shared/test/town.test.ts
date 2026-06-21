@@ -49,8 +49,7 @@ test('the Town stays Monster-free and combat-free across many ticks', () => {
 		expect(zone.monsters.length).toBe(0);
 		expect(zone.projectiles.length).toBe(0);
 	}
-	// no Monsters means no contact/projectile damage is ever dealt
-	expect(g.player.avatar.hp).toBe(startHp);
+	expect(g.player.avatar.hp).toBe(startHp); // no Monsters means no damage ever dealt
 });
 
 test('createGame registers a Town alongside the starter Field', () => {

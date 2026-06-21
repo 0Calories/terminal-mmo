@@ -1,13 +1,4 @@
-// Sprite design preview — renders every candidate in `gallery.ts` in true
-// colour, both facings side by side, grouped by entity kind. It's a plain
-// stdout/ANSI dump: no renderer, no TTY, no game loop — just run it and look.
-//
 //     bun packages/client/src/sprites/preview.ts
-//
-// Colours come from the real PALETTE, so what you see is what the game would
-// draw (modulo state tints like the hurt flash, which live in the renderer).
-// Both facings are shown so the block-glyph mirror support is visible at a
-// glance.
 import { GALLERY, type GalleryEntry } from './gallery';
 import { PALETTE } from './palette';
 
@@ -17,7 +8,6 @@ const DIM = '\x1b[2m';
 const fg = (r: number, g: number, b: number) => `\x1b[38;2;${r};${g};${b}m`;
 const MISSING: [number, number, number] = [120, 120, 120]; // unknown palette key
 
-/** Glyph rows for one facing, each cell wrapped in its palette colour. */
 function paint(sprite: GalleryEntry['sprite'], facing: 1 | -1): string[] {
 	const glyphs = sprite.rows(facing);
 	const keys = sprite.colorKeys(facing);
@@ -26,7 +16,7 @@ function paint(sprite: GalleryEntry['sprite'], facing: 1 | -1): string[] {
 		for (let x = 0; x < row.length; x++) {
 			const ch = row[x];
 			if (ch === ' ') {
-				out += ' '; // transparent cell
+				out += ' ';
 				continue;
 			}
 			const rgba = PALETTE[keys[y][x]];
@@ -37,8 +27,6 @@ function paint(sprite: GalleryEntry['sprite'], facing: 1 | -1): string[] {
 	});
 }
 
-/** Right-facing and left-facing renders laid side by side, with the label and
- *  note printed to the right of the art. */
 function card(entry: GalleryEntry): string {
 	const right = paint(entry.sprite, 1);
 	const left = paint(entry.sprite, -1);
@@ -49,13 +37,11 @@ function card(entry: GalleryEntry): string {
 	for (let y = 0; y < h; y++) {
 		const r = right[y] ?? '';
 		const l = left[y] ?? '';
-		// Pad the right-facing block to colW visible cells; ANSI colour codes
-		// carry no width, so pad by the sprite's known glyph-cell width.
+		// ANSI colour codes carry no width, so pad by glyph-cell width.
 		const rVisible = (glyphRight[y] ?? '').length;
 		const rGap = ' '.repeat(Math.max(0, colW - rVisible));
 		lines.push(`  ${r}${rGap}   ${l}`);
 	}
-	// Attach the label/note to the middle line.
 	const mid = Math.floor(h / 2);
 	const meta = `${BOLD}${entry.label}${RESET}  ${DIM}${entry.note}${RESET}`;
 	lines[mid] = `${lines[mid]}    ${meta}`;

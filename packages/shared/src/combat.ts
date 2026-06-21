@@ -1,13 +1,10 @@
 import { BOX, COMBAT } from './constants';
 import type { Box, Entity } from './types';
 
-/** The logical collision/hit box of an entity (decoupled from its sprite). */
 export function entityBox(e: Entity): Box {
 	return { x: e.x, y: e.y, w: BOX.w, h: BOX.h };
 }
 
-/** Forgiving frontal melee arc: a wide box extending in the facing direction,
- * full body height (CONTEXT: Combat — melee is forgiving). */
 export function meleeHitbox(p: Entity): Box {
 	const w = COMBAT.meleeReach;
 	return {

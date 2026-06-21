@@ -1,7 +1,7 @@
 import type { Input } from '@mmo/shared';
 
-// Maps held keys into a per-tick Input. With Kitty key-release reporting we trust
-// release events; on terminals without it we time out held keys (the M0 finding).
+// Fallback timeout for terminals without Kitty key-release reporting: without
+// release events a held key would stick, so it's dropped after this idle (M0).
 const HELD_MS = 220;
 
 type Action = 'left' | 'right' | 'jump' | 'attack' | 'interact' | 'skill1';
@@ -21,9 +21,9 @@ function actionFor(name: string): Action | null {
 		case 'x':
 			return 'attack';
 		case 'e':
-			return 'interact'; // enter Portals, talk to NPCs, pick up Items, use objects
+			return 'interact';
 		case 'k':
-			return 'skill1'; // Class Skill slot 1 (Warrior: Power Strike)
+			return 'skill1';
 		default:
 			return null;
 	}
@@ -42,7 +42,7 @@ export class InputState {
 	}
 
 	release(name: string) {
-		this.releaseCapable = true; // terminal reports releases — drop timeout fallback
+		this.releaseCapable = true; // terminal reports releases — drop the timeout fallback
 		const a = actionFor(name);
 		if (a) this.held.delete(a);
 	}

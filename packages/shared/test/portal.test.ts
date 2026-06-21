@@ -87,19 +87,16 @@ test('no transition when the Avatar is not overlapping a Portal', () => {
 
 test('createGame wires a round-trip Portal pair: Field -> Town -> Field', () => {
 	let g = createGame();
-	// the Field links to the Town, which links back to the Field
 	const fieldPortal = activeZone(g.world, 'field-01').portals[0];
 	const townPortal = activeZone(g.world, 'town-01').portals[0];
 	expect(g.world.zones[fieldPortal.target].type).toBe('town');
 	expect(g.world.zones[townPortal.target].type).toBe('field');
 
-	// stand on the Field's portal and enter -> Town, at the Town's arrival point
 	g.player.avatar.x = fieldPortal.x;
 	g = step(g, INTERACT, 16);
 	expect(g.player.zoneId).toBe('town-01');
 	expect(g.player.avatar.x).toBe(fieldPortal.arrival.x);
 
-	// stand on the Town's portal and enter -> back in the Field, at its arrival
 	g.player.avatar.x = townPortal.x;
 	g = step(g, INTERACT, 16);
 	expect(g.player.zoneId).toBe('field-01');

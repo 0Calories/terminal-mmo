@@ -8,28 +8,24 @@ import {
 	type View,
 } from '../src/camera';
 
-// 80x24 viewport over a 240x40 world — room to scroll on both axes.
 const VIEW: View = { sw: 80, sh: 24, ww: 240, wh: 40 };
 const Z = 'field-01';
 
-// state with the camera already centred on an Avatar at (ax, ay), as if it had
-// been tracking it for a frame (so teleport detection has a baseline).
+// Tracked for one frame already, so teleport detection has a baseline.
 function settled(ax: number, ay: number): CameraState {
 	return stepCamera(initCameraState(), Z, ax, ay, VIEW);
 }
 
 test('first frame snap-centres on the Avatar', () => {
 	const s = stepCamera(initCameraState(), Z, 100, 20, VIEW);
-	// centre = avatar + half-box; cam = centre - half-screen, clamped (float — the
-	// renderer rounds, not the camera, so a followed Avatar doesn't shimmer)
 	const cx = 100 + BOX.w / 2;
 	expect(s.cam).toEqual({ x: cx - 40, y: 22.5 - 12 });
 });
 
 test('the camera holds while the Avatar roams inside the dead-band', () => {
 	const s0 = settled(100, 20);
-	const s1 = stepCamera(s0, Z, 103, 20, VIEW); // small step, still central
-	expect(s1.cam).toEqual(s0.cam); // no shimmer
+	const s1 = stepCamera(s0, Z, 103, 20, VIEW);
+	expect(s1.cam).toEqual(s0.cam);
 });
 
 test('a held jump does not scroll the camera vertically', () => {
@@ -39,8 +35,7 @@ test('a held jump does not scroll the camera vertically', () => {
 });
 
 test('the camera scrolls once the Avatar pushes past the band edge', () => {
-	// pre-position: camera lagging behind an Avatar near the right band edge,
-	// with a near-identical last centre so this is treated as walking, not a jump
+	// near-identical last centre so this is treated as walking, not a jump
 	const start: CameraState = {
 		cam: { x: 50, y: 11 },
 		center: { x: 111, y: 22.5 },
@@ -49,8 +44,8 @@ test('the camera scrolls once the Avatar pushes past the band edge', () => {
 	const s = stepCamera(start, Z, 110, 20, VIEW); // cx = 112.5
 	const bandW = VIEW.sw * CAMERA.bandWidthFrac;
 	const rightEdge = (VIEW.sw + bandW) / 2;
-	expect(s.cam?.x).toBeCloseTo(112.5 - rightEdge); // pinned to band edge
-	expect(s.cam?.x).toBeGreaterThan(50); // scrolled right
+	expect(s.cam?.x).toBeCloseTo(112.5 - rightEdge);
+	expect(s.cam?.x).toBeGreaterThan(50);
 });
 
 test('the camera clamps at the world edge instead of overscrolling', () => {
@@ -60,21 +55,21 @@ test('the camera clamps at the world edge instead of overscrolling', () => {
 		zoneId: Z,
 	};
 	const s = stepCamera(start, Z, 0, 20, VIEW);
-	expect(s.cam?.x).toBe(0); // can't scroll past the left wall
+	expect(s.cam?.x).toBe(0);
 });
 
 test('a teleport-sized jump snap-centres instead of chasing', () => {
-	const s0 = settled(50, 20); // cam centred near x=50
+	const s0 = settled(50, 20);
 	const s = stepCamera(s0, Z, 150, 20, VIEW); // +100 cells in one frame
 	const cx = 150 + BOX.w / 2;
-	expect(s.cam?.x).toBeCloseTo(cx - 40); // re-centred, not band-scrolled
+	expect(s.cam?.x).toBeCloseTo(cx - 40);
 });
 
 test('walking never trips the teleport snap', () => {
-	// a single max-ish walking step is well under snapDeltaCells
+	// just under snapDeltaCells, and still inside the band, so the camera holds —
+	// a snap would instead re-centre
 	const s0 = settled(100, 20);
 	const s1 = stepCamera(s0, Z, 100 + (CAMERA.snapDeltaCells - 1), 20, VIEW);
-	// still inside the band, so the camera holds (would have re-centred on snap)
 	expect(s1.cam).toEqual(s0.cam);
 });
 

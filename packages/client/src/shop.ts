@@ -1,8 +1,5 @@
-// Shop overlay (story 29): the Town vendor's sell panel. A modal, layout-driven
-// overlay (like Hud) that lists the Player's inventory with each Item's sale
-// value and a selection caret. Pure view + selection state — the actual
-// transaction (sellItem) and Gold/inventory mutation live in index.ts, which
-// owns game state; this class only renders and tracks which row is selected.
+// View + selection state only; the transaction and Gold/inventory mutation live
+// in index.ts, which owns game state.
 import type { GameState } from '@mmo/shared';
 import { saleValue } from '@mmo/shared';
 import {
@@ -13,18 +10,16 @@ import {
 } from '@opentui/core';
 import { COLORS } from './theme';
 
-const RARITY_PAD = 9; // widest rarity word ('legendary') for column alignment
+const RARITY_PAD = 9; // width of 'legendary', the widest rarity word
 
 export class Shop {
 	private readonly container: BoxRenderable;
 	private readonly gold: TextRenderable;
 	private readonly list: TextRenderable;
-	/** Index of the highlighted inventory row; clamped to inventory length. */
 	selected = 0;
 
 	constructor(ctx: RenderContext) {
-		// Full-screen container that centres the panel; starts hidden until the
-		// Player talks to the vendor. zIndex 20 puts it above the HUD (z10).
+		// zIndex 20 puts it above the HUD (z10).
 		this.container = new BoxRenderable(ctx, {
 			position: 'absolute',
 			top: 0,
@@ -69,7 +64,6 @@ export class Shop {
 		this.container.add(panel);
 	}
 
-	/** Add the overlay to a parent (typically renderer.root). */
 	attach(parent: Renderable): void {
 		parent.add(this.container);
 	}
@@ -78,7 +72,6 @@ export class Shop {
 		return this.container.visible;
 	}
 
-	/** Show the panel and reset the selection to the top of the bags. */
 	show(): void {
 		this.selected = 0;
 		this.container.visible = true;
@@ -88,7 +81,6 @@ export class Shop {
 		this.container.visible = false;
 	}
 
-	/** Move the selection by `delta`, clamped to the inventory bounds. */
 	move(delta: number, count: number): void {
 		if (count <= 0) {
 			this.selected = 0;
@@ -97,7 +89,6 @@ export class Shop {
 		this.selected = Math.max(0, Math.min(count - 1, this.selected + delta));
 	}
 
-	/** Repaint from the latest Player state: Gold + one row per held Item. */
 	update(player: GameState['player']): void {
 		const inv = player.inventory;
 		if (this.selected > inv.length - 1)
