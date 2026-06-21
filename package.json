@@ -9,12 +9,14 @@
 		"dev": "bun run packages/client/src/index.ts",
 		"dev:client": "bun run packages/client/src/index.ts",
 		"dev:server": "bun run packages/server/src/index.ts",
+		"zone": "bun run packages/zone-tools/bin/zone.ts",
+		"zones:check": "bun run packages/zone-tools/bin/zone.ts check",
 		"test": "bun test",
 		"typecheck": "bun run --filter '*' typecheck",
 		"lint": "biome lint .",
 		"format": "biome format --write .",
 		"check": "biome check --write .",
-		"ci": "biome ci ."
+		"ci": "biome ci . && bun run zones:check"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.0",
