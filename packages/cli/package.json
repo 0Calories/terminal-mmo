@@ -1,0 +1,39 @@
+{
+	"name": "terminal-mmo",
+	"version": "0.1.0",
+	"description": "A persistent PvE side-scrolling MMORPG played entirely in your terminal. Alpha.",
+	"type": "module",
+	"bin": {
+		"terminal-mmo": "./dist/cli.js"
+	},
+	"files": [
+		"dist"
+	],
+	"engines": {
+		"bun": ">=1.0.0"
+	},
+	"scripts": {
+		"build": "bun run build.ts",
+		"prepublishOnly": "bun run build.ts",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@opentui/core": "0.4.1"
+	},
+	"devDependencies": {
+		"@mmo/client": "workspace:*",
+		"@mmo/shared": "workspace:*"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"keywords": [
+		"terminal",
+		"tui",
+		"mmo",
+		"game",
+		"bun",
+		"opentui"
+	],
+	"license": "MIT"
+}

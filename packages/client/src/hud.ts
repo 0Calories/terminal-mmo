@@ -34,6 +34,7 @@ export class Hud {
 	private readonly topBar: BoxRenderable;
 	private readonly bottom: BoxRenderable;
 	private readonly stats: TextRenderable;
+	private readonly alpha: TextRenderable;
 	private readonly meta: TextRenderable;
 	private readonly skills: TextRenderable;
 	private readonly log: TextRenderable;
@@ -58,12 +59,20 @@ export class Hud {
 			fg: COLORS.hud,
 			bg: COLORS.hudBg,
 		});
+		// Centre of the top bar: an alpha warning, shown only in networked play
+		// (ADR 0009 — the live World is ephemeral). Empty until showAlphaNotice().
+		this.alpha = new TextRenderable(ctx, {
+			content: '',
+			fg: COLORS.vendor,
+			bg: COLORS.hudBg,
+		});
 		this.meta = new TextRenderable(ctx, {
 			content: '',
 			fg: COLORS.dim,
 			bg: COLORS.hudBg,
 		});
 		this.topBar.add(this.stats);
+		this.topBar.add(this.alpha);
 		this.topBar.add(this.meta);
 
 		this.bottom = new BoxRenderable(ctx, {
@@ -106,6 +115,12 @@ export class Hud {
 	attach(parent: Renderable): void {
 		parent.add(this.topBar);
 		parent.add(this.bottom);
+	}
+
+	// Surface the ephemeral-alpha warning in the top bar (ADR 0009). Called once on
+	// entering networked play; the offline loop leaves it blank.
+	showAlphaNotice(): void {
+		this.alpha.content = ' ⚠ ALPHA · progress resets when the server restarts ';
 	}
 
 	update(game: GameState, fps: number): void {

@@ -33,9 +33,17 @@ import { Shop } from './shop';
 // on a 60Hz panel, or over SSH where the refresh is unknowable (#22).
 const RENDER_FPS = Number(process.env.MMO_FPS) || 120;
 
-// Set MMO_SERVER=ws://host:port to play against the M2 server (ADR 0006);
-// unset runs the offline single-player loop.
-const SERVER = process.env.MMO_SERVER;
+// Where `bunx terminal-mmo` connects with no configuration (ADR 0009): the live
+// World, deployed to Railway. This constant is baked into the published bundle;
+// changing hosts means a re-publish (acceptable — every protocol bump is one too).
+const PROD_SERVER = 'wss://mmoserver-production-c9d8.up.railway.app';
+
+// Connection resolution (ADR 0009): MMO_OFFLINE forces the single-player loop;
+// otherwise MMO_SERVER overrides the baked production URL (used for local dev,
+// e.g. MMO_SERVER=ws://localhost:8080), falling back to PROD_SERVER.
+const OFFLINE =
+	process.env.MMO_OFFLINE === '1' || process.env.MMO_OFFLINE === 'true';
+const SERVER = process.env.MMO_SERVER || PROD_SERVER;
 
 // No movement / combat this frame — fed to the sim while a modal (shop, chat)
 // owns the keyboard, so held keys don't drive the Avatar.
@@ -60,11 +68,14 @@ renderer.root.add(playfield);
 const hud = new Hud(renderer);
 hud.attach(renderer.root);
 
-function quit() {
+function quit(message?: string) {
 	try {
 		(renderer as unknown as { destroy?: () => void }).destroy?.();
 	} catch {}
-	process.exit(0);
+	// Printed after the TUI is torn down so it lands on the normal screen, not the
+	// cleared alt-screen (e.g. a server rejection reason, ADR 0009).
+	if (message) console.error(message);
+	process.exit(message ? 1 : 0);
 }
 
 // A running FPS estimate shared by both loops.
@@ -84,8 +95,8 @@ function fpsMeter() {
 	};
 }
 
-if (SERVER) runNetworked(SERVER);
-else runOffline();
+if (OFFLINE) runOffline();
+else runNetworked(SERVER);
 
 renderer.start();
 
@@ -184,7 +195,12 @@ function localZone(id: string): Zone {
 
 function runNetworked(url: string) {
 	const handle = process.env.USER || 'wanderer';
-	const net = new NetClient(url, handle);
+	// On a server refusal (protocol mismatch / connection cap, ADR 0009), tear down
+	// the TUI and print the reason so it isn't buried under the alt-screen.
+	const net = new NetClient(url, handle, (reason) => {
+		quit(reason);
+	});
+	hud.showAlphaNotice(); // ephemeral live World (ADR 0009)
 	// The Zone we currently render + predict against; swapped when the server moves
 	// us between Zones (portal travel, death respawn).
 	let zoneId = 'field-01';

@@ -11,6 +11,20 @@
         "typescript": "^5.6.0",
       },
     },
+    "packages/cli": {
+      "name": "terminal-mmo",
+      "version": "0.1.0",
+      "bin": {
+        "terminal-mmo": "./dist/cli.js",
+      },
+      "dependencies": {
+        "@opentui/core": "0.4.1",
+      },
+      "devDependencies": {
+        "@mmo/client": "workspace:*",
+        "@mmo/shared": "workspace:*",
+      },
+    },
     "packages/client": {
       "name": "@mmo/client",
       "version": "0.0.0",
@@ -105,6 +119,8 @@
     "string-width": ["string-width@7.2.0", "", { "dependencies": { "emoji-regex": "^10.3.0", "get-east-asian-width": "^1.0.0", "strip-ansi": "^7.1.0" } }, "sha512-tsaTIkKW9b4N+AEj+SVA+WhJzV7/zMhcSu78mLKWSk7cXMOSHsBKFWUs0fWwq8QyK3MgJBQRX6Gbi4kYbdvGkQ=="],
 
     "strip-ansi": ["strip-ansi@7.1.2", "", { "dependencies": { "ansi-regex": "^6.0.1" } }, "sha512-gmBGslpoQJtgnMAvOVqGZpEz9dyoKTCzy2nfz/n8aIFhN/jCE/rCmcxabB6jOOHV+0WNnylOxaxBQPSvcWklhA=="],
+
+    "terminal-mmo": ["terminal-mmo@workspace:packages/cli"],
 
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 

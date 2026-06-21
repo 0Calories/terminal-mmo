@@ -1,14 +1,16 @@
 {
-	"name": "terminal-mmo",
+	"name": "terminal-mmo-workspace",
 	"private": true,
 	"type": "module",
 	"workspaces": [
 		"packages/*"
 	],
 	"scripts": {
+		"start": "bun run packages/server/src/index.ts",
 		"dev": "bun run packages/client/src/index.ts",
 		"dev:client": "bun run packages/client/src/index.ts",
 		"dev:server": "bun run packages/server/src/index.ts",
+		"build:cli": "bun run packages/cli/build.ts",
 		"zone": "bun run packages/zone-tools/bin/zone.ts",
 		"zones:check": "bun run packages/zone-tools/bin/zone.ts check",
 		"test": "bun test",

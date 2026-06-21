@@ -14,6 +14,12 @@ import type {
 	Slot,
 } from './types';
 
+// Bumped by hand on EVERY change to the wire format below (and alongside the
+// published client version). Carried on `hello`; the server rejects a mismatch
+// (ADR 0009) so a stale `bunx` client fails loudly with "run @latest" rather than
+// silently mis-decoding a binary frame at the wrong offsets.
+export const PROTOCOL_VERSION = 1;
+
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
@@ -125,15 +131,22 @@ class Reader {
 		this.pos += len;
 		return textDecoder.decode(bytes);
 	}
+	// Unread bytes left in the frame — lets a decoder treat a missing trailing
+	// field as absent (e.g. a legacy `hello` with no protocol version) instead of
+	// reading past the buffer and throwing.
+	remaining(): number {
+		return this.buf.byteLength - this.pos;
+	}
 }
 
 // --- Client -> server -------------------------------------------------------
 
-// `hello` joins with an ephemeral handle; `input` reports the client-owned
-// Avatar kinematics (ADR 0001: position is client-authoritative) plus the combat
-// intents for the tick. A `skill` of 0 means none was pressed.
+// `hello` joins with an ephemeral handle and the client's PROTOCOL_VERSION (ADR
+// 0009: the server rejects a mismatch); `input` reports the client-owned Avatar
+// kinematics (ADR 0001: position is client-authoritative) plus the combat intents
+// for the tick. A `skill` of 0 means none was pressed.
 export type ClientMessage =
-	| { t: 'hello'; handle: string }
+	| { t: 'hello'; handle: string; protocol: number }
 	| {
 			t: 'input';
 			x: number;
@@ -158,6 +171,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 		case 'hello':
 			w.u8(CLIENT_TAG.hello);
 			w.str(msg.handle);
+			w.u16(msg.protocol);
 			break;
 		case 'input':
 			w.u8(CLIENT_TAG.input);
@@ -183,8 +197,13 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 	const r = new Reader(buf);
 	const tag = r.u8();
 	switch (tag) {
-		case CLIENT_TAG.hello:
-			return { t: 'hello', handle: r.str() };
+		case CLIENT_TAG.hello: {
+			const handle = r.str();
+			// A pre-0009 client sends no version; treat absent as 0 so it fails the
+			// gate cleanly (reject) rather than throwing on a short read.
+			const protocol = r.remaining() >= 2 ? r.u16() : 0;
+			return { t: 'hello', handle, protocol };
+		}
 		case CLIENT_TAG.input: {
 			const x = r.f64();
 			const y = r.f64();
@@ -269,9 +288,13 @@ export type ServerMessage =
 	// attributed to the sender's ephemeral handle (#34). Event-driven, not per-tick.
 	// `sessionId` keys the over-head Speech bubble to the sender's sprite (#59,
 	// ADR 0007) — the handle is a display label, not an identity.
-	| { t: 'chat'; sessionId: number; handle: string; text: string };
+	| { t: 'chat'; sessionId: number; handle: string; text: string }
+	// The server is refusing the connection and will close it (ADR 0009): a
+	// protocol-version mismatch, or a connection cap (global / per-IP). `reason` is
+	// a human-readable line the client surfaces before exiting.
+	| { t: 'reject'; reason: string };
 
-const SERVER_TAG = { welcome: 1, snapshot: 2, chat: 3 } as const;
+const SERVER_TAG = { welcome: 1, snapshot: 2, chat: 3, reject: 4 } as const;
 
 const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
 const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory'];
@@ -423,6 +446,10 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			w.str(msg.handle);
 			w.str(msg.text);
 			break;
+		case 'reject':
+			w.u8(SERVER_TAG.reject);
+			w.str(msg.reason);
+			break;
 	}
 	return w.finish();
 }
@@ -470,6 +497,8 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 		}
 		case SERVER_TAG.chat:
 			return { t: 'chat', sessionId: r.u32(), handle: r.str(), text: r.str() };
+		case SERVER_TAG.reject:
+			return { t: 'reject', reason: r.str() };
 		default:
 			throw new Error(`unknown server message tag ${tag}`);
 	}
