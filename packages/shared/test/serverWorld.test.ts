@@ -10,6 +10,7 @@ import {
 	makeFieldZone,
 	makeTownZone,
 	removeSession,
+	sessionsInChannel,
 	stepServerWorld,
 	TOWN_SPAWN,
 	worldSnapshotFor,
@@ -233,4 +234,35 @@ test('a leaver frees a slot the next entrant backfills (lowest Channel with room
 	expect(channelOf(w, 4)).toBe(0);
 	expect(channelsOf(w, 'field-01')[0].avatars.length).toBe(2);
 	expect(channelsOf(w, 'field-01')[1].avatars.length).toBe(1);
+});
+
+test('sessionsInChannel returns every session sharing a Channel, including itself', () => {
+	let w = addSession(makeWorld(), 1, 'a');
+	w = addSession(w, 2, 'b'); // same Channel (generous cap)
+	expect(sessionsInChannel(w, 1).sort()).toEqual([1, 2]);
+	expect(sessionsInChannel(w, 2).sort()).toEqual([1, 2]);
+});
+
+test('sessionsInChannel excludes sessions in another Channel of the same Zone', () => {
+	let w = makeWorld(1); // each Channel holds one
+	w = addSession(w, 1, 'a'); // field-01#0
+	w = addSession(w, 2, 'b'); // field-01#1
+	expect(sessionsInChannel(w, 1)).toEqual([1]);
+	expect(sessionsInChannel(w, 2)).toEqual([2]);
+});
+
+test('sessionsInChannel excludes a session that has left for another Zone', () => {
+	let w = addSession(makeWorld(), 1, 'a'); // both start in field-01#0
+	w = addSession(w, 2, 'b');
+	const portal = channelsOf(w, 'field-01')[0].zone.portals[0];
+	// Session 1 walks the portal to Town; session 2 stays in the Field.
+	w = stepServerWorld(w, [holdAt(1, portal.x, true), holdAt(2, 60)], 16);
+	expect(zoneOf(w, 1)).toBe('town-01');
+	expect(sessionsInChannel(w, 1)).toEqual([1]); // alone in Town
+	expect(sessionsInChannel(w, 2)).toEqual([2]); // alone in the Field
+});
+
+test('sessionsInChannel is empty for an unknown / unplaced session', () => {
+	const w = addSession(makeWorld(), 1, 'a');
+	expect(sessionsInChannel(w, 99)).toEqual([]);
 });

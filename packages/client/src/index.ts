@@ -21,6 +21,7 @@ import {
 	type Zone,
 } from '@mmo/shared';
 import { createCliRenderer } from '@opentui/core';
+import { ChatInput } from './chat';
 import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
@@ -35,6 +36,15 @@ const RENDER_FPS = Number(process.env.MMO_FPS) || 120;
 // Set MMO_SERVER=ws://host:port to play against the M2 server (ADR 0006);
 // unset runs the offline single-player loop.
 const SERVER = process.env.MMO_SERVER;
+
+// No movement / combat this frame — fed to the sim while a modal (shop, chat)
+// owns the keyboard, so held keys don't drive the Avatar.
+const IDLE_INPUT: Input = {
+	moveX: 0,
+	jump: false,
+	attack: false,
+	interact: false,
+};
 
 const renderer = await createCliRenderer({
 	targetFps: RENDER_FPS,
@@ -85,13 +95,6 @@ function runOffline() {
 	let game = createGame();
 	const shop = new Shop(renderer);
 	shop.attach(renderer.root);
-
-	const IDLE_INPUT: Input = {
-		moveX: 0,
-		jump: false,
-		attack: false,
-		interact: false,
-	};
 
 	function vendorUnder(g: GameState) {
 		const zone = activeZone(g.world, g.player.zoneId);
@@ -194,16 +197,33 @@ function runNetworked(url: string) {
 	const RECONCILE = 3; // cells of position drift before we snap to the server
 	const SEND_INTERVAL = 1000 / 30; // throttle input reports to ~30 Hz
 	let sendAcc = 0;
+	const chat = new ChatInput(); // Zone-local chat typing mode (#34)
 
 	renderer.keyInput.on('keypress', (k) => {
+		// While typing, chat OWNS the keyboard: every key edits the line (or sends /
+		// cancels) and none reaches movement / combat (no keystroke leak).
+		if (chat.open) {
+			const r = chat.key(k);
+			if (r.action === 'send') net.send({ t: 'chat', text: r.text });
+			return;
+		}
 		if (k.name === 'q') quit();
+		if (k.name === 'return') {
+			chat.start();
+			input.clear(); // a key held at the switch must not stick while typing
+			return;
+		}
 		input.press(k.name, performance.now());
 	});
-	renderer.keyInput.on('keyrelease', (k) => input.release(k.name));
+	// Ignore releases while typing so play-mode keys can't be toggled mid-message.
+	renderer.keyInput.on('keyrelease', (k) => {
+		if (!chat.open) input.release(k.name);
+	});
 
 	const meter = fpsMeter();
 	renderer.setFrameCallback(async (dt) => {
-		const inp = input.poll(performance.now());
+		// Freeze movement / combat while the chat line has the keyboard.
+		const inp = chat.open ? IDLE_INPUT : input.poll(performance.now());
 
 		// Follow a server-driven Zone change (portal travel / death respawn): swap the
 		// local Zone and snap the predicted Avatar to the server's arrival position so
@@ -285,5 +305,6 @@ function runNetworked(url: string) {
 		const game = snapshotToGame(zone, predicted, net.sessionId, view, localCd);
 		playfield.game = game;
 		hud.update(game, fps);
+		hud.updateChat(net.chatLog, chat.open, chat.text);
 	});
 }

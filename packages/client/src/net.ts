@@ -21,6 +21,9 @@ import { INTERP_DELAY_MS, SnapshotBuffer } from './interp';
 
 type Snapshot = Extract<ServerMessage, { t: 'snapshot' }>;
 
+// Cap the retained chat history; the HUD only shows the last few lines anyway.
+const MAX_CHAT_LOG = 100;
+
 export class NetClient {
 	private ws: WebSocket;
 	// Recent snapshots, kept so co-present entities can be rendered ~100 ms in the
@@ -31,6 +34,9 @@ export class NetClient {
 	tickRate = 20;
 	ready = false; // welcome received
 	latest: Snapshot | null = null;
+	// Zone-local chat lines received from the server (#34), each "handle: text",
+	// bounded so an idle session can't accumulate them forever.
+	chatLog: string[] = [];
 
 	constructor(url: string, handle: string) {
 		this.ws = new WebSocket(url);
@@ -57,16 +63,22 @@ export class NetClient {
 			this.zoneId = msg.zoneId;
 			this.tickRate = msg.tickRate;
 			this.ready = true;
-		} else {
-			// On a Zone change, drop the prior Zone's frames: interpolating across the
-			// boundary would ease an Avatar between two unrelated coordinate spaces.
-			if (msg.zoneId !== this.zoneId) {
-				this.zoneId = msg.zoneId;
-				this.buffer = new SnapshotBuffer();
-			}
-			this.latest = msg;
-			this.buffer.push(msg, recvTimeMs);
+			return;
 		}
+		if (msg.t === 'chat') {
+			this.chatLog.push(`${msg.handle}: ${msg.text}`);
+			if (this.chatLog.length > MAX_CHAT_LOG)
+				this.chatLog.splice(0, this.chatLog.length - MAX_CHAT_LOG);
+			return;
+		}
+		// snapshot: on a Zone change, drop the prior Zone's frames — interpolating
+		// across the boundary would ease an Avatar between two unrelated coord spaces.
+		if (msg.zoneId !== this.zoneId) {
+			this.zoneId = msg.zoneId;
+			this.buffer = new SnapshotBuffer();
+		}
+		this.latest = msg;
+		this.buffer.push(msg, recvTimeMs);
 	}
 
 	// The Zone view to render at local time `nowMs`: co-present entities are eased
