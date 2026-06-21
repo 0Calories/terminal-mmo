@@ -51,6 +51,7 @@ import { spawnMonster, type Zone } from './world';
 // each tick (ADR 0001); HP / progress / inventory / loot rng are server-owned.
 export interface ServerAvatar {
 	sessionId: number;
+	handle: string; // ephemeral nameplate handle from the handshake
 	avatar: Entity;
 	progress: PlayerProgress;
 	inventory: Item[];
@@ -384,6 +385,7 @@ export function snapshotFor(
 	const me = state.avatars.find((a) => a.sessionId === sessionId);
 	const avatars: AvatarSnapshot[] = state.avatars.map((a) => ({
 		sessionId: a.sessionId,
+		handle: a.handle,
 		x: a.avatar.x,
 		y: a.avatar.y,
 		vx: a.avatar.vx,
@@ -427,9 +429,14 @@ export function createZoneState(zone: Zone): ZoneState {
 
 // Add a freshly-spawned Avatar for a connecting session. The entity id mirrors
 // the session id (Avatars are identified by session on the wire).
-export function addAvatar(state: ZoneState, sessionId: number): ZoneState {
+export function addAvatar(
+	state: ZoneState,
+	sessionId: number,
+	handle: string,
+): ZoneState {
 	const sa: ServerAvatar = {
 		sessionId,
+		handle,
 		avatar: { ...spawnAvatar(SPAWN.x, SPAWN.y), id: sessionId },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],

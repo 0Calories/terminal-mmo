@@ -76,6 +76,7 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	).e;
 	const sa: ServerAvatar = {
 		sessionId: game.player.avatar.id,
+		handle: '', // offline single-player has no broadcast handle
 		avatar: game.player.avatar,
 		progress: game.player.progress,
 		inventory: game.player.inventory,

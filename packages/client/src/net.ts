@@ -94,6 +94,7 @@ function avatarEntity(a: AvatarSnapshot): Entity {
 	return {
 		id: a.sessionId,
 		type: 'player',
+		name: a.handle,
 		x: a.x,
 		y: a.y,
 		vx: a.vx,

@@ -25,9 +25,14 @@ import {
 
 const y = GROUND_TOP - BOX.h;
 
-function serverAvatar(sessionId: number, x: number): ServerAvatar {
+function serverAvatar(
+	sessionId: number,
+	x: number,
+	handle = 'hero',
+): ServerAvatar {
 	return {
 		sessionId,
+		handle,
 		avatar: { ...spawnAvatar(x, y), id: sessionId },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
@@ -180,10 +185,11 @@ test('removeAvatar drops a disconnected session from the Zone', () => {
 	expect(removeAvatar(state, 99).avatars.length).toBe(1); // unknown id is a no-op
 });
 
-test('addAvatar spawns a Warrior at the safe point', () => {
-	const spawned = addAvatar(createZoneState(zoneWith([])), 7);
+test('addAvatar spawns a Warrior at the safe point with its handle', () => {
+	const spawned = addAvatar(createZoneState(zoneWith([])), 7, 'neo');
 	expect(spawned.avatars.length).toBe(1);
 	expect(spawned.avatars[0].sessionId).toBe(7);
+	expect(spawned.avatars[0].handle).toBe('neo');
 	expect(spawned.avatars[0].avatar.x).toBe(SPAWN.x);
 });
 
@@ -201,14 +207,15 @@ test('clientStepAvatar predicts platformer movement and decays the swing timer',
 
 test('snapshotFor carries the zone state + the recipient private fields', () => {
 	const m = spawnMonster('shooter', 2, 50, y);
-	const a = serverAvatar(7, 20);
+	const a = serverAvatar(7, 20, 'morpheus');
 	a.progress = { level: 2, xp: 5, gold: 9 };
-	const b = serverAvatar(8, 60);
+	const b = serverAvatar(8, 60, 'trinity');
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [a, b], tick: 3 };
 	const snap = snapshotFor(state, 7);
 	expect(snap.t).toBe('snapshot');
 	expect(snap.tick).toBe(3);
 	expect(snap.avatars.length).toBe(2); // sees both Avatars
+	expect(snap.avatars.find((s) => s.sessionId === 8)?.handle).toBe('trinity');
 	expect(snap.monsters.length).toBe(1);
 	expect(snap.progress).toEqual({ level: 2, xp: 5, gold: 9 }); // recipient's own
 });
