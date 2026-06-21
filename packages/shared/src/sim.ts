@@ -1,37 +1,10 @@
-import { aabbOverlap, entityBox, meleeHitbox } from './combat';
-import {
-	BOX,
-	COMBAT,
-	MONSTER,
-	PHYS,
-	RESPAWN,
-	SHOOTER,
-	SPAWN,
-	XP_PER_KILL,
-} from './constants';
-import { rollItem } from './loot';
+import { aabbOverlap, entityBox } from './combat';
+import { PHYS, SPAWN } from './constants';
 import { stepEntity } from './physics';
 import { type PlayerState, spawnPlayerState } from './player';
-import { applyXp, maxHpForLevel } from './progression';
-import { projectileBox, spawnProjectile, stepProjectile } from './projectile';
-import { skillForSlot, skillHitbox, skillUnlocked } from './skills';
-import { isSolid } from './terrain';
-import type {
-	Box,
-	Control,
-	Entity,
-	Facing,
-	Input,
-	PendingRespawn,
-	Projectile,
-} from './types';
-import {
-	makeFieldZone,
-	makeTownZone,
-	spawnMonster,
-	type World,
-	type Zone,
-} from './world';
+import type { Entity, Input } from './types';
+import { makeFieldZone, makeTownZone, type World } from './world';
+import { type AvatarIntent, type ServerAvatar, stepZone } from './zone';
 
 export interface GameState {
 	player: PlayerState;
@@ -50,13 +23,22 @@ export function createGame(seed = 1): GameState {
 
 // TODO(M1): portal connecting the Field and Town (#3).
 
-/** Advance the active Zone + the Player one tick. Deterministic given inputs. */
+/**
+ * Advance the active Zone + the Player one tick. Deterministic given inputs.
+ *
+ * Single-player is the M2 client/server split applied to one local Avatar: the
+ * client-local physics prediction feeds a one-Avatar server-authoritative
+ * `stepZone`. Routing both through the same consequence engine is what keeps the
+ * offline loop and the networked server from ever diverging (ADR 0006).
+ */
 export function step(game: GameState, input: Input, dtMs: number): GameState {
 	const dt = Math.min(dtMs / 1000, PHYS.maxDt);
 	const zone = game.world.zones[game.player.zoneId];
 	const t = zone.terrain;
 
-	// Handled before movement/combat so the transition tick runs neither.
+	// Portals are a client-local Zone transition (cross-Zone routing over the wire
+	// is a later slice); handled before movement/combat so the transition tick
+	// runs neither.
 	if (input.interact) {
 		const here = entityBox(game.player.avatar);
 		const portal = zone.portals.find((p) => aabbOverlap(here, p));
@@ -81,181 +63,56 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		}
 	}
 
-	const pCtl: Control = { moveX: input.moveX, jump: input.jump };
-	let avatar = stepEntity(t, game.player.avatar, pCtl, dt).e;
-	avatar.attackT = Math.max(0, avatar.attackT - dt);
-	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
-
-	let progress = game.player.progress;
-	let inventory = game.player.inventory;
-	const log = game.player.log.slice(-5);
-	let nextId = game.player.nextId;
-	let rngState = game.player.rngState;
-
-	// A basic swing and a Skill share one hitbox slot; a fired Skill overrides.
-	const attacking = input.attack && avatar.attackT <= 0;
-	if (attacking) avatar = { ...avatar, attackT: COMBAT.attackCooldown };
-	let hb: Box | null = attacking ? meleeHitbox(avatar) : null;
-	let hitDamage: number = COMBAT.meleeDamage;
-
-	const skillCooldowns: Record<string, number> = {};
-	for (const [id, cd] of Object.entries(game.player.skillCooldowns ?? {}))
-		skillCooldowns[id] = Math.max(0, cd - dt);
-	if (input.skill) {
-		const skill = skillForSlot(game.player.class ?? 'warrior', input.skill);
-		if (
-			skill &&
-			skillUnlocked(skill, progress.level) &&
-			(skillCooldowns[skill.id] ?? 0) <= 0
-		) {
-			skillCooldowns[skill.id] = skill.cooldown;
-			hb = skillHitbox(avatar, skill);
-			hitDamage = skill.damage;
-			log.push(`${skill.name}!`);
-		}
-	}
-
-	const fired: Projectile[] = [];
-	let nextProjectileId = zone.nextProjectileId;
-
-	let nextMonsterId = zone.nextMonsterId;
-	const respawns: PendingRespawn[] = [];
-
-	const monsters: Entity[] = [];
-	for (const m0 of zone.monsters) {
-		let m: Entity = { ...m0 };
-		m.hurtT = Math.max(0, m.hurtT - dt);
-		m.attackT = Math.max(0, m.attackT - dt);
-
-		const dx = avatar.x - m.x;
-		const adx = Math.abs(dx);
-		const engaged = m.type === 'shooter' && adx < SHOOTER.aggro;
-		let moveX: -1 | 0 | 1;
-		if (m.type === 'chaser' && adx < MONSTER.chaserAggro)
-			// hold (moveX 0) inside the deadzone so facing doesn't flip-flop frame
-			// to frame when the Avatar is sitting on top of the chaser
-			moveX = adx < MONSTER.chaserDeadzone ? 0 : dx > 0 ? 1 : -1;
-		else if (engaged)
-			moveX = adx < SHOOTER.keepDist ? (dx > 0 ? -1 : 1) : 0;
-		else moveX = m.facing;
-		const res = stepEntity(t, m, { moveX, jump: false }, dt);
-		m = res.e;
-
-		// patrol turn-around at walls and platform edges
-		if (m.onGround && !engaged) {
-			const lead = moveX >= 0 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x);
-			const footY = Math.ceil(m.y + BOX.h);
-			if (res.hitWall || !isSolid(t, lead, footY))
-				m.facing = m.facing === 1 ? -1 : 1;
-		}
-
-		if (engaged) {
-			const dir: Facing = dx >= 0 ? 1 : -1;
-			m.facing = dir;
-			if (m.attackT <= 0) {
-				fired.push(spawnProjectile(nextProjectileId++, m, dir));
-				m = { ...m, attackT: SHOOTER.fireCooldown };
-			}
-		}
-
-		if (hb && m.hurtT <= 0 && aabbOverlap(hb, entityBox(m))) {
-			m = { ...m, hp: m.hp - hitDamage, hurtT: 0.6 };
-		}
-		if (
-			m.hp > 0 &&
-			avatar.hurtT <= 0 &&
-			aabbOverlap(entityBox(avatar), entityBox(m))
-		) {
-			avatar = { ...avatar, hp: avatar.hp - MONSTER.contactDamage, hurtT: 0.6 };
-		}
-
-		if (m.hp > 0) {
-			monsters.push(m);
-		} else {
-			const ap = applyXp(progress, XP_PER_KILL);
-			progress = ap.progress;
-			if (ap.leveled > 0) {
-				const mhp = maxHpForLevel(progress.level);
-				avatar = { ...avatar, maxHp: mhp, hp: mhp };
-				log.push(`Level up! Now level ${progress.level}.`);
-			}
-			const roll = rollItem(rngState, progress.level);
-			rngState = roll.state;
-			const item = { ...roll.item, id: nextId++ };
-			inventory = [...inventory, item];
-			log.push(`Looted ${item.rarity} ${item.base}.`);
-			if (m.spawnIndex !== undefined)
-				respawns.push({
-					spawnIndex: m.spawnIndex,
-					remaining: RESPAWN.delaySec,
-				});
-		}
-	}
-
-	// After the death loop, so timers added this tick wait a full tick.
-	for (const r of zone.respawns) {
-		const remaining = r.remaining - dt;
-		if (remaining > 0) {
-			respawns.push({ ...r, remaining });
-			continue;
-		}
-		const s = zone.spawns[r.spawnIndex];
-		monsters.push(
-			spawnMonster(s.type, nextMonsterId++, s.x, s.y, r.spawnIndex),
-		);
-	}
-
-	// Append this tick's fresh shots last, so they don't move or hit until next tick.
-	const projectiles: Projectile[] = [];
-	for (const pr0 of zone.projectiles) {
-		const pr = stepProjectile(t, pr0, dt);
-		if (!pr) continue;
-		if (
-			avatar.hurtT <= 0 &&
-			aabbOverlap(projectileBox(pr), entityBox(avatar))
-		) {
-			avatar = { ...avatar, hp: avatar.hp - pr.damage, hurtT: COMBAT.iframes };
-			continue;
-		}
-		projectiles.push(pr);
-	}
-	projectiles.push(...fired);
-
-	if (avatar.hp <= 0) {
-		avatar = {
-			...avatar,
-			hp: avatar.maxHp,
-			x: SPAWN.x,
-			y: SPAWN.y,
-			vx: 0,
-			vy: 0,
-			hurtT: 1,
-		};
-		log.push('You fell. Respawned in safety.');
-	}
-
-	const player: PlayerState = {
-		avatar,
-		progress,
-		inventory,
-		zoneId: game.player.zoneId,
-		log,
-		nextId,
-		rngState,
+	// Predict this Avatar's own platformer physics, then let the Zone resolve every
+	// consequence under server authority.
+	const predicted = stepEntity(
+		t,
+		game.player.avatar,
+		{ moveX: input.moveX, jump: input.jump },
+		dt,
+	).e;
+	const sa: ServerAvatar = {
+		sessionId: game.player.avatar.id,
+		avatar: game.player.avatar,
+		progress: game.player.progress,
+		inventory: game.player.inventory,
+		log: game.player.log,
+		nextId: game.player.nextId,
+		rngState: game.player.rngState,
 		class: game.player.class,
-		skillCooldowns,
+		skillCooldowns: game.player.skillCooldowns,
 	};
-	const newZone: Zone = {
-		...zone,
-		monsters,
-		projectiles,
-		nextProjectileId,
-		respawns,
-		nextMonsterId,
+	const intent: AvatarIntent = {
+		sessionId: sa.sessionId,
+		x: predicted.x,
+		y: predicted.y,
+		vx: predicted.vx,
+		vy: predicted.vy,
+		facing: predicted.facing,
+		onGround: predicted.onGround,
+		attack: input.attack,
+		skill: input.skill,
+	};
+	const next = stepZone(
+		{ zone, avatars: [sa], tick: game.world.tick },
+		[intent],
+		dtMs,
+	);
+	const out = next.avatars[0];
+	const player: PlayerState = {
+		avatar: out.avatar,
+		progress: out.progress,
+		inventory: out.inventory,
+		zoneId: game.player.zoneId,
+		log: out.log,
+		nextId: out.nextId,
+		rngState: out.rngState,
+		class: out.class,
+		skillCooldowns: out.skillCooldowns,
 	};
 	const world: World = {
-		zones: { ...game.world.zones, [zone.id]: newZone },
-		tick: game.world.tick + 1,
+		zones: { ...game.world.zones, [zone.id]: next.zone },
+		tick: next.tick,
 	};
 	return { player, world };
 }

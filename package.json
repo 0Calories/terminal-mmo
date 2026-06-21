@@ -8,6 +8,7 @@
 	"scripts": {
 		"dev": "bun run packages/client/src/index.ts",
 		"dev:client": "bun run packages/client/src/index.ts",
+		"dev:server": "bun run packages/server/src/index.ts",
 		"test": "bun test",
 		"typecheck": "bun run --filter '*' typecheck",
 		"lint": "biome lint .",
