@@ -4,84 +4,42 @@ import {
 	activeZone,
 	BOX,
 	COMBAT,
+	drawEntitySprite,
 	entityBox,
-	isSolid,
 	meleeHitbox,
+	type RenderStyle,
+	renderZoneScene,
 	skillForSlot,
 	skillHitbox,
+	spriteFor,
+	spriteForNpc,
 } from '@mmo/shared';
 import {
 	type OptimizedBuffer,
 	Renderable,
 	type RenderableOptions,
 	type RenderContext,
+	type RGBA,
 } from '@opentui/core';
 import { layoutBubble } from './bubble';
 import { type CameraState, initCameraState, stepCamera } from './camera';
-import type { Sprite } from './sprites';
-import { PALETTE, spriteFor, spriteForNpc } from './sprites';
+import { PALETTE } from './sprites';
 import { COLORS as C } from './theme';
 
-function blitSprite(
-	buf: OptimizedBuffer,
-	sprite: Sprite,
-	sx: number,
-	sy: number,
-	facing: Entity['facing'],
-	sw: number,
-	sh: number,
-	hurt: boolean,
-) {
-	const glyphs = sprite.rows(facing);
-	const keys = sprite.colorKeys(facing);
-	for (let ry = 0; ry < sprite.h; ry++) {
-		const py = sy + ry;
-		if (py < 0 || py >= sh) continue;
-		const row = glyphs[ry];
-		const krow = keys[ry];
-		for (let rx = 0; rx < sprite.w; rx++) {
-			const ch = row[rx];
-			if (ch === ' ') continue;
-			const px = sx + rx;
-			if (px < 0 || px >= sw) continue;
-			const fg = hurt ? C.hurt : (PALETTE[krow[rx]] ?? C.hud);
-			buf.setCellWithAlphaBlending(px, py, ch, fg, C.transparent);
-		}
-	}
-}
-
-function drawSprite(
-	buf: OptimizedBuffer,
-	e: Entity,
-	cam: { x: number; y: number },
-	sw: number,
-	sh: number,
-) {
-	const sprite = spriteFor(e.type);
-	// Centred horizontally, feet aligned to the box bottom.
-	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2) - cam.x);
-	const sy = Math.round(e.y + BOX.h - sprite.h - cam.y);
-	blitSprite(buf, sprite, sx, sy, e.facing, sw, sh, e.hurtT > 0.3);
-}
-
-// A Player Avatar's handle, centred over its collision box one row above the
-// Sprite top. Only `others` carry a name (Monsters and the own Avatar don't), so
-// this draws a nameplate for co-present Players only. Plain colour for now;
-// nameplate cosmetics arrive with M3 identity.
-function drawNameplate(
-	buf: OptimizedBuffer,
-	e: Entity,
-	cam: { x: number; y: number },
-	sw: number,
-	sh: number,
-) {
-	if (!e.name) return;
-	const sprite = spriteFor(e.type);
-	const top = Math.round(e.y + BOX.h - sprite.h - cam.y);
-	const cx = e.x + BOX.w / 2 - cam.x;
-	const x = Math.round(cx - e.name.length / 2);
-	drawText(buf, x, top - 1, e.name, C.dim, sw, sh);
-}
+// The colour binding for the shared, framework-agnostic renderer (@mmo/shared):
+// chrome colours from theme.ts + the recolourable art PALETTE. The same static
+// scene logic drives the game here and the zone-tools preview.
+const STYLE: RenderStyle<RGBA> = {
+	bg: C.bg,
+	terrainFg: C.terrainFg,
+	terrainBg: C.terrainBg,
+	portal: C.portal,
+	transparent: C.transparent,
+	hurt: C.hurt,
+	nameplate: C.dim,
+	palette: PALETTE,
+	paletteDefault: C.hud,
+};
 
 // An over-head Speech bubble for the sender's latest Chat line (#59, ADR 0007):
 // a bordered, opaque box with a downward tail, anchored above the nameplate and
@@ -163,45 +121,29 @@ function drawPlayfield(
 	const sw = buf.width;
 	const sh = buf.height;
 	const p = player.avatar;
-	const ww = zone.terrain.w;
-	const wh = zone.terrain.h;
-
-	// Terrain + portals sample the integer grid, so they scroll on a whole-cell
-	// camera. Entities round relative to the FLOAT `cam` instead, so a
-	// camera-pinned Avatar renders at a stable cell rather than bouncing ±1 from
-	// double-rounding (see camera.ts).
 	const camX = Math.round(cam.x);
 	const camY = Math.round(cam.y);
+	const others = game.others ?? [];
+	const npcs = zone.npcs ?? [];
 
-	buf.clear(C.bg);
+	// Static scene (terrain, portals, NPCs, z-ordered Monsters + co-present
+	// Avatars + nameplates) via the shared renderer — the same path zone-tools
+	// preview uses, so what authors see is what ships (ADR 0008 / #56).
+	renderZoneScene(
+		buf,
+		{
+			terrain: zone.terrain,
+			portals: zone.portals,
+			npcs,
+			entities: [...zone.monsters, ...others],
+		},
+		cam,
+		STYLE,
+	);
 
-	for (let sy = 0; sy < sh; sy++) {
-		const wy = sy + camY;
-		for (let sx = 0; sx < sw; sx++) {
-			const wx = sx + camX;
-			if (
-				isSolid(zone.terrain, wx, wy) &&
-				wx >= 0 &&
-				wx < ww &&
-				wy >= 0 &&
-				wy < wh
-			)
-				buf.setCell(sx, sy, '█', C.terrainFg, C.terrainBg);
-		}
-	}
-
-	// Drawn before the Sprites so the Avatar stands in front of the door.
+	// Interaction prompts depend on the local Avatar's overlap, so they're
+	// client-only dynamic overlays drawn on top of the static scene.
 	const onPortal = zone.portals.find((pr) => aabbOverlap(entityBox(p), pr));
-	for (const pr of zone.portals) {
-		for (let yy = 0; yy < pr.h; yy++) {
-			for (let xx = 0; xx < pr.w; xx++) {
-				const px = pr.x + xx - camX;
-				const py = pr.y + yy - camY;
-				if (px >= 0 && px < sw && py >= 0 && py < sh)
-					buf.setCellWithAlphaBlending(px, py, '▒', C.portal, C.transparent);
-			}
-		}
-	}
 	if (onPortal) {
 		const dest = game.world.zones[onPortal.target]?.type ?? 'zone';
 		const label = `↵ e  enter the ${dest.charAt(0).toUpperCase()}${dest.slice(1)}`;
@@ -215,27 +157,13 @@ function drawPlayfield(
 			sh,
 		);
 	}
-
-	// Drawn before the entity Sprites so the player stands in front.
-	const npcs = zone.npcs ?? [];
 	const onNpc = npcs.find((n) => aabbOverlap(entityBox(p), n));
-	for (const n of npcs) {
-		const sprite = spriteForNpc(n.kind);
-		const sx = Math.round(n.x + Math.floor((n.w - sprite.w) / 2)) - camX;
-		const sy = Math.round(n.y + n.h - sprite.h) - camY;
-		blitSprite(buf, sprite, sx, sy, 1, sw, sh, false);
-		if (n === onNpc)
-			drawText(buf, sx, sy - 1, `↵ e  talk to ${n.name}`, C.vendor, sw, sh);
-	}
-
-	// Co-present Avatars and Monsters share one z-ordered set (by y-position) so
-	// they occlude each other naturally; the local Avatar is still drawn last,
-	// on top of everyone (ADR 0003).
-	const others = game.others ?? [];
-	const sprites = [...zone.monsters, ...others].sort((a, b) => a.y - b.y);
-	for (const e of sprites) {
-		drawSprite(buf, e, cam, sw, sh);
-		drawNameplate(buf, e, cam, sw, sh);
+	if (onNpc) {
+		const sprite = spriteForNpc(onNpc.kind);
+		const sx =
+			Math.round(onNpc.x + Math.floor((onNpc.w - sprite.w) / 2)) - camX;
+		const sy = Math.round(onNpc.y + onNpc.h - sprite.h) - camY;
+		drawText(buf, sx, sy - 1, `↵ e  talk to ${onNpc.name}`, C.vendor, sw, sh);
 	}
 
 	if (p.attackT > COMBAT.attackCooldown - 0.12) {
@@ -273,7 +201,8 @@ function drawPlayfield(
 		}
 	}
 
-	drawSprite(buf, p, cam, sw, sh);
+	// The local Avatar is drawn last, on top of everyone (ADR 0003).
+	drawEntitySprite(buf, p, cam, STYLE);
 
 	// Final pass after all Sprites + nameplates: over-head Speech bubbles for every
 	// chatter on screen, the local Avatar included (one uniform rule, ADR 0007). An

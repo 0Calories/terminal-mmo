@@ -1,4 +1,4 @@
-import type { Facing } from '@mmo/shared';
+import type { Facing } from '../types';
 
 // `·` (U+00B7) marks a transparent cell: visible in the editor and survives
 // trailing-whitespace trimming, unlike a literal space (also transparent).
