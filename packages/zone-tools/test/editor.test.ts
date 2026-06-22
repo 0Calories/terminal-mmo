@@ -10,12 +10,15 @@ import {
 	editorExtent,
 	editorStatusLine,
 	eraseCells,
+	footprintBox,
+	groundSnap,
 	growToInclude,
 	lineCells,
 	moveRegion,
 	paintCells,
 	pasteClip,
 	placeableAt,
+	placementState,
 	rectCells,
 	scrollAxis,
 	scrollViewport,
@@ -410,6 +413,178 @@ describe('deleteRegion', () => {
 		expect(cellAt(doc, 0, 0)).toBe('.');
 		expect(cellAt(doc, 1, 0)).toBe('.');
 		expect(Object.keys(doc.header.spawns as object)).toHaveLength(0);
+	});
+});
+
+describe('footprintBox (#96)', () => {
+	test('monster is the engine 5×5 collision box anchored top-left at the glyph', () => {
+		expect(footprintBox({ kind: 'monster', id: 'chaser' }, 3, 2)).toEqual({
+			x: 3,
+			y: 2,
+			w: 5,
+			h: 5,
+		});
+	});
+
+	test('npc is 4×5 and portal is 4×7 — matching what parseZone builds', () => {
+		expect(footprintBox({ kind: 'npc', id: 'merchant' }, 0, 0)).toEqual({
+			x: 0,
+			y: 0,
+			w: 4,
+			h: 5,
+		});
+		expect(
+			footprintBox({ kind: 'portal', target: 't', arrival: [0, 0] }, 1, 1),
+		).toEqual({ x: 1, y: 1, w: 4, h: 7 });
+	});
+
+	test('terrain is a single cell (no real footprint)', () => {
+		expect(footprintBox({ kind: 'terrain' }, 7, 4)).toEqual({
+			x: 7,
+			y: 4,
+			w: 1,
+			h: 1,
+		});
+	});
+});
+
+describe('placementState (#96)', () => {
+	// A 10-wide field: empty headroom with a solid floor on the bottom row.
+	const grounded: EditorDoc = {
+		header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+		rows: [
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'##########',
+		],
+	};
+	// Taller: floor only on the last row, so a box up top floats above it.
+	const tall: EditorDoc = {
+		header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+		rows: [
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'##########',
+		],
+	};
+
+	test('green: a monster resting on the floor is grounded', () => {
+		// Box rows 0-4, the cell below (row 5) is solid terrain.
+		expect(
+			placementState(grounded, { kind: 'monster', id: 'chaser' }, 2, 0),
+		).toBe('grounded');
+	});
+
+	test('blue: a monster with no solid beneath its feet is airborne', () => {
+		// Box rows 0-4, row 5 is empty and in-grid → floating, not invalid.
+		expect(placementState(tall, { kind: 'monster', id: 'chaser' }, 0, 0)).toBe(
+			'airborne',
+		);
+	});
+
+	test('red: a footprint overlapping solid terrain is invalid', () => {
+		const clipsFloor: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+			rows: ['..........', '..........', '##########', '##########'],
+		};
+		// Box rows 1-5 overlaps the solid rows 2-3.
+		expect(
+			placementState(clipsFloor, { kind: 'monster', id: 'chaser' }, 0, 1),
+		).toBe('invalid');
+	});
+
+	test('red: a footprint extending past the canvas edge is invalid', () => {
+		// x 8 + width 5 = 13 > the 10-wide grid.
+		expect(
+			placementState(grounded, { kind: 'monster', id: 'chaser' }, 8, 0),
+		).toBe('invalid');
+	});
+
+	test('grounded uses the engine floor: a box at the canvas bottom rests on it', () => {
+		const flat: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+			rows: [
+				'..........',
+				'..........',
+				'..........',
+				'..........',
+				'..........',
+			],
+		};
+		// Box rows 0-4 fill the whole grid; the cell below (row 5) is the world floor.
+		expect(placementState(flat, { kind: 'monster', id: 'chaser' }, 0, 0)).toBe(
+			'grounded',
+		);
+	});
+
+	test('portals never need ground — fitting + not clipping is grounded', () => {
+		const wide: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+			rows: Array(8).fill('..........'),
+		};
+		expect(
+			placementState(
+				wide,
+				{ kind: 'portal', target: 't', arrival: [0, 0] },
+				0,
+				0,
+			),
+		).toBe('grounded');
+	});
+});
+
+describe('groundSnap (#96)', () => {
+	const tall: EditorDoc = {
+		header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+		rows: [
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'##########',
+		],
+	};
+
+	test('seats a floating monster so its feet rest on the nearest solid below', () => {
+		// Floor is row 7; a 5-tall box must anchor at row 2 (rows 2-6, below = row 7).
+		expect(groundSnap(tall, { kind: 'monster', id: 'chaser' }, 0, 0)).toEqual({
+			x: 0,
+			y: 2,
+		});
+	});
+
+	test('an already-grounded anchor is left unchanged', () => {
+		expect(groundSnap(tall, { kind: 'monster', id: 'chaser' }, 0, 2)).toEqual({
+			x: 0,
+			y: 2,
+		});
+	});
+
+	test('with no terrain below, snaps onto the canvas floor', () => {
+		const empty: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+			rows: Array(8).fill('..........'),
+		};
+		// Floor is the implicit cell below row 7 (== height 8) → anchor row 3.
+		expect(groundSnap(empty, { kind: 'monster', id: 'chaser' }, 0, 0)).toEqual({
+			x: 0,
+			y: 3,
+		});
+	});
+
+	test('terrain is never snapped', () => {
+		expect(groundSnap(tall, { kind: 'terrain' }, 4, 1)).toEqual({ x: 4, y: 1 });
 	});
 });
 

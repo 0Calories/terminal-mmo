@@ -1,10 +1,10 @@
-import { BOX, ZONE_MAX } from './constants';
+import { NPC_BOX, PORTAL_BOX, ZONE_MAX } from './constants';
 import type { Entity, Npc, SpawnPoint, Terrain } from './types';
 import { type Portal, spawnMonster, type Zone, type ZoneType } from './world';
 
 // Entity boxes are engine-derived from the anchor glyph, not authored (ADR 0008).
-const PORTAL_BOX = { w: 4, h: 7 } as const; // mirrors world.ts's fixed portal dims
-const NPC_W = 4 as const; // npc box: NPC_W × BOX.h, matching the factory Merchant
+// The footprint dims live in constants.ts so the editor's placement ghost (#96)
+// shares this single source of truth.
 
 /** A by-reference Monster: a spawn glyph resolves to one of these. */
 export interface MonsterCatalogEntry {
@@ -145,8 +145,8 @@ export function parseZone(text: string, catalogs: Catalogs): Zone {
 					name: entry.name,
 					x,
 					y,
-					w: NPC_W,
-					h: BOX.h,
+					w: NPC_BOX.w,
+					h: NPC_BOX.h,
 				});
 			} else {
 				portals.push({
