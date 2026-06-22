@@ -2,6 +2,7 @@ import {
 	aabbOverlap,
 	activeZone,
 	COMBAT,
+	type Cosmetics,
 	clientStepAvatar,
 	createGame,
 	type Entity,
@@ -21,6 +22,7 @@ import {
 	type Zone,
 } from '@mmo/shared';
 import { createCliRenderer } from '@opentui/core';
+import { CharacterCreator } from './character-creator';
 import { ChatInput, parseChatCommand } from './chat';
 import { Hud } from './hud';
 import { InputState } from './input';
@@ -192,161 +194,191 @@ function localZone(id: string): Zone {
 
 function runNetworked(url: string) {
 	const handle = process.env.USER || 'wanderer';
-	// Until the pre-spawn picker exists (a separate slice, #35), give each Avatar a
-	// randomized look at connect so co-present Players are visibly distinct. Pure +
-	// seeded so it is reproducible; the seed is a per-process random int.
-	const cosmetics = randomCosmetics((Math.random() * 0x7fffffff) | 0);
-	// On a server refusal (protocol mismatch / connection cap, ADR 0009), tear down
-	// the TUI and print the reason so it isn't buried under the alt-screen.
-	const net = new NetClient(
-		url,
+	// Pre-spawn customization (#36, story 7): the Player picks hue / hat / nameplate
+	// and confirms BEFORE we connect, so the chosen look rides the connect handshake
+	// (#35) and everyone sees it the moment they spawn in. Seeded with a randomized
+	// starting look so a Player who just hits Enter still gets a distinct Avatar.
+	const creator = new CharacterCreator(
+		renderer,
 		handle,
-		(reason) => {
-			quit(reason);
-		},
-		cosmetics,
+		randomCosmetics((Math.random() * 0x7fffffff) | 0),
 	);
-	hud.showAlphaNotice(); // ephemeral live World (ADR 0009)
-	// The Zone we currently render + predict against; swapped when the server moves
-	// us between Zones (portal travel, death respawn).
-	let zoneId = 'field-01';
-	let zone = localZone(zoneId);
+	creator.attach(renderer.root);
+	creator.show();
 
-	// Own Avatar, predicted locally for zero input lag; the server corrects vitals
-	// (and snaps position on respawn) via snapshots.
-	let predicted: Entity = spawnAvatar(SPAWN.x, SPAWN.y);
-	const localCd: Record<string, number> = {}; // predicted skill cooldowns (off-wire)
-	const SEND_INTERVAL = 1000 / 30; // throttle input reports to ~30 Hz
-	let sendAcc = 0;
-	const chat = new ChatInput(); // Zone-local chat typing mode (#34)
-
+	// Phase 1 — the picker owns the keyboard: every key drives a selection and, on
+	// Enter, hands back the chosen Cosmetics. `started` makes this handler inert once
+	// play() has taken over the keys (its own listener is added then), so the two
+	// phases never both react to a key.
+	let started = false;
 	renderer.keyInput.on('keypress', (k) => {
-		// While typing, chat OWNS the keyboard: every key edits the line (or sends /
-		// cancels) and none reaches movement / combat (no keystroke leak).
-		if (chat.open) {
-			const r = chat.key(k);
-			if (r.action === 'send') {
-				// A sent line is either a Zone-local say or a `/w` whisper (#40); a bad
-				// whisper surfaces a local usage notice rather than going to the wire.
-				const cmd = parseChatCommand(r.text);
-				if (cmd.kind === 'say') net.send({ t: 'chat', text: cmd.text });
-				else if (cmd.kind === 'whisper')
-					net.send({ t: 'whisper', to: cmd.to, text: cmd.text });
-				else if (cmd.kind === 'emote')
-					net.send({ t: 'emote', emote: cmd.emote });
-				else net.notice(cmd.message);
-			}
-			return;
-		}
+		if (started) return;
 		if (k.name === 'q') quit();
-		if (k.name === 'return') {
-			chat.start();
-			input.clear(); // a key held at the switch must not stick while typing
-			return;
-		}
-		input.press(k.name, performance.now());
-	});
-	// Ignore releases while typing so play-mode keys can't be toggled mid-message.
-	renderer.keyInput.on('keyrelease', (k) => {
-		if (!chat.open) input.release(k.name);
+		const chosen = creator.key(k.name);
+		if (!chosen) return;
+		started = true;
+		creator.hide();
+		play(chosen);
 	});
 
-	const meter = fpsMeter();
-	renderer.setFrameCallback(async (dt) => {
-		// Freeze movement / combat while the chat line has the keyboard.
-		const inp = chat.open ? IDLE_INPUT : input.poll(performance.now());
-
-		// Follow a server-driven Zone change (portal travel / death respawn): swap the
-		// local Zone and snap the predicted Avatar to the server's arrival position so
-		// it doesn't briefly run in the old Zone before reconciling.
-		if (net.zoneId && net.zoneId !== zoneId) {
-			zoneId = net.zoneId;
-			zone = localZone(zoneId);
-			const arrival = net.ownAvatar();
-			if (arrival)
-				predicted = {
-					...predicted,
-					x: arrival.x,
-					y: arrival.y,
-					vx: 0,
-					vy: 0,
-					onGround: false,
-				};
-		}
-
-		predicted = clientStepAvatar(
-			zone.terrain,
-			predicted,
-			{ moveX: inp.moveX, jump: inp.jump },
-			dt,
+	// Phase 2 — connect with the confirmed look and run the live World loop.
+	function play(cosmetics: Cosmetics) {
+		// On a server refusal (protocol mismatch / connection cap, ADR 0009), tear down
+		// the TUI and print the reason so it isn't buried under the alt-screen.
+		const net = new NetClient(
+			url,
+			handle,
+			(reason) => {
+				quit(reason);
+			},
+			cosmetics,
 		);
-		// Optimistic local telegraph (story 17): mirror the server's cooldown gate
-		// so the swing/skill flash shows before the snapshot confirms the hit.
-		if (inp.attack && predicted.attackT <= 0)
-			predicted.attackT = COMBAT.attackCooldown;
-		const dtSec = Math.min(dt / 1000, PHYS.maxDt);
-		for (const id in localCd) localCd[id] = Math.max(0, localCd[id] - dtSec);
-		const level = net.latest?.progress.level ?? 1;
-		if (inp.skill) {
-			const skill = skillForSlot('warrior', inp.skill);
-			if (skill && skillUnlocked(skill, level) && (localCd[skill.id] ?? 0) <= 0)
-				localCd[skill.id] = skill.cooldown;
-		}
+		hud.showAlphaNotice(); // ephemeral live World (ADR 0009)
+		// The Zone we currently render + predict against; swapped when the server moves
+		// us between Zones (portal travel, death respawn).
+		let zoneId = 'field-01';
+		let zone = localZone(zoneId);
 
-		// Server owns vitals; reconcile HP/i-frames from snapshots. Position is NOT
-		// reconciled here: per ADR 0001 the client is authoritative over its own
-		// position and the server never re-simulates it, so the snapshot only echoes
-		// back our own position from ~one round-trip ago. Snapping to it would drag
-		// the Avatar backward on every moving frame once RTT is non-trivial (#68).
-		// Server-initiated teleports (respawn, portal) arrive as a Zone change and are
-		// handled by the net.zoneId branch above.
-		const own = net.ownAvatar();
-		if (own) {
-			predicted.hp = own.hp;
-			predicted.maxHp = own.maxHp;
-			predicted.hurtT = own.hurtT;
-		}
+		// Own Avatar, predicted locally for zero input lag; the server corrects vitals
+		// (and snaps position on respawn) via snapshots.
+		let predicted: Entity = spawnAvatar(SPAWN.x, SPAWN.y);
+		const localCd: Record<string, number> = {}; // predicted skill cooldowns (off-wire)
+		const SEND_INTERVAL = 1000 / 30; // throttle input reports to ~30 Hz
+		let sendAcc = 0;
+		const chat = new ChatInput(); // Zone-local chat typing mode (#34)
 
-		sendAcc += dt;
-		if (sendAcc >= SEND_INTERVAL) {
-			sendAcc = 0;
-			net.send({
-				t: 'input',
-				x: predicted.x,
-				y: predicted.y,
-				vx: predicted.vx,
-				vy: predicted.vy,
-				facing: predicted.facing,
-				onGround: predicted.onGround,
-				attack: inp.attack,
-				interact: inp.interact ?? false,
-				skill: inp.skill,
-			});
-		}
+		renderer.keyInput.on('keypress', (k) => {
+			// While typing, chat OWNS the keyboard: every key edits the line (or sends /
+			// cancels) and none reaches movement / combat (no keystroke leak).
+			if (chat.open) {
+				const r = chat.key(k);
+				if (r.action === 'send') {
+					// A sent line is either a Zone-local say or a `/w` whisper (#40); a bad
+					// whisper surfaces a local usage notice rather than going to the wire.
+					const cmd = parseChatCommand(r.text);
+					if (cmd.kind === 'say') net.send({ t: 'chat', text: cmd.text });
+					else if (cmd.kind === 'whisper')
+						net.send({ t: 'whisper', to: cmd.to, text: cmd.text });
+					else if (cmd.kind === 'emote')
+						net.send({ t: 'emote', emote: cmd.emote });
+					else net.notice(cmd.message);
+				}
+				return;
+			}
+			if (k.name === 'q') quit();
+			if (k.name === 'return') {
+				chat.start();
+				input.clear(); // a key held at the switch must not stick while typing
+				return;
+			}
+			input.press(k.name, performance.now());
+		});
+		// Ignore releases while typing so play-mode keys can't be toggled mid-message.
+		renderer.keyInput.on('keyrelease', (k) => {
+			if (!chat.open) input.release(k.name);
+		});
 
-		const fps = meter(dt);
-		// Co-present entities are rendered from the buffer, interpolated ~100 ms in
-		// the past for smooth motion between ticks; the own Avatar stays purely
-		// predicted (only its vitals reconcile against net.latest, never the delayed
-		// view), so local motion is never dragged backward by network latency.
-		const view = net.sample(performance.now());
-		// Age over-head Speech bubbles by wall time, then stamp the live ones onto
-		// their senders' entities for the playfield to draw (#59, ADR 0007).
-		net.decayBubbles(dt / 1000);
-		net.decayEmotes(dt / 1000);
-		const game = snapshotToGame(
-			zone,
-			predicted,
-			net.sessionId,
-			view,
-			localCd,
-			net.bubbles,
-			net.emotes,
-		);
-		playfield.game = game;
-		hud.update(game, fps);
-		hud.updateChat(net.chatLog, chat.open, chat.text);
-	});
+		const meter = fpsMeter();
+		renderer.setFrameCallback(async (dt) => {
+			// Freeze movement / combat while the chat line has the keyboard.
+			const inp = chat.open ? IDLE_INPUT : input.poll(performance.now());
+
+			// Follow a server-driven Zone change (portal travel / death respawn): swap the
+			// local Zone and snap the predicted Avatar to the server's arrival position so
+			// it doesn't briefly run in the old Zone before reconciling.
+			if (net.zoneId && net.zoneId !== zoneId) {
+				zoneId = net.zoneId;
+				zone = localZone(zoneId);
+				const arrival = net.ownAvatar();
+				if (arrival)
+					predicted = {
+						...predicted,
+						x: arrival.x,
+						y: arrival.y,
+						vx: 0,
+						vy: 0,
+						onGround: false,
+					};
+			}
+
+			predicted = clientStepAvatar(
+				zone.terrain,
+				predicted,
+				{ moveX: inp.moveX, jump: inp.jump },
+				dt,
+			);
+			// Optimistic local telegraph (story 17): mirror the server's cooldown gate
+			// so the swing/skill flash shows before the snapshot confirms the hit.
+			if (inp.attack && predicted.attackT <= 0)
+				predicted.attackT = COMBAT.attackCooldown;
+			const dtSec = Math.min(dt / 1000, PHYS.maxDt);
+			for (const id in localCd) localCd[id] = Math.max(0, localCd[id] - dtSec);
+			const level = net.latest?.progress.level ?? 1;
+			if (inp.skill) {
+				const skill = skillForSlot('warrior', inp.skill);
+				if (
+					skill &&
+					skillUnlocked(skill, level) &&
+					(localCd[skill.id] ?? 0) <= 0
+				)
+					localCd[skill.id] = skill.cooldown;
+			}
+
+			// Server owns vitals; reconcile HP/i-frames from snapshots. Position is NOT
+			// reconciled here: per ADR 0001 the client is authoritative over its own
+			// position and the server never re-simulates it, so the snapshot only echoes
+			// back our own position from ~one round-trip ago. Snapping to it would drag
+			// the Avatar backward on every moving frame once RTT is non-trivial (#68).
+			// Server-initiated teleports (respawn, portal) arrive as a Zone change and are
+			// handled by the net.zoneId branch above.
+			const own = net.ownAvatar();
+			if (own) {
+				predicted.hp = own.hp;
+				predicted.maxHp = own.maxHp;
+				predicted.hurtT = own.hurtT;
+			}
+
+			sendAcc += dt;
+			if (sendAcc >= SEND_INTERVAL) {
+				sendAcc = 0;
+				net.send({
+					t: 'input',
+					x: predicted.x,
+					y: predicted.y,
+					vx: predicted.vx,
+					vy: predicted.vy,
+					facing: predicted.facing,
+					onGround: predicted.onGround,
+					attack: inp.attack,
+					interact: inp.interact ?? false,
+					skill: inp.skill,
+				});
+			}
+
+			const fps = meter(dt);
+			// Co-present entities are rendered from the buffer, interpolated ~100 ms in
+			// the past for smooth motion between ticks; the own Avatar stays purely
+			// predicted (only its vitals reconcile against net.latest, never the delayed
+			// view), so local motion is never dragged backward by network latency.
+			const view = net.sample(performance.now());
+			// Age over-head Speech bubbles by wall time, then stamp the live ones onto
+			// their senders' entities for the playfield to draw (#59, ADR 0007).
+			net.decayBubbles(dt / 1000);
+			net.decayEmotes(dt / 1000);
+			const game = snapshotToGame(
+				zone,
+				predicted,
+				net.sessionId,
+				view,
+				localCd,
+				net.bubbles,
+				net.emotes,
+			);
+			playfield.game = game;
+			hud.update(game, fps);
+			hud.updateChat(net.chatLog, chat.open, chat.text);
+		});
+	}
 }
 
 // Dispatch + start last, after every module-level declaration: runNetworked reads
