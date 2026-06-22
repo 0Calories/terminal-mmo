@@ -247,14 +247,17 @@ export function stepZone(
 			}
 		}
 
-		// First Avatar whose hitbox lands (Monster off i-frames) deals damage and
-		// is credited the kill if this brings the Monster down.
-		let killer = -1;
+		// First Avatar whose hitbox lands (Monster off i-frames) deals damage and is
+		// recorded as a contributor. Credit accumulates on the Monster across ticks
+		// so every Player who helped shares in the kill (#37, stories 26/27).
 		for (let i = 0; i < avatars.length; i++) {
 			const hb = hitboxes[i];
 			if (hb && m.hurtT <= 0 && aabbOverlap(hb, entityBox(m))) {
-				m = { ...m, hp: m.hp - damages[i], hurtT: 0.6 };
-				killer = i;
+				const sid = avatars[i].sessionId;
+				const contributors = m.contributors?.includes(sid)
+					? m.contributors
+					: [...(m.contributors ?? []), sid];
+				m = { ...m, hp: m.hp - damages[i], hurtT: 0.6, contributors };
 				break;
 			}
 		}
@@ -279,8 +282,14 @@ export function stepZone(
 		if (m.hp > 0) {
 			monsters.push(m);
 		} else {
-			const credited = killer >= 0 ? killer : 0;
-			avatars[credited] = grantKill(avatars[credited]);
+			// Every contributor earns full XP (shared, not split) and rolls its own
+			// private, per-Player-seeded loot — instanced, so there is no shared pile
+			// and no kill-stealing (#37). Each grant updates only that Avatar's state;
+			// snapshotFor delivers it to that Player alone.
+			for (const sid of m.contributors ?? []) {
+				const idx = avatars.findIndex((a) => a.sessionId === sid);
+				if (idx >= 0) avatars[idx] = grantKill(avatars[idx]);
+			}
 			if (m.spawnIndex !== undefined)
 				respawns.push({
 					spawnIndex: m.spawnIndex,

@@ -35,6 +35,7 @@ export interface Entity {
 	hurtT: number; // remaining invulnerability, seconds
 	attackT: number; // remaining attack cooldown, seconds
 	spawnIndex?: number; // index into its Zone's spawns[], if Field-spawned
+	contributors?: number[]; // Monster-only: session ids that have damaged it, for shared-kill rewards (#37)
 	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
 	bubble?: string; // latest Chat line shown as an over-head Speech bubble (#59); render-only
 }
