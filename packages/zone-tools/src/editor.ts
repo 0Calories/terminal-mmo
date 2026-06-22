@@ -187,7 +187,7 @@ export function editorStatusLine(m: StatusLineModel): string {
 	const health =
 		errors.length === 0 ? '✓' : `✗${errors.length}: ${errors[0].message}`;
 	const dirty = m.dirty ? ' *' : '';
-	return `${m.tool} · ${m.placeable} · (${m.cursor.x},${m.cursor.y})${dirty}  ${health}  · w save · q quit`;
+	return `${m.tool} · ${m.placeable} · (${m.cursor.x},${m.cursor.y})${dirty}  ${health}  · ^s save · q quit`;
 }
 
 // --- Interactive shell (opentui; not unit-tested, validated by eye) -----------
@@ -217,10 +217,10 @@ function flattenPalette(catalogs: Catalogs): PaletteEntry[] {
 
 /**
  * `zone edit <id>`: mount the entity-centric editor over an authored Zone. A
- * single crosshair cursor roams a free-growing canvas with vim/arrow keys; `space`
- * stamps the active Placeable (auto-growing the canvas into virgin space), `x`
- * erases, `tab` cycles the Placeable, `w` saves (trimming the trailing empties),
- * `q` quits. The rulers, crosshair, status bar, and palette bar are drawn here and
+ * single crosshair cursor roams a free-growing canvas with wasd / vim (hjkl) /
+ * arrow keys; `space` stamps the active Placeable (auto-growing the canvas into
+ * virgin space), `x` erases, `tab` cycles the Placeable, `^s` saves (trimming the
+ * trailing empties), `q` quits. The rulers, crosshair, status bar, and palette bar are drawn here and
  * validated by eye (PRD); all geometry comes from the pure helpers above. Reuses
  * the shared renderer (#56) and the lossless `EditorDoc`, so nothing is lost on a
  * round-trip. Long-lived: opentui owns the process lifecycle (ctrl-c / q exit).
@@ -407,7 +407,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			}
 			if (pendingQuit && px < W)
 				buf.drawText(
-					'  unsaved — q again to discard, w to save',
+					'  unsaved — q again to discard, ^s to save',
 					Math.min(px, W - 1),
 					paletteRow,
 					C.hot,
@@ -429,21 +429,33 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		cursor.y = c.y;
 	};
 
-	renderer.keyInput.on('keypress', (k: { name: string }) => {
+	const save = () => {
+		savedText = serializeDoc(trimDoc(doc));
+		writeZone(deps.root, id, savedText);
+		dirty = false;
+	};
+
+	renderer.keyInput.on('keypress', (k: { name: string; ctrl: boolean }) => {
 		const wasPendingQuit = pendingQuit;
 		pendingQuit = false;
+		// Save is ^s so the bare `s` (and the rest of wasd) is free for movement.
+		if (k.ctrl && k.name === 's') return save();
 		switch (k.name) {
 			case 'left':
 			case 'h':
+			case 'a':
 				return move(-1, 0);
 			case 'right':
 			case 'l':
+			case 'd':
 				return move(1, 0);
 			case 'up':
 			case 'k':
+			case 'w':
 				return move(0, -1);
 			case 'down':
 			case 'j':
+			case 's':
 				return move(0, 1);
 			case 'space': {
 				const p = palette[selIdx]?.placeable;
@@ -467,12 +479,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			case 'tab':
 				if (palette.length > 0) selIdx = (selIdx + 1) % palette.length;
 				return;
-			case 'w': {
-				savedText = serializeDoc(trimDoc(doc));
-				writeZone(deps.root, id, savedText);
-				dirty = false;
-				return;
-			}
 			case 'q':
 				if (dirty && !wasPendingQuit) {
 					pendingQuit = true;
