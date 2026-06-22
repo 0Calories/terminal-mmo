@@ -34,6 +34,23 @@ const MIRROR: Record<string, string> = {
 	'▞': '▚',
 };
 
+// A sprite glyph mapped to its translucent "ghost" form for placement previews
+// (#118). Only the FULL block █ fills its whole cell, so it's the one glyph that
+// hides the ghost's background tint — map it to a light shade so the tint reads
+// through. Every partial "puzzle-shape" block (quadrants/halves like ▟ ▛ ▌) leaves
+// part of its cell empty, so the tint already shows through and the silhouette
+// stays legible — those pass through unchanged (Unicode has no lighter quadrants).
+const GHOST_GLYPHS: Record<string, string> = {
+	'█': '░',
+};
+
+/** The translucent ghost form of a sprite glyph (#118): the solid full block
+ *  becomes a light shade; partial blocks keep their shape. Unknown glyphs (incl.
+ *  the light shade itself) pass through unchanged. */
+export function ghostGlyph(ch: string): string {
+	return GHOST_GLYPHS[ch] ?? ch;
+}
+
 function splitTrimPad(art: string): string[] {
 	const lines = art.split('\n');
 	while (lines.length > 0 && lines[0].trim() === '') lines.shift();

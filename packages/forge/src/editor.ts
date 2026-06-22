@@ -435,16 +435,18 @@ export function footprintBox(p: Placeable, x: number, y: number): FootBox {
 	}
 }
 
-/** The translucent glyph the placement ghost draws in place of the entity's solid
- *  sprite glyphs so the preview reads as a dimmed ghost, not the real entity (#118). */
+/** The translucent glyph the placement ghost fills the footprint box with when a
+ *  Placeable has no sprite preview yet (the portal fallback, #118). Sprite ghosts
+ *  map each glyph to its ghost form via the shared `ghostGlyph` instead. */
 export const GHOST_GLYPH = '░';
 
 /**
  * The scene object the placement ghost should draw to preview an entity Placeable
  * landing with its anchor glyph at `(x, y)` (#118). Rather than a coloured box, the
- * ghost is the entity's ACTUAL sprite — same art, same per-cell colours — just blit
- * with {@link GHOST_GLYPH} in place of the solid glyphs (the shell's `GhostStyle`).
- * Synthesising the very Entity/Npc that `parseZone` would spawn at the glyph keeps
+ * ghost is the entity's ACTUAL sprite — same art, same per-cell colours — blit with
+ * each glyph mapped to its translucent ghost form (the shared `ghostGlyph`: the
+ * solid block fades, partial puzzle-shape blocks keep their shape) over the
+ * placement-state tint. Synthesising the very Entity/Npc that `parseZone` would spawn keeps
  * the preview from drifting from what ships (#56): a monster resolves to its
  * behaviour sprite, an NPC to its kind sprite. Returns `undefined` for kinds with
  * no sprite preview yet (portals — #97 — and terrain), so the caller can fall back.
@@ -911,10 +913,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 						: st === 'airborne'
 							? C.ghostAir
 							: C.ghostBad;
-				const ghostStyle: GhostStyle<typeof C.selBg> = {
-					glyph: GHOST_GLYPH,
-					bg,
-				};
+				const ghostStyle: GhostStyle<typeof C.selBg> = { bg };
 				// Draw the synthesized entity through the SHARED renderer with the same
 				// chrome-inset camera renderZoneScene uses, so the ghost sits exactly
 				// where the placed entity would render. Kinds with no sprite yet

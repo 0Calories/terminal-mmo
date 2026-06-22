@@ -1,5 +1,11 @@
 import { BOX } from './constants';
-import { HATS, type Sprite, spriteFor, spriteForNpc } from './sprites';
+import {
+	ghostGlyph,
+	HATS,
+	type Sprite,
+	spriteFor,
+	spriteForNpc,
+} from './sprites';
 import { isSolid } from './terrain';
 import type { Entity, Facing, Npc, Terrain } from './types';
 import type { Portal } from './world';
@@ -57,13 +63,13 @@ export interface ZoneScene {
 	entities: readonly Entity[];
 }
 
-// A translucent "ghost" blit: every lit glyph is replaced by `glyph` (e.g. `░`)
-// and drawn over an opaque `bg` instead of the transparent scene, while the
-// sprite's real per-cell colours are PRESERVED. The forge editor's placement
-// preview uses this so the ghost is the entity's actual shape + colours (#118),
-// tinted by its placement state (grounded/airborne/invalid) behind the glyph.
+// A translucent "ghost" blit: every lit glyph is mapped to its ghost form via
+// `ghostGlyph` (the solid block fades to a light shade; partial puzzle-shape blocks
+// keep their shape) and drawn over an opaque `bg` instead of the transparent scene,
+// while the sprite's real per-cell colours are PRESERVED. The forge editor's
+// placement preview uses this so the ghost is the entity's actual shape + colours
+// (#118), tinted by its placement state (grounded/airborne/invalid) behind it.
 export interface GhostStyle<C> {
-	glyph: string;
 	bg: C;
 }
 
@@ -71,8 +77,8 @@ export interface GhostStyle<C> {
 // the viewport. A `hurt` flash overrides every glyph with the hurt colour. An
 // optional `recolor` overrides specific colour keys for this blit only — the seam
 // the cosmetic body hue uses to repaint the Avatar's `p` cells per Avatar (#35),
-// leaving the shared palette untouched. An optional `ghost` swaps each glyph for
-// the ghost glyph over an opaque tint while keeping the colours (#118).
+// leaving the shared palette untouched. An optional `ghost` maps each glyph to its
+// ghost form (`ghostGlyph`) over an opaque tint while keeping the colours (#118).
 function blitSprite<C>(
 	buf: CellBuffer<C>,
 	sprite: Sprite,
@@ -102,7 +108,7 @@ function blitSprite<C>(
 			const fg = hurt
 				? style.hurt
 				: (recolor?.[key] ?? style.palette[key] ?? style.paletteDefault);
-			if (ghost) buf.setCell(px, py, ghost.glyph, fg, ghost.bg);
+			if (ghost) buf.setCell(px, py, ghostGlyph(ch), fg, ghost.bg);
 			else buf.setCellWithAlphaBlending(px, py, ch, fg, style.transparent);
 		}
 	}

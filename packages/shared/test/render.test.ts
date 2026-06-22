@@ -6,7 +6,13 @@ import {
 	type RenderStyle,
 	renderZoneScene,
 } from '../src/render';
-import { HATS, type Sprite, spriteFor, spriteForNpc } from '../src/sprites';
+import {
+	ghostGlyph,
+	HATS,
+	type Sprite,
+	spriteFor,
+	spriteForNpc,
+} from '../src/sprites';
 import { parseTerrain } from '../src/terrain';
 import type { Entity, EntityType, Facing } from '../src/types';
 
@@ -191,25 +197,36 @@ test('portals render as a translucent block across their box', () => {
 	}
 });
 
-test('ghost mode replaces every glyph with the ghost glyph but keeps the colours (#118)', () => {
+test('ghost mode maps each glyph to its ghost form, over the tint, colours kept (#118)', () => {
 	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'chaser', x: 6, y: 6 });
-	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE, { glyph: '░', bg: 'TINT' });
+	// The shooter sprite has both solid full blocks (█→░) and partial puzzle-shape
+	// blocks (kept), so it exercises the per-glyph mapping in one blit.
+	const e = makeEntity({ type: 'shooter', x: 6, y: 6 });
+	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE, { bg: 'TINT' });
 
-	const sprite = spriteFor('chaser');
+	const sprite = spriteFor('shooter');
 	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
 	const sy = Math.round(e.y + BOX.h - sprite.h);
 	const glyphs = sprite.rows(1);
 	const keys = sprite.colorKeys(1);
+	let sawFade = false;
+	let sawKept = false;
 	for (let ry = 0; ry < sprite.h; ry++) {
 		for (let rx = 0; rx < sprite.w; rx++) {
-			if (glyphs[ry][rx] === ' ') continue;
+			const ch = glyphs[ry][rx];
+			if (ch === ' ') continue;
 			const cell = buf.at(sx + rx, sy + ry);
-			expect(cell?.ch).toBe('░'); // glyph swapped for the ghost glyph
+			expect(cell?.ch).toBe(ghostGlyph(ch)); // mapped to its ghost form
 			expect(cell?.bg).toBe('TINT'); // opaque placement-state tint behind it
 			expect(cell?.fg).toBe(fgFor(keys[ry][rx])); // real sprite colour preserved
+			if (ch === '█')
+				sawFade = true; // a solid block...
+			else sawKept = true; // ...and a partial block both appear
 		}
 	}
+	expect(ghostGlyph('█')).toBe('░'); // full block fades to a light shade
+	expect(ghostGlyph('▟')).toBe('▟'); // partial puzzle-shape block keeps its shape
+	expect(sawFade && sawKept).toBe(true);
 });
 
 test('NPC sprite blits at its box anchor (centred over the box, feet on the floor)', () => {
