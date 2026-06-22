@@ -20,10 +20,11 @@ permissions:
   id-token: write # required for npm Trusted Publishing (OIDC) + provenance
 
 env:
-  # The Railway service to deploy. Confirm this matches your Railway project's
-  # service name. (HEALTH_URL is derived at runtime from the client's single source
-  # of truth — see the "Derive health URL" step below.)
-  RAILWAY_SERVICE: mmoserver
+  # The Railway service to deploy, kept as a repo variable (Settings → Secrets and
+  # variables → Actions → Variables) so the live service name lives in config, not
+  # code. (HEALTH_URL is derived at runtime from the client's single source of
+  # truth — see the "Derive health URL" step below.)
+  RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
 
 jobs:
   release:
