@@ -25,7 +25,7 @@ test('createGame separates Player state from the World of Zones', () => {
 	expect(g.player.zoneId in g.world.zones).toBe(true);
 	const zone = activeZone(g.world, g.player.zoneId);
 	expect(zone.type).toBe('field');
-	expect(zone.monsters.length).toBe(8);
+	expect(zone.monsters.length).toBe(7); // the authored field-01 spawn set
 });
 
 test('createGameFromZones seeds the sim from an explicit Zone set + start id', () => {
