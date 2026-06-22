@@ -16,14 +16,15 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: read
+  contents: write # create the GitHub Release at the end
   id-token: write # required for npm Trusted Publishing (OIDC) + provenance
 
 env:
-  # The Railway service to deploy. Confirm this matches your Railway project's
-  # service name. (HEALTH_URL is derived at runtime from the client's single source
-  # of truth — see the "Derive health URL" step below.)
-  RAILWAY_SERVICE: mmoserver
+  # The Railway service to deploy, kept as a repo variable (Settings → Secrets and
+  # variables → Actions → Variables) so the live service name lives in config, not
+  # code. (HEALTH_URL is derived at runtime from the client's single source of
+  # truth — see the "Derive health URL" step below.)
+  RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
 
 jobs:
   release:
@@ -67,18 +68,28 @@ jobs:
         run: |
           # Stamp this release's Version onto the service first, WITHOUT redeploying
           # the old code (--skip-deploys), then build+deploy the tagged commit
-          # (Dockerfile) with the variable already in place. `up --ci` streams build
-          # logs then exits non-zero on build failure; the /health gate below waits
-          # for the new container to actually serve $VERSION.
+          # (Dockerfile) with the variable already in place.
+          #
+          # Use --detach, NOT --ci: when the tagged commit changes nothing under the
+          # service's watch paths (e.g. a client-only release, or a re-tag that only
+          # touches CI), Railway skips the build — and `up --ci` then hangs forever
+          # waiting to stream a deployment that was never created. --detach uploads,
+          # triggers the deploy, and returns immediately; the /health gate below is
+          # what actually confirms the new container is live and serving $VERSION (and
+          # refuses to publish if a real build fails to come up in time).
           bunx @railway/cli variables set "MMO_VERSION=$VERSION" \
             --service "$RAILWAY_SERVICE" \
             --skip-deploys
-          bunx @railway/cli up --ci --service "$RAILWAY_SERVICE"
+          bunx @railway/cli up --detach -y --service "$RAILWAY_SERVICE"
 
       # --- Gate: the live server must report exactly this Version ----------------
+      # Now that the deploy is detached, this gate spans the whole build → deploy →
+      # healthy cycle (not just container startup), so it polls generously: 90 × 5s
+      # ≈ 7.5 min. A skipped build (server already serving $VERSION) passes on the
+      # first attempt; a real build that never comes up trips the refuse-to-publish.
       - name: Assert /health reports the tag
         run: |
-          for i in $(seq 1 30); do
+          for i in $(seq 1 90); do
             body="$(curl -fsS "$HEALTH_URL" || true)"
             got="$(printf '%s' "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).version' 2>/dev/null || true)"
             echo "attempt $i: server reports '${got}', want '${VERSION}'"
@@ -98,5 +109,21 @@ jobs:
           # Baked into the bundle by build.ts (prepublishOnly) as the client's Version.
           MMO_VERSION: ${{ env.VERSION }}
         run: |
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          # Drop the workspace-only devDependencies (@mmo/client, @mmo/shared,
+          # `workspace:*`): npm can't parse that protocol, and they're build-time
+          # only — the bundle inlines them, so nothing ships them. bun resolves the
+          # build from the root workspace node_modules regardless. Do this FIRST so
+          # the version bump below never has to look at a `workspace:` spec.
+          npm pkg delete devDependencies
+          # Stamp the release Version with `npm pkg set`, NOT `npm version`: the
+          # latter reifies the dependency tree (the whole bun workspace — every
+          # sibling still carries `workspace:*`), and npm aborts with
+          # EUNSUPPORTEDPROTOCOL. `npm pkg set` only rewrites the JSON field.
+          npm pkg set version="$VERSION"
           npm publish --access public
+
+      # --- Record the release on GitHub (notes + history) ------------------------
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
