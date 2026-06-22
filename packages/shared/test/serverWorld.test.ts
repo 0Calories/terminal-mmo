@@ -7,8 +7,10 @@ import {
 	channelsOf,
 	createServerWorld,
 	GROUND_TOP,
+	handleOf,
 	loadZones,
 	removeSession,
+	sessionByHandle,
 	sessionsInChannel,
 	stepServerWorld,
 	TOWN_SPAWN,
@@ -264,4 +266,30 @@ test('sessionsInChannel excludes a session that has left for another Zone', () =
 test('sessionsInChannel is empty for an unknown / unplaced session', () => {
 	const w = addSession(makeWorld(), 1, 'a');
 	expect(sessionsInChannel(w, 99)).toEqual([]);
+});
+
+test('sessionByHandle finds an online session across Zones + Channels, case-insensitively', () => {
+	let w = makeWorld(1); // each Channel holds one, so the two split apart
+	w = addSession(w, 1, 'Neo'); // field-01#0
+	w = addSession(w, 2, 'Trinity'); // field-01#1
+	// Whisper is world-wide: a handle resolves regardless of Channel, ignoring case.
+	expect(sessionByHandle(w, 'neo')).toBe(1);
+	expect(sessionByHandle(w, 'TRINITY')).toBe(2);
+});
+
+test('sessionByHandle returns undefined for a handle that is not online', () => {
+	const w = addSession(makeWorld(), 1, 'neo');
+	expect(sessionByHandle(w, 'ghost')).toBeUndefined();
+});
+
+test('sessionByHandle resolves a duplicated handle to the lowest sessionId (unambiguous)', () => {
+	let w = addSession(makeWorld(), 5, 'neo');
+	w = addSession(w, 3, 'NEO'); // same handle, different case
+	expect(sessionByHandle(w, 'neo')).toBe(3);
+});
+
+test('handleOf returns a placed session handle, undefined otherwise', () => {
+	const w = addSession(makeWorld(), 7, 'Neo');
+	expect(handleOf(w, 7)).toBe('Neo');
+	expect(handleOf(w, 99)).toBeUndefined();
 });

@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { CHAT_MAX_LEN } from '@mmo/shared';
-import { ChatInput } from '../src/chat';
+import { ChatInput, parseChatCommand } from '../src/chat';
 
 // Drive a sequence of printable characters into an open ChatInput.
 function type(chat: ChatInput, s: string) {
@@ -59,4 +59,30 @@ test('typing cannot exceed the shared chat cap (#59, ADR 0007)', () => {
 	chat.start();
 	type(chat, 'a'.repeat(CHAT_MAX_LEN + 50));
 	expect(chat.text.length).toBe(CHAT_MAX_LEN);
+});
+
+test('parseChatCommand treats a plain line as a Zone-local say', () => {
+	expect(parseChatCommand('hello field')).toEqual({
+		kind: 'say',
+		text: 'hello field',
+	});
+});
+
+test('parseChatCommand parses /w <handle> <message> into a whisper (#40)', () => {
+	expect(parseChatCommand('/w Trinity follow the rabbit')).toEqual({
+		kind: 'whisper',
+		to: 'Trinity',
+		text: 'follow the rabbit',
+	});
+	// The long form and surrounding whitespace work too.
+	expect(parseChatCommand('  /whisper  neo   hey there  ')).toEqual({
+		kind: 'whisper',
+		to: 'neo',
+		text: 'hey there',
+	});
+});
+
+test('parseChatCommand reports a usage error when the whisper has no message', () => {
+	expect(parseChatCommand('/w neo').kind).toBe('error');
+	expect(parseChatCommand('/w').kind).toBe('error');
 });

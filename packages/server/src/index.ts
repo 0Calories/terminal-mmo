@@ -14,10 +14,12 @@ import {
 	createServerWorld,
 	decodeClientMessage,
 	encodeServerMessage,
+	handleOf,
 	loadZones,
 	PROTOCOL_VERSION,
 	removeSession,
 	type ServerWorld,
+	sessionByHandle,
 	sessionsInChannel,
 	stepServerWorld,
 	worldSnapshotFor,
@@ -134,6 +136,39 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		});
 		for (const sid of sessionsInChannel(world, sessionId))
 			sockets.get(sid)?.send(frame);
+		return;
+	}
+	if (msg.t === 'whisper') {
+		// A private, directed message routed world-wide to one online handle (#40) —
+		// unlike chat, it crosses Zones and Channels. Both sender and recipient see it.
+		const text = msg.text.trim().slice(0, CHAT_MAX_LEN);
+		if (!text) return; // drop empty / whitespace-only whispers
+		const from = handleOf(world, sessionId);
+		if (from === undefined) return; // whisper before hello; ignore
+		const target = sessionByHandle(world, msg.to);
+		if (target === undefined) {
+			// Graceful, sender-only feedback for an unknown / offline handle.
+			ws.send(
+				encodeServerMessage({
+					t: 'notice',
+					text: `No player named "${msg.to}" is online.`,
+				}),
+			);
+			return;
+		}
+		// Echo the recipient's canonical handle (its real casing) back to the sender.
+		const to = handleOf(world, target) ?? msg.to;
+		const frame = encodeServerMessage({
+			t: 'whisper',
+			fromSessionId: sessionId,
+			from,
+			to,
+			text,
+		});
+		sockets.get(target)?.send(frame);
+		// The sender always gets its own echo, even when whispering itself (target
+		// === sessionId sends one frame, which is the desired single echo).
+		if (target !== sessionId) sockets.get(sessionId)?.send(frame);
 		return;
 	}
 	// input: trust the reported position with only a loose bounds clamp (against the

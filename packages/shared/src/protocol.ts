@@ -18,7 +18,7 @@ import type {
 // published client version). Carried on `hello`; the server rejects a mismatch
 // (ADR 0009) so a stale `bunx` client fails loudly with "run @latest" rather than
 // silently mis-decoding a binary frame at the wrong offsets.
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -161,9 +161,12 @@ export type ClientMessage =
 	  }
 	// A Zone-local chat line; the server attributes it to the sender's handle and
 	// relays it to the sender's Channel (#34).
-	| { t: 'chat'; text: string };
+	| { t: 'chat'; text: string }
+	// A private, directed message to one online Player by handle (#40). Not
+	// Zone-local: the server routes it world-wide to the matching session only.
+	| { t: 'whisper'; to: string; text: string };
 
-const CLIENT_TAG = { hello: 1, input: 2, chat: 3 } as const;
+const CLIENT_TAG = { hello: 1, input: 2, chat: 3, whisper: 4 } as const;
 
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 	const w = new Writer();
@@ -187,6 +190,11 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			break;
 		case 'chat':
 			w.u8(CLIENT_TAG.chat);
+			w.str(msg.text);
+			break;
+		case 'whisper':
+			w.u8(CLIENT_TAG.whisper);
+			w.str(msg.to);
 			w.str(msg.text);
 			break;
 	}
@@ -230,6 +238,8 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 		}
 		case CLIENT_TAG.chat:
 			return { t: 'chat', text: r.str() };
+		case CLIENT_TAG.whisper:
+			return { t: 'whisper', to: r.str(), text: r.str() };
 		default:
 			throw new Error(`unknown client message tag ${tag}`);
 	}
@@ -289,12 +299,31 @@ export type ServerMessage =
 	// `sessionId` keys the over-head Speech bubble to the sender's sprite (#59,
 	// ADR 0007) — the handle is a display label, not an identity.
 	| { t: 'chat'; sessionId: number; handle: string; text: string }
+	// A private whisper (#40) delivered to BOTH the sender and the recipient, so
+	// each sees the line in its log. `fromSessionId` lets the recipient tell an
+	// incoming whisper from its own echo (handles are display labels, not identity).
+	| {
+			t: 'whisper';
+			fromSessionId: number;
+			from: string;
+			to: string;
+			text: string;
+	  }
+	// A sender-only system line (#40): e.g. whispering a handle that is not online.
+	| { t: 'notice'; text: string }
 	// The server is refusing the connection and will close it (ADR 0009): a
 	// protocol-version mismatch, or a connection cap (global / per-IP). `reason` is
 	// a human-readable line the client surfaces before exiting.
 	| { t: 'reject'; reason: string };
 
-const SERVER_TAG = { welcome: 1, snapshot: 2, chat: 3, reject: 4 } as const;
+const SERVER_TAG = {
+	welcome: 1,
+	snapshot: 2,
+	chat: 3,
+	reject: 4,
+	whisper: 5,
+	notice: 6,
+} as const;
 
 const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
 const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory'];
@@ -446,6 +475,17 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			w.str(msg.handle);
 			w.str(msg.text);
 			break;
+		case 'whisper':
+			w.u8(SERVER_TAG.whisper);
+			w.u32(msg.fromSessionId);
+			w.str(msg.from);
+			w.str(msg.to);
+			w.str(msg.text);
+			break;
+		case 'notice':
+			w.u8(SERVER_TAG.notice);
+			w.str(msg.text);
+			break;
 		case 'reject':
 			w.u8(SERVER_TAG.reject);
 			w.str(msg.reason);
@@ -497,6 +537,16 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 		}
 		case SERVER_TAG.chat:
 			return { t: 'chat', sessionId: r.u32(), handle: r.str(), text: r.str() };
+		case SERVER_TAG.whisper:
+			return {
+				t: 'whisper',
+				fromSessionId: r.u32(),
+				from: r.str(),
+				to: r.str(),
+				text: r.str(),
+			};
+		case SERVER_TAG.notice:
+			return { t: 'notice', text: r.str() };
 		case SERVER_TAG.reject:
 			return { t: 'reject', reason: r.str() };
 		default:

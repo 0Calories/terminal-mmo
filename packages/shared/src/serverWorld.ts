@@ -112,6 +112,37 @@ export function sessionsInChannel(
 	return out;
 }
 
+// The online session whose handle matches `handle`, world-wide — the routing
+// primitive for whisper (#40), which (unlike chat) crosses Zones and Channels.
+// Case-insensitive; a duplicated handle resolves to the lowest sessionId so the
+// lookup is unambiguous and deterministic. Undefined if no online session matches.
+export function sessionByHandle(
+	world: ServerWorld,
+	handle: string,
+): number | undefined {
+	const want = handle.toLowerCase();
+	let found: number | undefined;
+	for (const zs of Object.values(world.channels))
+		for (const a of zs.avatars)
+			if (a.handle.toLowerCase() === want)
+				if (found === undefined || a.sessionId < found) found = a.sessionId;
+	return found;
+}
+
+// The handle a placed session registered at the handshake (its canonical casing),
+// or undefined if the session is not online. Used to attribute a whisper to its
+// sender and to echo the recipient's real handle back (#40).
+export function handleOf(
+	world: ServerWorld,
+	sessionId: number,
+): string | undefined {
+	const loc = world.location[sessionId];
+	if (!loc) return undefined;
+	return world.channels[channelKey(loc.zone, loc.channel)]?.avatars.find(
+		(a) => a.sessionId === sessionId,
+	)?.handle;
+}
+
 // Every Channel of a Zone, ordered by Channel index (for inspection / tests).
 export function channelsOf(world: ServerWorld, zone: ZoneId): ZoneState[] {
 	const out: ZoneState[] = [];

@@ -186,6 +186,48 @@ test('NetClient.chatLog is bounded so it cannot grow without limit', () => {
 	net.close();
 });
 
+test('NetClient.ingest renders a whisper distinctly by direction (#40)', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.sessionId = 7; // this client
+	// Incoming: another session whispered us.
+	net.ingest(
+		{ t: 'whisper', fromSessionId: 9, from: 'neo', to: 'tester', text: 'hi' },
+		1000,
+	);
+	// Outgoing echo: our own whisper, returned by the server.
+	net.ingest(
+		{ t: 'whisper', fromSessionId: 7, from: 'tester', to: 'neo', text: 'yo' },
+		1010,
+	);
+	expect(net.chatLog).toEqual(['[neo → you] hi', '[you → neo] yo']);
+	net.close();
+});
+
+test('NetClient.ingest does NOT open a Speech bubble for a private whisper', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.sessionId = 7;
+	net.ingest(
+		{ t: 'whisper', fromSessionId: 9, from: 'neo', to: 'tester', text: 'psst' },
+		1000,
+	);
+	expect(net.bubbles.size).toBe(0); // whispers are private — no over-head bubble
+	net.close();
+});
+
+test('NetClient.ingest surfaces a server notice as a system line', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest({ t: 'notice', text: 'No player named "ghost" is online.' }, 1000);
+	expect(net.chatLog).toEqual(['* No player named "ghost" is online.']);
+	net.close();
+});
+
+test('NetClient.notice surfaces a local system line without a round-trip', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.notice('Usage: /w <handle> <message>');
+	expect(net.chatLog).toEqual(['* Usage: /w <handle> <message>']);
+	net.close();
+});
+
 test('NetClient.ingest opens a Speech bubble keyed to the sender, replacing the prior one', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester');
 	net.ingest({ t: 'chat', sessionId: 2, handle: 'rival', text: 'hi' }, 1000);

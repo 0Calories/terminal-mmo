@@ -93,14 +93,28 @@ export class NetClient {
 			return;
 		}
 		if (msg.t === 'chat') {
-			this.chatLog.push(`${msg.handle}: ${msg.text}`);
-			if (this.chatLog.length > MAX_CHAT_LOG)
-				this.chatLog.splice(0, this.chatLog.length - MAX_CHAT_LOG);
+			this.pushChat(`${msg.handle}: ${msg.text}`);
 			// Open / replace the sender's over-head bubble (#59).
 			this.bubbles.set(msg.sessionId, {
 				text: msg.text,
 				ttl: bubbleTtl(msg.text.length),
 			});
+			return;
+		}
+		// A private whisper (#40), styled distinctly from Zone chat and rendered by
+		// direction: our own echo reads "you → them", an inbound one "them → you".
+		// Whispers are private, so they open NO over-head bubble.
+		if (msg.t === 'whisper') {
+			const line =
+				msg.fromSessionId === this.sessionId
+					? `[you → ${msg.to}] ${msg.text}`
+					: `[${msg.from} → you] ${msg.text}`;
+			this.pushChat(line);
+			return;
+		}
+		// A sender-only system line (#40), e.g. whispering an offline handle.
+		if (msg.t === 'notice') {
+			this.notice(msg.text);
 			return;
 		}
 		// snapshot: on a Zone change, drop the prior Zone's frames — interpolating
@@ -118,6 +132,19 @@ export class NetClient {
 	// the first snapshot. The own Avatar is replaced downstream by local prediction.
 	sample(nowMs: number): Snapshot | null {
 		return this.buffer.sample(nowMs - INTERP_DELAY_MS);
+	}
+
+	// Append a line to the bounded chat log (shared by say / whisper / notice).
+	private pushChat(line: string) {
+		this.chatLog.push(line);
+		if (this.chatLog.length > MAX_CHAT_LOG)
+			this.chatLog.splice(0, this.chatLog.length - MAX_CHAT_LOG);
+	}
+
+	// Surface a local system line in the chat log (e.g. a bad `/w` usage), styled
+	// like a server notice (#40) — no round-trip.
+	notice(text: string) {
+		this.pushChat(`* ${text}`);
 	}
 
 	// Age every Speech bubble by `dtSec` and drop the expired ones (#59). Called

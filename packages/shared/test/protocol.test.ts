@@ -87,6 +87,37 @@ test('chat (client -> server) round-trips the message text', () => {
 	expect(decoded).toEqual(msg);
 });
 
+test('whisper (client -> server) round-trips the target handle + text', () => {
+	const msg: ClientMessage = {
+		t: 'whisper',
+		to: 'Trinity',
+		text: 'meet me 🐇',
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('whisper (server -> client) round-trips sender session + both handles + text', () => {
+	const msg: ServerMessage = {
+		t: 'whisper',
+		fromSessionId: 7,
+		from: 'neo',
+		to: 'trinity',
+		text: 'follow the white rabbit',
+	};
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('notice (server -> client) round-trips the sender-only system line', () => {
+	const msg: ServerMessage = {
+		t: 'notice',
+		text: 'No player named "ghost" is online.',
+	};
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
 test('welcome round-trips the assigned session, zone, and tick rate', () => {
 	const msg: ServerMessage = {
 		t: 'welcome',
