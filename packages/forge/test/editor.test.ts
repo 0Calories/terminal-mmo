@@ -13,6 +13,8 @@ import {
 	entityAt,
 	eraseCells,
 	footprintBox,
+	GHOST_FILL,
+	ghostFootprintCells,
 	groundSnap,
 	growToInclude,
 	lineCells,
@@ -447,6 +449,44 @@ describe('footprintBox (#96)', () => {
 			w: 1,
 			h: 1,
 		});
+	});
+});
+
+describe('ghostFootprintCells (#118)', () => {
+	test('fills every footprint cell with the translucent ghost glyph over empty space', () => {
+		const doc: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: {}, npcs: {}, portals: {} },
+			rows: ['..........', '..........', '..........'],
+		};
+		const cells = ghostFootprintCells(
+			doc,
+			{ kind: 'monster', id: 'chaser' },
+			1,
+			0,
+		);
+		// 5×5 box → 25 cells, all the fill glyph (nothing underneath but empty '.').
+		expect(cells).toHaveLength(25);
+		expect(cells.every((c) => c.glyph === GHOST_FILL)).toBe(true);
+		// Anchored top-left at (1,0), spanning the box.
+		expect(cells[0]).toEqual({ x: 1, y: 0, glyph: GHOST_FILL });
+		expect(cells.at(-1)).toEqual({ x: 5, y: 4, glyph: GHOST_FILL });
+	});
+
+	test('shows underlying authored content through the fill so a clip still reads', () => {
+		const doc: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: {}, npcs: {}, portals: {} },
+			rows: ['....', '.#..', '....'],
+		};
+		const cells = ghostFootprintCells(
+			doc,
+			{ kind: 'portal', target: 't', arrival: [0, 0] },
+			0,
+			0,
+		);
+		const clipped = cells.find((c) => c.x === 1 && c.y === 1);
+		expect(clipped?.glyph).toBe('#');
+		// Other cells stay the fill glyph.
+		expect(cells.find((c) => c.x === 0 && c.y === 0)?.glyph).toBe(GHOST_FILL);
 	});
 });
 

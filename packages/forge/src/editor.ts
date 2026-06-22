@@ -429,6 +429,34 @@ export function footprintBox(p: Placeable, x: number, y: number): FootBox {
 	}
 }
 
+/** The translucent glyph the placement ghost fills an entity's footprint with so
+ *  it reads as a shape, not an empty outline (#118). */
+export const GHOST_FILL = '▒';
+
+/**
+ * The cells the placement ghost should draw to preview an entity Placeable at
+ * anchor `(x, y)` (#118). Every cell of the {@link footprintBox} is filled with the
+ * translucent {@link GHOST_FILL} glyph so the ghost resembles the sprite footprint
+ * rather than a hollow box; authored content already on the grid (e.g. terrain the
+ * box would clip) shows through unchanged so the invalid/clip state still reads.
+ * The state tint is the caller's concern (drawn as the background).
+ */
+export function ghostFootprintCells(
+	doc: EditorDoc,
+	p: Placeable,
+	x: number,
+	y: number,
+): { x: number; y: number; glyph: string }[] {
+	const box = footprintBox(p, x, y);
+	const cells: { x: number; y: number; glyph: string }[] = [];
+	for (let cy = box.y; cy < box.y + box.h; cy++)
+		for (let cx = box.x; cx < box.x + box.w; cx++) {
+			const here = cellAt(doc, cx, cy);
+			cells.push({ x: cx, y: cy, glyph: here === '.' ? GHOST_FILL : here });
+		}
+	return cells;
+}
+
 /**
  * Editor-grid solidity, matching the runtime's `isSolid` (shared/terrain): a `#`
  * cell is solid; horizontal out-of-bounds and below the canvas read as solid
@@ -852,7 +880,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			const ghostP = stampP;
 			if (ghostP && TOOLS[toolIdx].id === 'stamp' && !anchor) {
 				const a = cursorToAnchor(doc, ghostP, cursor.x, cursor.y, freePlace);
-				const box = footprintBox(ghostP, a.x, a.y);
 				const st = placementState(doc, ghostP, a.x, a.y);
 				const bg =
 					st === 'grounded'
@@ -860,13 +887,16 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 						: st === 'airborne'
 							? C.ghostAir
 							: C.ghostBad;
-				tint(
-					rectCells(
-						{ x: box.x, y: box.y },
-						{ x: box.x + box.w - 1, y: box.y + box.h - 1 },
-					),
-					bg,
-				);
+				// Filled-glyph preview (#118): the footprint is filled with a
+				// translucent shade so the ghost reads as the entity's shape, not a
+				// hollow outline; the state tint stays the background. Authored content
+				// (e.g. clipped terrain) shows through so an invalid placement reads.
+				for (const g of ghostFootprintCells(doc, ghostP, a.x, a.y)) {
+					const px = sx(g.x);
+					const py = sy(g.y);
+					if (!inCanvasX(px) || !inCanvasY(py)) continue;
+					buf.setCell(px, py, g.glyph, C.cursorFg, bg);
+				}
 				if (inCanvasX(cx) && inCanvasY(cy)) {
 					const here = cellAt(doc, cursor.x, cursor.y);
 					buf.setCell(
