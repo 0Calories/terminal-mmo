@@ -249,13 +249,13 @@ test('NetClient.decayBubbles expires a bubble after its length-scaled ttl', () =
 	net.close();
 });
 
-test('NetClient.ingest opens an emote keyed to the sender, resolving its glyph (#38)', () => {
+test('NetClient.ingest opens an emote keyed to the sender (#38)', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester');
 	net.ingest({ t: 'emote', sessionId: 2, emote: 'wave' }, 1000);
-	expect(net.emotes.get(2)?.glyph).toBe('👋');
+	expect(net.emotes.get(2)?.id).toBe('wave');
 	// A new emote from the same sender replaces the prior one (one per sender).
 	net.ingest({ t: 'emote', sessionId: 2, emote: 'laugh' }, 1100);
-	expect(net.emotes.get(2)?.glyph).toBe('😂');
+	expect(net.emotes.get(2)?.id).toBe('laugh');
 	expect(net.emotes.size).toBe(1);
 	net.close();
 });
@@ -288,8 +288,8 @@ test('snapshotToGame stamps active emotes onto the sender entities, incl. own (#
 	const field = loadField();
 	const predicted = spawnAvatar(33, y);
 	const emotes = new Map([
-		[1, { glyph: '👋', ttl: 2 }],
-		[2, { glyph: '😂', ttl: 2 }],
+		[1, { id: 'wave', ttl: 2 }],
+		[2, { id: 'laugh', ttl: 2 }],
 	]);
 	const game = snapshotToGame(
 		field,
@@ -300,8 +300,8 @@ test('snapshotToGame stamps active emotes onto the sender entities, incl. own (#
 		new Map(),
 		emotes,
 	);
-	expect(game.player.avatar.emote).toBe('👋');
-	expect(game.others?.[0]?.emote).toBe('😂');
+	expect(game.player.avatar.emote).toBe('wave');
+	expect(game.others?.[0]?.emote).toBe('laugh');
 });
 
 test('snapshotToGame stamps active bubbles onto the sender entities, incl. own', () => {

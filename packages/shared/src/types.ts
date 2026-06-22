@@ -38,7 +38,7 @@ export interface Entity {
 	contributors?: number[]; // Monster-only: session ids that have damaged it, for shared-kill rewards (#37)
 	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
 	bubble?: string; // latest Chat line shown as an over-head Speech bubble (#59); render-only
-	emote?: string; // active emote glyph shown over the head (#38); render-only
+	emote?: string; // active emote id shown over the head (#38); render-only
 }
 
 export interface SpawnPoint {

@@ -6,6 +6,7 @@ import {
 	buildSceneStyle,
 	COMBAT,
 	drawEntitySprite,
+	emoteById,
 	entityBox,
 	meleeHitbox,
 	type RenderStyle,
@@ -33,22 +34,30 @@ const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 	RGBA.fromInts(r, g, b, a),
 );
 
-// An over-head Speech bubble for the sender's latest Chat line (#59, ADR 0007):
-// a bordered, opaque box with a downward tail, anchored above the nameplate and
-// re-projected through the camera each frame so it tracks the moving Avatar. The
-// box is x-clamped to the viewport so a full-length message can't clip off-screen.
-function drawSpeechBubble(
+// The shared over-head box behind both the chat Speech bubble (#59, ADR 0007) and
+// the emote (#38): a bordered, opaque box with a downward tail, anchored above the
+// nameplate and re-projected through the camera each frame so it tracks the moving
+// Avatar. x-clamped to the viewport so it can't clip off-screen. The two callers
+// differ only in their CONTENT (`lines`) and `style` colours — the geometry is one
+// place so they can't drift.
+interface BoxStyle {
+	fg: RGBA;
+	border: RGBA;
+	bg: RGBA;
+}
+
+function drawOverheadBox(
 	buf: OptimizedBuffer,
 	e: Entity,
 	cam: { x: number; y: number },
 	sw: number,
 	sh: number,
+	lines: readonly string[],
+	style: BoxStyle,
 ) {
-	if (!e.bubble) return;
 	const sprite = spriteFor(e.type);
 	const top = Math.round(e.y + BOX.h - sprite.h - cam.y);
-	const lines = layoutBubble(e.bubble);
-	const innerW = Math.max(...lines.map((l) => l.length));
+	const innerW = Math.max(1, ...lines.map((l) => l.length));
 	const boxW = innerW + 2;
 	const boxH = lines.length + 2;
 
@@ -70,26 +79,61 @@ function drawSpeechBubble(
 			if (px < 0 || px >= sw) continue;
 			const lastCol = rx === boxW - 1;
 			let ch = ' ';
-			let fg = C.bubbleFg;
+			let fg = style.fg;
 			if (ry === 0 || lastRow || rx === 0 || lastCol) {
-				fg = C.bubbleBorder;
+				fg = style.border;
 				if (ry === 0) ch = rx === 0 ? '╭' : lastCol ? '╮' : '─';
 				else if (lastRow) ch = rx === 0 ? '╰' : lastCol ? '╯' : '─';
 				else ch = '│';
 			} else {
 				ch = lines[ry - 1]?.[rx - 1] ?? ' ';
 			}
-			buf.setCell(px, py, ch, fg, C.bubbleBg);
+			buf.setCell(px, py, ch, fg, style.bg);
 		}
 	}
 	if (tailY >= 0 && tailY < sh && tailX >= 0 && tailX < sw)
-		buf.setCell(tailX, tailY, '▼', C.bubbleBorder, C.bubbleBg);
+		buf.setCell(tailX, tailY, '▼', style.border, style.bg);
 }
 
-// A transient over-head emote glyph (#38): a single high-contrast symbol centred
-// above the emoting Avatar's head, re-projected through the camera each frame so it
-// tracks the moving Avatar. Sits on the telegraph layer (above all Sprites, ADR
-// 0003) and is x-clamped to the viewport so it can't clip off-screen.
+const BUBBLE_STYLE: BoxStyle = {
+	fg: C.bubbleFg,
+	border: C.bubbleBorder,
+	bg: C.bubbleBg,
+};
+// Emotes reuse the bubble's opaque panel but in the high-contrast emote colour so a
+// reaction reads distinctly from a chat line (#38).
+const EMOTE_STYLE: BoxStyle = {
+	fg: C.emote,
+	border: C.emote,
+	bg: C.bubbleBg,
+};
+
+// The latest Chat line, word-wrapped, in the shared over-head box (#59, ADR 0007).
+function drawSpeechBubble(
+	buf: OptimizedBuffer,
+	e: Entity,
+	cam: { x: number; y: number },
+	sw: number,
+	sh: number,
+) {
+	if (!e.bubble) return;
+	drawOverheadBox(buf, e, cam, sw, sh, layoutBubble(e.bubble), BUBBLE_STYLE);
+}
+
+// Pad every line to a common width, centred — so a ragged ASCII-art image sits
+// centred in the box (chat text stays left-aligned and skips this).
+function centerLines(lines: readonly string[]): string[] {
+	const w = Math.max(...lines.map((l) => l.length));
+	return lines.map((l) => {
+		const pad = w - l.length;
+		const lpad = Math.floor(pad / 2);
+		return ' '.repeat(lpad) + l + ' '.repeat(pad - lpad);
+	});
+}
+
+// A transient emote (#38): the emote id resolved to its sized-up multi-row ASCII
+// art, drawn in the SAME over-head box as a Speech bubble (one shared renderer) on
+// the telegraph layer (above all Sprites, ADR 0003), self-clearing upstream.
 function drawEmote(
 	buf: OptimizedBuffer,
 	e: Entity,
@@ -98,13 +142,9 @@ function drawEmote(
 	sh: number,
 ) {
 	if (!e.emote) return;
-	const sprite = spriteFor(e.type);
-	const top = Math.round(e.y + BOX.h - sprite.h - cam.y);
-	const py = top - 2; // one row above the nameplate (at top - 1)
-	const cx = Math.round(e.x + BOX.w / 2 - cam.x);
-	const px = Math.max(0, Math.min(cx, sw - 1));
-	if (py < 0 || py >= sh) return;
-	buf.setCellWithAlphaBlending(px, py, e.emote, C.emote, C.transparent);
+	const def = emoteById(e.emote);
+	if (!def) return;
+	drawOverheadBox(buf, e, cam, sw, sh, centerLines(def.art), EMOTE_STYLE);
 }
 
 function drawText(

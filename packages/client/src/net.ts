@@ -30,10 +30,11 @@ export interface Bubble {
 	ttl: number; // seconds remaining
 }
 
-// A transient over-head emote (#38): the glyph for one sender's active emote plus
-// its remaining lifetime, decayed each frame and rendered on the telegraph layer.
+// A transient over-head emote (#38): the id of one sender's active emote plus its
+// remaining lifetime, decayed each frame. The renderer resolves the id to its
+// multi-row art and draws it on the telegraph layer, like a Speech bubble.
 export interface Emote {
-	glyph: string;
+	id: string;
 	ttl: number; // seconds remaining
 }
 
@@ -130,13 +131,12 @@ export class NetClient {
 			this.notice(msg.text);
 			return;
 		}
-		// A Zone-local emote (#38): resolve its glyph and open / replace the sender's
-		// transient over-head emote. An unknown id is dropped (no entry). Emotes are
-		// purely visual — no chat-log line, no Speech bubble.
+		// A Zone-local emote (#38): open / replace the sender's transient over-head
+		// emote (the renderer resolves the id to its art). An unknown id is dropped
+		// (no entry). Emotes are purely visual — no chat-log line, no Speech bubble.
 		if (msg.t === 'emote') {
-			const def = emoteById(msg.emote);
-			if (def)
-				this.emotes.set(msg.sessionId, { glyph: def.glyph, ttl: EMOTE_TTL });
+			if (emoteById(msg.emote))
+				this.emotes.set(msg.sessionId, { id: msg.emote, ttl: EMOTE_TTL });
 			return;
 		}
 		// snapshot: on a Zone change, drop the prior Zone's frames — interpolating
@@ -272,13 +272,13 @@ export function snapshotToGame(
 					const e = avatarEntity(a);
 					const bubble = bubbles.get(a.sessionId)?.text;
 					if (bubble) e.bubble = bubble;
-					const emote = emotes.get(a.sessionId)?.glyph;
+					const emote = emotes.get(a.sessionId)?.id;
 					if (emote) e.emote = emote;
 					return e;
 				})
 		: [];
 	const ownBubble = bubbles.get(ownSessionId)?.text;
-	const ownEmote = emotes.get(ownSessionId)?.glyph;
+	const ownEmote = emotes.get(ownSessionId)?.id;
 	let avatar = predicted;
 	if (ownBubble) avatar = { ...avatar, bubble: ownBubble };
 	if (ownEmote) avatar = { ...avatar, emote: ownEmote };
