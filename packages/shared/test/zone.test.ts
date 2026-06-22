@@ -14,6 +14,7 @@ import {
 	GROUND_TOP,
 	MONSTER,
 	removeAvatar,
+	rollItem,
 	SPAWN,
 	snapshotFor,
 	spawnAvatar,
@@ -144,6 +145,66 @@ test('only the Avatar landing the kill is credited when two are present', () => 
 	);
 	expect(next.avatars[0].progress.xp).toBe(XP_PER_KILL);
 	expect(next.avatars[0].inventory.length).toBe(1);
+	expect(next.avatars[1].progress.xp).toBe(0);
+	expect(next.avatars[1].inventory.length).toBe(0);
+});
+
+test('a landing hit records the attacker as a contributor on the Monster', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y); // full HP, survives one swing
+	const av = serverAvatar(7, 20);
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [{ ...holdAt(7, av.avatar), attack: true }], 16);
+	expect(next.zone.monsters[0].hp).toBeLessThan(MONSTER.chaserHp); // took damage
+	expect(next.zone.monsters[0].contributors).toEqual([7]);
+});
+
+test('on death every recorded contributor earns shared XP and its own loot roll', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 4; // the next swing kills it
+	m.contributors = [7, 8]; // both damaged it on earlier ticks
+	const killer = serverAvatar(7, 20); // adjacent, lands the killing blow
+	const helper = serverAvatar(8, 300); // damaged it earlier, now far away
+	helper.rngState = 999; // a distinct loot seed, to prove instancing
+	const state: ZoneState = {
+		zone: zoneWith([m]),
+		avatars: [killer, helper],
+		tick: 0,
+	};
+	const next = stepZone(
+		state,
+		[{ ...holdAt(7, killer.avatar), attack: true }, holdAt(8, helper.avatar)],
+		16,
+	);
+	expect(next.zone.monsters.length).toBe(0);
+	// Shared, not split: each contributor gets the FULL kill XP.
+	expect(next.avatars[0].progress.xp).toBe(XP_PER_KILL);
+	expect(next.avatars[1].progress.xp).toBe(XP_PER_KILL);
+	// Each rolls its OWN private loot, seeded per-Player (instanced).
+	expect(next.avatars[0].inventory.length).toBe(1);
+	expect(next.avatars[1].inventory.length).toBe(1);
+	const expected = rollItem(999, next.avatars[1].progress.level);
+	expect(next.avatars[1].inventory[0]).toEqual({ ...expected.item, id: 1 });
+});
+
+test('a non-contributor present at a shared kill receives nothing', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 4;
+	const killer = serverAvatar(7, 20);
+	const bystander = serverAvatar(8, 300); // never damaged it
+	const state: ZoneState = {
+		zone: zoneWith([m]),
+		avatars: [killer, bystander],
+		tick: 0,
+	};
+	const next = stepZone(
+		state,
+		[
+			{ ...holdAt(7, killer.avatar), attack: true },
+			holdAt(8, bystander.avatar),
+		],
+		16,
+	);
+	expect(next.avatars[0].progress.xp).toBe(XP_PER_KILL);
 	expect(next.avatars[1].progress.xp).toBe(0);
 	expect(next.avatars[1].inventory.length).toBe(0);
 });
