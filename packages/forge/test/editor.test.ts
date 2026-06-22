@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { type Catalogs, findOrphanGlyphs, ZONE_MAX } from '@mmo/shared';
+import {
+	type Catalogs,
+	findOrphanGlyphs,
+	NPC_BOX,
+	ZONE_MAX,
+} from '@mmo/shared';
 import { cellAt, type EditorDoc, serializeDoc } from '../src/doc';
 import {
 	clampRoam,
@@ -13,6 +18,7 @@ import {
 	entityAt,
 	eraseCells,
 	footprintBox,
+	ghostEntity,
 	groundSnap,
 	growToInclude,
 	lineCells,
@@ -447,6 +453,43 @@ describe('footprintBox (#96)', () => {
 			w: 1,
 			h: 1,
 		});
+	});
+});
+
+describe('ghostEntity (#118)', () => {
+	const cats: Catalogs = {
+		monsters: [{ id: 'chaser', behavior: 'chaser', name: 'Slime' }],
+		npcs: [{ id: 'merchant', kind: 'vendor', name: 'Pemberton' }],
+	};
+
+	test('a monster ghost is the very Entity parseZone would spawn at the anchor', () => {
+		const g = ghostEntity(cats, { kind: 'monster', id: 'chaser' }, 3, 2);
+		expect(g?.kind).toBe('entity');
+		if (g?.kind !== 'entity') throw new Error('expected entity');
+		// behaviour-typed sprite, placed at the glyph anchor — no drift from spawn.
+		expect(g.entity.type).toBe('chaser');
+		expect(g.entity.x).toBe(3);
+		expect(g.entity.y).toBe(2);
+	});
+
+	test('an NPC ghost carries the catalog kind + box at the anchor', () => {
+		const g = ghostEntity(cats, { kind: 'npc', id: 'merchant' }, 1, 4);
+		expect(g?.kind).toBe('npc');
+		if (g?.kind !== 'npc') throw new Error('expected npc');
+		expect(g.npc.kind).toBe('vendor');
+		expect(g.npc.x).toBe(1);
+		expect(g.npc.y).toBe(4);
+		expect(g.npc.w).toBe(NPC_BOX.w);
+		expect(g.npc.h).toBe(NPC_BOX.h);
+	});
+
+	test('kinds with no sprite preview yet (portal, unknown id) return undefined', () => {
+		expect(
+			ghostEntity(cats, { kind: 'portal', target: 't', arrival: [0, 0] }, 0, 0),
+		).toBeUndefined();
+		expect(
+			ghostEntity(cats, { kind: 'monster', id: 'nope' }, 0, 0),
+		).toBeUndefined();
 	});
 });
 
