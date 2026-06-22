@@ -68,18 +68,28 @@ jobs:
         run: |
           # Stamp this release's Version onto the service first, WITHOUT redeploying
           # the old code (--skip-deploys), then build+deploy the tagged commit
-          # (Dockerfile) with the variable already in place. `up --ci` streams build
-          # logs then exits non-zero on build failure; the /health gate below waits
-          # for the new container to actually serve $VERSION.
+          # (Dockerfile) with the variable already in place.
+          #
+          # Use --detach, NOT --ci: when the tagged commit changes nothing under the
+          # service's watch paths (e.g. a client-only release, or a re-tag that only
+          # touches CI), Railway skips the build — and `up --ci` then hangs forever
+          # waiting to stream a deployment that was never created. --detach uploads,
+          # triggers the deploy, and returns immediately; the /health gate below is
+          # what actually confirms the new container is live and serving $VERSION (and
+          # refuses to publish if a real build fails to come up in time).
           bunx @railway/cli variables set "MMO_VERSION=$VERSION" \
             --service "$RAILWAY_SERVICE" \
             --skip-deploys
-          bunx @railway/cli up --ci --service "$RAILWAY_SERVICE"
+          bunx @railway/cli up --detach -y --service "$RAILWAY_SERVICE"
 
       # --- Gate: the live server must report exactly this Version ----------------
+      # Now that the deploy is detached, this gate spans the whole build → deploy →
+      # healthy cycle (not just container startup), so it polls generously: 90 × 5s
+      # ≈ 7.5 min. A skipped build (server already serving $VERSION) passes on the
+      # first attempt; a real build that never comes up trips the refuse-to-publish.
       - name: Assert /health reports the tag
         run: |
-          for i in $(seq 1 30); do
+          for i in $(seq 1 90); do
             body="$(curl -fsS "$HEALTH_URL" || true)"
             got="$(printf '%s' "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).version' 2>/dev/null || true)"
             echo "attempt $i: server reports '${got}', want '${VERSION}'"
