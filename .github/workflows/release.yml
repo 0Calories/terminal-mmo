@@ -99,12 +99,17 @@ jobs:
           # Baked into the bundle by build.ts (prepublishOnly) as the client's Version.
           MMO_VERSION: ${{ env.VERSION }}
         run: |
-          npm version "$VERSION" --no-git-tag-version --allow-same-version
           # Drop the workspace-only devDependencies (@mmo/client, @mmo/shared,
           # `workspace:*`): npm can't parse that protocol, and they're build-time
           # only — the bundle inlines them, so nothing ships them. bun resolves the
-          # build from the root workspace node_modules regardless.
+          # build from the root workspace node_modules regardless. Do this FIRST so
+          # the version bump below never has to look at a `workspace:` spec.
           npm pkg delete devDependencies
+          # Stamp the release Version with `npm pkg set`, NOT `npm version`: the
+          # latter reifies the dependency tree (the whole bun workspace — every
+          # sibling still carries `workspace:*`), and npm aborts with
+          # EUNSUPPORTEDPROTOCOL. `npm pkg set` only rewrites the JSON field.
+          npm pkg set version="$VERSION"
           npm publish --access public
 
       # --- Record the release on GitHub (notes + history) ------------------------
