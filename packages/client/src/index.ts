@@ -8,8 +8,7 @@ import {
 	entityBox,
 	type GameState,
 	type Input,
-	makeFieldZone,
-	makeTownZone,
+	loadZones,
 	PHYS,
 	SPAWN,
 	saleValue,
@@ -186,11 +185,13 @@ function runOffline() {
 
 // --- Networked (M2) ---------------------------------------------------------
 
-// The static content (terrain / portals / NPCs) for a Zone id. The server is
-// authoritative over entities; the client only needs the local geometry to
-// predict its own Avatar and draw the playfield.
+// The static content (terrain / portals / NPCs) for a Zone id, loaded once from the
+// authored `.zone` files (ADR 0008). The server is authoritative over entities; the
+// client only needs the local geometry to predict its own Avatar and draw the
+// playfield. Falls back to the start Zone for an unknown id.
+const LOCAL_ZONES = new Map<string, Zone>(loadZones().map((z) => [z.id, z]));
 function localZone(id: string): Zone {
-	return id === 'town-01' ? makeTownZone(id) : makeFieldZone(id || 'field-01');
+	return LOCAL_ZONES.get(id) ?? LOCAL_ZONES.get('field-01') ?? loadZones()[0];
 }
 
 function runNetworked(url: string) {

@@ -5,7 +5,6 @@ import {
 	BOX,
 	GROUND_TOP,
 	MONSTER,
-	makeStarterField,
 	POWER_STRIKE,
 	skillForSlot,
 	skillHitbox,
@@ -14,6 +13,7 @@ import {
 	spawnMonster,
 	step,
 } from '../src';
+import { flatTerrain } from './helpers';
 
 // Player at x=20 facing right, one chaser directly in front on flat ground.
 function skillGame(level: number): GameState {
@@ -22,7 +22,7 @@ function skillGame(level: number): GameState {
 	const zone: Zone = {
 		id: 'field-01',
 		type: 'field',
-		terrain: makeStarterField(),
+		terrain: flatTerrain(),
 		monsters: [m],
 		projectiles: [],
 		nextProjectileId: 1,

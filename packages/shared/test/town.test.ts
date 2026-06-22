@@ -1,20 +1,27 @@
 import { expect, test } from 'bun:test';
-import type { GameState, Input } from '../src';
+import type { GameState, Input, Zone } from '../src';
 import {
 	activeZone,
 	BOX,
 	createGame,
 	GROUND_TOP,
-	makeTownZone,
+	loadZones,
 	spawnAvatar,
 	step,
 } from '../src';
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false };
 
+/** The authored Town, freshly parsed (ADR 0008). */
+function loadTown(): Zone {
+	const town = loadZones().find((z) => z.id === 'town-01');
+	if (!town) throw new Error('town-01 missing from authored zones/');
+	return town;
+}
+
 /** A Player standing in the Town, attacking into thin air. */
 function townGame(): GameState {
-	const town = makeTownZone('town-01');
+	const town = loadTown();
 	return {
 		player: {
 			avatar: spawnAvatar(20, GROUND_TOP - BOX.h),
@@ -29,8 +36,8 @@ function townGame(): GameState {
 	};
 }
 
-test('makeTownZone is a safe Zone: town-typed with no Monsters or spawns', () => {
-	const town = makeTownZone('town-01');
+test('the authored Town is a safe Zone: town-typed with no Monsters or spawns', () => {
+	const town = loadTown();
 	expect(town.id).toBe('town-01');
 	expect(town.type).toBe('town');
 	expect(town.monsters.length).toBe(0);

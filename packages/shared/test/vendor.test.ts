@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Item, PlayerProgress } from '../src/types';
 import { saleValue, sellItem } from '../src/vendor';
-import { makeFieldZone, makeTownZone } from '../src/world';
+import { loadZones } from '../src/zoneContent';
 
 const item = (over: Partial<Item> = {}): Item => ({
 	id: 1,
@@ -43,9 +43,10 @@ describe('sellItem', () => {
 
 describe('vendor NPC placement', () => {
 	test('the Town has a vendor NPC; the Field has none', () => {
-		const town = makeTownZone('town-01');
-		const field = makeFieldZone('field-01');
-		expect(town.npcs?.some((n) => n.kind === 'vendor')).toBe(true);
-		expect(field.npcs ?? []).toEqual([]); // combat Field is vendor-free
+		const zones = loadZones();
+		const town = zones.find((z) => z.id === 'town-01');
+		const field = zones.find((z) => z.id === 'field-01');
+		expect(town?.npcs?.some((n) => n.kind === 'vendor')).toBe(true);
+		expect(field?.npcs ?? []).toEqual([]); // combat Field is vendor-free
 	});
 });

@@ -7,8 +7,7 @@ import {
 	channelsOf,
 	createServerWorld,
 	GROUND_TOP,
-	makeFieldZone,
-	makeTownZone,
+	loadZones,
 	removeSession,
 	sessionsInChannel,
 	stepServerWorld,
@@ -23,7 +22,7 @@ const y = GROUND_TOP - BOX.h;
 // A world with a generous soft cap (single-session tests never split a Channel).
 function makeWorld(cap = 50): ServerWorld {
 	return createServerWorld({
-		zones: [makeFieldZone('field-01'), makeTownZone('town-01')],
+		zones: loadZones(),
 		start: 'field-01',
 		town: 'town-01',
 		cap,

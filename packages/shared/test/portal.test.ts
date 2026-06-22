@@ -5,11 +5,11 @@ import {
 	BOX,
 	createGame,
 	GROUND_TOP,
-	makeStarterField,
-	makeTownZone,
+	loadZones,
 	spawnAvatar,
 	step,
 } from '../src';
+import { flatTerrain } from './helpers';
 
 const INTERACT: Input = {
 	moveX: 0,
@@ -32,7 +32,7 @@ function portalGame(): GameState {
 	const field: Zone = {
 		id: 'field-01',
 		type: 'field',
-		terrain: makeStarterField(),
+		terrain: flatTerrain(),
 		monsters: [],
 		projectiles: [],
 		nextProjectileId: 1,
@@ -41,7 +41,8 @@ function portalGame(): GameState {
 		nextMonsterId: 2,
 		portals: [portal],
 	};
-	const town = makeTownZone('town-01');
+	const town = loadZones().find((z) => z.id === 'town-01');
+	if (!town) throw new Error('town-01 missing from authored zones/');
 	return {
 		player: {
 			avatar: spawnAvatar(20, y), // box overlaps the portal at x=20

@@ -1,0 +1,21 @@
+{
+	"monsters": [
+		{
+			"id": "chaser",
+			"behavior": "chaser",
+			"name": "Slime"
+		},
+		{
+			"id": "shooter",
+			"behavior": "shooter",
+			"name": "Sporeling"
+		}
+	],
+	"npcs": [
+		{
+			"id": "merchant",
+			"kind": "vendor",
+			"name": "Merchant"
+		}
+	]
+}

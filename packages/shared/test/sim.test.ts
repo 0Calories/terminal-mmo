@@ -6,13 +6,13 @@ import {
 	createGame,
 	GROUND_TOP,
 	MONSTER,
-	makeStarterField,
 	SHOOTER,
 	spawnAvatar,
 	spawnMonster,
 	step,
 	XP_PER_KILL,
 } from '../src';
+import { flatTerrain } from './helpers';
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false };
 
@@ -57,7 +57,7 @@ function adjacentGame(monsterHp?: number): GameState {
 	const zone: Zone = {
 		id: 'field-01',
 		type: 'field',
-		terrain: makeStarterField(),
+		terrain: flatTerrain(),
 		monsters: [m],
 		projectiles: [],
 		nextProjectileId: 1,
@@ -102,7 +102,7 @@ function stackedGame(): GameState {
 	const zone: Zone = {
 		id: 'field-01',
 		type: 'field',
-		terrain: makeStarterField(),
+		terrain: flatTerrain(),
 		monsters: [m],
 		projectiles: [],
 		nextProjectileId: 1,
@@ -149,7 +149,7 @@ function shooterGame(gap: number): GameState {
 	const zone: Zone = {
 		id: 'field-01',
 		type: 'field',
-		terrain: makeStarterField(),
+		terrain: flatTerrain(),
 		monsters: [m],
 		projectiles: [],
 		nextProjectileId: 1,
@@ -212,7 +212,7 @@ test('a projectile overlapping the Avatar damages it and applies i-frames', () =
 	const zone: Zone = {
 		id: 'field-01',
 		type: 'field',
-		terrain: makeStarterField(),
+		terrain: flatTerrain(),
 		monsters: [],
 		projectiles: [proj],
 		nextProjectileId: 2,
@@ -253,7 +253,7 @@ function fieldSpawnGame(monsterHp: number): GameState {
 	const zone: Zone = {
 		id: 'field-01',
 		type: 'field',
-		terrain: makeStarterField(),
+		terrain: flatTerrain(),
 		monsters: [m],
 		projectiles: [],
 		nextProjectileId: 1,
@@ -276,7 +276,7 @@ function fieldSpawnGame(monsterHp: number): GameState {
 
 const ATTACK: Input = { moveX: 0, jump: false, attack: true };
 
-test('makeFieldZone seeds Monsters from fixed spawn points', () => {
+test('the authored Field seeds Monsters from its fixed spawn points', () => {
 	const zone = activeZone(createGame().world, 'field-01');
 	expect(zone.spawns.length).toBe(zone.monsters.length);
 	expect(zone.monsters.every((m, i) => m.spawnIndex === i)).toBe(true);
@@ -331,7 +331,7 @@ test("only the active Zone ticks; the Avatar's persistent state lives above it",
 	const dormant: Zone = {
 		id: 'field-02',
 		type: 'field',
-		terrain: makeStarterField(),
+		terrain: flatTerrain(),
 		monsters: [spawnMonster('chaser', 99, 60, GROUND_TOP - BOX.h)],
 		projectiles: [],
 		nextProjectileId: 1,

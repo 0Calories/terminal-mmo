@@ -14,8 +14,7 @@ import {
 	createServerWorld,
 	decodeClientMessage,
 	encodeServerMessage,
-	makeFieldZone,
-	makeTownZone,
+	loadZones,
 	PROTOCOL_VERSION,
 	removeSession,
 	type ServerWorld,
@@ -74,7 +73,7 @@ function reject(ws: ServerWebSocket<WsData>, reason: string) {
 const START_ZONE = 'field-01';
 const TOWN_ZONE = 'town-01';
 let world: ServerWorld = createServerWorld({
-	zones: [makeFieldZone(START_ZONE), makeTownZone(TOWN_ZONE)],
+	zones: loadZones(), // authored `.zone` content off disk (ADR 0008)
 	start: START_ZONE,
 	town: TOWN_ZONE,
 	cap: CHANNEL.softCap,
