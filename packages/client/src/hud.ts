@@ -9,7 +9,7 @@ import {
 import { COLORS } from './theme';
 
 const HINT =
-	'move ←/→ a/d  jump ␣/↑  attack j/x  skill k  interact e  chat ⏎ (/w whisper)  quit q';
+	'move ←/→ a/d  jump ␣/↑  attack j/x  skill k  interact e  chat ⏎ (/w whisper, /em emote)  quit q';
 const Z = 10; // above the playfield (zIndex 0)
 const CHAT_LINES = 4; // recent Zone-chat lines shown above the input
 

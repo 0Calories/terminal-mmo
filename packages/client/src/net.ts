@@ -8,7 +8,9 @@ import {
 	type AvatarSnapshot,
 	type ClientMessage,
 	decodeServerMessage,
+	EMOTE_TTL,
 	type Entity,
+	emoteById,
 	encodeClientMessage,
 	type GameState,
 	type Item,
@@ -25,6 +27,14 @@ import { INTERP_DELAY_MS, SnapshotBuffer } from './interp';
 // one sender plus its remaining lifetime, decayed each frame.
 export interface Bubble {
 	text: string;
+	ttl: number; // seconds remaining
+}
+
+// A transient over-head emote (#38): the id of one sender's active emote plus its
+// remaining lifetime, decayed each frame. The renderer resolves the id to its
+// multi-row art and draws it on the telegraph layer, like a Speech bubble.
+export interface Emote {
+	id: string;
 	ttl: number; // seconds remaining
 }
 
@@ -50,6 +60,10 @@ export class NetClient {
 	// One per sender: a new line replaces the prior text and resets the timer; the
 	// frame callback decays them and the playfield draws each over its sender's sprite.
 	bubbles = new Map<number, Bubble>();
+	// Active over-head emotes, keyed by sender sessionId (#38). One per sender: a new
+	// emote replaces the prior glyph and resets the timer; the frame callback decays
+	// them and the playfield draws each over its sender's sprite (telegraph layer).
+	emotes = new Map<number, Emote>();
 	// Set when the server refuses the connection (ADR 0009): a protocol-version
 	// mismatch or a connection cap. The caller surfaces this and exits.
 	rejected: string | null = null;
@@ -117,6 +131,14 @@ export class NetClient {
 			this.notice(msg.text);
 			return;
 		}
+		// A Zone-local emote (#38): open / replace the sender's transient over-head
+		// emote (the renderer resolves the id to its art). An unknown id is dropped
+		// (no entry). Emotes are purely visual — no chat-log line, no Speech bubble.
+		if (msg.t === 'emote') {
+			if (emoteById(msg.emote))
+				this.emotes.set(msg.sessionId, { id: msg.emote, ttl: EMOTE_TTL });
+			return;
+		}
 		// snapshot: on a Zone change, drop the prior Zone's frames — interpolating
 		// across the boundary would ease an Avatar between two unrelated coord spaces.
 		if (msg.zoneId !== this.zoneId) {
@@ -153,6 +175,15 @@ export class NetClient {
 		for (const [id, b] of this.bubbles) {
 			b.ttl -= dtSec;
 			if (b.ttl <= 0) this.bubbles.delete(id);
+		}
+	}
+
+	// Age every over-head emote by `dtSec` and drop the expired ones (#38). Called
+	// from the frame callback so timing follows real elapsed time, not tick count.
+	decayEmotes(dtSec: number) {
+		for (const [id, e] of this.emotes) {
+			e.ttl -= dtSec;
+			if (e.ttl <= 0) this.emotes.delete(id);
 		}
 	}
 
@@ -220,7 +251,8 @@ function monsterEntity(m: MonsterSnapshot): Entity {
  * vitals. Co-present Avatars (everyone but `ownSessionId`) ride along in
  * `others` for the playfield to draw. `localSkillCooldowns` are client-predicted
  * (not on the wire). `bubbles` stamps each sender's active Speech bubble onto its
- * entity — own Avatar included, one uniform rule (#59, ADR 0007).
+ * entity — own Avatar included, one uniform rule (#59, ADR 0007); `emotes` does
+ * the same for transient over-head emotes (#38).
  */
 export function snapshotToGame(
 	field: Zone,
@@ -229,6 +261,7 @@ export function snapshotToGame(
 	snapshot: Snapshot | null,
 	localSkillCooldowns: Record<string, number>,
 	bubbles: ReadonlyMap<number, Bubble> = new Map(),
+	emotes: ReadonlyMap<number, Emote> = new Map(),
 ): GameState {
 	const monsters = snapshot ? snapshot.monsters.map(monsterEntity) : [];
 	const projectiles = snapshot ? snapshot.projectiles : [];
@@ -239,11 +272,16 @@ export function snapshotToGame(
 					const e = avatarEntity(a);
 					const bubble = bubbles.get(a.sessionId)?.text;
 					if (bubble) e.bubble = bubble;
+					const emote = emotes.get(a.sessionId)?.id;
+					if (emote) e.emote = emote;
 					return e;
 				})
 		: [];
 	const ownBubble = bubbles.get(ownSessionId)?.text;
-	const avatar = ownBubble ? { ...predicted, bubble: ownBubble } : predicted;
+	const ownEmote = emotes.get(ownSessionId)?.id;
+	let avatar = predicted;
+	if (ownBubble) avatar = { ...avatar, bubble: ownBubble };
+	if (ownEmote) avatar = { ...avatar, emote: ownEmote };
 	const progress = snapshot?.progress ?? { level: 1, xp: 0, gold: 0 };
 	const inventory: Item[] = snapshot?.inventory ?? [];
 	const log = snapshot?.log ?? ['Connecting…'];

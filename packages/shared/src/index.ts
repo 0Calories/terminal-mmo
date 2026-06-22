@@ -1,5 +1,6 @@
 export * from './combat';
 export * from './constants';
+export * from './emote';
 export * from './loot';
 export * from './physics';
 export * from './player';

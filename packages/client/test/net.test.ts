@@ -249,6 +249,61 @@ test('NetClient.decayBubbles expires a bubble after its length-scaled ttl', () =
 	net.close();
 });
 
+test('NetClient.ingest opens an emote keyed to the sender (#38)', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest({ t: 'emote', sessionId: 2, emote: 'laugh' }, 1000);
+	expect(net.emotes.get(2)?.id).toBe('laugh');
+	// A new emote from the same sender replaces the prior one (one per sender).
+	net.ingest({ t: 'emote', sessionId: 2, emote: 'cry' }, 1100);
+	expect(net.emotes.get(2)?.id).toBe('cry');
+	expect(net.emotes.size).toBe(1);
+	net.close();
+});
+
+test('NetClient.ingest ignores an unknown emote id (#38)', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest({ t: 'emote', sessionId: 3, emote: 'bogus' }, 1000);
+	expect(net.emotes.size).toBe(0);
+	net.close();
+});
+
+test('NetClient.ingest does NOT push an emote into the chat log (#38)', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest({ t: 'emote', sessionId: 2, emote: 'laugh' }, 1000);
+	expect(net.chatLog).toEqual([]); // emotes are visual, not chat lines
+	net.close();
+});
+
+test('NetClient.decayEmotes expires an emote after EMOTE_TTL (#38)', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest({ t: 'emote', sessionId: 5, emote: 'angry' }, 1000);
+	net.decayEmotes(2); // 2s elapsed, ttl is 2.5s -> still alive
+	expect(net.emotes.has(5)).toBe(true);
+	net.decayEmotes(1); // 3s total -> expired
+	expect(net.emotes.has(5)).toBe(false);
+	net.close();
+});
+
+test('snapshotToGame stamps active emotes onto the sender entities, incl. own (#38)', () => {
+	const field = loadField();
+	const predicted = spawnAvatar(33, y);
+	const emotes = new Map([
+		[1, { id: 'laugh', ttl: 2 }],
+		[2, { id: 'cry', ttl: 2 }],
+	]);
+	const game = snapshotToGame(
+		field,
+		predicted,
+		1,
+		withOther(),
+		{},
+		new Map(),
+		emotes,
+	);
+	expect(game.player.avatar.emote).toBe('laugh');
+	expect(game.others?.[0]?.emote).toBe('cry');
+});
+
 test('snapshotToGame stamps active bubbles onto the sender entities, incl. own', () => {
 	const field = loadField();
 	const predicted = spawnAvatar(33, y);

@@ -18,7 +18,7 @@ import type {
 // published client version). Carried on `hello`; the server rejects a mismatch
 // (ADR 0009) so a stale `bunx` client fails loudly with "run @latest" rather than
 // silently mis-decoding a binary frame at the wrong offsets.
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -164,9 +164,19 @@ export type ClientMessage =
 	| { t: 'chat'; text: string }
 	// A private, directed message to one online Player by handle (#40). Not
 	// Zone-local: the server routes it world-wide to the matching session only.
-	| { t: 'whisper'; to: string; text: string };
+	| { t: 'whisper'; to: string; text: string }
+	// A triggered emote from the fixed set (#38). Zone-local like chat: the server
+	// relays it to the sender's Channel, where it renders as a transient over-head
+	// glyph. `emote` is an EMOTES id; the server drops an unknown one.
+	| { t: 'emote'; emote: string };
 
-const CLIENT_TAG = { hello: 1, input: 2, chat: 3, whisper: 4 } as const;
+const CLIENT_TAG = {
+	hello: 1,
+	input: 2,
+	chat: 3,
+	whisper: 4,
+	emote: 5,
+} as const;
 
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 	const w = new Writer();
@@ -196,6 +206,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.u8(CLIENT_TAG.whisper);
 			w.str(msg.to);
 			w.str(msg.text);
+			break;
+		case 'emote':
+			w.u8(CLIENT_TAG.emote);
+			w.str(msg.emote);
 			break;
 	}
 	return w.finish();
@@ -240,6 +254,8 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			return { t: 'chat', text: r.str() };
 		case CLIENT_TAG.whisper:
 			return { t: 'whisper', to: r.str(), text: r.str() };
+		case CLIENT_TAG.emote:
+			return { t: 'emote', emote: r.str() };
 		default:
 			throw new Error(`unknown client message tag ${tag}`);
 	}
@@ -311,6 +327,11 @@ export type ServerMessage =
 	  }
 	// A sender-only system line (#40): e.g. whispering a handle that is not online.
 	| { t: 'notice'; text: string }
+	// An emote relayed to every session in the sender's Channel (#38), Zone-local
+	// like chat. `sessionId` keys the transient over-head glyph to the sender's
+	// sprite (the handle is a display label, not an identity); `emote` is an
+	// EMOTES id the recipient resolves to a glyph.
+	| { t: 'emote'; sessionId: number; emote: string }
 	// The server is refusing the connection and will close it (ADR 0009): a
 	// protocol-version mismatch, or a connection cap (global / per-IP). `reason` is
 	// a human-readable line the client surfaces before exiting.
@@ -323,6 +344,7 @@ const SERVER_TAG = {
 	reject: 4,
 	whisper: 5,
 	notice: 6,
+	emote: 7,
 } as const;
 
 const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
@@ -486,6 +508,11 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			w.u8(SERVER_TAG.notice);
 			w.str(msg.text);
 			break;
+		case 'emote':
+			w.u8(SERVER_TAG.emote);
+			w.u32(msg.sessionId);
+			w.str(msg.emote);
+			break;
 		case 'reject':
 			w.u8(SERVER_TAG.reject);
 			w.str(msg.reason);
@@ -547,6 +574,8 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			};
 		case SERVER_TAG.notice:
 			return { t: 'notice', text: r.str() };
+		case SERVER_TAG.emote:
+			return { t: 'emote', sessionId: r.u32(), emote: r.str() };
 		case SERVER_TAG.reject:
 			return { t: 'reject', reason: r.str() };
 		default:

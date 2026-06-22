@@ -109,6 +109,18 @@ test('whisper (server -> client) round-trips sender session + both handles + tex
 	expect(decoded).toEqual(msg);
 });
 
+test('emote (client -> server) round-trips the emote id (#38)', () => {
+	const msg: ClientMessage = { t: 'emote', emote: 'wave' };
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('emote (server -> client) round-trips the sender session + emote id (#38)', () => {
+	const msg: ServerMessage = { t: 'emote', sessionId: 7, emote: 'laugh' };
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
 test('notice (server -> client) round-trips the sender-only system line', () => {
 	const msg: ServerMessage = {
 		t: 'notice',

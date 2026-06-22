@@ -3,7 +3,7 @@
 // input never sees them and typing can't leak into movement / combat. The caller
 // adapts OpenTUI key events to ChatKey and acts on the returned ChatKeyResult.
 
-import { CHAT_MAX_LEN } from '@mmo/shared';
+import { CHAT_MAX_LEN, EMOTES, emoteById } from '@mmo/shared';
 
 // The fields of a key event ChatInput cares about. `sequence` is the literal
 // character a printable key produced (OpenTUI's ParsedKey.sequence).
@@ -23,20 +23,30 @@ export type ChatKeyResult =
 const MAX_LEN = CHAT_MAX_LEN; // matches the server's relay clamp (#59, ADR 0007)
 
 // A sent chat line resolved to its intent: a Zone-local say, a directed whisper
-// (#40), or a usage error to surface locally (no round-trip). Pure so the slash
-// parsing is unit-tested without a renderer or socket.
+// (#40), a triggered emote (#38), or a usage error to surface locally (no
+// round-trip). Pure so the slash parsing is unit-tested without a renderer or socket.
 export type ChatCommand =
 	| { kind: 'say'; text: string }
 	| { kind: 'whisper'; to: string; text: string }
+	| { kind: 'emote'; emote: string }
 	| { kind: 'error'; message: string };
 
 const WHISPER_USAGE = 'Usage: /w <handle> <message>';
+const EMOTE_USAGE = `Usage: /em <${EMOTES.map((e) => e.id).join('|')}>`;
 
 // Classify a sent line: `/w <handle> <message>` (or `/whisper …`) is a whisper;
-// anything else is a Zone-local say. A whisper missing a handle or message is an
-// error the caller shows in the log instead of sending.
+// `/em <name>` (or `/emote …`) is an emote from the fixed set; anything else is a
+// Zone-local say. A whisper missing a handle/message, or an emote with an unknown /
+// missing name, is an error the caller shows in the log instead of sending.
 export function parseChatCommand(line: string): ChatCommand {
 	const trimmed = line.trim();
+	const em = /^\/(?:em|emote)\b\s*(.*)$/s.exec(trimmed);
+	if (em) {
+		const name = em[1].trim().split(/\s+/)[0] ?? '';
+		if (!name || !emoteById(name))
+			return { kind: 'error', message: EMOTE_USAGE };
+		return { kind: 'emote', emote: name };
+	}
 	const m = /^\/(?:w|whisper)\b\s*(.*)$/s.exec(trimmed);
 	if (!m) return { kind: 'say', text: trimmed };
 	const rest = m[1].trimStart();
