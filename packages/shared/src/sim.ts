@@ -36,7 +36,7 @@ export function createGameFromZones(
 
 export function createGame(seed = 1): GameState {
 	// The data-driven World (ADR 0008): zones are loaded from the authored `.zone`
-	// files, not built by a factory. loadZones() returns the start Zone (the Field)
+	// files, not built by a factory. loadZones() returns the start Zone (the Town)
 	// first; the Player spawns there at the shared safe point.
 	const loaded = loadZones();
 	return createGameFromZones(loaded, loaded[0].id, seed);

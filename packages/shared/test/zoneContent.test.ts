@@ -57,12 +57,12 @@ test('round-trip portals: you can leave Town for the Field and return', () => {
 	expect(field?.portals.some((p) => p.target === 'town-01')).toBe(true);
 });
 
-test('the shared Player spawn point lands on walkable ground in the start Field', () => {
-	// createGame drops the Player at SPAWN in the first Zone (the Field); that cell
+test('the shared Player spawn point lands on walkable ground in the start Town', () => {
+	// createGame drops the Player at SPAWN in the first Zone (the Town); that cell
 	// must be clear and rest on solid ground or the game opens mid-air / in a wall.
-	const field = loadZones()[0];
-	expect(field.id).toBe('field-01');
-	const t = field.terrain;
+	const town = loadZones()[0];
+	expect(town.id).toBe('town-01');
+	const t = town.terrain;
 	for (let y = SPAWN.y; y < SPAWN.y + BOX.h; y++)
 		for (let x = SPAWN.x; x < SPAWN.x + BOX.w; x++)
 			expect(isSolid(t, x, y)).toBe(false);

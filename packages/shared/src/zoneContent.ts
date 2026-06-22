@@ -17,7 +17,8 @@ import { type Catalogs, parseZone } from './zoneFormat';
 /** The monster + NPC catalogs the authored Zones resolve their glyphs against. */
 export const CATALOGS: Catalogs = catalogsJson as Catalogs;
 
-/** The shipped World content, parsed. Order is the start Zone first (the Field). */
+/** The shipped World content, parsed. Order is the start Zone first (the Town: a
+ * safe hub Players spawn into, then portal out to the Field). */
 export function loadZones(): Zone[] {
-	return [parseZone(fieldText, CATALOGS), parseZone(townText, CATALOGS)];
+	return [parseZone(townText, CATALOGS), parseZone(fieldText, CATALOGS)];
 }
