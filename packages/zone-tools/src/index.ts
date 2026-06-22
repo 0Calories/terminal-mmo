@@ -1,5 +1,6 @@
 export * from './cli';
 export * from './diagnostics';
+export * from './doc';
 export * from './io';
 export * from './play';
 export * from './preview';

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Catalogs, Zone } from '@mmo/shared';
 import { parseZone } from '@mmo/shared';
@@ -59,4 +59,10 @@ export function zonePath(root: string, id: string): string {
 
 export function zoneExists(root: string, id: string): boolean {
 	return existsSync(zonePath(root, id));
+}
+
+/** Write raw `.zone` text to `<root>/<id>.zone` — symmetric with `loadZone`. The
+ *  editor (#84) serializes an `EditorDoc` and writes the result here. */
+export function writeZone(root: string, id: string, text: string): void {
+	writeFileSync(zonePath(root, id), text);
 }
