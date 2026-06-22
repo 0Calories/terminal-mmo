@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { join } from 'node:path';
 import { run } from '../src/cli';
+import { runEdit } from '../src/edit';
 import { runPlay } from '../src/play';
 import { runPreview } from '../src/preview';
 
@@ -15,4 +16,5 @@ const argv = process.argv.slice(2);
 // are synchronous and return an exit code.
 if (argv[0] === 'preview') await runPreview(argv.slice(1), deps);
 else if (argv[0] === 'play') await runPlay(argv.slice(1), deps);
+else if (argv[0] === 'edit') await runEdit(argv.slice(1), deps);
 else process.exit(run(argv, deps));
