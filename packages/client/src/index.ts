@@ -20,7 +20,7 @@ import {
 	type Zone,
 } from '@mmo/shared';
 import { createCliRenderer } from '@opentui/core';
-import { ChatInput } from './chat';
+import { ChatInput, parseChatCommand } from './chat';
 import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
@@ -220,7 +220,15 @@ function runNetworked(url: string) {
 		// cancels) and none reaches movement / combat (no keystroke leak).
 		if (chat.open) {
 			const r = chat.key(k);
-			if (r.action === 'send') net.send({ t: 'chat', text: r.text });
+			if (r.action === 'send') {
+				// A sent line is either a Zone-local say or a `/w` whisper (#40); a bad
+				// whisper surfaces a local usage notice rather than going to the wire.
+				const cmd = parseChatCommand(r.text);
+				if (cmd.kind === 'say') net.send({ t: 'chat', text: cmd.text });
+				else if (cmd.kind === 'whisper')
+					net.send({ t: 'whisper', to: cmd.to, text: cmd.text });
+				else net.notice(cmd.message);
+			}
 			return;
 		}
 		if (k.name === 'q') quit();

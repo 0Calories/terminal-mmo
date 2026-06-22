@@ -22,6 +22,32 @@ export type ChatKeyResult =
 
 const MAX_LEN = CHAT_MAX_LEN; // matches the server's relay clamp (#59, ADR 0007)
 
+// A sent chat line resolved to its intent: a Zone-local say, a directed whisper
+// (#40), or a usage error to surface locally (no round-trip). Pure so the slash
+// parsing is unit-tested without a renderer or socket.
+export type ChatCommand =
+	| { kind: 'say'; text: string }
+	| { kind: 'whisper'; to: string; text: string }
+	| { kind: 'error'; message: string };
+
+const WHISPER_USAGE = 'Usage: /w <handle> <message>';
+
+// Classify a sent line: `/w <handle> <message>` (or `/whisper …`) is a whisper;
+// anything else is a Zone-local say. A whisper missing a handle or message is an
+// error the caller shows in the log instead of sending.
+export function parseChatCommand(line: string): ChatCommand {
+	const trimmed = line.trim();
+	const m = /^\/(?:w|whisper)\b\s*(.*)$/s.exec(trimmed);
+	if (!m) return { kind: 'say', text: trimmed };
+	const rest = m[1].trimStart();
+	const sp = rest.search(/\s/);
+	if (sp < 0) return { kind: 'error', message: WHISPER_USAGE };
+	const to = rest.slice(0, sp);
+	const text = rest.slice(sp + 1).trim();
+	if (!to || !text) return { kind: 'error', message: WHISPER_USAGE };
+	return { kind: 'whisper', to, text };
+}
+
 export class ChatInput {
 	open = false;
 	text = '';
