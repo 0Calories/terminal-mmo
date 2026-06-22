@@ -11,11 +11,17 @@ import {
 	buildSceneStyle,
 	type Catalogs,
 	type Diagnostic,
+	drawEntitySprite,
+	drawNpcSprite,
+	type Entity,
 	findOrphanGlyphs,
+	type GhostStyle,
 	NPC_BOX,
+	type Npc,
 	PORTAL_BOX,
 	parseZone,
 	renderZoneScene,
+	spawnMonster,
 	validateZone,
 	ZONE_MAX,
 } from '@mmo/shared';
@@ -429,32 +435,48 @@ export function footprintBox(p: Placeable, x: number, y: number): FootBox {
 	}
 }
 
-/** The translucent glyph the placement ghost fills an entity's footprint with so
- *  it reads as a shape, not an empty outline (#118). */
-export const GHOST_FILL = '▒';
+/** The translucent glyph the placement ghost draws in place of the entity's solid
+ *  sprite glyphs so the preview reads as a dimmed ghost, not the real entity (#118). */
+export const GHOST_GLYPH = '░';
 
 /**
- * The cells the placement ghost should draw to preview an entity Placeable at
- * anchor `(x, y)` (#118). Every cell of the {@link footprintBox} is filled with the
- * translucent {@link GHOST_FILL} glyph so the ghost resembles the sprite footprint
- * rather than a hollow box; authored content already on the grid (e.g. terrain the
- * box would clip) shows through unchanged so the invalid/clip state still reads.
- * The state tint is the caller's concern (drawn as the background).
+ * The scene object the placement ghost should draw to preview an entity Placeable
+ * landing with its anchor glyph at `(x, y)` (#118). Rather than a coloured box, the
+ * ghost is the entity's ACTUAL sprite — same art, same per-cell colours — just blit
+ * with {@link GHOST_GLYPH} in place of the solid glyphs (the shell's `GhostStyle`).
+ * Synthesising the very Entity/Npc that `parseZone` would spawn at the glyph keeps
+ * the preview from drifting from what ships (#56): a monster resolves to its
+ * behaviour sprite, an NPC to its kind sprite. Returns `undefined` for kinds with
+ * no sprite preview yet (portals — #97 — and terrain), so the caller can fall back.
  */
-export function ghostFootprintCells(
-	doc: EditorDoc,
+export function ghostEntity(
+	catalogs: Catalogs,
 	p: Placeable,
 	x: number,
 	y: number,
-): { x: number; y: number; glyph: string }[] {
-	const box = footprintBox(p, x, y);
-	const cells: { x: number; y: number; glyph: string }[] = [];
-	for (let cy = box.y; cy < box.y + box.h; cy++)
-		for (let cx = box.x; cx < box.x + box.w; cx++) {
-			const here = cellAt(doc, cx, cy);
-			cells.push({ x: cx, y: cy, glyph: here === '.' ? GHOST_FILL : here });
-		}
-	return cells;
+): { kind: 'entity'; entity: Entity } | { kind: 'npc'; npc: Npc } | undefined {
+	if (p.kind === 'monster') {
+		const m = catalogs.monsters.find((e) => e.id === p.id);
+		if (!m) return undefined;
+		return { kind: 'entity', entity: spawnMonster(m.behavior, -1, x, y) };
+	}
+	if (p.kind === 'npc') {
+		const n = catalogs.npcs.find((e) => e.id === p.id);
+		if (!n) return undefined;
+		return {
+			kind: 'npc',
+			npc: {
+				id: -1,
+				kind: n.kind,
+				name: n.name,
+				x,
+				y,
+				w: NPC_BOX.w,
+				h: NPC_BOX.h,
+			},
+		};
+	}
+	return undefined;
 }
 
 /**
@@ -871,12 +893,14 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				tint(cells, C.gestureBg);
 			}
 
-			// Ghost footprint (#96/#114): while the Stamp tool holds a picked entity,
-			// preview its 5×5 / 4×5 / 4×7 collision box at the spot it will actually land.
-			// The cursor is the sprite's CENTER (or feet when ground-snapping): one
-			// `cursorToAnchor` conversion feeds the ghost, the stamp, and the erase
-			// hit-test, so the box is tinted by its real placement state — green grounded,
-			// blue airborne, red clipping/off-canvas — and can't drift from where it lands.
+			// Ghost preview (#96/#114/#118): while the Stamp tool holds a picked
+			// entity, preview the actual entity that will land — its real sprite art
+			// and colours, blit with a translucent ░ in place of the solid glyphs —
+			// at the spot it will actually land. The cursor is the sprite's CENTER
+			// (or feet when ground-snapping): one `cursorToAnchor` conversion feeds
+			// the ghost, the stamp, and the erase hit-test, so it can't drift from
+			// where the glyph lands. The placement state tints the glyph background —
+			// green grounded, blue airborne, red clipping/off-canvas.
 			const ghostP = stampP;
 			if (ghostP && TOOLS[toolIdx].id === 'stamp' && !anchor) {
 				const a = cursorToAnchor(doc, ghostP, cursor.x, cursor.y, freePlace);
@@ -887,15 +911,29 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 						: st === 'airborne'
 							? C.ghostAir
 							: C.ghostBad;
-				// Filled-glyph preview (#118): the footprint is filled with a
-				// translucent shade so the ghost reads as the entity's shape, not a
-				// hollow outline; the state tint stays the background. Authored content
-				// (e.g. clipped terrain) shows through so an invalid placement reads.
-				for (const g of ghostFootprintCells(doc, ghostP, a.x, a.y)) {
-					const px = sx(g.x);
-					const py = sy(g.y);
-					if (!inCanvasX(px) || !inCanvasY(py)) continue;
-					buf.setCell(px, py, g.glyph, C.cursorFg, bg);
+				const ghostStyle: GhostStyle<typeof C.selBg> = {
+					glyph: GHOST_GLYPH,
+					bg,
+				};
+				// Draw the synthesized entity through the SHARED renderer with the same
+				// chrome-inset camera renderZoneScene uses, so the ghost sits exactly
+				// where the placed entity would render. Kinds with no sprite yet
+				// (portals, #97) fall back to a ░-filled footprint box.
+				const sceneCam = { x: cam.x - GUTTER_W, y: cam.y - RULER_H };
+				const ghost = ghostEntity(catalogs, ghostP, a.x, a.y);
+				if (ghost?.kind === 'entity') {
+					drawEntitySprite(buf, ghost.entity, sceneCam, style, ghostStyle);
+				} else if (ghost?.kind === 'npc') {
+					drawNpcSprite(buf, ghost.npc, sceneCam, style, ghostStyle);
+				} else {
+					const box = footprintBox(ghostP, a.x, a.y);
+					for (let wy = box.y; wy < box.y + box.h; wy++)
+						for (let wx = box.x; wx < box.x + box.w; wx++) {
+							const px = sx(wx);
+							const py = sy(wy);
+							if (inCanvasX(px) && inCanvasY(py))
+								buf.setCell(px, py, GHOST_GLYPH, C.cursorFg, bg);
+						}
 				}
 				if (inCanvasX(cx) && inCanvasY(cy)) {
 					const here = cellAt(doc, cursor.x, cursor.y);

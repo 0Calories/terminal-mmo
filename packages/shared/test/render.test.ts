@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import { BOX } from '../src/constants';
 import {
 	type CellBuffer,
+	drawEntitySprite,
 	type RenderStyle,
 	renderZoneScene,
 } from '../src/render';
@@ -187,6 +188,27 @@ test('portals render as a translucent block across their box', () => {
 		[2, 2],
 	]) {
 		expect(buf.at(x, y)).toEqual({ ch: '▒', fg: 'PORTAL', bg: 'TR' });
+	}
+});
+
+test('ghost mode replaces every glyph with the ghost glyph but keeps the colours (#118)', () => {
+	const buf = new FakeBuffer(20, 16);
+	const e = makeEntity({ type: 'chaser', x: 6, y: 6 });
+	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE, { glyph: '░', bg: 'TINT' });
+
+	const sprite = spriteFor('chaser');
+	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
+	const sy = Math.round(e.y + BOX.h - sprite.h);
+	const glyphs = sprite.rows(1);
+	const keys = sprite.colorKeys(1);
+	for (let ry = 0; ry < sprite.h; ry++) {
+		for (let rx = 0; rx < sprite.w; rx++) {
+			if (glyphs[ry][rx] === ' ') continue;
+			const cell = buf.at(sx + rx, sy + ry);
+			expect(cell?.ch).toBe('░'); // glyph swapped for the ghost glyph
+			expect(cell?.bg).toBe('TINT'); // opaque placement-state tint behind it
+			expect(cell?.fg).toBe(fgFor(keys[ry][rx])); // real sprite colour preserved
+		}
 	}
 });
 

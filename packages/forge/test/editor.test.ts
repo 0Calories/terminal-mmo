@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { type Catalogs, findOrphanGlyphs, ZONE_MAX } from '@mmo/shared';
+import {
+	type Catalogs,
+	findOrphanGlyphs,
+	NPC_BOX,
+	ZONE_MAX,
+} from '@mmo/shared';
 import { cellAt, type EditorDoc, serializeDoc } from '../src/doc';
 import {
 	clampRoam,
@@ -13,8 +18,7 @@ import {
 	entityAt,
 	eraseCells,
 	footprintBox,
-	GHOST_FILL,
-	ghostFootprintCells,
+	ghostEntity,
 	groundSnap,
 	growToInclude,
 	lineCells,
@@ -452,41 +456,40 @@ describe('footprintBox (#96)', () => {
 	});
 });
 
-describe('ghostFootprintCells (#118)', () => {
-	test('fills every footprint cell with the translucent ghost glyph over empty space', () => {
-		const doc: EditorDoc = {
-			header: { id: 'z', type: 'field', spawns: {}, npcs: {}, portals: {} },
-			rows: ['..........', '..........', '..........'],
-		};
-		const cells = ghostFootprintCells(
-			doc,
-			{ kind: 'monster', id: 'chaser' },
-			1,
-			0,
-		);
-		// 5×5 box → 25 cells, all the fill glyph (nothing underneath but empty '.').
-		expect(cells).toHaveLength(25);
-		expect(cells.every((c) => c.glyph === GHOST_FILL)).toBe(true);
-		// Anchored top-left at (1,0), spanning the box.
-		expect(cells[0]).toEqual({ x: 1, y: 0, glyph: GHOST_FILL });
-		expect(cells.at(-1)).toEqual({ x: 5, y: 4, glyph: GHOST_FILL });
+describe('ghostEntity (#118)', () => {
+	const cats: Catalogs = {
+		monsters: [{ id: 'chaser', behavior: 'chaser', name: 'Slime' }],
+		npcs: [{ id: 'merchant', kind: 'vendor', name: 'Pemberton' }],
+	};
+
+	test('a monster ghost is the very Entity parseZone would spawn at the anchor', () => {
+		const g = ghostEntity(cats, { kind: 'monster', id: 'chaser' }, 3, 2);
+		expect(g?.kind).toBe('entity');
+		if (g?.kind !== 'entity') throw new Error('expected entity');
+		// behaviour-typed sprite, placed at the glyph anchor — no drift from spawn.
+		expect(g.entity.type).toBe('chaser');
+		expect(g.entity.x).toBe(3);
+		expect(g.entity.y).toBe(2);
 	});
 
-	test('shows underlying authored content through the fill so a clip still reads', () => {
-		const doc: EditorDoc = {
-			header: { id: 'z', type: 'field', spawns: {}, npcs: {}, portals: {} },
-			rows: ['....', '.#..', '....'],
-		};
-		const cells = ghostFootprintCells(
-			doc,
-			{ kind: 'portal', target: 't', arrival: [0, 0] },
-			0,
-			0,
-		);
-		const clipped = cells.find((c) => c.x === 1 && c.y === 1);
-		expect(clipped?.glyph).toBe('#');
-		// Other cells stay the fill glyph.
-		expect(cells.find((c) => c.x === 0 && c.y === 0)?.glyph).toBe(GHOST_FILL);
+	test('an NPC ghost carries the catalog kind + box at the anchor', () => {
+		const g = ghostEntity(cats, { kind: 'npc', id: 'merchant' }, 1, 4);
+		expect(g?.kind).toBe('npc');
+		if (g?.kind !== 'npc') throw new Error('expected npc');
+		expect(g.npc.kind).toBe('vendor');
+		expect(g.npc.x).toBe(1);
+		expect(g.npc.y).toBe(4);
+		expect(g.npc.w).toBe(NPC_BOX.w);
+		expect(g.npc.h).toBe(NPC_BOX.h);
+	});
+
+	test('kinds with no sprite preview yet (portal, unknown id) return undefined', () => {
+		expect(
+			ghostEntity(cats, { kind: 'portal', target: 't', arrival: [0, 0] }, 0, 0),
+		).toBeUndefined();
+		expect(
+			ghostEntity(cats, { kind: 'monster', id: 'nope' }, 0, 0),
+		).toBeUndefined();
 	});
 });
 

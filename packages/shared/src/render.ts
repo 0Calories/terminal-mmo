@@ -57,11 +57,22 @@ export interface ZoneScene {
 	entities: readonly Entity[];
 }
 
+// A translucent "ghost" blit: every lit glyph is replaced by `glyph` (e.g. `░`)
+// and drawn over an opaque `bg` instead of the transparent scene, while the
+// sprite's real per-cell colours are PRESERVED. The forge editor's placement
+// preview uses this so the ghost is the entity's actual shape + colours (#118),
+// tinted by its placement state (grounded/airborne/invalid) behind the glyph.
+export interface GhostStyle<C> {
+	glyph: string;
+	bg: C;
+}
+
 // Blit a Sprite's lit glyphs into the buffer with palette colours, clipping to
 // the viewport. A `hurt` flash overrides every glyph with the hurt colour. An
 // optional `recolor` overrides specific colour keys for this blit only — the seam
 // the cosmetic body hue uses to repaint the Avatar's `p` cells per Avatar (#35),
-// leaving the shared palette untouched.
+// leaving the shared palette untouched. An optional `ghost` swaps each glyph for
+// the ghost glyph over an opaque tint while keeping the colours (#118).
 function blitSprite<C>(
 	buf: CellBuffer<C>,
 	sprite: Sprite,
@@ -71,6 +82,7 @@ function blitSprite<C>(
 	hurt: boolean,
 	style: RenderStyle<C>,
 	recolor?: Readonly<Record<string, C>>,
+	ghost?: GhostStyle<C>,
 ): void {
 	const sw = buf.width;
 	const sh = buf.height;
@@ -90,7 +102,8 @@ function blitSprite<C>(
 			const fg = hurt
 				? style.hurt
 				: (recolor?.[key] ?? style.palette[key] ?? style.paletteDefault);
-			buf.setCellWithAlphaBlending(px, py, ch, fg, style.transparent);
+			if (ghost) buf.setCell(px, py, ghost.glyph, fg, ghost.bg);
+			else buf.setCellWithAlphaBlending(px, py, ch, fg, style.transparent);
 		}
 	}
 }
@@ -123,12 +136,23 @@ export function drawEntitySprite<C>(
 	e: Entity,
 	cam: { x: number; y: number },
 	style: RenderStyle<C>,
+	ghost?: GhostStyle<C>,
 ): void {
 	const sprite = spriteFor(e.type);
 	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2) - cam.x);
 	const sy = Math.round(e.y + BOX.h - sprite.h - cam.y);
 	const hurt = e.hurtT > 0.3;
-	blitSprite(buf, sprite, sx, sy, e.facing, hurt, style, recolorFor(e, style));
+	blitSprite(
+		buf,
+		sprite,
+		sx,
+		sy,
+		e.facing,
+		hurt,
+		style,
+		recolorFor(e, style),
+		ghost,
+	);
 
 	// The cosmetic hat sits directly above the head (its bottom row on the row above
 	// the Sprite top), centred over the Sprite, mirrored with the Avatar's facing.
@@ -136,8 +160,24 @@ export function drawEntitySprite<C>(
 	if (hat) {
 		const hx = sx + Math.round((sprite.w - hat.w) / 2);
 		const hy = sy - hat.h;
-		blitSprite(buf, hat, hx, hy, e.facing, hurt, style);
+		blitSprite(buf, hat, hx, hy, e.facing, hurt, style, undefined, ghost);
 	}
+}
+
+// A static NPC Sprite, centred over its box with feet on the box bottom. Drawn by
+// `renderZoneScene` and reused by the forge editor's placement ghost (`ghost`) so
+// the preview matches the shipped NPC exactly (#118).
+export function drawNpcSprite<C>(
+	buf: CellBuffer<C>,
+	n: Npc,
+	cam: { x: number; y: number },
+	style: RenderStyle<C>,
+	ghost?: GhostStyle<C>,
+): void {
+	const sprite = spriteForNpc(n.kind);
+	const sx = Math.round(n.x + Math.floor((n.w - sprite.w) / 2) - cam.x);
+	const sy = Math.round(n.y + n.h - sprite.h - cam.y);
+	blitSprite(buf, sprite, sx, sy, 1, false, style, undefined, ghost);
 }
 
 // A Player Avatar's handle, drawn in a rounded, opaque bordered box directly BELOW
@@ -230,12 +270,7 @@ export function renderZoneScene<C>(
 
 	// NPCs are static content (not simulated), keyed off their own `kind`. Drawn
 	// before the entity Sprites so the player stands in front.
-	for (const n of scene.npcs) {
-		const sprite = spriteForNpc(n.kind);
-		const sx = Math.round(n.x + Math.floor((n.w - sprite.w) / 2)) - camX;
-		const sy = Math.round(n.y + n.h - sprite.h) - camY;
-		blitSprite(buf, sprite, sx, sy, 1, false, style);
-	}
+	for (const n of scene.npcs) drawNpcSprite(buf, n, cam, style);
 
 	// Co-present Avatars and Monsters share one z-ordered set (by y-position) so
 	// they occlude each other naturally (ADR 0003). Sorted here so every caller
