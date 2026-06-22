@@ -41,24 +41,27 @@ const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 );
 
 // Preview geometry, derived from the real Sprite / hat catalog so it always frames
-// the whole Avatar. The drawn stack is nameplate (1 row) + hat (0–MAX_HAT_H rows) +
-// Sprite, with a row of padding above and below; the canvas is sized for the tallest
-// possible stack so no selection ever clips.
+// the whole Avatar. Top to bottom the drawn stack is hat (0–MAX_HAT_H rows) + Sprite
+// + boxed nameplate (NAMEPLATE_H rows, below the feet — #103), with a row of padding
+// above and below; the canvas is sized for the tallest possible stack so no selection
+// ever clips.
 export const PLAYER = spriteFor('player');
-export const NAMEPLATE_H = 1;
+// The boxed nameplate is 3 rows: top border, handle, bottom border (#103).
+export const NAMEPLATE_H = 3;
 const MAX_HAT_H = Math.max(0, ...HATS.map((h) => h.sprite?.h ?? 0));
 export const VPAD = 1;
 const PREVIEW_W = PLAYER.w + 12; // Sprite plus room for a short handle either side
-export const PREVIEW_H = NAMEPLATE_H + MAX_HAT_H + PLAYER.h + 2 * VPAD;
+export const PREVIEW_H = MAX_HAT_H + PLAYER.h + NAMEPLATE_H + 2 * VPAD;
 
 // A still Avatar for the preview: facing right, full health (no hurt flash), carrying
 // the in-progress cosmetics + handle so the body hue, hat, AND nameplate colour all
 // preview. The Sprite is ANCHORED at a fixed vertical position — VPAD plus reserved
-// headroom for the nameplate and the tallest possible hat — so cycling hats only moves
-// the headwear above the head, never the body/feet (#104). x/y are the inverse of
-// drawEntitySprite's placement, so the resolved Sprite lands where intended.
+// headroom for the tallest possible hat — so cycling hats only moves the headwear
+// above the head, never the body/feet (#104). Room is reserved below for the boxed
+// nameplate (#103). x/y are the inverse of drawEntitySprite's placement, so the
+// resolved Sprite lands where intended.
 export function previewAvatar(cosmetics: Cosmetics, name: string): Entity {
-	const spriteTop = VPAD + NAMEPLATE_H + MAX_HAT_H;
+	const spriteTop = VPAD + MAX_HAT_H;
 	const spriteLeft = Math.round((PREVIEW_W - PLAYER.w) / 2);
 	return {
 		id: 1,

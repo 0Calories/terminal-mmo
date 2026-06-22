@@ -84,6 +84,7 @@ const STYLE: RenderStyle<string> = {
 	transparent: 'TR',
 	hurt: 'HURT',
 	nameplate: 'NAME',
+	nameplateBg: 'NAMEBG',
 	palette: {
 		p: 'cP',
 		m: 'cM',
@@ -277,7 +278,7 @@ test('entities are z-ordered by y: a lower entity is drawn over a higher one', (
 	}
 });
 
-test('a named entity gets a nameplate one row above its sprite', () => {
+test('a named entity gets a boxed nameplate below its sprite', () => {
 	const buf = new FakeBuffer(20, 16);
 	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'neo' });
 
@@ -288,13 +289,24 @@ test('a named entity gets a nameplate one row above its sprite', () => {
 		STYLE,
 	);
 
-	const sprite = spriteFor('player');
-	const top = Math.round(e.y + BOX.h - sprite.h);
+	// The box top border sits on the row directly below the feet (one past the
+	// Sprite's last row), centred over the box; its width is the handle + 2 borders.
+	const boxTop = Math.round(e.y + BOX.h);
 	const cx = e.x + BOX.w / 2;
-	const x = Math.round(cx - 'neo'.length / 2);
-	expect(buf.at(x, top - 1)?.ch).toBe('n');
-	expect(buf.at(x + 1, top - 1)).toEqual({ ch: 'e', fg: 'NAME', bg: 'TR' });
-	expect(buf.at(x + 2, top - 1)?.ch).toBe('o');
+	const left = Math.round(cx - ('neo'.length + 2) / 2);
+	// Top border: ╭──╮
+	expect(buf.at(left, boxTop)?.ch).toBe('╭');
+	expect(buf.at(left + 1, boxTop)?.ch).toBe('─');
+	expect(buf.at(left + 4, boxTop)?.ch).toBe('╮');
+	// Handle row: │neo│
+	expect(buf.at(left, boxTop + 1)?.ch).toBe('│');
+	expect(buf.at(left + 1, boxTop + 1)?.ch).toBe('n');
+	expect(buf.at(left + 2, boxTop + 1)?.ch).toBe('e');
+	expect(buf.at(left + 3, boxTop + 1)?.ch).toBe('o');
+	expect(buf.at(left + 4, boxTop + 1)?.ch).toBe('│');
+	// Bottom border: ╰──╯
+	expect(buf.at(left, boxTop + 2)?.ch).toBe('╰');
+	expect(buf.at(left + 4, boxTop + 2)?.ch).toBe('╯');
 });
 
 // --- Cosmetics (#35) -------------------------------------------------------
@@ -363,15 +375,15 @@ test('a cosmetic hat is overlaid directly above the head', () => {
 	);
 });
 
-test('the nameplate uses the chosen colour and clears the hat above it', () => {
+test('the boxed nameplate uses the chosen colour with an opaque fill', () => {
 	const buf = new FakeBuffer(20, 16);
-	const hatIdx = 1; // Cap (2 rows)
 	const e = makeEntity({
 		type: 'player',
 		x: 8,
 		y: 7,
 		name: 'neo',
-		cosmetics: { hue: 0, hat: hatIdx, nameplate: 4 },
+		// hat present to prove it no longer affects the (now below-feet) plate position
+		cosmetics: { hue: 0, hat: 3, nameplate: 4 },
 	});
 
 	renderZoneScene(
@@ -381,13 +393,41 @@ test('the nameplate uses the chosen colour and clears the hat above it', () => {
 		STYLE,
 	);
 
-	const hat = HATS[hatIdx].sprite;
-	if (!hat) throw new Error('expected a hat sprite');
-	const { ay } = avatarTopLeft(e);
+	const boxTop = Math.round(e.y + BOX.h);
 	const cx = e.x + BOX.w / 2;
-	const x = Math.round(cx - 'neo'.length / 2);
-	const plateY = ay - 1 - hat.h; // pushed above the hat
-	expect(buf.at(x, plateY)?.ch).toBe('n');
-	expect(buf.at(x + 1, plateY)).toEqual({ ch: 'e', fg: 'np4', bg: 'TR' });
-	expect(buf.at(x + 2, plateY)?.ch).toBe('o');
+	const left = Math.round(cx - ('neo'.length + 2) / 2);
+	// Border tinted with the chosen nameplate colour (np4), opaque fill behind it.
+	expect(buf.at(left, boxTop)).toEqual({ ch: '╭', fg: 'np4', bg: 'NAMEBG' });
+	// Handle char tinted the same, on the opaque fill.
+	expect(buf.at(left + 1, boxTop + 1)).toEqual({
+		ch: 'n',
+		fg: 'np4',
+		bg: 'NAMEBG',
+	});
+});
+
+test('the nameplate position is independent of hat height', () => {
+	const render = (hat: number) => {
+		const buf = new FakeBuffer(20, 16);
+		const e = makeEntity({
+			type: 'player',
+			x: 8,
+			y: 7,
+			name: 'a',
+			cosmetics: { hue: 0, hat, nameplate: 0 },
+		});
+		renderZoneScene(
+			buf,
+			{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+			{ x: 0, y: 0 },
+			STYLE,
+		);
+		return buf;
+	};
+	const boxTop = Math.round(7 + BOX.h);
+	const left = Math.round(8 + BOX.w / 2 - 3 / 2);
+	// No hat vs the tallest hat (Wizard, 3 rows): the plate's top border lands on the
+	// same row either way, since it anchors below the feet now (#103).
+	expect(render(0).at(left, boxTop)?.ch).toBe('╭');
+	expect(render(3).at(left, boxTop)?.ch).toBe('╭');
 });
