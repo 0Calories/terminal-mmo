@@ -18,6 +18,7 @@ export * from './sprites';
 export * from './terrain';
 export * from './types';
 export * from './vendor';
+export * from './version';
 export * from './world';
 export * from './zone';
 export * from './zoneContent';

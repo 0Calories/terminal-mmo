@@ -1,0 +1,102 @@
+# Release pipeline (ADR 0012). Fires on a `v*` tag — the only thing that ships.
+# Atomic, deploy-first/publish-last: gate → deploy the server → assert /health
+# reports the tag → publish the client. npm publish is the irreversible step and
+# runs LAST, gated on a healthy, correctly-versioned deploy, so a failed deploy
+# never burns an npm version.
+#
+# npm auth uses npm Trusted Publishing (OIDC) — NO npm token. The job requests an
+# OIDC identity token (`id-token: write`) that npm exchanges for a short-lived,
+# single-use publish credential, and stamps build provenance automatically. This
+# workflow file's path must be registered as the Trusted Publisher on the
+# `terminal-mmo` package (npmjs.com → package → Settings → Publishing access).
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write # required for npm Trusted Publishing (OIDC) + provenance
+
+env:
+  # The Railway service to deploy. Confirm this matches your Railway project's
+  # service name. (HEALTH_URL is derived at runtime from the client's single source
+  # of truth — see the "Derive health URL" step below.)
+  RAILWAY_SERVICE: mmoserver
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      # Node + a current npm (>= 11.5.1) are what perform the OIDC publish.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Upgrade npm (OIDC trusted publishing needs >= 11.5.1)
+        run: npm install -g npm@latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      # The tag is the single source of truth for the Version. `v0.3.0` -> `0.3.0`.
+      - name: Derive version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      # The prod host has ONE definition — packages/client/src/server-url.ts, which
+      # the client also bakes into its bundle. Read it by path (no workspace install
+      # needed) so the /health gate can never target a different host than players do.
+      - name: Derive health URL from the client's single source of truth
+        run: |
+          HOST="$(bun -e 'import { PROD_SERVER_HOST } from "./packages/client/src/server-url.ts"; process.stdout.write(PROD_SERVER_HOST)')"
+          echo "HEALTH_URL=https://$HOST/health" >> "$GITHUB_ENV"
+
+      # Re-run the full gate on the tagged commit before shipping anything.
+      - name: CI gate
+        run: bun run ci
+
+      # --- Deploy the server FIRST (reversible step) -----------------------------
+      - name: Deploy server to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          # Stamp this release's Version onto the service first, WITHOUT redeploying
+          # the old code (--skip-deploys), then build+deploy the tagged commit
+          # (Dockerfile) with the variable already in place. `up --ci` streams build
+          # logs then exits non-zero on build failure; the /health gate below waits
+          # for the new container to actually serve $VERSION.
+          bunx @railway/cli variables set "MMO_VERSION=$VERSION" \
+            --service "$RAILWAY_SERVICE" \
+            --skip-deploys
+          bunx @railway/cli up --ci --service "$RAILWAY_SERVICE"
+
+      # --- Gate: the live server must report exactly this Version ----------------
+      - name: Assert /health reports the tag
+        run: |
+          for i in $(seq 1 30); do
+            body="$(curl -fsS "$HEALTH_URL" || true)"
+            got="$(printf '%s' "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).version' 2>/dev/null || true)"
+            echo "attempt $i: server reports '${got}', want '${VERSION}'"
+            if [ "$got" = "$VERSION" ]; then
+              echo "deploy confirmed at $VERSION"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::server never reported version $VERSION — refusing to publish"
+          exit 1
+
+      # --- Publish the client LAST (irreversible step), via OIDC -----------------
+      - name: Publish terminal-mmo to npm (Trusted Publishing)
+        working-directory: packages/cli
+        env:
+          # Baked into the bundle by build.ts (prepublishOnly) as the client's Version.
+          MMO_VERSION: ${{ env.VERSION }}
+        run: |
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          npm publish --access public
