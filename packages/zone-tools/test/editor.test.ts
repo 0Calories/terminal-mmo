@@ -1,15 +1,26 @@
 import { describe, expect, test } from 'bun:test';
-import { type Catalogs, ZONE_MAX } from '@mmo/shared';
-import type { EditorDoc } from '../src/doc';
+import { type Catalogs, findOrphanGlyphs, ZONE_MAX } from '@mmo/shared';
+import { cellAt, type EditorDoc, serializeDoc } from '../src/doc';
 import {
 	clampRoam,
+	copyRegion,
 	cursorEdge,
+	deleteRegion,
 	docDiagnostics,
 	editorExtent,
 	editorStatusLine,
+	eraseCells,
 	growToInclude,
+	lineCells,
+	moveRegion,
+	paintCells,
+	pasteClip,
+	placeableAt,
+	rectCells,
 	scrollAxis,
 	scrollViewport,
+	TOOLS,
+	toolByKey,
 	trimDoc,
 } from '../src/editor';
 
@@ -192,5 +203,231 @@ describe('editorStatusLine', () => {
 		});
 		expect(line).toContain('✓');
 		expect(line).not.toContain('*');
+	});
+});
+
+// --- Modal tools (#95) --------------------------------------------------------
+
+const key = (c: { x: number; y: number }) => `${c.x},${c.y}`;
+const setOf = (cs: { x: number; y: number }[]) => new Set(cs.map(key));
+
+// A doc with one floored row plus blank space above, header maps present.
+function field(rows: string[]): EditorDoc {
+	return {
+		header: { id: 'z', type: 'field', spawns: {}, npcs: {}, portals: {} },
+		rows,
+	};
+}
+
+describe('TOOLS / toolByKey', () => {
+	test('offers the six modal tools (flood-fill deferred)', () => {
+		expect(TOOLS.map((t) => t.id)).toEqual([
+			'brush',
+			'eraser',
+			'eyedropper',
+			'rectangle',
+			'line',
+			'select',
+		]);
+	});
+
+	test('every tool is reachable with no mouse — by its key and by 1-6', () => {
+		TOOLS.forEach((t, i) => {
+			expect(toolByKey(t.key)?.id).toBe(t.id);
+			expect(toolByKey(String(i + 1))?.id).toBe(t.id);
+		});
+	});
+
+	test('an unbound key resolves to no tool', () => {
+		expect(toolByKey('z')).toBeUndefined();
+		expect(toolByKey('9')).toBeUndefined();
+		expect(toolByKey('left')).toBeUndefined();
+	});
+});
+
+describe('rectCells', () => {
+	test('fills the rectangle spanning two corners, order-independent', () => {
+		const expected = setOf([
+			{ x: 0, y: 0 },
+			{ x: 1, y: 0 },
+			{ x: 2, y: 0 },
+			{ x: 0, y: 1 },
+			{ x: 1, y: 1 },
+			{ x: 2, y: 1 },
+		]);
+		expect(setOf(rectCells({ x: 0, y: 0 }, { x: 2, y: 1 }))).toEqual(expected);
+		expect(setOf(rectCells({ x: 2, y: 1 }, { x: 0, y: 0 }))).toEqual(expected);
+	});
+
+	test('a single cell when both corners coincide', () => {
+		expect(rectCells({ x: 4, y: 4 }, { x: 4, y: 4 })).toEqual([{ x: 4, y: 4 }]);
+	});
+});
+
+describe('lineCells', () => {
+	test('a horizontal floor includes both endpoints', () => {
+		expect(setOf(lineCells({ x: 1, y: 3 }, { x: 4, y: 3 }))).toEqual(
+			setOf([
+				{ x: 1, y: 3 },
+				{ x: 2, y: 3 },
+				{ x: 3, y: 3 },
+				{ x: 4, y: 3 },
+			]),
+		);
+	});
+
+	test('a vertical wall includes both endpoints', () => {
+		expect(setOf(lineCells({ x: 2, y: 0 }, { x: 2, y: 2 }))).toEqual(
+			setOf([
+				{ x: 2, y: 0 },
+				{ x: 2, y: 1 },
+				{ x: 2, y: 2 },
+			]),
+		);
+	});
+
+	test('a diagonal steps one cell per axis (Bresenham)', () => {
+		expect(lineCells({ x: 0, y: 0 }, { x: 2, y: 2 })).toEqual([
+			{ x: 0, y: 0 },
+			{ x: 1, y: 1 },
+			{ x: 2, y: 2 },
+		]);
+	});
+
+	test('a single cell when both endpoints coincide', () => {
+		expect(lineCells({ x: 1, y: 1 }, { x: 1, y: 1 })).toEqual([{ x: 1, y: 1 }]);
+	});
+});
+
+describe('paintCells', () => {
+	test('a wall is one rectangle stroke — terrain fills and grows the canvas', () => {
+		// A 5×3 field; paint a solid block reaching down past the content.
+		const doc = paintCells(
+			field(['.....', '.....', '#####']),
+			rectCells({ x: 0, y: 0 }, { x: 1, y: 4 }),
+			{ kind: 'terrain' },
+		);
+		expect(doc.rows.length).toBe(5); // grew to include y=4
+		for (const c of rectCells({ x: 0, y: 0 }, { x: 1, y: 4 }))
+			expect(cellAt(doc, c.x, c.y)).toBe('#');
+	});
+
+	test('painting one monster across cells reuses a single glyph', () => {
+		const doc = paintCells(
+			field(['.....', '#####']),
+			[
+				{ x: 0, y: 0 },
+				{ x: 2, y: 0 },
+			],
+			{ kind: 'monster', id: 'chaser' },
+		);
+		const spawns = doc.header.spawns as Record<string, unknown>;
+		expect(Object.keys(spawns)).toHaveLength(1);
+		const g = Object.keys(spawns)[0];
+		expect(cellAt(doc, 0, 0)).toBe(g);
+		expect(cellAt(doc, 2, 0)).toBe(g);
+	});
+});
+
+describe('eraseCells', () => {
+	test('erasing every instance garbage-collects the header entry', () => {
+		let doc = paintCells(
+			field(['.....', '#####']),
+			[
+				{ x: 0, y: 0 },
+				{ x: 2, y: 0 },
+			],
+			{ kind: 'monster', id: 'chaser' },
+		);
+		doc = eraseCells(doc, [
+			{ x: 0, y: 0 },
+			{ x: 2, y: 0 },
+		]);
+		expect(Object.keys(doc.header.spawns as object)).toHaveLength(0);
+	});
+});
+
+describe('placeableAt (eyedropper)', () => {
+	const doc: EditorDoc = {
+		header: { id: 'z', type: 'field', spawns: { a: 'chaser' }, npcs: {} },
+		rows: ['a#..', '####'],
+	};
+
+	test('adopts terrain under a `#`', () => {
+		expect(placeableAt(doc, 1, 0)).toEqual({ kind: 'terrain' });
+	});
+
+	test('adopts the catalog Placeable behind a declared glyph', () => {
+		expect(placeableAt(doc, 0, 0)).toEqual({ kind: 'monster', id: 'chaser' });
+	});
+
+	test('adopts nothing over an empty cell', () => {
+		expect(placeableAt(doc, 2, 0)).toBeUndefined();
+	});
+
+	test('adopts nothing over an undeclared glyph', () => {
+		expect(
+			placeableAt({ ...doc, rows: ['z...', '####'] }, 0, 0),
+		).toBeUndefined();
+	});
+});
+
+describe('copyRegion / pasteClip', () => {
+	const src: EditorDoc = {
+		header: { id: 'z', type: 'field', spawns: { a: 'chaser' }, npcs: {} },
+		rows: ['a#...', '.....', '#####'],
+	};
+
+	test('captures only the non-empty Placeables in the region', () => {
+		const clip = copyRegion(src, { x: 0, y: 0 }, { x: 2, y: 0 });
+		expect(clip.w).toBe(3);
+		expect(clip.h).toBe(1);
+		// `a` and `#` captured, the trailing `.` skipped.
+		expect(clip.cells).toHaveLength(2);
+	});
+
+	test('pastes the Placeables (not raw glyphs) at the new top-left', () => {
+		const clip = copyRegion(src, { x: 0, y: 0 }, { x: 1, y: 0 });
+		const doc = pasteClip(src, clip, 3, 1);
+		expect(placeableAt(doc, 3, 1)).toEqual({ kind: 'monster', id: 'chaser' });
+		expect(cellAt(doc, 4, 1)).toBe('#');
+		// The same monster id reuses its single header glyph — no duplicate, no orphan.
+		expect(Object.keys(doc.header.spawns as object)).toHaveLength(1);
+		expect(findOrphanGlyphs(serializeDoc(doc))).toEqual([]);
+	});
+});
+
+describe('deleteRegion', () => {
+	test('clears the region and GCs glyphs that vanish', () => {
+		const doc = deleteRegion(
+			{
+				header: { id: 'z', type: 'field', spawns: { a: 'chaser' }, npcs: {} },
+				rows: ['a#..', '####'],
+			},
+			{ x: 0, y: 0 },
+			{ x: 1, y: 0 },
+		);
+		expect(cellAt(doc, 0, 0)).toBe('.');
+		expect(cellAt(doc, 1, 0)).toBe('.');
+		expect(Object.keys(doc.header.spawns as object)).toHaveLength(0);
+	});
+});
+
+describe('moveRegion', () => {
+	test('relocates a Placeable block, leaving no orphan or duplicate', () => {
+		const doc = moveRegion(
+			{
+				header: { id: 'z', type: 'field', spawns: { a: 'chaser' }, npcs: {} },
+				rows: ['a....', '.....', '#####'],
+			},
+			{ x: 0, y: 0 },
+			{ x: 0, y: 0 },
+			2,
+			1,
+		);
+		expect(placeableAt(doc, 0, 0)).toBeUndefined();
+		expect(placeableAt(doc, 2, 1)).toEqual({ kind: 'monster', id: 'chaser' });
+		expect(Object.keys(doc.header.spawns as object)).toHaveLength(1);
+		expect(findOrphanGlyphs(serializeDoc(doc))).toEqual([]);
 	});
 });
