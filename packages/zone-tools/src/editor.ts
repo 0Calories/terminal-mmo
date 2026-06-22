@@ -199,7 +199,7 @@ export function editorStatusLine(m: StatusLineModel): string {
  *  (Rectangle/Line/Select drag A→B); the others act on the single cursor cell.
  *  `key` is the tool's mnemonic; it never collides with a movement key. */
 export interface ToolDef {
-	id: 'brush' | 'eraser' | 'eyedropper' | 'rectangle' | 'line' | 'select';
+	id: 'brush' | 'eraser' | 'rectangle' | 'line' | 'select' | 'stamp';
 	label: string;
 	key: string;
 	drag: boolean;
@@ -207,14 +207,18 @@ export interface ToolDef {
 
 export type ToolId = ToolDef['id'];
 
-/** The six modal tools, in palette order. Flood-fill is deferred (#95 scope). */
+/**
+ * The six modal tools, in palette order (#114). Brush/Rectangle/Line paint terrain
+ * only; Stamp places entities via its modal picker; Select is the region clipboard.
+ * The Eyedropper was dropped with the bottom palette bar. Flood-fill is deferred.
+ */
 export const TOOLS: readonly ToolDef[] = [
 	{ id: 'brush', label: 'Brush', key: 'b', drag: false },
 	{ id: 'eraser', label: 'Eraser', key: 'e', drag: false },
-	{ id: 'eyedropper', label: 'Eyedropper', key: 'i', drag: false },
 	{ id: 'rectangle', label: 'Rectangle', key: 'r', drag: true },
 	{ id: 'line', label: 'Line', key: 'g', drag: true },
 	{ id: 'select', label: 'Select', key: 'v', drag: true },
+	{ id: 'stamp', label: 'Stamp', key: 'p', drag: false },
 ];
 
 /**
@@ -526,45 +530,142 @@ export function groundSnap(
 	return { x, y };
 }
 
+// --- Center-origin placement + footprint hit-test (#114) -----------------------
+
+/** The renderer's entity draw order (render.ts): monsters draw last and sit on
+ *  top, then NPCs, then portals. A higher rank means "in front" on overlap. */
+const ENTITY_LAYER: Record<Placeable['kind'], number> = {
+	monster: 3,
+	npc: 2,
+	portal: 1,
+	terrain: 0,
+};
+
+/**
+ * Convert a CENTER-origin cursor to the stored TOP-LEFT glyph anchor (ADR 0008).
+ * The cursor tracks the sprite's visual centre horizontally — `x = cx - floor(w/2)`
+ * always — while the existing free-place toggle owns the vertical anchor AND the
+ * snap, so there is never a per-cell auto-jump:
+ *   - free-place ON  → the box is centred on the cursor (`cy - floor(h/2)`), dropped
+ *     exactly where aimed (incl. mid-air).
+ *   - free-place OFF → the cursor is the entity's feet (`cy - (h-1)`), then
+ *     `groundSnap` drops the box onto the nearest surface at or below it.
+ * One conversion shared by the ghost preview, `stampAt`, and the erase hit-test so
+ * none of them can drift from where the glyph actually lands. Terrain (1×1) maps
+ * the cursor straight through to the anchor. Zero file-format/engine change.
+ */
+export function cursorToAnchor(
+	doc: EditorDoc,
+	p: Placeable,
+	cx: number,
+	cy: number,
+	freePlace: boolean,
+): Point {
+	const { w, h } = footprintBox(p, 0, 0);
+	const x = cx - Math.floor(w / 2);
+	if (freePlace) return { x, y: cy - Math.floor(h / 2) };
+	return groundSnap(doc, p, x, cy - (h - 1));
+}
+
+/** An entity glyph located by a footprint hit-test: its stored top-left origin and
+ *  the resolved Placeable. */
+export interface EntityHit {
+	originX: number;
+	originY: number;
+	placeable: Placeable;
+}
+
+/**
+ * The renderer-topmost entity whose footprint covers `(x, y)`, or `undefined`.
+ * Entities store only their origin glyph, so the rest of the footprint is empty
+ * grid — this reverse-lookup scans every placed entity glyph (row-major, as
+ * `parseZone` does), keeps those whose `footprintBox` contains the cell, and
+ * returns the one the author sees on top: ordered by render layer
+ * (monster > npc > portal), then larger anchor `y` (drawn later → in front), then
+ * later in the scan. Deterministic from the doc and survives save/reload. The one
+ * shared hit-test behind erase-anywhere now, and move + edit-on-click (#97) later.
+ * Terrain is not an entity (it has no footprint to grab).
+ */
+export function entityAt(
+	doc: EditorDoc,
+	x: number,
+	y: number,
+): EntityHit | undefined {
+	const ext = editorExtent(doc);
+	const hits: { hit: EntityHit; scan: number }[] = [];
+	let scan = 0;
+	for (let oy = 0; oy < ext.h; oy++)
+		for (let ox = 0; ox < ext.w; ox++) {
+			const p = placeableAt(doc, ox, oy);
+			if (!p || p.kind === 'terrain') continue;
+			const order = scan++;
+			const b = footprintBox(p, ox, oy);
+			if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)
+				hits.push({
+					hit: { originX: ox, originY: oy, placeable: p },
+					scan: order,
+				});
+		}
+	if (hits.length === 0) return undefined;
+	hits.sort(
+		(a, b) =>
+			ENTITY_LAYER[b.hit.placeable.kind] - ENTITY_LAYER[a.hit.placeable.kind] ||
+			b.hit.originY - a.hit.originY ||
+			b.scan - a.scan,
+	);
+	return hits[0].hit;
+}
+
 // --- Interactive shell (opentui; not unit-tested, validated by eye) -----------
 
 // Editor frame geometry. The scene fills the buffer; the rulers + footer overpaint
 // its edges, so the visible canvas is the inset region.
 const RULER_H = 1; // top column ruler
 const GUTTER_W = 4; // left row ruler (up to 3 digits + tick)
-const FOOTER_H = 3; // tool bar + status line + palette bar
+const FOOTER_H = 3; // tool bar + status line + stamp/hint line
 const SCROLLOFF = 4; // edit-scroll margin before the viewport follows
 const ROAM_MARGIN = 16; // virgin space the cursor may roam past the content
 
-/** One Placeable the editor can stamp, with its display label (flattened from the
- *  Palette groups; stub slots without a Placeable are skipped). */
-interface PaletteEntry {
+/** Terrain is the only non-entity Placeable, so Brush/Rectangle/Line just paint it
+ *  (no selector). Entities are chosen in the Stamp tool's modal picker (#114). */
+const TERRAIN: Placeable = { kind: 'terrain' };
+
+/** One entity the Stamp picker can place, with its display label and group. */
+interface PickerEntry {
 	label: string;
+	group: string;
 	placeable: Placeable;
 }
 
-function flattenPalette(catalogs: Catalogs): PaletteEntry[] {
-	return buildPalette(catalogs).flatMap((g) =>
-		g.items.flatMap((i) =>
-			i.placeable ? [{ label: i.label, placeable: i.placeable }] : [],
-		),
-	);
+/** The Stamp picker's entries: the catalog Monsters + NPCs (Terrain is implicit,
+ *  Structures/portals arrive with #97). Group labels are kept for the modal's
+ *  section headers. */
+function entityPalette(catalogs: Catalogs): PickerEntry[] {
+	return buildPalette(catalogs)
+		.filter((g) => g.label === 'Monsters' || g.label === 'NPCs')
+		.flatMap((g) =>
+			g.items.flatMap((i) =>
+				i.placeable
+					? [{ label: i.label, group: g.label, placeable: i.placeable }]
+					: [],
+			),
+		);
 }
 
 /**
  * `zone edit <id>`: mount the entity-centric editor over an authored Zone. A
  * single crosshair cursor roams a free-growing canvas with wasd / vim (hjkl) /
- * arrow keys. Six modal Tools (#95) drive the canvas: Brush stamps the active
- * Placeable, Eraser clears, Eyedropper adopts the Placeable under the cursor,
- * Rectangle/Line drag a region A→B (anchor on `space`, commit on `space`), and
- * Select captures a region for copy (`c`) / cut (`x`) / paste (`p`) / delete.
- * Tools switch by mnemonic key, `1`-`6`, or a click on the tool bar; with a
- * mouse, click/drag drives the cursor and middle-mouse free-pans the camera —
- * but every Tool is fully reachable with no mouse (SSH/tmux parity). `tab` cycles
- * the Placeable, `^s` saves (trimming the trailing empties), `q` quits. The
- * rulers, crosshair, status/tool/palette bars are drawn here and validated by eye
- * (PRD); all geometry comes from the pure helpers above. Reuses the shared
- * renderer (#56) and the lossless `EditorDoc`, so nothing is lost on a round-trip.
+ * arrow keys. Six modal Tools drive the canvas (#114): Brush/Rectangle/Line paint
+ * terrain only, Eraser removes whatever entity or terrain the cursor covers, Stamp
+ * opens a modal picker then places the chosen entity (center-origin, ground-snapped),
+ * and Select captures a region for copy (`c`) / cut (`x`) / paste (`y`) / delete.
+ * Tools switch by mnemonic key, `1`-`6`, or a click on the tool bar; with a mouse,
+ * click/drag drives the cursor and middle-mouse free-pans the camera — but every
+ * Tool is fully reachable with no mouse (SSH/tmux parity). `f` toggles ground-snap
+ * vs. free-place, `^s` saves (trimming the trailing empties), `q` quits. The rulers,
+ * crosshair, status/tool bars and Stamp picker are drawn here and validated by eye
+ * (PRD); all geometry comes from the pure helpers above. Reuses the shared renderer
+ * (#56) and the lossless `EditorDoc`, so nothing is lost on a round-trip.
  * Long-lived: opentui owns the process lifecycle (ctrl-c / q exit).
  */
 export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
@@ -588,8 +689,11 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let doc = parseDoc(loaded.text);
 	const cursor = { x: 0, y: 0 };
 	const cam: Cam = { x: 0, y: 0 };
-	const palette = flattenPalette(catalogs);
-	let selIdx = 0; // active Placeable (defaults to Terrain Solid)
+	const picker = entityPalette(catalogs); // entities the Stamp tool can place
+	let stampP: Placeable | undefined; // the entity Stamp will place (picked in the modal)
+	let stampLabel = ''; // its display label (for the hint line)
+	let pickerOpen = false; // the Stamp modal is capturing input
+	let pickerIdx = 0; // highlighted row in the picker
 	let toolIdx = 0; // active Tool (defaults to Brush)
 	let anchor: Point | null = null; // in-progress drag gesture start (rect/line/select)
 	let selection: { a: Point; b: Point } | null = null; // captured Select region
@@ -603,11 +707,12 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let pendingQuit = false;
 
 	// Footer hit-test spans, recomputed each frame so mouse clicks select the Tool
-	// / Placeable under the pointer (keyboard parity is the canonical path).
+	// under the pointer (keyboard parity is the canonical path). The Stamp picker's
+	// rows get their own hit-test while it is open.
 	let frameW = 0;
 	let frameH = 0;
 	let toolHits: { x0: number; x1: number; idx: number }[] = [];
-	let paletteHits: { x0: number; x1: number; idx: number }[] = [];
+	let pickerHits: { x0: number; x1: number; y: number; idx: number }[] = [];
 
 	const recompute = () => {
 		dirty = serializeDoc(trimDoc(doc)) !== savedText;
@@ -726,22 +831,15 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				tint(cells, C.gestureBg);
 			}
 
-			// Ghost footprint (#96): while a Brush holds an entity Placeable, preview the
-			// 5×5 / 4×5 / 4×7 collision box at the spot it will actually land (ground-
-			// snapped unless free-place), tinted by its placement state — green grounded,
-			// blue airborne, red clipping/off-canvas — so floating/clipping entities are
-			// visible before they're stamped. Drawn under the cursor marker, which is
-			// re-stamped on top so it stays crisp.
-			const ghostP = palette[selIdx]?.placeable;
-			if (
-				ghostP &&
-				ghostP.kind !== 'terrain' &&
-				TOOLS[toolIdx].id === 'brush' &&
-				!anchor
-			) {
-				const a = freePlace
-					? cursor
-					: groundSnap(doc, ghostP, cursor.x, cursor.y);
+			// Ghost footprint (#96/#114): while the Stamp tool holds a picked entity,
+			// preview its 5×5 / 4×5 / 4×7 collision box at the spot it will actually land.
+			// The cursor is the sprite's CENTER (or feet when ground-snapping): one
+			// `cursorToAnchor` conversion feeds the ghost, the stamp, and the erase
+			// hit-test, so the box is tinted by its real placement state — green grounded,
+			// blue airborne, red clipping/off-canvas — and can't drift from where it lands.
+			const ghostP = stampP;
+			if (ghostP && TOOLS[toolIdx].id === 'stamp' && !anchor) {
+				const a = cursorToAnchor(doc, ghostP, cursor.x, cursor.y, freePlace);
 				const box = footprintBox(ghostP, a.x, a.y);
 				const st = placementState(doc, ghostP, a.x, a.y);
 				const bg =
@@ -826,52 +924,114 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				toolHits.push({ x0: tx, x1: tx + seg.length, idx: i });
 				tx += seg.length;
 			}
-			// Placement-mode badge (#96): which way the active entity Brush will drop.
-			const ghostMode = palette[selIdx]?.placeable;
-			if (ghostMode && ghostMode.kind !== 'terrain') {
+			// Placement-mode badge (#96): which way the Stamp entity will drop.
+			if (TOOLS[toolIdx].id === 'stamp' && stampP) {
 				const badge = freePlace ? 'free-place (f)' : 'ground-snap (f)';
 				const bx = Math.max(tx + 1, W - badge.length);
 				if (bx < W) buf.drawText(badge, bx, toolbarRow, C.dimFg, C.chromeBg);
 			}
 
-			// Status bar (now reflects the active Tool).
+			// Status bar (reflects the active Tool; entity = the picked Stamp, if any).
 			const statusRow = H - 2;
 			buf.fillRect(0, statusRow, W, 1, C.chromeBg);
+			const isStamp = TOOLS[toolIdx].id === 'stamp';
 			const status = editorStatusLine({
 				tool: TOOLS[toolIdx].label,
-				placeable: palette[selIdx]?.label ?? '—',
+				placeable: isStamp ? stampLabel || '— pick (p)' : 'Terrain',
 				cursor,
 				dirty,
 				diags,
 			});
 			buf.drawText(status.slice(0, W), 0, statusRow, C.textFg, C.chromeBg);
 
-			// Palette bar: groups with the active Placeable bracketed + highlighted.
-			const paletteRow = H - 1;
-			buf.fillRect(0, paletteRow, W, 1, C.chromeBg);
-			paletteHits = [];
-			let px = 0;
-			for (let i = 0; i < palette.length && px < W; i++) {
-				const active = i === selIdx;
-				const seg = active ? `[${palette[i].label}]` : ` ${palette[i].label} `;
-				buf.drawText(
-					seg.slice(0, W - px),
-					px,
-					paletteRow,
-					active ? C.hot : C.dimFg,
-					C.chromeBg,
-				);
-				paletteHits.push({ x0: px, x1: px + seg.length, idx: i });
-				px += seg.length;
-			}
+			// Hint line: context help (the bottom palette bar + `tab` are retired, #114).
+			const hintRow = H - 1;
+			buf.fillRect(0, hintRow, W, 1, C.chromeBg);
+			const hint = isStamp
+				? stampP
+					? `Stamp: ${stampLabel} · space/click place · p re-pick`
+					: 'Stamp: press p (or click the tool) to pick an entity'
+				: 'Brush/Rect/Line paint terrain · Eraser removes · Stamp (p) places entities';
+			buf.drawText(hint.slice(0, W), 0, hintRow, C.dimFg, C.chromeBg);
+			const px = Math.min(hint.length + 2, W - 1);
 			if (pendingQuit && px < W)
 				buf.drawText(
 					'  unsaved — q again to discard, ^s to save',
-					Math.min(px, W - 1),
-					paletteRow,
+					px,
+					hintRow,
 					C.hot,
 					C.chromeBg,
 				);
+
+			// Stamp entity-picker modal (#114): a bordered panel (the `drawOverheadBox`
+			// pattern from playfield.ts) over the canvas, grouped Monsters / NPCs, the
+			// highlighted row bracketed. Drawn LAST so it sits on top; its rows are
+			// hit-tested for a mouse click. Keys are captured by `pickerOpen` early-return.
+			pickerHits = [];
+			if (pickerOpen) {
+				const rows: { text: string; idx: number; header: boolean }[] = [];
+				let group = '';
+				for (let i = 0; i < picker.length; i++) {
+					if (picker[i].group !== group) {
+						group = picker[i].group;
+						rows.push({ text: group, idx: -1, header: true });
+					}
+					rows.push({ text: picker[i].label, idx: i, header: false });
+				}
+				const title = ' Pick an entity ';
+				const innerW = Math.max(
+					title.length,
+					...rows.map((r) => r.text.length + 4),
+					18,
+				);
+				const boxW = innerW + 2;
+				const boxH = rows.length + 3; // title row + rows + 2 borders
+				const ox = Math.max(0, Math.floor((W - boxW) / 2));
+				const oy = Math.max(RULER_H, Math.floor((H - boxH) / 2));
+				const line = (s: string) => (s + ' '.repeat(boxW)).slice(0, boxW);
+				buf.fillRect(ox, oy, boxW, boxH, C.chromeBg);
+				buf.drawText(
+					line(`┌${title}${'─'.repeat(boxW - 2 - title.length)}┐`),
+					ox,
+					oy,
+					C.tickFg,
+					C.chromeBg,
+				);
+				let ry = oy + 1;
+				for (const r of rows) {
+					if (r.header) {
+						buf.drawText(line(`│ ${r.text}`), ox, ry, C.dimFg, C.chromeBg);
+						buf.setCell(ox + boxW - 1, ry, '│', C.tickFg, C.chromeBg);
+					} else {
+						const active = r.idx === pickerIdx;
+						const num = r.idx < 9 ? `${r.idx + 1} ` : '  ';
+						const label = `${num}${r.text}`;
+						const seg = active ? `[${label}]` : ` ${label} `;
+						buf.setCell(ox, ry, '│', C.tickFg, C.chromeBg);
+						buf.drawText(
+							`  ${seg}`.slice(0, boxW - 2),
+							ox + 1,
+							ry,
+							active ? C.hot : C.textFg,
+							C.chromeBg,
+						);
+						buf.setCell(ox + boxW - 1, ry, '│', C.tickFg, C.chromeBg);
+						pickerHits.push({ x0: ox, x1: ox + boxW, y: ry, idx: r.idx });
+					}
+					ry++;
+				}
+				buf.drawText(
+					line(`└${'─'.repeat(boxW - 2)}┘`),
+					ox,
+					ry,
+					C.tickFg,
+					C.chromeBg,
+				);
+				ry++;
+				const foot = ' ↑/↓ jk · Enter · 1-9 · Esc ';
+				if (ry < oy + boxH + 1)
+					buf.drawText(foot.slice(0, boxW), ox, oy + boxH, C.dimFg, C.chromeBg);
+			}
 		}
 	}
 
@@ -899,37 +1059,42 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	};
 
 	const activeTool = () => TOOLS[toolIdx];
-	const activeP = () => palette[selIdx]?.placeable;
 
-	/** The palette index whose Placeable matches `p` (Eyedropper → reselect). */
-	const paletteIndexOf = (p: Placeable): number =>
-		palette.findIndex((e) => {
-			const q = e.placeable;
-			if (q.kind !== p.kind) return false;
-			if (q.kind === 'monster' && p.kind === 'monster') return q.id === p.id;
-			if (q.kind === 'npc' && p.kind === 'npc') return q.id === p.id;
-			if (q.kind === 'portal' && p.kind === 'portal')
-				return q.target === p.target;
-			return q.kind === 'terrain';
-		});
-
-	// Where an entity actually lands: ground-snapped by default (#96), or exactly at
-	// the cursor when free-place is on. Terrain never snaps.
-	const placeAnchor = (x: number, y: number): Point => {
-		const p = activeP();
-		if (!p || freePlace) return { x, y };
-		return groundSnap(doc, p, x, y);
+	// Open / close the Stamp picker. Selecting the Stamp tool with no entity yet
+	// opens it automatically; confirming keeps the tool active for "pick once, stamp
+	// many". An empty catalog (no entities to pick) never opens.
+	const openPicker = () => {
+		if (picker.length === 0) return;
+		pickerOpen = true;
+		const cur = picker.findIndex((e) => e.placeable === stampP);
+		pickerIdx = cur >= 0 ? cur : 0;
+	};
+	const confirmPicker = (i: number) => {
+		if (i >= 0 && i < picker.length) {
+			stampP = picker[i].placeable;
+			stampLabel = picker[i].label;
+		}
+		pickerOpen = false;
 	};
 
-	const stampAt = (x: number, y: number) => {
-		const p = activeP();
-		if (!p) return;
-		const a = placeAnchor(x, y);
-		doc = place(growToInclude(doc, a.x, a.y), a.x, a.y, p);
+	// Paint terrain `#` at a cell (Brush / Rectangle / Line are terrain-only, #114).
+	const paintAt = (x: number, y: number) => {
+		doc = place(growToInclude(doc, x, y), x, y, TERRAIN);
 		recompute();
 	};
+	// Stamp the picked entity: the cursor is its CENTER, converted to the stored
+	// top-left anchor (ground-snapped unless free-place) by the shared `cursorToAnchor`.
+	const stampAt = (x: number, y: number) => {
+		if (!stampP) return openPicker();
+		const a = cursorToAnchor(doc, stampP, x, y, freePlace);
+		doc = place(growToInclude(doc, a.x, a.y), a.x, a.y, stampP);
+		recompute();
+	};
+	// Erase whatever the cell covers: the topmost entity whose footprint contains it
+	// (removed at its origin), else the exact cell — so any part of a sprite erases it.
 	const eraseAt = (x: number, y: number) => {
-		doc = erase(doc, x, y);
+		const hit = entityAt(doc, x, y);
+		doc = hit ? erase(doc, hit.originX, hit.originY) : erase(doc, x, y);
 		recompute();
 	};
 
@@ -937,19 +1102,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	// the anchor (press A, then press B to commit); the rest act immediately.
 	const toolPrimary = () => {
 		const t = activeTool();
-		if (t.id === 'brush') return stampAt(cursor.x, cursor.y);
+		if (t.id === 'brush') return paintAt(cursor.x, cursor.y);
 		if (t.id === 'eraser') return eraseAt(cursor.x, cursor.y);
-		if (t.id === 'eyedropper') {
-			const picked = placeableAt(doc, cursor.x, cursor.y);
-			if (picked) {
-				const idx = paletteIndexOf(picked);
-				if (idx >= 0) {
-					selIdx = idx;
-					toolIdx = 0; // hop back to Brush, ready to paint what was adopted
-				}
-			}
-			return;
-		}
+		if (t.id === 'stamp') return stampAt(cursor.x, cursor.y);
 		// Rectangle / Line / Select: first press anchors, second commits.
 		if (!anchor) {
 			anchor = { x: cursor.x, y: cursor.y };
@@ -963,12 +1118,12 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		const a = anchor;
 		const b = { x: cursor.x, y: cursor.y };
 		const t = activeTool();
-		const p = activeP();
-		if (t.id === 'rectangle' && p) {
-			doc = paintCells(doc, rectCells(a, b), p);
+		// Rectangle / Line paint terrain only (#114); Select captures the region.
+		if (t.id === 'rectangle') {
+			doc = paintCells(doc, rectCells(a, b), TERRAIN);
 			recompute();
-		} else if (t.id === 'line' && p) {
-			doc = paintCells(doc, lineCells(a, b), p);
+		} else if (t.id === 'line') {
+			doc = paintCells(doc, lineCells(a, b), TERRAIN);
 			recompute();
 		} else if (t.id === 'select') {
 			selection = { a, b };
@@ -990,32 +1145,42 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		panned = false;
 	};
 	let panLast: Point | null = null;
+	let stampDrag = false; // an entity drag-place is in flight (commit one on release)
 
 	view.onMouseDown = (e: { button: number; x: number; y: number }) => {
 		pendingQuit = false;
+		// The Stamp picker modal eats clicks: a row confirms, anywhere else cancels.
+		if (pickerOpen) {
+			const hit = pickerHits.find(
+				(h) => e.y === h.y && e.x >= h.x0 && e.x < h.x1,
+			);
+			if (hit) confirmPicker(hit.idx);
+			else pickerOpen = false;
+			return;
+		}
 		if (e.button === 1) {
 			panLast = { x: e.x, y: e.y }; // middle-mouse: begin free pan
 			return;
 		}
 		if (e.button !== 0) return;
-		// Tool / palette bar clicks select without touching the canvas.
+		// Tool bar clicks select the Tool (and open the picker for Stamp).
 		if (e.y === frameH - FOOTER_H) {
 			const hit = toolHits.find((h) => e.x >= h.x0 && e.x < h.x1);
 			if (hit) {
 				toolIdx = hit.idx;
 				anchor = null;
+				if (TOOLS[hit.idx].id === 'stamp' && !stampP) openPicker();
 			}
-			return;
-		}
-		if (e.y === frameH - 1) {
-			const hit = paletteHits.find((h) => e.x >= h.x0 && e.x < h.x1);
-			if (hit) selIdx = hit.idx;
 			return;
 		}
 		if (!inCanvasRegion(e.x, e.y)) return;
 		const w = toWorld(e.x, e.y);
 		moveCursorTo(w.x, w.y);
-		if (activeTool().drag) anchor = { x: cursor.x, y: cursor.y };
+		const t = activeTool();
+		// Drag tools anchor on down; Stamp picks up a ghost (commit one on release);
+		// Brush/Eraser act immediately and drag-paint.
+		if (t.drag) anchor = { x: cursor.x, y: cursor.y };
+		else if (t.id === 'stamp') stampDrag = true;
 		else toolPrimary();
 	};
 
@@ -1030,15 +1195,22 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		if (e.button !== 0 || !inCanvasRegion(e.x, e.y)) return;
 		const w = toWorld(e.x, e.y);
 		moveCursorTo(w.x, w.y);
-		// Terrain/entity Brush drag-paints continuously; Eraser drag-erases. Drag
-		// tools just trail the cursor — the region preview follows for free.
-		if (activeTool().id === 'brush') stampAt(cursor.x, cursor.y);
+		// Terrain Brush drag-paints continuously; Eraser drag-erases. Stamp's ghost
+		// just trails the cursor (one entity on release); drag tools trail for the preview.
+		if (activeTool().id === 'brush') paintAt(cursor.x, cursor.y);
 		else if (activeTool().id === 'eraser') eraseAt(cursor.x, cursor.y);
 	};
 
 	const endDrag = (e: { button: number }) => {
 		if (panLast && e.button === 1) {
 			panLast = null;
+			return;
+		}
+		// Stamp drag-place commits ONE entity at the release point (a plain click is a
+		// zero-length drag → one placement).
+		if (stampDrag) {
+			stampDrag = false;
+			stampAt(cursor.x, cursor.y);
 			return;
 		}
 		if (anchor) commitGesture(); // safe: commitGesture clears the anchor
@@ -1062,15 +1234,41 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	renderer.keyInput.on('keypress', (k: { name: string; ctrl: boolean }) => {
 		const wasPendingQuit = pendingQuit;
 		pendingQuit = false;
+
+		// The Stamp picker modal captures all keys while open (#114): navigate the
+		// entity list, Enter / a digit confirms, Esc cancels — like `pendingQuit`.
+		if (pickerOpen) {
+			if (k.name === 'escape') {
+				pickerOpen = false;
+			} else if (k.name === 'up' || k.name === 'k') {
+				pickerIdx = (pickerIdx - 1 + picker.length) % picker.length;
+			} else if (k.name === 'down' || k.name === 'j') {
+				pickerIdx = (pickerIdx + 1) % picker.length;
+			} else if (
+				k.name === 'return' ||
+				k.name === 'enter' ||
+				k.name === 'space'
+			) {
+				confirmPicker(pickerIdx);
+			} else {
+				const n = Number.parseInt(k.name, 10);
+				if (String(n) === k.name && n >= 1 && n <= picker.length)
+					confirmPicker(n - 1);
+			}
+			return;
+		}
+
 		// Save is ^s so the bare `s` (and the rest of wasd) is free for movement.
 		if (k.ctrl && k.name === 's') return save();
 
 		// Tool selection (mnemonic letter or 1-6 digit). These never collide with a
-		// movement key, so they're safe to intercept before the movement switch.
+		// movement key, so they're safe to intercept before the movement switch. The
+		// Stamp tool (`p`/`6`) opens its picker — so re-pressing it re-picks the entity.
 		const tool = toolByKey(k.name);
 		if (tool) {
 			toolIdx = TOOLS.indexOf(tool);
 			anchor = null;
+			if (tool.id === 'stamp') openPicker();
 			return;
 		}
 
@@ -1112,7 +1310,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				if (hasSelection() && selection)
 					clip = copyRegion(doc, selection.a, selection.b);
 				return;
-			case 'p': // paste the clipboard at the cursor (any tool)
+			case 'y': // paste the clipboard at the cursor (any tool); `p` is the Stamp tool
 				if (clip) {
 					doc = pasteClip(doc, clip, cursor.x, cursor.y);
 					recompute();
@@ -1139,9 +1337,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				} else {
 					eraseAt(cursor.x, cursor.y);
 				}
-				return;
-			case 'tab':
-				if (palette.length > 0) selIdx = (selIdx + 1) % palette.length;
 				return;
 			case 'q':
 				if (dirty && !wasPendingQuit) {
