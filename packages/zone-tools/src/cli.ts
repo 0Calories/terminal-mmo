@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import type { Diagnostic, ZoneType } from '@mmo/shared';
-import { validateZone, validateZoneSet } from '@mmo/shared';
+import { findOrphanGlyphs, validateZone, validateZoneSet } from '@mmo/shared';
 import { formatDiagnostics } from './diagnostics';
 import {
 	loadCatalogs,
@@ -60,14 +60,17 @@ function cmdRender(args: string[], deps: CliDeps): number {
 		return 1;
 	}
 	const catalogs = loadCatalogs(deps.root);
-	const { zone, parseError } = loadZone(deps.root, id, catalogs);
+	const { zone, parseError, text } = loadZone(deps.root, id, catalogs);
 	if (!zone) {
 		deps.log(`render: cannot load '${id}': ${parseError}`);
 		return 1;
 	}
 	deps.log(renderZone(zone));
 	deps.log('');
-	const diags = validateZone(zone, catalogs);
+	const diags = [
+		...validateZone(zone, catalogs),
+		...findOrphanGlyphs(text ?? ''),
+	];
 	reportDiagnostics(diags, deps);
 	return hasError(diags) ? 1 : 0;
 }
@@ -89,7 +92,15 @@ function cmdCheck(args: string[], deps: CliDeps): number {
 			message: `parse failed: ${l.parseError}`,
 		}));
 	const zones = loaded.flatMap((l) => (l.zone ? [l.zone] : []));
-	const diags = [...parseErrors, ...validateZoneSet(zones, catalogs)];
+	// Orphan glyphs need the raw source, which the parsed Zone has discarded.
+	const orphans = loaded.flatMap((l) =>
+		l.text ? findOrphanGlyphs(l.text) : [],
+	);
+	const diags = [
+		...parseErrors,
+		...validateZoneSet(zones, catalogs),
+		...orphans,
+	];
 
 	if (zones.length === 0 && parseErrors.length === 0)
 		deps.log(`check: no .zone files found in ${dir}`);
