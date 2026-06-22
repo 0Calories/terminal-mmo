@@ -13,7 +13,7 @@
     },
     "packages/cli": {
       "name": "terminal-mmo",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "bin": {
         "terminal-mmo": "./dist/cli.js",
       },
@@ -52,6 +52,7 @@
       },
       "dependencies": {
         "@mmo/shared": "workspace:*",
+        "@opentui/core": "^0.4.1",
       },
     },
   },

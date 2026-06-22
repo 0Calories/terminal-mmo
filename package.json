@@ -13,6 +13,7 @@
 		"build:cli": "bun run packages/cli/build.ts",
 		"zone": "bun run packages/zone-tools/bin/zone.ts",
 		"zones:check": "bun run packages/zone-tools/bin/zone.ts check",
+		"zones:preview": "bun run packages/zone-tools/bin/zone.ts preview",
 		"test": "bun test",
 		"typecheck": "bun run --filter '*' typecheck",
 		"lint": "biome lint .",

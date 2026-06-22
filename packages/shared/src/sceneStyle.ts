@@ -1,0 +1,62 @@
+import type { RenderStyle } from './render';
+
+// The static Zone scene's colour DATA, as plain RGBA int tuples — the single
+// source of truth shared by the game (client) and `zone preview` (zone-tools),
+// so the preview is faithful ("what you see is what ships", #56). It is data
+// only: @mmo/shared stays opentui-free, and each consumer binds its own colour
+// type (opentui `RGBA.fromInts`) via `buildSceneStyle`.
+export type RGBAQuad = readonly [number, number, number, number];
+
+// Chrome the static renderer needs (mirrors the subset of the client theme that
+// `RenderStyle` consumes). `nameplate` is the client's dim text; `paletteDefault`
+// is its bright HUD colour, used for sprite glyphs whose key isn't in the palette.
+export const SCENE_COLORS = {
+	bg: [16, 18, 26, 255],
+	terrainFg: [70, 82, 104, 255],
+	terrainBg: [34, 40, 54, 255],
+	portal: [180, 130, 255, 255],
+	transparent: [0, 0, 0, 0],
+	hurt: [255, 240, 120, 255],
+	nameplate: [150, 156, 168, 255],
+	paletteDefault: [232, 232, 238, 255],
+} as const satisfies Record<string, RGBAQuad>;
+
+// The recolourable art palette, keyed by a Sprite's single-char colour codes.
+export const SCENE_PALETTE = {
+	p: [255, 150, 40, 255],
+	m: [220, 90, 90, 255],
+	g: [170, 240, 95, 255],
+	s: [186, 196, 210, 255],
+	w: [150, 96, 52, 255],
+	y: [242, 210, 92, 255],
+	e: [236, 190, 150, 255],
+	f: [110, 200, 110, 255],
+	c: [132, 222, 230, 255],
+	o: [232, 230, 216, 255],
+	k: [64, 66, 82, 255],
+} as const satisfies Record<string, RGBAQuad>;
+
+/** Build a colour `C` from an RGBA int tuple (e.g. opentui's `RGBA.fromInts`). */
+export type ColorFactory<C> = (r: number, g: number, b: number, a: number) => C;
+
+/**
+ * Resolve the shared scene colour data into a `RenderStyle<C>` using a caller-
+ * supplied colour factory. One place builds the style so the game and the
+ * `zone preview` can't drift apart.
+ */
+export function buildSceneStyle<C>(toColor: ColorFactory<C>): RenderStyle<C> {
+	const c = (q: RGBAQuad) => toColor(q[0], q[1], q[2], q[3]);
+	const palette: Record<string, C> = {};
+	for (const [k, q] of Object.entries(SCENE_PALETTE)) palette[k] = c(q);
+	return {
+		bg: c(SCENE_COLORS.bg),
+		terrainFg: c(SCENE_COLORS.terrainFg),
+		terrainBg: c(SCENE_COLORS.terrainBg),
+		portal: c(SCENE_COLORS.portal),
+		transparent: c(SCENE_COLORS.transparent),
+		hurt: c(SCENE_COLORS.hurt),
+		nameplate: c(SCENE_COLORS.nameplate),
+		palette,
+		paletteDefault: c(SCENE_COLORS.paletteDefault),
+	};
+}

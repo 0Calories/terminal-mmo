@@ -3,6 +3,7 @@ import {
 	aabbOverlap,
 	activeZone,
 	BOX,
+	buildSceneStyle,
 	COMBAT,
 	drawEntitySprite,
 	entityBox,
@@ -19,27 +20,18 @@ import {
 	Renderable,
 	type RenderableOptions,
 	type RenderContext,
-	type RGBA,
+	RGBA,
 } from '@opentui/core';
 import { layoutBubble } from './bubble';
 import { type CameraState, initCameraState, stepCamera } from './camera';
-import { PALETTE } from './sprites';
 import { COLORS as C } from './theme';
 
 // The colour binding for the shared, framework-agnostic renderer (@mmo/shared):
-// chrome colours from theme.ts + the recolourable art PALETTE. The same static
-// scene logic drives the game here and the zone-tools preview.
-const STYLE: RenderStyle<RGBA> = {
-	bg: C.bg,
-	terrainFg: C.terrainFg,
-	terrainBg: C.terrainBg,
-	portal: C.portal,
-	transparent: C.transparent,
-	hurt: C.hurt,
-	nameplate: C.dim,
-	palette: PALETTE,
-	paletteDefault: C.hud,
-};
+// resolved from the shared scene colour DATA so the game and the zone-tools
+// preview render from one source and can't drift (#56).
+const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
+	RGBA.fromInts(r, g, b, a),
+);
 
 // An over-head Speech bubble for the sender's latest Chat line (#59, ADR 0007):
 // a bordered, opaque box with a downward tail, anchored above the nameplate and

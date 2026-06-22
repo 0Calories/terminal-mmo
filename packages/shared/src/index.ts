@@ -8,6 +8,7 @@ export * from './projectile';
 export * from './protocol';
 export * from './render';
 export * from './rng';
+export * from './sceneStyle';
 export * from './serverWorld';
 export * from './sim';
 export * from './skills';
