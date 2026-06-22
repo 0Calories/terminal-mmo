@@ -16,7 +16,7 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: read
+  contents: write # create the GitHub Release at the end
   id-token: write # required for npm Trusted Publishing (OIDC) + provenance
 
 env:
@@ -100,4 +100,15 @@ jobs:
           MMO_VERSION: ${{ env.VERSION }}
         run: |
           npm version "$VERSION" --no-git-tag-version --allow-same-version
+          # Drop the workspace-only devDependencies (@mmo/client, @mmo/shared,
+          # `workspace:*`): npm can't parse that protocol, and they're build-time
+          # only — the bundle inlines them, so nothing ships them. bun resolves the
+          # build from the root workspace node_modules regardless.
+          npm pkg delete devDependencies
           npm publish --access public
+
+      # --- Record the release on GitHub (notes + history) ------------------------
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
