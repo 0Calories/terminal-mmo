@@ -11,6 +11,9 @@ export interface LoadedZone {
 	id: string;
 	zone?: Zone;
 	parseError?: string;
+	// Raw file text, kept so the CLI can run checks that need the original source
+	// (e.g. orphan header glyphs, which parseZone discards). Absent if unreadable.
+	text?: string;
 }
 
 /**
@@ -32,10 +35,11 @@ export function loadZone(
 ): LoadedZone {
 	const path = join(root, `${id}${ZONE_EXT}`);
 	if (!existsSync(path)) return { id, parseError: `no such Zone '${id}'` };
+	const text = readFileSync(path, 'utf8');
 	try {
-		return { id, zone: parseZone(readFileSync(path, 'utf8'), catalogs) };
+		return { id, zone: parseZone(text, catalogs), text };
 	} catch (e) {
-		return { id, parseError: (e as Error).message };
+		return { id, parseError: (e as Error).message, text };
 	}
 }
 

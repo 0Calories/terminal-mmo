@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run } from '../src/cli';
@@ -51,5 +51,38 @@ describe('zone CLI', () => {
 	test('render of a missing Zone fails with a clear message', () => {
 		expect(run(['render', 'nope'], deps())).not.toBe(0);
 		expect(output().toLowerCase()).toContain('nope');
+	});
+
+	// An otherwise-valid Zone that declares a header glyph it never places: parseZone
+	// loads it fine (it ignores unplaced keys), so only the raw-text orphan pass catches it.
+	test('check flags an orphan header glyph (declared but unused)', () => {
+		writeFileSync(
+			join(root, 'catalogs.json'),
+			JSON.stringify({
+				monsters: [{ id: 'chaser', behavior: 'chaser', name: 'Chaser' }],
+				npcs: [],
+			}),
+		);
+		const grid = [
+			'............',
+			'............',
+			'............',
+			'............',
+			'............',
+			'..c.........',
+			'............',
+			'............',
+			'............',
+			'............',
+			'############',
+			'############',
+		].join('\n');
+		writeFileSync(
+			join(root, 'field-9.zone'),
+			`{"id":"field-9","type":"field","spawns":{"c":"chaser","z":"chaser"}}\n---\n${grid}`,
+		);
+		expect(run(['check'], deps())).not.toBe(0);
+		expect(output()).toContain("'z'");
+		expect(output()).toContain('field-9');
 	});
 });

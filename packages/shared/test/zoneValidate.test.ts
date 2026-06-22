@@ -4,7 +4,11 @@ import type { Terrain } from '../src/types';
 import type { Portal, Zone } from '../src/world';
 import { parseZone } from '../src/zoneFormat';
 import type { Diagnostic } from '../src/zoneValidate';
-import { validateZone, validateZoneSet } from '../src/zoneValidate';
+import {
+	findOrphanGlyphs,
+	validateZone,
+	validateZoneSet,
+} from '../src/zoneValidate';
 
 const monsters = [
 	{ id: 'goblin-01', behavior: 'chaser' as const, name: 'Goblin' },
@@ -257,5 +261,46 @@ describe('validateZoneSet — whole-set integrity', () => {
 		expect(warns(all).some((x) => /one-way|return/i.test(x.message))).toBe(
 			true,
 		);
+	});
+});
+
+// Orphan-key detection reads the RAW .zone text (parseZone discards header glyph
+// keys whose glyph never appears in the grid), so its fixtures are text, not Zones.
+describe('findOrphanGlyphs — header keys must be used in the grid', () => {
+	const grid = ['..........', '....c.....', '##########'].join('\n');
+	const file = (header: string) => `${header}\n---\n${grid}`;
+
+	test('a declared spawn glyph that never appears in the grid is an error', () => {
+		const text = file(
+			'{"id":"f","type":"field","spawns":{"c":"chaser","z":"chaser"}}',
+		);
+		const d = findOrphanGlyphs(text);
+		expect(d).toHaveLength(1);
+		expect(d[0].severity).toBe('error');
+		expect(d[0].zoneId).toBe('f');
+		expect(d[0].message).toContain("'z'");
+	});
+
+	test('a file whose every declared glyph is placed has no orphans', () => {
+		const text = file('{"id":"f","type":"field","spawns":{"c":"chaser"}}');
+		expect(findOrphanGlyphs(text)).toEqual([]);
+	});
+
+	test('orphan npc and portal keys are flagged too', () => {
+		const text = file(
+			'{"id":"f","type":"field","spawns":{"c":"chaser"},' +
+				'"npcs":{"M":"merchant"},' +
+				'"portals":{"P":{"target":"town-01","arrival":[1,1]}}}',
+		);
+		const d = findOrphanGlyphs(text);
+		expect(d).toHaveLength(2); // M and P never appear in the grid
+		expect(d.map((x) => x.message).join(' ')).toContain("'M'");
+		expect(d.map((x) => x.message).join(' ')).toContain("'P'");
+		expect(d.every((x) => x.severity === 'error')).toBe(true);
+	});
+
+	test('a malformed file (no delimiter / bad JSON header) yields nothing', () => {
+		expect(findOrphanGlyphs('{"id":"f"} no delimiter here')).toEqual([]);
+		expect(findOrphanGlyphs('{not json\n---\n....')).toEqual([]);
 	});
 });

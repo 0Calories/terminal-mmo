@@ -149,6 +149,51 @@ function perFile(zone: Zone): Diagnostic[] {
 	return out;
 }
 
+/**
+ * Orphan-key check (#50, ADR 0008): a header glyph declared under spawns/npcs/
+ * portals but never placed in the grid body. This is the one validator that reads
+ * the RAW `.zone` text rather than a parsed Zone — parseZone silently drops keys
+ * whose glyph it never encounters, so the information is gone by the time we have a
+ * Zone. A malformed file (no `---` delimiter / unparseable header) yields nothing
+ * here; parseZone reports those failures, and we only flag orphans in a file that
+ * otherwise parses. Errors, per the format's "orphan keys are validation errors".
+ */
+export function findOrphanGlyphs(text: string): Diagnostic[] {
+	const lines = text.split('\n');
+	const di = lines.findIndex((l) => l.trim() === '---');
+	if (di === -1) return [];
+	let header: {
+		id?: unknown;
+		spawns?: Record<string, unknown>;
+		npcs?: Record<string, unknown>;
+		portals?: Record<string, unknown>;
+	};
+	try {
+		header = JSON.parse(lines.slice(0, di).join('\n'));
+	} catch {
+		return [];
+	}
+
+	const used = new Set<string>();
+	for (const line of lines.slice(di + 1)) for (const ch of line) used.add(ch);
+
+	const zoneId = typeof header.id === 'string' ? header.id : '(zone)';
+	const out: Diagnostic[] = [];
+	const scan = (kind: string, map?: Record<string, unknown>) => {
+		for (const ch of Object.keys(map ?? {}))
+			if (!used.has(ch))
+				out.push({
+					severity: 'error',
+					zoneId,
+					message: `header ${kind} glyph '${ch}' is declared but never appears in the grid`,
+				});
+	};
+	scan('spawn', header.spawns);
+	scan('npc', header.npcs);
+	scan('portal', header.portals);
+	return out;
+}
+
 /** Validate one parsed Zone + its catalogs (per-file tier). Pure. */
 export function validateZone(zone: Zone, catalogs: Catalogs): Diagnostic[] {
 	return [...perFile(zone), ...catalogIntegrity(catalogs)];
