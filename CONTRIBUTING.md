@@ -49,10 +49,15 @@ progress (expected, for now).
 ```bash
 bun install
 bun run dev:server                       # ws://localhost:8080
-MMO_SERVER=ws://localhost:8080 bun run dev:client   # play against it
+bun run dev:client                       # from-source clients default to the local server
+MMO_SERVER=ws://host:port bun run dev:client   # ...or point at another server
 MMO_OFFLINE=1 bun run dev:client         # single-player, no network
 bun test && bun run typecheck && bun run ci
 ```
+
+A from-source (`dev`) client defaults to the local dev server, since a deployed
+server rejects a `dev` client at its version gate (ADR 0012). Set `MMO_SERVER` to
+override the target.
 
 ## Conventions
 
