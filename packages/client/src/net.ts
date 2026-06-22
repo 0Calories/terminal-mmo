@@ -18,12 +18,12 @@ import {
 	type Item,
 	type MonsterSnapshot,
 	type PlayerState,
-	PROTOCOL_VERSION,
 	type ServerMessage,
 	type Zone,
 } from '@mmo/shared';
 import { bubbleTtl } from './bubble';
 import { INTERP_DELAY_MS, SnapshotBuffer } from './interp';
+import { CLIENT_VERSION } from './version';
 
 // A transient over-head Speech bubble (#59, ADR 0007): the latest Chat line from
 // one sender plus its remaining lifetime, decayed each frame.
@@ -66,8 +66,8 @@ export class NetClient {
 	// emote replaces the prior glyph and resets the timer; the frame callback decays
 	// them and the playfield draws each over its sender's sprite (telegraph layer).
 	emotes = new Map<number, Emote>();
-	// Set when the server refuses the connection (ADR 0009): a protocol-version
-	// mismatch or a connection cap. The caller surfaces this and exits.
+	// Set when the server refuses the connection: a Version mismatch (ADR 0012) or a
+	// connection cap (ADR 0009). The caller surfaces this and exits.
 	rejected: string | null = null;
 
 	constructor(
@@ -83,7 +83,7 @@ export class NetClient {
 				encodeClientMessage({
 					t: 'hello',
 					handle,
-					protocol: PROTOCOL_VERSION,
+					version: CLIENT_VERSION,
 					cosmetics,
 				}),
 			);

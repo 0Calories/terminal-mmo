@@ -3,6 +3,12 @@
 	"version": "0.2.0",
 	"description": "A persistent PvE side-scrolling MMORPG played entirely in your terminal. Alpha.",
 	"type": "module",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/0Calories/terminal-mmo.git",
+		"directory": "packages/cli"
+	},
+	"homepage": "https://github.com/0Calories/terminal-mmo#readme",
 	"bin": {
 		"terminal-mmo": "./dist/cli.js"
 	},

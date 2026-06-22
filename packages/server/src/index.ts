@@ -16,8 +16,8 @@ import {
 	emoteById,
 	encodeServerMessage,
 	handleOf,
+	isReleaseVersion,
 	loadZones,
-	PROTOCOL_VERSION,
 	removeSession,
 	type ServerWorld,
 	sessionByHandle,
@@ -31,6 +31,12 @@ import type { ServerWebSocket } from 'bun';
 
 // Railway injects PORT; MMO_PORT stays as a local-dev override (ADR 0009).
 const PORT = Number(process.env.PORT) || Number(process.env.MMO_PORT) || 8080;
+
+// This server's release Version (ADR 0012). The release pipeline sets MMO_VERSION
+// on the Railway deploy; unset means a dev server, which skips the version gate
+// (`isReleaseVersion` is false) and admits any client. Reported at `/health` so the
+// pipeline can assert the right build went live before it publishes the client.
+const SERVER_VERSION = process.env.MMO_VERSION ?? 'dev';
 const TICK_RATE = 20; // Hz (ADR 0002 / PRD cadence)
 const MS_PER_TICK = 1000 / TICK_RATE;
 
@@ -93,12 +99,15 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 	const msg = decodeClientMessage(raw);
 	const { sessionId } = ws.data;
 	if (msg.t === 'hello') {
-		// Protocol-version gate (ADR 0009): a stale `bunx` client (cached against a
-		// newer server) is refused loudly rather than left to mis-decode frames.
-		if (msg.protocol !== PROTOCOL_VERSION) {
+		// Version gate (ADR 0012): a deployed server admits a client only at its exact
+		// release Version, so a stale `bunx` client (cached against a newer server) is
+		// refused loudly rather than left to mis-decode frames. A dev server
+		// (MMO_VERSION unset) skips the gate and admits anyone, so local dev is never
+		// rejected.
+		if (isReleaseVersion(SERVER_VERSION) && msg.version !== SERVER_VERSION) {
 			reject(
 				ws,
-				`Your client is out of date — run \`bunx terminal-mmo@latest\` (server protocol v${PROTOCOL_VERSION}, your client v${msg.protocol}).`,
+				`Your client is out of date — run \`bunx terminal-mmo@latest\` (server ${SERVER_VERSION}, your client ${msg.version || 'unknown'}).`,
 			);
 			return;
 		}
@@ -227,8 +236,12 @@ const server = Bun.serve<WsData>({
 		});
 		if (upgraded) return;
 		// Any plain HTTP GET answers 200 so Railway's healthcheck passes (ADR 0009).
+		// `/health` also reports this server's release Version (ADR 0012): the release
+		// pipeline polls it after deploy and refuses to publish the client unless the
+		// reported version matches the tag it just shipped.
 		const path = new URL(req.url).pathname;
-		if (path === '/health') return new Response('ok');
+		if (path === '/health')
+			return Response.json({ status: 'ok', version: SERVER_VERSION });
 		return new Response('terminal-mmo server — connect over WebSocket');
 	},
 	websocket: {
@@ -280,5 +293,5 @@ const server = Bun.serve<WsData>({
 setInterval(tick, MS_PER_TICK);
 
 console.log(
-	`@mmo/server ticking the world at ${TICK_RATE} Hz on ws://localhost:${server.port}`,
+	`@mmo/server (${SERVER_VERSION}) ticking the world at ${TICK_RATE} Hz on ws://localhost:${server.port}`,
 );

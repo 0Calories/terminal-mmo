@@ -6,22 +6,23 @@ import {
 	decodeServerMessage,
 	encodeClientMessage,
 	encodeServerMessage,
-	PROTOCOL_VERSION,
 } from '../src';
 
-test('hello round-trips the handle + protocol version + cosmetics', () => {
+test('hello round-trips the handle + release version + cosmetics', () => {
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'neo',
-		protocol: PROTOCOL_VERSION,
+		version: '0.3.0',
 		cosmetics: { hue: 3, hat: 2, nameplate: 5 },
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
 });
 
-test('a legacy hello (no protocol field) decodes to protocol 0 + default cosmetics', () => {
-	// Hand-roll a pre-0009 hello: tag(1) + u32 length-prefixed handle, no version.
+test('a truncated hello (no version field) decodes to empty version + default cosmetics', () => {
+	// Hand-roll a hello with only tag(1) + u32 length-prefixed handle and nothing
+	// after: decode must not throw, and the absent Version becomes '' — which fails
+	// the server's equality gate cleanly.
 	const handle = new TextEncoder().encode('legacy');
 	const buf = new Uint8Array(1 + 4 + handle.length);
 	buf[0] = 1; // CLIENT_TAG.hello
@@ -30,29 +31,25 @@ test('a legacy hello (no protocol field) decodes to protocol 0 + default cosmeti
 	expect(decodeClientMessage(buf)).toEqual({
 		t: 'hello',
 		handle: 'legacy',
-		protocol: 0,
+		version: '',
 		cosmetics: DEFAULT_COSMETICS,
 	});
 });
 
 test('hello clamps an out-of-range cosmetic index to the default on decode', () => {
-	// Hand-roll a hello with a hat id past the catalog; decode must not throw and the
-	// bad field falls back to 0 (the renderer is never handed a stray index).
-	const handle = new TextEncoder().encode('forward');
-	const buf = new Uint8Array(1 + 4 + handle.length + 2 + 3);
-	const view = new DataView(buf.buffer);
-	buf[0] = 1; // CLIENT_TAG.hello
-	view.setUint32(1, handle.length);
-	buf.set(handle, 5);
-	view.setUint16(5 + handle.length, PROTOCOL_VERSION);
-	const cos = 5 + handle.length + 2;
-	buf[cos] = 2; // hue (valid)
-	buf[cos + 1] = 250; // hat (out of range)
-	buf[cos + 2] = 1; // nameplate (valid)
-	expect(decodeClientMessage(buf)).toEqual({
+	// A hello whose hat id is past the catalog: decode must not throw and the bad
+	// field falls back to 0 (the renderer is never handed a stray index). Built via
+	// the encoder so the (length-prefixed) Version field stays in sync with the wire.
+	const encoded = encodeClientMessage({
 		t: 'hello',
 		handle: 'forward',
-		protocol: PROTOCOL_VERSION,
+		version: '0.3.0',
+		cosmetics: { hue: 2, hat: 250, nameplate: 1 },
+	});
+	expect(decodeClientMessage(encoded)).toEqual({
+		t: 'hello',
+		handle: 'forward',
+		version: '0.3.0',
 		cosmetics: { hue: 2, hat: 0, nameplate: 1 },
 	});
 });

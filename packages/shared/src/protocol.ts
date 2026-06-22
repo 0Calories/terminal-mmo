@@ -16,12 +16,6 @@ import type {
 	Slot,
 } from './types';
 
-// Bumped by hand on EVERY change to the wire format below (and alongside the
-// published client version). Carried on `hello`; the server rejects a mismatch
-// (ADR 0009) so a stale `bunx` client fails loudly with "run @latest" rather than
-// silently mis-decoding a binary frame at the wrong offsets.
-export const PROTOCOL_VERSION = 4;
-
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
 
@@ -143,12 +137,12 @@ class Reader {
 
 // --- Client -> server -------------------------------------------------------
 
-// `hello` joins with an ephemeral handle and the client's PROTOCOL_VERSION (ADR
-// 0009: the server rejects a mismatch); `input` reports the client-owned Avatar
-// kinematics (ADR 0001: position is client-authoritative) plus the combat intents
-// for the tick. A `skill` of 0 means none was pressed.
+// `hello` joins with an ephemeral handle and the client's release Version (ADR
+// 0012: the deployed server rejects a mismatch); `input` reports the client-owned
+// Avatar kinematics (ADR 0001: position is client-authoritative) plus the combat
+// intents for the tick. A `skill` of 0 means none was pressed.
 export type ClientMessage =
-	| { t: 'hello'; handle: string; protocol: number; cosmetics: Cosmetics }
+	| { t: 'hello'; handle: string; version: string; cosmetics: Cosmetics }
 	| {
 			t: 'input';
 			x: number;
@@ -198,7 +192,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 		case 'hello':
 			w.u8(CLIENT_TAG.hello);
 			w.str(msg.handle);
-			w.u16(msg.protocol);
+			w.str(msg.version);
 			writeCosmetics(w, msg.cosmetics);
 			break;
 		case 'input':
@@ -236,14 +230,16 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 	switch (tag) {
 		case CLIENT_TAG.hello: {
 			const handle = r.str();
-			// A pre-0009 client sends no version; treat absent as 0 so it fails the
-			// gate cleanly (reject) rather than throwing on a short read.
-			const protocol = r.remaining() >= 2 ? r.u16() : 0;
+			// A pre-0012 client sends an integer protocol where we now expect a Version
+			// string; the `remaining` guards keep decode from throwing on the resulting
+			// short/garbled read, and the bogus Version simply fails the equality gate
+			// (reject) — exactly the "your client is out of date" outcome we want.
+			const version = r.remaining() >= 4 ? r.str() : '';
 			// Cosmetics (#35) are trailing too; a client predating them defaults to the
 			// bareheaded look (it is rejected by the version gate regardless).
 			const cosmetics =
 				r.remaining() >= 3 ? readCosmetics(r) : DEFAULT_COSMETICS;
-			return { t: 'hello', handle, protocol, cosmetics };
+			return { t: 'hello', handle, version, cosmetics };
 		}
 		case CLIENT_TAG.input: {
 			const x = r.f64();
