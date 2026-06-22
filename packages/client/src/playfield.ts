@@ -11,6 +11,7 @@ import {
 	meleeHitbox,
 	type RenderStyle,
 	renderZoneScene,
+	type Sprite,
 	skillForSlot,
 	skillHitbox,
 	spriteFor,
@@ -34,32 +35,71 @@ const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 	RGBA.fromInts(r, g, b, a),
 );
 
+// One lit interior cell of an over-head box: its glyph and colour. A `null` cell
+// is blank (the box's opaque background shows through).
+type BoxCell = { ch: string; fg: RGBA } | null;
+
+// The grid an over-head box frames: its size plus a per-cell lookup. Chat text and
+// emote pixel-art both reduce to this, so the box geometry serves both.
+interface BoxContent {
+	w: number;
+	h: number;
+	cell(x: number, y: number): BoxCell;
+}
+
+// Word-wrapped chat text as box content: each character in the sender's colour,
+// spaces left blank (#59, ADR 0007).
+function textContent(lines: readonly string[], fg: RGBA): BoxContent {
+	return {
+		w: Math.max(1, ...lines.map((l) => l.length)),
+		h: lines.length,
+		cell(x, y) {
+			const ch = lines[y]?.[x];
+			return ch && ch !== ' ' ? { ch, fg } : null;
+		},
+	};
+}
+
+// A Sprite as box content: its lit glyphs coloured through the renderer's palette
+// (the same resolution entity Sprites use), transparent cells left blank. This is
+// what makes an emote a sized-up, glyph-style pixel-art image (#38).
+function spriteContent(
+	sprite: Sprite,
+	palette: Readonly<Record<string, RGBA>>,
+	paletteDefault: RGBA,
+): BoxContent {
+	const rows = sprite.rows(1);
+	const keys = sprite.colorKeys(1);
+	return {
+		w: sprite.w,
+		h: sprite.h,
+		cell(x, y) {
+			const ch = rows[y]?.[x];
+			if (!ch || ch === ' ') return null;
+			return { ch, fg: palette[keys[y]?.[x]] ?? paletteDefault };
+		},
+	};
+}
+
 // The shared over-head box behind both the chat Speech bubble (#59, ADR 0007) and
 // the emote (#38): a bordered, opaque box with a downward tail, anchored above the
 // nameplate and re-projected through the camera each frame so it tracks the moving
 // Avatar. x-clamped to the viewport so it can't clip off-screen. The two callers
-// differ only in their CONTENT (`lines`) and `style` colours — the geometry is one
-// place so they can't drift.
-interface BoxStyle {
-	fg: RGBA;
-	border: RGBA;
-	bg: RGBA;
-}
-
+// differ only in their CONTENT and border colour — the geometry is one place so
+// they can't drift.
 function drawOverheadBox(
 	buf: OptimizedBuffer,
 	e: Entity,
 	cam: { x: number; y: number },
 	sw: number,
 	sh: number,
-	lines: readonly string[],
-	style: BoxStyle,
+	content: BoxContent,
+	border: RGBA,
 ) {
 	const sprite = spriteFor(e.type);
 	const top = Math.round(e.y + BOX.h - sprite.h - cam.y);
-	const innerW = Math.max(1, ...lines.map((l) => l.length));
-	const boxW = innerW + 2;
-	const boxH = lines.length + 2;
+	const boxW = content.w + 2;
+	const boxH = content.h + 2;
 
 	const cx = e.x + BOX.w / 2 - cam.x;
 	// Tail tip sits one row above the nameplate (which is at top - 1); the box bottom
@@ -79,34 +119,24 @@ function drawOverheadBox(
 			if (px < 0 || px >= sw) continue;
 			const lastCol = rx === boxW - 1;
 			let ch = ' ';
-			let fg = style.fg;
+			let fg = border;
 			if (ry === 0 || lastRow || rx === 0 || lastCol) {
-				fg = style.border;
 				if (ry === 0) ch = rx === 0 ? '╭' : lastCol ? '╮' : '─';
 				else if (lastRow) ch = rx === 0 ? '╰' : lastCol ? '╯' : '─';
 				else ch = '│';
 			} else {
-				ch = lines[ry - 1]?.[rx - 1] ?? ' ';
+				const c = content.cell(rx - 1, ry - 1);
+				if (c) {
+					ch = c.ch;
+					fg = c.fg;
+				}
 			}
-			buf.setCell(px, py, ch, fg, style.bg);
+			buf.setCell(px, py, ch, fg, C.bubbleBg);
 		}
 	}
 	if (tailY >= 0 && tailY < sh && tailX >= 0 && tailX < sw)
-		buf.setCell(tailX, tailY, '▼', style.border, style.bg);
+		buf.setCell(tailX, tailY, '▼', border, C.bubbleBg);
 }
-
-const BUBBLE_STYLE: BoxStyle = {
-	fg: C.bubbleFg,
-	border: C.bubbleBorder,
-	bg: C.bubbleBg,
-};
-// Emotes reuse the bubble's opaque panel but in the high-contrast emote colour so a
-// reaction reads distinctly from a chat line (#38).
-const EMOTE_STYLE: BoxStyle = {
-	fg: C.emote,
-	border: C.emote,
-	bg: C.bubbleBg,
-};
 
 // The latest Chat line, word-wrapped, in the shared over-head box (#59, ADR 0007).
 function drawSpeechBubble(
@@ -117,23 +147,14 @@ function drawSpeechBubble(
 	sh: number,
 ) {
 	if (!e.bubble) return;
-	drawOverheadBox(buf, e, cam, sw, sh, layoutBubble(e.bubble), BUBBLE_STYLE);
+	const content = textContent(layoutBubble(e.bubble), C.bubbleFg);
+	drawOverheadBox(buf, e, cam, sw, sh, content, C.bubbleBorder);
 }
 
-// Pad every line to a common width, centred — so a ragged ASCII-art image sits
-// centred in the box (chat text stays left-aligned and skips this).
-function centerLines(lines: readonly string[]): string[] {
-	const w = Math.max(...lines.map((l) => l.length));
-	return lines.map((l) => {
-		const pad = w - l.length;
-		const lpad = Math.floor(pad / 2);
-		return ' '.repeat(lpad) + l + ' '.repeat(pad - lpad);
-	});
-}
-
-// A transient emote (#38): the emote id resolved to its sized-up multi-row ASCII
-// art, drawn in the SAME over-head box as a Speech bubble (one shared renderer) on
-// the telegraph layer (above all Sprites, ADR 0003), self-clearing upstream.
+// A transient emote (#38): the emote id resolved to its pixel-art Sprite, drawn in
+// the SAME over-head box as a Speech bubble (one shared renderer) on the telegraph
+// layer (above all Sprites, ADR 0003), self-clearing upstream. The warm emote
+// border distinguishes a reaction from a chat line at a glance.
 function drawEmote(
 	buf: OptimizedBuffer,
 	e: Entity,
@@ -144,7 +165,12 @@ function drawEmote(
 	if (!e.emote) return;
 	const def = emoteById(e.emote);
 	if (!def) return;
-	drawOverheadBox(buf, e, cam, sw, sh, centerLines(def.art), EMOTE_STYLE);
+	const content = spriteContent(
+		def.sprite,
+		STYLE.palette,
+		STYLE.paletteDefault,
+	);
+	drawOverheadBox(buf, e, cam, sw, sh, content, C.emote);
 }
 
 function drawText(
