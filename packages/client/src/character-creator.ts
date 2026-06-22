@@ -87,7 +87,11 @@ class PreviewRenderable extends Renderable {
 	avatar: Entity = previewAvatar({ hue: 0, hat: 0, nameplate: 0 }, '');
 
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
-		super(ctx, { live: true, ...options });
+		// `buffered` gives this node its OWN frame buffer: renderSelf draws into it at
+		// local 0,0 and opentui composites it at the node's laid-out position inside the
+		// panel. Without it, renderSelf would draw onto the root buffer at absolute 0,0
+		// (top-left of the screen) and renderZoneScene's clear would wipe everything.
+		super(ctx, { live: true, buffered: true, ...options });
 	}
 
 	protected renderSelf(buffer: OptimizedBuffer): void {
