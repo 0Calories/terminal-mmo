@@ -1,5 +1,5 @@
 {
-	"name": "@mmo/zone-tools",
+	"name": "@mmo/forge",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
@@ -9,7 +9,7 @@
 		".": "./src/index.ts"
 	},
 	"bin": {
-		"zone": "bin/zone.ts"
+		"forge": "bin/forge.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit"

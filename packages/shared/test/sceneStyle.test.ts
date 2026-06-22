@@ -39,7 +39,7 @@ describe('buildSceneStyle', () => {
 	});
 
 	it('exposes the chrome tuples as plain (opentui-free) data', () => {
-		// Single source of truth for the game + zone-tools preview: data only,
+		// Single source of truth for the game + forge preview: data only,
 		// so consumers bind their own colour type (no drift, no opentui in shared).
 		expect(SCENE_COLORS.bg).toEqual([16, 18, 26, 255]);
 		expect(Array.isArray(SCENE_COLORS.bg)).toBe(true);
