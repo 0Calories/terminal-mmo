@@ -225,7 +225,8 @@ test('ghost mode maps each glyph to its ghost form, over the tint, colours kept 
 		}
 	}
 	expect(ghostGlyph('█')).toBe('░'); // full block fades to a light shade
-	expect(ghostGlyph('▟')).toBe('▟'); // partial puzzle-shape block keeps its shape
+	expect(ghostGlyph('▟')).toBe('▗'); // 3/4 block opens up to its pointing quadrant
+	expect(ghostGlyph('▖')).toBe('▖'); // a small partial block keeps its shape
 	expect(sawFade && sawKept).toBe(true);
 });
 
