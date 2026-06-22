@@ -15,6 +15,7 @@
 		"zones:check": "bun run packages/zone-tools/bin/zone.ts check",
 		"zones:preview": "bun run packages/zone-tools/bin/zone.ts preview",
 		"zones:play": "bun run packages/zone-tools/bin/zone.ts play",
+		"zones:edit": "bun run packages/zone-tools/bin/zone.ts edit",
 		"test": "bun test",
 		"typecheck": "bun run --filter '*' typecheck",
 		"lint": "biome lint .",
