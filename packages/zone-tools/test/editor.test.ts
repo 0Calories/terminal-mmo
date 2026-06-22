@@ -5,10 +5,12 @@ import {
 	clampRoam,
 	copyRegion,
 	cursorEdge,
+	cursorToAnchor,
 	deleteRegion,
 	docDiagnostics,
 	editorExtent,
 	editorStatusLine,
+	entityAt,
 	eraseCells,
 	footprintBox,
 	groundSnap,
@@ -223,14 +225,14 @@ function field(rows: string[]): EditorDoc {
 }
 
 describe('TOOLS / toolByKey', () => {
-	test('offers the six modal tools (flood-fill deferred)', () => {
+	test('offers the six modal tools (Eyedropper dropped, Stamp added — #114)', () => {
 		expect(TOOLS.map((t) => t.id)).toEqual([
 			'brush',
 			'eraser',
-			'eyedropper',
 			'rectangle',
 			'line',
 			'select',
+			'stamp',
 		]);
 	});
 
@@ -585,6 +587,131 @@ describe('groundSnap (#96)', () => {
 
 	test('terrain is never snapped', () => {
 		expect(groundSnap(tall, { kind: 'terrain' }, 4, 1)).toEqual({ x: 4, y: 1 });
+	});
+});
+
+describe('cursorToAnchor (#114)', () => {
+	// Floor on the bottom row; ample headroom above it.
+	const field: EditorDoc = {
+		header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+		rows: [
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'..........',
+			'##########',
+		],
+	};
+	const monster = { kind: 'monster', id: 'chaser' } as const;
+
+	test('x is always the cursor minus half the box width', () => {
+		// 5-wide box → floor(5/2) = 2, so the cursor sits at the box centre column.
+		expect(cursorToAnchor(field, monster, 5, 5, true).x).toBe(3);
+	});
+
+	test('free-place centres the box on the cursor (no snap)', () => {
+		// 5×5 box → anchor = cursor - (2,2), mid-air, untouched by ground.
+		expect(cursorToAnchor(field, monster, 5, 5, true)).toEqual({ x: 3, y: 3 });
+	});
+
+	test('ground-snap seats the box feet at the cursor, then drops to the surface', () => {
+		// Feet anchor y = 5 - (5-1) = 1 (box rows 1-5); the floor is row 7, so the
+		// box drops until its bottom rests above it → anchor row 2 (rows 2-6).
+		expect(cursorToAnchor(field, monster, 5, 5, false)).toEqual({ x: 3, y: 2 });
+	});
+
+	test('terrain (1×1) maps the cursor straight to the anchor either way', () => {
+		const terrain = { kind: 'terrain' } as const;
+		expect(cursorToAnchor(field, terrain, 4, 6, true)).toEqual({ x: 4, y: 6 });
+		expect(cursorToAnchor(field, terrain, 4, 6, false)).toEqual({ x: 4, y: 6 });
+	});
+});
+
+describe('entityAt (#114)', () => {
+	test('a click anywhere in the footprint resolves the entity at its origin', () => {
+		const doc: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: { c: 'chaser' }, npcs: {} },
+			rows: [
+				'c.........',
+				'..........',
+				'..........',
+				'..........',
+				'..........',
+			],
+		};
+		// Monster origin is (0,0); its 5×5 footprint covers (3,3).
+		expect(entityAt(doc, 3, 3)).toEqual({
+			originX: 0,
+			originY: 0,
+			placeable: { kind: 'monster', id: 'chaser' },
+		});
+	});
+
+	test('a cell outside every footprint resolves to nothing', () => {
+		const doc: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: { c: 'chaser' }, npcs: {} },
+			rows: [
+				'c.........',
+				'..........',
+				'..........',
+				'..........',
+				'..........',
+			],
+		};
+		expect(entityAt(doc, 6, 0)).toBeUndefined();
+	});
+
+	test('an empty cell with no entity above-left resolves to nothing', () => {
+		const doc: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+			rows: ['.....', '.....', '#####'],
+		};
+		expect(entityAt(doc, 2, 0)).toBeUndefined();
+	});
+
+	test('on overlap the renderer-topmost (monster over npc) wins', () => {
+		// Monster 'c' at (0,0) [cols 0-4] and NPC 'm' at (2,0) [cols 2-5] both cover
+		// (3,3); the monster draws on top, so it is the one erased.
+		const doc: EditorDoc = {
+			header: {
+				id: 'z',
+				type: 'field',
+				spawns: { c: 'chaser' },
+				npcs: { m: 'merchant' },
+			},
+			rows: [
+				'c.m.......',
+				'..........',
+				'..........',
+				'..........',
+				'..........',
+			],
+		};
+		expect(entityAt(doc, 3, 3)?.placeable).toEqual({
+			kind: 'monster',
+			id: 'chaser',
+		});
+	});
+
+	test('among same-layer entities the lower one (larger anchor y) wins', () => {
+		// Two monsters whose 5×5 footprints overlap at (2,4); the one anchored lower
+		// (origin y 2) is drawn later → on top.
+		const doc: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: { c: 'chaser' }, npcs: {} },
+			rows: [
+				'c.........',
+				'..........',
+				'c.........',
+				'..........',
+				'..........',
+				'..........',
+				'..........',
+			],
+		};
+		expect(entityAt(doc, 2, 4)?.originY).toBe(2);
 	});
 });
 
