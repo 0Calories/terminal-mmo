@@ -29,7 +29,7 @@ import { type CameraState, initCameraState, stepCamera } from './camera';
 import { COLORS as C } from './theme';
 
 // The colour binding for the shared, framework-agnostic renderer (@mmo/shared):
-// resolved from the shared scene colour DATA so the game and the zone-tools
+// resolved from the shared scene colour DATA so the game and the forge
 // preview render from one source and can't drift (#56).
 const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 	RGBA.fromInts(r, g, b, a),
@@ -206,7 +206,7 @@ function drawPlayfield(
 	const npcs = zone.npcs ?? [];
 
 	// Static scene (terrain, portals, NPCs, z-ordered Monsters + co-present
-	// Avatars + nameplates) via the shared renderer — the same path zone-tools
+	// Avatars + nameplates) via the shared renderer — the same path forge
 	// preview uses, so what authors see is what ships (ADR 0008 / #56).
 	renderZoneScene(
 		buf,

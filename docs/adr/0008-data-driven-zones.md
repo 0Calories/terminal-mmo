@@ -76,7 +76,7 @@ by-reference entity model so every downstream issue references one source of tru
 - **Purity boundary: parse/validate in `shared`, disk I/O in server/tooling.** The
   pure core takes strings (Zone text + catalog text) and returns a `Zone` or
   validation errors. Reading `.zone` and catalog files off disk — at runtime from a
-  repo-root `zones/` directory, and in the `zone-tools` CLI — lives in the server
+  repo-root `zones/` directory, and in the `forge` CLI — lives in the server
   and tooling layers. (Build-time bundling of zones is deferred; runtime reads disk
   for now.)
 
@@ -117,7 +117,7 @@ by-reference entity model so every downstream issue references one source of tru
 - A two-tier validator follows: per-file structural / placement / walkability /
   type-rule checks, plus a whole-set pass resolving the Portal graph and catalog
   references. Type rules + walkability are errors; a one-way Portal is a warning.
-- A new `packages/zone-tools` CLI (depends on `@mmo/shared`) exposes
+- A new `packages/forge` CLI (depends on `@mmo/shared`) exposes
   `render` / `check` / `new` (renderer-free, the agent/CI path) and, later,
   `preview` (a human live-reload visual reusing the real `playfield.ts` renderer)
   and `play` (playable test-play). These are the downstream slices this gate

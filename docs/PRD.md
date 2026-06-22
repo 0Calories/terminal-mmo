@@ -5,7 +5,7 @@
 > stack, 0003 visual architecture, 0004 SSH-key auth). This PRD scopes the MVP
 > (milestones M0–M4); anything not here is post-MVP.
 >
-> The **Zone authoring pipeline** (data-driven Zones + `zone-tools`) is a focused
+> The **Zone authoring pipeline** (data-driven Zones + `forge`) is a focused
 > downstream initiative with its own PRD ([#50](https://github.com/0Calories/terminal-mmo/issues/50)),
 > gated by [ADR 0008 (Zones as data)](./adr/0008-data-driven-zones.md).
 

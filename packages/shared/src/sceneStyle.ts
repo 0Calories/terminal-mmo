@@ -1,7 +1,7 @@
 import type { RenderStyle } from './render';
 
 // The static Zone scene's colour DATA, as plain RGBA int tuples — the single
-// source of truth shared by the game (client) and `zone preview` (zone-tools),
+// source of truth shared by the game (client) and `forge zone preview` (forge),
 // so the preview is faithful ("what you see is what ships", #56). It is data
 // only: @mmo/shared stays opentui-free, and each consumer binds its own colour
 // type (opentui `RGBA.fromInts`) via `buildSceneStyle`.
@@ -78,7 +78,7 @@ export type ColorFactory<C> = (r: number, g: number, b: number, a: number) => C;
 /**
  * Resolve the shared scene colour data into a `RenderStyle<C>` using a caller-
  * supplied colour factory. One place builds the style so the game and the
- * `zone preview` can't drift apart.
+ * `forge zone preview` can't drift apart.
  */
 export function buildSceneStyle<C>(toColor: ColorFactory<C>): RenderStyle<C> {
 	const c = (q: RGBAQuad) => toColor(q[0], q[1], q[2], q[3]);

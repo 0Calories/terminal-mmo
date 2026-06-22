@@ -13,7 +13,7 @@
     },
     "packages/cli": {
       "name": "terminal-mmo",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "bin": {
         "terminal-mmo": "./dist/cli.js",
       },
@@ -33,6 +33,17 @@
         "@opentui/core": "^0.4.1",
       },
     },
+    "packages/forge": {
+      "name": "@mmo/forge",
+      "version": "0.0.0",
+      "bin": {
+        "forge": "bin/forge.ts",
+      },
+      "dependencies": {
+        "@mmo/shared": "workspace:*",
+        "@opentui/core": "^0.4.1",
+      },
+    },
     "packages/server": {
       "name": "@mmo/server",
       "version": "0.0.0",
@@ -43,17 +54,6 @@
     "packages/shared": {
       "name": "@mmo/shared",
       "version": "0.0.0",
-    },
-    "packages/zone-tools": {
-      "name": "@mmo/zone-tools",
-      "version": "0.0.0",
-      "bin": {
-        "zone": "bin/zone.ts",
-      },
-      "dependencies": {
-        "@mmo/shared": "workspace:*",
-        "@opentui/core": "^0.4.1",
-      },
     },
   },
   "packages": {
@@ -77,11 +77,11 @@
 
     "@mmo/client": ["@mmo/client@workspace:packages/client"],
 
+    "@mmo/forge": ["@mmo/forge@workspace:packages/forge"],
+
     "@mmo/server": ["@mmo/server@workspace:packages/server"],
 
     "@mmo/shared": ["@mmo/shared@workspace:packages/shared"],
-
-    "@mmo/zone-tools": ["@mmo/zone-tools@workspace:packages/zone-tools"],
 
     "@opentui/core": ["@opentui/core@0.4.1", "", { "dependencies": { "bun-ffi-structs": "0.2.3", "diff": "9.0.0", "marked": "17.0.1", "string-width": "7.2.0", "strip-ansi": "7.1.2" }, "optionalDependencies": { "@opentui/core-darwin-arm64": "0.4.1", "@opentui/core-darwin-x64": "0.4.1", "@opentui/core-linux-arm64": "0.4.1", "@opentui/core-linux-arm64-musl": "0.4.1", "@opentui/core-linux-x64": "0.4.1", "@opentui/core-linux-x64-musl": "0.4.1", "@opentui/core-win32-arm64": "0.4.1", "@opentui/core-win32-x64": "0.4.1" }, "peerDependencies": { "web-tree-sitter": "0.25.10" } }, "sha512-ejlunoFCGLcghYGdfamI/DlWHsgCTLbuoL2JeOmFuLsN+DM5phje3CQbGR4tpl24cadCgHJQFomjoQ9Htvin+Q=="],
 

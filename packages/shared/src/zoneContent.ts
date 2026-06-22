@@ -3,7 +3,7 @@
 // dir is the single source of truth for World content. Both the server (reads the
 // files off disk at runtime) and the client (Bun inlines them into the published
 // bundle) load the SAME files through these static imports, then hand the raw text
-// to the pure `parseZone`. The tooling (zone-tools) reads the same dir dynamically
+// to the pure `parseZone`. The tooling (forge) reads the same dir dynamically
 // off disk for `zone render`/`check`/`preview`; this module is the *runtime* reader.
 //
 // Adding a Zone is two lines here plus the `.zone` file — deliberately explicit so

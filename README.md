@@ -37,7 +37,7 @@ packages/
   client/     @mmo/client — OpenTUI terminal client (rendering + input + netcode)
   server/     @mmo/server — authoritative Bun WebSocket world (M2)
   cli/        terminal-mmo — the published bundle for `bunx` (ADR 0009)
-  zone-tools/ @mmo/zone-tools — .zone authoring/validation CLI
+  forge/      @mmo/forge — content authoring suite: zones now; sprites/NPCs/quests next
 ```
 
 The `shared` package holds all simulation (physics, combat, loot, progression) as

@@ -10,7 +10,7 @@ const deps = () => ({ root, log: (s: string) => lines.push(s) });
 const output = () => lines.join('\n');
 
 beforeEach(() => {
-	root = mkdtempSync(join(tmpdir(), 'zone-tools-'));
+	root = mkdtempSync(join(tmpdir(), 'forge-'));
 	lines = [];
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));

@@ -9,18 +9,18 @@ including the parts that don't need a real terminal.
 
 ## The authoring loop
 
-All commands are workspace scripts (`bun run zone <cmd>`); the CLI lives in
-`@mmo/zone-tools`.
+All commands are workspace scripts (`bun run forge zone <cmd>`); the CLI lives in
+`@mmo/forge`.
 
 ```bash
-bun run zone new <id> --type field|town   # scaffold a blank <id>.zone
-bun run zone render <id>                   # ASCII dump + per-file diagnostics
-bun run zone check [dir]                   # whole-set validation (CI gate)
-bun run zone preview <id>                  # live, faithful TUI render (needs a TTY)
-bun run zone play <id>                     # boot the Zone into the offline sim (needs a TTY)
+bun run forge zone new <id> --type field|town   # scaffold a blank <id>.zone
+bun run forge zone render <id>                   # ASCII dump + per-file diagnostics
+bun run forge zone check [dir]                   # whole-set validation (CI gate)
+bun run forge zone preview <id>                  # live, faithful TUI render (needs a TTY)
+bun run forge zone play <id>                     # boot the Zone into the offline sim (needs a TTY)
 ```
 
-`zone check` (also `bun run zones:check`, part of `bun run ci`) is the invariant:
+`forge zone check` (also `bun run zones:check`, part of `bun run ci`) is the invariant:
 portal round-trips resolve, arrivals land on walkable ground, spawns/NPCs rest on
 ground, catalog refs resolve. The authored set is also asserted clean in
 `packages/shared/test/zoneContent.test.ts`, so a broken build fails `bun test`.
@@ -36,13 +36,13 @@ ground, catalog refs resolve. The authored set is also asserted clean in
 
 ## Judging a build *without* a terminal
 
-`zone render` gives a schematic ASCII dump (terrain `#` + single-letter glyphs).
-`zone preview` / `zone play` give the real, colored, animated view — but they take
+`forge zone render` gives a schematic ASCII dump (terrain `#` + single-letter glyphs).
+`forge zone preview` / `forge zone play` give the real, colored, animated view — but they take
 over the TTY, so **an agent cannot see their output** (there's no screenshot to
 read, and a subagent has the same Bash/file tools — it's just as blind).
 
 To actually *see and critique* a build, drive the **shared renderer** —
-`renderZoneScene` (the exact one `zone play` uses) — into an in-memory buffer and
+`renderZoneScene` (the exact one `forge zone play` uses) — into an in-memory buffer and
 dump the glyph frame. The renderer is generic over `CellBuffer<C>`, so no opentui /
 TTY is involved:
 
@@ -86,8 +86,8 @@ Run it from the repo root with `bun run view.ts`, then delete the scratch file
 NPC, and terrain** — what you get is a
 faithful single frame minus colour, enough to judge spacing, reachability,
 sprite placement, and legibility. For a zoomed/scrolled view, pass a `cam` offset
-(mirror `followCam` in `zone-tools/src/play.ts`) instead of `{x:0,y:0}`.
+(mirror `followCam` in `forge/src/play.ts`) instead of `{x:0,y:0}`.
 
 **What this still can't tell you:** colour, and motion (jump arcs, monster
-aggro, camera feel). Those need a human running `zone preview` / `zone play` in a
+aggro, camera feel). Those need a human running `forge zone preview` / `forge zone play` in a
 real terminal — say so rather than claiming you verified them.

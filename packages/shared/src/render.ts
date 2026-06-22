@@ -6,7 +6,7 @@ import type { Portal } from './world';
 
 // A framework-agnostic cell sink, the subset of opentui's OptimizedBuffer the
 // renderer needs. Generic over the colour type `C` so @mmo/shared stays
-// opentui-free: the client and zone-tools each bind `C` to their own RGBA.
+// opentui-free: the client and forge each bind `C` to their own RGBA.
 export interface CellBuffer<C> {
 	readonly width: number;
 	readonly height: number;
