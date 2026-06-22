@@ -94,11 +94,6 @@ function fpsMeter() {
 	};
 }
 
-if (OFFLINE) runOffline();
-else runNetworked(SERVER);
-
-renderer.start();
-
 // --- Offline single-player (M1 loop) ---------------------------------------
 
 function runOffline() {
@@ -343,3 +338,11 @@ function runNetworked(url: string) {
 		hud.updateChat(net.chatLog, chat.open, chat.text);
 	});
 }
+
+// Dispatch + start last, after every module-level declaration: runNetworked reads
+// the `LOCAL_ZONES` const (below), so invoking it earlier would hit that const's
+// temporal dead zone (the functions themselves are hoisted and callable here).
+if (OFFLINE) runOffline();
+else runNetworked(SERVER);
+
+renderer.start();
