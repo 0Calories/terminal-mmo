@@ -25,3 +25,7 @@ Five canonical roles: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-fo
 ### Domain docs
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Zone authoring
+
+Design + validate `.zone` content with the `zone` CLI, and judge a build headlessly (render through the shared renderer — no TTY needed). See `docs/agents/zone-authoring.md`.
