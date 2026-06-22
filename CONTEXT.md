@@ -46,6 +46,19 @@ independent, enabling later distribution across processes). It is also the unit 
 Zone (and Channel). Two kinds: Town and Field.
 _Avoid_: Map, level, room, screen
 
+**Zone id**:
+A Zone's stable identity — derived from its filename (`zones/<id>.zone`), NOT a
+field stored in the file. It is what every Portal `target` references. Renaming a
+Zone means renaming the file (and rewriting referencing Portals); identity is the
+path, so it can never drift from a duplicated header field.
+_Avoid_: Name, slug (reserve "name" for the display label)
+
+**Zone name**:
+A Zone's human-facing display label ("Verdant Field"), distinct from its id — a
+label, not an identity (cf. Handle). Optional, decorative, editable in the Zone
+editor. Never used to address or resolve a Zone.
+_Avoid_: Title, id
+
 **Channel**:
 A parallel instance of a single Zone, created automatically by the server when
 that Zone reaches its soft population cap. Players in different Channels of the
@@ -161,3 +174,35 @@ _Avoid_: Tiles, level, collision map
 **Hacking (sub-theme)**:
 Developer/hacker-culture flavor that may inspire some mechanics. Explicitly NOT
 the core verb of the game — parked until the core spine exists.
+
+## Zone authoring
+
+Vocabulary for the human-facing tools that design Zones (the `zone edit` TUI).
+Distinct from the game-world language above — these are authoring concepts.
+
+**Zone editor**:
+The interactive TUI (`zone edit <id>`) for authoring a Zone — painting Terrain
+and placing entities over the raw `.zone` document, rendered through the same
+renderer the game uses. Operates on the lossless document, never a parsed Zone.
+_Avoid_: Level editor, map editor, painter
+
+**Placeable**:
+A thing the Zone editor can place into a Zone: a Terrain type (solid), a catalog
+entity (a Monster or NPC, by catalog id), or a Structure (Portal; later Spawn /
+Respawn markers). The author works in Placeables, not glyphs — the editor owns
+the glyph↔Placeable mapping in the header, so undeclared/orphan glyphs are
+unrepresentable, not merely validated.
+_Avoid_: Glyph, stamp, tile, entity (when you mean the editor-facing thing)
+
+**Palette**:
+The set of Placeables the editor offers, generated from `catalogs.json` plus the
+structural primitives — never a hand-maintained list. Grouped Terrain / Monsters
+/ NPCs / Structures. The editor consumes the catalog; it never edits it (a
+separate creature/NPC-authoring tool will own that later).
+_Avoid_: Toolbar, inventory, brushes
+
+**Tool**:
+The interaction verb bound to the pointer/cursor in the modal editor — what a
+click or drag *does*. The active Tool plus the active Palette selection together
+determine each edit.
+_Avoid_: Mode, brush (reserve "brush" for the specific paint Tool)
