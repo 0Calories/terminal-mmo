@@ -4,7 +4,14 @@ import type { Input } from '@mmo/shared';
 // release events a held key would stick, so it's dropped after this idle (M0).
 const HELD_MS = 220;
 
-type Action = 'left' | 'right' | 'jump' | 'attack' | 'interact' | 'skill1';
+type Action =
+	| 'left'
+	| 'right'
+	| 'jump'
+	| 'attack'
+	| 'interact'
+	| 'skill1'
+	| 'skill2';
 
 function actionFor(name: string): Action | null {
 	switch (name) {
@@ -24,6 +31,8 @@ function actionFor(name: string): Action | null {
 			return 'interact';
 		case 'k':
 			return 'skill1';
+		case 'l':
+			return 'skill2';
 		default:
 			return null;
 	}
@@ -65,7 +74,11 @@ export class InputState {
 			jump: this.held.has('jump'),
 			attack: this.held.has('attack'),
 			interact: this.held.has('interact'),
-			skill: this.held.has('skill1') ? 1 : undefined,
+			skill: this.held.has('skill1')
+				? 1
+				: this.held.has('skill2')
+					? 2
+					: undefined,
 		};
 	}
 }

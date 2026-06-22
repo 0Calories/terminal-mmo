@@ -8,8 +8,11 @@ import {
 } from '@opentui/core';
 import { COLORS } from './theme';
 
+// Keyboard binding per Warrior skill slot — kept in lockstep with input.ts.
+const SKILL_KEYS = ['k', 'l'];
+
 const HINT =
-	'move ←/→ a/d  jump ␣/↑  attack j/x  skill k  interact e  chat ⏎ (/w whisper, /em emote)  quit q';
+	'move ←/→ a/d  jump ␣/↑  attack j/x  skills k/l  interact e  chat ⏎ (/w whisper, /em emote)  quit q';
 const Z = 10; // above the playfield (zIndex 0)
 const CHAT_LINES = 4; // recent Zone-chat lines shown above the input
 
@@ -25,7 +28,7 @@ function skillReadout(player: GameState['player']): string {
 			const cd = player.skillCooldowns?.[skill.id] ?? 0;
 			state = cd > 0 ? `${cd.toFixed(1)}s` : 'ready';
 		}
-		segs.push(`k ${skill.name}: ${state}`);
+		segs.push(`${SKILL_KEYS[slot - 1] ?? '?'} ${skill.name}: ${state}`);
 	}
 	return segs.join('   ');
 }
