@@ -500,6 +500,11 @@ export function placementState(
 	return 'grounded';
 }
 
+/** How far below the feet ground-snap will reach, in cells (#117). A surface
+ *  farther than this reads as "not nearby ground", so the box stays where the
+ *  author aimed (airborne) rather than falling to a distant floor. Tuned by feel. */
+const MAX_SNAP_DROP = 3;
+
 /**
  * Auto-ground-snap (#96): drop an entity's anchor so its feet rest on the nearest
  * solid surface at or below the cursor. Scans the footprint columns downward for the
@@ -507,6 +512,11 @@ export function placementState(
  * above it. An already-grounded anchor (or a Placeable with no surface below, or
  * terrain) is returned unchanged. The shell offers a free-place modifier that
  * bypasses this to drop exactly at the cursor (incl. mid-air).
+ *
+ * Snap should feel like "settle onto nearby ground", not "fall to the floor"
+ * (#117): the scan reaches at most {@link MAX_SNAP_DROP} cells below the feet, so
+ * a cursor held high above any surface keeps the author's feet anchor (airborne)
+ * instead of teleporting down to a distant surface or the implicit world floor.
  */
 export function groundSnap(
 	doc: EditorDoc,
@@ -517,8 +527,10 @@ export function groundSnap(
 	if (p.kind === 'terrain') return { x, y };
 	const ext = editorExtent(doc);
 	const box = footprintBox(p, x, y);
-	// The first solid row at or below the box's current bottom edge.
-	for (let r = y + box.h; r <= ext.h; r++) {
+	// The first solid row at or below the box's current bottom edge, but no
+	// farther than the snap cap — beyond it the box stays at the feet anchor.
+	const limit = Math.min(ext.h, y + box.h + MAX_SNAP_DROP);
+	for (let r = y + box.h; r <= limit; r++) {
 		let solid = false;
 		for (let cx = x; cx < x + box.w; cx++)
 			if (gridSolid(doc, ext, cx, r)) {

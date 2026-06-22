@@ -588,6 +588,34 @@ describe('groundSnap (#96)', () => {
 	test('terrain is never snapped', () => {
 		expect(groundSnap(tall, { kind: 'terrain' }, 4, 1)).toEqual({ x: 4, y: 1 });
 	});
+
+	test('a cursor far above any surface stays put rather than falling to it (#117)', () => {
+		// 5-tall box at row 0 → feet at row 4; the only ground is the canvas floor
+		// far below (row 16). That drop is well past the snap cap, so the box keeps
+		// the author's feet anchor (airborne) instead of teleporting to the floor.
+		const skyHigh: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+			rows: Array(16).fill('..........'),
+		};
+		expect(
+			groundSnap(skyHigh, { kind: 'monster', id: 'chaser' }, 0, 0),
+		).toEqual({
+			x: 0,
+			y: 0,
+		});
+	});
+
+	test('still snaps when a surface is within the cap distance (#117)', () => {
+		// Feet at row 4, floor at row 8 → a 3-cell drop (within the cap) snaps.
+		const near: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+			rows: Array(8).fill('..........'),
+		};
+		expect(groundSnap(near, { kind: 'monster', id: 'chaser' }, 0, 0)).toEqual({
+			x: 0,
+			y: 3,
+		});
+	});
 });
 
 describe('cursorToAnchor (#114)', () => {
