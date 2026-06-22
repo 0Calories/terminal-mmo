@@ -13,6 +13,7 @@ import {
 	channelOf,
 	createServerWorld,
 	decodeClientMessage,
+	emoteById,
 	encodeServerMessage,
 	handleOf,
 	loadZones,
@@ -169,6 +170,24 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		// The sender always gets its own echo, even when whispering itself (target
 		// === sessionId sends one frame, which is the desired single echo).
 		if (target !== sessionId) sockets.get(sessionId)?.send(frame);
+		return;
+	}
+	if (msg.t === 'emote') {
+		// Relay a Zone-local emote to every session in the sender's Channel (#38),
+		// keyed to the sender's sprite. Drop an unknown id rather than relay it. Like
+		// chat, the sender is in its own Channel, so it sees its own emote echoed back.
+		if (!emoteById(msg.emote)) return;
+		const me = zoneStateOf(world, sessionId)?.avatars.find(
+			(a) => a.sessionId === sessionId,
+		);
+		if (me === undefined) return; // emote before hello; ignore
+		const frame = encodeServerMessage({
+			t: 'emote',
+			sessionId,
+			emote: msg.emote,
+		});
+		for (const sid of sessionsInChannel(world, sessionId))
+			sockets.get(sid)?.send(frame);
 		return;
 	}
 	// input: trust the reported position with only a loose bounds clamp (against the

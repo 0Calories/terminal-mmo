@@ -86,6 +86,27 @@ function drawSpeechBubble(
 		buf.setCell(tailX, tailY, '▼', C.bubbleBorder, C.bubbleBg);
 }
 
+// A transient over-head emote glyph (#38): a single high-contrast symbol centred
+// above the emoting Avatar's head, re-projected through the camera each frame so it
+// tracks the moving Avatar. Sits on the telegraph layer (above all Sprites, ADR
+// 0003) and is x-clamped to the viewport so it can't clip off-screen.
+function drawEmote(
+	buf: OptimizedBuffer,
+	e: Entity,
+	cam: { x: number; y: number },
+	sw: number,
+	sh: number,
+) {
+	if (!e.emote) return;
+	const sprite = spriteFor(e.type);
+	const top = Math.round(e.y + BOX.h - sprite.h - cam.y);
+	const py = top - 2; // one row above the nameplate (at top - 1)
+	const cx = Math.round(e.x + BOX.w / 2 - cam.x);
+	const px = Math.max(0, Math.min(cx, sw - 1));
+	if (py < 0 || py >= sh) return;
+	buf.setCellWithAlphaBlending(px, py, e.emote, C.emote, C.transparent);
+}
+
 function drawText(
 	buf: OptimizedBuffer,
 	x: number,
@@ -201,6 +222,11 @@ function drawPlayfield(
 	// absent sender simply has no entity here, so its bubble isn't drawn.
 	for (const e of others) drawSpeechBubble(buf, e, cam, sw, sh);
 	drawSpeechBubble(buf, p, cam, sw, sh);
+
+	// Over-head emotes for every emoting Avatar on screen, the local one included —
+	// one uniform rule (#38, ADR 0003), on top of all Sprites and nameplates.
+	for (const e of others) drawEmote(buf, e, cam, sw, sh);
+	drawEmote(buf, p, cam, sw, sh);
 
 	// Drawn last so nothing occludes an incoming shot.
 	for (const pr of zone.projectiles) {

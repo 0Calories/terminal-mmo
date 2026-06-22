@@ -227,6 +227,8 @@ function runNetworked(url: string) {
 				if (cmd.kind === 'say') net.send({ t: 'chat', text: cmd.text });
 				else if (cmd.kind === 'whisper')
 					net.send({ t: 'whisper', to: cmd.to, text: cmd.text });
+				else if (cmd.kind === 'emote')
+					net.send({ t: 'emote', emote: cmd.emote });
 				else net.notice(cmd.message);
 			}
 			return;
@@ -326,6 +328,7 @@ function runNetworked(url: string) {
 		// Age over-head Speech bubbles by wall time, then stamp the live ones onto
 		// their senders' entities for the playfield to draw (#59, ADR 0007).
 		net.decayBubbles(dt / 1000);
+		net.decayEmotes(dt / 1000);
 		const game = snapshotToGame(
 			zone,
 			predicted,
@@ -333,6 +336,7 @@ function runNetworked(url: string) {
 			view,
 			localCd,
 			net.bubbles,
+			net.emotes,
 		);
 		playfield.game = game;
 		hud.update(game, fps);

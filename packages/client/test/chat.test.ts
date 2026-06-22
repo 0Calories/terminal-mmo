@@ -86,3 +86,20 @@ test('parseChatCommand reports a usage error when the whisper has no message', (
 	expect(parseChatCommand('/w neo').kind).toBe('error');
 	expect(parseChatCommand('/w').kind).toBe('error');
 });
+
+test('parseChatCommand parses /em <name> into an emote (#38)', () => {
+	expect(parseChatCommand('/em wave')).toEqual({
+		kind: 'emote',
+		emote: 'wave',
+	});
+	// The long form and surrounding whitespace work too.
+	expect(parseChatCommand('  /emote   laugh  ')).toEqual({
+		kind: 'emote',
+		emote: 'laugh',
+	});
+});
+
+test('parseChatCommand rejects an unknown or missing emote name (#38)', () => {
+	expect(parseChatCommand('/em bogus').kind).toBe('error');
+	expect(parseChatCommand('/em').kind).toBe('error');
+});
