@@ -28,6 +28,7 @@ import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
 import { PlayfieldRenderable } from './playfield';
+import { PROD_SERVER_URL } from './server-url';
 import { Shop } from './shop';
 
 // The sim is dt-based, so this only affects smoothness + CPU, never game speed.
@@ -35,17 +36,13 @@ import { Shop } from './shop';
 // on a 60Hz panel, or over SSH where the refresh is unknowable (#22).
 const RENDER_FPS = Number(process.env.MMO_FPS) || 120;
 
-// Where `bunx terminal-mmo` connects with no configuration (ADR 0009): the live
-// World, deployed to Railway. This constant is baked into the published bundle;
-// changing hosts means a re-publish (acceptable — every protocol bump is one too).
-const PROD_SERVER = 'wss://mmoserver-production-c9d8.up.railway.app';
-
 // Connection resolution (ADR 0009): MMO_OFFLINE forces the single-player loop;
 // otherwise MMO_SERVER overrides the baked production URL (used for local dev,
-// e.g. MMO_SERVER=ws://localhost:8080), falling back to PROD_SERVER.
+// e.g. MMO_SERVER=ws://localhost:8080), falling back to the live World on Railway
+// (PROD_SERVER_URL, the single source of truth in ./server-url).
 const OFFLINE =
 	process.env.MMO_OFFLINE === '1' || process.env.MMO_OFFLINE === 'true';
-const SERVER = process.env.MMO_SERVER || PROD_SERVER;
+const SERVER = process.env.MMO_SERVER || PROD_SERVER_URL;
 
 // No movement / combat this frame — fed to the sim while a modal (shop, chat)
 // owns the keyboard, so held keys don't drive the Avatar.
