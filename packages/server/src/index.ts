@@ -72,7 +72,7 @@ function reject(ws: ServerWebSocket<WsData>, reason: string) {
 	ws.close();
 }
 
-const START_ZONE = 'field-01';
+const START_ZONE = 'town-01'; // Players spawn into the safe hub, then portal out
 const TOWN_ZONE = 'town-01';
 let world: ServerWorld = createServerWorld({
 	zones: loadZones(), // authored `.zone` content off disk (ADR 0008)

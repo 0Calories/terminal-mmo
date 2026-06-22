@@ -24,17 +24,17 @@ test('createGame separates Player state from the World of Zones', () => {
 	expect(g.player.avatar.type).toBe('player');
 	expect(g.player.zoneId in g.world.zones).toBe(true);
 	const zone = activeZone(g.world, g.player.zoneId);
-	expect(zone.type).toBe('field');
-	expect(zone.monsters.length).toBe(8);
+	expect(zone.type).toBe('town'); // the Player spawns into the safe hub
+	expect(zone.monsters.length).toBe(0); // a town has no Monster spawns
 });
 
 test('createGameFromZones seeds the sim from an explicit Zone set + start id', () => {
 	const zones = loadZones();
-	const town = zones.find((z) => z.type === 'town');
-	if (!town) throw new Error('expected an authored town Zone');
-	const g = createGameFromZones(zones, town.id);
+	const field = zones.find((z) => z.type === 'field');
+	if (!field) throw new Error('expected an authored field Zone');
+	const g = createGameFromZones(zones, field.id);
 	// Player spawns in the requested start Zone, not the default first Zone.
-	expect(g.player.zoneId).toBe(town.id);
+	expect(g.player.zoneId).toBe(field.id);
 	// Every loaded Zone is in the World so portal travel between them works.
 	for (const z of zones) expect(z.id in g.world.zones).toBe(true);
 	expect(g.world.tick).toBe(0);
@@ -373,5 +373,5 @@ test("only the active Zone ticks; the Avatar's persistent state lives above it",
 	g = step(g, { moveX: 1, jump: false, attack: false }, 16);
 	// dormant Zone untouched (same reference)
 	expect(g.world.zones['field-02']).toBe(before);
-	expect(g.player.zoneId).toBe('field-01');
+	expect(g.player.zoneId).toBe('town-01');
 });

@@ -86,22 +86,25 @@ test('no transition when the Avatar is not overlapping a Portal', () => {
 	expect(g.player.zoneId).toBe('field-01');
 });
 
-test('createGame wires a round-trip Portal pair: Field -> Town -> Field', () => {
+test('createGame wires a round-trip Portal pair: Town -> Field -> Town', () => {
 	let g = createGame();
-	const fieldPortal = activeZone(g.world, 'field-01').portals[0];
 	const townPortal = activeZone(g.world, 'town-01').portals[0];
-	expect(g.world.zones[fieldPortal.target].type).toBe('town');
+	const fieldPortal = activeZone(g.world, 'field-01').portals[0];
 	expect(g.world.zones[townPortal.target].type).toBe('field');
+	expect(g.world.zones[fieldPortal.target].type).toBe('town');
 
-	g.player.avatar.x = fieldPortal.x;
-	g = step(g, INTERACT, 16);
+	// The Player spawns into the Town hub; portal out to the Field...
 	expect(g.player.zoneId).toBe('town-01');
-	expect(g.player.avatar.x).toBe(fieldPortal.arrival.x);
-
 	g.player.avatar.x = townPortal.x;
 	g = step(g, INTERACT, 16);
 	expect(g.player.zoneId).toBe('field-01');
 	expect(g.player.avatar.x).toBe(townPortal.arrival.x);
+
+	// ...and back to the Town.
+	g.player.avatar.x = fieldPortal.x;
+	g = step(g, INTERACT, 16);
+	expect(g.player.zoneId).toBe('town-01');
+	expect(g.player.avatar.x).toBe(fieldPortal.arrival.x);
 });
 
 test('a Portal transition is deterministic', () => {
