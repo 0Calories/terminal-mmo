@@ -1,8 +1,11 @@
 // Candidate sprite designs, NOT wired into the entity REGISTRY. Preview with:
 //     bun packages/client/src/sprites/preview.ts
-import { merchant } from './merchant';
-import { player } from './player';
-import { Sprite } from './sprite';
+import { Sprite, spriteFor, spriteForNpc } from '@mmo/shared';
+
+// The live Avatar/vendor art lives in @mmo/shared's registry; pull it through the
+// lookup so the gallery and game can't drift.
+const player = spriteFor('player');
+const merchant = spriteForNpc('vendor');
 
 export interface GalleryEntry {
 	category: 'Avatar' | 'Monster';

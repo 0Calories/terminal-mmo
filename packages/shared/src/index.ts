@@ -10,6 +10,7 @@ export * from './rng';
 export * from './serverWorld';
 export * from './sim';
 export * from './skills';
+export * from './sprites';
 export * from './terrain';
 export * from './types';
 export * from './vendor';

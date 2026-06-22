@@ -9,6 +9,9 @@ import {
 	meleeHitbox,
 	skillForSlot,
 	skillHitbox,
+	type Sprite,
+	spriteFor,
+	spriteForNpc,
 } from '@mmo/shared';
 import {
 	type OptimizedBuffer,
@@ -18,8 +21,7 @@ import {
 } from '@opentui/core';
 import { layoutBubble } from './bubble';
 import { type CameraState, initCameraState, stepCamera } from './camera';
-import type { Sprite } from './sprites';
-import { PALETTE, spriteFor, spriteForNpc } from './sprites';
+import { PALETTE } from './sprites';
 import { COLORS as C } from './theme';
 
 function blitSprite(
