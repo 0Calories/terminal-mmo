@@ -13,7 +13,6 @@ import {
 	createZoneState,
 	GROUND_TOP,
 	MONSTER,
-	makeStarterField,
 	removeAvatar,
 	SPAWN,
 	snapshotFor,
@@ -22,6 +21,7 @@ import {
 	stepZone,
 	XP_PER_KILL,
 } from '../src';
+import { flatTerrain } from './helpers';
 
 const y = GROUND_TOP - BOX.h;
 
@@ -46,7 +46,7 @@ function zoneWith(monsters: Entity[]): Zone {
 	return {
 		id: 'field-01',
 		type: 'field',
-		terrain: makeStarterField(),
+		terrain: flatTerrain(),
 		monsters,
 		projectiles: [],
 		nextProjectileId: 1,
@@ -213,7 +213,7 @@ test('addAvatar spawns a Warrior at the safe point with its handle', () => {
 test('clientStepAvatar predicts platformer movement and decays the swing timer', () => {
 	const a = { ...spawnAvatar(20, y), attackT: 0.3 };
 	const predicted = clientStepAvatar(
-		makeStarterField(),
+		flatTerrain(),
 		a,
 		{ moveX: 1, jump: false },
 		16,

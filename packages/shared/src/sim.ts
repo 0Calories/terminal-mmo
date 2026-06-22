@@ -3,8 +3,9 @@ import { PHYS, SPAWN } from './constants';
 import { stepEntity } from './physics';
 import { type PlayerState, spawnPlayerState } from './player';
 import type { Entity, Input } from './types';
-import { makeFieldZone, makeTownZone, type World } from './world';
+import type { World, Zone } from './world';
 import { type AvatarIntent, type ServerAvatar, stepZone } from './zone';
+import { loadZones } from './zoneContent';
 
 export interface GameState {
 	player: PlayerState;
@@ -15,13 +16,15 @@ export interface GameState {
 }
 
 export function createGame(seed = 1): GameState {
-	const field = makeFieldZone('field-01');
-	const town = makeTownZone('town-01');
-	const player = spawnPlayerState(field.id, SPAWN.x, SPAWN.y, seed);
-	return {
-		player,
-		world: { zones: { [field.id]: field, [town.id]: town }, tick: 0 },
-	};
+	// The data-driven World (ADR 0008): zones are loaded from the authored `.zone`
+	// files, not built by a factory. loadZones() returns the start Zone (the Field)
+	// first; the Player spawns there at the shared safe point.
+	const loaded = loadZones();
+	const zones: Record<string, Zone> = {};
+	for (const z of loaded) zones[z.id] = z;
+	const start = loaded[0];
+	const player = spawnPlayerState(start.id, SPAWN.x, SPAWN.y, seed);
+	return { player, world: { zones, tick: 0 } };
 }
 
 // TODO(M1): portal connecting the Field and Town (#3).

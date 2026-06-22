@@ -15,5 +15,6 @@ export * from './types';
 export * from './vendor';
 export * from './world';
 export * from './zone';
+export * from './zoneContent';
 export * from './zoneFormat';
 export * from './zoneValidate';
