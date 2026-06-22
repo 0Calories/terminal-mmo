@@ -17,6 +17,7 @@ import {
 	SPAWN,
 	XP_PER_KILL,
 } from './constants';
+import { DEFAULT_COSMETICS } from './cosmetics';
 import { rollItem } from './loot';
 import { stepEntity } from './physics';
 import { spawnAvatar } from './player';
@@ -37,6 +38,7 @@ import { isSolid } from './terrain';
 import type {
 	Box,
 	Control,
+	Cosmetics,
 	Entity,
 	Facing,
 	Item,
@@ -52,6 +54,7 @@ import { spawnMonster, type Zone } from './world';
 export interface ServerAvatar {
 	sessionId: number;
 	handle: string; // ephemeral nameplate handle from the handshake
+	cosmetics: Cosmetics; // chosen hue / hat / nameplate colour (#35), echoed in snapshots
 	avatar: Entity;
 	progress: PlayerProgress;
 	inventory: Item[];
@@ -403,6 +406,7 @@ export function snapshotFor(
 	const avatars: AvatarSnapshot[] = state.avatars.map((a) => ({
 		sessionId: a.sessionId,
 		handle: a.handle,
+		cosmetics: a.cosmetics,
 		x: a.avatar.x,
 		y: a.avatar.y,
 		vx: a.avatar.vx,
@@ -451,10 +455,12 @@ export function addAvatar(
 	state: ZoneState,
 	sessionId: number,
 	handle: string,
+	cosmetics: Cosmetics = DEFAULT_COSMETICS,
 ): ZoneState {
 	const sa: ServerAvatar = {
 		sessionId,
 		handle,
+		cosmetics,
 		avatar: { ...spawnAvatar(SPAWN.x, SPAWN.y), id: sessionId },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],

@@ -21,6 +21,39 @@ export const SCENE_COLORS = {
 	paletteDefault: [232, 232, 238, 255],
 } as const satisfies Record<string, RGBAQuad>;
 
+// The cosmetic Avatar hue catalog (#35, ADR 0003): the body-recolour options an
+// Avatar chooses from, indexed by the on-the-wire hue id. Index 0 is the default
+// amber (identical to the `p` body key) so a defaulted Avatar looks unchanged. The
+// rest are a small, fixed, reviewed set. Append-only so ids stay stable.
+//
+// VISUAL ARTEFACT — this palette needs design review / sign-off before merge.
+export const HUES = [
+	[255, 150, 40, 255], // amber (default)
+	[235, 90, 90, 255], // red
+	[120, 215, 120, 255], // green
+	[90, 170, 255, 255], // blue
+	[200, 120, 240, 255], // purple
+	[245, 215, 95, 255], // gold
+	[120, 225, 230, 255], // cyan
+	[245, 150, 205, 255], // pink
+] as const satisfies readonly RGBAQuad[];
+
+// The cosmetic nameplate-colour catalog (#35): the handle-tint options, indexed by
+// the on-the-wire nameplate id. Index 0 is the default dim grey (identical to
+// SCENE_COLORS.nameplate). Append-only so ids stay stable.
+//
+// VISUAL ARTEFACT — this set needs design review / sign-off before merge.
+export const NAMEPLATE_COLORS = [
+	[150, 156, 168, 255], // grey (default)
+	[120, 200, 255, 255], // blue
+	[130, 230, 140, 255], // green
+	[210, 150, 255, 255], // purple
+	[255, 140, 140, 255], // red
+	[245, 215, 110, 255], // gold
+	[140, 235, 235, 255], // cyan
+	[245, 160, 205, 255], // pink
+] as const satisfies readonly RGBAQuad[];
+
 // The recolourable art palette, keyed by a Sprite's single-char colour codes.
 export const SCENE_PALETTE = {
 	p: [255, 150, 40, 255],
@@ -58,5 +91,11 @@ export function buildSceneStyle<C>(toColor: ColorFactory<C>): RenderStyle<C> {
 		nameplate: c(SCENE_COLORS.nameplate),
 		palette,
 		paletteDefault: c(SCENE_COLORS.paletteDefault),
+		// Cosmetic catalogs resolved into the colour type once, so the renderer can
+		// index them per Avatar without re-resolving (#35).
+		cosmetics: {
+			hues: HUES.map((q) => c(q)),
+			nameplates: NAMEPLATE_COLORS.map((q) => c(q)),
+		},
 	};
 }

@@ -11,6 +11,7 @@ import {
 	BOX,
 	clientStepAvatar,
 	createZoneState,
+	DEFAULT_COSMETICS,
 	GROUND_TOP,
 	MONSTER,
 	removeAvatar,
@@ -34,6 +35,7 @@ function serverAvatar(
 	return {
 		sessionId,
 		handle,
+		cosmetics: DEFAULT_COSMETICS,
 		avatar: { ...spawnAvatar(x, y), id: sessionId },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],

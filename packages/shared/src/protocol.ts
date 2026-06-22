@@ -3,7 +3,9 @@
 // round-trip testable. Floats use f64 so encode -> decode is exact (bandwidth is
 // trivial at this scale; quant/delta-encoding is a later concern).
 
+import { clampCosmetics, DEFAULT_COSMETICS } from './cosmetics';
 import type {
+	Cosmetics,
 	EntityType,
 	Facing,
 	Item,
@@ -18,7 +20,7 @@ import type {
 // published client version). Carried on `hello`; the server rejects a mismatch
 // (ADR 0009) so a stale `bunx` client fails loudly with "run @latest" rather than
 // silently mis-decoding a binary frame at the wrong offsets.
-export const PROTOCOL_VERSION = 3;
+export const PROTOCOL_VERSION = 4;
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -146,7 +148,7 @@ class Reader {
 // kinematics (ADR 0001: position is client-authoritative) plus the combat intents
 // for the tick. A `skill` of 0 means none was pressed.
 export type ClientMessage =
-	| { t: 'hello'; handle: string; protocol: number }
+	| { t: 'hello'; handle: string; protocol: number; cosmetics: Cosmetics }
 	| {
 			t: 'input';
 			x: number;
@@ -170,6 +172,18 @@ export type ClientMessage =
 	// glyph. `emote` is an EMOTES id; the server drops an unknown one.
 	| { t: 'emote'; emote: string };
 
+// Cosmetics are three small catalog indices (#35): one u8 each. Decode clamps to a
+// valid index so a forward-version / garbled value can never crash the renderer.
+function writeCosmetics(w: Writer, c: Cosmetics) {
+	w.u8(c.hue);
+	w.u8(c.hat);
+	w.u8(c.nameplate);
+}
+
+function readCosmetics(r: Reader): Cosmetics {
+	return clampCosmetics({ hue: r.u8(), hat: r.u8(), nameplate: r.u8() });
+}
+
 const CLIENT_TAG = {
 	hello: 1,
 	input: 2,
@@ -185,6 +199,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.u8(CLIENT_TAG.hello);
 			w.str(msg.handle);
 			w.u16(msg.protocol);
+			writeCosmetics(w, msg.cosmetics);
 			break;
 		case 'input':
 			w.u8(CLIENT_TAG.input);
@@ -224,7 +239,11 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			// A pre-0009 client sends no version; treat absent as 0 so it fails the
 			// gate cleanly (reject) rather than throwing on a short read.
 			const protocol = r.remaining() >= 2 ? r.u16() : 0;
-			return { t: 'hello', handle, protocol };
+			// Cosmetics (#35) are trailing too; a client predating them defaults to the
+			// bareheaded look (it is rejected by the version gate regardless).
+			const cosmetics =
+				r.remaining() >= 3 ? readCosmetics(r) : DEFAULT_COSMETICS;
+			return { t: 'hello', handle, protocol, cosmetics };
 		}
 		case CLIENT_TAG.input: {
 			const x = r.f64();
@@ -269,6 +288,7 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 export interface AvatarSnapshot {
 	sessionId: number;
 	handle: string; // ephemeral nameplate handle from the handshake
+	cosmetics: Cosmetics; // chosen hue / hat / nameplate colour (#35)
 	x: number;
 	y: number;
 	vx: number;
@@ -360,6 +380,7 @@ const RARITIES: readonly Rarity[] = [
 function writeAvatar(w: Writer, a: AvatarSnapshot) {
 	w.u32(a.sessionId);
 	w.str(a.handle);
+	writeCosmetics(w, a.cosmetics);
 	w.f64(a.x);
 	w.f64(a.y);
 	w.f64(a.vx);
@@ -375,6 +396,7 @@ function readAvatar(r: Reader): AvatarSnapshot {
 	return {
 		sessionId: r.u32(),
 		handle: r.str(),
+		cosmetics: readCosmetics(r),
 		x: r.f64(),
 		y: r.f64(),
 		vx: r.f64(),

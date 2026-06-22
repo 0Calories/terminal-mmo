@@ -5,7 +5,7 @@ import {
 	type RenderStyle,
 	renderZoneScene,
 } from '../src/render';
-import { type Sprite, spriteFor, spriteForNpc } from '../src/sprites';
+import { HATS, type Sprite, spriteFor, spriteForNpc } from '../src/sprites';
 import { parseTerrain } from '../src/terrain';
 import type { Entity, EntityType, Facing } from '../src/types';
 
@@ -98,6 +98,11 @@ const STYLE: RenderStyle<string> = {
 		k: 'cK',
 	},
 	paletteDefault: 'DEF',
+	cosmetics: {
+		// Distinct sentinels per index so a test can assert which catalog slot was used.
+		hues: ['hue0', 'hue1', 'hue2', 'hue3', 'hue4', 'hue5', 'hue6', 'hue7'],
+		nameplates: ['np0', 'np1', 'np2', 'np3', 'np4', 'np5', 'np6', 'np7'],
+	},
 };
 
 const fgFor = (key: string) => STYLE.palette[key] ?? STYLE.paletteDefault;
@@ -290,4 +295,99 @@ test('a named entity gets a nameplate one row above its sprite', () => {
 	expect(buf.at(x, top - 1)?.ch).toBe('n');
 	expect(buf.at(x + 1, top - 1)).toEqual({ ch: 'e', fg: 'NAME', bg: 'TR' });
 	expect(buf.at(x + 2, top - 1)?.ch).toBe('o');
+});
+
+// --- Cosmetics (#35) -------------------------------------------------------
+
+// The own Avatar is drawn directly (not via the z-ordered scene loop), so the
+// cosmetic tests render through drawEntitySprite to pin the per-Avatar overrides.
+function avatarTopLeft(e: Entity) {
+	const sprite = spriteFor('player');
+	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
+	const ay = Math.round(e.y + BOX.h - sprite.h);
+	return { sprite, ax, ay };
+}
+
+test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouched", () => {
+	const buf = new FakeBuffer(20, 16);
+	// hue 2 -> 'hue2'; the player sprite is entirely the 'p' body key.
+	const e = makeEntity({
+		type: 'player',
+		x: 8,
+		y: 7,
+		cosmetics: { hue: 2, hat: 0, nameplate: 0 },
+	});
+
+	renderZoneScene(
+		buf,
+		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	const { sprite, ax, ay } = avatarTopLeft(e);
+	expectSpriteAt(buf, sprite, ax, ay, 1, (key) =>
+		key === 'p' ? 'hue2' : (STYLE.palette[key] ?? STYLE.paletteDefault),
+	);
+});
+
+test('a cosmetic hat is overlaid directly above the head', () => {
+	const buf = new FakeBuffer(20, 16);
+	const hatIdx = 1; // Cap
+	const e = makeEntity({
+		type: 'player',
+		x: 8,
+		y: 7,
+		cosmetics: { hue: 0, hat: hatIdx, nameplate: 0 },
+	});
+
+	renderZoneScene(
+		buf,
+		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	const hat = HATS[hatIdx].sprite;
+	if (!hat) throw new Error('expected a hat sprite');
+	const { sprite, ax, ay } = avatarTopLeft(e);
+	const hx = ax + Math.round((sprite.w - hat.w) / 2);
+	const hy = ay - hat.h; // bottom row sits on the row above the Sprite top
+	expectSpriteAt(
+		buf,
+		hat,
+		hx,
+		hy,
+		1,
+		(key) => STYLE.palette[key] ?? STYLE.paletteDefault,
+	);
+});
+
+test('the nameplate uses the chosen colour and clears the hat above it', () => {
+	const buf = new FakeBuffer(20, 16);
+	const hatIdx = 1; // Cap (2 rows)
+	const e = makeEntity({
+		type: 'player',
+		x: 8,
+		y: 7,
+		name: 'neo',
+		cosmetics: { hue: 0, hat: hatIdx, nameplate: 4 },
+	});
+
+	renderZoneScene(
+		buf,
+		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	const hat = HATS[hatIdx].sprite;
+	if (!hat) throw new Error('expected a hat sprite');
+	const { ay } = avatarTopLeft(e);
+	const cx = e.x + BOX.w / 2;
+	const x = Math.round(cx - 'neo'.length / 2);
+	const plateY = ay - 1 - hat.h; // pushed above the hat
+	expect(buf.at(x, plateY)?.ch).toBe('n');
+	expect(buf.at(x + 1, plateY)).toEqual({ ch: 'e', fg: 'np4', bg: 'TR' });
+	expect(buf.at(x + 2, plateY)?.ch).toBe('o');
 });

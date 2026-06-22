@@ -10,6 +10,7 @@ import {
 	type Input,
 	loadZones,
 	PHYS,
+	randomCosmetics,
 	SPAWN,
 	saleValue,
 	sellItem,
@@ -191,11 +192,20 @@ function localZone(id: string): Zone {
 
 function runNetworked(url: string) {
 	const handle = process.env.USER || 'wanderer';
+	// Until the pre-spawn picker exists (a separate slice, #35), give each Avatar a
+	// randomized look at connect so co-present Players are visibly distinct. Pure +
+	// seeded so it is reproducible; the seed is a per-process random int.
+	const cosmetics = randomCosmetics((Math.random() * 0x7fffffff) | 0);
 	// On a server refusal (protocol mismatch / connection cap, ADR 0009), tear down
 	// the TUI and print the reason so it isn't buried under the alt-screen.
-	const net = new NetClient(url, handle, (reason) => {
-		quit(reason);
-	});
+	const net = new NetClient(
+		url,
+		handle,
+		(reason) => {
+			quit(reason);
+		},
+		cosmetics,
+	);
 	hud.showAlphaNotice(); // ephemeral live World (ADR 0009)
 	// The Zone we currently render + predict against; swapped when the server moves
 	// us between Zones (portal travel, death respawn).

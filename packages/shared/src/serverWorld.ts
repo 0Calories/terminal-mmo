@@ -13,7 +13,7 @@
 import { aabbOverlap } from './combat';
 import { BOX, TOWN_SPAWN } from './constants';
 import type { ServerMessage } from './protocol';
-import type { Box } from './types';
+import type { Box, Cosmetics } from './types';
 import type { Zone, ZoneId } from './world';
 import {
 	type AvatarIntent,
@@ -183,6 +183,7 @@ export function addSession(
 	world: ServerWorld,
 	sessionId: number,
 	handle: string,
+	cosmetics?: Cosmetics,
 ): ServerWorld {
 	const channels = { ...world.channels };
 	const channel = openRoute(
@@ -192,7 +193,7 @@ export function addSession(
 		world.startZone,
 	);
 	const key = channelKey(world.startZone, channel);
-	channels[key] = addAvatar(channels[key], sessionId, handle);
+	channels[key] = addAvatar(channels[key], sessionId, handle, cosmetics);
 	return {
 		...world,
 		channels,

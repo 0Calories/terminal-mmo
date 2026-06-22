@@ -29,6 +29,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 			{
 				sessionId: 1,
 				handle: 'me',
+				cosmetics: { hue: 2, hat: 1, nameplate: 4 },
 				x: 40,
 				y,
 				vx: 0,
@@ -70,6 +71,7 @@ function withOther(): Extract<ServerMessage, { t: 'snapshot' }> {
 	s.avatars.push({
 		sessionId: 2,
 		handle: 'rival',
+		cosmetics: { hue: 5, hat: 3, nameplate: 6 },
 		x: 70,
 		y,
 		vx: 0,
@@ -95,6 +97,21 @@ test('snapshotToGame carries co-present Avatars into others, excluding own', () 
 	expect(other?.facing).toBe(-1);
 	expect(other?.hp).toBe(30);
 	expect(other?.hurtT).toBe(0.5);
+});
+
+test('snapshotToGame threads cosmetics onto co-present Avatars and the own Avatar (#35)', () => {
+	const field = loadField();
+	const predicted = spawnAvatar(33, y);
+	const game = snapshotToGame(field, predicted, 1, withOther(), {});
+	// The co-present rival carries the cosmetics from its snapshot.
+	expect(game.others?.[0]?.cosmetics).toEqual({ hue: 5, hat: 3, nameplate: 6 });
+	// The own (locally-predicted) Avatar is stamped with its own snapshot cosmetics,
+	// so the local view matches what every other client renders.
+	expect(game.player.avatar.cosmetics).toEqual({
+		hue: 2,
+		hat: 1,
+		nameplate: 4,
+	});
 });
 
 test('snapshotToGame renders snapshot monsters/projectiles with the predicted own Avatar', () => {
