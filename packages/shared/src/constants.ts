@@ -4,6 +4,12 @@ export const GROUND_TOP = WORLD.h - 3;
 // logical collision box, decoupled from the ~7x5 visual sprite (ADR 0003)
 export const BOX = { w: 5, h: 5 } as const;
 
+// Entity collision-box footprints, engine-derived from the anchor glyph (ADR 0008).
+// One source of truth shared by parseZone (which builds these boxes) and the Zone
+// editor's placement ghost (#96), so the preview can never drift from validation.
+export const NPC_BOX = { w: 4, h: BOX.h } as const; // matches the factory Merchant
+export const PORTAL_BOX = { w: 4, h: 7 } as const; // mirrors world.ts's fixed dims
+
 // cells/second
 export const PHYS = {
 	speed: 22,

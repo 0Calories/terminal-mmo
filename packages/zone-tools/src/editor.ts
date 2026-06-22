@@ -7,10 +7,13 @@
 // the PRD. All geometry sits on top of the lossless `EditorDoc` (doc.ts).
 
 import {
+	BOX,
 	buildSceneStyle,
 	type Catalogs,
 	type Diagnostic,
 	findOrphanGlyphs,
+	NPC_BOX,
+	PORTAL_BOX,
 	parseZone,
 	renderZoneScene,
 	validateZone,
@@ -392,6 +395,137 @@ export function moveRegion(
 	return pasteClip(cleared, clip, x0 + dx, y0 + dy);
 }
 
+// --- Placement feedback (#96): footprint, grounding state, ground-snap ---------
+
+/** A rectangular footprint anchored at its top-left. */
+export interface FootBox {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+
+/**
+ * The engine-derived collision box an entity Placeable occupies when its anchor
+ * glyph sits at `(x, y)` — the glyph is the box's TOP-LEFT corner (ADR 0008).
+ * Dimensions come from the shared constants `parseZone` builds its boxes from, so
+ * the editor's placement ghost can't drift from what `zone check` validates.
+ * Terrain has no real footprint (it stamps one solid cell).
+ */
+export function footprintBox(p: Placeable, x: number, y: number): FootBox {
+	switch (p.kind) {
+		case 'monster':
+			return { x, y, w: BOX.w, h: BOX.h };
+		case 'npc':
+			return { x, y, w: NPC_BOX.w, h: NPC_BOX.h };
+		case 'portal':
+			return { x, y, w: PORTAL_BOX.w, h: PORTAL_BOX.h };
+		case 'terrain':
+			return { x, y, w: 1, h: 1 };
+	}
+}
+
+/**
+ * Editor-grid solidity, matching the runtime's `isSolid` (shared/terrain): a `#`
+ * cell is solid; horizontal out-of-bounds and below the canvas read as solid
+ * wall/floor, above the canvas as open sky. Lets the placement checks see the same
+ * world the validator/runtime does (incl. the implicit world floor).
+ */
+function gridSolid(
+	doc: EditorDoc,
+	ext: { w: number; h: number },
+	x: number,
+	y: number,
+): boolean {
+	if (x < 0 || x >= ext.w) return true;
+	if (y < 0) return false;
+	if (y >= ext.h) return true;
+	return cellAt(doc, x, y) === '#';
+}
+
+/** Does the box fit entirely within the current canvas extent? */
+function boxInBounds(b: FootBox, ext: { w: number; h: number }): boolean {
+	return b.x >= 0 && b.y >= 0 && b.x + b.w <= ext.w && b.y + b.h <= ext.h;
+}
+
+/** Any in-grid cell under the footprint is solid terrain (`#`). Mirrors the
+ *  validator's `clipsSolid` — out-of-bounds is `boxInBounds`'s concern, not this. */
+function boxClips(doc: EditorDoc, b: FootBox): boolean {
+	for (let y = b.y; y < b.y + b.h; y++)
+		for (let x = b.x; x < b.x + b.w; x++)
+			if (cellAt(doc, x, y) === '#') return true;
+	return false;
+}
+
+/** Some cell directly below the box bottom is solid (incl. the world floor). */
+function boxRestsOnGround(
+	doc: EditorDoc,
+	ext: { w: number; h: number },
+	b: FootBox,
+): boolean {
+	const below = b.y + b.h;
+	for (let x = b.x; x < b.x + b.w; x++)
+		if (gridSolid(doc, ext, x, below)) return true;
+	return false;
+}
+
+/** The three placement states the ghost footprint is tinted by (#96). */
+export type PlacementState = 'grounded' | 'airborne' | 'invalid';
+
+/**
+ * Classify where an entity Placeable would land if its anchor were `(x, y)`, using
+ * the SAME footprint/clip/ground rules the validator applies — so the green/blue/red
+ * ghost predicts exactly what `zone check` will say. `invalid` (red) = the footprint
+ * clips solid terrain or extends off the canvas; `airborne` (blue) = it fits but has
+ * no solid beneath its feet (informational — not an error for Monsters until #90);
+ * `grounded` (green) = it rests on ground. Portals need no ground; terrain is always
+ * placeable.
+ */
+export function placementState(
+	doc: EditorDoc,
+	p: Placeable,
+	x: number,
+	y: number,
+): PlacementState {
+	if (p.kind === 'terrain') return 'grounded';
+	const ext = editorExtent(doc);
+	const box = footprintBox(p, x, y);
+	if (!boxInBounds(box, ext) || boxClips(doc, box)) return 'invalid';
+	const needsGround = p.kind === 'monster' || p.kind === 'npc';
+	if (needsGround && !boxRestsOnGround(doc, ext, box)) return 'airborne';
+	return 'grounded';
+}
+
+/**
+ * Auto-ground-snap (#96): drop an entity's anchor so its feet rest on the nearest
+ * solid surface at or below the cursor. Scans the footprint columns downward for the
+ * first solid row — a `#` cell or the implicit canvas floor — and seats the box just
+ * above it. An already-grounded anchor (or a Placeable with no surface below, or
+ * terrain) is returned unchanged. The shell offers a free-place modifier that
+ * bypasses this to drop exactly at the cursor (incl. mid-air).
+ */
+export function groundSnap(
+	doc: EditorDoc,
+	p: Placeable,
+	x: number,
+	y: number,
+): { x: number; y: number } {
+	if (p.kind === 'terrain') return { x, y };
+	const ext = editorExtent(doc);
+	const box = footprintBox(p, x, y);
+	// The first solid row at or below the box's current bottom edge.
+	for (let r = y + box.h; r <= ext.h; r++) {
+		let solid = false;
+		for (let cx = x; cx < x + box.w; cx++)
+			if (gridSolid(doc, ext, cx, r)) {
+				solid = true;
+				break;
+			}
+		if (solid) return { x, y: Math.max(0, r - box.h) };
+	}
+	return { x, y };
+}
+
 // --- Interactive shell (opentui; not unit-tested, validated by eye) -----------
 
 // Editor frame geometry. The scene fills the buffer; the rulers + footer overpaint
@@ -461,6 +595,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let selection: { a: Point; b: Point } | null = null; // captured Select region
 	let clip: Clip | null = null; // copy/cut buffer
 	let panned = false; // middle-mouse free pan detached the camera from the cursor
+	let freePlace = false; // `f` drops entities at the cursor instead of ground-snapping
 	let savedText = serializeDoc(trimDoc(doc));
 	let dirty = false;
 	let diags = docDiagnostics(doc, catalogs);
@@ -502,6 +637,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		hot: RGBA.fromInts(245, 215, 95, 255),
 		gestureBg: RGBA.fromInts(70, 96, 70, 255), // in-progress rect/line drag
 		selBg: RGBA.fromInts(58, 72, 104, 255), // captured Select region
+		ghostOk: RGBA.fromInts(40, 110, 60, 255), // grounded footprint — green
+		ghostAir: RGBA.fromInts(48, 80, 134, 255), // airborne footprint — blue
+		ghostBad: RGBA.fromInts(130, 48, 48, 255), // invalid footprint — red
 	};
 
 	class EditRenderable extends Renderable {
@@ -588,6 +726,49 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				tint(cells, C.gestureBg);
 			}
 
+			// Ghost footprint (#96): while a Brush holds an entity Placeable, preview the
+			// 5×5 / 4×5 / 4×7 collision box at the spot it will actually land (ground-
+			// snapped unless free-place), tinted by its placement state — green grounded,
+			// blue airborne, red clipping/off-canvas — so floating/clipping entities are
+			// visible before they're stamped. Drawn under the cursor marker, which is
+			// re-stamped on top so it stays crisp.
+			const ghostP = palette[selIdx]?.placeable;
+			if (
+				ghostP &&
+				ghostP.kind !== 'terrain' &&
+				TOOLS[toolIdx].id === 'brush' &&
+				!anchor
+			) {
+				const a = freePlace
+					? cursor
+					: groundSnap(doc, ghostP, cursor.x, cursor.y);
+				const box = footprintBox(ghostP, a.x, a.y);
+				const st = placementState(doc, ghostP, a.x, a.y);
+				const bg =
+					st === 'grounded'
+						? C.ghostOk
+						: st === 'airborne'
+							? C.ghostAir
+							: C.ghostBad;
+				tint(
+					rectCells(
+						{ x: box.x, y: box.y },
+						{ x: box.x + box.w - 1, y: box.y + box.h - 1 },
+					),
+					bg,
+				);
+				if (inCanvasX(cx) && inCanvasY(cy)) {
+					const here = cellAt(doc, cursor.x, cursor.y);
+					buf.setCell(
+						cx,
+						cy,
+						here === '.' ? '+' : here,
+						C.cursorFg,
+						C.cursorBg,
+					);
+				}
+			}
+
 			// Off-screen indicator: live once a middle-mouse free pan detaches the cam.
 			const edge = cursorEdge(cursor, cam, viewW, viewH);
 			if (edge.dx || edge.dy) {
@@ -644,6 +825,13 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				);
 				toolHits.push({ x0: tx, x1: tx + seg.length, idx: i });
 				tx += seg.length;
+			}
+			// Placement-mode badge (#96): which way the active entity Brush will drop.
+			const ghostMode = palette[selIdx]?.placeable;
+			if (ghostMode && ghostMode.kind !== 'terrain') {
+				const badge = freePlace ? 'free-place (f)' : 'ground-snap (f)';
+				const bx = Math.max(tx + 1, W - badge.length);
+				if (bx < W) buf.drawText(badge, bx, toolbarRow, C.dimFg, C.chromeBg);
 			}
 
 			// Status bar (now reflects the active Tool).
@@ -725,10 +913,19 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			return q.kind === 'terrain';
 		});
 
+	// Where an entity actually lands: ground-snapped by default (#96), or exactly at
+	// the cursor when free-place is on. Terrain never snaps.
+	const placeAnchor = (x: number, y: number): Point => {
+		const p = activeP();
+		if (!p || freePlace) return { x, y };
+		return groundSnap(doc, p, x, y);
+	};
+
 	const stampAt = (x: number, y: number) => {
 		const p = activeP();
 		if (!p) return;
-		doc = place(growToInclude(doc, x, y), x, y, p);
+		const a = placeAnchor(x, y);
+		doc = place(growToInclude(doc, a.x, a.y), a.x, a.y, p);
 		recompute();
 	};
 	const eraseAt = (x: number, y: number) => {
@@ -907,6 +1104,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			case 'escape':
 				anchor = null;
 				selection = null;
+				return;
+			case 'f': // toggle ground-snap vs. free-place for entity placement (#96)
+				freePlace = !freePlace;
 				return;
 			case 'c': // Select → copy
 				if (hasSelection() && selection)
