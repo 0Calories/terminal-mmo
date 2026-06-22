@@ -42,38 +42,31 @@ export const EMOTES: readonly EmoteDef[] = [
 	{
 		id: 'laugh',
 		sprite: new Sprite(FACE, {
-			defaultKey: 'y', // yellow face, dark eyes + a wide open grin
+			defaultKey: 'y', // yellow face: scrunched squinting eyes + a wide open grin
 			colors: `
 ·yyyyy·
-yykykyy
+ykkykky
 ykkkkky
 ·yyyyy·`,
 		}),
 	},
 	{
 		id: 'cry',
-		sprite: new Sprite(
-			`
-·▟▀▀▀▙·
-▐█████▌
-▐██▄██▌
-·▜▄▄▄▛·`,
-			{
-				defaultKey: 'y', // dark eyes, cyan tears, a small sad mouth
-				colors: `
+		sprite: new Sprite(FACE, {
+			defaultKey: 'y', // yellow face, dark eyes, cyan tears streaming down both cheeks
+			colors: `
 ·yyyyy·
-yykykyy
-yyckcyy
-·yyyyy·`,
-			},
-		),
+yckykcy
+ycykycy
+·cyyyc·`,
+		}),
 	},
 	{
 		id: 'angry',
 		sprite: new Sprite(FACE, {
-			defaultKey: 'm', // red face, dark eyes + a clenched mouth
+			defaultKey: 'm', // red face: heavy lowered brows, glaring eyes, a tight scowl
 			colors: `
-·mmmmm·
+mkkmkkm
 mmkmkmm
 mmkkkmm
 ·mmmmm·`,
