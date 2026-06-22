@@ -15,16 +15,31 @@ export interface GameState {
 	others?: Entity[];
 }
 
+/**
+ * Seed a playable World from an explicit set of Zones, spawning the Player in
+ * `startId` (falling back to the first Zone for an unknown id). The whole set is
+ * kept in the World so portal travel between the Zones works. This is the seam
+ * `zone play` uses to boot the offline sim from `.zone` files under edit, sharing
+ * one code path with `createGame` so the playtest and the game never diverge.
+ */
+export function createGameFromZones(
+	zones: Zone[],
+	startId: string,
+	seed = 1,
+): GameState {
+	const rec: Record<string, Zone> = {};
+	for (const z of zones) rec[z.id] = z;
+	const start = rec[startId] ?? zones[0];
+	const player = spawnPlayerState(start.id, SPAWN.x, SPAWN.y, seed);
+	return { player, world: { zones: rec, tick: 0 } };
+}
+
 export function createGame(seed = 1): GameState {
 	// The data-driven World (ADR 0008): zones are loaded from the authored `.zone`
 	// files, not built by a factory. loadZones() returns the start Zone (the Field)
 	// first; the Player spawns there at the shared safe point.
 	const loaded = loadZones();
-	const zones: Record<string, Zone> = {};
-	for (const z of loaded) zones[z.id] = z;
-	const start = loaded[0];
-	const player = spawnPlayerState(start.id, SPAWN.x, SPAWN.y, seed);
-	return { player, world: { zones, tick: 0 } };
+	return createGameFromZones(loaded, loaded[0].id, seed);
 }
 
 // TODO(M1): portal connecting the Field and Town (#3).

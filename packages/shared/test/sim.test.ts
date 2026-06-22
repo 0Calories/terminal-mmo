@@ -4,7 +4,9 @@ import {
 	activeZone,
 	BOX,
 	createGame,
+	createGameFromZones,
 	GROUND_TOP,
+	loadZones,
 	MONSTER,
 	SHOOTER,
 	spawnAvatar,
@@ -24,6 +26,25 @@ test('createGame separates Player state from the World of Zones', () => {
 	const zone = activeZone(g.world, g.player.zoneId);
 	expect(zone.type).toBe('field');
 	expect(zone.monsters.length).toBe(8);
+});
+
+test('createGameFromZones seeds the sim from an explicit Zone set + start id', () => {
+	const zones = loadZones();
+	const town = zones.find((z) => z.type === 'town');
+	if (!town) throw new Error('expected an authored town Zone');
+	const g = createGameFromZones(zones, town.id);
+	// Player spawns in the requested start Zone, not the default first Zone.
+	expect(g.player.zoneId).toBe(town.id);
+	// Every loaded Zone is in the World so portal travel between them works.
+	for (const z of zones) expect(z.id in g.world.zones).toBe(true);
+	expect(g.world.tick).toBe(0);
+	expect(g.player.avatar.type).toBe('player');
+});
+
+test('createGameFromZones falls back to the first Zone for an unknown start id', () => {
+	const zones = loadZones();
+	const g = createGameFromZones(zones, 'no-such-zone');
+	expect(g.player.zoneId).toBe(zones[0].id);
 });
 
 test('step advances the World tick', () => {

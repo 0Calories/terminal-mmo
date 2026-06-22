@@ -23,6 +23,7 @@ const USAGE = [
 	'usage:',
 	'  zone render <id>            parse + dump one Zone as ASCII + diagnostics',
 	'  zone preview <id>           live, faithful TUI render (pan; re-renders on save)',
+	'  zone play <id>              boot the Zone into the offline sim + walk around in it',
 	'  zone check [dir]            whole-set validation (CI; non-zero on error)',
 	'  zone new <id> --type field|town   write a blank template to <id>.zone',
 ].join('\n');
