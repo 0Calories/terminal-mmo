@@ -2,6 +2,7 @@ export * from './cli';
 export * from './diagnostics';
 export * from './doc';
 export * from './io';
+export * from './placeable';
 export * from './play';
 export * from './preview';
 export * from './render';
