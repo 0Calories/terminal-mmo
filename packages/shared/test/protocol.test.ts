@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { ClientMessage, ServerMessage } from '../src';
 import {
+	DEFAULT_COSMETICS,
 	decodeClientMessage,
 	decodeServerMessage,
 	encodeClientMessage,
@@ -8,17 +9,18 @@ import {
 	PROTOCOL_VERSION,
 } from '../src';
 
-test('hello round-trips the handle + protocol version', () => {
+test('hello round-trips the handle + protocol version + cosmetics', () => {
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'neo',
 		protocol: PROTOCOL_VERSION,
+		cosmetics: { hue: 3, hat: 2, nameplate: 5 },
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
 });
 
-test('a legacy hello (no protocol field) decodes to protocol 0', () => {
+test('a legacy hello (no protocol field) decodes to protocol 0 + default cosmetics', () => {
 	// Hand-roll a pre-0009 hello: tag(1) + u32 length-prefixed handle, no version.
 	const handle = new TextEncoder().encode('legacy');
 	const buf = new Uint8Array(1 + 4 + handle.length);
@@ -29,6 +31,29 @@ test('a legacy hello (no protocol field) decodes to protocol 0', () => {
 		t: 'hello',
 		handle: 'legacy',
 		protocol: 0,
+		cosmetics: DEFAULT_COSMETICS,
+	});
+});
+
+test('hello clamps an out-of-range cosmetic index to the default on decode', () => {
+	// Hand-roll a hello with a hat id past the catalog; decode must not throw and the
+	// bad field falls back to 0 (the renderer is never handed a stray index).
+	const handle = new TextEncoder().encode('forward');
+	const buf = new Uint8Array(1 + 4 + handle.length + 2 + 3);
+	const view = new DataView(buf.buffer);
+	buf[0] = 1; // CLIENT_TAG.hello
+	view.setUint32(1, handle.length);
+	buf.set(handle, 5);
+	view.setUint16(5 + handle.length, PROTOCOL_VERSION);
+	const cos = 5 + handle.length + 2;
+	buf[cos] = 2; // hue (valid)
+	buf[cos + 1] = 250; // hat (out of range)
+	buf[cos + 2] = 1; // nameplate (valid)
+	expect(decodeClientMessage(buf)).toEqual({
+		t: 'hello',
+		handle: 'forward',
+		protocol: PROTOCOL_VERSION,
+		cosmetics: { hue: 2, hat: 0, nameplate: 1 },
 	});
 });
 
@@ -161,6 +186,7 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 			{
 				sessionId: 7,
 				handle: 'neo',
+				cosmetics: { hue: 1, hat: 4, nameplate: 3 },
 				x: 12.5,
 				y: 31.25,
 				vx: -22,

@@ -7,6 +7,8 @@
 import {
 	type AvatarSnapshot,
 	type ClientMessage,
+	type Cosmetics,
+	DEFAULT_COSMETICS,
 	decodeServerMessage,
 	EMOTE_TTL,
 	type Entity,
@@ -72,12 +74,18 @@ export class NetClient {
 		url: string,
 		handle: string,
 		private onReject: (reason: string) => void = () => {},
+		cosmetics: Cosmetics = DEFAULT_COSMETICS,
 	) {
 		this.ws = new WebSocket(url);
 		this.ws.binaryType = 'arraybuffer';
 		this.ws.onopen = () => {
 			this.ws.send(
-				encodeClientMessage({ t: 'hello', handle, protocol: PROTOCOL_VERSION }),
+				encodeClientMessage({
+					t: 'hello',
+					handle,
+					protocol: PROTOCOL_VERSION,
+					cosmetics,
+				}),
 			);
 		};
 		this.ws.onmessage = (ev) => {
@@ -212,6 +220,7 @@ function avatarEntity(a: AvatarSnapshot): Entity {
 		id: a.sessionId,
 		type: 'player',
 		name: a.handle,
+		cosmetics: a.cosmetics,
 		x: a.x,
 		y: a.y,
 		vx: a.vx,
@@ -279,7 +288,13 @@ export function snapshotToGame(
 		: [];
 	const ownBubble = bubbles.get(ownSessionId)?.text;
 	const ownEmote = emotes.get(ownSessionId)?.id;
+	// Own cosmetics come from the snapshot too, so the local Avatar renders the same
+	// hue / hat / nameplate every other client sees — one uniform source (#35).
+	const ownCosmetics = snapshot?.avatars.find(
+		(a) => a.sessionId === ownSessionId,
+	)?.cosmetics;
 	let avatar = predicted;
+	if (ownCosmetics) avatar = { ...avatar, cosmetics: ownCosmetics };
 	if (ownBubble) avatar = { ...avatar, bubble: ownBubble };
 	if (ownEmote) avatar = { ...avatar, emote: ownEmote };
 	const progress = snapshot?.progress ?? { level: 1, xp: 0, gold: 0 };

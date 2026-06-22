@@ -102,7 +102,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			);
 			return;
 		}
-		world = addSession(world, sessionId, msg.handle);
+		world = addSession(world, sessionId, msg.handle, msg.cosmetics);
 		sockets.set(sessionId, ws);
 		const zoneId = zoneOf(world, sessionId) ?? START_ZONE;
 		ws.send(

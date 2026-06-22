@@ -1,5 +1,5 @@
 import { BOX } from './constants';
-import { type Sprite, spriteFor, spriteForNpc } from './sprites';
+import { HATS, type Sprite, spriteFor, spriteForNpc } from './sprites';
 import { isSolid } from './terrain';
 import type { Entity, Facing, Npc, Terrain } from './types';
 import type { Portal } from './world';
@@ -34,6 +34,13 @@ export interface RenderStyle<C> {
 	nameplate: C;
 	palette: Readonly<Record<string, C>>;
 	paletteDefault: C;
+	// Cosmetic catalogs resolved into the colour type (#35), indexed by an Avatar's
+	// `Cosmetics` choices: `hues[hue]` recolours the body, `nameplates[nameplate]`
+	// tints the handle. Hat art is glyph data (HATS), so it needs no colour here.
+	cosmetics: {
+		hues: readonly C[];
+		nameplates: readonly C[];
+	};
 }
 
 // The static, simulation-free layers of a Zone: terrain, portals, NPCs, and a
@@ -48,7 +55,10 @@ export interface ZoneScene {
 }
 
 // Blit a Sprite's lit glyphs into the buffer with palette colours, clipping to
-// the viewport. A `hurt` flash overrides every glyph with the hurt colour.
+// the viewport. A `hurt` flash overrides every glyph with the hurt colour. An
+// optional `recolor` overrides specific colour keys for this blit only — the seam
+// the cosmetic body hue uses to repaint the Avatar's `p` cells per Avatar (#35),
+// leaving the shared palette untouched.
 function blitSprite<C>(
 	buf: CellBuffer<C>,
 	sprite: Sprite,
@@ -57,6 +67,7 @@ function blitSprite<C>(
 	facing: Facing,
 	hurt: boolean,
 	style: RenderStyle<C>,
+	recolor?: Readonly<Record<string, C>>,
 ): void {
 	const sw = buf.width;
 	const sh = buf.height;
@@ -72,9 +83,10 @@ function blitSprite<C>(
 			if (ch === ' ') continue;
 			const px = sx + rx;
 			if (px < 0 || px >= sw) continue;
+			const key = krow[rx];
 			const fg = hurt
 				? style.hurt
-				: (style.palette[krow[rx]] ?? style.paletteDefault);
+				: (recolor?.[key] ?? style.palette[key] ?? style.paletteDefault);
 			buf.setCellWithAlphaBlending(px, py, ch, fg, style.transparent);
 		}
 	}
@@ -96,10 +108,29 @@ function drawText<C>(
 	}
 }
 
+// The hat Sprite an Avatar wears this frame, or null (bareheaded, a Monster, or a
+// stray index). Centralised so the Sprite blit and the nameplate offset agree on
+// the same hat height (#35).
+function hatFor(e: Entity): Sprite | null {
+	return e.cosmetics ? (HATS[e.cosmetics.hat]?.sprite ?? null) : null;
+}
+
+// The per-Avatar body recolour for its chosen hue, or undefined (no cosmetics /
+// stray index). Repaints the Sprite's `p` body cells; a stray hue index falls back
+// to the unrecoloured palette (#35).
+function recolorFor<C>(
+	e: Entity,
+	style: RenderStyle<C>,
+): Readonly<Record<string, C>> | undefined {
+	const hue = e.cosmetics && style.cosmetics.hues[e.cosmetics.hue];
+	return hue !== undefined ? { p: hue } : undefined;
+}
+
 // An Entity Sprite, centred horizontally over the ~1×2 collision box with its
 // feet aligned to the box bottom (ADR 0003). Entities round relative to the
 // FLOAT `cam` (not the whole-cell terrain camera) so a camera-pinned Avatar sits
-// on a stable cell instead of bouncing ±1 from double-rounding.
+// on a stable cell instead of bouncing ±1 from double-rounding. An Avatar's
+// cosmetic hue recolours the body and its cosmetic hat is overlaid on the head (#35).
 export function drawEntitySprite<C>(
 	buf: CellBuffer<C>,
 	e: Entity,
@@ -109,11 +140,23 @@ export function drawEntitySprite<C>(
 	const sprite = spriteFor(e.type);
 	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2) - cam.x);
 	const sy = Math.round(e.y + BOX.h - sprite.h - cam.y);
-	blitSprite(buf, sprite, sx, sy, e.facing, e.hurtT > 0.3, style);
+	const hurt = e.hurtT > 0.3;
+	blitSprite(buf, sprite, sx, sy, e.facing, hurt, style, recolorFor(e, style));
+
+	// The cosmetic hat sits directly above the head (its bottom row on the row above
+	// the Sprite top), centred over the Sprite, mirrored with the Avatar's facing.
+	const hat = hatFor(e);
+	if (hat) {
+		const hx = sx + Math.round((sprite.w - hat.w) / 2);
+		const hy = sy - hat.h;
+		blitSprite(buf, hat, hx, hy, e.facing, hurt, style);
+	}
 }
 
-// A Player Avatar's handle, centred over its box one row above the Sprite top.
-// Only entities carrying a `name` (co-present Players) get a plate.
+// A Player Avatar's handle, centred over its box one row above the Sprite top (or
+// above the hat, if any). Tinted to the Avatar's cosmetic nameplate colour, falling
+// back to the default plate colour (#35). Only entities carrying a `name`
+// (co-present Players) get a plate.
 function drawNameplate<C>(
 	buf: CellBuffer<C>,
 	e: Entity,
@@ -125,7 +168,12 @@ function drawNameplate<C>(
 	const top = Math.round(e.y + BOX.h - sprite.h - cam.y);
 	const cx = e.x + BOX.w / 2 - cam.x;
 	const x = Math.round(cx - e.name.length / 2);
-	drawText(buf, x, top - 1, e.name, style.nameplate, style.transparent);
+	// Clear the hat so the plate never overlaps it.
+	const hatH = hatFor(e)?.h ?? 0;
+	const color =
+		(e.cosmetics && style.cosmetics.nameplates[e.cosmetics.nameplate]) ??
+		style.nameplate;
+	drawText(buf, x, top - 1 - hatH, e.name, color, style.transparent);
 }
 
 export function renderZoneScene<C>(

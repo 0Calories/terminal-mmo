@@ -20,6 +20,17 @@ export interface Input extends Control {
 
 export type EntityType = 'player' | 'chaser' | 'shooter';
 
+// One Avatar's cosmetic choices (#35, ADR 0003): a body hue, one cosmetic hat
+// (separate from gear), and a nameplate colour, each a small integer index into a
+// fixed, reviewed catalog (see cosmetics.ts). Purely decorative and client-rendered
+// like the Sprite; the indices travel on the wire so every client renders every
+// Avatar's look identically.
+export interface Cosmetics {
+	hue: number; // index into HUES
+	hat: number; // index into HATS; 0 == bareheaded
+	nameplate: number; // index into NAMEPLATE_COLORS
+}
+
 export interface Entity {
 	id: number;
 	type: EntityType;
@@ -37,6 +48,7 @@ export interface Entity {
 	spawnIndex?: number; // index into its Zone's spawns[], if Field-spawned
 	contributors?: number[]; // Monster-only: session ids that have damaged it, for shared-kill rewards (#37)
 	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
+	cosmetics?: Cosmetics; // Avatar customization (#35); render-only, absent for Monsters
 	bubble?: string; // latest Chat line shown as an over-head Speech bubble (#59); render-only
 	emote?: string; // active emote id shown over the head (#38); render-only
 }

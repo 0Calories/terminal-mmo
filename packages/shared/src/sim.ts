@@ -1,5 +1,6 @@
 import { aabbOverlap, entityBox } from './combat';
 import { PHYS, SPAWN } from './constants';
+import { DEFAULT_COSMETICS } from './cosmetics';
 import { stepEntity } from './physics';
 import { type PlayerState, spawnPlayerState } from './player';
 import type { Entity, Input } from './types';
@@ -95,6 +96,7 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	const sa: ServerAvatar = {
 		sessionId: game.player.avatar.id,
 		handle: '', // offline single-player has no broadcast handle
+		cosmetics: DEFAULT_COSMETICS, // unused offline (no broadcast); default look
 		avatar: game.player.avatar,
 		progress: game.player.progress,
 		inventory: game.player.inventory,

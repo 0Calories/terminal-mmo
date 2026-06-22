@@ -25,6 +25,7 @@ export function spriteForNpc(kind: Npc['kind']): Sprite {
 	return NPC_REGISTRY[kind];
 }
 
+export { HATS, type HatDef } from './hats';
 // The art palette is keyed by single-char codes but its colours are renderer-
 // specific (opentui RGBA), so it stays with the consumer; shared owns only the
 // framework-agnostic glyph/colour-key grids.
