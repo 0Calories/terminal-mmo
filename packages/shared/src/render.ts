@@ -32,6 +32,9 @@ export interface RenderStyle<C> {
 	transparent: C;
 	hurt: C;
 	nameplate: C;
+	// Opaque fill behind the boxed nameplate (#103) so terrain can't bleed through
+	// and the handle stays legible on solid ground.
+	nameplateBg: C;
 	palette: Readonly<Record<string, C>>;
 	paletteDefault: C;
 	// Cosmetic catalogs resolved into the colour type (#35), indexed by an Avatar's
@@ -92,22 +95,6 @@ function blitSprite<C>(
 	}
 }
 
-function drawText<C>(
-	buf: CellBuffer<C>,
-	x: number,
-	y: number,
-	text: string,
-	fg: C,
-	transparent: C,
-): void {
-	if (y < 0 || y >= buf.height) return;
-	for (let i = 0; i < text.length; i++) {
-		const px = x + i;
-		if (px < 0 || px >= buf.width) continue;
-		buf.setCellWithAlphaBlending(px, y, text[i], fg, transparent);
-	}
-}
-
 // The hat Sprite an Avatar wears this frame, or null (bareheaded, a Monster, or a
 // stray index). Centralised so the Sprite blit and the nameplate offset agree on
 // the same hat height (#35).
@@ -153,10 +140,13 @@ export function drawEntitySprite<C>(
 	}
 }
 
-// A Player Avatar's handle, centred over its box one row above the Sprite top (or
-// above the hat, if any). Tinted to the Avatar's cosmetic nameplate colour, falling
-// back to the default plate colour (#35). Only entities carrying a `name`
-// (co-present Players) get a plate.
+// A Player Avatar's handle, drawn in a rounded, opaque bordered box directly BELOW
+// the Sprite's feet (#103). The border and handle are tinted to the Avatar's
+// cosmetic nameplate colour, falling back to the default plate colour (#35); the
+// box fill is opaque (drawn with setCell, not alpha-blended) so terrain can't bleed
+// through and the handle stays legible on solid ground. Only entities carrying a
+// `name` (co-present Players) get a plate. The hat height no longer affects the
+// plate's position now that it sits below the Avatar rather than above the head.
 function drawNameplate<C>(
 	buf: CellBuffer<C>,
 	e: Entity,
@@ -164,16 +154,31 @@ function drawNameplate<C>(
 	style: RenderStyle<C>,
 ): void {
 	if (!e.name) return;
-	const sprite = spriteFor(e.type);
-	const top = Math.round(e.y + BOX.h - sprite.h - cam.y);
-	const cx = e.x + BOX.w / 2 - cam.x;
-	const x = Math.round(cx - e.name.length / 2);
-	// Clear the hat so the plate never overlaps it.
-	const hatH = hatFor(e)?.h ?? 0;
 	const color =
 		(e.cosmetics && style.cosmetics.nameplates[e.cosmetics.nameplate]) ??
 		style.nameplate;
-	drawText(buf, x, top - 1 - hatH, e.name, color, style.transparent);
+	const cx = e.x + BOX.w / 2 - cam.x;
+	const boxW = e.name.length + 2; // handle plus a left/right border column
+	const left = Math.round(cx - boxW / 2);
+	// Top border sits on the row one past the Sprite's last row (directly below the
+	// feet); BOX.h - sprite.h + sprite.h == BOX.h, so the box top is e.y + BOX.h.
+	const boxTop = Math.round(e.y + BOX.h - cam.y);
+
+	for (let ry = 0; ry < 3; ry++) {
+		const py = boxTop + ry;
+		if (py < 0 || py >= buf.height) continue;
+		for (let rx = 0; rx < boxW; rx++) {
+			const px = left + rx;
+			if (px < 0 || px >= buf.width) continue;
+			const lastCol = rx === boxW - 1;
+			let ch: string;
+			if (ry === 0) ch = rx === 0 ? '╭' : lastCol ? '╮' : '─';
+			else if (ry === 2) ch = rx === 0 ? '╰' : lastCol ? '╯' : '─';
+			else if (rx === 0 || lastCol) ch = '│';
+			else ch = e.name[rx - 1];
+			buf.setCell(px, py, ch, color, style.nameplateBg);
+		}
+	}
 }
 
 export function renderZoneScene<C>(

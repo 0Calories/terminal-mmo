@@ -24,16 +24,18 @@ test('no hat selection clips the stack at the top or bottom of the preview', () 
 	for (let hat = 0; hat < HATS.length; hat++) {
 		const spriteTop = spriteTopOf(hat);
 		const hatH = HATS[hat]?.sprite?.h ?? 0;
-		const nameplateTop = spriteTop - hatH - NAMEPLATE_H;
-		const spriteBottom = spriteTop + PLAYER.h;
-		expect(nameplateTop).toBeGreaterThanOrEqual(0); // nameplate + hat fit above
-		expect(spriteBottom).toBeLessThanOrEqual(PREVIEW_H); // feet fit below
+		const hatTop = spriteTop - hatH;
+		// The boxed nameplate sits below the feet (#103), so its bottom is the lowest row.
+		const nameplateBottom = spriteTop + PLAYER.h + NAMEPLATE_H;
+		expect(hatTop).toBeGreaterThanOrEqual(0); // tallest hat fits above
+		expect(nameplateBottom).toBeLessThanOrEqual(PREVIEW_H); // boxed plate fits below
 	}
 });
 
-test('reserved headroom is fixed, so the Sprite sits below NAMEPLATE_H + tallest hat', () => {
-	// The anchor leaves VPAD + nameplate + MAX_HAT_H rows above the Sprite regardless of
-	// the current hat, which is what guarantees the tallest hat never clips.
+test('reserved headroom is fixed, so the Sprite sits below the tallest hat', () => {
+	// The anchor leaves VPAD + MAX_HAT_H rows above the Sprite regardless of the current
+	// hat, which is what guarantees the tallest hat never clips. The nameplate no longer
+	// reserves headroom — it sits below the Avatar now (#103).
 	const maxHatH = Math.max(0, ...HATS.map((h) => h.sprite?.h ?? 0));
-	expect(spriteTopOf(0)).toBe(VPAD + NAMEPLATE_H + maxHatH);
+	expect(spriteTopOf(0)).toBe(VPAD + maxHatH);
 });

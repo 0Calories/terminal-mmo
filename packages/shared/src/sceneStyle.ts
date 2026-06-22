@@ -18,6 +18,9 @@ export const SCENE_COLORS = {
 	transparent: [0, 0, 0, 0],
 	hurt: [255, 240, 120, 255],
 	nameplate: [150, 156, 168, 255],
+	// Opaque dark fill behind the boxed nameplate (#103), matching the chat bubble's
+	// panel so handles read as labels rather than floating text.
+	nameplateBg: [20, 24, 34, 255],
 	paletteDefault: [232, 232, 238, 255],
 } as const satisfies Record<string, RGBAQuad>;
 
@@ -89,6 +92,7 @@ export function buildSceneStyle<C>(toColor: ColorFactory<C>): RenderStyle<C> {
 		transparent: c(SCENE_COLORS.transparent),
 		hurt: c(SCENE_COLORS.hurt),
 		nameplate: c(SCENE_COLORS.nameplate),
+		nameplateBg: c(SCENE_COLORS.nameplateBg),
 		palette,
 		paletteDefault: c(SCENE_COLORS.paletteDefault),
 		// Cosmetic catalogs resolved into the colour type once, so the renderer can

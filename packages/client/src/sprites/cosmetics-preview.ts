@@ -51,6 +51,7 @@ const STYLE: RenderStyle<string> = {
 	transparent: 'tr',
 	hurt: 'h',
 	nameplate: 'name',
+	nameplateBg: 'namebg',
 	palette: Object.fromEntries(Object.keys(SCENE_PALETTE).map((k) => [k, k])),
 	paletteDefault: '?',
 	cosmetics: {
