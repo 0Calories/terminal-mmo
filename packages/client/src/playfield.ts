@@ -35,7 +35,23 @@ import {
 	RGBA,
 } from '@opentui/core';
 import { layoutBubble } from './bubble';
-import { type CameraState, initCameraState, stepCamera } from './camera';
+import {
+	applyKick,
+	CAMERA_KICK,
+	type CameraState,
+	initCameraState,
+	type Kick,
+	NO_KICK,
+	stepCamera,
+	stepKick,
+} from './camera';
+import {
+	type Hitstop,
+	isFrozen,
+	NO_HITSTOP,
+	stepHitstop,
+	triggerHitstop,
+} from './hitstop';
 import {
 	type Particle,
 	ParticleSystem,
@@ -477,6 +493,11 @@ export class PlayfieldRenderable extends Renderable {
 	sound: SoundSink | null = null;
 
 	private camState: CameraState = initCameraState();
+	// Camera-kick + hitstop (ADR 0017 §13c): view-only impact juice fired on a Poise
+	// break (the `impact` Effect). The kick is a small decaying viewport offset layered
+	// on the follow camera; the hitstop briefly holds the last drawn frame.
+	private kick: Kick = NO_KICK;
+	private hitstop: Hitstop = NO_HITSTOP;
 	// The client-local particle system (ADR 0013): combat Effects off the sim feed
 	// it, it's advanced at render framerate, drawn two-pass by drawPlayfield.
 	private particles = new ParticleSystem();
@@ -500,6 +521,18 @@ export class PlayfieldRenderable extends Renderable {
 
 	protected renderSelf(buffer: OptimizedBuffer): void {
 		if (!this.game) return;
+		const now = performance.now();
+		const dt = this.lastTime ? now - this.lastTime : 0;
+		this.lastTime = now;
+
+		// Hitstop (ADR 0017 §13c): a render-only freeze. While it drains, hold the last
+		// drawn frame and repaint nothing — the sim keeps advancing in index.ts's frame
+		// callback, only the playfield's redraw is gated. Decayed by real wall time.
+		if (isFrozen(this.hitstop)) {
+			this.hitstop = stepHitstop(this.hitstop, dt);
+			return;
+		}
+
 		const zone = activeZone(this.game.world, this.game.player.zoneId);
 		const a = this.game.player.avatar;
 		this.camState = stepCamera(
@@ -514,15 +547,12 @@ export class PlayfieldRenderable extends Renderable {
 				wh: zone.terrain.h,
 			},
 		);
-		const cam = this.camState.cam;
-		if (!cam) return;
+		const baseCam = this.camState.cam;
+		if (!baseCam) return;
 
 		// Advance the particle system at render framerate. Fresh Effects are consumed
 		// once per sim tick (guarded by world.tick so a faster render loop can't spawn
 		// the same burst twice); off-camera bursts are skipped inside stepParticles.
-		const now = performance.now();
-		const dt = this.lastTime ? now - this.lastTime : 0;
-		this.lastTime = now;
 		const tick = this.game.world.tick;
 		const snapshotEffects =
 			tick !== this.lastParticleTick ? (this.game.effects ?? []) : [];
@@ -533,6 +563,20 @@ export class PlayfieldRenderable extends Renderable {
 			? [...snapshotEffects, ...this.predicted]
 			: snapshotEffects;
 		this.predicted = [];
+
+		// Impact juice on a Poise break (ADR 0017 §13c): the `impact` Effect — emitted
+		// only on a break — fires a camera-kick (a ≤2-cell pop toward the hit, decaying
+		// to zero in <150ms) and a brief hitstop. Light chip hits emit `blood` and get
+		// none of this, exactly as the ADR wants ("big moments only").
+		for (const fx of fresh)
+			if (fx.kind === 'impact') {
+				this.kick = applyKick(this.kick, fx.dir * CAMERA_KICK.maxCells, -1);
+				this.hitstop = triggerHitstop(this.hitstop);
+			}
+		// Layer the decaying kick onto the follow camera for this frame's draw.
+		this.kick = stepKick(this.kick, dt);
+		const cam = { x: baseCam.x + this.kick.x, y: baseCam.y + this.kick.y };
+
 		stepParticles(this.particles, fresh, dt, zone.terrain, Math.random, {
 			x: cam.x,
 			y: cam.y,

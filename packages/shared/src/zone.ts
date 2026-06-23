@@ -8,12 +8,16 @@
 
 import {
 	aabbOverlap,
+	actionFlags,
 	actionStateOf,
+	applyPoiseDamage,
 	bloodEffect,
 	deathGoreEffect,
 	entityBox,
 	hurtBloodEffect,
 	IDLE_ACTION,
+	impactEffect,
+	regenPoise,
 	resolveCombat,
 } from './combat';
 import {
@@ -28,7 +32,7 @@ import {
 } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
 import { rollItem } from './loot';
-import { stepEntity } from './physics';
+import { applyImpulse, stepEntity } from './physics';
 import { spawnAvatar } from './player';
 import { applyXp, maxHpForLevel } from './progression';
 import { projectileBox, spawnProjectile, stepProjectile } from './projectile';
@@ -155,6 +159,10 @@ function resolveAvatarIntent(
 	);
 	avatar.attackT = r.attackT;
 	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
+	// A fresh swing clears the per-swing hit list so it can connect again; an
+	// in-flight swing keeps its list so it lands on each target only once (ADR 0017
+	// §2 — the rate-limiter that replaced automatic post-hit i-frames).
+	avatar.swingHits = r.swingStarted ? [] : (avatar.swingHits ?? []);
 	if (r.skillFired) log.push(`${r.skillFired.name}!`);
 
 	return {
@@ -207,6 +215,14 @@ export function stepZone(
 		damages.push(damage);
 		return sa;
 	});
+	// Per-swing hit registry (ADR 0017 §2): one mutable Set per Avatar of the Monster
+	// ids its current swing has already hit, seeded from `swingHits` (cleared on a
+	// fresh swing by resolveAvatarIntent) and folded back onto each Avatar at tick
+	// end. This — not invulnerability — rate-limits a multi-tick active window to one
+	// hit per target, so a Staggered Monster stays hittable by the NEXT swing.
+	const swingHits: Set<number>[] = avatars.map(
+		(a) => new Set(a.avatar.swingHits ?? []),
+	);
 
 	const effects: Effect[] = [];
 	const fired: Projectile[] = [];
@@ -219,13 +235,27 @@ export function stepZone(
 		let m: Entity = { ...m0 };
 		m.hurtT = Math.max(0, m.hurtT - dt);
 		m.attackT = Math.max(0, m.attackT - dt);
+		// Hitstun + Poise bookkeeping (ADR 0017 §2/§3): decay the Stagger timer and
+		// regenerate the Poise pool under no pressure. `stunned` locks CONTROL (no AI),
+		// not physics — the body below still integrates its Knockback impulse + gravity.
+		m.stunT = Math.max(0, (m.stunT ?? 0) - dt);
+		// Poise regenerates only under no pressure (ADR 0017 §3): the regen-delay timer
+		// is reset on every hit below, so a flurry holds it > 0 and the pool purely
+		// accumulates (and breaks); once hits stop, it drains and regen resumes.
+		m.poiseT = Math.max(0, (m.poiseT ?? 0) - dt);
+		if ((m.poiseT ?? 0) <= 0) m.poise = regenPoise(m, dt);
+		const stunned = (m.stunT ?? 0) > 0;
 
 		const target = nearestAvatar(avatars, m.x);
 		const dx = target >= 0 ? avatars[target].avatar.x - m.x : 0;
 		const adx = Math.abs(dx);
-		const engaged = target >= 0 && m.type === 'shooter' && adx < SHOOTER.aggro;
+		const engaged =
+			!stunned && target >= 0 && m.type === 'shooter' && adx < SHOOTER.aggro;
 		let moveX: -1 | 0 | 1;
-		if (target >= 0 && m.type === 'chaser' && adx < MONSTER.chaserAggro)
+		if (stunned)
+			// Staggered: no input drive. stepEntity still carries ivx (Knockback) + gravity.
+			moveX = 0;
+		else if (target >= 0 && m.type === 'chaser' && adx < MONSTER.chaserAggro)
 			// hold (moveX 0) inside the deadzone so facing doesn't flip-flop frame
 			// to frame when the Avatar is sitting on top of the chaser
 			moveX = adx < MONSTER.chaserDeadzone ? 0 : dx > 0 ? 1 : -1;
@@ -234,8 +264,8 @@ export function stepZone(
 		const res = stepEntity(t, m, { moveX, jump: false }, dt);
 		m = res.e;
 
-		// patrol turn-around at walls and platform edges
-		if (m.onGround && !engaged) {
+		// patrol turn-around at walls and platform edges (suppressed while staggered)
+		if (!stunned && m.onGround && !engaged) {
 			const lead = moveX >= 0 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x);
 			const footY = Math.ceil(m.y + BOX.h);
 			if (res.hitWall || !isSolid(t, lead, footY))
@@ -251,23 +281,51 @@ export function stepZone(
 			}
 		}
 
-		// First Avatar whose hitbox lands (Monster off i-frames) deals damage and is
-		// recorded as a contributor. Credit accumulates on the Monster across ticks
-		// so every Player who helped shares in the kill (#37, stories 26/27).
+		// A landed hit applies the universal hit-reaction payload (ADR 0017 §2): always
+		// HP damage + Poise damage, and — only on a Poise BREAK — Stagger (Hitstun) +
+		// Knockback (a Mass-scaled impulse). The gate is the per-swing hit registry, NOT
+		// invulnerability: a swing connects with each Monster once, but a NEW swing can
+		// re-hit a Staggered target. First Avatar whose hitbox lands deals the hit and is
+		// recorded as a contributor; credit accumulates across ticks so every Player who
+		// helped shares in the kill (#37, stories 26/27).
 		for (let i = 0; i < avatars.length; i++) {
 			const hb = hitboxes[i];
-			if (hb && m.hurtT <= 0 && aabbOverlap(hb, entityBox(m))) {
+			if (hb && !swingHits[i].has(m.id) && aabbOverlap(hb, entityBox(m))) {
 				const sid = avatars[i].sessionId;
+				swingHits[i].add(m.id);
+				const facing = avatars[i].avatar.facing;
 				const contributors = m.contributors?.includes(sid)
 					? m.contributors
 					: [...(m.contributors ?? []), sid];
-				m = { ...m, hp: m.hp - damages[i], hurtT: 0.6, contributors };
-				// One blood burst at the damage site, biased along the attacker's
-				// facing, scaled by the damage dealt (ADR 0013). Emitted only here,
-				// inside the i-frame gate, so a blocked/i-framed hit makes no Effect.
-				// `source` attributes it to the attacker so the per-recipient snapshot
-				// filter can suppress sending it back (the attacker predicts its own).
-				effects.push(bloodEffect(m, avatars[i].avatar.facing, damages[i], sid));
+				const { poise, broke } = applyPoiseDamage(m, COMBAT.poiseDamage);
+				// Reset the regen-delay so a sustained flurry keeps the pool from healing
+				// between swings (ADR 0017 §3).
+				m = {
+					...m,
+					hp: m.hp - damages[i],
+					poise,
+					poiseT: COMBAT.poise.regenDelay,
+					contributors,
+				};
+				if (broke) {
+					// Poise break → Stagger: lock control for Hitstun and throw the body with
+					// a Knockback impulse (applyImpulse scales by 1/Mass — a light Slime
+					// rockets, a heavy body barely nudges), plus a small upward pop. The
+					// impact Effect is the break punctuation the client keys hitstop +
+					// camera-kick off. `source` attributes it for originator-suppression.
+					m = applyImpulse(m, COMBAT.knockback * facing, -COMBAT.knockbackUp);
+					m = { ...m, stunT: COMBAT.hitstun };
+					// No `source`: like the death gore burst, the break is a "big moment"
+					// delivered to EVERYONE in range — including the attacker, who needs it to
+					// fire the camera-kick + hitstop. The client predicts only chip blood
+					// (predictHitEffects), so there is no double-render of the impact spark.
+					effects.push(impactEffect(m, facing, damages[i]));
+				} else {
+					// Chip: HP + Poise damage, no Stagger — the Slime barely flinches. One
+					// blood burst at the site, biased along the attacker's facing, scaled by
+					// the damage dealt (ADR 0013); `source` suppresses it back to the attacker.
+					effects.push(bloodEffect(m, facing, damages[i], sid));
+				}
 				break;
 			}
 		}
@@ -386,6 +444,15 @@ export function stepZone(
 		}
 	}
 
+	// Persist each Avatar's per-swing hit registry for the next tick (ADR 0017 §2):
+	// an in-flight swing keeps the ids it has already hit so it can't double-hit them,
+	// and resolveAvatarIntent clears the list when the next swing starts.
+	for (let i = 0; i < avatars.length; i++)
+		avatars[i] = {
+			...avatars[i],
+			avatar: { ...avatars[i].avatar, swingHits: [...swingHits[i]] },
+		};
+
 	const newZone: Zone = {
 		...zone,
 		monsters,
@@ -460,9 +527,11 @@ export function snapshotFor(
 		hp: m.hp,
 		maxHp: m.maxHp,
 		hurtT: m.hurtT,
-		// Monsters keep their MVP behavior this slice, so they replicate idle; the
-		// field is present for the later telegraphed-offense rework (ADR 0017 §9).
-		action: IDLE_ACTION,
+		// Monsters keep their MVP offense this slice, so they replicate an idle move —
+		// but a Staggered Monster surfaces its reaction through the action `flags`, so
+		// observers can render the hit reaction (ADR 0017 §3/§10). The phased-offense
+		// rework is a later slice (ADR 0017 §9).
+		action: { ...IDLE_ACTION, flags: actionFlags(m) },
 	}));
 	// Originator-suppression (ADR 0013): an Effect is never sent back to the
 	// session that caused it — the acting client already predicted its own blood,

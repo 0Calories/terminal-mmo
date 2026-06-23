@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	ACTION_FLAG,
+	actionFlags,
 	actionStateOf,
+	applyPoiseDamage,
 	BOX,
 	bloodEffect,
 	COMBAT,
@@ -11,13 +14,16 @@ import {
 	GROUND_POUND,
 	hurtBloodEffect,
 	IDLE_ACTION,
+	impactEffect,
 	meleeActive,
 	meleeHitbox,
 	POWER_STRIKE,
 	predictHitEffects,
+	regenPoise,
 	resolveCombat,
 	SWING_TOTAL,
 	skillHitbox,
+	superArmorActive,
 	swingPhase,
 	swingPoseCell,
 	swingPoseGlyph,
@@ -393,5 +399,130 @@ describe('swing pose realization', () => {
 		// Facing left places the accent on the other side.
 		const left = monster(20, 4, { type: 'player', facing: -1 });
 		expect(swingPoseCell(left, 'windup')).toEqual({ x: 19, y: 4 });
+	});
+});
+
+// --- Poise + hit-reaction (ADR 0017 §2/§3) ----------------------------------
+
+describe('applyPoiseDamage', () => {
+	test('chips the pool without breaking when the hit does not empty it', () => {
+		const m = monster(0, 0, { poise: COMBAT.poise.max });
+		const r = applyPoiseDamage(m, COMBAT.poiseDamage);
+		expect(r.broke).toBe(false);
+		expect(r.poise).toBe(COMBAT.poise.max - COMBAT.poiseDamage);
+	});
+
+	test('accumulates across hits and breaks only when the pool empties', () => {
+		// Pure accumulation (no regen between hits): the pool depletes by poiseDamage
+		// each connect and breaks exactly when the accumulated damage empties it.
+		const hitsToBreak = Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage);
+		let poise: number = COMBAT.poise.max;
+		let brokeAt = -1;
+		for (let i = 1; i <= hitsToBreak; i++) {
+			const r = applyPoiseDamage(monster(0, 0, { poise }), COMBAT.poiseDamage);
+			if (r.broke && brokeAt < 0) brokeAt = i;
+			poise = r.poise;
+		}
+		expect(brokeAt).toBe(hitsToBreak); // earlier hits chip; only the last one breaks
+		expect(poise).toBe(COMBAT.poise.max); // a break refilled the pool
+	});
+
+	test('a low-poise-damage attacker never breaks a high-poise target', () => {
+		// A trivial 1-poise chip against a full pool: many hits, never a break.
+		let poise: number = COMBAT.poise.max;
+		for (let i = 0; i < 10; i++) {
+			const r = applyPoiseDamage(monster(0, 0, { poise }), 1);
+			expect(r.broke).toBe(false);
+			poise = r.poise;
+		}
+	});
+
+	test('an absent pool defaults to full', () => {
+		const r = applyPoiseDamage(monster(0, 0), COMBAT.poiseDamage);
+		expect(r.poise).toBe(COMBAT.poise.max - COMBAT.poiseDamage);
+		expect(r.broke).toBe(false);
+	});
+});
+
+describe('superArmorActive', () => {
+	test('true while the entity is in its own attack wind-up, false otherwise', () => {
+		expect(superArmorActive(monster(0, 0, { attackT: SWING_TOTAL }))).toBe(
+			true,
+		);
+		// Mid-active (past wind-up) and idle both lack super-armor.
+		const active = SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
+		expect(superArmorActive(monster(0, 0, { attackT: active }))).toBe(false);
+		expect(superArmorActive(monster(0, 0, { attackT: 0 }))).toBe(false);
+	});
+
+	test('wind-up super-armor chips poise but suppresses the break (heavy swing not interrupted)', () => {
+		// A nearly-empty pool that WOULD break, but the entity is mid-wind-up: the hit
+		// chips it to 0 without staggering, so the committed heavy swing survives.
+		const heavy = monster(0, 0, { poise: 4, attackT: SWING_TOTAL });
+		const r = applyPoiseDamage(heavy, COMBAT.poiseDamage);
+		expect(r.broke).toBe(false);
+		expect(r.poise).toBe(0); // chipped to empty, not refilled — next hit out of wind-up breaks
+	});
+});
+
+describe('regenPoise', () => {
+	test('regenerates toward the max and clamps at it', () => {
+		expect(regenPoise(monster(0, 0, { poise: 10 }), 0.1)).toBeCloseTo(
+			10 + COMBAT.poise.regen * 0.1,
+		);
+		// Already full stays full; a large dt cannot overshoot the cap.
+		expect(regenPoise(monster(0, 0, { poise: COMBAT.poise.max }), 10)).toBe(
+			COMBAT.poise.max,
+		);
+	});
+});
+
+describe('actionFlags', () => {
+	test('sets the staggered bit only while hitstun is in flight', () => {
+		expect(actionFlags(monster(0, 0, { stunT: 0.2 }))).toBe(
+			ACTION_FLAG.staggered,
+		);
+		expect(actionFlags(monster(0, 0, { stunT: 0 }))).toBe(0);
+		expect(actionFlags(monster(0, 0))).toBe(0);
+	});
+
+	test('actionStateOf surfaces the staggered flag (idle or mid-swing)', () => {
+		expect(actionStateOf(monster(0, 0, { stunT: 0.2 })).flags).toBe(
+			ACTION_FLAG.staggered,
+		);
+		const swinging = monster(0, 0, { attackT: SWING_TOTAL, stunT: 0.2 });
+		expect(actionStateOf(swinging).flags).toBe(ACTION_FLAG.staggered);
+	});
+});
+
+describe('impactEffect', () => {
+	test('bursts at the victim centre, biased along facing, bigger than a chip, no source', () => {
+		const m = monster(10, 4);
+		const e = impactEffect(m, 1, COMBAT.meleeDamage);
+		expect(e.kind).toBe('impact');
+		expect(e.x).toBe(10 + BOX.w / 2);
+		expect(e.y).toBe(4 + BOX.h / 2);
+		expect(e.dir).toBe(1);
+		expect(e.intensity).toBeGreaterThan(COMBAT.meleeDamage); // meatier than chip blood
+		expect(e.source).toBeUndefined(); // delivered to everyone, like the death burst
+	});
+});
+
+describe('resolveCombat swingStarted', () => {
+	test('true on the tick a fresh swing begins, false while one is in flight', () => {
+		const idle = monster(20, 0, { type: 'player', attackT: 0 });
+		const fresh = resolveCombat(
+			idle,
+			{},
+			1,
+			'warrior',
+			{ attack: true },
+			0.016,
+		);
+		expect(fresh.swingStarted).toBe(true);
+		// Still mid-swing on the next tick: holding attack does not restart it.
+		const mid = monster(20, 0, { type: 'player', attackT: fresh.attackT });
+		const cont = resolveCombat(mid, {}, 1, 'warrior', { attack: true }, 0.016);
+		expect(cont.swingStarted).toBe(false);
 	});
 });

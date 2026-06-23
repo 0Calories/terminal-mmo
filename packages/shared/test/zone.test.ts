@@ -7,6 +7,7 @@ import type {
 	ZoneState,
 } from '../src';
 import {
+	ACTION_FLAG,
 	addAvatar,
 	BOX,
 	COMBAT,
@@ -542,4 +543,176 @@ test('snapshotFor carries an empty Effects list when none were emitted', () => {
 	const a = serverAvatar(7, 20);
 	const state: ZoneState = { zone: zoneWith([]), avatars: [a], tick: 0 };
 	expect(snapshotFor(state, 7).effects).toEqual([]);
+});
+
+// --- Poise / Hitstun / Knockback hit-reaction (ADR 0017 §2/§3) ---------------
+
+// A primed swing that lands an attack this tick on an adjacent Monster to its right.
+function attackRight(av: ServerAvatar): AvatarIntent {
+	av.avatar.facing = 1;
+	av.avatar.hurtT = 5; // ignore any contact damage so we read only the melee outcome
+	return { ...holdAt(av.sessionId, av.avatar), attack: true };
+}
+
+test('a single chip hit deals HP + Poise damage but does NOT Stagger a full-Poise Monster', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y); // full default Poise
+	const av = primeSwing(serverAvatar(7, 20));
+	const next = stepZone(
+		{ zone: zoneWith([m]), avatars: [av], tick: 0 },
+		[attackRight(av)],
+		16,
+	);
+	const mon = next.zone.monsters[0];
+	expect(mon.hp).toBe(MONSTER.chaserHp - COMBAT.meleeDamage); // HP damage always lands
+	expect(mon.poise).toBe(COMBAT.poise.max - COMBAT.poiseDamage); // Poise chipped, not broken
+	expect(mon.stunT ?? 0).toBe(0); // not staggered
+	expect(mon.ivx ?? 0).toBe(0); // no Knockback
+	expect(next.effects?.some((e) => e.kind === 'impact')).toBe(false);
+	expect(next.effects?.some((e) => e.kind === 'blood')).toBe(true);
+});
+
+test('a Poise break Staggers: Hitstun + a Knockback impulse + an impact Effect', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.poise = 1; // well below the break threshold, so the hit breaks even after this tick's Poise regen
+	const av = primeSwing(serverAvatar(7, 20));
+	const next = stepZone(
+		{ zone: zoneWith([m]), avatars: [av], tick: 0 },
+		[attackRight(av)],
+		16,
+	);
+	const mon = next.zone.monsters[0];
+	expect(mon.hp).toBe(MONSTER.chaserHp - COMBAT.meleeDamage);
+	expect(mon.stunT ?? 0).toBeGreaterThan(0); // Hitstun: control locked
+	expect(mon.ivx ?? 0).toBeGreaterThan(0); // knocked back along the attacker's facing (+x)
+	const impact = next.effects?.find((e) => e.kind === 'impact');
+	expect(impact?.dir).toBe(1);
+	expect(next.effects?.some((e) => e.kind === 'blood')).toBe(false); // break, not chip
+});
+
+test('Knockback is scaled by Mass — a lighter body is thrown farther by the same break', () => {
+	function breakIvx(mass: number): number {
+		const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+		m.poise = 1; // well below the break threshold, so the hit breaks even after this tick's Poise regen
+		m.mass = mass;
+		const av = primeSwing(serverAvatar(7, 20));
+		const next = stepZone(
+			{ zone: zoneWith([m]), avatars: [av], tick: 0 },
+			[attackRight(av)],
+			16,
+		);
+		return next.zone.monsters[0].ivx ?? 0;
+	}
+	expect(breakIvx(1)).toBeGreaterThan(breakIvx(4)); // light rockets, heavy barely nudges
+});
+
+test('Hitstun locks control but not physics: a staggered Monster flies under Knockback, not chasing', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y); // to the RIGHT of the attacker
+	m.poise = 1; // well below the break threshold, so the hit breaks even after this tick's Poise regen
+	m.onGround = true;
+	const av = primeSwing(serverAvatar(7, 20)); // attacker on the LEFT, swinging right
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	state = stepZone(state, [attackRight(av)], 16); // break it
+	expect(state.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0);
+	const brokenX = state.zone.monsters[0].x;
+	// Hold still: a chaser's AI would home LEFT toward the attacker, but Hitstun
+	// suppresses it — the body drifts RIGHT under the Knockback shove instead.
+	const a = state.avatars[0].avatar;
+	for (let i = 0; i < 5; i++) state = stepZone(state, [holdAt(7, a)], 16);
+	expect(state.zone.monsters[0].x).toBeGreaterThan(brokenX);
+	expect(state.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0); // still inside the stun window
+});
+
+test('automatic post-hit i-frames are gone: a staggered Monster takes a second hit', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 100; // survives both hits so we can read the cumulative damage
+	m.poise = 1; // well below the break threshold, so the hit breaks even after this tick's Poise regen
+	const av = primeSwing(serverAvatar(7, 20));
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	state = stepZone(state, [attackRight(av)], 16);
+	expect(state.zone.monsters[0].hp).toBe(100 - COMBAT.meleeDamage);
+	expect(state.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0);
+	// Old code stamped a 0.6s i-frame here, blocking everything. Land the NEXT swing
+	// (a fresh swing clears the per-swing registry) while the Monster is still
+	// staggered: with i-frames removed, it must take damage again.
+	state.avatars[0].avatar.swingHits = [];
+	state.avatars[0].avatar.attackT = MID_ACTIVE;
+	state = stepZone(state, [attackRight(state.avatars[0])], 16);
+	expect(state.zone.monsters[0].hp).toBe(100 - 2 * COMBAT.meleeDamage);
+});
+
+test('a Staggered Monster surfaces the staggered action-flag in the snapshot', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.poise = 1; // well below the break threshold, so the hit breaks even after this tick's Poise regen
+	const av = primeSwing(serverAvatar(7, 20));
+	const next = stepZone(
+		{ zone: zoneWith([m]), avatars: [av], tick: 0 },
+		[attackRight(av)],
+		16,
+	);
+	const snap = snapshotFor(next, 7);
+	expect(snap.monsters[0].action.flags & ACTION_FLAG.staggered).toBe(
+		ACTION_FLAG.staggered,
+	);
+});
+
+test('a default chaser Poise-breaks strictly before it dies (the break is observable)', () => {
+	// The tuning guard behind the demo: if a chaser broke only on the same hit that
+	// killed it, the Stagger would never be seen. Pure accumulation (regen is gated
+	// under a flurry), so hit counts come straight from the constants.
+	const hitsToBreak = Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage);
+	const hitsToKill = Math.ceil(MONSTER.chaserHp / COMBAT.meleeDamage);
+	expect(hitsToBreak).toBeLessThan(hitsToKill);
+});
+
+test('sustained real swings Stagger a chaser while it is still alive (regen is gated)', () => {
+	// Drive genuine swings (windup→active→recovery) tick by tick, keeping the Avatar
+	// in melee range as the Monster is knocked back. The regen delay must hold the
+	// pool down across swings so a break actually lands before the kill — an always-on
+	// regen would refill it between swings and this would never observe a Stagger.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	let state: ZoneState = {
+		zone: zoneWith([m]),
+		avatars: [serverAvatar(7, 20)],
+		tick: 0,
+	};
+	let staggeredAlive = false;
+	for (let i = 0; i < 120 && state.zone.monsters.length > 0; i++) {
+		const mon = state.zone.monsters[0];
+		// Report the Avatar just to the Monster's left, facing into it, swinging.
+		const intent: AvatarIntent = {
+			sessionId: 7,
+			x: mon.x - BOX.w,
+			y,
+			vx: 0,
+			vy: 0,
+			facing: 1,
+			onGround: true,
+			attack: true,
+		};
+		state = stepZone(state, [intent], 16);
+		const after = state.zone.monsters[0];
+		if (after && (after.stunT ?? 0) > 0 && after.hp > 0) staggeredAlive = true;
+	}
+	expect(staggeredAlive).toBe(true); // a Stagger was seen on a living chaser
+	expect(state.zone.monsters.length).toBe(0); // and the flurry eventually killed it
+});
+
+test('Poise regenerates once pressure stops (a spaced poke does not accumulate to a break)', () => {
+	// One hit chips the pool; then with no further hits the regen-delay drains and the
+	// pool climbs back to full — so the SAME single chip never compounds into a break.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 1000; // survive indefinitely
+	let state: ZoneState = {
+		zone: zoneWith([m]),
+		avatars: [primeSwing(serverAvatar(7, 20))],
+		tick: 0,
+	};
+	state = stepZone(state, [attackRight(state.avatars[0])], 16);
+	const chipped = state.zone.monsters[0].poise ?? 0;
+	expect(chipped).toBeLessThan(COMBAT.poise.max); // it was chipped
+	expect(state.zone.monsters[0].stunT ?? 0).toBe(0); // not staggered by one chip
+	// Now idle long enough for regen to resume and refill the pool.
+	const a = state.avatars[0].avatar;
+	for (let i = 0; i < 120; i++) state = stepZone(state, [holdAt(7, a)], 16);
+	expect(state.zone.monsters[0].poise).toBe(COMBAT.poise.max); // fully recovered
 });

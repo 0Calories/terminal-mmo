@@ -125,12 +125,40 @@ export const GORE: ParticleType = {
 	z: 0,
 };
 
+// The `impact` profile (the Poise-break look, ADR 0017 §13d): a sharp, bright spark
+// that bursts OUT fast and far and fades quickly — a percussive flash, not the
+// lingering wet specks of blood. High launch + low gravity + a short fade make it
+// read as a hard CLACK at the break site, the visual twin of the Stagger (paired
+// with hitstop + camera-kick). Untinted: a fixed hot white→amber spark curve.
+export const IMPACT: ParticleType = {
+	gravity: 30, // light — sparks fly straight out rather than dropping
+	restitution: 0.2,
+	collide: false, // sparks wink out in the air; they don't pool on the floor
+	restMs: 0,
+	fadeMs: 220, // quick percussive fade
+	maxLifeMs: 360,
+	launchSpeed: 26, // bursts out hard and far — the meatiest of the three kinds
+	launchSpread: 16,
+	countScale: 0.8,
+	glyphs: {
+		airborne: ['✦', '✧', '•', '◦', '＊'],
+		rest: ['·'],
+	},
+	colors: [
+		{ t: 0, r: 255, g: 244, b: 200 }, // hot near-white flash
+		{ t: 0.5, r: 255, g: 200, b: 90 }, // amber spark
+		{ t: 1, r: 200, g: 120, b: 40 }, // fading ember
+	],
+	z: 0,
+};
+
 // The client-side map from a semantic game event to the look(s) it spawns. 1:1
 // today; the indirection lets a future event fan out into several ParticleTypes
 // (e.g. death → blood + gib) with no wire change.
 export const SPAWN_MAP: Record<EffectKind, ParticleType[]> = {
 	blood: [BLOOD],
 	gore: [GORE],
+	impact: [IMPACT],
 };
 
 // Fixed, preallocated pool — newest action always renders (evict-oldest), and the

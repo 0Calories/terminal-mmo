@@ -18,6 +18,10 @@ import type { SoundKind } from './registry';
 export const EFFECT_SOUND_MAP: Record<EffectKind, SoundKind> = {
 	blood: 'hit',
 	gore: 'death',
+	// A Poise-break (ADR 0017) reuses the meaty `hit` voice — the heavier hitstop +
+	// camera-kick carry the "this one landed harder" weight; a dedicated break sound
+	// is deferred with the rest of the combat-audio pass.
+	impact: 'hit',
 };
 
 // Hard cutoff radius (world cells, horizontal): an Effect farther than this from

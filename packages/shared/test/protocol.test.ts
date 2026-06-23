@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { ClientMessage, ServerMessage } from '../src';
 import {
+	ACTION_FLAG,
 	DEFAULT_COSMETICS,
 	decodeClientMessage,
 	decodeServerMessage,
@@ -298,6 +299,64 @@ test('snapshot round-trips a multi-Effect list across every dir (ADR 0013)', () 
 		log: [],
 	};
 	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
+});
+
+test('snapshot round-trips the impact Poise-break Effect kind (ADR 0017)', () => {
+	const msg: ServerMessage = {
+		t: 'snapshot',
+		tick: 8,
+		zoneId: 'field-01',
+		avatars: [],
+		monsters: [],
+		projectiles: [],
+		effects: [
+			{ kind: 'impact', x: 12.5, y: 7.5, intensity: 32, dir: 1 },
+			{ kind: 'impact', x: 4, y: 4, intensity: 32, dir: -1 },
+			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 }, // the existing kinds still round-trip
+		],
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		log: [],
+	};
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	expect(decoded).toEqual(msg);
+	if (decoded.t === 'snapshot') expect(decoded.effects[0].kind).toBe('impact');
+});
+
+test('snapshot round-trips a Monster carrying the staggered action-flag (ADR 0017)', () => {
+	const msg: ServerMessage = {
+		t: 'snapshot',
+		tick: 9,
+		zoneId: 'field-01',
+		avatars: [],
+		monsters: [
+			{
+				id: 3,
+				type: 'chaser',
+				x: 50,
+				y: 32,
+				vx: 0,
+				vy: 0,
+				facing: -1,
+				onGround: true,
+				hp: 10,
+				maxHp: 24,
+				hurtT: 0,
+				action: { ...IDLE_ACTION, flags: ACTION_FLAG.staggered },
+			},
+		],
+		projectiles: [],
+		effects: [],
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		log: [],
+	};
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	expect(decoded).toEqual(msg);
+	if (decoded.t === 'snapshot')
+		expect(decoded.monsters[0].action.flags & ACTION_FLAG.staggered).toBe(
+			ACTION_FLAG.staggered,
+		);
 });
 
 test('snapshot round-trips a tinted gore death Effect (#139)', () => {

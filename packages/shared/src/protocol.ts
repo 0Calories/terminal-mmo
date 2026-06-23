@@ -380,7 +380,10 @@ const SERVER_TAG = {
 } as const;
 
 const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
-const EFFECT_KINDS: readonly EffectKind[] = ['blood', 'gore'];
+// Append-only: indices are the wire encoding, so a new kind goes on the END (a
+// reorder would remap existing Effects). A forward-version kind clamps to `blood`
+// on decode (see readEffect) so a newer server can't crash an older client.
+const EFFECT_KINDS: readonly EffectKind[] = ['blood', 'gore', 'impact'];
 const MOVE_IDS: readonly MoveId[] = ['idle', 'basic'];
 const ATTACK_PHASES: readonly AttackPhase[] = ['windup', 'active', 'recovery'];
 
@@ -523,7 +526,7 @@ function writeEffect(w: Writer, e: Effect) {
 
 function readEffect(r: Reader): Effect {
 	const e: Effect = {
-		kind: EFFECT_KINDS[r.u8()],
+		kind: EFFECT_KINDS[r.u8()] ?? 'blood',
 		x: r.f64(),
 		y: r.f64(),
 		intensity: r.f64(),
