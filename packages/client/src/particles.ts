@@ -311,8 +311,20 @@ function advance(
 
 	if (p.stage === 'airborne') {
 		p.vy += type.gravity * dt;
-		const nx = p.x + p.vx * dt;
+		let nx = p.x + p.vx * dt;
 		const ny = p.y + p.vy * dt;
+		// Horizontal collision: stop a speck moving sideways into a solid cell (a
+		// wall or the world edge) at the boundary so it can't embed in the terrain.
+		if (
+			type.collide &&
+			Math.floor(nx) !== Math.floor(p.x) &&
+			isSolid(terrain, Math.floor(nx), Math.floor(p.y)) &&
+			!isSolid(terrain, Math.floor(p.x), Math.floor(p.y))
+		) {
+			nx = p.x;
+			p.vx = 0;
+		}
+		// Vertical collision: a swept check down the (possibly clamped) column.
 		const surface = type.collide
 			? surfaceHit(terrain, Math.floor(nx), p.y, ny)
 			: -1;

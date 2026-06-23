@@ -27,6 +27,19 @@ function floorTerrain(w = 40, h = 20): Terrain {
 	return parseTerrain(rows);
 }
 
+// A floor plus a tall solid wall column, so a sideways-spraying burst would embed
+// into the wall without horizontal collision.
+function wallTerrain(w = 40, h = 20, wallX = 25): Terrain {
+	const rows: string[] = [];
+	for (let y = 0; y < h; y++) {
+		const cells = Array.from({ length: w }, (_, x) =>
+			y === h - 1 || x >= wallX ? '#' : '.',
+		);
+		rows.push(cells.join(''));
+	}
+	return parseTerrain(rows);
+}
+
 function bloodAt(
 	x: number,
 	y: number,
@@ -146,6 +159,22 @@ test('a falling speck collides with the surface and never penetrates the ground'
 			// Within the world it never occupies a solid cell — it lands on the
 			// platform surface, not inside or below it.
 			expect(isSolid(terrain, col, Math.floor(p.y))).toBe(false);
+		}
+	}
+});
+
+test('specks spraying sideways into a wall never embed in the solid terrain', () => {
+	const terrain = wallTerrain(40, 20, 25);
+	const sys = new ParticleSystem();
+	// Burst just left of the wall, biased toward it — specks fly into the wall.
+	stepParticles(sys, [bloodAt(23, 10, 24, 1)], 16, terrain, seededRng(8));
+	for (let i = 0; i < 400; i++) {
+		stepParticles(sys, [], 16, terrain, seededRng(21));
+		for (const p of sys.particles) {
+			if (!p.active) continue;
+			const cx = Math.floor(p.x);
+			if (cx < 0 || cx >= terrain.w) continue;
+			expect(isSolid(terrain, cx, Math.floor(p.y))).toBe(false);
 		}
 	}
 });
