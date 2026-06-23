@@ -1258,6 +1258,11 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		exitOnCtrlC: true,
 		backgroundColor: '#10121a',
 		useMouse: true,
+		// Kitty keyboard protocol (#98): lets the terminal report the Cmd (`super`)
+		// modifier and shifted keys, so Cmd-Z / Cmd-Shift-Z and Shift-U undo/redo are
+		// distinguishable. Terminals that don't speak it ignore the enable sequence and
+		// fall back to legacy parsing (the bare `u`/`U` path still works either way).
+		useKittyKeyboard: {},
 	});
 	const view = new EditRenderable(renderer);
 	renderer.root.add(view);
@@ -1492,6 +1497,12 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		name: string;
 		ctrl: boolean;
 		meta?: boolean;
+		shift?: boolean;
+		// macOS Cmd arrives as `super` (only over the Kitty keyboard protocol); Alt/
+		// Option as `meta`/`option`. We treat any of them as the "command" modifier so
+		// Cmd-Z works wherever the terminal forwards it.
+		super?: boolean;
+		option?: boolean;
 		sequence?: string;
 	};
 	// Tear down opentui and exit. The single quit path, shared by the clean-quit `q`
@@ -1567,11 +1578,19 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		// Save is ^s so the bare `s` (and the rest of wasd) is free for movement.
 		if (k.ctrl && k.name === 's') return save();
 
-		// Undo / redo (#98). Ctrl-combos are checked BEFORE `toolByKey` so Ctrl-R
-		// redoes rather than selecting the Rectangle tool (bare `r`). `u` is the
-		// primary undo; Ctrl-Z/Ctrl-Y are the familiar aliases, Ctrl-R the primary redo.
-		if (k.ctrl && k.name === 'z') return doUndo();
-		if (k.ctrl && (k.name === 'r' || k.name === 'y')) return doRedo();
+		// Undo / redo (#98). Bound on every modifier a terminal might forward, plus a
+		// modifier-FREE pair so you're never stuck if Ctrl/Cmd is awkward:
+		//   · `u` undo / `U` (Shift-U) redo — always available, no Ctrl needed.
+		//   · Ctrl-Z undo, Ctrl-R / Ctrl-Y redo (vim-style).
+		//   · Cmd-Z undo, Cmd-Shift-Z / Cmd-Y redo (macOS-native; needs a terminal that
+		//     speaks the Kitty keyboard protocol — Ghostty, Kitty, WezTerm, iTerm2 cfg).
+		// Checked BEFORE `toolByKey` so Ctrl/Cmd-R isn't read as the Rectangle tool.
+		const cmd = k.super === true || k.meta === true || k.option === true;
+		if ((k.ctrl || cmd) && k.name === 'z') return k.shift ? doRedo() : doUndo();
+		if ((k.ctrl || cmd) && (k.name === 'r' || k.name === 'y')) return doRedo();
+		// Bare-key fallbacks: `u` undo, Shift-U redo (or a literal uppercase 'U').
+		if (k.name === 'u') return k.shift ? doRedo() : doUndo();
+		if (k.sequence === 'U') return doRedo();
 
 		// Tool selection (mnemonic letter or 1-6 digit). These never collide with a
 		// movement key, so they're safe to intercept before the movement switch. The
@@ -1615,8 +1634,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				anchor = null;
 				selection = null;
 				return;
-			case 'u': // undo (#98); Ctrl-Z is the alias, handled above
-				return doUndo();
 			case 'f': // toggle ground-snap vs. free-place for entity placement (#96)
 				freePlace = !freePlace;
 				return;
