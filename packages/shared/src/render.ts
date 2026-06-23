@@ -1,11 +1,5 @@
 import { BOX } from './constants';
-import {
-	ghostGlyph,
-	HATS,
-	type Sprite,
-	spriteFor,
-	spriteForNpc,
-} from './sprites';
+import { HATS, type Sprite, spriteFor, spriteForNpc } from './sprites';
 import { isSolid } from './terrain';
 import type { Entity, Facing, Npc, Terrain } from './types';
 import type { Portal } from './world';
@@ -63,22 +57,29 @@ export interface ZoneScene {
 	entities: readonly Entity[];
 }
 
-// A translucent "ghost" blit: every lit glyph is mapped to its ghost form via
-// `ghostGlyph` (the solid block fades to a light shade; partial puzzle-shape blocks
-// keep their shape) and drawn over an opaque `bg` instead of the transparent scene,
-// while the sprite's real per-cell colours are PRESERVED. The forge editor's
-// placement preview uses this so the ghost is the entity's actual shape + colours
-// (#118), tinted by its placement state (grounded/airborne/invalid) behind it.
+// A translucent "ghost" blit: the sprite is drawn EXACTLY as it ships — every glyph
+// unchanged — but each cell's real colour is run through `fade` and laid over an
+// opaque `bg`, and the sprite's transparent cells are filled with `bg` too so the
+// whole footprint reads as one solid rectangle (no gappy silhouette). Fading the
+// colour (not swapping the glyph) is what makes the preview read as translucent, so
+// it works for every glyph uniformly — the old per-glyph swap garbled the puzzle-shape
+// blocks it had no lighter character for (#118). `fade` lives on the caller because
+// @mmo/shared is colour-type-agnostic (it can't blend `C` itself); the forge editor
+// passes a fade that composites the colour onto the placement-state tint
+// (grounded/airborne/invalid).
 export interface GhostStyle<C> {
 	bg: C;
+	/** Maps a sprite's real cell colour to its faded ghost form (e.g. composited
+	 *  onto `bg` at low opacity). Applied to every lit cell in ghost mode. */
+	fade: (fg: C) => C;
 }
 
 // Blit a Sprite's lit glyphs into the buffer with palette colours, clipping to
 // the viewport. A `hurt` flash overrides every glyph with the hurt colour. An
 // optional `recolor` overrides specific colour keys for this blit only — the seam
 // the cosmetic body hue uses to repaint the Avatar's `p` cells per Avatar (#35),
-// leaving the shared palette untouched. An optional `ghost` maps each glyph to its
-// ghost form (`ghostGlyph`) over an opaque tint while keeping the colours (#118).
+// leaving the shared palette untouched. An optional `ghost` keeps every glyph as-is
+// but fades each cell's colour (via `ghost.fade`) over an opaque tint (#118).
 function blitSprite<C>(
 	buf: CellBuffer<C>,
 	sprite: Sprite,
@@ -100,15 +101,21 @@ function blitSprite<C>(
 		const row = glyphs[ry];
 		const krow = keys[ry];
 		for (let rx = 0; rx < sprite.w; rx++) {
-			const ch = row[rx];
-			if (ch === ' ') continue;
 			const px = sx + rx;
 			if (px < 0 || px >= sw) continue;
+			const ch = row[rx];
+			if (ch === ' ') {
+				// In ghost mode a transparent cell still paints the tint, so the whole
+				// sprite footprint reads as one solid rectangle instead of a gappy
+				// silhouette; in normal mode it stays see-through (skip).
+				if (ghost) buf.setCell(px, py, ' ', ghost.bg, ghost.bg);
+				continue;
+			}
 			const key = krow[rx];
 			const fg = hurt
 				? style.hurt
 				: (recolor?.[key] ?? style.palette[key] ?? style.paletteDefault);
-			if (ghost) buf.setCell(px, py, ghostGlyph(ch), fg, ghost.bg);
+			if (ghost) buf.setCell(px, py, ch, ghost.fade(fg), ghost.bg);
 			else buf.setCellWithAlphaBlending(px, py, ch, fg, style.transparent);
 		}
 	}

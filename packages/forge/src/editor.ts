@@ -437,16 +437,21 @@ export function footprintBox(p: Placeable, x: number, y: number): FootBox {
 
 /** The translucent glyph the placement ghost fills the footprint box with when a
  *  Placeable has no sprite preview yet (the portal fallback, #118). Sprite ghosts
- *  map each glyph to its ghost form via the shared `ghostGlyph` instead. */
+ *  keep their real glyphs and fade the colours instead (see the `fade` in the Stamp
+ *  preview). */
 export const GHOST_GLYPH = '░';
+
+/** How much of a sprite's own colour survives in its placement ghost; the rest is
+ *  the placement-state tint it's composited onto. Low enough to read as translucent,
+ *  high enough to keep the entity's hues recognisable (#118). */
+const GHOST_OPACITY = 0.5;
 
 /**
  * The scene object the placement ghost should draw to preview an entity Placeable
  * landing with its anchor glyph at `(x, y)` (#118). Rather than a coloured box, the
- * ghost is the entity's ACTUAL sprite — same art, same per-cell colours — blit with
- * each glyph mapped to its translucent ghost form (the shared `ghostGlyph`: the
- * solid block fades, partial puzzle-shape blocks keep their shape) over the
- * placement-state tint. Synthesising the very Entity/Npc that `parseZone` would spawn keeps
+ * ghost is the entity's ACTUAL sprite — same art, same glyphs — blit with every
+ * cell's colour faded onto the placement-state tint so it reads as a translucent
+ * preview. Synthesising the very Entity/Npc that `parseZone` would spawn keeps
  * the preview from drifting from what ships (#56): a monster resolves to its
  * behaviour sprite, an NPC to its kind sprite. Returns `undefined` for kinds with
  * no sprite preview yet (portals — #97 — and terrain), so the caller can fall back.
@@ -896,9 +901,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			}
 
 			// Ghost preview (#96/#114/#118): while the Stamp tool holds a picked
-			// entity, preview the actual entity that will land — its real sprite art
-			// and colours, blit with a translucent ░ in place of the solid glyphs —
-			// at the spot it will actually land. The cursor is the sprite's CENTER
+			// entity, preview the actual entity that will land — its real sprite art,
+			// every glyph kept, each colour faded onto the placement-state tint — at
+			// the spot it will actually land. The cursor is the sprite's CENTER
 			// (or feet when ground-snapping): one `cursorToAnchor` conversion feeds
 			// the ghost, the stamp, and the erase hit-test, so it can't drift from
 			// where the glyph lands. The placement state tints the glyph background —
@@ -913,7 +918,22 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 						: st === 'airborne'
 							? C.ghostAir
 							: C.ghostBad;
-				const ghostStyle: GhostStyle<typeof C.selBg> = { bg };
+				// Fade each sprite colour by compositing it onto the placement-state
+				// tint at GHOST_OPACITY, so the ghost reads as a translucent preview of
+				// the REAL entity — same glyphs, faded colours — instead of swapping
+				// each glyph for a lighter character (which garbled puzzle-shape blocks).
+				const b = bg.toInts();
+				const fade = (fg?: typeof C.selBg): typeof C.selBg | undefined => {
+					if (!fg) return fg;
+					const f = fg.toInts();
+					const mix = (i: number) =>
+						Math.round(f[i] * GHOST_OPACITY + b[i] * (1 - GHOST_OPACITY));
+					return RGBA.fromInts(mix(0), mix(1), mix(2), 255);
+				};
+				const ghostStyle: GhostStyle<typeof C.selBg | undefined> = {
+					bg,
+					fade,
+				};
 				// Draw the synthesized entity through the SHARED renderer with the same
 				// chrome-inset camera renderZoneScene uses, so the ghost sits exactly
 				// where the placed entity would render. Kinds with no sprite yet

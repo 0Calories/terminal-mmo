@@ -6,13 +6,7 @@ import {
 	type RenderStyle,
 	renderZoneScene,
 } from '../src/render';
-import {
-	ghostGlyph,
-	HATS,
-	type Sprite,
-	spriteFor,
-	spriteForNpc,
-} from '../src/sprites';
+import { HATS, type Sprite, spriteFor, spriteForNpc } from '../src/sprites';
 import { parseTerrain } from '../src/terrain';
 import type { Entity, EntityType, Facing } from '../src/types';
 
@@ -197,37 +191,42 @@ test('portals render as a translucent block across their box', () => {
 	}
 });
 
-test('ghost mode maps each glyph to its ghost form, over the tint, colours kept (#118)', () => {
+test('ghost mode keeps every glyph as-is and fades the colour over the tint (#118)', () => {
 	const buf = new FakeBuffer(20, 16);
-	// The shooter sprite has both solid full blocks (█→░) and partial puzzle-shape
-	// blocks (kept), so it exercises the per-glyph mapping in one blit.
+	// The shooter sprite has both solid full blocks and partial puzzle-shape blocks;
+	// every one must survive unchanged (no glyph swap) — only the colour is faded.
 	const e = makeEntity({ type: 'shooter', x: 6, y: 6 });
-	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE, { bg: 'TINT' });
+	const fade = (fg: string) => `FADED(${fg})`;
+	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE, { bg: 'TINT', fade });
 
 	const sprite = spriteFor('shooter');
 	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
 	const sy = Math.round(e.y + BOX.h - sprite.h);
 	const glyphs = sprite.rows(1);
 	const keys = sprite.colorKeys(1);
-	let sawFade = false;
-	let sawKept = false;
+	let sawSolid = false;
+	let sawPartial = false;
+	let sawFilledGap = false;
 	for (let ry = 0; ry < sprite.h; ry++) {
 		for (let rx = 0; rx < sprite.w; rx++) {
 			const ch = glyphs[ry][rx];
-			if (ch === ' ') continue;
 			const cell = buf.at(sx + rx, sy + ry);
-			expect(cell?.ch).toBe(ghostGlyph(ch)); // mapped to its ghost form
-			expect(cell?.bg).toBe('TINT'); // opaque placement-state tint behind it
-			expect(cell?.fg).toBe(fgFor(keys[ry][rx])); // real sprite colour preserved
+			// Every cell in the sprite's bounding box carries the tint — lit OR
+			// transparent — so the footprint reads as one solid rectangle (#118).
+			expect(cell?.bg).toBe('TINT');
+			if (ch === ' ') {
+				expect(cell?.ch).toBe(' '); // a transparent cell, filled with the tint
+				sawFilledGap = true;
+				continue;
+			}
+			expect(cell?.ch).toBe(ch); // glyph kept exactly — no swap
+			expect(cell?.fg).toBe(fade(fgFor(keys[ry][rx]))); // colour run through fade
 			if (ch === '█')
-				sawFade = true; // a solid block...
-			else sawKept = true; // ...and a partial block both appear
+				sawSolid = true; // a solid full block...
+			else sawPartial = true; // ...and a puzzle-shape block both survive
 		}
 	}
-	expect(ghostGlyph('█')).toBe('░'); // full block fades to a light shade
-	expect(ghostGlyph('▟')).toBe('▗'); // 3/4 block opens up to its pointing quadrant
-	expect(ghostGlyph('▖')).toBe('▖'); // a small partial block keeps its shape
-	expect(sawFade && sawKept).toBe(true);
+	expect(sawSolid && sawPartial && sawFilledGap).toBe(true);
 });
 
 test('NPC sprite blits at its box anchor (centred over the box, feet on the floor)', () => {
