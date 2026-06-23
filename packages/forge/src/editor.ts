@@ -24,6 +24,7 @@ import {
 	spawnMonster,
 	validateZone,
 	ZONE_MAX,
+	type Zone,
 } from '@mmo/shared';
 // Type-only import is erased at compile time, so it never loads opentui's
 // runtime — the pure helpers above stay testable without a terminal.
@@ -40,8 +41,17 @@ import {
 	zoneName,
 	zoneType,
 } from './doc';
-import { loadCatalogs, loadZone, writeZone } from './io';
+import { loadCatalogs, loadZone, loadZoneSet, writeZone } from './io';
 import { buildPalette, erase, type Placeable, place } from './placeable';
+import {
+	type Arrival,
+	defaultArrival,
+	filterCandidates,
+	formatArrival,
+	type PortalCandidate,
+	parseArrival,
+	portalCandidates,
+} from './portalForm';
 import { type Cam, sceneOf } from './preview';
 
 // --- Pure geometry (unit-tested; the opentui shell below is manual per PRD) ----
@@ -717,11 +727,21 @@ interface PickerEntry {
 	placeable: Placeable;
 }
 
-/** The Stamp picker's entries: the catalog Monsters + NPCs (Terrain is implicit,
- *  Structures/portals arrive with #97). Group labels are kept for the modal's
- *  section headers. */
+/** The placeholder Portal a picker row carries (#97). A Portal is data-carrying —
+ *  its real `target`/`arrival` come from the config form — so picking this row puts
+ *  the editor into "place a portal" mode; the actual placement happens on form
+ *  commit. `stampAt` detects the portal kind and opens the form instead of stamping. */
+const PORTAL_SENTINEL: Placeable = {
+	kind: 'portal',
+	target: '',
+	arrival: [0, 0],
+};
+
+/** The Stamp picker's entries: the catalog Monsters + NPCs, plus the Structures'
+ *  Portal (#97). Terrain is implicit. Group labels are kept for the modal's section
+ *  headers. */
 function entityPalette(catalogs: Catalogs): PickerEntry[] {
-	return buildPalette(catalogs)
+	const entries = buildPalette(catalogs)
 		.filter((g) => g.label === 'Monsters' || g.label === 'NPCs')
 		.flatMap((g) =>
 			g.items.flatMap((i) =>
@@ -730,6 +750,29 @@ function entityPalette(catalogs: Catalogs): PickerEntry[] {
 					: [],
 			),
 		);
+	entries.push({
+		label: 'Portal',
+		group: 'Structures',
+		placeable: PORTAL_SENTINEL,
+	});
+	return entries;
+}
+
+/**
+ * The Portal config form's live state (#97), or `null` when closed. The author
+ * first chooses a `target` Zone (autocompleted from `query`), then edits the
+ * `arrival` text — committing places (or, in `edit` mode, re-places) the Portal.
+ * Shell state; the modal is eyeball-only per the PRD, its decisions are the pure
+ * `portalForm` helpers.
+ */
+interface PortalForm {
+	stage: 'target' | 'arrival';
+	anchor: Point; // top-left glyph cell the Portal will occupy
+	edit: Point | null; // origin of an existing Portal being edited (erased on commit)
+	query: string; // typed target filter (target stage)
+	target: string; // chosen target Zone id
+	selIdx: number; // highlighted row in the filtered candidate list
+	arrivalText: string; // the arrival field's editable text
 }
 
 /**
@@ -770,6 +813,16 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	const cursor = { x: 0, y: 0 };
 	const cam: Cam = { x: 0, y: 0 };
 	const picker = entityPalette(catalogs); // entities the Stamp tool can place
+	// The Portal config form (#97) needs the rest of the Zone set: the candidate
+	// targets (so a Portal can never name a nonexistent Zone) and each target's
+	// parsed Zone (to seed the default arrival from its return portal). Parse failures
+	// are excluded — they can't be a valid target anyway.
+	const zoneSet = loadZoneSet(deps.root, catalogs).flatMap((l) =>
+		l.zone ? [l.zone] : [],
+	);
+	const portalCands: PortalCandidate[] = portalCandidates(zoneSet, id);
+	const zoneById = new Map<string, Zone>(zoneSet.map((z) => [z.id, z]));
+	let portalForm: PortalForm | null = null; // the open config form, or null
 	let stampP: Placeable | undefined; // the entity Stamp will place (picked in the modal)
 	let stampLabel = ''; // its display label (for the hint line)
 	let pickerOpen = false; // the Stamp modal is capturing input
@@ -1206,6 +1259,76 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					C.chromeBg,
 				);
 			}
+
+			// Portal config form (#97): a floating modal, drawn last. The target stage
+			// shows the typed filter + the autocompleted candidate Zones (highlighted
+			// row bracketed); the arrival stage shows the chosen target + the editable
+			// `x,y` field. Keys are captured by the `portalForm` early-return above.
+			if (portalForm) {
+				const f = portalForm;
+				const verb = f.edit ? 'Edit' : 'New';
+				const body: { text: string; hot?: boolean }[] = [];
+				if (f.stage === 'target') {
+					body.push({ text: `target: ${f.query}▏` });
+					const cands = filterCandidates(portalCands, f.query);
+					if (cands.length === 0) body.push({ text: ' (no matching Zone)' });
+					for (let i = 0; i < cands.length && i < 8; i++) {
+						const c = cands[i];
+						const lbl = c.name ? `${c.id}  ${c.name}` : c.id;
+						body.push({
+							text: i === f.selIdx ? `[${lbl}]` : ` ${lbl} `,
+							hot: i === f.selIdx,
+						});
+					}
+					body.push({ text: ' ↑/↓ · Enter pick · Esc cancel' });
+				} else {
+					body.push({ text: `target: ${f.target}` });
+					const ok = parseArrival(f.arrivalText) !== undefined;
+					body.push({
+						text: `arrival: ${f.arrivalText}▏${ok ? '' : '  (x,y)'}`,
+					});
+					body.push({ text: ' Enter save · Esc back' });
+				}
+				const title = ` ${verb} portal `;
+				const innerW = Math.max(
+					title.length,
+					...body.map((b) => b.text.length + 2),
+					30,
+				);
+				const boxW = innerW + 2;
+				const boxH = body.length + 2;
+				const ox = Math.max(0, Math.floor((W - boxW) / 2));
+				const oy = Math.max(RULER_H, Math.floor((H - boxH) / 2));
+				const line = (s: string) => (s + ' '.repeat(boxW)).slice(0, boxW);
+				buf.fillRect(ox, oy, boxW, boxH, C.chromeBg);
+				buf.drawText(
+					line(`┌${title}${'─'.repeat(Math.max(0, boxW - 2 - title.length))}┐`),
+					ox,
+					oy,
+					C.tickFg,
+					C.chromeBg,
+				);
+				let ry = oy + 1;
+				for (const b of body) {
+					buf.setCell(ox, ry, '│', C.tickFg, C.chromeBg);
+					buf.drawText(
+						` ${b.text}`.slice(0, boxW - 2),
+						ox + 1,
+						ry,
+						b.hot ? C.hot : C.textFg,
+						C.chromeBg,
+					);
+					buf.setCell(ox + boxW - 1, ry, '│', C.tickFg, C.chromeBg);
+					ry++;
+				}
+				buf.drawText(
+					line(`└${'─'.repeat(boxW - 2)}┘`),
+					ox,
+					ry,
+					C.tickFg,
+					C.chromeBg,
+				);
+			}
 		}
 	}
 
@@ -1256,11 +1379,66 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		doc = place(growToInclude(doc, x, y), x, y, TERRAIN);
 		recompute();
 	};
+	// The filtered target candidates for the form's current query (target stage).
+	const formCandidates = (): PortalCandidate[] =>
+		portalForm ? filterCandidates(portalCands, portalForm.query) : [];
+
+	// Open the Portal config form (#97). For a NEW portal, `edit` is null and the
+	// anchor is where the ghost sits; for an EDIT, `edit` is the existing origin and
+	// the form is seeded with its current target + arrival. With no candidate Zones
+	// to target, the form can't resolve, so it never opens.
+	const openPortalForm = (
+		anchor: Point,
+		edit: Point | null,
+		seed?: { target: string; arrival: Arrival },
+	) => {
+		if (portalCands.length === 0) return;
+		const sel = seed
+			? Math.max(
+					0,
+					filterCandidates(portalCands, '').findIndex(
+						(c) => c.id === seed.target,
+					),
+				)
+			: 0;
+		portalForm = {
+			stage: 'target',
+			anchor,
+			edit,
+			query: '',
+			target: seed?.target ?? '',
+			selIdx: sel,
+			arrivalText: seed ? formatArrival(seed.arrival) : '',
+		};
+	};
+
+	// Commit the Portal form: build the data-carrying Placeable and stamp it at the
+	// anchor. An edit first erases the old origin so a changed target/arrival doesn't
+	// leave a stale glyph (place then re-declares). Stays open on a malformed arrival.
+	const commitPortalForm = () => {
+		if (!portalForm) return;
+		const arrival = parseArrival(portalForm.arrivalText);
+		if (!portalForm.target || !arrival) return;
+		const p: Placeable = {
+			kind: 'portal',
+			target: portalForm.target,
+			arrival,
+		};
+		const a = portalForm.anchor;
+		if (portalForm.edit) doc = erase(doc, portalForm.edit.x, portalForm.edit.y);
+		doc = place(growToInclude(doc, a.x, a.y), a.x, a.y, p);
+		portalForm = null;
+		recompute();
+	};
+
 	// Stamp the picked entity: the cursor is its CENTER, converted to the stored
 	// top-left anchor (ground-snapped unless free-place) by the shared `cursorToAnchor`.
+	// A Portal is data-carrying — instead of stamping, it opens the config form (#97)
+	// at the landing anchor.
 	const stampAt = (x: number, y: number) => {
 		if (!stampP) return openPicker();
 		const a = cursorToAnchor(doc, stampP, x, y, freePlace);
+		if (stampP.kind === 'portal') return openPortalForm(a, null);
 		doc = place(growToInclude(doc, a.x, a.y), a.x, a.y, stampP);
 		recompute();
 	};
@@ -1272,6 +1450,23 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		recompute();
 	};
 
+	// Edit-on-click (#97): if the cell holds a data-carrying Portal, re-open its
+	// config form (seeded with the current target + arrival) and report it handled.
+	// Plain Monsters/NPCs carry no data, so they fall through to move/delete.
+	const tryEditPortal = (x: number, y: number): boolean => {
+		const hit = entityAt(doc, x, y);
+		if (hit?.placeable.kind !== 'portal') return false;
+		openPortalForm(
+			{ x: hit.originX, y: hit.originY },
+			{ x: hit.originX, y: hit.originY },
+			{
+				target: hit.placeable.target,
+				arrival: hit.placeable.arrival,
+			},
+		);
+		return true;
+	};
+
 	// The Tool's primary action at the cursor (`space`/click). Drag tools toggle
 	// the anchor (press A, then press B to commit); the rest act immediately.
 	const toolPrimary = () => {
@@ -1279,6 +1474,10 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		if (t.id === 'brush') return paintAt(cursor.x, cursor.y);
 		if (t.id === 'eraser') return eraseAt(cursor.x, cursor.y);
 		if (t.id === 'stamp') return stampAt(cursor.x, cursor.y);
+		// Select: a press on a Portal opens its form (edit-on-click); otherwise it
+		// anchors a region (first press) then commits the selection (second press).
+		if (t.id === 'select' && !anchor && tryEditPortal(cursor.x, cursor.y))
+			return;
 		// Rectangle / Line / Select: first press anchors, second commits.
 		if (!anchor) {
 			anchor = { x: cursor.x, y: cursor.y };
@@ -1327,6 +1526,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		// While the name prompt is open it owns input — ignore canvas/tool clicks so a
 		// stray click can't paint mid-type (keyboard Enter/Esc closes it).
 		if (namePrompt !== null) return;
+		// The Portal config form (#97) is keyboard-driven (like the name prompt) — a
+		// stray canvas/tool click can't paint while it's open.
+		if (portalForm) return;
 		// The Stamp picker modal eats clicks: a row confirms, anywhere else cancels.
 		if (pickerOpen) {
 			const hit = pickerHits.find(
@@ -1355,6 +1557,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		const w = toWorld(e.x, e.y);
 		moveCursorTo(w.x, w.y);
 		const t = activeTool();
+		// Select-clicking a Portal opens its config form (edit-on-click, #97) rather
+		// than starting a region drag; start the drag on empty space to select instead.
+		if (t.id === 'select' && tryEditPortal(cursor.x, cursor.y)) return;
 		// Drag tools anchor on down; Stamp picks up a ghost (commit one on release);
 		// Brush/Eraser act immediately and drag-paint.
 		if (t.drag) anchor = { x: cursor.x, y: cursor.y };
@@ -1442,6 +1647,61 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					namePrompt.length < NAME_MAX
 				)
 					namePrompt += ch;
+			}
+			return;
+		}
+
+		// The Portal config form (#97) owns every key while open. Two stages:
+		//  - target: type to autocomplete the candidate Zones, ↑/↓ to highlight, Enter
+		//    to choose (seeds the default arrival from the target's return portal),
+		//    Esc to cancel the form.
+		//  - arrival: edit the `x,y` text, Enter to commit (stays open if malformed),
+		//    Esc to step back to the target stage.
+		if (portalForm) {
+			const f = portalForm;
+			if (f.stage === 'target') {
+				const cands = formCandidates();
+				if (k.name === 'escape') {
+					portalForm = null;
+				} else if (k.name === 'up') {
+					if (cands.length)
+						f.selIdx = (f.selIdx - 1 + cands.length) % cands.length;
+				} else if (k.name === 'down') {
+					if (cands.length) f.selIdx = (f.selIdx + 1) % cands.length;
+				} else if (k.name === 'return' || k.name === 'enter') {
+					const chosen = cands[f.selIdx];
+					if (chosen) {
+						f.target = chosen.id;
+						// Seed the arrival only when it's still blank (a fresh portal), so an
+						// edit keeps the author's existing point unless they clear it.
+						if (!f.arrivalText.trim()) {
+							const tz = zoneById.get(chosen.id);
+							if (tz) f.arrivalText = formatArrival(defaultArrival(tz, id));
+						}
+						f.stage = 'arrival';
+					}
+				} else if (k.name === 'backspace') {
+					f.query = f.query.slice(0, -1);
+					f.selIdx = 0;
+				} else if (!k.ctrl && !k.meta) {
+					const ch = k.name === 'space' ? ' ' : (k.sequence ?? '');
+					if (ch.length === 1 && ch > ' ' && ch !== '\x7f') {
+						f.query += ch;
+						f.selIdx = 0;
+					}
+				}
+			} else {
+				if (k.name === 'escape') {
+					f.stage = 'target';
+				} else if (k.name === 'return' || k.name === 'enter') {
+					commitPortalForm();
+				} else if (k.name === 'backspace') {
+					f.arrivalText = f.arrivalText.slice(0, -1);
+				} else if (!k.ctrl && !k.meta) {
+					// The arrival field accepts only the digits/comma/space `parseArrival` reads.
+					const ch = k.name === 'space' ? ' ' : (k.sequence ?? '');
+					if (ch.length === 1 && /[0-9, ]/.test(ch)) f.arrivalText += ch;
+				}
 			}
 			return;
 		}
