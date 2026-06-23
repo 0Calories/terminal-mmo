@@ -43,6 +43,21 @@ export const COMBAT = {
 	// (ADR 0017 §11).
 	swing: { windup: 0.1, active: 0.12, recovery: 0.16 },
 	iframes: 0.6,
+	// The universal hit-reaction payload a landed basic swing carries (ADR 0017 §2):
+	// it always deals `meleeDamage` HP, chips `poiseDamage` off the victim's Poise,
+	// and — only on a Poise break — Staggers (Hitstun locks control) and Knocks back
+	// (a momentum-body impulse, scaled by Mass in applyImpulse). Authored so a Slime
+	// (poise.max 24) shrugs off a chip but breaks under ~3 sustained connects.
+	poiseDamage: 8,
+	hitstun: 0.35, // seconds the victim's control is locked on Stagger (body still flies)
+	knockback: 40, // horizontal Knockback impulse on a break (÷ Mass in applyImpulse)
+	knockbackUp: 14, // a small upward pop on a break, so a Stagger lifts as well as shoves
+	// Per-entity Poise (ADR 0017 §3): an accumulating pool that depletes by an
+	// attack's poiseDamage per hit and regenerates under no pressure. Stagger fires
+	// ONLY when a hit drives the pool to 0 (a break refills it). Wind-up grants
+	// Super-armor (a break is suppressed while an attacker is in its own wind-up), so
+	// a light hit chips a heavy attacker's Poise without interrupting the heavy swing.
+	poise: { max: 24, regen: 12 } as const,
 	// Intensity of a death blood burst (ADR 0013). High enough to saturate the
 	// client speck count so a kill reads visibly bigger and wider than a chip hit;
 	// paired with a radial dir 0 it sprays in every direction.

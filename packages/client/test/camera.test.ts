@@ -97,3 +97,76 @@ test('the Avatar screen column never bounces while walking (no double-round shim
 		prev = screenCol;
 	}
 });
+
+// --- Camera-kick (ADR 0017 §13c) --------------------------------------------
+
+import {
+	applyKick,
+	CAMERA_KICK,
+	type Kick,
+	NO_KICK,
+	stepKick,
+} from '../src/camera';
+
+const mag = (k: Kick) => Math.max(Math.abs(k.x), Math.abs(k.y));
+
+test('applyKick clamps each axis to ±maxCells (≤2 cells)', () => {
+	// A huge impulse on both axes saturates at the clamp, never beyond.
+	const k = applyKick(NO_KICK, 100, -100);
+	expect(k.x).toBe(CAMERA_KICK.maxCells);
+	expect(k.y).toBe(-CAMERA_KICK.maxCells);
+	// Stacking more never pushes past the clamp.
+	const k2 = applyKick(k, 50, -50);
+	expect(mag(k2)).toBeLessThanOrEqual(CAMERA_KICK.maxCells);
+});
+
+test('stepKick decays a kick monotonically toward zero and reaches exactly 0 within the duration', () => {
+	let k = applyKick(NO_KICK, CAMERA_KICK.maxCells, -CAMERA_KICK.maxCells); // full magnitude
+	let prev = mag(k);
+	let elapsed = 0;
+	const dt = 16;
+	// Over one full duration the offset must be back to exactly zero (no lingering, no overshoot).
+	for (let i = 0; i < Math.ceil(CAMERA_KICK.durationMs / dt); i++) {
+		k = stepKick(k, dt);
+		elapsed += dt;
+		const m = mag(k);
+		expect(m).toBeLessThanOrEqual(prev); // monotonic, never grows
+		expect(k.x).toBeGreaterThanOrEqual(0); // a +x kick never crosses zero into -x
+		expect(k.y).toBeLessThanOrEqual(0); // a -y kick never crosses zero into +y
+		prev = m;
+	}
+	expect(elapsed).toBeGreaterThanOrEqual(CAMERA_KICK.durationMs);
+	expect(k).toEqual({ x: 0, y: 0 }); // fully settled
+});
+
+test('stepKick clamps the decremented value at zero (never overshoots past 0)', () => {
+	// A tiny residual kick + a long frame must snap to 0, not flip sign.
+	const k = stepKick({ x: 0.1, y: -0.1 }, CAMERA_KICK.durationMs);
+	expect(k).toEqual({ x: 0, y: 0 });
+});
+
+// --- Hitstop (ADR 0017 §13c) -------------------------------------------------
+
+import {
+	HITSTOP_MS,
+	isFrozen,
+	NO_HITSTOP,
+	stepHitstop,
+	triggerHitstop,
+} from '../src/hitstop';
+
+test('hitstop freezes on trigger and drains to unfrozen over its duration', () => {
+	expect(isFrozen(NO_HITSTOP)).toBe(false);
+	let h = triggerHitstop(NO_HITSTOP);
+	expect(isFrozen(h)).toBe(true);
+	// Drains by real wall time; after the full duration it is no longer frozen.
+	h = stepHitstop(h, HITSTOP_MS);
+	expect(isFrozen(h)).toBe(false);
+});
+
+test('a re-trigger mid-freeze cannot shorten the remaining freeze', () => {
+	let h = triggerHitstop(NO_HITSTOP, 100);
+	h = stepHitstop(h, 30); // 70 left
+	h = triggerHitstop(h, 50); // shorter request must not win
+	expect(h.remainingMs).toBe(70);
+});

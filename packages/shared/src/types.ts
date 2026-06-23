@@ -36,13 +36,14 @@ export type MoveId = 'idle' | 'basic';
 // (ADR 0017 §10) — this replaces the old client-local swing telegraph. Derived
 // from the entity's swing timer by `actionStateOf`, never hand-authored. `phase` +
 // `progress` drive the client's per-phase sprite pose and the slash-arc (live only
-// while `active`); `flags` reserves the guarding / staggered / airborne bits later
-// slices set (always 0 here). `phase`/`progress` are meaningless when `move` is idle.
+// while `active`); `flags` is a bitfield surfacing reaction/defense state — the
+// `staggered` bit (ACTION_FLAG.staggered) is set here, with guarding / airborne bits
+// reserved for later slices. `phase`/`progress` are meaningless when `move` is idle.
 export interface ActionState {
 	move: MoveId;
 	phase: AttackPhase;
 	progress: number; // 0..1 through the current phase
-	flags: number; // reserved bitfield (0 in this slice)
+	flags: number; // reaction/defense bitfield (ACTION_FLAG.*)
 }
 
 // One Avatar's cosmetic choices (#35, ADR 0003): a body hue, one cosmetic hat
@@ -80,6 +81,21 @@ export interface Entity {
 	// otherwise erase a shove. Vertical impulses need no channel — they add straight
 	// into `vy`, which already carries momentum under gravity. Absent == 0.
 	ivx?: number;
+	// Poise (ADR 0017 §3): the accumulating pool that regulates whether a hit
+	// Staggers. Depletes by an attack's poise damage, regenerates under no pressure,
+	// and a hit that drives it to 0 BREAKS (refilling it) and triggers Stagger. Absent
+	// == full (DEFAULT poise.max). Server-tracked; never on the wire.
+	poise?: number;
+	// Hitstun (ADR 0017 §2): seconds of remaining Stagger. While > 0 the victim's
+	// CONTROL is locked (no AI / input drive) but its body still integrates Knockback
+	// + gravity, so a staggered entity flies. Absent == 0 (acting normally). The
+	// staggered state is surfaced to clients through the action-state `flags` bit.
+	stunT?: number;
+	// Ids an in-flight basic swing has already hit (ADR 0017 §2): a swing connects
+	// with a given target at most once, the rate-limiter that replaced the removed
+	// automatic post-hit i-frames. Cleared when a fresh swing starts; a NEW swing (or
+	// another attacker) can still hit a target that is mid-Stagger. Server-internal.
+	swingHits?: number[];
 	spawnIndex?: number; // index into its Zone's spawns[], if Field-spawned
 	contributors?: number[]; // Monster-only: session ids that have damaged it, for shared-kill rewards (#37)
 	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
@@ -94,9 +110,11 @@ export interface Entity {
 }
 
 // The semantic game event a burst represents. `blood` is the chip-hit MVP kind;
-// `gore` is the meatier, entity-tinted death burst (#139). Future kinds (dust,
-// sparkle, spark, smoke) are added here as the system grows.
-export type EffectKind = 'blood' | 'gore';
+// `gore` is the meatier, entity-tinted death burst (#139); `impact` is the heavy
+// Poise-break burst (ADR 0017 §13d) — bigger and sharper than a chip, the visual
+// twin of the Stagger that pairs with client hitstop + camera-kick. Future kinds
+// (parry clash, guard-break, launch) are added here as the system grows.
+export type EffectKind = 'blood' | 'gore' | 'impact';
 
 // An RGB colour carried on an Effect to tint its particles (#139), e.g. a death
 // burst recoloured to the dead entity's body. Each channel is 0..255.

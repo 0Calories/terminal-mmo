@@ -82,3 +82,42 @@ export function stepCamera(
 
 	return { cam, center: { x: cx, y: cy }, zoneId };
 }
+
+// --- Camera-kick (ADR 0017 §13c) --------------------------------------------
+//
+// A short, decaying viewport offset added on a "big moment" (a Poise break in this
+// slice), layered ON TOP of the follow camera above. View-only, like the camera
+// itself — the server never knows. Deliberately small and brief: a 1–2 cell punch
+// that decays to zero in <150ms. Micro-shake reads as jank at cell granularity, so
+// this is a single directional pop, not a rumble.
+
+export const CAMERA_KICK = {
+	maxCells: 2, // hard clamp on the offset magnitude (≤2 cells, per ADR)
+	durationMs: 150, // a kick at full magnitude decays linearly to zero in this long
+} as const;
+
+export interface Kick {
+	x: number;
+	y: number;
+}
+
+export const NO_KICK: Kick = { x: 0, y: 0 };
+
+// Add a fresh kick impulse, clamping each axis into ±maxCells so a burst of breaks
+// can't stack into a nauseating lurch. Pure.
+export function applyKick(kick: Kick, dx: number, dy: number): Kick {
+	const clamp = (v: number) =>
+		Math.max(-CAMERA_KICK.maxCells, Math.min(CAMERA_KICK.maxCells, v));
+	return { x: clamp(kick.x + dx), y: clamp(kick.y + dy) };
+}
+
+// Decay a kick toward zero by one frame: a linear ramp that reaches EXACTLY zero
+// within `durationMs` from full magnitude (and sooner from a smaller one), so the
+// offset never lingers or overshoots past 0. Pure; `dtMs` is wall time.
+export function stepKick(kick: Kick, dtMs: number): Kick {
+	const step =
+		CAMERA_KICK.maxCells * (Math.max(0, dtMs) / CAMERA_KICK.durationMs);
+	const decay = (v: number) =>
+		v > 0 ? Math.max(0, v - step) : Math.min(0, v + step);
+	return { x: decay(kick.x), y: decay(kick.y) };
+}

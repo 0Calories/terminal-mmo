@@ -129,6 +129,22 @@ data entry, not new code. Distinct from `Effect.kind`: an Effect.kind is the
 ParticleTypes — the indirection that lets one event spawn several looks.
 _Avoid_: Effect.kind, ParticleKind, sprite
 
+**Hitstop**:
+A client-side, render-only freeze of a few dozen milliseconds on a meaty hit (a
+Poise break), holding the last drawn frame so the blow lands with weight. The
+**sim never pauses** — the shared step keeps advancing authoritatively; only the
+playfield's redraw is gated, so positions catch up the instant the freeze drains.
+View-only and non-authoritative, like a Particle; the server has no concept of it.
+_Avoid_: pause, freeze-frame (the *sim* doesn't freeze), slow-mo, lag
+
+**Camera-kick**:
+A small, decaying viewport offset (≤2 cells, gone in <150ms) the client adds on a
+"big moment" — a Poise break in the foundation — layered on top of the follow
+camera as a single directional punch (not a rumble; micro-shake reads as jank at
+cell granularity). View-only and non-authoritative; keyed off the `impact`
+**Effect**, so it fires for everyone who sees the break, attacker included.
+_Avoid_: screenshake, rumble, camera shake (it's a single decaying pop)
+
 **SoundEffect**:
 The client-side *audible* realization of a moment — the audio twin of a Particle.
 Where a Particle answers *what it looks like*, a SoundEffect answers *what it

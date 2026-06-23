@@ -92,6 +92,19 @@ export function meleeActive(attackT: number): boolean {
 	return swingPhase(attackT) === 'active';
 }
 
+// The action-state `flags` bitfield (ADR 0017 §10): a compact set of reaction /
+// defense bits replicated for every entity so a client can render the state (a
+// staggered sprite, later a guard pose). Only `staggered` exists in this slice;
+// guarding / airborne join as later slices land. Round-trips as the action's u8.
+export const ACTION_FLAG = { staggered: 1 } as const;
+
+// The reaction/defense flags an entity broadcasts this tick. In this slice the only
+// bit is `staggered` (Hitstun in flight) — surfacing Poise/Stagger state through the
+// action-state exactly as ADR 0017 §3 requires, for Avatars and Monsters alike.
+export function actionFlags(e: Entity): number {
+	return (e.stunT ?? 0) > 0 ? ACTION_FLAG.staggered : 0;
+}
+
 // The action-state every entity replicates when idle: no move, no live hitbox.
 export const IDLE_ACTION: ActionState = {
 	move: 'idle',
@@ -100,14 +113,58 @@ export const IDLE_ACTION: ActionState = {
 	flags: 0,
 };
 
+// --- Poise + hit-reaction (ADR 0017 §2/§3) ----------------------------------
+//
+// Poise is an accumulating pool that regulates whether a hit Staggers at all. A
+// hit always deals HP damage but only Staggers on a Poise BREAK (the pool driven to
+// 0). The pool regenerates under no pressure, so weak sustained chip eventually
+// breaks a target while a single light hit never does. Pure; the server tracks the
+// pool on the Entity and the client never sees it (off-wire).
+
+// Super-armor (ADR 0017 §3): while an attacker is in its own attack wind-up, a hit
+// chips its Poise but cannot break it — so a jab can't interrupt a committed heavy
+// swing. A pure function of the swing timer, symmetric for every entity.
+export function superArmorActive(e: Entity): boolean {
+	return swingPhase(e.attackT) === 'windup';
+}
+
+// Apply a hit's poise damage to an entity, returning its new pool and whether the
+// hit BROKE it. A break refills the pool (the Stagger is the cost); Super-armor
+// (wind-up) suppresses a break, clamping the chipped pool at 0 so the next hit out
+// of wind-up breaks immediately. Pure — the caller folds `poise` back onto the
+// Entity and, on a break, applies Hitstun + the Knockback impulse.
+export function applyPoiseDamage(
+	e: Entity,
+	poiseDamage: number,
+): { poise: number; broke: boolean } {
+	const max = COMBAT.poise.max;
+	const cur = e.poise ?? max;
+	if (superArmorActive(e))
+		return { poise: Math.max(0, cur - poiseDamage), broke: false };
+	const next = cur - poiseDamage;
+	if (next <= 0) return { poise: max, broke: true };
+	return { poise: next, broke: false };
+}
+
+// Regenerate an entity's Poise toward full by one tick (ADR 0017 §3). Always-on
+// regen is the MVP of "regenerates under no pressure" — a hit depletes far faster
+// than this refills, preserving the chip-then-break rhythm. Pure.
+export function regenPoise(e: Entity, dt: number): number {
+	return Math.min(
+		COMBAT.poise.max,
+		(e.poise ?? COMBAT.poise.max) + COMBAT.poise.regen * dt,
+	);
+}
+
 // The action-state to broadcast for an entity, derived from its swing timer
 // (`attackT`). In this slice only Avatars run the phase machine; the snapshot
 // builder calls this for Avatars and replicates IDLE_ACTION for Monsters (their
 // offense rework is a later slice). Pure — the wire field is computed, not stored.
 export function actionStateOf(e: Entity): ActionState {
+	const flags = actionFlags(e);
 	const phase = swingPhase(e.attackT);
-	if (!phase) return IDLE_ACTION;
-	return { move: 'basic', phase, progress: swingProgress(e.attackT), flags: 0 };
+	if (!phase) return flags ? { ...IDLE_ACTION, flags } : IDLE_ACTION;
+	return { move: 'basic', phase, progress: swingProgress(e.attackT), flags };
 }
 
 // --- Slash-arc + per-phase pose realization data (ADR 0017 §13a/b) ----------
@@ -179,6 +236,28 @@ export function bloodEffect(
 	return e;
 }
 
+// The impact Effect a Poise-break emits (ADR 0017 §13d): a heavier, sharper burst
+// than a chip `blood`, biased along the attacker's facing and scaled up from the
+// damage dealt so a Stagger reads visibly bigger than a chip. It is the wire signal
+// the client realizes into the impact-spark particle burst AND keys hitstop +
+// camera-kick off (a break is the only "big moment" in this slice). Like the death
+// gore burst it carries NO `source` — it is delivered to everyone in range including
+// the attacker, who needs it to fire the camera-kick (the client predicts only chip
+// blood, so the spark never double-renders).
+export function impactEffect(
+	m: Entity,
+	attackerFacing: Facing,
+	damage: number,
+): Effect {
+	return {
+		kind: 'impact',
+		x: m.x + BOX.w / 2,
+		y: m.y + BOX.h / 2,
+		intensity: damage + COMBAT.poise.max, // bigger than a chip blood of the same damage
+		dir: attackerFacing,
+	};
+}
+
 // The blood Effect an Avatar taking damage emits (ADR 0013, #132): one burst at
 // the Avatar's centre, biased AWAY from the damage source (`dir` 0 = radial when
 // the direction is ambiguous), scaled by the damage taken. Unlike monster-hit
@@ -241,6 +320,10 @@ export function resolveCombat(
 	attackT: number;
 	cooldowns: Record<string, number>;
 	skillFired?: Skill;
+	// True on the tick a fresh swing begins (ADR 0017 §2): the caller clears the
+	// per-swing hit list so the new swing can connect again, the rate-limiter that
+	// replaced automatic post-hit i-frames.
+	swingStarted: boolean;
 } {
 	const attackT = Math.max(0, avatar.attackT - dt);
 	const decayed: Record<string, number> = {};
@@ -279,5 +362,6 @@ export function resolveCombat(
 		attackT: nextAttackT,
 		cooldowns: decayed,
 		skillFired,
+		swingStarted: starting,
 	};
 }
