@@ -7,17 +7,21 @@ import {
 } from '@mmo/shared';
 import { cellAt, type EditorDoc, serializeDoc } from '../src/doc';
 import {
+	clampDiagIndex,
 	clampRoam,
 	copyRegion,
 	cursorEdge,
 	cursorToAnchor,
 	deleteRegion,
+	diagJumpTarget,
+	diagPanelSummary,
 	docDiagnostics,
 	editorExtent,
 	editorStatusLine,
 	entityAt,
 	eraseCells,
 	footprintBox,
+	formatDiagLine,
 	ghostEntity,
 	groundSnap,
 	growToInclude,
@@ -214,6 +218,82 @@ describe('editorStatusLine', () => {
 		});
 		expect(line).toContain('✓');
 		expect(line).not.toContain('*');
+	});
+});
+
+// --- Diagnostics panel (#100) -------------------------------------------------
+
+describe('diagJumpTarget', () => {
+	test('returns the offending cell for a placement finding', () => {
+		expect(
+			diagJumpTarget({
+				severity: 'error',
+				zoneId: 'z',
+				message: 'floating',
+				cell: { x: 4, y: 2 },
+			}),
+		).toEqual({ x: 4, y: 2 });
+	});
+
+	test('returns null for a finding with no cell (orphan/type/catalog)', () => {
+		expect(
+			diagJumpTarget({ severity: 'error', zoneId: 'z', message: 'orphan' }),
+		).toBeNull();
+	});
+});
+
+describe('clampDiagIndex', () => {
+	test('keeps an in-range index unchanged', () => {
+		expect(clampDiagIndex(2, 5)).toBe(2);
+	});
+	test('clamps past-the-end down to the last row', () => {
+		expect(clampDiagIndex(9, 3)).toBe(2);
+	});
+	test('clamps a negative index up to 0', () => {
+		expect(clampDiagIndex(-1, 3)).toBe(0);
+	});
+	test('is 0 for an empty list', () => {
+		expect(clampDiagIndex(4, 0)).toBe(0);
+	});
+});
+
+describe('formatDiagLine', () => {
+	test('marks an error and carries its message', () => {
+		const line = formatDiagLine({
+			severity: 'error',
+			zoneId: 'z',
+			message: 'box at (1,2) overlaps solid terrain',
+		});
+		expect(line).toContain('✗');
+		expect(line).toContain('overlaps solid terrain');
+	});
+	test('uses a distinct marker for a warning', () => {
+		const err = formatDiagLine({
+			severity: 'error',
+			zoneId: 'z',
+			message: 'm',
+		});
+		const warn = formatDiagLine({
+			severity: 'warning',
+			zoneId: 'z',
+			message: 'm',
+		});
+		expect(warn[0]).not.toBe(err[0]);
+	});
+});
+
+describe('diagPanelSummary', () => {
+	test('reports an all-clear line when there are no findings', () => {
+		expect(diagPanelSummary([])).toContain('No issues');
+	});
+	test('counts errors and warnings separately, pluralized', () => {
+		const s = diagPanelSummary([
+			{ severity: 'error', zoneId: 'z', message: 'a' },
+			{ severity: 'error', zoneId: 'z', message: 'b' },
+			{ severity: 'warning', zoneId: 'z', message: 'c' },
+		]);
+		expect(s).toContain('2 errors');
+		expect(s).toContain('1 warning');
 	});
 });
 
