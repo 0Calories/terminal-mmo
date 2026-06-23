@@ -98,6 +98,37 @@ to the Avatar by session id, tracks the Avatar as it moves, and expires on a
 timer — the chat log stays the durable record.
 _Avoid_: Chat bubble, balloon, callout, tooltip
 
+**Effect**:
+A small, authoritative descriptor of a momentary world event worth showing —
+e.g. "a blood-hit landed at (x,y), facing →, intensity N." Produced
+deterministically in shared logic the moment Combat resolves, and broadcast to
+every session in the Zone (like an Emote) *except* the session that caused it
+(which predicts it locally). An Effect says *what happened*, never *what it
+looks like* — its visual realization is the client's business (see Particle).
+The local Player predicts their own Effects client-side for zero-latency
+feedback; the server derives the same Effects independently and authoritatively.
+_Avoid_: Event (too generic), FX, animation, particle (that's the realization)
+
+**Particle**:
+A single client-side visual speck — one cell with a sub-cell position,
+velocity, and lifetime — simulated locally at render framerate. A client turns
+one Effect into many Particles using local randomness, so the exact specks
+differ harmlessly between clients; only the Effect is shared. Each Particle's
+motion and look (gravity, bounce, whether it rests, glyphs, color-over-life) come
+from its **ParticleType**, not from hardcoded blood behavior. Purely decorative
+and client-side, like a Sprite.
+_Avoid_: Effect, sprite, pixel (ambiguous), FX
+
+**ParticleType**:
+The visual profile a Particle belongs to (`blood`, later `dust`, `sparkle`,
+`spark`…) — a declarative data entry defining its whole behavior: gravity,
+bounce, terrain collision, rest and fade durations, glyph sets, color-over-life,
+z-layer. One generic client simulator reads the profile, so a new look is a new
+data entry, not new code. Distinct from `Effect.kind`: an Effect.kind is the
+*semantic game event* ("blood hit"), mapped client-side to one or more
+ParticleTypes — the indirection that lets one event spawn several looks.
+_Avoid_: Effect.kind, ParticleKind, sprite
+
 **Monster**:
 A hostile, server-controlled entity that Players fight for XP and loot. Lives in
 Fields.
