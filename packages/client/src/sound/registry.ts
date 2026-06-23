@@ -13,12 +13,14 @@ export type SoundKind = 'jump';
 
 export const SOUND_SPECS: Record<SoundKind, SynthSpec> = {
 	// A short rising square-wave "boop" — the chiptune-native voice of a jump.
+	// A square wave reads far louder than its peak amplitude suggests (full-energy
+	// waveform, rich harmonics), so the amplitude is kept low to stay unobtrusive.
 	jump: {
 		wave: 'square',
 		freq: 320,
 		freqEnd: 660,
 		durationMs: 120,
 		releaseMs: 60,
-		volume: 0.5,
+		volume: 0.18,
 	},
 };
