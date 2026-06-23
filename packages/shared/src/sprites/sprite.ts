@@ -34,33 +34,6 @@ const MIRROR: Record<string, string> = {
 	'▞': '▚',
 };
 
-// A sprite glyph mapped to its translucent "ghost" form for placement previews
-// (#118). The glyphs that fill (or nearly fill) their whole cell hide the ghost's
-// background tint, so they fade to a lighter shade and let it read through:
-//   - the full block █ and the denser shades ▓ ▒ → the lightest shade ░;
-//   - the three-quarter quadrant blocks ▙ ▟ ▛ ▜ (only one empty quadrant) → the
-//     opposite single quadrant, which keeps the corner the silhouette points to
-//     while opening up three quarters for the tint.
-// Every smaller partial block (halves/quadrants like ▌ ▖ ▘ ▚) already leaves most
-// of its cell empty, so the tint shows through and the shape stays legible — those
-// pass through unchanged (Unicode has no lighter form for them).
-const GHOST_GLYPHS: Record<string, string> = {
-	'█': '░',
-	'▓': '░',
-	'▒': '░',
-	'▟': '▗', // ▛▜▙▟ keep only the quadrant they point to, opening up the rest
-	'▙': '▖',
-	'▛': '▘',
-	'▜': '▝',
-};
-
-/** The translucent ghost form of a sprite glyph (#118): the solid full block
- *  becomes a light shade; partial blocks keep their shape. Unknown glyphs (incl.
- *  the light shade itself) pass through unchanged. */
-export function ghostGlyph(ch: string): string {
-	return GHOST_GLYPHS[ch] ?? ch;
-}
-
 function splitTrimPad(art: string): string[] {
 	const lines = art.split('\n');
 	while (lines.length > 0 && lines[0].trim() === '') lines.shift();
