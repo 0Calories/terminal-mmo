@@ -28,7 +28,7 @@ if (domain === 'zone') {
 		[
 			'usage: forge <domain> <command>',
 			'',
-			'  zone   author + validate .zone content (render|preview|play|edit|check|new)',
+			'  zone   author + validate .zone content (render|preview|play|edit|check|new|rename)',
 			'',
 			'run `forge zone` for zone subcommands.',
 		].join('\n'),

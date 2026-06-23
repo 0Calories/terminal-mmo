@@ -1,5 +1,4 @@
 {
-  "id": "town-01",
   "type": "town",
   "npcs": {
     "a": "merchant"

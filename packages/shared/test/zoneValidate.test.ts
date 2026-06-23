@@ -88,7 +88,6 @@ describe('validateZone — a well-formed Zone passes clean', () => {
 		rows[onGround][20] = 'm';
 		rows[FLOOR - 7][14] = 'a';
 		const header = JSON.stringify({
-			id: 'field-01',
 			type: 'field',
 			spawns: { c: 'goblin-01', s: 'archer-01' },
 			npcs: { m: 'merchant-01' },
@@ -97,6 +96,7 @@ describe('validateZone — a well-formed Zone passes clean', () => {
 		const z = parseZone(
 			`${header}\n---\n${rows.map((r) => r.join('')).join('\n')}`,
 			catalogs,
+			'field-01',
 		);
 		expect(errs(validateZone(z, catalogs))).toEqual([]);
 	});
@@ -271,10 +271,9 @@ describe('findOrphanGlyphs — header keys must be used in the grid', () => {
 	const file = (header: string) => `${header}\n---\n${grid}`;
 
 	test('a declared spawn glyph that never appears in the grid is an error', () => {
-		const text = file(
-			'{"id":"f","type":"field","spawns":{"c":"chaser","z":"chaser"}}',
-		);
-		const d = findOrphanGlyphs(text);
+		const text = file('{"type":"field","spawns":{"c":"chaser","z":"chaser"}}');
+		// The id is supplied by the caller (the filename, ADR 0011), not the header.
+		const d = findOrphanGlyphs(text, 'f');
 		expect(d).toHaveLength(1);
 		expect(d[0].severity).toBe('error');
 		expect(d[0].zoneId).toBe('f');
@@ -282,13 +281,13 @@ describe('findOrphanGlyphs — header keys must be used in the grid', () => {
 	});
 
 	test('a file whose every declared glyph is placed has no orphans', () => {
-		const text = file('{"id":"f","type":"field","spawns":{"c":"chaser"}}');
+		const text = file('{"type":"field","spawns":{"c":"chaser"}}');
 		expect(findOrphanGlyphs(text)).toEqual([]);
 	});
 
 	test('orphan npc and portal keys are flagged too', () => {
 		const text = file(
-			'{"id":"f","type":"field","spawns":{"c":"chaser"},' +
+			'{"type":"field","spawns":{"c":"chaser"},' +
 				'"npcs":{"M":"merchant"},' +
 				'"portals":{"P":{"target":"town-01","arrival":[1,1]}}}',
 		);
@@ -300,7 +299,7 @@ describe('findOrphanGlyphs — header keys must be used in the grid', () => {
 	});
 
 	test('a malformed file (no delimiter / bad JSON header) yields nothing', () => {
-		expect(findOrphanGlyphs('{"id":"f"} no delimiter here')).toEqual([]);
+		expect(findOrphanGlyphs('{} no delimiter here')).toEqual([]);
 		expect(findOrphanGlyphs('{not json\n---\n....')).toEqual([]);
 	});
 });

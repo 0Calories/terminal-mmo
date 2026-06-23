@@ -14,7 +14,7 @@ const CATALOGS: Catalogs = {
 // A blank 5×3 field doc to place into.
 function blank(): EditorDoc {
 	return {
-		header: { id: 'z', type: 'field', spawns: {}, npcs: {}, portals: {} },
+		header: { type: 'field', spawns: {}, npcs: {}, portals: {} },
 		rows: ['.....', '.....', '#####'],
 	};
 }
@@ -134,7 +134,7 @@ describe('orphan/undeclared glyph states are unreachable through the editor', ()
 		// No declared-but-unused glyphs (orphans)…
 		expect(findOrphanGlyphs(text)).toEqual([]);
 		// …and every placed glyph is declared, so parseZone resolves cleanly.
-		expect(() => parseZone(text, CATALOGS)).not.toThrow();
+		expect(() => parseZone(text, CATALOGS, 'z')).not.toThrow();
 	});
 
 	test('placing out of grid is a no-op and allocates no header entry', () => {

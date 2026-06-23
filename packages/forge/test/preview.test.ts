@@ -7,7 +7,7 @@ const CATALOGS = {
 	monsters: [{ id: 'slime', behavior: 'chaser' as const, name: 'Slime' }],
 	npcs: [],
 };
-const ZONE_TEXT = `{"id":"f","type":"field","spawns":{"c":"slime"},"portals":{"P":{"target":"t","arrival":[2,8]}}}
+const ZONE_TEXT = `{"type":"field","spawns":{"c":"slime"},"portals":{"P":{"target":"t","arrival":[2,8]}}}
 ---
 ..........
 ..........
@@ -45,7 +45,7 @@ describe('clampPreviewCam', () => {
 });
 
 describe('sceneOf', () => {
-	const zone = parseZone(ZONE_TEXT, CATALOGS);
+	const zone = parseZone(ZONE_TEXT, CATALOGS, 'f');
 	const scene = sceneOf(zone);
 
 	it('exposes the Zone terrain, portals, and spawned monsters as a static scene', () => {
