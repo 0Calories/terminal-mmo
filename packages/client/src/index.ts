@@ -405,10 +405,6 @@ function runNetworked(url: string) {
 			// so the swing/skill flash shows before the snapshot confirms the hit. The
 			// same gate yields the outgoing hitbox + damage for blood prediction (ADR
 			// 0013): a fired Skill overrides the basic swing, matching resolveAvatarIntent.
-			const swung = inp.attack && predicted.attackT <= 0;
-			if (swung) predicted.attackT = COMBAT.attackCooldown;
-			let hitbox = swung ? meleeHitbox(predicted) : null;
-			let hitDamage: number = COMBAT.meleeDamage;
 			const dtSec = Math.min(dt / 1000, PHYS.maxDt);
 			const r = resolveCombat(
 				predicted,
