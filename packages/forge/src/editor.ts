@@ -29,7 +29,17 @@ import {
 // runtime — the pure helpers above stay testable without a terminal.
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
-import { cellAt, type EditorDoc, parseDoc, serializeDoc } from './doc';
+import {
+	cellAt,
+	type EditorDoc,
+	parseDoc,
+	placedMonsterCount,
+	serializeDoc,
+	setZoneName,
+	setZoneType,
+	zoneName,
+	zoneType,
+} from './doc';
 import { loadCatalogs, loadZone, writeZone } from './io';
 import { buildPalette, erase, type Placeable, place } from './placeable';
 import { type Cam, sceneOf } from './preview';
@@ -692,6 +702,7 @@ export function entityAt(
 const RULER_H = 1; // top column ruler
 const GUTTER_W = 4; // left row ruler (up to 3 digits + tick)
 const FOOTER_H = 3; // tool bar + status line + stamp/hint line
+const NAME_MAX = 48; // display-name length cap in the editor's name prompt (#99)
 const SCROLLOFF = 4; // edit-scroll margin before the viewport follows
 const ROAM_MARGIN = 16; // virgin space the cursor may roam past the content
 
@@ -774,6 +785,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let diags = docDiagnostics(doc, catalogs);
 	let scene = sceneOf(loaded.zone); // last-good scene; kept on a parse failure
 	let pendingQuit = false;
+	let namePrompt: string | null = null; // name-edit modal buffer (null = closed)
+	let pendingTownToggle = false; // Field→Town toggle awaiting data-loss confirm
 
 	// Footer hit-test spans, recomputed each frame so mouse clicks select the Tool
 	// under the pointer (keyboard parity is the canonical path). The Stamp picker's
@@ -1023,11 +1036,18 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				toolHits.push({ x0: tx, x1: tx + seg.length, idx: i });
 				tx += seg.length;
 			}
-			// Placement-mode badge (#96): which way the Stamp entity will drop.
+			// Right of the tool bar: the Stamp placement-mode badge (#96), or — when
+			// not actively stamping — a persistent Zone identity readout (#99) so the
+			// author always sees the display name + type they're editing.
 			if (TOOLS[toolIdx].id === 'stamp' && stampP) {
 				const badge = freePlace ? 'free-place (f)' : 'ground-snap (f)';
 				const bx = Math.max(tx + 1, W - badge.length);
 				if (bx < W) buf.drawText(badge, bx, toolbarRow, C.dimFg, C.chromeBg);
+			} else {
+				const nm = zoneName(doc);
+				const readout = `${nm ? `"${nm}" · ` : ''}${zoneType(doc)} (t)`;
+				const bx = Math.max(tx + 1, W - readout.length);
+				if (bx < W) buf.drawText(readout, bx, toolbarRow, C.dimFg, C.chromeBg);
 			}
 
 			// Status bar (reflects the active Tool; entity = the picked Stamp, if any).
@@ -1050,12 +1070,21 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				? stampP
 					? `Stamp: ${stampLabel} · space/click place · p re-pick`
 					: 'Stamp: press p (or click the tool) to pick an entity'
-				: 'Brush/Rect/Line paint terrain · Eraser removes · Stamp (p) places entities';
+				: 'Brush/Rect/Line terrain · Eraser removes · Stamp (p) entities · n name · t type';
 			buf.drawText(hint.slice(0, W), 0, hintRow, C.dimFg, C.chromeBg);
 			const px = Math.min(hint.length + 2, W - 1);
 			if (pendingQuit && px < W)
 				buf.drawText(
 					'  unsaved — q again to discard, ^s to save',
+					px,
+					hintRow,
+					C.hot,
+					C.chromeBg,
+				);
+			// Field→Town data-loss confirm (#99): a second `t` applies, Esc cancels.
+			if (pendingTownToggle && px < W)
+				buf.drawText(
+					`  → town: ${placedMonsterCount(doc)} monster(s) become invalid — t to confirm, Esc cancel`,
 					px,
 					hintRow,
 					C.hot,
@@ -1130,6 +1159,52 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				const foot = ' ↑/↓ jk · Enter · 1-9 · Esc ';
 				if (ry < oy + boxH + 1)
 					buf.drawText(foot.slice(0, boxW), ox, oy + boxH, C.dimFg, C.chromeBg);
+			}
+
+			// Name-edit modal (#99): a single-line text field with a caret. Drawn last
+			// so it floats over everything; keys are captured by the `namePrompt`
+			// early-return in the keypress handler.
+			if (namePrompt !== null) {
+				const title = ' Zone display name ';
+				const field = `${namePrompt}▏`;
+				const innerW = Math.max(title.length, field.length + 2, 28);
+				const boxW = innerW + 2;
+				const ox = Math.max(0, Math.floor((W - boxW) / 2));
+				const oy = Math.max(RULER_H, Math.floor((H - 4) / 2));
+				const line = (s: string) => (s + ' '.repeat(boxW)).slice(0, boxW);
+				buf.fillRect(ox, oy, boxW, 4, C.chromeBg);
+				buf.drawText(
+					line(`┌${title}${'─'.repeat(Math.max(0, boxW - 2 - title.length))}┐`),
+					ox,
+					oy,
+					C.tickFg,
+					C.chromeBg,
+				);
+				buf.setCell(ox, oy + 1, '│', C.tickFg, C.chromeBg);
+				buf.drawText(
+					` ${field}`.slice(0, boxW - 2),
+					ox + 1,
+					oy + 1,
+					C.textFg,
+					C.chromeBg,
+				);
+				buf.setCell(ox + boxW - 1, oy + 1, '│', C.tickFg, C.chromeBg);
+				buf.setCell(ox, oy + 2, '│', C.tickFg, C.chromeBg);
+				buf.drawText(
+					' Enter save · Esc cancel · blank clears'.slice(0, boxW - 2),
+					ox + 1,
+					oy + 2,
+					C.dimFg,
+					C.chromeBg,
+				);
+				buf.setCell(ox + boxW - 1, oy + 2, '│', C.tickFg, C.chromeBg);
+				buf.drawText(
+					line(`└${'─'.repeat(boxW - 2)}┘`),
+					ox,
+					oy + 3,
+					C.tickFg,
+					C.chromeBg,
+				);
 			}
 		}
 	}
@@ -1248,6 +1323,10 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 
 	view.onMouseDown = (e: { button: number; x: number; y: number }) => {
 		pendingQuit = false;
+		pendingTownToggle = false;
+		// While the name prompt is open it owns input — ignore canvas/tool clicks so a
+		// stray click can't paint mid-type (keyboard Enter/Esc closes it).
+		if (namePrompt !== null) return;
 		// The Stamp picker modal eats clicks: a row confirms, anywhere else cancels.
 		if (pickerOpen) {
 			const hit = pickerHits.find(
@@ -1330,9 +1409,42 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	// True when the Select tool holds a captured region (gates copy/cut/delete).
 	const hasSelection = () => activeTool().id === 'select' && selection !== null;
 
-	renderer.keyInput.on('keypress', (k: { name: string; ctrl: boolean }) => {
+	type EditKey = {
+		name: string;
+		ctrl: boolean;
+		meta?: boolean;
+		sequence?: string;
+	};
+	renderer.keyInput.on('keypress', (k: EditKey) => {
 		const wasPendingQuit = pendingQuit;
 		pendingQuit = false;
+		const wasPendingTownToggle = pendingTownToggle;
+		pendingTownToggle = false;
+
+		// The name-edit modal (#99) owns every key while open: printable chars extend
+		// the buffer (sequence = the literal char, like ChatInput), Enter commits via
+		// setZoneName, Esc cancels. Drawn last; captured here first.
+		if (namePrompt !== null) {
+			if (k.name === 'escape') {
+				namePrompt = null;
+			} else if (k.name === 'return' || k.name === 'enter') {
+				doc = setZoneName(doc, namePrompt);
+				namePrompt = null;
+				recompute();
+			} else if (k.name === 'backspace') {
+				namePrompt = namePrompt.slice(0, -1);
+			} else if (!k.ctrl && !k.meta) {
+				const ch = k.name === 'space' ? ' ' : (k.sequence ?? '');
+				if (
+					ch.length === 1 &&
+					ch >= ' ' &&
+					ch !== '\x7f' &&
+					namePrompt.length < NAME_MAX
+				)
+					namePrompt += ch;
+			}
+			return;
+		}
 
 		// The Stamp picker modal captures all keys while open (#114): navigate the
 		// entity list, Enter / a digit confirms, Esc cancels — like `pendingQuit`.
@@ -1405,6 +1517,26 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			case 'f': // toggle ground-snap vs. free-place for entity placement (#96)
 				freePlace = !freePlace;
 				return;
+			case 'n': // edit the Zone's display name (#99): open the prompt seeded with it
+				namePrompt = zoneName(doc) ?? '';
+				return;
+			case 't': {
+				// Toggle Zone type field↔town (#99). Switching a populated Field → Town
+				// would invalidate its Monsters (Towns forbid spawns), so warn once and
+				// require a second `t` to confirm; live validation backstops it either way.
+				const target = zoneType(doc) === 'field' ? 'town' : 'field';
+				if (
+					target === 'town' &&
+					placedMonsterCount(doc) > 0 &&
+					!wasPendingTownToggle
+				) {
+					pendingTownToggle = true;
+					return;
+				}
+				doc = setZoneType(doc, target);
+				recompute();
+				return;
+			}
 			case 'c': // Select → copy
 				if (hasSelection() && selection)
 					clip = copyRegion(doc, selection.a, selection.b);

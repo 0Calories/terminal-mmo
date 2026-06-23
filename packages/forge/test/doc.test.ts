@@ -4,9 +4,14 @@ import {
 	clearCell,
 	type EditorDoc,
 	parseDoc,
+	placedMonsterCount,
 	placeGlyph,
 	serializeDoc,
+	setZoneName,
+	setZoneType,
 	toggleSolid,
+	zoneName,
+	zoneType,
 } from '../src/doc';
 import { newZoneTemplate } from '../src/template';
 
@@ -68,5 +73,51 @@ describe('grid edit ops', () => {
 		const before = sample.rows[0];
 		toggleSolid(sample, 0, 0);
 		expect(sample.rows[0]).toBe(before);
+	});
+});
+
+describe('header: display name + type (#99)', () => {
+	test('zoneName reads the optional name (undefined when absent)', () => {
+		expect(zoneName(sample)).toBeUndefined();
+		expect(zoneName({ header: { id: 'z', name: 'Hub' }, rows: [] })).toBe(
+			'Hub',
+		);
+	});
+
+	test('setZoneName sets a trimmed name and round-trips losslessly', () => {
+		const named = setZoneName(sample, '  Sunny Meadow  ');
+		expect(zoneName(named)).toBe('Sunny Meadow');
+		expect(zoneName(parseDoc(serializeDoc(named)))).toBe('Sunny Meadow');
+	});
+
+	test('setZoneName with an empty/whitespace name removes the key', () => {
+		const named = setZoneName(sample, 'Hub');
+		const cleared = setZoneName(named, '   ');
+		expect('name' in cleared.header).toBe(false);
+	});
+
+	test('setZoneName does not mutate the input doc', () => {
+		setZoneName(sample, 'X');
+		expect('name' in sample.header).toBe(false);
+	});
+
+	test('zoneType reads the type; setZoneType flips it immutably', () => {
+		expect(zoneType(sample)).toBe('field');
+		const town = setZoneType(sample, 'town');
+		expect(zoneType(town)).toBe('town');
+		expect(zoneType(sample)).toBe('field'); // input untouched
+	});
+
+	test('placedMonsterCount counts grid cells anchored to a spawn glyph', () => {
+		const doc: EditorDoc = {
+			header: { id: 'f', type: 'field', spawns: { c: 'goblin', s: 'archer' } },
+			rows: ['..c..s..c', '#########'],
+		};
+		expect(placedMonsterCount(doc)).toBe(3);
+		// undeclared glyphs and terrain don't count; no spawns map → 0
+		expect(placedMonsterCount(sample)).toBe(0);
+		expect(
+			placedMonsterCount({ header: { id: 'f', type: 'field' }, rows: ['ccc'] }),
+		).toBe(0);
 	});
 });

@@ -21,6 +21,9 @@ export interface Portal extends Box {
 
 export interface Zone {
 	id: ZoneId;
+	/** Optional human display label, distinct from `id` — decorative, never used to
+	 *  resolve a Zone (cf. Zone id vs Zone name in CONTEXT.md). */
+	name?: string;
 	type: ZoneType;
 	terrain: Terrain;
 	monsters: Entity[];

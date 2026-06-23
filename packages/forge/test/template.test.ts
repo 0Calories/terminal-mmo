@@ -14,6 +14,11 @@ describe('newZoneTemplate', () => {
 		expect(validateZone(zone, catalogs)).toEqual([]);
 	});
 
+	test('a fresh template carries an editable display name (#99)', () => {
+		const zone = parseZone(newZoneTemplate('town-99', 'town'), catalogs);
+		expect(zone.name).toBe('town-99'); // a sensible, editable default label
+	});
+
 	test('a field template parses; its only error is the missing spawn', () => {
 		const text = newZoneTemplate('field-99', 'field');
 		const zone = parseZone(text, catalogs);

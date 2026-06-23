@@ -13,10 +13,12 @@ const SIZE: Record<ZoneType, { w: number; h: number }> = {
  */
 export function newZoneTemplate(id: string, type: ZoneType): string {
 	const { w, h } = SIZE[type];
+	// `name` is the optional display label (#99) — seeded to the id as a sensible,
+	// editable default (the editor's `n` prompt renames it; decorative, never resolves a Zone).
 	const header =
 		type === 'field'
-			? { id, type, spawns: {}, portals: {} }
-			: { id, type, npcs: {}, portals: {} };
+			? { id, name: id, type, spawns: {}, portals: {} }
+			: { id, name: id, type, npcs: {}, portals: {} };
 
 	const rows: string[] = [];
 	for (let y = 0; y < h - 1; y++) rows.push('.'.repeat(w));
