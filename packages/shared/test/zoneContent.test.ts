@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { CATALOGS, loadZones, validateZoneSet } from '../src';
-import { BOX, GROUND_TOP, SPAWN } from '../src/constants';
+import { BOX, SPAWN } from '../src/constants';
 import { isSolid } from '../src/terrain';
 
 test('loadZones parses the authored Field and Town from the repo-root zones/', () => {
