@@ -13,6 +13,7 @@ import {
 	type EffectKind,
 	isSolid,
 	type Terrain,
+	type Tint,
 } from '@mmo/shared';
 
 // A Particle's life runs airborne → (one bounce) → rest → fade → cull. `bounced`
@@ -60,6 +61,10 @@ export interface Particle {
 	stageMs: number; // time spent in the current stage
 	born: number; // spawn order (monotonic); smallest = oldest
 	seed: number; // [0,1) chosen at spawn, picks a glyph
+	// Optional per-speck RGB recolour from the spawning Effect (#139): a gore burst
+	// carries the dead entity's body colour. When set, the colour-over-life curve is
+	// derived from this tint instead of the profile's fixed `colors` palette.
+	tint?: Tint;
 }
 
 // The `blood` profile (the MVP look): bright red erupting outward, falling under
@@ -88,11 +93,39 @@ export const BLOOD: ParticleType = {
 	z: 0,
 };
 
+// The `gore` profile (the death-burst look, #139): chunkier, meatier specks than
+// the fine `blood` mist — heavier full-block glyphs, launched slower and shorter so
+// they read as gobs of gore rather than a fine spray, settling into fat splats. Its
+// `colors` are a deep-red fallback; a death Effect carries a `tint` (the dead
+// entity's body colour) that overrides this curve per-speck.
+export const GORE: ParticleType = {
+	gravity: 70,
+	restitution: 0.3,
+	collide: true,
+	restMs: 3000,
+	fadeMs: 900,
+	maxLifeMs: 7000,
+	launchSpeed: 9, // slower than blood's 14 — gobs, not spray
+	launchSpread: 7,
+	// Heavier, fuller blocks (chunks of gore) vs blood's thin quadrant droplets.
+	glyphs: {
+		airborne: ['█', '▓', '▆', '▇', '▅'],
+		rest: ['▓', '▒', '█', '▆'],
+	},
+	colors: [
+		{ t: 0, r: 200, g: 30, b: 30 }, // deep red (fallback when untinted)
+		{ t: 0.5, r: 120, g: 18, b: 18 },
+		{ t: 1, r: 70, g: 10, b: 10 },
+	],
+	z: 0,
+};
+
 // The client-side map from a semantic game event to the look(s) it spawns. 1:1
 // today; the indirection lets a future event fan out into several ParticleTypes
 // (e.g. death → blood + gib) with no wire change.
 export const SPAWN_MAP: Record<EffectKind, ParticleType[]> = {
 	blood: [BLOOD],
+	gore: [GORE],
 };
 
 // Fixed, preallocated pool — newest action always renders (evict-oldest), and the
@@ -140,8 +173,19 @@ export interface Rgba {
 	a: number;
 }
 
+// A colour-over-life curve derived from a single tint (#139): the entity's body
+// colour at birth, darkening to a deep ~40%-luminance gore as the speck ages — so
+// a death burst reads as the dead entity's colour, then dries dark like blood.
+function tintStops(tint: Tint): ColorStop[] {
+	const dim = (v: number) => Math.round(v * 0.4);
+	return [
+		{ t: 0, r: tint.r, g: tint.g, b: tint.b },
+		{ t: 1, r: dim(tint.r), g: dim(tint.g), b: dim(tint.b) },
+	];
+}
+
 export function particleColor(p: Particle): Rgba {
-	const stops = p.type.colors;
+	const stops = p.tint ? tintStops(p.tint) : p.type.colors;
 	const t = Math.max(0, Math.min(1, p.ageMs / p.type.maxLifeMs));
 	let lo = stops[0];
 	let hi = stops[stops.length - 1];
@@ -244,6 +288,7 @@ export class ParticleSystem {
 		y: number,
 		dir: -1 | 0 | 1,
 		rng: () => number,
+		tint?: Tint,
 	): void {
 		const p = this.claim();
 		// dir 0 = radial (full circle); ±1 = a cone biased that way and upward.
@@ -267,6 +312,7 @@ export class ParticleSystem {
 		p.ageMs = 0;
 		p.stageMs = 0;
 		p.seed = rng();
+		p.tint = tint;
 	}
 }
 
@@ -289,7 +335,8 @@ export function stepParticles(
 		if (!types) continue;
 		const count = speckCount(fx.intensity);
 		for (const type of types)
-			for (let i = 0; i < count; i++) sys.spawn(type, fx.x, fx.y, fx.dir, rng);
+			for (let i = 0; i < count; i++)
+				sys.spawn(type, fx.x, fx.y, fx.dir, rng, fx.tint);
 	}
 
 	const dt = dtMs / 1000;

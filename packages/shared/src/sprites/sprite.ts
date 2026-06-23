@@ -70,6 +70,9 @@ export interface SpriteOptions {
 export class Sprite {
 	readonly w: number;
 	readonly h: number;
+	// The fallback colour key for any cell without an explicit one — the entity's
+	// dominant body colour, reused as its death-gore tint (#139).
+	readonly defaultKey: string;
 	private readonly glyphRight: readonly string[];
 	private readonly glyphLeft: readonly string[];
 	private readonly colorRight: readonly string[];
@@ -81,6 +84,7 @@ export class Sprite {
 			throw new Error(
 				`Sprite defaultKey must be a single char, got "${defaultKey}"`,
 			);
+		this.defaultKey = defaultKey;
 
 		const glyphRows = splitTrimPad(glyph).map((r) =>
 			r.replaceAll(SENTINEL, ' '),

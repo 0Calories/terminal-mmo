@@ -13,6 +13,7 @@ import {
 	clientStepAvatar,
 	createZoneState,
 	DEFAULT_COSMETICS,
+	entityTint,
 	GROUND_TOP,
 	MONSTER,
 	removeAvatar,
@@ -139,7 +140,7 @@ test('the Avatar landing the killing blow earns the XP and the loot roll', () =>
 	expect(me.inventory[0].id).toBe(1); // from the killer's own nextId
 });
 
-test('a Monster dying emits a radial, high-intensity blood Effect at the Monster', () => {
+test('a Monster dying emits a radial, high-intensity gore Effect at the Monster, tinted by its body', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4; // one swing kills
 	const av = serverAvatar(7, 20);
@@ -150,7 +151,8 @@ test('a Monster dying emits a radial, high-intensity blood Effect at the Monster
 	expect(next.zone.monsters.length).toBe(0); // dead
 	// the kill burst: radial (dir 0), intensity above the chip-hit damage
 	const death = next.effects?.find((fx) => fx.dir === 0);
-	expect(death?.kind).toBe('blood');
+	expect(death?.kind).toBe('gore');
+	expect(death?.tint).toEqual(entityTint(m)); // chaser body colour
 	expect(death?.intensity).toBe(COMBAT.deathBurstIntensity);
 	expect(death?.x).toBeGreaterThanOrEqual(m.x);
 	expect(death?.x).toBeLessThanOrEqual(m.x + BOX.w);
@@ -304,7 +306,7 @@ test('an Avatar reduced to 0 HP respawns at the safe point at full HP', () => {
 	expect(a.y).toBe(SPAWN.y);
 });
 
-test('an Avatar dying emits a radial blood Effect at the death position, before respawn', () => {
+test('an Avatar dying emits a radial gore Effect at the death position, before respawn', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.hp = 1;
 	const m = spawnMonster('chaser', 2, 20, y); // contact finishes the Avatar
@@ -316,7 +318,7 @@ test('an Avatar dying emits a radial blood Effect at the death position, before 
 	const death = next.effects?.find(
 		(fx) => fx.dir === 0 && fx.intensity === COMBAT.deathBurstIntensity,
 	);
-	expect(death?.kind).toBe('blood');
+	expect(death?.kind).toBe('gore');
 	// at the death spot (~x 20), NOT the respawn point (SPAWN.x = 10)
 	expect(death?.x).toBeGreaterThanOrEqual(20);
 	expect(next.avatars[0].avatar.x).toBe(SPAWN.x); // respawn still happened

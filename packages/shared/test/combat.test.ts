@@ -3,9 +3,10 @@ import {
 	BOX,
 	bloodEffect,
 	COMBAT,
-	deathBloodEffect,
+	deathGoreEffect,
 	type Entity,
 	entityBox,
+	entityTint,
 	hurtBloodEffect,
 	meleeHitbox,
 	predictHitEffects,
@@ -71,21 +72,60 @@ describe('hurtBloodEffect', () => {
 	});
 });
 
-describe('deathBloodEffect', () => {
-	test('bursts radially (dir 0) at the entity centre, high intensity', () => {
+describe('entityTint', () => {
+	test('a monster takes its sprite body colour (chaser = red)', () => {
+		expect(entityTint(monster(0, 0, { type: 'chaser' }))).toEqual({
+			r: 220,
+			g: 90,
+			b: 90,
+		});
+	});
+
+	test('a different monster takes its own body colour (shooter = bone)', () => {
+		expect(entityTint(monster(0, 0, { type: 'shooter' }))).toEqual({
+			r: 232,
+			g: 230,
+			b: 216,
+		});
+	});
+
+	test('an Avatar takes its cosmetic hue, not the default body colour', () => {
+		const a = monster(0, 0, {
+			type: 'player',
+			cosmetics: { hue: 3, hat: 0, nameplate: 0 },
+		});
+		expect(entityTint(a)).toEqual({ r: 90, g: 170, b: 255 }); // HUES[3] = blue
+	});
+
+	test('a stray cosmetic hue falls back to the default amber body', () => {
+		const a = monster(0, 0, {
+			type: 'player',
+			cosmetics: { hue: 999, hat: 0, nameplate: 0 },
+		});
+		expect(entityTint(a)).toEqual({ r: 255, g: 150, b: 40 }); // HUES[0]
+	});
+});
+
+describe('deathGoreEffect', () => {
+	test('bursts radially (dir 0) at the entity centre, high intensity, tinted by the entity', () => {
 		const m = monster(10, 4);
-		const e = deathBloodEffect(m);
+		const e = deathGoreEffect(m);
 		expect(e).toEqual({
-			kind: 'blood',
+			kind: 'gore',
 			x: 10 + BOX.w / 2,
 			y: 4 + BOX.h / 2,
 			intensity: COMBAT.deathBurstIntensity,
 			dir: 0,
+			tint: { r: 220, g: 90, b: 90 },
 		});
 	});
 
 	test('reads visibly bigger than a chip hit — intensity above melee damage', () => {
 		expect(COMBAT.deathBurstIntensity).toBeGreaterThan(COMBAT.meleeDamage);
+	});
+
+	test('carries no source — death gore is delivered to everyone in range', () => {
+		expect(deathGoreEffect(monster(0, 0)).source).toBeUndefined();
 	});
 });
 

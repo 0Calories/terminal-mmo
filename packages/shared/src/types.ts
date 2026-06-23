@@ -53,9 +53,18 @@ export interface Entity {
 	emote?: string; // active emote id shown over the head (#38); render-only
 }
 
-// The semantic game event a burst represents. `blood` is the MVP kind; future
-// kinds (dust, sparkle, spark, smoke) are added here as the system grows.
-export type EffectKind = 'blood';
+// The semantic game event a burst represents. `blood` is the chip-hit MVP kind;
+// `gore` is the meatier, entity-tinted death burst (#139). Future kinds (dust,
+// sparkle, spark, smoke) are added here as the system grows.
+export type EffectKind = 'blood' | 'gore';
+
+// An RGB colour carried on an Effect to tint its particles (#139), e.g. a death
+// burst recoloured to the dead entity's body. Each channel is 0..255.
+export interface Tint {
+	r: number;
+	g: number;
+	b: number;
+}
 
 // A small, authoritative, deterministic descriptor of *what happened* in combat,
 // produced in the shared Zone tick the instant damage resolves (ADR 0013). The
@@ -68,6 +77,10 @@ export interface Effect {
 	y: number;
 	intensity: number; // scales with damage dealt; the client maps it to a speck count
 	dir: -1 | 0 | 1;
+	// Optional RGB recolour for this burst's particles (#139): a death gore burst
+	// carries the dead entity's body colour so the splatter matches what died. Rides
+	// the wire (unlike `source`); absent for the fixed-palette `blood` kind.
+	tint?: Tint;
 	// The session that caused this Effect, set at the emission site so the server
 	// can suppress sending it back to its originator (the acting client already
 	// predicted its own blood, ADR 0013). Server-internal attribution only: it is

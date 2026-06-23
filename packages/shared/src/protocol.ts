@@ -370,7 +370,7 @@ const SERVER_TAG = {
 } as const;
 
 const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
-const EFFECT_KINDS: readonly EffectKind[] = ['blood'];
+const EFFECT_KINDS: readonly EffectKind[] = ['blood', 'gore'];
 const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory'];
 const RARITIES: readonly Rarity[] = [
 	'common',
@@ -475,16 +475,26 @@ function writeEffect(w: Writer, e: Effect) {
 	w.f64(e.y);
 	w.f64(e.intensity);
 	w.i8(e.dir);
+	// Optional RGB tint (#139), guarded by a present flag so an untinted Effect
+	// costs one extra byte. Each channel is a u8.
+	w.bool(e.tint !== undefined);
+	if (e.tint !== undefined) {
+		w.u8(e.tint.r);
+		w.u8(e.tint.g);
+		w.u8(e.tint.b);
+	}
 }
 
 function readEffect(r: Reader): Effect {
-	return {
+	const e: Effect = {
 		kind: EFFECT_KINDS[r.u8()],
 		x: r.f64(),
 		y: r.f64(),
 		intensity: r.f64(),
 		dir: r.i8() as -1 | 0 | 1,
 	};
+	if (r.bool()) e.tint = { r: r.u8(), g: r.u8(), b: r.u8() };
+	return e;
 }
 
 function writeItem(w: Writer, it: Item) {

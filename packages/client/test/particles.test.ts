@@ -3,6 +3,7 @@ import type { Effect, EffectKind, Terrain } from '@mmo/shared';
 import { isSolid, parseTerrain } from '@mmo/shared';
 import {
 	BLOOD,
+	GORE,
 	type Particle,
 	ParticleSystem,
 	type ParticleType,
@@ -89,6 +90,64 @@ test('blood is bright red at birth, darkens with age, and fades to zero alpha', 
 
 test('the Effect.kind → ParticleType map routes blood to the blood profile', () => {
 	expect(SPAWN_MAP.blood).toContain(BLOOD);
+});
+
+test('the Effect.kind → ParticleType map routes gore (death) to the gore profile', () => {
+	expect(SPAWN_MAP.gore).toContain(GORE);
+});
+
+test('gore is a meatier, chunkier profile — distinct glyphs and slower than blood spray', () => {
+	expect(GORE).not.toBe(BLOOD);
+	// More gore than spray: heavier, slower specks (lower launch speed than blood).
+	expect(GORE.launchSpeed).toBeLessThan(BLOOD.launchSpeed);
+	// A distinct, chunkier glyph set (not the fine blood mist).
+	expect(GORE.glyphs.airborne).not.toEqual(BLOOD.glyphs.airborne);
+});
+
+test('a tinted gore Effect colours its specks by the tint, not the maroon blood palette (#139)', () => {
+	const terrain = floorTerrain();
+	const sys = new ParticleSystem();
+	// A blue-tinted death burst (e.g. a blue-hued Avatar).
+	const fx: Effect = {
+		kind: 'gore',
+		x: 10,
+		y: 16,
+		intensity: 4,
+		dir: 0,
+		tint: { r: 90, g: 170, b: 255 },
+	};
+	stepParticles(sys, [fx], 16, terrain, seededRng(3));
+	const p = sys.particles[0];
+	const born = particleColor(p);
+	expect(born.a).toBe(255);
+	// Blue-dominant: the tint, not red blood.
+	expect(born.b).toBeGreaterThan(born.r);
+	expect(born.b).toBeGreaterThan(born.g);
+});
+
+test('a tinted speck keeps its hue but darkens with age', () => {
+	const terrain = floorTerrain();
+	const sys = new ParticleSystem();
+	const fx: Effect = {
+		kind: 'gore',
+		x: 10,
+		y: 16,
+		intensity: 2,
+		dir: 0,
+		tint: { r: 90, g: 170, b: 255 },
+	};
+	stepParticles(sys, [fx], 16, terrain, seededRng(3));
+	const p = sys.particles[0];
+	const born = particleColor(p);
+	let aged = born;
+	for (let i = 0; i < 600 && p.active; i++) {
+		stepParticles(sys, [], 16, terrain, seededRng(99));
+		if (p.stage === 'fade' && p.stageMs > 0) aged = particleColor(p);
+	}
+	// Same blue hue family, but darker and fading.
+	expect(aged.b).toBeGreaterThan(aged.r); // still blue-dominant
+	expect(aged.b).toBeLessThan(born.b); // darkened
+	expect(aged.a).toBeLessThan(255); // fading out
 });
 
 test('the pool is capped and never overflows', () => {
@@ -260,7 +319,10 @@ test('a profile with no gravity and no terrain collision never settles (profile-
 		launchSpeed: 0,
 		launchSpread: 0,
 	};
-	const map: Record<EffectKind, ParticleType[]> = { blood: [FLOATER] };
+	const map: Record<EffectKind, ParticleType[]> = {
+		blood: [FLOATER],
+		gore: [FLOATER],
+	};
 	const terrain = floorTerrain();
 	const sys = new ParticleSystem();
 	stepParticles(

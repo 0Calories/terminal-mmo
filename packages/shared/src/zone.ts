@@ -9,7 +9,7 @@
 import {
 	aabbOverlap,
 	bloodEffect,
-	deathBloodEffect,
+	deathGoreEffect,
 	entityBox,
 	hurtBloodEffect,
 	meleeHitbox,
@@ -312,9 +312,10 @@ export function stepZone(
 		if (m.hp > 0) {
 			monsters.push(m);
 		} else {
-			// A radial, high-intensity blood burst at the kill site (ADR 0013): no
-			// `source`, so every Player in range — including the killer — sees it.
-			effects.push(deathBloodEffect(m));
+			// A radial, high-intensity gore burst at the kill site (ADR 0013, #139):
+			// tinted to the Monster's body colour, no `source`, so every Player in
+			// range — including the killer — sees it.
+			effects.push(deathGoreEffect(m));
 			// Every contributor earns full XP (shared, not split) and rolls its own
 			// private, per-Player-seeded loot — instanced, so there is no shared pile
 			// and no kill-stealing (#37). Each grant updates only that Avatar's state;
@@ -378,9 +379,10 @@ export function stepZone(
 		const a = avatars[i].avatar;
 		if (a.hp <= 0) {
 			deaths.push(avatars[i].sessionId);
-			// Radial death burst at the spot the Avatar fell — emitted before the
-			// teleport below moves them to the safe point (ADR 0013).
-			effects.push(deathBloodEffect(a));
+			// Radial gore burst at the spot the Avatar fell, tinted to the Avatar's
+			// cosmetic hue — emitted before the teleport below moves them to the safe
+			// point (ADR 0013, #139).
+			effects.push(deathGoreEffect(a));
 			avatars[i] = {
 				...avatars[i],
 				avatar: {

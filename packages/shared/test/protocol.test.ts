@@ -253,6 +253,32 @@ test('snapshot round-trips a multi-Effect list across every dir (ADR 0013)', () 
 	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
 });
 
+test('snapshot round-trips a tinted gore death Effect (#139)', () => {
+	const msg: ServerMessage = {
+		t: 'snapshot',
+		tick: 7,
+		zoneId: 'field-01',
+		avatars: [],
+		monsters: [],
+		projectiles: [],
+		effects: [
+			{
+				kind: 'gore',
+				x: 5.5,
+				y: 6.5,
+				intensity: 30,
+				dir: 0,
+				tint: { r: 220, g: 90, b: 90 },
+			},
+			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 }, // untinted blood still round-trips
+		],
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		log: [],
+	};
+	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
+});
+
 test('snapshot round-trips an empty Effects list', () => {
 	const msg: ServerMessage = {
 		t: 'snapshot',
