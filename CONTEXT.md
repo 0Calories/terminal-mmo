@@ -203,6 +203,15 @@ An entity's resistance to **Knockback** distance — the same **Launcher** rocke
 light Slime across the screen but barely lifts a heavy ogre.
 _Avoid_: Weight, heaviness
 
+**Momentum body**:
+The single physics body every entity — Avatar and Monster alike — integrates each
+tick (`position + velocity + Mass`): input drive + external impulses + gravity −
+drag, then the shared axis-separated Terrain collision. **Knockback** is just an
+impulse fed into it, so a shove decays under drag and a launch arcs under gravity
+on the same path that walks and jumps. Monsters are airborne-capable on it with no
+special case (`stepEntity` in `physics.ts`).
+_Avoid_: Rigidbody, actor, character controller
+
 **Super-armor**:
 The temporary **Poise** spike an entity holds during a wind-up, letting a heavy
 attack shrug off light hits without being interrupted.

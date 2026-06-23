@@ -1,4 +1,4 @@
-import { MONSTER, SHOOTER } from './constants';
+import { DEFAULT_MASS, MONSTER, SHOOTER } from './constants';
 import type {
 	Box,
 	Entity,
@@ -68,6 +68,7 @@ export function spawnMonster(
 		maxHp: hp,
 		hurtT: 0,
 		attackT: 0,
+		mass: DEFAULT_MASS,
 		spawnIndex,
 	};
 }
