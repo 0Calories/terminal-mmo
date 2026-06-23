@@ -33,6 +33,8 @@ import { NetClient, snapshotToGame } from './net';
 import { PlayfieldRenderable } from './playfield';
 import { resolveServerUrl } from './server-url';
 import { Shop } from './shop';
+import { SoundSystem } from './sound/system';
+import { jumpStarted } from './sound/triggers';
 import { CLIENT_VERSION } from './version';
 
 // The sim is dt-based, so this only affects smoothness + CPU, never game speed.
@@ -71,7 +73,13 @@ renderer.root.add(playfield);
 const hud = new Hud(renderer);
 hud.attach(renderer.root);
 
+// Best-effort, always-optional audio (ADR 0014). Init is attempted once here,
+// gated inside the facade on an interactive TTY, so a headless/piped launch
+// never touches the engine; every play() is a no-op when disabled.
+const sound = new SoundSystem({ debug: process.env.MMO_DEBUG === '1' });
+
 function quit(message?: string) {
+	sound.dispose(); // tear the engine down without blocking exit
 	try {
 		(renderer as unknown as { destroy?: () => void }).destroy?.();
 	} catch {}
@@ -170,11 +178,15 @@ function runOffline() {
 
 	const meter = fpsMeter();
 	renderer.setFrameCallback(async (dt) => {
+		const prevAvatar = game.player.avatar;
 		game = step(
 			game,
 			shop.open ? IDLE_INPUT : input.poll(performance.now()),
 			dt,
 		);
+		// Self SoundEffect: the jump blip fires on the frame the Avatar leaves the
+		// ground (client-local, centered, full volume).
+		if (jumpStarted(prevAvatar, game.player.avatar)) sound.play('jump');
 		const fps = meter(dt);
 		playfield.game = game;
 		hud.update(game, fps);
@@ -302,12 +314,17 @@ function runNetworked(url: string) {
 					};
 			}
 
+			const prevOnGround = predicted.onGround;
 			predicted = clientStepAvatar(
 				zone.terrain,
 				predicted,
 				{ moveX: inp.moveX, jump: inp.jump },
 				dt,
 			);
+			// Self SoundEffect: blip on the frame our own predicted Avatar jumps
+			// (client-local, centered, full volume).
+			if (jumpStarted({ onGround: prevOnGround }, predicted))
+				sound.play('jump');
 			// Optimistic local telegraph (story 17): mirror the server's cooldown gate
 			// so the swing/skill flash shows before the snapshot confirms the hit. The
 			// same gate yields the outgoing hitbox + damage for blood prediction (ADR
