@@ -165,6 +165,12 @@ function runOffline() {
 
 	renderer.keyInput.on('keypress', (k) => {
 		if (k.name === 'q') quit();
+		// `m` toggles master mute instantly (ADR 0014), reachable even with the shop
+		// modal open — it's a global audio control, not a gameplay/menu key.
+		if (k.name === 'm') {
+			sound.toggleMute();
+			return;
+		}
 		if (shop.open) {
 			handleShopKey(k.name);
 			return;
@@ -282,6 +288,12 @@ function runNetworked(url: string) {
 				return;
 			}
 			if (k.name === 'q') quit();
+			// `m` toggles master mute instantly (ADR 0014). Placed after the chat block
+			// so it edits the line while typing and only mutes during play.
+			if (k.name === 'm') {
+				sound.toggleMute();
+				return;
+			}
 			if (k.name === 'return') {
 				chat.start();
 				input.clear(); // a key held at the switch must not stick while typing
