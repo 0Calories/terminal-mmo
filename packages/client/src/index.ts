@@ -77,6 +77,9 @@ hud.attach(renderer.root);
 // gated inside the facade on an interactive TTY, so a headless/piped launch
 // never touches the engine; every play() is a no-op when disabled.
 const sound = new SoundSystem({ debug: process.env.MMO_DEBUG === '1' });
+// The playfield voices per-tick combat Effects (hit/death) as spatialized world
+// SoundEffects from the same render path it spawns particles on (ADR 0014).
+playfield.sound = sound;
 
 function quit(message?: string) {
 	sound.dispose(); // tear the engine down without blocking exit
