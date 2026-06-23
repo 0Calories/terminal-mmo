@@ -1,4 +1,10 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import type { Catalogs, Zone } from '@mmo/shared';
 import { parseZone } from '@mmo/shared';
@@ -62,7 +68,14 @@ export function zoneExists(root: string, id: string): boolean {
 }
 
 /** Write raw `.zone` text to `<root>/<id>.zone` — symmetric with `loadZone`. The
- *  editor (#84) serializes an `EditorDoc` and writes the result here. */
+ *  editor (#84) serializes an `EditorDoc` and writes the result here. Atomic
+ *  (#98): the bytes land in a sibling temp file first, then a single `rename`
+ *  swaps it over the target — so a crash mid-write can never leave a half-written
+ *  `.zone`, and no stray temp file survives a successful save. We lean on git for
+ *  history (no `.bak`). */
 export function writeZone(root: string, id: string, text: string): void {
-	writeFileSync(zonePath(root, id), text);
+	const target = zonePath(root, id);
+	const tmp = `${target}.tmp`;
+	writeFileSync(tmp, text);
+	renameSync(tmp, target);
 }
