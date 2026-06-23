@@ -106,13 +106,17 @@ test('attacking damages an adjacent monster', () => {
 });
 
 test('step surfaces the tick Effects so the offline loop can feed the particle system', () => {
-	const g = step(adjacentGame(), { moveX: 0, jump: false, attack: true }, 16);
+	const game = adjacentGame();
+	game.player.avatar.hurtT = 1; // i-framed, so the chaser's contact draws no blood
+	const g = step(game, { moveX: 0, jump: false, attack: true }, 16);
 	expect(g.effects?.length).toBe(1);
 	expect(g.effects?.[0].kind).toBe('blood');
 });
 
 test('a step with no combat surfaces no Effects', () => {
-	const g = step(adjacentGame(), IDLE, 16);
+	const game = adjacentGame();
+	game.player.avatar.hurtT = 1; // i-framed, so the chaser's contact draws no blood
+	const g = step(game, IDLE, 16);
 	expect(g.effects ?? []).toEqual([]);
 });
 

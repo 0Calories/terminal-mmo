@@ -6,7 +6,13 @@
 // platformer physics. Both live here, framework-free and deterministic, so the
 // two sides can never diverge.
 
-import { aabbOverlap, bloodEffect, entityBox, meleeHitbox } from './combat';
+import {
+	aabbOverlap,
+	bloodEffect,
+	entityBox,
+	hurtBloodEffect,
+	meleeHitbox,
+} from './combat';
 import {
 	BOX,
 	COMBAT,
@@ -291,6 +297,13 @@ export function stepZone(
 							hurtT: 0.6,
 						},
 					};
+					// Hurt blood at the Avatar, knocked away from the Monster (0 when
+					// they share a column). Server-sourced — no `source` — so the
+					// snapshot delivers it to the victim too, in sync with the
+					// hurt-flash (ADR 0013, #132). Inside the i-frame gate, so an
+					// i-framed Avatar bleeds nothing.
+					const dir: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
+					effects.push(hurtBloodEffect(a, dir, MONSTER.contactDamage));
 				}
 			}
 		}
@@ -340,6 +353,12 @@ export function stepZone(
 					...avatars[i],
 					avatar: { ...a, hp: a.hp - pr.damage, hurtT: COMBAT.iframes },
 				};
+				// Hurt blood at the Avatar, knocked along the projectile's travel
+				// (0 for a stationary shot). Server-sourced — no `source` — so the
+				// snapshot delivers it to the victim too, in sync with the
+				// hurt-flash (ADR 0013, #132). Inside the i-frame gate.
+				const dir: -1 | 0 | 1 = pr.vx > 0 ? 1 : pr.vx < 0 ? -1 : 0;
+				effects.push(hurtBloodEffect(a, dir, pr.damage));
 				consumed = true;
 				break;
 			}
