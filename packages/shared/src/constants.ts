@@ -16,7 +16,20 @@ export const PHYS = {
 	jump: 34,
 	grav: 90,
 	maxDt: 0.05, // clamp to avoid tunnelling on long frames
+	// Horizontal friction on the external-impulse channel (knockback shove): an
+	// exponential decay rate (per second). Tuned snappy/arcade (ADR 0017) so a
+	// shove dies out in a few hundred ms rather than sliding floatily. Only the
+	// impulse channel decays; input-driven horizontal velocity is unaffected.
+	drag: 8,
+	// Below this magnitude an impulse velocity snaps to 0, so a body doesn't creep
+	// forever on an asymptotically-tiny residual.
+	impulseEpsilon: 0.01,
 } as const;
+
+// Default Mass for a body whose Entity leaves it unset (ADR 0017). 1 is neutral:
+// an impulse divided by mass 1 is itself. Per-entity Mass tuning (heavy ogres,
+// light Slimes) is balance work deferred with the rest of the Knockback slice.
+export const DEFAULT_MASS = 1;
 
 export const COMBAT = {
 	meleeReach: 6,

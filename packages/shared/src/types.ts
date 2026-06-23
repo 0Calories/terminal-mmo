@@ -45,6 +45,16 @@ export interface Entity {
 	maxHp: number;
 	hurtT: number; // remaining invulnerability, seconds
 	attackT: number; // remaining attack cooldown, seconds
+	// Momentum body (ADR 0017). Every entity — Avatar or Monster — integrates on
+	// one body so a later slice can throw it with a Knockback impulse and reuse the
+	// same gravity + drag + Terrain collision.
+	mass?: number; // resistance to impulse displacement; absent == DEFAULT_MASS (1)
+	// External-impulse horizontal velocity (cells/s): the part of horizontal motion
+	// that survives between ticks (a Knockback shove), decayed by drag. Kept apart
+	// from input-driven velocity, which is recomputed fresh each tick and would
+	// otherwise erase a shove. Vertical impulses need no channel — they add straight
+	// into `vy`, which already carries momentum under gravity. Absent == 0.
+	ivx?: number;
 	spawnIndex?: number; // index into its Zone's spawns[], if Field-spawned
 	contributors?: number[]; // Monster-only: session ids that have damaged it, for shared-kill rewards (#37)
 	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
