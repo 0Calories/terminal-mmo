@@ -77,7 +77,7 @@ export const BLOOD: ParticleType = {
 	// airborne specks are sub-cell quadrant droplets; settled specks use
 	// lower-anchored blocks so the pool reads as resting on the floor.
 	glyphs: {
-		airborne: ['▖', '▗', '▘', '▝'],
+		airborne: ['▄', '▖', '▗', '▘', '▝'],
 		rest: ['▄', '▃', '▖', '▗'],
 	},
 	colors: [
