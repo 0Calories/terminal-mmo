@@ -55,6 +55,24 @@ describe('placing a Placeable declares + stamps it', () => {
 			(doc.header.portals as Record<string, unknown>)[portalGlyph],
 		).toEqual({ target: 'town-01', arrival: [4, 9] });
 	});
+
+	test('a placed Portal round-trips through parseZone — target + arrival resolve (#97)', () => {
+		const doc = place(blank(), 2, 1, {
+			kind: 'portal',
+			target: 'town-01',
+			arrival: [4, 9],
+		});
+		const text = serializeDoc(doc);
+		expect(findOrphanGlyphs(text)).toEqual([]); // the glyph is declared, not orphaned
+		const zone = parseZone(text, CATALOGS);
+		expect(zone.portals).toHaveLength(1);
+		expect(zone.portals[0]).toMatchObject({
+			x: 2,
+			y: 1,
+			target: 'town-01',
+			arrival: { x: 4, y: 9 },
+		});
+	});
 });
 
 describe('glyph allocation: one per type, reused across instances', () => {
