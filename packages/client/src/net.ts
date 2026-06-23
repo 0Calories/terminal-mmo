@@ -317,5 +317,10 @@ export function snapshotToGame(
 		player,
 		world: { zones: { [field.id]: zone }, tick: snapshot?.tick ?? 0 },
 		others,
+		// Effects ride the snapshot, already originator-suppressed server-side (ADR
+		// 0013): the playfield consumes them once per tick (keyed by world.tick) and
+		// spawns particles. The acting client's own outgoing-hit blood is predicted
+		// separately (see index.ts) — those Effects are suppressed here, so no double-render.
+		effects: snapshot?.effects ?? [],
 	};
 }

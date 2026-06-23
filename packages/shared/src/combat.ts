@@ -1,5 +1,5 @@
 import { BOX, COMBAT } from './constants';
-import type { Box, Entity } from './types';
+import type { Box, Effect, Entity, Facing } from './types';
 
 export function entityBox(e: Entity): Box {
 	return { x: e.x, y: e.y, w: BOX.w, h: BOX.h };
@@ -19,4 +19,46 @@ export function aabbOverlap(a: Box, b: Box): boolean {
 	return (
 		a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 	);
+}
+
+// The blood Effect a landed hit on a Monster emits (ADR 0013): one burst at the
+// Monster's centre, biased along the attacker's facing, scaled by the damage
+// dealt. Shared so the authoritative `stepZone` and the client's outgoing-hit
+// prediction produce identical Effects. `source` attributes the burst to the
+// attacking session for originator-suppression; the client predictor omits it
+// (predicted Effects are never reported upward).
+export function bloodEffect(
+	m: Entity,
+	attackerFacing: Facing,
+	damage: number,
+	source?: number,
+): Effect {
+	const e: Effect = {
+		kind: 'blood',
+		x: m.x + BOX.w / 2,
+		y: m.y + BOX.h / 2,
+		intensity: damage,
+		dir: attackerFacing,
+	};
+	if (source !== undefined) e.source = source;
+	return e;
+}
+
+// The blood Effects the local Avatar's outgoing hit produces this tick, mirroring
+// stepZone's monster-hit emission (same i-frame gate, centre, dir, intensity) so
+// the predicted burst matches the authoritative one the server suppresses back to
+// the attacker (ADR 0013). Pure; the client feeds these straight to its particle
+// system for zero-latency feedback. No rollback on mispredict — a stray splat on
+// a swing the server scores as a miss is acceptable.
+export function predictHitEffects(
+	hitbox: Box,
+	attackerFacing: Facing,
+	damage: number,
+	monsters: Entity[],
+): Effect[] {
+	const effects: Effect[] = [];
+	for (const m of monsters)
+		if (m.hurtT <= 0 && aabbOverlap(hitbox, entityBox(m)))
+			effects.push(bloodEffect(m, attackerFacing, damage));
+	return effects;
 }

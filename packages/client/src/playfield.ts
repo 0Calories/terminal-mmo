@@ -1,4 +1,4 @@
-import type { Entity, GameState, Terrain } from '@mmo/shared';
+import type { Effect, Entity, GameState, Terrain } from '@mmo/shared';
 import {
 	aabbOverlap,
 	activeZone,
@@ -389,6 +389,17 @@ export class PlayfieldRenderable extends Renderable {
 	private particles = new ParticleSystem();
 	private lastParticleTick = -1;
 	private lastTime = 0;
+	// Locally-predicted Effects awaiting the next frame (ADR 0013): the acting
+	// client spawns its own outgoing-hit blood immediately, off the server tick,
+	// so it isn't gated by lastParticleTick. Drained every renderSelf.
+	private predicted: Effect[] = [];
+
+	// Spawn particles for locally-predicted Effects right now (the own swing's
+	// blood), independent of the snapshot tick. The server suppresses these back to
+	// us (originator-suppression), so they never double-render against a snapshot.
+	emitPredicted(effects: Effect[]): void {
+		if (effects.length) this.predicted.push(...effects);
+	}
 
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
 		super(ctx, { width: '100%', height: '100%', live: true, ...options });
@@ -420,9 +431,15 @@ export class PlayfieldRenderable extends Renderable {
 		const dt = this.lastTime ? now - this.lastTime : 0;
 		this.lastTime = now;
 		const tick = this.game.world.tick;
-		const fresh =
+		const snapshotEffects =
 			tick !== this.lastParticleTick ? (this.game.effects ?? []) : [];
 		this.lastParticleTick = tick;
+		// Snapshot Effects fire once per server tick; predicted Effects (own swing)
+		// fire immediately and are drained each frame so they spawn exactly once.
+		const fresh = this.predicted.length
+			? [...snapshotEffects, ...this.predicted]
+			: snapshotEffects;
+		this.predicted = [];
 		stepParticles(this.particles, fresh, dt, zone.terrain, Math.random, {
 			x: cam.x,
 			y: cam.y,

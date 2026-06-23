@@ -338,3 +338,42 @@ test('snapshotFor carries the zone state + the recipient private fields', () => 
 	expect(snap.progress).toEqual({ level: 2, xp: 5, gold: 9 }); // recipient's own
 	expect(snap.zoneId).toBe('field-01'); // the zone the recipient is currently in
 });
+
+test('a Monster hit attributes the Effect to the attacking session via source', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = 1;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [{ ...holdAt(7, av.avatar), attack: true }], 16);
+	expect(next.effects?.[0]?.source).toBe(7);
+});
+
+test('snapshotFor suppresses Effects back to their originator and strips source', () => {
+	const a = serverAvatar(7, 20, 'morpheus');
+	const b = serverAvatar(8, 60, 'trinity');
+	const state: ZoneState = {
+		zone: zoneWith([]),
+		avatars: [a, b],
+		tick: 3,
+		effects: [
+			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1, source: 7 },
+			{ kind: 'blood', x: 2, y: 2, intensity: 5, dir: -1, source: 8 },
+		],
+	};
+	// 7 caused the first burst → it is suppressed back to 7; 7 still sees 8's.
+	const forA = snapshotFor(state, 7);
+	expect(forA.effects).toEqual([
+		{ kind: 'blood', x: 2, y: 2, intensity: 5, dir: -1 },
+	]);
+	// 8 sees 7's burst (source stripped), not its own.
+	const forB = snapshotFor(state, 8);
+	expect(forB.effects).toEqual([
+		{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 },
+	]);
+});
+
+test('snapshotFor carries an empty Effects list when none were emitted', () => {
+	const a = serverAvatar(7, 20);
+	const state: ZoneState = { zone: zoneWith([]), avatars: [a], tick: 0 };
+	expect(snapshotFor(state, 7).effects).toEqual([]);
+});
