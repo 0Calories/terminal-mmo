@@ -23,14 +23,18 @@ export const SOUND_SPECS: Record<SoundKind, SynthSpec> = {
 		releaseMs: 60,
 		volume: 0.18,
 	},
-	// A short noise burst — the percussive "thwack" of a landed hit. Noise gives
-	// the impact texture a tone can't; kept brief so rapid swings don't smear.
+	// A low, body-heavy "thump" for a landed hit: a sine (the least harsh wave)
+	// dropping fast from ~150Hz to ~55Hz, so it reads as a deep meaty impact rather
+	// than a sharp grating crack. Brief, with a quick release, so rapid swings stay
+	// punchy and don't smear. Sine reads quieter than noise, so the amplitude runs
+	// higher to land with weight.
 	hit: {
-		wave: 'noise',
-		freq: 0,
-		durationMs: 70,
-		releaseMs: 50,
-		volume: 0.22,
+		wave: 'sine',
+		freq: 150,
+		freqEnd: 55,
+		durationMs: 90,
+		releaseMs: 70,
+		volume: 0.45,
 	},
 	// A lower, falling triangle tone — the kill's voice. Longer and descending so
 	// it reads as a defeat distinct from the dry chip of a hit; triangle is softer
