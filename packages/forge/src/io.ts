@@ -43,20 +43,24 @@ export function loadZone(
 	if (!existsSync(path)) return { id, parseError: `no such Zone '${id}'` };
 	const text = readFileSync(path, 'utf8');
 	try {
-		return { id, zone: parseZone(text, catalogs), text };
+		return { id, zone: parseZone(text, catalogs, id), text };
 	} catch (e) {
 		return { id, parseError: (e as Error).message, text };
 	}
 }
 
-/** Every `.zone` in the dir, parsed (id-sorted for deterministic output). */
-export function loadZoneSet(root: string, catalogs: Catalogs): LoadedZone[] {
+/** Every `.zone` id in the dir (sorted), without parsing — the bare identity list. */
+export function listZoneIds(root: string): string[] {
 	if (!existsSync(root)) return [];
 	return readdirSync(root)
 		.filter((f) => f.endsWith(ZONE_EXT))
 		.map((f) => f.slice(0, -ZONE_EXT.length))
-		.sort()
-		.map((id) => loadZone(root, id, catalogs));
+		.sort();
+}
+
+/** Every `.zone` in the dir, parsed (id-sorted for deterministic output). */
+export function loadZoneSet(root: string, catalogs: Catalogs): LoadedZone[] {
+	return listZoneIds(root).map((id) => loadZone(root, id, catalogs));
 }
 
 export function zonePath(root: string, id: string): string {
@@ -78,4 +82,35 @@ export function writeZone(root: string, id: string, text: string): void {
 	const tmp = `${target}.tmp`;
 	writeFileSync(tmp, text);
 	renameSync(tmp, target);
+}
+
+/** Move `<root>/<old>.zone` → `<root>/<new>.zone`. The id is the filename
+ *  (ADR 0011), so renaming a Zone is renaming its file. */
+export function renameZoneFile(
+	root: string,
+	oldId: string,
+	newId: string,
+): void {
+	renameSync(zonePath(root, oldId), zonePath(root, newId));
+}
+
+/**
+ * Rewrite every Portal `target` in one `.zone` file's header that references
+ * `oldId`, so a rename of a Zone keeps the cross-zone links intact (ADR 0011).
+ * Pure + surgical: only whole-value `"target": "<oldId>"` matches in the HEADER
+ * are touched (the grid body is left alone), so the resulting diff is minimal and
+ * the rest of the file — formatting, other targets, unrelated keys — is byte-stable.
+ */
+export function rewritePortalTarget(
+	text: string,
+	oldId: string,
+	newId: string,
+): string {
+	const lines = text.split('\n');
+	const di = lines.findIndex((l) => l.trim() === '---');
+	if (di === -1) return text;
+	const esc = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	const re = new RegExp(`("target"\\s*:\\s*)"${esc}"`, 'g');
+	const header = lines.slice(0, di).join('\n').replace(re, `$1"${newId}"`);
+	return [header, ...lines.slice(di)].join('\n');
 }

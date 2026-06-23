@@ -7,17 +7,21 @@ import {
 } from '@mmo/shared';
 import { cellAt, type EditorDoc, serializeDoc } from '../src/doc';
 import {
+	clampDiagIndex,
 	clampRoam,
 	copyRegion,
 	cursorEdge,
 	cursorToAnchor,
 	deleteRegion,
+	diagJumpTarget,
+	diagPanelSummary,
 	docDiagnostics,
 	editorExtent,
 	editorStatusLine,
 	entityAt,
 	eraseCells,
 	footprintBox,
+	formatDiagLine,
 	ghostEntity,
 	groundSnap,
 	growToInclude,
@@ -76,7 +80,7 @@ describe('trimDoc', () => {
 		// Erasing the far edge leaves redundant trailing dots and blank rows that
 		// `parseZone` would treat as empty anyway — trimming shrinks the extent.
 		const doc: EditorDoc = {
-			header: { id: 'z', type: 'field' },
+			header: { type: 'field' },
 			rows: ['##...', '.....', '#####', '.....', ''],
 		};
 		const trimmed = trimDoc(doc);
@@ -86,7 +90,7 @@ describe('trimDoc', () => {
 
 	test('keeps the header untouched', () => {
 		const doc: EditorDoc = {
-			header: { id: 'z', type: 'field', spawns: { c: 'chaser' } },
+			header: { type: 'field', spawns: { c: 'chaser' } },
 			rows: ['c...'],
 		};
 		expect(trimDoc(doc).header).toEqual(doc.header);
@@ -162,27 +166,27 @@ describe('docDiagnostics', () => {
 	test('a clean doc has no findings', () => {
 		// A town needs no spawns, so a bare floored grid validates clean.
 		const town: EditorDoc = {
-			header: { id: 't', type: 'town' },
+			header: { type: 'town' },
 			rows: ['.....', '.....', '#####'],
 		};
-		expect(docDiagnostics(town, CATALOGS)).toEqual([]);
+		expect(docDiagnostics(town, CATALOGS, 't')).toEqual([]);
 	});
 
 	test('surfaces the same orphan-glyph error that `zone check` would', () => {
 		// `c` is declared in the header but never placed in the grid.
 		const doc: EditorDoc = {
-			header: { id: 'z', type: 'field', spawns: { c: 'chaser' } },
+			header: { type: 'field', spawns: { c: 'chaser' } },
 			rows: ['.....', '#####'],
 		};
-		const diags = docDiagnostics(doc, CATALOGS);
+		const diags = docDiagnostics(doc, CATALOGS, 'z');
 		expect(diags.some((d) => d.severity === 'error')).toBe(true);
 		expect(diags.some((d) => d.message.includes("'c'"))).toBe(true);
 	});
 
 	test('reports a single parse error for an unparseable doc', () => {
 		// An all-empty grid fails `parseZone` (no cells).
-		const doc: EditorDoc = { header: { id: 'z', type: 'field' }, rows: [] };
-		const diags = docDiagnostics(doc, CATALOGS);
+		const doc: EditorDoc = { header: { type: 'field' }, rows: [] };
+		const diags = docDiagnostics(doc, CATALOGS, 'z');
 		expect(diags).toHaveLength(1);
 		expect(diags[0].severity).toBe('error');
 	});
@@ -214,6 +218,82 @@ describe('editorStatusLine', () => {
 		});
 		expect(line).toContain('✓');
 		expect(line).not.toContain('*');
+	});
+});
+
+// --- Diagnostics panel (#100) -------------------------------------------------
+
+describe('diagJumpTarget', () => {
+	test('returns the offending cell for a placement finding', () => {
+		expect(
+			diagJumpTarget({
+				severity: 'error',
+				zoneId: 'z',
+				message: 'floating',
+				cell: { x: 4, y: 2 },
+			}),
+		).toEqual({ x: 4, y: 2 });
+	});
+
+	test('returns null for a finding with no cell (orphan/type/catalog)', () => {
+		expect(
+			diagJumpTarget({ severity: 'error', zoneId: 'z', message: 'orphan' }),
+		).toBeNull();
+	});
+});
+
+describe('clampDiagIndex', () => {
+	test('keeps an in-range index unchanged', () => {
+		expect(clampDiagIndex(2, 5)).toBe(2);
+	});
+	test('clamps past-the-end down to the last row', () => {
+		expect(clampDiagIndex(9, 3)).toBe(2);
+	});
+	test('clamps a negative index up to 0', () => {
+		expect(clampDiagIndex(-1, 3)).toBe(0);
+	});
+	test('is 0 for an empty list', () => {
+		expect(clampDiagIndex(4, 0)).toBe(0);
+	});
+});
+
+describe('formatDiagLine', () => {
+	test('marks an error and carries its message', () => {
+		const line = formatDiagLine({
+			severity: 'error',
+			zoneId: 'z',
+			message: 'box at (1,2) overlaps solid terrain',
+		});
+		expect(line).toContain('✗');
+		expect(line).toContain('overlaps solid terrain');
+	});
+	test('uses a distinct marker for a warning', () => {
+		const err = formatDiagLine({
+			severity: 'error',
+			zoneId: 'z',
+			message: 'm',
+		});
+		const warn = formatDiagLine({
+			severity: 'warning',
+			zoneId: 'z',
+			message: 'm',
+		});
+		expect(warn[0]).not.toBe(err[0]);
+	});
+});
+
+describe('diagPanelSummary', () => {
+	test('reports an all-clear line when there are no findings', () => {
+		expect(diagPanelSummary([])).toContain('No issues');
+	});
+	test('counts errors and warnings separately, pluralized', () => {
+		const s = diagPanelSummary([
+			{ severity: 'error', zoneId: 'z', message: 'a' },
+			{ severity: 'error', zoneId: 'z', message: 'b' },
+			{ severity: 'warning', zoneId: 'z', message: 'c' },
+		]);
+		expect(s).toContain('2 errors');
+		expect(s).toContain('1 warning');
 	});
 });
 

@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { run } from '../src/cli';
@@ -79,10 +85,72 @@ describe('zone CLI', () => {
 		].join('\n');
 		writeFileSync(
 			join(root, 'field-9.zone'),
-			`{"id":"field-9","type":"field","spawns":{"c":"chaser","z":"chaser"}}\n---\n${grid}`,
+			`{"type":"field","spawns":{"c":"chaser","z":"chaser"}}\n---\n${grid}`,
 		);
 		expect(run(['check'], deps())).not.toBe(0);
 		expect(output()).toContain("'z'");
 		expect(output()).toContain('field-9');
+	});
+});
+
+describe('zone rename', () => {
+	// A two-Zone set that portals into each other, so a rename must rewrite the
+	// other file's Portal target as well as move the file.
+	const writePair = () => {
+		writeFileSync(
+			join(root, 'catalogs.json'),
+			JSON.stringify({ monsters: [], npcs: [] }),
+		);
+		writeFileSync(
+			join(root, 'town-01.zone'),
+			'{"type":"town","portals":{"P":{"target":"field-01","arrival":[2,2]}}}\n---\n....\n####',
+		);
+		writeFileSync(
+			join(root, 'field-01.zone'),
+			'{"type":"field","portals":{"P":{"target":"town-01","arrival":[2,2]}}}\n---\n....\n####',
+		);
+	};
+
+	test('renames the file and rewrites every referencing Portal target', () => {
+		writePair();
+		expect(run(['rename', 'town-01', 'hub'], deps())).toBe(0);
+
+		// the file moved…
+		expect(existsSync(join(root, 'town-01.zone'))).toBe(false);
+		expect(existsSync(join(root, 'hub.zone'))).toBe(true);
+		// …and the sibling Portal now points at the new id
+		const field = readFileSync(join(root, 'field-01.zone'), 'utf8');
+		expect(field).toContain('"target":"hub"');
+		expect(field).not.toContain('town-01');
+
+		// no Portal is left dangling at the vanished id (the rename's whole point)
+		lines = [];
+		run(['check'], deps());
+		expect(output()).not.toContain("unknown Zone 'town-01'");
+	});
+
+	test('without the rewrite, the sibling Portal would dangle (load-bearing)', () => {
+		writePair();
+		// Sanity: before any rename, both targets resolve.
+		run(['check'], deps());
+		expect(output()).not.toContain('unknown Zone');
+	});
+
+	test('refuses to overwrite an existing Zone', () => {
+		writePair();
+		expect(run(['rename', 'town-01', 'field-01'], deps())).not.toBe(0);
+		expect(output().toLowerCase()).toContain('exists');
+		expect(existsSync(join(root, 'town-01.zone'))).toBe(true);
+	});
+
+	test('fails clearly on a missing source Zone', () => {
+		writePair();
+		expect(run(['rename', 'nope', 'hub'], deps())).not.toBe(0);
+		expect(output().toLowerCase()).toContain('nope');
+	});
+
+	test('requires both old and new ids', () => {
+		expect(run(['rename', 'town-01'], deps())).not.toBe(0);
+		expect(output().toLowerCase()).toContain('usage');
 	});
 });

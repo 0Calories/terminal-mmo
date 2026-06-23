@@ -20,5 +20,10 @@ export const CATALOGS: Catalogs = catalogsJson as Catalogs;
 /** The shipped World content, parsed. Order is the start Zone first (the Town: a
  * safe hub Players spawn into, then portal out to the Field). */
 export function loadZones(): Zone[] {
-	return [parseZone(townText, CATALOGS), parseZone(fieldText, CATALOGS)];
+	// The id is the filename (ADR 0011); these static imports name their files, so
+	// the id is supplied here rather than read from the header.
+	return [
+		parseZone(townText, CATALOGS, 'town-01'),
+		parseZone(fieldText, CATALOGS, 'field-01'),
+	];
 }

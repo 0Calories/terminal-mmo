@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadCatalogs, loadZone, writeZone } from '../src/io';
+import {
+	loadCatalogs,
+	loadZone,
+	rewritePortalTarget,
+	writeZone,
+} from '../src/io';
 import { newZoneTemplate } from '../src/template';
 
 let root: string;
@@ -44,5 +49,48 @@ describe('writeZone', () => {
 		const loaded = loadZone(root, 'town-7', loadCatalogs(root));
 		expect(loaded.text).toBe(text);
 		expect(readdirSync(root)).toEqual(['town-7.zone']);
+	});
+});
+
+describe('rewritePortalTarget (the `zone rename` refactor)', () => {
+	const file = (header: string) => `${header}\n---\n....\n####`;
+
+	test('rewrites a Portal target that references the old id', () => {
+		const text = file(
+			'{"type":"field","portals":{"P":{"target":"town-01","arrival":[1,1]}}}',
+		);
+		const out = rewritePortalTarget(text, 'town-01', 'hub');
+		expect(out).toContain('"target":"hub"');
+		expect(out).not.toContain('town-01');
+	});
+
+	test('leaves Portal targets that reference a different id untouched', () => {
+		const text = file(
+			'{"type":"field","portals":{"P":{"target":"other-zone","arrival":[1,1]}}}',
+		);
+		expect(rewritePortalTarget(text, 'town-01', 'hub')).toBe(text);
+	});
+
+	test('rewrites every matching target (multiple portals)', () => {
+		const text = file(
+			'{"type":"town","portals":{' +
+				'"A":{"target":"field-01","arrival":[1,1]},' +
+				'"B":{"target":"field-01","arrival":[2,2]}}}',
+		);
+		const out = rewritePortalTarget(text, 'field-01', 'meadow');
+		expect(out.match(/"target":"meadow"/g)).toHaveLength(2);
+		expect(out).not.toContain('field-01');
+	});
+
+	test('only the old id is a whole-value match — a prefix is not rewritten', () => {
+		const text = file(
+			'{"type":"field","portals":{"P":{"target":"town-01-annex","arrival":[1,1]}}}',
+		);
+		expect(rewritePortalTarget(text, 'town-01', 'hub')).toBe(text);
+	});
+
+	test('does not touch the grid body even if it contains the literal', () => {
+		const text = `{"type":"field"}\n---\n"target":"town-01"\n####`;
+		expect(rewritePortalTarget(text, 'town-01', 'hub')).toBe(text);
 	});
 });

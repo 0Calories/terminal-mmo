@@ -158,12 +158,11 @@ function perFile(zone: Zone): Diagnostic[] {
  * here; parseZone reports those failures, and we only flag orphans in a file that
  * otherwise parses. Errors, per the format's "orphan keys are validation errors".
  */
-export function findOrphanGlyphs(text: string): Diagnostic[] {
+export function findOrphanGlyphs(text: string, id = '(zone)'): Diagnostic[] {
 	const lines = text.split('\n');
 	const di = lines.findIndex((l) => l.trim() === '---');
 	if (di === -1) return [];
 	let header: {
-		id?: unknown;
 		spawns?: Record<string, unknown>;
 		npcs?: Record<string, unknown>;
 		portals?: Record<string, unknown>;
@@ -177,7 +176,9 @@ export function findOrphanGlyphs(text: string): Diagnostic[] {
 	const used = new Set<string>();
 	for (const line of lines.slice(di + 1)) for (const ch of line) used.add(ch);
 
-	const zoneId = typeof header.id === 'string' ? header.id : '(zone)';
+	// A Zone's identity is its filename (ADR 0011); the caller passes it so a
+	// finding names the file, not a (now-removed) header field.
+	const zoneId = id;
 	const out: Diagnostic[] = [];
 	const scan = (kind: string, map?: Record<string, unknown>) => {
 		for (const ch of Object.keys(map ?? {}))

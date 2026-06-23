@@ -24,6 +24,7 @@ import {
 	spawnMonster,
 	validateZone,
 	ZONE_MAX,
+	type Zone,
 } from '@mmo/shared';
 // Type-only import is erased at compile time, so it never loads opentui's
 // runtime — the pure helpers above stay testable without a terminal.
@@ -41,8 +42,17 @@ import {
 	zoneType,
 } from './doc';
 import { canRedo, canUndo, initHistory, record, redo, undo } from './history';
-import { loadCatalogs, loadZone, writeZone } from './io';
+import { loadCatalogs, loadZone, loadZoneSet, writeZone } from './io';
 import { buildPalette, erase, type Placeable, place } from './placeable';
+import {
+	type Arrival,
+	defaultArrival,
+	filterCandidates,
+	formatArrival,
+	type PortalCandidate,
+	parseArrival,
+	portalCandidates,
+} from './portalForm';
 import { type Cam, sceneOf } from './preview';
 
 // --- Pure geometry (unit-tested; the opentui shell below is manual per PRD) ----
@@ -169,21 +179,22 @@ export function cursorEdge(
 export function docDiagnostics(
 	doc: EditorDoc,
 	catalogs: Catalogs,
+	id: string,
 ): Diagnostic[] {
 	const text = serializeDoc(doc);
 	let zone: ReturnType<typeof parseZone>;
 	try {
-		zone = parseZone(text, catalogs);
+		zone = parseZone(text, catalogs, id);
 	} catch (e) {
 		return [
 			{
 				severity: 'error',
-				zoneId: typeof doc.header.id === 'string' ? doc.header.id : '?',
+				zoneId: id,
 				message: `parse failed: ${(e as Error).message}`,
 			},
 		];
 	}
-	return [...validateZone(zone, catalogs), ...findOrphanGlyphs(text)];
+	return [...validateZone(zone, catalogs), ...findOrphanGlyphs(text, id)];
 }
 
 /** The inputs the status line summarizes. `tool`/`placeable` are the active
@@ -208,6 +219,49 @@ export function editorStatusLine(m: StatusLineModel): string {
 		errors.length === 0 ? '✓' : `✗${errors.length}: ${errors[0].message}`;
 	const dirty = m.dirty ? ' *' : '';
 	return `${m.tool} · ${m.placeable} · (${m.cursor.x},${m.cursor.y})${dirty}  ${health}  · ^s save · q quit`;
+}
+
+// --- Diagnostics panel (#100): pure drill-down helpers ------------------------
+
+/**
+ * The cell a diagnostic points at, or null when the finding isn't tied to one
+ * (zone-type / orphan-glyph / catalog findings carry no `cell`). The diagnostics
+ * panel uses this for jump-to-cell: a navigable row moves the cursor there.
+ */
+export function diagJumpTarget(d: Diagnostic): { x: number; y: number } | null {
+	return d.cell ?? null;
+}
+
+/**
+ * Keep a panel selection index inside `[0, count)` as the live diagnostics list
+ * grows/shrinks under edits; 0 for an empty list.
+ */
+export function clampDiagIndex(idx: number, count: number): number {
+	if (count <= 0) return 0;
+	return Math.max(0, Math.min(idx, count - 1));
+}
+
+/**
+ * One diagnostics-panel row: a severity marker (`✗` error / `▲` warning) plus the
+ * finding's message. The message already embeds any coordinates, so the row stays
+ * self-describing.
+ */
+export function formatDiagLine(d: Diagnostic): string {
+	return `${d.severity === 'error' ? '✗' : '▲'} ${d.message}`;
+}
+
+/**
+ * The panel header: counts by severity (pluralized), or an all-clear line. Mirrors
+ * the at-a-glance status badge so the drill-down opens with the same verdict.
+ */
+export function diagPanelSummary(diags: Diagnostic[]): string {
+	if (diags.length === 0) return 'No issues — zone is clean';
+	const errors = diags.filter((d) => d.severity === 'error').length;
+	const warnings = diags.length - errors;
+	const parts: string[] = [];
+	if (errors) parts.push(`${errors} error${errors === 1 ? '' : 's'}`);
+	if (warnings) parts.push(`${warnings} warning${warnings === 1 ? '' : 's'}`);
+	return parts.join(' · ');
 }
 
 // --- Modal tools (#95): geometry, eyedropper, and select/clipboard ops --------
@@ -718,11 +772,21 @@ interface PickerEntry {
 	placeable: Placeable;
 }
 
-/** The Stamp picker's entries: the catalog Monsters + NPCs (Terrain is implicit,
- *  Structures/portals arrive with #97). Group labels are kept for the modal's
- *  section headers. */
+/** The placeholder Portal a picker row carries (#97). A Portal is data-carrying —
+ *  its real `target`/`arrival` come from the config form — so picking this row puts
+ *  the editor into "place a portal" mode; the actual placement happens on form
+ *  commit. `stampAt` detects the portal kind and opens the form instead of stamping. */
+const PORTAL_SENTINEL: Placeable = {
+	kind: 'portal',
+	target: '',
+	arrival: [0, 0],
+};
+
+/** The Stamp picker's entries: the catalog Monsters + NPCs, plus the Structures'
+ *  Portal (#97). Terrain is implicit. Group labels are kept for the modal's section
+ *  headers. */
 function entityPalette(catalogs: Catalogs): PickerEntry[] {
-	return buildPalette(catalogs)
+	const entries = buildPalette(catalogs)
 		.filter((g) => g.label === 'Monsters' || g.label === 'NPCs')
 		.flatMap((g) =>
 			g.items.flatMap((i) =>
@@ -731,6 +795,29 @@ function entityPalette(catalogs: Catalogs): PickerEntry[] {
 					: [],
 			),
 		);
+	entries.push({
+		label: 'Portal',
+		group: 'Structures',
+		placeable: PORTAL_SENTINEL,
+	});
+	return entries;
+}
+
+/**
+ * The Portal config form's live state (#97), or `null` when closed. The author
+ * first chooses a `target` Zone (autocompleted from `query`), then edits the
+ * `arrival` text — committing places (or, in `edit` mode, re-places) the Portal.
+ * Shell state; the modal is eyeball-only per the PRD, its decisions are the pure
+ * `portalForm` helpers.
+ */
+interface PortalForm {
+	stage: 'target' | 'arrival';
+	anchor: Point; // top-left glyph cell the Portal will occupy
+	edit: Point | null; // origin of an existing Portal being edited (erased on commit)
+	query: string; // typed target filter (target stage)
+	target: string; // chosen target Zone id
+	selIdx: number; // highlighted row in the filtered candidate list
+	arrivalText: string; // the arrival field's editable text
 }
 
 /**
@@ -777,6 +864,16 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	const cursor = { x: 0, y: 0 };
 	const cam: Cam = { x: 0, y: 0 };
 	const picker = entityPalette(catalogs); // entities the Stamp tool can place
+	// The Portal config form (#97) needs the rest of the Zone set: the candidate
+	// targets (so a Portal can never name a nonexistent Zone) and each target's
+	// parsed Zone (to seed the default arrival from its return portal). Parse failures
+	// are excluded — they can't be a valid target anyway.
+	const zoneSet = loadZoneSet(deps.root, catalogs).flatMap((l) =>
+		l.zone ? [l.zone] : [],
+	);
+	const portalCands: PortalCandidate[] = portalCandidates(zoneSet, id);
+	const zoneById = new Map<string, Zone>(zoneSet.map((z) => [z.id, z]));
+	let portalForm: PortalForm | null = null; // the open config form, or null
 	let stampP: Placeable | undefined; // the entity Stamp will place (picked in the modal)
 	let stampLabel = ''; // its display label (for the hint line)
 	let pickerOpen = false; // the Stamp modal is capturing input
@@ -789,11 +886,13 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let freePlace = false; // `f` drops entities at the cursor instead of ground-snapping
 	let savedText = serializeDoc(trimDoc(doc));
 	let dirty = false;
-	let diags = docDiagnostics(doc, catalogs);
+	let diags = docDiagnostics(doc, catalogs, id);
 	let scene = sceneOf(loaded.zone); // last-good scene; kept on a parse failure
 	let quitPrompt = false; // quit-with-unsaved modal: [S]ave / [D]iscard / [Esc] cancel
 	let namePrompt: string | null = null; // name-edit modal buffer (null = closed)
 	let pendingTownToggle = false; // Field→Town toggle awaiting data-loss confirm
+	let diagPanel = false; // diagnostics drill-down panel (#100) is open
+	let diagIdx = 0; // highlighted diagnostic row
 
 	// Footer hit-test spans, recomputed each frame so mouse clicks select the Tool
 	// under the pointer (keyboard parity is the canonical path). The Stamp picker's
@@ -805,9 +904,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 
 	const recompute = () => {
 		dirty = serializeDoc(trimDoc(doc)) !== savedText;
-		diags = docDiagnostics(doc, catalogs);
+		diags = docDiagnostics(doc, catalogs, id);
 		try {
-			scene = sceneOf(parseZone(serializeDoc(doc), catalogs));
+			scene = sceneOf(parseZone(serializeDoc(doc), catalogs, id));
 		} catch {
 			// Keep the last good scene so a transient empty/invalid grid doesn't blank
 			// the canvas mid-edit.
@@ -1077,7 +1176,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				? stampP
 					? `Stamp: ${stampLabel} · space/click place · p re-pick`
 					: 'Stamp: press p (or click the tool) to pick an entity'
-				: 'Brush/Rect/Line terrain · Eraser removes · Stamp (p) entities · n name · t type';
+				: 'Brush/Rect/Line terrain · Eraser removes · Stamp (p) entities · n name · t type · i issues';
 			buf.drawText(hint.slice(0, W), 0, hintRow, C.dimFg, C.chromeBg);
 			const px = Math.min(hint.length + 2, W - 1);
 			// Field→Town data-loss confirm (#99): a second `t` applies, Esc cancels.
@@ -1250,6 +1349,145 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					C.chromeBg,
 				);
 			}
+
+			// Portal config form (#97): a floating modal, drawn last. The target stage
+			// shows the typed filter + the autocompleted candidate Zones (highlighted
+			// row bracketed); the arrival stage shows the chosen target + the editable
+			// `x,y` field. Keys are captured by the `portalForm` early-return above.
+			if (portalForm) {
+				const f = portalForm;
+				const verb = f.edit ? 'Edit' : 'New';
+				const body: { text: string; hot?: boolean }[] = [];
+				if (f.stage === 'target') {
+					body.push({ text: `target: ${f.query}▏` });
+					const cands = filterCandidates(portalCands, f.query);
+					if (cands.length === 0) body.push({ text: ' (no matching Zone)' });
+					for (let i = 0; i < cands.length && i < 8; i++) {
+						const c = cands[i];
+						const lbl = c.name ? `${c.id}  ${c.name}` : c.id;
+						body.push({
+							text: i === f.selIdx ? `[${lbl}]` : ` ${lbl} `,
+							hot: i === f.selIdx,
+						});
+					}
+					body.push({ text: ' ↑/↓ · Enter pick · Esc cancel' });
+				} else {
+					body.push({ text: `target: ${f.target}` });
+					const ok = parseArrival(f.arrivalText) !== undefined;
+					body.push({
+						text: `arrival: ${f.arrivalText}▏${ok ? '' : '  (x,y)'}`,
+					});
+					body.push({ text: ' Enter save · Esc back' });
+				}
+				const title = ` ${verb} portal `;
+				const innerW = Math.max(
+					title.length,
+					...body.map((b) => b.text.length + 2),
+					30,
+				);
+				const boxW = innerW + 2;
+				const boxH = body.length + 2;
+				const ox = Math.max(0, Math.floor((W - boxW) / 2));
+				const oy = Math.max(RULER_H, Math.floor((H - boxH) / 2));
+				const line = (s: string) => (s + ' '.repeat(boxW)).slice(0, boxW);
+				buf.fillRect(ox, oy, boxW, boxH, C.chromeBg);
+				buf.drawText(
+					line(`┌${title}${'─'.repeat(Math.max(0, boxW - 2 - title.length))}┐`),
+					ox,
+					oy,
+					C.tickFg,
+					C.chromeBg,
+				);
+				let ry = oy + 1;
+				for (const b of body) {
+					buf.setCell(ox, ry, '│', C.tickFg, C.chromeBg);
+					buf.drawText(
+						` ${b.text}`.slice(0, boxW - 2),
+						ox + 1,
+						ry,
+						b.hot ? C.hot : C.textFg,
+						C.chromeBg,
+					);
+					buf.setCell(ox + boxW - 1, ry, '│', C.tickFg, C.chromeBg);
+					ry++;
+				}
+				buf.drawText(
+					line(`└${'─'.repeat(boxW - 2)}┘`),
+					ox,
+					ry,
+					C.tickFg,
+					C.chromeBg,
+				);
+			}
+
+			// Diagnostics drill-down panel (#100): the live `diags` (the same findings
+			// `zone check` emits, recomputed on every edit) listed in full, the selected
+			// row bracketed and a `→` marking the navigable ones. Drawn last; keys are
+			// captured by the `diagPanel` early-return. The status badge stays the
+			// always-on signal — this is the opt-in detail view.
+			if (diagPanel) {
+				diagIdx = clampDiagIndex(diagIdx, diags.length);
+				const title = ' Diagnostics ';
+				const summary = diagPanelSummary(diags);
+				const rowsTxt = diags.map(
+					(d) => `${diagJumpTarget(d) ? '→ ' : '  '}${formatDiagLine(d)}`,
+				);
+				const foot = ' ↑/↓ jk · Enter jump · Esc/i close ';
+				const innerW = Math.min(
+					Math.max(
+						title.length,
+						summary.length + 2,
+						foot.length,
+						...rowsTxt.map((t) => t.length + 2),
+						24,
+					),
+					Math.max(8, W - 2),
+				);
+				const boxW = innerW + 2;
+				const boxH = rowsTxt.length + 3; // title + summary + rows + bottom border
+				const ox = Math.max(0, Math.floor((W - boxW) / 2));
+				const oy = Math.max(RULER_H, Math.floor((H - boxH - 1) / 2));
+				const line = (s: string) => (s + ' '.repeat(boxW)).slice(0, boxW);
+				buf.fillRect(ox, oy, boxW, boxH + 1, C.chromeBg);
+				buf.drawText(
+					line(`┌${title}${'─'.repeat(boxW - 2 - title.length)}┐`),
+					ox,
+					oy,
+					C.tickFg,
+					C.chromeBg,
+				);
+				buf.setCell(ox, oy + 1, '│', C.tickFg, C.chromeBg);
+				buf.drawText(
+					` ${summary}`.slice(0, boxW - 2),
+					ox + 1,
+					oy + 1,
+					C.dimFg,
+					C.chromeBg,
+				);
+				buf.setCell(ox + boxW - 1, oy + 1, '│', C.tickFg, C.chromeBg);
+				let ry = oy + 2;
+				for (let i = 0; i < rowsTxt.length; i++) {
+					const active = i === diagIdx;
+					const seg = active ? `[${rowsTxt[i]}]` : ` ${rowsTxt[i]} `;
+					const fg = active
+						? C.hot
+						: diags[i].severity === 'error'
+							? C.textFg
+							: C.dimFg;
+					buf.setCell(ox, ry, '│', C.tickFg, C.chromeBg);
+					buf.drawText(seg.slice(0, boxW - 2), ox + 1, ry, fg, C.chromeBg);
+					buf.setCell(ox + boxW - 1, ry, '│', C.tickFg, C.chromeBg);
+					ry++;
+				}
+				buf.drawText(
+					line(`└${'─'.repeat(boxW - 2)}┘`),
+					ox,
+					ry,
+					C.tickFg,
+					C.chromeBg,
+				);
+				buf.drawText(foot.slice(0, boxW), ox, ry + 1, C.dimFg, C.chromeBg);
+			}
 		}
 	}
 
@@ -1337,11 +1575,66 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			strokeTag ?? undefined,
 		);
 	};
+	// The filtered target candidates for the form's current query (target stage).
+	const formCandidates = (): PortalCandidate[] =>
+		portalForm ? filterCandidates(portalCands, portalForm.query) : [];
+
+	// Open the Portal config form (#97). For a NEW portal, `edit` is null and the
+	// anchor is where the ghost sits; for an EDIT, `edit` is the existing origin and
+	// the form is seeded with its current target + arrival. With no candidate Zones
+	// to target, the form can't resolve, so it never opens.
+	const openPortalForm = (
+		anchor: Point,
+		edit: Point | null,
+		seed?: { target: string; arrival: Arrival },
+	) => {
+		if (portalCands.length === 0) return;
+		const sel = seed
+			? Math.max(
+					0,
+					filterCandidates(portalCands, '').findIndex(
+						(c) => c.id === seed.target,
+					),
+				)
+			: 0;
+		portalForm = {
+			stage: 'target',
+			anchor,
+			edit,
+			query: '',
+			target: seed?.target ?? '',
+			selIdx: sel,
+			arrivalText: seed ? formatArrival(seed.arrival) : '',
+		};
+	};
+
+	// Commit the Portal form: build the data-carrying Placeable and stamp it at the
+	// anchor. An edit first erases the old origin so a changed target/arrival doesn't
+	// leave a stale glyph (place then re-declares). Stays open on a malformed arrival.
+	const commitPortalForm = () => {
+		if (!portalForm) return;
+		const arrival = parseArrival(portalForm.arrivalText);
+		if (!portalForm.target || !arrival) return;
+		const p: Placeable = {
+			kind: 'portal',
+			target: portalForm.target,
+			arrival,
+		};
+		const a = portalForm.anchor;
+		if (portalForm.edit) doc = erase(doc, portalForm.edit.x, portalForm.edit.y);
+		doc = place(growToInclude(doc, a.x, a.y), a.x, a.y, p);
+		portalForm = null;
+		recompute();
+	};
+
 	// Stamp the picked entity: the cursor is its CENTER, converted to the stored
 	// top-left anchor (ground-snapped unless free-place) by the shared `cursorToAnchor`.
+	// A Portal is data-carrying — instead of stamping, it opens the config form (#97)
+	// at the landing anchor.
 	const stampAt = (x: number, y: number) => {
 		if (!stampP) return openPicker();
 		const a = cursorToAnchor(doc, stampP, x, y, freePlace);
+		if (stampP.kind === 'portal') return openPortalForm(a, null);
 		commit(place(growToInclude(doc, a.x, a.y), a.x, a.y, stampP));
 	};
 	// Erase whatever the cell covers: the topmost entity whose footprint contains it
@@ -1352,6 +1645,23 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		commit(next, strokeTag ?? undefined);
 	};
 
+	// Edit-on-click (#97): if the cell holds a data-carrying Portal, re-open its
+	// config form (seeded with the current target + arrival) and report it handled.
+	// Plain Monsters/NPCs carry no data, so they fall through to move/delete.
+	const tryEditPortal = (x: number, y: number): boolean => {
+		const hit = entityAt(doc, x, y);
+		if (hit?.placeable.kind !== 'portal') return false;
+		openPortalForm(
+			{ x: hit.originX, y: hit.originY },
+			{ x: hit.originX, y: hit.originY },
+			{
+				target: hit.placeable.target,
+				arrival: hit.placeable.arrival,
+			},
+		);
+		return true;
+	};
+
 	// The Tool's primary action at the cursor (`space`/click). Drag tools toggle
 	// the anchor (press A, then press B to commit); the rest act immediately.
 	const toolPrimary = () => {
@@ -1359,6 +1669,10 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		if (t.id === 'brush') return paintAt(cursor.x, cursor.y);
 		if (t.id === 'eraser') return eraseAt(cursor.x, cursor.y);
 		if (t.id === 'stamp') return stampAt(cursor.x, cursor.y);
+		// Select: a press on a Portal opens its form (edit-on-click); otherwise it
+		// anchors a region (first press) then commits the selection (second press).
+		if (t.id === 'select' && !anchor && tryEditPortal(cursor.x, cursor.y))
+			return;
 		// Rectangle / Line / Select: first press anchors, second commits.
 		if (!anchor) {
 			anchor = { x: cursor.x, y: cursor.y };
@@ -1406,6 +1720,12 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		// canvas/tool clicks so a stray click can't paint or dismiss them (the modal
 		// resolves only via S/D/Esc; the prompt via Enter/Esc).
 		if (quitPrompt || namePrompt !== null) return;
+		// The Portal config form (#97) is keyboard-driven (like the name prompt) — a
+		// stray canvas/tool click can't paint while it's open.
+		if (portalForm) return;
+		// The diagnostics panel (#100) is keyboard-driven too — ignore canvas clicks
+		// while it's open so a stray click can't paint behind it.
+		if (diagPanel) return;
 		// The Stamp picker modal eats clicks: a row confirms, anywhere else cancels.
 		if (pickerOpen) {
 			const hit = pickerHits.find(
@@ -1434,6 +1754,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		const w = toWorld(e.x, e.y);
 		moveCursorTo(w.x, w.y);
 		const t = activeTool();
+		// Select-clicking a Portal opens its config form (edit-on-click, #97) rather
+		// than starting a region drag; start the drag on empty space to select instead.
+		if (t.id === 'select' && tryEditPortal(cursor.x, cursor.y)) return;
 		// Drag tools anchor on down; Stamp picks up a ghost (commit one on release);
 		// Brush/Eraser act immediately and drag-paint. A brush/eraser stroke opens a
 		// fresh coalesce tag so the whole down→drag→up paint is one undo step.
@@ -1552,6 +1875,61 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			return;
 		}
 
+		// The Portal config form (#97) owns every key while open. Two stages:
+		//  - target: type to autocomplete the candidate Zones, ↑/↓ to highlight, Enter
+		//    to choose (seeds the default arrival from the target's return portal),
+		//    Esc to cancel the form.
+		//  - arrival: edit the `x,y` text, Enter to commit (stays open if malformed),
+		//    Esc to step back to the target stage.
+		if (portalForm) {
+			const f = portalForm;
+			if (f.stage === 'target') {
+				const cands = formCandidates();
+				if (k.name === 'escape') {
+					portalForm = null;
+				} else if (k.name === 'up') {
+					if (cands.length)
+						f.selIdx = (f.selIdx - 1 + cands.length) % cands.length;
+				} else if (k.name === 'down') {
+					if (cands.length) f.selIdx = (f.selIdx + 1) % cands.length;
+				} else if (k.name === 'return' || k.name === 'enter') {
+					const chosen = cands[f.selIdx];
+					if (chosen) {
+						f.target = chosen.id;
+						// Seed the arrival only when it's still blank (a fresh portal), so an
+						// edit keeps the author's existing point unless they clear it.
+						if (!f.arrivalText.trim()) {
+							const tz = zoneById.get(chosen.id);
+							if (tz) f.arrivalText = formatArrival(defaultArrival(tz, id));
+						}
+						f.stage = 'arrival';
+					}
+				} else if (k.name === 'backspace') {
+					f.query = f.query.slice(0, -1);
+					f.selIdx = 0;
+				} else if (!k.ctrl && !k.meta) {
+					const ch = k.name === 'space' ? ' ' : (k.sequence ?? '');
+					if (ch.length === 1 && ch > ' ' && ch !== '\x7f') {
+						f.query += ch;
+						f.selIdx = 0;
+					}
+				}
+			} else {
+				if (k.name === 'escape') {
+					f.stage = 'target';
+				} else if (k.name === 'return' || k.name === 'enter') {
+					commitPortalForm();
+				} else if (k.name === 'backspace') {
+					f.arrivalText = f.arrivalText.slice(0, -1);
+				} else if (!k.ctrl && !k.meta) {
+					// The arrival field accepts only the digits/comma/space `parseArrival` reads.
+					const ch = k.name === 'space' ? ' ' : (k.sequence ?? '');
+					if (ch.length === 1 && /[0-9, ]/.test(ch)) f.arrivalText += ch;
+				}
+			}
+			return;
+		}
+
 		// The Stamp picker modal captures all keys while open (#114): navigate the
 		// entity list, Enter / a digit confirms, Esc cancels — like `pendingQuit`.
 		if (pickerOpen) {
@@ -1571,6 +1949,29 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				const n = Number.parseInt(k.name, 10);
 				if (String(n) === k.name && n >= 1 && n <= picker.length)
 					confirmPicker(n - 1);
+			}
+			return;
+		}
+
+		// The diagnostics panel (#100) owns navigation while open: ↑/↓ (jk) move the
+		// selection, Enter/space jumps the cursor to the offending cell (and closes),
+		// Esc / i close. It's a drill-down over the live `diags`, never a blocking modal.
+		if (diagPanel) {
+			diagIdx = clampDiagIndex(diagIdx, diags.length);
+			if (k.name === 'escape' || k.name === 'i') {
+				diagPanel = false;
+			} else if (k.name === 'up' || k.name === 'k') {
+				if (diags.length) diagIdx = (diagIdx - 1 + diags.length) % diags.length;
+			} else if (k.name === 'down' || k.name === 'j') {
+				if (diags.length) diagIdx = (diagIdx + 1) % diags.length;
+			} else if (
+				k.name === 'return' ||
+				k.name === 'enter' ||
+				k.name === 'space'
+			) {
+				const target = diags[diagIdx] ? diagJumpTarget(diags[diagIdx]) : null;
+				if (target) move(target.x - cursor.x, target.y - cursor.y);
+				diagPanel = false;
 			}
 			return;
 		}
@@ -1636,6 +2037,10 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				return;
 			case 'f': // toggle ground-snap vs. free-place for entity placement (#96)
 				freePlace = !freePlace;
+				return;
+			case 'i': // open the diagnostics drill-down panel (#100); closing is handled above
+				diagPanel = true;
+				diagIdx = clampDiagIndex(diagIdx, diags.length);
 				return;
 			case 'n': // edit the Zone's display name (#99): open the prompt seeded with it
 				namePrompt = zoneName(doc) ?? '';

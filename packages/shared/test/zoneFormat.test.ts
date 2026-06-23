@@ -19,7 +19,9 @@ const npcs: NpcCatalogEntry[] = [
 const catalogs = { monsters, npcs };
 
 // header + `---` + a 4-row grid: solid floor, two spawns, one portal, one npc.
-const FIELD = `{ "id": "field-01", "type": "field",
+// No `id` in the header — a Zone's identity is its filename (ADR 0011), passed
+// to parseZone as the third argument.
+const FIELD = `{ "type": "field",
   "spawns":  { "c": "goblin-01", "s": "archer-01" },
   "portals": { "a": { "target": "town-01", "arrival": [12, 32] } },
   "npcs":    { "m": "merchant-01" } }
@@ -30,11 +32,17 @@ const FIELD = `{ "id": "field-01", "type": "field",
 ##############`;
 
 describe('parseZone — happy path', () => {
-	const zone = parseZone(FIELD, catalogs);
+	const zone = parseZone(FIELD, catalogs, 'field-01');
 
-	test('header identity', () => {
+	test('identity comes from the filename arg, not the header', () => {
 		expect(zone.id).toBe('field-01');
 		expect(zone.type).toBe('field');
+	});
+
+	test('the same text parses under whatever id the path supplies', () => {
+		expect(parseZone(FIELD, catalogs, 'verdant-meadow').id).toBe(
+			'verdant-meadow',
+		);
 	});
 
 	test('dimensions inferred from the grid (h = rows, w = widest)', () => {
@@ -99,16 +107,18 @@ describe('parseZone — happy path', () => {
 	});
 
 	test('deterministic — no RNG, parse twice is deep-equal', () => {
-		expect(parseZone(FIELD, catalogs)).toEqual(parseZone(FIELD, catalogs));
+		expect(parseZone(FIELD, catalogs, 'field-01')).toEqual(
+			parseZone(FIELD, catalogs, 'field-01'),
+		);
 	});
 });
 
 describe('parseZone — empty entity collections', () => {
-	const BARE = `{ "id": "town-01", "type": "town" }
+	const BARE = `{ "type": "town" }
 ---
 ....
 ####`;
-	const zone = parseZone(BARE, catalogs);
+	const zone = parseZone(BARE, catalogs, 'town-01');
 
 	test('no spawns/npcs/portals yields empty arrays and omitted npcs key', () => {
 		expect(zone.monsters).toEqual([]);
@@ -119,51 +129,61 @@ describe('parseZone — empty entity collections', () => {
 	});
 });
 
+describe('id is the filename, never the header (ADR 0011)', () => {
+	const grid = `\n---\n....\n####`;
+
+	test('a header carrying an id is rejected — identity-as-wrong is unrepresentable', () => {
+		const text = `{ "id": "stale", "type": "field" }${grid}`;
+		expect(() => parseZone(text, catalogs, 'field-01')).toThrow(ZoneParseError);
+		expect(() => parseZone(text, catalogs, 'field-01')).toThrow(/id/i);
+	});
+});
+
 describe('parseZone — fails safely', () => {
 	const grid = `\n---\n....\n####`;
 
 	test('missing --- delimiter', () => {
-		expect(() =>
-			parseZone('{ "id": "x", "type": "field" }\n....', catalogs),
-		).toThrow(ZoneParseError);
+		expect(() => parseZone('{ "type": "field" }\n....', catalogs, 'x')).toThrow(
+			ZoneParseError,
+		);
 	});
 
 	test('malformed JSON header', () => {
-		expect(() => parseZone(`{ "id": "x", "type": }${grid}`, catalogs)).toThrow(
+		expect(() => parseZone(`{ "type": }${grid}`, catalogs, 'x')).toThrow(
 			ZoneParseError,
 		);
 	});
 
 	test('invalid zone type', () => {
 		expect(() =>
-			parseZone(`{ "id": "x", "type": "dungeon" }${grid}`, catalogs),
+			parseZone(`{ "type": "dungeon" }${grid}`, catalogs, 'x'),
 		).toThrow(ZoneParseError);
 	});
 
 	test('undeclared glyph in the grid', () => {
-		const z = `{ "id": "x", "type": "field" }\n---\n.Z..\n####`;
-		expect(() => parseZone(z, catalogs)).toThrow(/glyph/i);
+		const z = `{ "type": "field" }\n---\n.Z..\n####`;
+		expect(() => parseZone(z, catalogs, 'x')).toThrow(/glyph/i);
 	});
 
 	test('spawn references a monster id absent from the catalog', () => {
-		const z = `{ "id": "x", "type": "field", "spawns": { "c": "dragon-99" } }\n---\n.c..\n####`;
-		expect(() => parseZone(z, catalogs)).toThrow(ZoneParseError);
+		const z = `{ "type": "field", "spawns": { "c": "dragon-99" } }\n---\n.c..\n####`;
+		expect(() => parseZone(z, catalogs, 'x')).toThrow(ZoneParseError);
 	});
 
 	test('a glyph declared in two header maps', () => {
-		const z = `{ "id": "x", "type": "field", "spawns": { "c": "goblin-01" }, "npcs": { "c": "merchant-01" } }\n---\n.c..\n####`;
-		expect(() => parseZone(z, catalogs)).toThrow(ZoneParseError);
+		const z = `{ "type": "field", "spawns": { "c": "goblin-01" }, "npcs": { "c": "merchant-01" } }\n---\n.c..\n####`;
+		expect(() => parseZone(z, catalogs, 'x')).toThrow(ZoneParseError);
 	});
 
 	test('reserved glyph (# or .) used as a header key', () => {
-		const z = `{ "id": "x", "type": "field", "spawns": { "#": "goblin-01" } }\n---\n.c..\n####`;
-		expect(() => parseZone(z, catalogs)).toThrow(ZoneParseError);
+		const z = `{ "type": "field", "spawns": { "#": "goblin-01" } }\n---\n.c..\n####`;
+		expect(() => parseZone(z, catalogs, 'x')).toThrow(ZoneParseError);
 	});
 
 	test('oversize grid', () => {
 		const wide = '.'.repeat(5000);
 		expect(() =>
-			parseZone(`{ "id": "x", "type": "field" }\n---\n${wide}`, catalogs),
+			parseZone(`{ "type": "field" }\n---\n${wide}`, catalogs, 'x'),
 		).toThrow(/large/i);
 	});
 });
@@ -171,27 +191,27 @@ describe('parseZone — fails safely', () => {
 describe('optional display name (#99)', () => {
 	test('header.name surfaces on the parsed Zone', () => {
 		const text =
-			'{ "id": "field-01", "type": "field", "name": "Sunny Meadow",\n  "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
-		expect(parseZone(text, catalogs).name).toBe('Sunny Meadow');
+			'{ "type": "field", "name": "Sunny Meadow",\n  "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
+		expect(parseZone(text, catalogs, 'field-01').name).toBe('Sunny Meadow');
 	});
 
 	test('name is optional — absent leaves Zone.name undefined', () => {
 		const text =
-			'{ "id": "field-01", "type": "field", "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
-		expect(parseZone(text, catalogs).name).toBeUndefined();
+			'{ "type": "field", "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
+		expect(parseZone(text, catalogs, 'field-01').name).toBeUndefined();
 	});
 
 	test('a non-string name is a header error', () => {
 		const text =
-			'{ "id": "field-01", "type": "field", "name": 7, "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
-		expect(() => parseZone(text, catalogs)).toThrow(ZoneParseError);
-		expect(() => parseZone(text, catalogs)).toThrow(/name/i);
+			'{ "type": "field", "name": 7, "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
+		expect(() => parseZone(text, catalogs, 'field-01')).toThrow(ZoneParseError);
+		expect(() => parseZone(text, catalogs, 'field-01')).toThrow(/name/i);
 	});
 
 	test('name never resolves a Zone — it is decorative, distinct from id', () => {
 		const text =
-			'{ "id": "field-01", "type": "field", "name": "field-99",\n  "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
-		const zone = parseZone(text, catalogs);
+			'{ "type": "field", "name": "field-99",\n  "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
+		const zone = parseZone(text, catalogs, 'field-01');
 		expect(zone.id).toBe('field-01');
 		expect(zone.name).toBe('field-99');
 	});
