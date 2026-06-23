@@ -324,6 +324,16 @@ _Avoid_: Tiles, level, collision map
 Developer/hacker-culture flavor that may inspire some mechanics. Explicitly NOT
 the core verb of the game — parked until the core spine exists.
 
+**Access Gate** (temporary):
+A shared-password lock on joining the deployed World, for a private playtest. When
+the server has a password configured (`MMO_PASSWORD`), a client must echo it in the
+connect handshake or be refused; the client collects it in a prompt and retries. A
+deliberate *speed bump*, not authentication — one secret, handed out by hand, that
+keeps casual readers of the open-source repo from connecting. The password lives
+only as a server-side secret, never in the client. Off when unset (local dev never
+prompts). To be removed once the World opens up.
+_Avoid_: Login, auth, sign-in, account, gatekeeper
+
 ## Zone authoring
 
 Vocabulary for the human-facing tools that design Zones (the `zone edit` TUI).

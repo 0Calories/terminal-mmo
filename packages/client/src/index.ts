@@ -28,6 +28,7 @@ import { ConfigStore } from './config';
 import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
+import { PasswordModal } from './password-modal';
 import { PlayfieldRenderable } from './playfield';
 import { resolveServerUrl } from './server-url';
 import { Shop } from './shop';
@@ -281,12 +282,22 @@ function runNetworked(url: string) {
 
 	// Phase 2 — connect with the confirmed look and run the live World loop.
 	function play(cosmetics: Cosmetics) {
-		// On a server refusal (protocol mismatch / connection cap, ADR 0009), tear down
-		// the TUI and print the reason so it isn't buried under the alt-screen.
+		// Access Gate prompt (TEMPORARY playtest lock): shown only if the deployed server
+		// is locked and refuses our first (password-less) hello with an `auth` reject.
+		const password = new PasswordModal(renderer);
+		password.attach(renderer.root);
+		// On a server refusal (ADR 0009): an `auth` code is the recoverable Access Gate
+		// case — surface the reason in the password modal and let the player retry on the
+		// same socket; any other code is fatal, so tear down the TUI and print the reason.
 		const net = new NetClient(
 			url,
 			handle,
-			(reason) => {
+			(reason, code) => {
+				if (code === 'auth') {
+					if (!password.open) password.show();
+					password.setError(reason);
+					return;
+				}
 				quit(reason);
 			},
 			cosmetics,
@@ -309,6 +320,15 @@ function runNetworked(url: string) {
 		options.attach(renderer.root);
 
 		renderer.keyInput.on('keypress', (k) => {
+			// While the Access Gate prompt is up (TEMPORARY) it OWNS the keyboard, ahead of
+			// every other binding: each key edits the secret, Enter retries hello with it,
+			// and Esc quits (the gate is the only way in). `q` must type, not quit, here.
+			if (password.open) {
+				const r = password.key(k);
+				if (r === 'submit') net.submitPassword(password.value());
+				else if (r === 'quit') quit();
+				return;
+			}
 			// While typing, chat OWNS the keyboard: every key edits the line (or sends /
 			// cancels) and none reaches movement / combat (no keystroke leak).
 			if (chat.open) {
@@ -361,8 +381,14 @@ function runNetworked(url: string) {
 		// once on each rising edge of the server-authoritative level.
 		let prevLevel: number | null = null;
 		renderer.setFrameCallback(async (dt) => {
-			// Freeze movement / combat while the chat line has the keyboard.
-			const inp = chat.open ? IDLE_INPUT : input.poll(performance.now());
+			// The right password produces a `welcome`: dismiss the Access Gate prompt once
+			// we're admitted (TEMPORARY). A gate-off server is admitted on the first hello,
+			// so the modal never opened and this is a no-op.
+			if (password.open && net.ready) password.hide();
+			// Freeze movement / combat while the chat line (or the password prompt) has the
+			// keyboard, so a held key never drives the Avatar behind a modal.
+			const inp =
+				chat.open || password.open ? IDLE_INPUT : input.poll(performance.now());
 
 			// Follow a server-driven Zone change (portal travel / death respawn): swap the
 			// local Zone and snap the predicted Avatar to the server's arrival position so

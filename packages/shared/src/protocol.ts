@@ -144,7 +144,17 @@ class Reader {
 // Avatar kinematics (ADR 0001: position is client-authoritative) plus the combat
 // intents for the tick. A `skill` of 0 means none was pressed.
 export type ClientMessage =
-	| { t: 'hello'; handle: string; version: string; cosmetics: Cosmetics }
+	// `password` is the optional Access Gate secret (TEMPORARY playtest lock): the
+	// deployed server, when MMO_PASSWORD is set, admits a client only if it matches.
+	// Trailing + optional on the wire, so a gate-off server and a pre-gate client both
+	// just ignore it. Remove this field when the gate is retired.
+	| {
+			t: 'hello';
+			handle: string;
+			version: string;
+			cosmetics: Cosmetics;
+			password?: string;
+	  }
 	| {
 			t: 'input';
 			x: number;
@@ -196,6 +206,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.str(msg.handle);
 			w.str(msg.version);
 			writeCosmetics(w, msg.cosmetics);
+			// Trailing Access Gate password (TEMPORARY): always written so the field is
+			// positional after cosmetics; an absent one is the empty string, which the
+			// server treats as "no password supplied".
+			w.str(msg.password ?? '');
 			break;
 		case 'input':
 			w.u8(CLIENT_TAG.input);
@@ -241,7 +255,14 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			// bareheaded look (it is rejected by the version gate regardless).
 			const cosmetics =
 				r.remaining() >= 3 ? readCosmetics(r) : DEFAULT_COSMETICS;
-			return { t: 'hello', handle, version, cosmetics };
+			const msg: ClientMessage = { t: 'hello', handle, version, cosmetics };
+			// Optional trailing Access Gate password (TEMPORARY): a u32-prefixed string,
+			// absent for a pre-gate client. An empty value is treated as no password.
+			if (r.remaining() >= 4) {
+				const password = r.str();
+				if (password) msg.password = password;
+			}
+			return msg;
 		}
 		case CLIENT_TAG.input: {
 			const x = r.f64();
@@ -354,10 +375,16 @@ export type ServerMessage =
 	// sprite (the handle is a display label, not an identity); `emote` is an
 	// EMOTES id the recipient resolves to a glyph.
 	| { t: 'emote'; sessionId: number; emote: string }
-	// The server is refusing the connection and will close it (ADR 0009): a
-	// protocol-version mismatch, or a connection cap (global / per-IP). `reason` is
-	// a human-readable line the client surfaces before exiting.
-	| { t: 'reject'; reason: string };
+	// The server is refusing the connection (ADR 0009): a protocol-version mismatch,
+	// a connection cap (global / per-IP), or the Access Gate (TEMPORARY playtest lock).
+	// `reason` is a human-readable line the client surfaces; `code` is the machine-
+	// readable discriminator the client branches on — only `'auth'` is non-fatal (it
+	// re-prompts for the password and retries hello), everything else exits.
+	| { t: 'reject'; reason: string; code?: RejectCode };
+
+// Why a connection was refused, so the client doesn't have to match on English text.
+// `'auth'` (Access Gate) is the one recoverable code: the client re-prompts and retries.
+export type RejectCode = 'version' | 'full' | 'auth';
 
 const SERVER_TAG = {
 	welcome: 1,
@@ -574,6 +601,8 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 		case 'reject':
 			w.u8(SERVER_TAG.reject);
 			w.str(msg.reason);
+			// Trailing machine-readable code (empty when unset, e.g. a pre-code server).
+			w.str(msg.code ?? '');
 			break;
 	}
 	return w.finish();
@@ -637,8 +666,16 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			return { t: 'notice', text: r.str() };
 		case SERVER_TAG.emote:
 			return { t: 'emote', sessionId: r.u32(), emote: r.str() };
-		case SERVER_TAG.reject:
-			return { t: 'reject', reason: r.str() };
+		case SERVER_TAG.reject: {
+			const reason = r.str();
+			const msg: ServerMessage = { t: 'reject', reason };
+			// Optional trailing code; absent (empty) for a pre-code server frame.
+			if (r.remaining() >= 4) {
+				const code = r.str();
+				if (code) msg.code = code as RejectCode;
+			}
+			return msg;
+		}
 		default:
 			throw new Error(`unknown server message tag ${tag}`);
 	}

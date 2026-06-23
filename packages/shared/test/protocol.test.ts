@@ -54,6 +54,33 @@ test('hello clamps an out-of-range cosmetic index to the default on decode', () 
 	});
 });
 
+test('hello round-trips the Access Gate password when present', () => {
+	const msg: ClientMessage = {
+		t: 'hello',
+		handle: 'neo',
+		version: '0.3.0',
+		cosmetics: { hue: 3, hat: 2, nameplate: 5 },
+		password: 'redpill 🔑',
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('hello omits the password field when none was supplied', () => {
+	// A password-less hello (gate off, or the first probe before the prompt) decodes
+	// with NO password key — not an empty string — so the server's `msg.password`
+	// check reads undefined, never "".
+	const msg: ClientMessage = {
+		t: 'hello',
+		handle: 'neo',
+		version: '0.3.0',
+		cosmetics: { hue: 0, hat: 0, nameplate: 0 },
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+	expect('password' in decoded).toBe(false);
+});
+
 test('input round-trips reported kinematics + combat intents', () => {
 	const msg: ClientMessage = {
 		t: 'input',
@@ -295,10 +322,21 @@ test('snapshot round-trips an empty Effects list', () => {
 	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
 });
 
-test('reject round-trips the human-readable reason', () => {
+test('reject round-trips the human-readable reason (no code)', () => {
 	const msg: ServerMessage = {
 		t: 'reject',
 		reason: 'client out of date',
+	};
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	expect(decoded).toEqual(msg);
+	expect('code' in decoded).toBe(false);
+});
+
+test('reject round-trips the machine-readable code the client branches on', () => {
+	const msg: ServerMessage = {
+		t: 'reject',
+		reason: 'Incorrect password.',
+		code: 'auth',
 	};
 	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
