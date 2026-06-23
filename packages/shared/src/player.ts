@@ -1,4 +1,4 @@
-import { PHYS } from './constants';
+import { DEFAULT_MASS, PHYS } from './constants';
 import { maxHpForLevel } from './progression';
 import type { PlayerClass } from './skills';
 import type { Entity, Item, PlayerProgress } from './types';
@@ -32,6 +32,7 @@ export function spawnAvatar(x: number, y: number): Entity {
 		maxHp: maxHpForLevel(1),
 		hurtT: 0,
 		attackT: 0,
+		mass: DEFAULT_MASS,
 	};
 }
 
