@@ -53,6 +53,23 @@ export interface Entity {
 	emote?: string; // active emote id shown over the head (#38); render-only
 }
 
+// The semantic game event a burst represents. `blood` is the MVP kind; future
+// kinds (dust, sparkle, spark, smoke) are added here as the system grows.
+export type EffectKind = 'blood';
+
+// A small, authoritative, deterministic descriptor of *what happened* in combat,
+// produced in the shared Zone tick the instant damage resolves (ADR 0013). The
+// client realizes it into a non-deterministic cloud of Particles; the shared
+// layer owns the fact, the client owns the pixels. `dir` is the horizontal bias
+// of the burst — -1 / 1 follow the blow, 0 is a radial burst (used by deaths).
+export interface Effect {
+	kind: EffectKind;
+	x: number;
+	y: number;
+	intensity: number; // scales with damage dealt; the client maps it to a speck count
+	dir: -1 | 0 | 1;
+}
+
 export interface SpawnPoint {
 	type: EntityType;
 	x: number;

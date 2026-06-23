@@ -39,6 +39,7 @@ import type {
 	Box,
 	Control,
 	Cosmetics,
+	Effect,
 	Entity,
 	Facing,
 	Item,
@@ -73,6 +74,11 @@ export interface ZoneState {
 	// Zone respawns them in place at the safe point; the world layer uses this to
 	// relocate a forgiving death to Town (#33).
 	deaths?: number[];
+	// Combat Effects emitted this tick (transient stepZone output, ADR 0013): one
+	// blood burst per damage site. The client realizes them into Particles; the
+	// offline loop reads them straight off the step result, the server batches them
+	// into each recipient's snapshot.
+	effects?: Effect[];
 }
 
 // One tick of client->server input: the reported Avatar kinematics plus the
@@ -208,6 +214,7 @@ export function stepZone(
 		return sa;
 	});
 
+	const effects: Effect[] = [];
 	const fired: Projectile[] = [];
 	let nextProjectileId = zone.nextProjectileId;
 	let nextMonsterId = zone.nextMonsterId;
@@ -261,6 +268,16 @@ export function stepZone(
 					? m.contributors
 					: [...(m.contributors ?? []), sid];
 				m = { ...m, hp: m.hp - damages[i], hurtT: 0.6, contributors };
+				// One blood burst at the damage site, biased along the attacker's
+				// facing, scaled by the damage dealt (ADR 0013). Emitted only here,
+				// inside the i-frame gate, so a blocked/i-framed hit makes no Effect.
+				effects.push({
+					kind: 'blood',
+					x: m.x + BOX.w / 2,
+					y: m.y + BOX.h / 2,
+					intensity: damages[i],
+					dir: avatars[i].avatar.facing,
+				});
 				break;
 			}
 		}
@@ -366,7 +383,7 @@ export function stepZone(
 		respawns,
 		nextMonsterId,
 	};
-	return { zone: newZone, avatars, tick: state.tick + 1, deaths };
+	return { zone: newZone, avatars, tick: state.tick + 1, deaths, effects };
 }
 
 // Award XP (+ any level-up HP bump) and an instanced loot roll to one Avatar.

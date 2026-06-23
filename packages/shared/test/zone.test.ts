@@ -84,6 +84,44 @@ test('an Avatar attack intent damages an adjacent Monster', () => {
 	expect(next.tick).toBe(1);
 });
 
+test('a Monster hit emits one blood Effect at the Monster, intensity scaled by damage, dir = attacker facing', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = 1; // swinging to the right, into the Monster
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
+	const next = stepZone(state, [intent], 16);
+	expect(next.effects?.length).toBe(1);
+	const fx = next.effects?.[0];
+	expect(fx?.kind).toBe('blood');
+	expect(fx?.dir).toBe(1);
+	expect(fx?.intensity).toBe(8); // the melee damage dealt
+	// at the Monster's position (within its footprint box)
+	expect(fx?.x).toBeGreaterThanOrEqual(m.x);
+	expect(fx?.x).toBeLessThanOrEqual(m.x + BOX.w);
+	expect(fx?.y).toBeGreaterThanOrEqual(m.y);
+	expect(fx?.y).toBeLessThanOrEqual(m.y + BOX.h);
+});
+
+test('no Effect is emitted when the hit lands on an i-framed Monster', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hurtT = 0.5; // still invulnerable
+	const av = serverAvatar(7, 20);
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
+	const next = stepZone(state, [intent], 16);
+	expect(next.zone.monsters[0].hp).toBe(MONSTER.chaserHp); // no damage
+	expect(next.effects ?? []).toEqual([]);
+});
+
+test('a tick with no combat emits no Effects', () => {
+	const m = spawnMonster('chaser', 2, 80, y); // far away, no hit
+	const av = serverAvatar(7, 20);
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(next.effects ?? []).toEqual([]);
+});
+
 test('the Avatar landing the killing blow earns the XP and the loot roll', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4; // one swing kills

@@ -3,7 +3,7 @@ import { PHYS, SPAWN } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
 import { stepEntity } from './physics';
 import { type PlayerState, spawnPlayerState } from './player';
-import type { Entity, Input } from './types';
+import type { Effect, Entity, Input } from './types';
 import type { World, Zone } from './world';
 import { type AvatarIntent, type ServerAvatar, stepZone } from './zone';
 import { loadZones } from './zoneContent';
@@ -14,6 +14,10 @@ export interface GameState {
 	// Co-present Avatars to draw alongside (networked render only; ADR 0003
 	// z-orders them with Monsters, local Avatar on top). Absent offline.
 	others?: Entity[];
+	// Combat Effects emitted by the most recent `step` (transient, ADR 0013). The
+	// offline loop reads them straight off the result and feeds the client particle
+	// system — no wire, identical behavior to networked play.
+	effects?: Effect[];
 }
 
 /**
@@ -138,5 +142,5 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		zones: { ...game.world.zones, [zone.id]: next.zone },
 		tick: next.tick,
 	};
-	return { player, world };
+	return { player, world, effects: next.effects ?? [] };
 }
