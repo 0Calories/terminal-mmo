@@ -25,8 +25,10 @@ import {
 	type Zone,
 } from '@mmo/shared';
 import { createCliRenderer } from '@opentui/core';
+import { AudioOptions } from './audio-options-view';
 import { CharacterCreator } from './character-creator';
 import { ChatInput, parseChatCommand } from './chat';
+import { ConfigStore } from './config';
 import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
@@ -81,6 +83,14 @@ const sound = new SoundSystem({ debug: process.env.MMO_DEBUG === '1' });
 // SoundEffects from the same render path it spawns particles on (ADR 0014).
 playfield.sound = sound;
 
+// Persisted audio prefs (ADR 0015): the client's first on-disk config. Load it,
+// apply the saved mixer state (so a player who muted stays muted), then write any
+// later change back through onChange. Tolerant by construction — a missing/corrupt
+// file falls back to defaults and a failed write degrades to in-memory, never a crash.
+const config = new ConfigStore().load();
+sound.applyAudioPrefs(config.audio());
+sound.onChange = () => config.saveAudio(sound.audioPrefs());
+
 function quit(message?: string) {
 	sound.dispose(); // tear the engine down without blocking exit
 	try {
@@ -115,6 +125,9 @@ function runOffline() {
 	let game = createGame();
 	const shop = new Shop(renderer);
 	shop.attach(renderer.root);
+	// Audio options modal (ADR 0014/0015): a global, Shop-class overlay opened with `o`.
+	const options = new AudioOptions(renderer, sound);
+	options.attach(renderer.root);
 
 	function vendorUnder(g: GameState) {
 		const zone = activeZone(g.world, g.player.zoneId);
@@ -167,12 +180,22 @@ function runOffline() {
 		if (k.name === 'q') quit();
 		// `m` toggles master mute instantly (ADR 0014), reachable even with the shop
 		// modal open — it's a global audio control, not a gameplay/menu key.
+		// While the options modal is open it owns the keyboard: arrows/m adjust the
+		// mixer (persisted live), o/esc close. Swallow every key so none hits the sim.
+		if (options.open) {
+			options.key(k.name);
+			return;
+		}
 		if (k.name === 'm') {
 			sound.toggleMute();
 			return;
 		}
 		if (shop.open) {
 			handleShopKey(k.name);
+			return;
+		}
+		if (k.name === 'o') {
+			options.show();
 			return;
 		}
 		// Swallow the key so it isn't also fed to the sim as a portal/interact intent.
@@ -268,6 +291,9 @@ function runNetworked(url: string) {
 		const SEND_INTERVAL = 1000 / 30; // throttle input reports to ~30 Hz
 		let sendAcc = 0;
 		const chat = new ChatInput(); // Zone-local chat typing mode (#34)
+		// Audio options modal (ADR 0014/0015): a global overlay opened with `o` during play.
+		const options = new AudioOptions(renderer, sound);
+		options.attach(renderer.root);
 
 		renderer.keyInput.on('keypress', (k) => {
 			// While typing, chat OWNS the keyboard: every key edits the line (or sends /
@@ -288,10 +314,20 @@ function runNetworked(url: string) {
 				return;
 			}
 			if (k.name === 'q') quit();
+			// The options modal owns the keyboard while open (after the chat block, so
+			// typing still wins): arrows/m adjust the mixer (persisted live), o/esc close.
+			if (options.open) {
+				options.key(k.name);
+				return;
+			}
 			// `m` toggles master mute instantly (ADR 0014). Placed after the chat block
 			// so it edits the line while typing and only mutes during play.
 			if (k.name === 'm') {
 				sound.toggleMute();
+				return;
+			}
+			if (k.name === 'o') {
+				options.show();
 				return;
 			}
 			if (k.name === 'return') {
