@@ -68,6 +68,11 @@ export interface Effect {
 	y: number;
 	intensity: number; // scales with damage dealt; the client maps it to a speck count
 	dir: -1 | 0 | 1;
+	// The session that caused this Effect, set at the emission site so the server
+	// can suppress sending it back to its originator (the acting client already
+	// predicted its own blood, ADR 0013). Server-internal attribution only: it is
+	// never serialized onto the wire and is absent on a decoded Effect.
+	source?: number;
 }
 
 export interface SpawnPoint {

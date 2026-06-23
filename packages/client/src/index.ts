@@ -10,12 +10,15 @@ import {
 	type GameState,
 	type Input,
 	loadZones,
+	meleeHitbox,
 	PHYS,
+	predictHitEffects,
 	randomCosmetics,
 	SPAWN,
 	saleValue,
 	sellItem,
 	skillForSlot,
+	skillHitbox,
 	skillUnlocked,
 	spawnAvatar,
 	step,
@@ -306,9 +309,13 @@ function runNetworked(url: string) {
 				dt,
 			);
 			// Optimistic local telegraph (story 17): mirror the server's cooldown gate
-			// so the swing/skill flash shows before the snapshot confirms the hit.
-			if (inp.attack && predicted.attackT <= 0)
-				predicted.attackT = COMBAT.attackCooldown;
+			// so the swing/skill flash shows before the snapshot confirms the hit. The
+			// same gate yields the outgoing hitbox + damage for blood prediction (ADR
+			// 0013): a fired Skill overrides the basic swing, matching resolveAvatarIntent.
+			const swung = inp.attack && predicted.attackT <= 0;
+			if (swung) predicted.attackT = COMBAT.attackCooldown;
+			let hitbox = swung ? meleeHitbox(predicted) : null;
+			let hitDamage: number = COMBAT.meleeDamage;
 			const dtSec = Math.min(dt / 1000, PHYS.maxDt);
 			for (const id in localCd) localCd[id] = Math.max(0, localCd[id] - dtSec);
 			const level = net.latest?.progress.level ?? 1;
@@ -318,8 +325,11 @@ function runNetworked(url: string) {
 					skill &&
 					skillUnlocked(skill, level) &&
 					(localCd[skill.id] ?? 0) <= 0
-				)
+				) {
 					localCd[skill.id] = skill.cooldown;
+					hitbox = skillHitbox(predicted, skill);
+					hitDamage = skill.damage;
+				}
 			}
 
 			// Server owns vitals; reconcile HP/i-frames from snapshots. Position is NOT
@@ -373,6 +383,16 @@ function runNetworked(url: string) {
 				net.emotes,
 			);
 			playfield.game = game;
+			// Predict our own outgoing-hit blood off the rendered (interpolated)
+			// Monsters, so it erupts instantly; the server suppresses the matching
+			// Effect back to us, so there is no double-render (ADR 0013). A mispredicted
+			// swing leaves a harmless stray splat — no rollback.
+			if (hitbox) {
+				const monsters = activeZone(game.world, game.player.zoneId).monsters;
+				playfield.emitPredicted(
+					predictHitEffects(hitbox, predicted.facing, hitDamage, monsters),
+				);
+			}
 			hud.update(game, fps);
 			hud.updateChat(net.chatLog, chat.open, chat.text);
 		});

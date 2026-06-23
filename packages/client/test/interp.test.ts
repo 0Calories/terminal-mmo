@@ -53,6 +53,7 @@ function snap(
 		avatars,
 		monsters,
 		projectiles: [],
+		effects: [],
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
 		log: [],

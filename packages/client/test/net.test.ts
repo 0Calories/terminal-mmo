@@ -59,6 +59,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 		projectiles: [
 			{ id: 2, x: 55, y, vx: -36, vy: 0, life: 2, damage: 7, ownerId: 9 },
 		],
+		effects: [],
 		progress: { level: 4, xp: 30, gold: 11 },
 		inventory: [],
 		log: ['Looted rare Iron Sword.'],
@@ -130,6 +131,22 @@ test('snapshotToGame renders snapshot monsters/projectiles with the predicted ow
 	expect(game.world.tick).toBe(12);
 	// the lone avatar in the snapshot is our own, so no co-present others
 	expect(game.others).toEqual([]);
+});
+
+test('snapshotToGame carries snapshot Effects through for the particle system (#130)', () => {
+	const field = loadField();
+	const s = snapshot();
+	s.effects = [{ kind: 'blood', x: 60, y, intensity: 8, dir: -1 }];
+	const game = snapshotToGame(field, spawnAvatar(33, y), 1, s, {});
+	expect(game.effects).toEqual([
+		{ kind: 'blood', x: 60, y, intensity: 8, dir: -1 },
+	]);
+});
+
+test('snapshotToGame has no Effects before the first snapshot', () => {
+	const field = loadField();
+	const game = snapshotToGame(field, spawnAvatar(10, y), 1, null, {});
+	expect(game.effects ?? []).toEqual([]);
 });
 
 test('snapshotToGame degrades gracefully before the first snapshot', () => {

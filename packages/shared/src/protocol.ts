@@ -6,6 +6,8 @@
 import { clampCosmetics, DEFAULT_COSMETICS } from './cosmetics';
 import type {
 	Cosmetics,
+	Effect,
+	EffectKind,
 	EntityType,
 	Facing,
 	Item,
@@ -322,6 +324,10 @@ export type ServerMessage =
 			avatars: AvatarSnapshot[];
 			monsters: MonsterSnapshot[];
 			projectiles: Projectile[];
+			// Combat Effects produced this tick, already filtered by Zone interest and
+			// originator-suppressed for this recipient (ADR 0013). The client realizes
+			// them into Particles. Decoded Effects carry no `source` (wire-stripped).
+			effects: Effect[];
 			progress: PlayerProgress;
 			inventory: Item[];
 			log: string[];
@@ -364,6 +370,7 @@ const SERVER_TAG = {
 } as const;
 
 const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
+const EFFECT_KINDS: readonly EffectKind[] = ['blood'];
 const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory'];
 const RARITIES: readonly Rarity[] = [
 	'common',
@@ -459,6 +466,27 @@ function readProjectile(r: Reader): Projectile {
 	};
 }
 
+// An Effect on the wire is the pure { kind, x, y, intensity, dir } — `source` is
+// server-internal attribution stripped during snapshot-building (ADR 0013), so a
+// decoded Effect never carries it. `dir` is -1 | 0 | 1, carried as a signed byte.
+function writeEffect(w: Writer, e: Effect) {
+	w.u8(EFFECT_KINDS.indexOf(e.kind));
+	w.f64(e.x);
+	w.f64(e.y);
+	w.f64(e.intensity);
+	w.i8(e.dir);
+}
+
+function readEffect(r: Reader): Effect {
+	return {
+		kind: EFFECT_KINDS[r.u8()],
+		x: r.f64(),
+		y: r.f64(),
+		intensity: r.f64(),
+		dir: r.i8() as -1 | 0 | 1,
+	};
+}
+
 function writeItem(w: Writer, it: Item) {
 	w.u32(it.id);
 	w.str(it.base);
@@ -501,6 +529,8 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			for (const m of msg.monsters) writeMonster(w, m);
 			w.u32(msg.projectiles.length);
 			for (const p of msg.projectiles) writeProjectile(w, p);
+			w.u32(msg.effects.length);
+			for (const e of msg.effects) writeEffect(w, e);
 			w.u32(msg.progress.level);
 			w.u32(msg.progress.xp);
 			w.u32(msg.progress.gold);
@@ -559,6 +589,8 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			for (let i = r.u32(); i > 0; i--) monsters.push(readMonster(r));
 			const projectiles: Projectile[] = [];
 			for (let i = r.u32(); i > 0; i--) projectiles.push(readProjectile(r));
+			const effects: Effect[] = [];
+			for (let i = r.u32(); i > 0; i--) effects.push(readEffect(r));
 			const progress: PlayerProgress = {
 				level: r.u32(),
 				xp: r.u32(),
@@ -575,6 +607,7 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 				avatars,
 				monsters,
 				projectiles,
+				effects,
 				progress,
 				inventory,
 				log,

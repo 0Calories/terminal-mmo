@@ -6,7 +6,7 @@
 // platformer physics. Both live here, framework-free and deterministic, so the
 // two sides can never diverge.
 
-import { aabbOverlap, entityBox, meleeHitbox } from './combat';
+import { aabbOverlap, bloodEffect, entityBox, meleeHitbox } from './combat';
 import {
 	BOX,
 	COMBAT,
@@ -271,13 +271,9 @@ export function stepZone(
 				// One blood burst at the damage site, biased along the attacker's
 				// facing, scaled by the damage dealt (ADR 0013). Emitted only here,
 				// inside the i-frame gate, so a blocked/i-framed hit makes no Effect.
-				effects.push({
-					kind: 'blood',
-					x: m.x + BOX.w / 2,
-					y: m.y + BOX.h / 2,
-					intensity: damages[i],
-					dir: avatars[i].avatar.facing,
-				});
+				// `source` attributes it to the attacker so the per-recipient snapshot
+				// filter can suppress sending it back (the attacker predicts its own).
+				effects.push(bloodEffect(m, avatars[i].avatar.facing, damages[i], sid));
 				break;
 			}
 		}
@@ -447,6 +443,13 @@ export function snapshotFor(
 		maxHp: m.maxHp,
 		hurtT: m.hurtT,
 	}));
+	// Originator-suppression (ADR 0013): an Effect is never sent back to the
+	// session that caused it — the acting client already predicted its own blood,
+	// so re-rendering it from the snapshot would double up. `source` is attribution
+	// only; strip it so the wire Effect stays the pure { kind, x, y, intensity, dir }.
+	const effects: Effect[] = (state.effects ?? [])
+		.filter((e) => e.source !== sessionId)
+		.map(({ source: _source, ...e }) => e);
 	return {
 		t: 'snapshot',
 		tick: state.tick,
@@ -454,6 +457,7 @@ export function snapshotFor(
 		avatars,
 		monsters,
 		projectiles: state.zone.projectiles,
+		effects,
 		progress: me?.progress ?? { level: 1, xp: 0, gold: 0 },
 		inventory: me?.inventory ?? [],
 		log: me?.log ?? [],

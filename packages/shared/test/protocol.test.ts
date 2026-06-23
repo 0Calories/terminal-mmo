@@ -213,6 +213,7 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 		projectiles: [
 			{ id: 9, x: 48, y: 33, vx: -36, vy: 0, life: 2.4, damage: 7, ownerId: 3 },
 		],
+		effects: [{ kind: 'blood', x: 52.5, y: 34.5, intensity: 8, dir: 1 }],
 		progress: { level: 3, xp: 17, gold: 42 },
 		inventory: [
 			{
@@ -232,6 +233,42 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 	expect(decoded).toEqual(msg);
 });
 
+test('snapshot round-trips a multi-Effect list across every dir (ADR 0013)', () => {
+	const msg: ServerMessage = {
+		t: 'snapshot',
+		tick: 5,
+		zoneId: 'field-01',
+		avatars: [],
+		monsters: [],
+		projectiles: [],
+		effects: [
+			{ kind: 'blood', x: 1.5, y: 2.5, intensity: 8, dir: 1 },
+			{ kind: 'blood', x: 3.25, y: 4.75, intensity: 24, dir: -1 },
+			{ kind: 'blood', x: 9, y: 9, intensity: 12, dir: 0 }, // radial (death)
+		],
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		log: [],
+	};
+	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
+});
+
+test('snapshot round-trips an empty Effects list', () => {
+	const msg: ServerMessage = {
+		t: 'snapshot',
+		tick: 0,
+		zoneId: 'field-01',
+		avatars: [],
+		monsters: [],
+		projectiles: [],
+		effects: [],
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		log: [],
+	};
+	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
+});
+
 test('reject round-trips the human-readable reason', () => {
 	const msg: ServerMessage = {
 		t: 'reject',
@@ -249,6 +286,7 @@ test('snapshot round-trips when the zone is empty', () => {
 		avatars: [],
 		monsters: [],
 		projectiles: [],
+		effects: [],
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
 		log: [],
