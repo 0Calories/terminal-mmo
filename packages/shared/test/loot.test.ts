@@ -12,9 +12,13 @@ test('rolled item is structurally valid; affix count matches rarity', () => {
 	const { item } = rollItem(999, 10);
 	const rar = RARITIES.find((r) => r.name === item.rarity);
 	expect(rar).toBeDefined();
-	expect(item.affixes.length).toBe(rar!.affixes);
-	expect(BASES.some((b) => b.name === item.base)).toBe(true);
-	expect(item.slot).toBe(BASES.find((b) => b.name === item.base)!.slot);
+	if (!rar) throw new Error(`unknown rarity: ${item.rarity}`);
+	expect(item.affixes.length).toBe(rar.affixes);
+
+	const base = BASES.find((b) => b.name === item.base);
+	expect(base).toBeDefined();
+	if (!base) throw new Error(`unknown base: ${item.base}`);
+	expect(item.slot).toBe(base.slot);
 });
 
 test('rolling many items produces variety', () => {
