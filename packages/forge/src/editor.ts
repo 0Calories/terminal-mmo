@@ -41,6 +41,7 @@ import {
 	zoneName,
 	zoneType,
 } from './doc';
+import { canRedo, canUndo, initHistory, record, redo, undo } from './history';
 import { loadCatalogs, loadZone, loadZoneSet, writeZone } from './io';
 import { buildPalette, erase, type Placeable, place } from './placeable';
 import {
@@ -854,6 +855,12 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	}
 
 	let doc = parseDoc(loaded.text);
+	// Undo/redo history (#98): past/present/future over `EditorDoc` snapshots. Every
+	// edit funnels through `commit`; a drag stroke coalesces into one step via a
+	// per-stroke `strokeTag`, single-key edits pass none (always their own step).
+	let history = initHistory(doc);
+	let strokeTag: string | null = null; // non-null only mid mouse brush/eraser stroke
+	let strokeSeq = 0; // makes each stroke's coalesce tag unique
 	const cursor = { x: 0, y: 0 };
 	const cam: Cam = { x: 0, y: 0 };
 	const picker = entityPalette(catalogs); // entities the Stamp tool can place
@@ -881,7 +888,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let dirty = false;
 	let diags = docDiagnostics(doc, catalogs, id);
 	let scene = sceneOf(loaded.zone); // last-good scene; kept on a parse failure
-	let pendingQuit = false;
+	let quitPrompt = false; // quit-with-unsaved modal: [S]ave / [D]iscard / [Esc] cancel
 	let namePrompt: string | null = null; // name-edit modal buffer (null = closed)
 	let pendingTownToggle = false; // Field→Town toggle awaiting data-loss confirm
 	let diagPanel = false; // diagnostics drill-down panel (#100) is open
@@ -1172,14 +1179,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				: 'Brush/Rect/Line terrain · Eraser removes · Stamp (p) entities · n name · t type · i issues';
 			buf.drawText(hint.slice(0, W), 0, hintRow, C.dimFg, C.chromeBg);
 			const px = Math.min(hint.length + 2, W - 1);
-			if (pendingQuit && px < W)
-				buf.drawText(
-					'  unsaved — q again to discard, ^s to save',
-					px,
-					hintRow,
-					C.hot,
-					C.chromeBg,
-				);
 			// Field→Town data-loss confirm (#99): a second `t` applies, Esc cancels.
 			if (pendingTownToggle && px < W)
 				buf.drawText(
@@ -1302,6 +1301,51 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					ox,
 					oy + 3,
 					C.tickFg,
+					C.chromeBg,
+				);
+			}
+
+			// Quit-with-unsaved modal (#98): a real three-way choice (drawn last, on
+			// top). Replaces the old "press q twice to discard" footgun.
+			if (quitPrompt) {
+				const title = ' Unsaved changes ';
+				const choices = ' [S]ave & quit · [D]iscard · [Esc] cancel ';
+				const innerW = Math.max(title.length, choices.length, 28);
+				const boxW = innerW + 2;
+				const ox = Math.max(0, Math.floor((W - boxW) / 2));
+				const oy = Math.max(RULER_H, Math.floor((H - 4) / 2));
+				const line = (s: string) => (s + ' '.repeat(boxW)).slice(0, boxW);
+				buf.fillRect(ox, oy, boxW, 4, C.chromeBg);
+				buf.drawText(
+					line(`┌${title}${'─'.repeat(Math.max(0, boxW - 2 - title.length))}┐`),
+					ox,
+					oy,
+					C.hot,
+					C.chromeBg,
+				);
+				buf.setCell(ox, oy + 1, '│', C.hot, C.chromeBg);
+				buf.drawText(
+					' This Zone has unsaved edits.'.slice(0, boxW - 2),
+					ox + 1,
+					oy + 1,
+					C.textFg,
+					C.chromeBg,
+				);
+				buf.setCell(ox + boxW - 1, oy + 1, '│', C.hot, C.chromeBg);
+				buf.setCell(ox, oy + 2, '│', C.hot, C.chromeBg);
+				buf.drawText(
+					choices.slice(0, boxW - 2),
+					ox + 1,
+					oy + 2,
+					C.hot,
+					C.chromeBg,
+				);
+				buf.setCell(ox + boxW - 1, oy + 2, '│', C.hot, C.chromeBg);
+				buf.drawText(
+					line(`└${'─'.repeat(boxW - 2)}┘`),
+					ox,
+					oy + 3,
+					C.hot,
 					C.chromeBg,
 				);
 			}
@@ -1452,6 +1496,11 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		exitOnCtrlC: true,
 		backgroundColor: '#10121a',
 		useMouse: true,
+		// Kitty keyboard protocol (#98): lets the terminal report the Cmd (`super`)
+		// modifier and shifted keys, so Cmd-Z / Cmd-Shift-Z and Shift-U undo/redo are
+		// distinguishable. Terminals that don't speak it ignore the enable sequence and
+		// fall back to legacy parsing (the bare `u`/`U` path still works either way).
+		useKittyKeyboard: {},
 	});
 	const view = new EditRenderable(renderer);
 	renderer.root.add(view);
@@ -1468,6 +1517,34 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		savedText = serializeDoc(trimDoc(doc));
 		writeZone(deps.root, id, savedText);
 		dirty = false;
+	};
+
+	// Apply an edit: swap in the new doc, record it on the history (coalescing into
+	// the current step when `tag` matches, e.g. a brush stroke), and recompute. The
+	// single funnel every mutation goes through so undo/redo can never miss one.
+	const commit = (next: EditorDoc, tag?: string) => {
+		doc = next;
+		history = record(history, doc, tag);
+		recompute();
+	};
+	// Undo / redo (#98): restore the snapshot and drop any in-progress gesture so the
+	// view can't reference a cell from the reverted state. `dirty` is derived in
+	// recompute, so it tracks back to clean when we land on the saved snapshot.
+	const doUndo = () => {
+		if (!canUndo(history)) return;
+		history = undo(history);
+		doc = history.present;
+		anchor = null;
+		selection = null;
+		recompute();
+	};
+	const doRedo = () => {
+		if (!canRedo(history)) return;
+		history = redo(history);
+		doc = history.present;
+		anchor = null;
+		selection = null;
+		recompute();
 	};
 
 	const activeTool = () => TOOLS[toolIdx];
@@ -1490,9 +1567,13 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	};
 
 	// Paint terrain `#` at a cell (Brush / Rectangle / Line are terrain-only, #114).
+	// `strokeTag` is set only during a mouse drag, so a stroke is one undo step while
+	// each keyboard press is its own.
 	const paintAt = (x: number, y: number) => {
-		doc = place(growToInclude(doc, x, y), x, y, TERRAIN);
-		recompute();
+		commit(
+			place(growToInclude(doc, x, y), x, y, TERRAIN),
+			strokeTag ?? undefined,
+		);
 	};
 	// The filtered target candidates for the form's current query (target stage).
 	const formCandidates = (): PortalCandidate[] =>
@@ -1540,10 +1621,15 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			arrival,
 		};
 		const a = portalForm.anchor;
-		if (portalForm.edit) doc = erase(doc, portalForm.edit.x, portalForm.edit.y);
-		doc = place(growToInclude(doc, a.x, a.y), a.x, a.y, p);
+		// Placing/editing a portal is one atomic edit → one undo step (#98). Route it
+		// through `commit` (records history + recomputes) rather than mutating `doc`
+		// directly, so it isn't swallowed by the next edit's snapshot. An edit-on-click
+		// first erases the old portal, then re-places, within the same commit.
+		const base = portalForm.edit
+			? erase(doc, portalForm.edit.x, portalForm.edit.y)
+			: doc;
 		portalForm = null;
-		recompute();
+		commit(place(growToInclude(base, a.x, a.y), a.x, a.y, p));
 	};
 
 	// Stamp the picked entity: the cursor is its CENTER, converted to the stored
@@ -1554,15 +1640,14 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		if (!stampP) return openPicker();
 		const a = cursorToAnchor(doc, stampP, x, y, freePlace);
 		if (stampP.kind === 'portal') return openPortalForm(a, null);
-		doc = place(growToInclude(doc, a.x, a.y), a.x, a.y, stampP);
-		recompute();
+		commit(place(growToInclude(doc, a.x, a.y), a.x, a.y, stampP));
 	};
 	// Erase whatever the cell covers: the topmost entity whose footprint contains it
 	// (removed at its origin), else the exact cell — so any part of a sprite erases it.
 	const eraseAt = (x: number, y: number) => {
 		const hit = entityAt(doc, x, y);
-		doc = hit ? erase(doc, hit.originX, hit.originY) : erase(doc, x, y);
-		recompute();
+		const next = hit ? erase(doc, hit.originX, hit.originY) : erase(doc, x, y);
+		commit(next, strokeTag ?? undefined);
 	};
 
 	// Edit-on-click (#97): if the cell holds a data-carrying Portal, re-open its
@@ -1607,12 +1692,11 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		const b = { x: cursor.x, y: cursor.y };
 		const t = activeTool();
 		// Rectangle / Line paint terrain only (#114); Select captures the region.
+		// Each is one atomic edit → one undo step (no per-cell coalescing needed).
 		if (t.id === 'rectangle') {
-			doc = paintCells(doc, rectCells(a, b), TERRAIN);
-			recompute();
+			commit(paintCells(doc, rectCells(a, b), TERRAIN));
 		} else if (t.id === 'line') {
-			doc = paintCells(doc, lineCells(a, b), TERRAIN);
-			recompute();
+			commit(paintCells(doc, lineCells(a, b), TERRAIN));
 		} else if (t.id === 'select') {
 			selection = { a, b };
 		}
@@ -1636,11 +1720,11 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let stampDrag = false; // an entity drag-place is in flight (commit one on release)
 
 	view.onMouseDown = (e: { button: number; x: number; y: number }) => {
-		pendingQuit = false;
 		pendingTownToggle = false;
-		// While the name prompt is open it owns input — ignore canvas/tool clicks so a
-		// stray click can't paint mid-type (keyboard Enter/Esc closes it).
-		if (namePrompt !== null) return;
+		// While the quit modal (#98) or name prompt is open they own input — ignore
+		// canvas/tool clicks so a stray click can't paint or dismiss them (the modal
+		// resolves only via S/D/Esc; the prompt via Enter/Esc).
+		if (quitPrompt || namePrompt !== null) return;
 		// The Portal config form (#97) is keyboard-driven (like the name prompt) — a
 		// stray canvas/tool click can't paint while it's open.
 		if (portalForm) return;
@@ -1679,7 +1763,10 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		// than starting a region drag; start the drag on empty space to select instead.
 		if (t.id === 'select' && tryEditPortal(cursor.x, cursor.y)) return;
 		// Drag tools anchor on down; Stamp picks up a ghost (commit one on release);
-		// Brush/Eraser act immediately and drag-paint.
+		// Brush/Eraser act immediately and drag-paint. A brush/eraser stroke opens a
+		// fresh coalesce tag so the whole down→drag→up paint is one undo step.
+		if (t.id === 'brush' || t.id === 'eraser')
+			strokeTag = `stroke${++strokeSeq}`;
 		if (t.drag) anchor = { x: cursor.x, y: cursor.y };
 		else if (t.id === 'stamp') stampDrag = true;
 		else toolPrimary();
@@ -1707,6 +1794,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			panLast = null;
 			return;
 		}
+		// The brush/eraser stroke is over; the next stroke gets a fresh coalesce tag.
+		strokeTag = null;
 		// Stamp drag-place commits ONE entity at the release point (a plain click is a
 		// zero-length drag → one placement).
 		if (stampDrag) {
@@ -1736,13 +1825,36 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		name: string;
 		ctrl: boolean;
 		meta?: boolean;
+		shift?: boolean;
+		// macOS Cmd arrives as `super` (only over the Kitty keyboard protocol); Alt/
+		// Option as `meta`/`option`. We treat any of them as the "command" modifier so
+		// Cmd-Z works wherever the terminal forwards it.
+		super?: boolean;
+		option?: boolean;
 		sequence?: string;
 	};
+	// Tear down opentui and exit. The single quit path, shared by the clean-quit `q`
+	// and the [S]ave / [D]iscard choices of the unsaved-changes modal (#98).
+	const doQuit = () => {
+		(renderer as unknown as { destroy?: () => void }).destroy?.();
+		process.exit(0);
+	};
+
 	renderer.keyInput.on('keypress', (k: EditKey) => {
-		const wasPendingQuit = pendingQuit;
-		pendingQuit = false;
 		const wasPendingTownToggle = pendingTownToggle;
 		pendingTownToggle = false;
+
+		// Quit-with-unsaved modal (#98) owns every key while open: a real three-way
+		// choice — [S]ave & quit, [D]iscard & quit, [Esc] cancel — replacing the old
+		// "press q twice to discard" footgun. Captured first, like the other modals.
+		if (quitPrompt) {
+			if (k.name === 'escape') quitPrompt = false;
+			else if (k.name === 's') {
+				save();
+				doQuit();
+			} else if (k.name === 'd') doQuit();
+			return;
+		}
 
 		// The name-edit modal (#99) owns every key while open: printable chars extend
 		// the buffer (sequence = the literal char, like ChatInput), Enter commits via
@@ -1751,9 +1863,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			if (k.name === 'escape') {
 				namePrompt = null;
 			} else if (k.name === 'return' || k.name === 'enter') {
-				doc = setZoneName(doc, namePrompt);
+				commit(setZoneName(doc, namePrompt));
 				namePrompt = null;
-				recompute();
 			} else if (k.name === 'backspace') {
 				namePrompt = namePrompt.slice(0, -1);
 			} else if (!k.ctrl && !k.meta) {
@@ -1873,6 +1984,20 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		// Save is ^s so the bare `s` (and the rest of wasd) is free for movement.
 		if (k.ctrl && k.name === 's') return save();
 
+		// Undo / redo (#98). Bound on every modifier a terminal might forward, plus a
+		// modifier-FREE pair so you're never stuck if Ctrl/Cmd is awkward:
+		//   · `u` undo / `U` (Shift-U) redo — always available, no Ctrl needed.
+		//   · Ctrl-Z undo, Ctrl-R / Ctrl-Y redo (vim-style).
+		//   · Cmd-Z undo, Cmd-Shift-Z / Cmd-Y redo (macOS-native; needs a terminal that
+		//     speaks the Kitty keyboard protocol — Ghostty, Kitty, WezTerm, iTerm2 cfg).
+		// Checked BEFORE `toolByKey` so Ctrl/Cmd-R isn't read as the Rectangle tool.
+		const cmd = k.super === true || k.meta === true || k.option === true;
+		if ((k.ctrl || cmd) && k.name === 'z') return k.shift ? doRedo() : doUndo();
+		if ((k.ctrl || cmd) && (k.name === 'r' || k.name === 'y')) return doRedo();
+		// Bare-key fallbacks: `u` undo, Shift-U redo (or a literal uppercase 'U').
+		if (k.name === 'u') return k.shift ? doRedo() : doUndo();
+		if (k.sequence === 'U') return doRedo();
+
 		// Tool selection (mnemonic letter or 1-6 digit). These never collide with a
 		// movement key, so they're safe to intercept before the movement switch. The
 		// Stamp tool (`p`/`6`) opens its picker — so re-pressing it re-picks the entity.
@@ -1938,8 +2063,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					pendingTownToggle = true;
 					return;
 				}
-				doc = setZoneType(doc, target);
-				recompute();
+				commit(setZoneType(doc, target));
 				return;
 			}
 			case 'c': // Select → copy
@@ -1947,18 +2071,14 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					clip = copyRegion(doc, selection.a, selection.b);
 				return;
 			case 'y': // paste the clipboard at the cursor (any tool); `p` is the Stamp tool
-				if (clip) {
-					doc = pasteClip(doc, clip, cursor.x, cursor.y);
-					recompute();
-				}
+				if (clip) commit(pasteClip(doc, clip, cursor.x, cursor.y));
 				return;
 			case 'x':
 				// In Select with a region: cut (copy + clear) so a paste moves it.
 				if (hasSelection() && selection) {
 					clip = copyRegion(doc, selection.a, selection.b);
-					doc = deleteRegion(doc, selection.a, selection.b);
+					commit(deleteRegion(doc, selection.a, selection.b));
 					selection = null;
-					recompute();
 				} else {
 					eraseAt(cursor.x, cursor.y);
 				}
@@ -1967,20 +2087,20 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			case 'delete':
 				// In Select with a region: delete it; otherwise erase the cursor cell.
 				if (hasSelection() && selection) {
-					doc = deleteRegion(doc, selection.a, selection.b);
+					commit(deleteRegion(doc, selection.a, selection.b));
 					selection = null;
-					recompute();
 				} else {
 					eraseAt(cursor.x, cursor.y);
 				}
 				return;
 			case 'q':
-				if (dirty && !wasPendingQuit) {
-					pendingQuit = true;
+				// Unsaved changes open the explicit Save/Discard/Cancel modal (#98);
+				// a clean buffer quits straight away.
+				if (dirty) {
+					quitPrompt = true;
 					return;
 				}
-				(renderer as unknown as { destroy?: () => void }).destroy?.();
-				process.exit(0);
+				doQuit();
 		}
 	});
 
