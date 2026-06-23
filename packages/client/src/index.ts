@@ -70,9 +70,21 @@ const renderer = await createCliRenderer({
 	useKittyKeyboard: { events: true },
 });
 
-const input = new InputState();
+// Control scheme (ADR 0017 §12): keyboard-only by default; MMO_SCHEME=mouse selects
+// the keyboard+mouse scheme (left-click attack, skills on e/r). Both produce
+// identical intents through the abstract action set, so the sim never sees the
+// difference. The mouse scheme also binds the playfield's mouse buttons below.
+const SCHEME = process.env.MMO_SCHEME === 'mouse' ? 'mouse' : 'keyboard';
+const input = new InputState(SCHEME);
 const playfield = new PlayfieldRenderable(renderer);
 renderer.root.add(playfield);
+// In the mouse scheme, route the playfield's left mouse button to the attack intent
+// (OpenTUI fires these alongside held movement keys). Wired once here so both loops
+// inherit it; a no-op in the keyboard scheme.
+if (SCHEME === 'mouse') {
+	playfield.onMouseDown = (e: { button: number }) => input.mouseDown(e.button);
+	playfield.onMouseUp = (e: { button: number }) => input.mouseUp(e.button);
+}
 const hud = new Hud(renderer);
 hud.attach(renderer.root);
 

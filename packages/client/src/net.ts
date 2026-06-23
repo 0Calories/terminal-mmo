@@ -213,8 +213,9 @@ export class NetClient {
 }
 
 // A co-present Avatar reshaped as a renderable Entity. `speed` is unused by the
-// renderer (physics is server-side); `attackT` is 0 since others' swings aren't
-// telegraphed over the wire — we only draw their pose, position, and hurt flash.
+// renderer (physics is server-side); `attackT` stays 0 (the swing timer is the
+// server's), and the replicated `action` carries the swing so the renderer can draw
+// this Avatar's pose + slash-arc — others' attacks are now visible (ADR 0017 §10).
 function avatarEntity(a: AvatarSnapshot): Entity {
 	return {
 		id: a.sessionId,
@@ -232,6 +233,7 @@ function avatarEntity(a: AvatarSnapshot): Entity {
 		maxHp: a.maxHp,
 		hurtT: a.hurtT,
 		attackT: 0,
+		action: a.action,
 	};
 }
 
@@ -250,6 +252,7 @@ function monsterEntity(m: MonsterSnapshot): Entity {
 		maxHp: m.maxHp,
 		hurtT: m.hurtT,
 		attackT: 0,
+		action: m.action,
 	};
 }
 

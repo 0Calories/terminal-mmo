@@ -20,6 +20,31 @@ export interface Input extends Control {
 
 export type EntityType = 'player' | 'chaser' | 'shooter';
 
+// The three phases every attack runs through (ADR 0017 §1): `windup` commits the
+// attacker (telegraphed, no hitbox yet), `active` is the only window the hitbox is
+// live, `recovery` leaves the attacker exposed. In this foundational slice only the
+// Player's basic swing is phased; Monsters stay on their MVP behavior and replicate
+// an idle action-state.
+export type AttackPhase = 'windup' | 'active' | 'recovery';
+
+// The move an entity is performing. `idle` = nothing; `basic` = the basic melee
+// swing. Skills and Monster moves join this set as later combat slices land.
+export type MoveId = 'idle' | 'basic';
+
+// A compact, authoritative description of what an entity is *doing* this tick,
+// broadcast for every entity in the snapshot so offense is visible to everyone
+// (ADR 0017 §10) — this replaces the old client-local swing telegraph. Derived
+// from the entity's swing timer by `actionStateOf`, never hand-authored. `phase` +
+// `progress` drive the client's per-phase sprite pose and the slash-arc (live only
+// while `active`); `flags` reserves the guarding / staggered / airborne bits later
+// slices set (always 0 here). `phase`/`progress` are meaningless when `move` is idle.
+export interface ActionState {
+	move: MoveId;
+	phase: AttackPhase;
+	progress: number; // 0..1 through the current phase
+	flags: number; // reserved bitfield (0 in this slice)
+}
+
 // One Avatar's cosmetic choices (#35, ADR 0003): a body hue, one cosmetic hat
 // (separate from gear), and a nameplate colour, each a small integer index into a
 // fixed, reviewed catalog (see cosmetics.ts). Purely decorative and client-rendered
@@ -61,6 +86,11 @@ export interface Entity {
 	cosmetics?: Cosmetics; // Avatar customization (#35); render-only, absent for Monsters
 	bubble?: string; // latest Chat line shown as an over-head Speech bubble (#59); render-only
 	emote?: string; // active emote id shown over the head (#38); render-only
+	// Replicated action-state for a co-present entity (ADR 0017 §10): set by the
+	// client when rebuilding an Entity from a snapshot so the renderer can draw its
+	// swing (pose + slash-arc). The local Avatar leaves this absent — its swing is
+	// derived from the predicted `attackT` instead. Render-only.
+	action?: ActionState;
 }
 
 // The semantic game event a burst represents. `blood` is the chip-hit MVP kind;

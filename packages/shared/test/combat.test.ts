@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	actionStateOf,
 	BOX,
 	bloodEffect,
 	COMBAT,
@@ -9,11 +10,18 @@ import {
 	entityTint,
 	GROUND_POUND,
 	hurtBloodEffect,
+	IDLE_ACTION,
+	meleeActive,
 	meleeHitbox,
 	POWER_STRIKE,
 	predictHitEffects,
 	resolveCombat,
+	SWING_TOTAL,
 	skillHitbox,
+	swingPhase,
+	swingPoseCell,
+	swingPoseGlyph,
+	swingProgress,
 } from '../src';
 
 function monster(x: number, y: number, over: Partial<Entity> = {}): Entity {
@@ -173,20 +181,61 @@ describe('resolveCombat', () => {
 	const avatar = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, ...over });
 
-	test('a basic swing produces a melee hitbox + meleeDamage and resets attackT', () => {
+	test('starting a basic swing loads the full phase sequence and is in wind-up (no hitbox yet)', () => {
 		const a = avatar({ attackT: 0 });
 		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.016);
-		expect(r.hitbox).toEqual(meleeHitbox(a));
-		expect(r.damage).toBe(COMBAT.meleeDamage);
-		expect(r.attackT).toBe(COMBAT.attackCooldown);
+		// The swing commits this tick but the hitbox is NOT live during wind-up
+		// (ADR 0017 §1) — it goes live a few ticks later, in the active phase.
+		expect(r.attackT).toBe(SWING_TOTAL);
+		expect(swingPhase(r.attackT)).toBe('windup');
+		expect(r.hitbox).toBeNull();
 		expect(r.skillFired).toBeUndefined();
 	});
 
-	test('a swing is gated while attackT > 0 (no hitbox, attackT decays)', () => {
-		const a = avatar({ attackT: 0.3 });
-		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.1);
-		expect(r.hitbox).toBeNull();
-		expect(r.attackT).toBeCloseTo(0.2, 5);
+	test('the melee hitbox is live ONLY during the active phase', () => {
+		const { windup, active } = COMBAT.swing;
+		// Mid-active: attackT positioned so elapsed lands inside the active window.
+		const inActive = SWING_TOTAL - (windup + active / 2);
+		const r1 = resolveCombat(
+			avatar({ attackT: inActive }),
+			{},
+			1,
+			'warrior',
+			{ attack: false },
+			0,
+		);
+		expect(swingPhase(r1.attackT)).toBe('active');
+		expect(r1.hitbox).toEqual(meleeHitbox(avatar()));
+		expect(r1.damage).toBe(COMBAT.meleeDamage);
+
+		// Mid-recovery: past the active window — exposed, no hitbox.
+		const inRecovery = SWING_TOTAL - (windup + active + 0.01);
+		const r2 = resolveCombat(
+			avatar({ attackT: inRecovery }),
+			{},
+			1,
+			'warrior',
+			{ attack: false },
+			0,
+		);
+		expect(swingPhase(r2.attackT)).toBe('recovery');
+		expect(r2.hitbox).toBeNull();
+	});
+
+	test('a fresh attack press mid-swing does not restart the swing (stays committed)', () => {
+		// Holding attack while in recovery must not re-trigger; the phase machine runs
+		// to completion before a new swing can begin.
+		const a = avatar({ attackT: 0.1 });
+		const before = a.attackT;
+		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.02);
+		expect(r.attackT).toBeCloseTo(before - 0.02, 5); // just decayed, not reset
+		expect(r.attackT).toBeLessThan(SWING_TOTAL);
+	});
+
+	test('a new swing can start once the prior swing has fully recovered (idle)', () => {
+		const a = avatar({ attackT: 0 });
+		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.016);
+		expect(r.attackT).toBe(SWING_TOTAL);
 	});
 
 	test('a skill is gated when level < unlockLevel', () => {
@@ -272,5 +321,77 @@ describe('resolveCombat', () => {
 		const cds = { [POWER_STRIKE.id]: 0.5 };
 		resolveCombat(a, cds, 1, 'warrior', { attack: true, skill: 1 }, 0.1);
 		expect(cds[POWER_STRIKE.id]).toBe(0.5);
+	});
+});
+
+describe('swing phase machine', () => {
+	const avatar = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, ...over });
+
+	test('attackT walks wind-up → active → recovery → idle as it counts down', () => {
+		const { windup, active, recovery } = COMBAT.swing;
+		// attackT = time REMAINING; elapsed = SWING_TOTAL - attackT.
+		expect(swingPhase(SWING_TOTAL)).toBe('windup'); // elapsed 0
+		expect(swingPhase(SWING_TOTAL - windup / 2)).toBe('windup');
+		expect(swingPhase(SWING_TOTAL - windup - active / 2)).toBe('active');
+		expect(swingPhase(SWING_TOTAL - windup - active - recovery / 2)).toBe(
+			'recovery',
+		);
+		expect(swingPhase(0)).toBeNull(); // idle
+		expect(swingPhase(-1)).toBeNull();
+	});
+
+	test('meleeActive is true exactly when the phase is active', () => {
+		const { windup, active } = COMBAT.swing;
+		expect(meleeActive(SWING_TOTAL)).toBe(false); // wind-up
+		expect(meleeActive(SWING_TOTAL - windup - active / 2)).toBe(true); // active
+		expect(meleeActive(0.001)).toBe(false); // recovery tail
+		expect(meleeActive(0)).toBe(false); // idle
+	});
+
+	test('swingProgress runs 0→1 within each phase and is 0 when idle', () => {
+		const { windup } = COMBAT.swing;
+		expect(swingProgress(SWING_TOTAL)).toBeCloseTo(0, 5); // start of wind-up
+		expect(swingProgress(SWING_TOTAL - windup / 2)).toBeCloseTo(0.5, 5);
+		expect(swingProgress(0)).toBe(0); // idle
+	});
+
+	test('actionStateOf derives an idle action for a non-swinging entity', () => {
+		expect(actionStateOf(avatar({ attackT: 0 }))).toEqual(IDLE_ACTION);
+		expect(IDLE_ACTION.move).toBe('idle');
+	});
+
+	test('actionStateOf derives a basic move with the live phase + progress', () => {
+		const { windup, active } = COMBAT.swing;
+		const a = avatar({ attackT: SWING_TOTAL - windup - active / 2 });
+		const action = actionStateOf(a);
+		expect(action.move).toBe('basic');
+		expect(action.phase).toBe('active');
+		expect(action.progress).toBeCloseTo(0.5, 5);
+		expect(action.flags).toBe(0);
+	});
+});
+
+describe('swing pose realization', () => {
+	test('swingPoseGlyph mirrors the diagonal with facing and keeps the level bar', () => {
+		expect(swingPoseGlyph('windup', 1)).toBe('╲');
+		expect(swingPoseGlyph('windup', -1)).toBe('╱'); // mirrored
+		expect(swingPoseGlyph('recovery', 1)).toBe('╱');
+		expect(swingPoseGlyph('recovery', -1)).toBe('╲'); // mirrored
+		expect(swingPoseGlyph('active', 1)).toBe('─'); // symmetric
+		expect(swingPoseGlyph('active', -1)).toBe('─');
+	});
+
+	test('swingPoseCell sits past the leading edge and drops through the swing', () => {
+		const right = monster(20, 4, { type: 'player', facing: 1 });
+		expect(swingPoseCell(right, 'windup')).toEqual({ x: 20 + BOX.w, y: 4 });
+		expect(swingPoseCell(right, 'active')).toEqual({ x: 20 + BOX.w, y: 5 });
+		expect(swingPoseCell(right, 'recovery')).toEqual({
+			x: 20 + BOX.w,
+			y: 4 + BOX.h - 1,
+		});
+		// Facing left places the accent on the other side.
+		const left = monster(20, 4, { type: 'player', facing: -1 });
+		expect(swingPoseCell(left, 'windup')).toEqual({ x: 19, y: 4 });
 	});
 });

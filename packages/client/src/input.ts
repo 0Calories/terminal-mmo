@@ -4,6 +4,9 @@ import type { Input } from '@mmo/shared';
 // release events a held key would stick, so it's dropped after this idle (M0).
 const HELD_MS = 220;
 
+// The abstract action set bindings resolve onto (ADR 0017 §12). Guard / Dodge /
+// `down` are reserved for the later defensive + combo slices; this foundation wires
+// movement, jump, attack, interact, and the two active-skill slots.
 type Action =
 	| 'left'
 	| 'right'
@@ -13,38 +16,62 @@ type Action =
 	| 'skill1'
 	| 'skill2';
 
-function actionFor(name: string): Action | null {
-	switch (name) {
-		case 'left':
-		case 'a':
-			return 'left';
-		case 'right':
-		case 'd':
-			return 'right';
-		case 'up':
-		case 'space':
-			return 'jump';
-		case 'j':
-		case 'x':
-			return 'attack';
-		case 'e':
-			return 'interact';
-		case 'k':
-			return 'skill1';
-		case 'l':
-			return 'skill2';
-		default:
-			return null;
-	}
-}
+// The two control schemes (ADR 0017 §12). Both map onto the SAME abstract actions,
+// so a poll() yields identical Input intents whichever the Player runs.
+export type Scheme = 'keyboard' | 'mouse';
+
+// Keyboard-only: attack on `j` (and the legacy `x`), active skills moved to `u`/`i`
+// — freeing `k`/`l` for the Guard/Dodge verbs a later slice adds. `e` interacts.
+const KEYBOARD_BINDINGS: Readonly<Record<string, Action>> = {
+	left: 'left',
+	a: 'left',
+	right: 'right',
+	d: 'right',
+	up: 'jump',
+	space: 'jump',
+	j: 'attack',
+	x: 'attack',
+	e: 'interact',
+	u: 'skill1',
+	i: 'skill2',
+};
+
+// Keyboard + mouse: attack is the left mouse button (see `mouseDown`), active skills
+// move to `e`/`r`. Since `e` is now skill1, interact relocates to `f` so portals /
+// vendors stay reachable. Movement + jump are shared with the keyboard scheme, so the
+// intents are identical. Mouse-position aim is stubbed (reserved for ranged Classes).
+const MOUSE_BINDINGS: Readonly<Record<string, Action>> = {
+	left: 'left',
+	a: 'left',
+	right: 'right',
+	d: 'right',
+	up: 'jump',
+	space: 'jump',
+	f: 'interact',
+	e: 'skill1',
+	r: 'skill2',
+};
 
 export class InputState {
 	private held = new Set<Action>();
 	private seen = new Map<Action, number>();
 	private releaseCapable = false;
+	// Left mouse button held (keyboard+mouse scheme attack, ADR 0017 §12). Tracked
+	// apart from `held` because mouse releases are always reported, so it needs no
+	// held-key timeout fallback and is OR'd into the attack intent in poll().
+	private mouseAttack = false;
+	private readonly bindings: Readonly<Record<string, Action>>;
+
+	constructor(scheme: Scheme = 'keyboard') {
+		this.bindings = scheme === 'mouse' ? MOUSE_BINDINGS : KEYBOARD_BINDINGS;
+	}
+
+	private actionFor(name: string): Action | null {
+		return this.bindings[name] ?? null;
+	}
 
 	press(name: string, now: number) {
-		const a = actionFor(name);
+		const a = this.actionFor(name);
 		if (!a) return;
 		this.held.add(a);
 		this.seen.set(a, now);
@@ -52,14 +79,27 @@ export class InputState {
 
 	release(name: string) {
 		this.releaseCapable = true; // terminal reports releases — drop the timeout fallback
-		const a = actionFor(name);
+		const a = this.actionFor(name);
 		if (a) this.held.delete(a);
 	}
 
-	// Drop every held key. Used when handing control to a modal (chat typing) so a
-	// key held at the switch can't stay "down" and move the Avatar on return.
+	// Left-click (button 0) is attack in the keyboard+mouse scheme (ADR 0017 §12);
+	// other buttons are reserved (right = Guard, a later slice). OpenTUI fires these
+	// alongside held movement keys (verified in the Forge editor), so a click while
+	// running still attacks — and an attack press fires beside held movement.
+	mouseDown(button: number) {
+		if (button === 0) this.mouseAttack = true;
+	}
+
+	mouseUp(button: number) {
+		if (button === 0) this.mouseAttack = false;
+	}
+
+	// Drop every held input. Used when handing control to a modal (chat typing) so a
+	// key/button held at the switch can't stay "down" and move/attack on return.
 	clear() {
 		this.held.clear();
+		this.mouseAttack = false;
 	}
 
 	poll(now: number): Input {
@@ -72,7 +112,7 @@ export class InputState {
 		return {
 			moveX: moveX as -1 | 0 | 1,
 			jump: this.held.has('jump'),
-			attack: this.held.has('attack'),
+			attack: this.held.has('attack') || this.mouseAttack,
 			interact: this.held.has('interact'),
 			skill: this.held.has('skill1')
 				? 1

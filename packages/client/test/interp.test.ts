@@ -4,6 +4,7 @@ import type {
 	MonsterSnapshot,
 	ServerMessage,
 } from '@mmo/shared';
+import { IDLE_ACTION } from '@mmo/shared';
 import { SnapshotBuffer } from '../src/interp';
 
 type Snapshot = Extract<ServerMessage, { t: 'snapshot' }>;
@@ -22,6 +23,7 @@ function avatar(sessionId: number, x: number, y: number): AvatarSnapshot {
 		hp: 80,
 		maxHp: 80,
 		hurtT: 0,
+		action: IDLE_ACTION,
 	};
 }
 
@@ -38,6 +40,7 @@ function monster(id: number, x: number, y: number): MonsterSnapshot {
 		hp: 24,
 		maxHp: 24,
 		hurtT: 0,
+		action: IDLE_ACTION,
 	};
 }
 

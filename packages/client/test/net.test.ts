@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import {
 	BOX,
 	GROUND_TOP,
+	IDLE_ACTION,
 	loadZones,
 	type ServerMessage,
 	spawnAvatar,
@@ -39,6 +40,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 				hp: 50,
 				maxHp: 80,
 				hurtT: 0,
+				action: IDLE_ACTION,
 			},
 		],
 		monsters: [
@@ -54,6 +56,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 				hp: 12,
 				maxHp: 24,
 				hurtT: 0,
+				action: IDLE_ACTION,
 			},
 		],
 		projectiles: [
@@ -82,6 +85,7 @@ function withOther(): Extract<ServerMessage, { t: 'snapshot' }> {
 		hp: 30,
 		maxHp: 80,
 		hurtT: 0.5,
+		action: IDLE_ACTION,
 	});
 	return s;
 }

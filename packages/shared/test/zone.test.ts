@@ -19,10 +19,12 @@ import {
 	removeAvatar,
 	rollItem,
 	SPAWN,
+	SWING_TOTAL,
 	snapshotFor,
 	spawnAvatar,
 	spawnMonster,
 	stepZone,
+	swingPhase,
 	XP_PER_KILL,
 } from '../src';
 import { flatTerrain } from './helpers';
@@ -62,6 +64,18 @@ function zoneWith(monsters: Entity[]): Zone {
 	};
 }
 
+// The basic swing is now phased (ADR 0017 §1): its hitbox is live only during the
+// active window, so a hit no longer lands on the tick `attack` is pressed (it starts
+// a wind-up). The outcome tests below care about a connect's *consequences* (damage,
+// blood, XP, loot, contributors), not the wind-up timing — which is covered by the
+// dedicated phase-timing test further down + combat.test — so they prime the swing
+// into its active phase and land the hit in a single tick.
+const MID_ACTIVE = SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
+function primeSwing(av: ServerAvatar): ServerAvatar {
+	av.avatar.attackT = MID_ACTIVE;
+	return av;
+}
+
 // hold position, no attack, reporting the avatar's current spot back to the server
 function holdAt(sessionId: number, e: Entity): AvatarIntent {
 	return {
@@ -78,12 +92,38 @@ function holdAt(sessionId: number, e: Entity): AvatarIntent {
 
 test('an Avatar attack intent damages an adjacent Monster', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
-	const av = serverAvatar(7, 20);
+	const av = primeSwing(serverAvatar(7, 20));
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
 	expect(next.zone.monsters[0].hp).toBe(MONSTER.chaserHp - 8);
 	expect(next.tick).toBe(1);
+});
+
+test('stepZone keeps the melee hitbox live ONLY during the swing active phase', () => {
+	// Drive a real swing tick by tick (no priming): the Monster takes NO damage
+	// through wind-up, then exactly one hit when the swing enters its active phase
+	// (ADR 0017 §1) — the keystone behavior of the phase machine end to end.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 100; // survives the hit so we can read the single connect
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = 1;
+	av.avatar.hurtT = 5; // i-framed, so the chaser's contact can't end the run early
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	let sawWindupNoDamage = false;
+	let hitPhase: string | null = null;
+	let prevHp = m.hp;
+	for (let i = 0; i < 40 && hitPhase === null; i++) {
+		const a = state.avatars[0].avatar;
+		state = stepZone(state, [{ ...holdAt(7, a), attack: true }], 16);
+		const hp = state.zone.monsters[0]?.hp ?? 0;
+		const phase = swingPhase(state.avatars[0].avatar.attackT);
+		if (phase === 'windup' && hp === prevHp) sawWindupNoDamage = true;
+		if (hp < prevHp) hitPhase = phase;
+		prevHp = hp;
+	}
+	expect(sawWindupNoDamage).toBe(true); // no damage while winding up
+	expect(hitPhase).toBe('active'); // the connect lands in the active phase
 });
 
 test('a skill intent damages a Monster and the server folds its cooldown + log', () => {
@@ -106,7 +146,7 @@ test('a skill intent damages a Monster and the server folds its cooldown + log',
 
 test('a Monster hit emits one blood Effect at the Monster, intensity scaled by damage, dir = attacker facing', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
-	const av = serverAvatar(7, 20);
+	const av = primeSwing(serverAvatar(7, 20));
 	av.avatar.facing = 1; // swinging to the right, into the Monster
 	av.avatar.hurtT = 1; // i-framed, so the chasing Monster's contact draws no blood
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
@@ -147,7 +187,7 @@ test('a tick with no combat emits no Effects', () => {
 test('the Avatar landing the killing blow earns the XP and the loot roll', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4; // one swing kills
-	const av = serverAvatar(7, 20);
+	const av = primeSwing(serverAvatar(7, 20));
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
@@ -161,7 +201,7 @@ test('the Avatar landing the killing blow earns the XP and the loot roll', () =>
 test('a Monster dying emits a radial, high-intensity gore Effect at the Monster, tinted by its body', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4; // one swing kills
-	const av = serverAvatar(7, 20);
+	const av = primeSwing(serverAvatar(7, 20));
 	av.avatar.facing = 1;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
@@ -230,7 +270,7 @@ test('a Monster targets and chases the nearest Avatar', () => {
 test('only the Avatar landing the kill is credited when two are present', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4;
-	const attacker = serverAvatar(7, 20); // adjacent, swings
+	const attacker = primeSwing(serverAvatar(7, 20)); // adjacent, swings
 	const bystander = serverAvatar(8, 200); // far away, idle
 	const state: ZoneState = {
 		zone: zoneWith([m]),
@@ -253,7 +293,7 @@ test('only the Avatar landing the kill is credited when two are present', () => 
 
 test('a landing hit records the attacker as a contributor on the Monster', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y); // full HP, survives one swing
-	const av = serverAvatar(7, 20);
+	const av = primeSwing(serverAvatar(7, 20));
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [{ ...holdAt(7, av.avatar), attack: true }], 16);
 	expect(next.zone.monsters[0].hp).toBeLessThan(MONSTER.chaserHp); // took damage
@@ -264,7 +304,7 @@ test('on death every recorded contributor earns shared XP and its own loot roll'
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4; // the next swing kills it
 	m.contributors = [7, 8]; // both damaged it on earlier ticks
-	const killer = serverAvatar(7, 20); // adjacent, lands the killing blow
+	const killer = primeSwing(serverAvatar(7, 20)); // adjacent, lands the killing blow
 	const helper = serverAvatar(8, 300); // damaged it earlier, now far away
 	helper.rngState = 999; // a distinct loot seed, to prove instancing
 	const state: ZoneState = {
@@ -291,7 +331,7 @@ test('on death every recorded contributor earns shared XP and its own loot roll'
 test('a non-contributor present at a shared kill receives nothing', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4;
-	const killer = serverAvatar(7, 20);
+	const killer = primeSwing(serverAvatar(7, 20));
 	const bystander = serverAvatar(8, 300); // never damaged it
 	const state: ZoneState = {
 		zone: zoneWith([m]),
@@ -363,7 +403,7 @@ test('stepZone is deterministic for identical state + intents', () => {
 	const mk = () => {
 		const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 		m.hp = 4;
-		const av = serverAvatar(7, 20);
+		const av = primeSwing(serverAvatar(7, 20));
 		return { zone: zoneWith([m]), avatars: [av], tick: 0 } as ZoneState;
 	};
 	const intent: AvatarIntent = {
@@ -467,7 +507,7 @@ test('snapshotFor carries the zone state + the recipient private fields', () => 
 
 test('a Monster hit attributes the Effect to the attacking session via source', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
-	const av = serverAvatar(7, 20);
+	const av = primeSwing(serverAvatar(7, 20));
 	av.avatar.facing = 1;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [{ ...holdAt(7, av.avatar), attack: true }], 16);

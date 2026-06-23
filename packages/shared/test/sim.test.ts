@@ -3,12 +3,14 @@ import type { GameState, Input, PlayerState, Projectile, Zone } from '../src';
 import {
 	activeZone,
 	BOX,
+	COMBAT,
 	createGame,
 	createGameFromZones,
 	GROUND_TOP,
 	loadZones,
 	MONSTER,
 	SHOOTER,
+	SWING_TOTAL,
 	spawnAvatar,
 	spawnMonster,
 	step,
@@ -17,6 +19,15 @@ import {
 import { flatTerrain } from './helpers';
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false };
+
+// The basic swing is phased now (ADR 0017 §1): the hitbox is live only in the active
+// window, so a hit isn't instant. Prime an Avatar mid-active so a single attacking
+// step lands the swing (the wind-up→active timing is covered in combat.test / zone.test).
+const MID_ACTIVE = SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
+function primeSwing(g: GameState): GameState {
+	g.player.avatar.attackT = MID_ACTIVE;
+	return g;
+}
 
 test('createGame separates Player state from the World of Zones', () => {
 	const g = createGame();
@@ -100,13 +111,17 @@ function adjacentGame(monsterHp?: number): GameState {
 }
 
 test('attacking damages an adjacent monster', () => {
-	const g = step(adjacentGame(), { moveX: 0, jump: false, attack: true }, 16);
+	const g = step(
+		primeSwing(adjacentGame()),
+		{ moveX: 0, jump: false, attack: true },
+		16,
+	);
 	const zone = activeZone(g.world, g.player.zoneId);
 	expect(zone.monsters[0].hp).toBe(MONSTER.chaserHp - 8);
 });
 
 test('step surfaces the tick Effects so the offline loop can feed the particle system', () => {
-	const game = adjacentGame();
+	const game = primeSwing(adjacentGame());
 	game.player.avatar.hurtT = 1; // i-framed, so the chaser's contact draws no blood
 	const g = step(game, { moveX: 0, jump: false, attack: true }, 16);
 	expect(g.effects?.length).toBe(1);
@@ -121,7 +136,11 @@ test('a step with no combat surfaces no Effects', () => {
 });
 
 test('killing a monster grants XP and an instanced loot drop', () => {
-	const g = step(adjacentGame(4), { moveX: 0, jump: false, attack: true }, 16);
+	const g = step(
+		primeSwing(adjacentGame(4)),
+		{ moveX: 0, jump: false, attack: true },
+		16,
+	);
 	expect(activeZone(g.world, g.player.zoneId).monsters.length).toBe(0);
 	expect(g.player.inventory.length).toBe(1);
 	expect(g.player.progress.xp).toBe(XP_PER_KILL);
@@ -299,7 +318,9 @@ function fieldSpawnGame(monsterHp: number): GameState {
 		nextMonsterId: 3,
 	};
 	const player: PlayerState = {
-		avatar: spawnAvatar(20, y),
+		// Primed mid-active so the single ATTACK step lands the kill (ADR 0017 §1):
+		// every fieldSpawnGame caller swings to exercise the spawn/respawn machinery.
+		avatar: { ...spawnAvatar(20, y), attackT: MID_ACTIVE },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
 		zoneId: zone.id,
