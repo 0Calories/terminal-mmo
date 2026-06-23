@@ -6,9 +6,17 @@
 // headless zone-judging, piped/CI runs, and any non-interactive launch stay
 // silent and unaffected.
 
-import { Audio, type AudioSound } from '@opentui/core';
-import { SOUND_SPECS, type SoundKind } from './registry';
+import { Audio, type AudioGroup, type AudioSound } from '@opentui/core';
+import {
+	BUS_BY_KIND,
+	BUSES,
+	type Bus,
+	SOUND_SPECS,
+	type SoundKind,
+} from './registry';
 import { renderWav } from './synth';
+
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 export interface SoundSystemOptions {
 	// Whether stdout is an interactive terminal. Injected for tests; defaults to
@@ -23,6 +31,14 @@ export class SoundSystem {
 	enabled = false;
 	private engine: Audio | null = null;
 	private readonly sounds = new Map<SoundKind, AudioSound>();
+	// The mixing control plane (ADR 0014, #149). State is in-memory for this slice —
+	// persistence + the options UI land in #150. It is kept whether or not the engine
+	// is live so callers (the `m` key, the future modal) read a consistent picture;
+	// the actual engine calls are guarded and silently no-op when disabled.
+	private readonly groups = new Map<Bus, AudioGroup>();
+	private readonly busVolumes = new Map<Bus, number>(BUSES.map((b) => [b, 1]));
+	private master = 1;
+	private isMuted = false;
 	private readonly debug: boolean;
 	private warned = false;
 
@@ -50,11 +66,25 @@ export class SoundSystem {
 				return;
 			}
 			this.engine = engine;
+			this.makeGroups();
 			this.loadAll();
 			this.enabled = true;
 		} catch (err) {
 			this.warn(`audio init threw: ${(err as Error).message}`);
 			this.enabled = false;
+		}
+	}
+
+	// Create one named voice group per bus (ADR 0014). A group that fails to create
+	// is simply absent — voices for it then play directly on the master, never
+	// crashing. `ambient` is created too, even though no voice routes to it yet, so
+	// its slot exists for ambient/music without a later structural change.
+	private makeGroups(): void {
+		if (!this.engine) return;
+		for (const bus of BUSES) {
+			const group = this.engine.group(bus);
+			if (group != null) this.groups.set(bus, group);
+			else this.warn(`failed to create audio group: ${bus}`);
 		}
 	}
 
@@ -77,14 +107,60 @@ export class SoundSystem {
 		if (!this.enabled || !this.engine) return;
 		const sound = this.sounds.get(kind);
 		if (sound == null) return;
+		// Route the voice into its bus group so per-bus volume/mute applies. A missing
+		// group (creation failed) plays on the master — degraded, not silent.
+		const group = this.groups.get(BUS_BY_KIND[kind]);
 		try {
 			this.engine.play(sound, {
 				volume: opts.volume ?? 1,
 				pan: opts.pan ?? 0,
+				...(group != null ? { groupId: group } : {}),
 			});
 		} catch (err) {
 			this.warn(`play(${kind}) failed: ${(err as Error).message}`);
 		}
+	}
+
+	// --- Mixing control plane (ADR 0014, #149) ---------------------------------
+	// Live, in-memory mixer state. Each setter updates the bookkeeping (so it holds
+	// even with audio disabled) and best-effort pushes it to the engine. Mute is a
+	// master override: while muted the engine master sits at 0 regardless of the
+	// stored master volume, which is restored on unmute.
+
+	get muted(): boolean {
+		return this.isMuted;
+	}
+
+	get masterVolume(): number {
+		return this.master;
+	}
+
+	busVolume(bus: Bus): number {
+		return this.busVolumes.get(bus) ?? 1;
+	}
+
+	setMasterVolume(volume: number): void {
+		this.master = clamp01(volume);
+		if (!this.isMuted) this.engine?.setMasterVolume(this.master);
+	}
+
+	setBusVolume(bus: Bus, volume: number): void {
+		const v = clamp01(volume);
+		this.busVolumes.set(bus, v);
+		const group = this.groups.get(bus);
+		if (group != null) this.engine?.setGroupVolume(group, v);
+	}
+
+	setMuted(muted: boolean): void {
+		this.isMuted = muted;
+		// Mute silences the master instantly; unmute restores the stored master volume.
+		this.engine?.setMasterVolume(muted ? 0 : this.master);
+	}
+
+	// Flip master mute and report the new state. Bound to `m` for an instant toggle.
+	toggleMute(): boolean {
+		this.setMuted(!this.isMuted);
+		return this.isMuted;
 	}
 
 	// Tear down the engine on clean shutdown, never blocking exit.

@@ -11,6 +11,24 @@ import type { SynthSpec } from './synth';
 // world-combat voices `hit` and `death` alongside the tracer's `jump`.
 export type SoundKind = 'jump' | 'hit' | 'death';
 
+// The mixing buses (ADR 0014): named voice groups, each with independent volume
+// under a master volume. `ambient` is declared but unused — reserved so the group
+// structure doesn't churn when ambient/music arrives. Order is stable for the
+// options modal (#150) to list.
+export type Bus = 'combat' | 'movement' | 'ui' | 'ambient';
+
+export const BUSES: readonly Bus[] = ['combat', 'movement', 'ui', 'ambient'];
+
+// Each voice's bus. The categorisation is data, not code: a new sound picks its
+// bus here and is mixed/muted with its peers for free. The combat world feed
+// (`hit`/`death`) groups under `combat`; the jump blip is locomotion, so
+// `movement`.
+export const BUS_BY_KIND: Record<SoundKind, Bus> = {
+	jump: 'movement',
+	hit: 'combat',
+	death: 'combat',
+};
+
 export const SOUND_SPECS: Record<SoundKind, SynthSpec> = {
 	// A short rising square-wave "boop" — the chiptune-native voice of a jump.
 	// A square wave reads far louder than its peak amplitude suggests (full-energy
