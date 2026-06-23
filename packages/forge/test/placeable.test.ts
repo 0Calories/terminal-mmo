@@ -64,7 +64,7 @@ describe('placing a Placeable declares + stamps it', () => {
 		});
 		const text = serializeDoc(doc);
 		expect(findOrphanGlyphs(text)).toEqual([]); // the glyph is declared, not orphaned
-		const zone = parseZone(text, CATALOGS);
+		const zone = parseZone(text, CATALOGS, 'z');
 		expect(zone.portals).toHaveLength(1);
 		expect(zone.portals[0]).toMatchObject({
 			x: 2,
