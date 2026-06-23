@@ -220,6 +220,49 @@ export function editorStatusLine(m: StatusLineModel): string {
 	return `${m.tool} · ${m.placeable} · (${m.cursor.x},${m.cursor.y})${dirty}  ${health}  · ^s save · q quit`;
 }
 
+// --- Diagnostics panel (#100): pure drill-down helpers ------------------------
+
+/**
+ * The cell a diagnostic points at, or null when the finding isn't tied to one
+ * (zone-type / orphan-glyph / catalog findings carry no `cell`). The diagnostics
+ * panel uses this for jump-to-cell: a navigable row moves the cursor there.
+ */
+export function diagJumpTarget(d: Diagnostic): { x: number; y: number } | null {
+	return d.cell ?? null;
+}
+
+/**
+ * Keep a panel selection index inside `[0, count)` as the live diagnostics list
+ * grows/shrinks under edits; 0 for an empty list.
+ */
+export function clampDiagIndex(idx: number, count: number): number {
+	if (count <= 0) return 0;
+	return Math.max(0, Math.min(idx, count - 1));
+}
+
+/**
+ * One diagnostics-panel row: a severity marker (`✗` error / `▲` warning) plus the
+ * finding's message. The message already embeds any coordinates, so the row stays
+ * self-describing.
+ */
+export function formatDiagLine(d: Diagnostic): string {
+	return `${d.severity === 'error' ? '✗' : '▲'} ${d.message}`;
+}
+
+/**
+ * The panel header: counts by severity (pluralized), or an all-clear line. Mirrors
+ * the at-a-glance status badge so the drill-down opens with the same verdict.
+ */
+export function diagPanelSummary(diags: Diagnostic[]): string {
+	if (diags.length === 0) return 'No issues — zone is clean';
+	const errors = diags.filter((d) => d.severity === 'error').length;
+	const warnings = diags.length - errors;
+	const parts: string[] = [];
+	if (errors) parts.push(`${errors} error${errors === 1 ? '' : 's'}`);
+	if (warnings) parts.push(`${warnings} warning${warnings === 1 ? '' : 's'}`);
+	return parts.join(' · ');
+}
+
 // --- Modal tools (#95): geometry, eyedropper, and select/clipboard ops --------
 
 /** A modal editing tool. `drag` tools work over an anchor→cursor gesture
@@ -841,6 +884,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let pendingQuit = false;
 	let namePrompt: string | null = null; // name-edit modal buffer (null = closed)
 	let pendingTownToggle = false; // Field→Town toggle awaiting data-loss confirm
+	let diagPanel = false; // diagnostics drill-down panel (#100) is open
+	let diagIdx = 0; // highlighted diagnostic row
 
 	// Footer hit-test spans, recomputed each frame so mouse clicks select the Tool
 	// under the pointer (keyboard parity is the canonical path). The Stamp picker's
@@ -1124,7 +1169,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				? stampP
 					? `Stamp: ${stampLabel} · space/click place · p re-pick`
 					: 'Stamp: press p (or click the tool) to pick an entity'
-				: 'Brush/Rect/Line terrain · Eraser removes · Stamp (p) entities · n name · t type';
+				: 'Brush/Rect/Line terrain · Eraser removes · Stamp (p) entities · n name · t type · i issues';
 			buf.drawText(hint.slice(0, W), 0, hintRow, C.dimFg, C.chromeBg);
 			const px = Math.min(hint.length + 2, W - 1);
 			if (pendingQuit && px < W)
@@ -1330,6 +1375,75 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					C.chromeBg,
 				);
 			}
+
+			// Diagnostics drill-down panel (#100): the live `diags` (the same findings
+			// `zone check` emits, recomputed on every edit) listed in full, the selected
+			// row bracketed and a `→` marking the navigable ones. Drawn last; keys are
+			// captured by the `diagPanel` early-return. The status badge stays the
+			// always-on signal — this is the opt-in detail view.
+			if (diagPanel) {
+				diagIdx = clampDiagIndex(diagIdx, diags.length);
+				const title = ' Diagnostics ';
+				const summary = diagPanelSummary(diags);
+				const rowsTxt = diags.map(
+					(d) => `${diagJumpTarget(d) ? '→ ' : '  '}${formatDiagLine(d)}`,
+				);
+				const foot = ' ↑/↓ jk · Enter jump · Esc/i close ';
+				const innerW = Math.min(
+					Math.max(
+						title.length,
+						summary.length + 2,
+						foot.length,
+						...rowsTxt.map((t) => t.length + 2),
+						24,
+					),
+					Math.max(8, W - 2),
+				);
+				const boxW = innerW + 2;
+				const boxH = rowsTxt.length + 3; // title + summary + rows + bottom border
+				const ox = Math.max(0, Math.floor((W - boxW) / 2));
+				const oy = Math.max(RULER_H, Math.floor((H - boxH - 1) / 2));
+				const line = (s: string) => (s + ' '.repeat(boxW)).slice(0, boxW);
+				buf.fillRect(ox, oy, boxW, boxH + 1, C.chromeBg);
+				buf.drawText(
+					line(`┌${title}${'─'.repeat(boxW - 2 - title.length)}┐`),
+					ox,
+					oy,
+					C.tickFg,
+					C.chromeBg,
+				);
+				buf.setCell(ox, oy + 1, '│', C.tickFg, C.chromeBg);
+				buf.drawText(
+					` ${summary}`.slice(0, boxW - 2),
+					ox + 1,
+					oy + 1,
+					C.dimFg,
+					C.chromeBg,
+				);
+				buf.setCell(ox + boxW - 1, oy + 1, '│', C.tickFg, C.chromeBg);
+				let ry = oy + 2;
+				for (let i = 0; i < rowsTxt.length; i++) {
+					const active = i === diagIdx;
+					const seg = active ? `[${rowsTxt[i]}]` : ` ${rowsTxt[i]} `;
+					const fg = active
+						? C.hot
+						: diags[i].severity === 'error'
+							? C.textFg
+							: C.dimFg;
+					buf.setCell(ox, ry, '│', C.tickFg, C.chromeBg);
+					buf.drawText(seg.slice(0, boxW - 2), ox + 1, ry, fg, C.chromeBg);
+					buf.setCell(ox + boxW - 1, ry, '│', C.tickFg, C.chromeBg);
+					ry++;
+				}
+				buf.drawText(
+					line(`└${'─'.repeat(boxW - 2)}┘`),
+					ox,
+					ry,
+					C.tickFg,
+					C.chromeBg,
+				);
+				buf.drawText(foot.slice(0, boxW), ox, ry + 1, C.dimFg, C.chromeBg);
+			}
 		}
 	}
 
@@ -1530,6 +1644,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		// The Portal config form (#97) is keyboard-driven (like the name prompt) — a
 		// stray canvas/tool click can't paint while it's open.
 		if (portalForm) return;
+		// The diagnostics panel (#100) is keyboard-driven too — ignore canvas clicks
+		// while it's open so a stray click can't paint behind it.
+		if (diagPanel) return;
 		// The Stamp picker modal eats clicks: a row confirms, anywhere else cancels.
 		if (pickerOpen) {
 			const hit = pickerHits.find(
@@ -1730,6 +1847,29 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			return;
 		}
 
+		// The diagnostics panel (#100) owns navigation while open: ↑/↓ (jk) move the
+		// selection, Enter/space jumps the cursor to the offending cell (and closes),
+		// Esc / i close. It's a drill-down over the live `diags`, never a blocking modal.
+		if (diagPanel) {
+			diagIdx = clampDiagIndex(diagIdx, diags.length);
+			if (k.name === 'escape' || k.name === 'i') {
+				diagPanel = false;
+			} else if (k.name === 'up' || k.name === 'k') {
+				if (diags.length) diagIdx = (diagIdx - 1 + diags.length) % diags.length;
+			} else if (k.name === 'down' || k.name === 'j') {
+				if (diags.length) diagIdx = (diagIdx + 1) % diags.length;
+			} else if (
+				k.name === 'return' ||
+				k.name === 'enter' ||
+				k.name === 'space'
+			) {
+				const target = diags[diagIdx] ? diagJumpTarget(diags[diagIdx]) : null;
+				if (target) move(target.x - cursor.x, target.y - cursor.y);
+				diagPanel = false;
+			}
+			return;
+		}
+
 		// Save is ^s so the bare `s` (and the rest of wasd) is free for movement.
 		if (k.ctrl && k.name === 's') return save();
 
@@ -1777,6 +1917,10 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				return;
 			case 'f': // toggle ground-snap vs. free-place for entity placement (#96)
 				freePlace = !freePlace;
+				return;
+			case 'i': // open the diagnostics drill-down panel (#100); closing is handled above
+				diagPanel = true;
+				diagIdx = clampDiagIndex(diagIdx, diags.length);
 				return;
 			case 'n': // edit the Zone's display name (#99): open the prompt seeded with it
 				namePrompt = zoneName(doc) ?? '';
