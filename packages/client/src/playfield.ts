@@ -35,7 +35,16 @@ import {
 	particleGlyph,
 	stepParticles,
 } from './particles';
+import type { SoundKind } from './sound/registry';
+import { effectSoundCues } from './sound/world';
 import { COLORS as C } from './theme';
+
+// The minimal audio sink the playfield needs: just `play`. Kept as an interface so
+// the render path depends on the SoundSystem's surface, not its construction, and
+// stays a no-op when audio is unset/disabled.
+export interface SoundSink {
+	play(kind: SoundKind, opts?: { volume?: number; pan?: number }): void;
+}
 
 // The colour binding for the shared, framework-agnostic renderer (@mmo/shared):
 // resolved from the shared scene colour DATA so the game and the forge
@@ -406,6 +415,11 @@ function drawPlayfield(
 export class PlayfieldRenderable extends Renderable {
 	game: GameState | null = null;
 
+	// The world-sound sink (ADR 0014). Set by index.ts to the SoundSystem; the
+	// playfield voices the same per-tick combat Effects it spawns particles for,
+	// spatialized against the live camera. Null/disabled audio is a silent no-op.
+	sound: SoundSink | null = null;
+
 	private camState: CameraState = initCameraState();
 	// The client-local particle system (ADR 0013): combat Effects off the sim feed
 	// it, it's advanced at render framerate, drawn two-pass by drawPlayfield.
@@ -469,6 +483,19 @@ export class PlayfieldRenderable extends Renderable {
 			w: buffer.width,
 			h: buffer.height,
 		});
+
+		// Voice the same fresh Effects as world SoundEffects (ADR 0014), spatialized
+		// against the live camera: pan by horizontal offset, volume by distance, y
+		// ignored, out-of-range dropped. Snapshot Effects fire once per tick and
+		// predicted own-hits fire immediately — in lockstep with their particles, so
+		// audio and pixels never diverge. A kill voices death, not hit+death (the
+		// coincident lethal-blow blood is suppressed in effectSoundCues).
+		if (this.sound && fresh.length) {
+			const centerX = cam.x + buffer.width / 2;
+			const cues = effectSoundCues(fresh, centerX, buffer.width / 2);
+			for (const cue of cues)
+				this.sound.play(cue.kind, { volume: cue.volume, pan: cue.pan });
+		}
 
 		drawPlayfield(buffer, this.game, cam, this.particles);
 	}

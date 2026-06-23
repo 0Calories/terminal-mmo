@@ -7,9 +7,13 @@ import {
 	type Entity,
 	entityBox,
 	entityTint,
+	GROUND_POUND,
 	hurtBloodEffect,
 	meleeHitbox,
+	POWER_STRIKE,
 	predictHitEffects,
+	resolveCombat,
+	skillHitbox,
 } from '../src';
 
 function monster(x: number, y: number, over: Partial<Entity> = {}): Entity {
@@ -161,5 +165,112 @@ describe('predictHitEffects', () => {
 		expect(predictHitEffects(hb, 1, 8, [target])[0].source).toBeUndefined();
 		// sanity: the hitbox really does overlap the target
 		expect(entityBox(target).x).toBeLessThan(hb.x + hb.w);
+	});
+});
+
+describe('resolveCombat', () => {
+	// An Avatar-shaped Entity (the monster() factory makes a generic Entity).
+	const avatar = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, ...over });
+
+	test('a basic swing produces a melee hitbox + meleeDamage and resets attackT', () => {
+		const a = avatar({ attackT: 0 });
+		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.016);
+		expect(r.hitbox).toEqual(meleeHitbox(a));
+		expect(r.damage).toBe(COMBAT.meleeDamage);
+		expect(r.attackT).toBe(COMBAT.attackCooldown);
+		expect(r.skillFired).toBeUndefined();
+	});
+
+	test('a swing is gated while attackT > 0 (no hitbox, attackT decays)', () => {
+		const a = avatar({ attackT: 0.3 });
+		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.1);
+		expect(r.hitbox).toBeNull();
+		expect(r.attackT).toBeCloseTo(0.2, 5);
+	});
+
+	test('a skill is gated when level < unlockLevel', () => {
+		const a = avatar({ attackT: 0 });
+		// GROUND_POUND unlocks at level 5; slot 2 = GROUND_POUND.
+		const r = resolveCombat(
+			a,
+			{},
+			1,
+			'warrior',
+			{ attack: false, skill: 2 },
+			0.016,
+		);
+		expect(r.skillFired).toBeUndefined();
+		expect(r.cooldowns[GROUND_POUND.id]).toBeUndefined();
+		expect(r.hitbox).toBeNull();
+	});
+
+	test('a skill is gated while on cooldown', () => {
+		const a = avatar({ attackT: 0 });
+		const r = resolveCombat(
+			a,
+			{ [POWER_STRIKE.id]: 1.0 },
+			1,
+			'warrior',
+			{ attack: false, skill: 1 },
+			0.1,
+		);
+		expect(r.skillFired).toBeUndefined();
+		expect(r.hitbox).toBeNull();
+		// the on-cooldown timer still decays
+		expect(r.cooldowns[POWER_STRIKE.id]).toBeCloseTo(0.9, 5);
+	});
+
+	test('a fired skill overrides the basic swing', () => {
+		const a = avatar({ attackT: 0 });
+		const r = resolveCombat(
+			a,
+			{},
+			1,
+			'warrior',
+			{ attack: true, skill: 1 },
+			0.016,
+		);
+		expect(r.skillFired).toBe(POWER_STRIKE);
+		expect(r.hitbox).toEqual(skillHitbox(a, POWER_STRIKE));
+		expect(r.damage).toBe(POWER_STRIKE.damage);
+		expect(r.cooldowns[POWER_STRIKE.id]).toBe(POWER_STRIKE.cooldown);
+	});
+
+	test('attackT AND skill cooldowns both decay by dt', () => {
+		const a = avatar({ attackT: 0.5 });
+		const r = resolveCombat(
+			a,
+			{ [POWER_STRIKE.id]: 1.0, [GROUND_POUND.id]: 2.0 },
+			1,
+			'warrior',
+			{ attack: false },
+			0.2,
+		);
+		expect(r.attackT).toBeCloseTo(0.3, 5);
+		expect(r.cooldowns[POWER_STRIKE.id]).toBeCloseTo(0.8, 5);
+		expect(r.cooldowns[GROUND_POUND.id]).toBeCloseTo(1.8, 5);
+	});
+
+	test('a no-attack call still decays both timers and projects no hitbox', () => {
+		const a = avatar({ attackT: 0.1 });
+		const r = resolveCombat(
+			a,
+			{ [POWER_STRIKE.id]: 0.05 },
+			1,
+			'warrior',
+			{ attack: false },
+			0.2,
+		);
+		expect(r.hitbox).toBeNull();
+		expect(r.attackT).toBe(0); // clamped at 0
+		expect(r.cooldowns[POWER_STRIKE.id]).toBe(0); // clamped at 0
+	});
+
+	test('is pure — does not mutate the input cooldowns map', () => {
+		const a = avatar({ attackT: 0 });
+		const cds = { [POWER_STRIKE.id]: 0.5 };
+		resolveCombat(a, cds, 1, 'warrior', { attack: true, skill: 1 }, 0.1);
+		expect(cds[POWER_STRIKE.id]).toBe(0.5);
 	});
 });

@@ -160,8 +160,22 @@ forgiving** (a wide frontal arc — rewards getting in close, not precise aim);
 *intents*; the server resolves all outcomes authoritatively (hit, damage, kills,
 loot) and clients display what the server decides; the client may play an
 optimistic local telegraph (swing/projectile) before the authoritative result
-arrives.
+arrives. The combat slice of an Intent (attack/skill) is gated by a single
+shared resolver (`resolveCombat`) that both the authoritative server step and
+the client's optimistic telegraph run, so they can never gate a swing or skill
+differently.
 _Avoid_: Fighting, battle, PvE, tab-target (use "Combat")
+
+**Intent**:
+The per-tick bundle of what an Avatar is trying to do, reported by the client
+and resolved authoritatively by the server (ADR 0001): the Avatar's reported
+kinematics (position/velocity/facing/onGround) plus its combat (attack, skill)
+and interact requests for that tick. Continuously sampled and idempotently
+gated each tick (cooldowns / i-frames stop a double-apply). Distinct from a
+discrete request action — Chat, Trade, item use — which is a one-shot, apply-
+exactly-once message with its own authoritative handler, never a per-tick Intent
+field.
+_Avoid_: Command, action, input (reserve "input" for the raw client-side keys)
 
 **Authority model**:
 Client owns its Avatar's movement (broadcast + loose server sanity-check, safe
