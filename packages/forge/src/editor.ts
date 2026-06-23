@@ -1621,10 +1621,15 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			arrival,
 		};
 		const a = portalForm.anchor;
-		if (portalForm.edit) doc = erase(doc, portalForm.edit.x, portalForm.edit.y);
-		doc = place(growToInclude(doc, a.x, a.y), a.x, a.y, p);
+		// Placing/editing a portal is one atomic edit → one undo step (#98). Route it
+		// through `commit` (records history + recomputes) rather than mutating `doc`
+		// directly, so it isn't swallowed by the next edit's snapshot. An edit-on-click
+		// first erases the old portal, then re-places, within the same commit.
+		const base = portalForm.edit
+			? erase(doc, portalForm.edit.x, portalForm.edit.y)
+			: doc;
 		portalForm = null;
-		recompute();
+		commit(place(growToInclude(base, a.x, a.y), a.x, a.y, p));
 	};
 
 	// Stamp the picked entity: the cursor is its CENTER, converted to the stored
