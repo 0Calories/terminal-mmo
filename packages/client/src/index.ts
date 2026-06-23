@@ -36,7 +36,12 @@ import { PlayfieldRenderable } from './playfield';
 import { resolveServerUrl } from './server-url';
 import { Shop } from './shop';
 import { SoundSystem } from './sound/system';
-import { jumpStarted } from './sound/triggers';
+import {
+	isMenuBlipKey,
+	jumpStarted,
+	landed,
+	leveledUp,
+} from './sound/triggers';
 import { CLIENT_VERSION } from './version';
 
 // The sim is dt-based, so this only affects smoothness + CPU, never game speed.
@@ -157,6 +162,9 @@ function runOffline() {
 	}
 
 	function handleShopKey(name: string) {
+		// UI blip on menu navigation / confirm (ADR 0014): a centered, full-volume
+		// interface click. Close (e/esc) is silent — it marks moving *through* a menu.
+		if (isMenuBlipKey(name)) sound.play('ui');
 		const count = game.player.inventory.length;
 		switch (name) {
 			case 'up':
@@ -209,6 +217,7 @@ function runOffline() {
 	renderer.keyInput.on('keyrelease', (k) => input.release(k.name));
 
 	const meter = fpsMeter();
+	let prevLevel = game.player.progress.level;
 	renderer.setFrameCallback(async (dt) => {
 		const prevAvatar = game.player.avatar;
 		game = step(
@@ -216,9 +225,14 @@ function runOffline() {
 			shop.open ? IDLE_INPUT : input.poll(performance.now()),
 			dt,
 		);
-		// Self SoundEffect: the jump blip fires on the frame the Avatar leaves the
-		// ground (client-local, centered, full volume).
+		// Self SoundEffects (client-local, centered, full volume): the jump blip on
+		// the take-off frame and the landing footfall on the touchdown frame.
 		if (jumpStarted(prevAvatar, game.player.avatar)) sound.play('jump');
+		if (landed(prevAvatar, game.player.avatar)) sound.play('land');
+		// Level-up flourish, once per rising edge of the Player's level.
+		const level = game.player.progress.level;
+		if (leveledUp(prevLevel, level)) sound.play('level-up');
+		prevLevel = level;
 		const fps = meter(dt);
 		playfield.game = game;
 		hud.update(game, fps);
@@ -259,6 +273,9 @@ function runNetworked(url: string) {
 	renderer.keyInput.on('keypress', (k) => {
 		if (started) return;
 		if (k.name === 'q') quit();
+		// UI blip on customize navigation / confirm (ADR 0014), the same menu click
+		// the shop uses — a centered, full-volume interface tick.
+		if (isMenuBlipKey(k.name)) sound.play('ui');
 		const chosen = creator.key(k.name);
 		if (!chosen) return;
 		started = true;
@@ -343,6 +360,10 @@ function runNetworked(url: string) {
 		});
 
 		const meter = fpsMeter();
+		// Level-up flourish: seeded from the first real snapshot (null until then) so a
+		// reconnect at an already-high level can't false-trigger; thereafter it fires
+		// once on each rising edge of the server-authoritative level.
+		let prevLevel: number | null = null;
 		renderer.setFrameCallback(async (dt) => {
 			// Freeze movement / combat while the chat line has the keyboard.
 			const inp = chat.open ? IDLE_INPUT : input.poll(performance.now());
@@ -372,10 +393,18 @@ function runNetworked(url: string) {
 				{ moveX: inp.moveX, jump: inp.jump },
 				dt,
 			);
-			// Self SoundEffect: blip on the frame our own predicted Avatar jumps
-			// (client-local, centered, full volume).
+			// Self SoundEffects on our own predicted Avatar (client-local, centered,
+			// full volume): the jump blip on take-off, the footfall on touchdown.
 			if (jumpStarted({ onGround: prevOnGround }, predicted))
 				sound.play('jump');
+			if (landed({ onGround: prevOnGround }, predicted)) sound.play('land');
+			// Level-up flourish off the server-authoritative progression in the snapshot.
+			const snapLevel = net.latest?.progress.level;
+			if (snapLevel != null) {
+				if (prevLevel != null && leveledUp(prevLevel, snapLevel))
+					sound.play('level-up');
+				prevLevel = snapLevel;
+			}
 			// Optimistic local telegraph (story 17): mirror the server's cooldown gate
 			// so the swing/skill flash shows before the snapshot confirms the hit. The
 			// same gate yields the outgoing hitbox + damage for blood prediction (ADR

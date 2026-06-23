@@ -25,3 +25,20 @@ test('combat sounds route to combat, jump to movement', () => {
 	expect(BUS_BY_KIND.death).toBe('combat');
 	expect(BUS_BY_KIND.jump).toBe('movement');
 });
+
+// The MVP catalog's remaining self/UI voices (#148): land is locomotion, so it
+// joins the movement bus alongside jump; the level-up flourish and the menu blip
+// are interface feedback, so they route to the ui bus.
+test('land routes to movement, level-up and ui-blip to ui', () => {
+	expect(BUS_BY_KIND.land).toBe('movement');
+	expect(BUS_BY_KIND['level-up']).toBe('ui');
+	expect(BUS_BY_KIND.ui).toBe('ui');
+});
+
+// Every kind in the BUS map must have a synth source, and vice versa — a voice
+// with a bus but no source (or a source with no bus) is a wiring gap.
+test('every kind has both a synth spec and a bus', () => {
+	const specKinds = Object.keys(SOUND_SPECS).sort();
+	const busKinds = Object.keys(BUS_BY_KIND).sort();
+	expect(specKinds).toEqual(busKinds);
+});
