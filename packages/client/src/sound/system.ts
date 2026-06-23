@@ -7,6 +7,7 @@
 // silent and unaffected.
 
 import { Audio, type AudioGroup, type AudioSound } from '@opentui/core';
+import type { AudioPrefs } from '../config';
 import {
 	BUS_BY_KIND,
 	BUSES,
@@ -41,6 +42,11 @@ export class SoundSystem {
 	private isMuted = false;
 	private readonly debug: boolean;
 	private warned = false;
+	// Notified after any user-facing mixer change (volume / mute) so the caller can
+	// write the new state through to the persisted config (#150, ADR 0015). Not fired
+	// by applyAudioPrefs, which is a load — that would round-trip a fresh launch's
+	// loaded prefs straight back to disk for no reason.
+	onChange?: () => void;
 
 	constructor(opts: SoundSystemOptions = {}) {
 		this.debug = opts.debug ?? false;
@@ -142,6 +148,7 @@ export class SoundSystem {
 	setMasterVolume(volume: number): void {
 		this.master = clamp01(volume);
 		if (!this.isMuted) this.engine?.setMasterVolume(this.master);
+		this.onChange?.();
 	}
 
 	setBusVolume(bus: Bus, volume: number): void {
@@ -149,18 +156,51 @@ export class SoundSystem {
 		this.busVolumes.set(bus, v);
 		const group = this.groups.get(bus);
 		if (group != null) this.engine?.setGroupVolume(group, v);
+		this.onChange?.();
 	}
 
 	setMuted(muted: boolean): void {
 		this.isMuted = muted;
 		// Mute silences the master instantly; unmute restores the stored master volume.
 		this.engine?.setMasterVolume(muted ? 0 : this.master);
+		this.onChange?.();
 	}
 
 	// Flip master mute and report the new state. Bound to `m` for an instant toggle.
 	toggleMute(): boolean {
 		this.setMuted(!this.isMuted);
 		return this.isMuted;
+	}
+
+	// --- Persistence seam (#150, ADR 0015) -------------------------------------
+
+	// Apply prefs loaded from the config file. This is a LOAD, not a user edit, so
+	// it sets state + pushes to the engine directly without firing onChange (which
+	// would write the just-loaded prefs straight back to disk). Values are clamped
+	// defensively — a hand-edited or older-client config can't drive the mixer out
+	// of range. Only the three voiced buses are persisted; `ambient` is left as-is.
+	applyAudioPrefs(prefs: AudioPrefs): void {
+		this.master = clamp01(prefs.master);
+		this.isMuted = prefs.muted;
+		this.busVolumes.set('combat', clamp01(prefs.buses.combat));
+		this.busVolumes.set('movement', clamp01(prefs.buses.movement));
+		this.busVolumes.set('ui', clamp01(prefs.buses.ui));
+		for (const [bus, group] of this.groups)
+			this.engine?.setGroupVolume(group, this.busVolumes.get(bus) ?? 1);
+		this.engine?.setMasterVolume(this.isMuted ? 0 : this.master);
+	}
+
+	// The current mixer state in the persisted shape, for write-through on change.
+	audioPrefs(): AudioPrefs {
+		return {
+			master: this.master,
+			muted: this.isMuted,
+			buses: {
+				combat: this.busVolume('combat'),
+				movement: this.busVolume('movement'),
+				ui: this.busVolume('ui'),
+			},
+		};
 	}
 
 	// Tear down the engine on clean shutdown, never blocking exit.

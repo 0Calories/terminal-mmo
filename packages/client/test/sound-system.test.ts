@@ -56,3 +56,47 @@ test('mixer setters never throw when disabled', () => {
 		sound.toggleMute();
 	}).not.toThrow();
 });
+
+// Persistence seam (#150, ADR 0015): the system applies saved prefs on init and
+// reports its current prefs for write-through, both decoupled from the fs (the
+// ConfigStore does the I/O). applyAudioPrefs is a load, not a user change, so it
+// must NOT fire onChange and trigger a redundant write.
+test('applyAudioPrefs restores saved state and round-trips through audioPrefs', () => {
+	const sound = new SoundSystem({ isTTY: false });
+	const saved = {
+		master: 0.4,
+		muted: true,
+		buses: { combat: 0.2, movement: 0.6, ui: 0.8 },
+	};
+	sound.applyAudioPrefs(saved);
+	expect(sound.audioPrefs()).toEqual(saved);
+	expect(sound.masterVolume).toBe(0.4);
+	expect(sound.muted).toBe(true);
+	expect(sound.busVolume('movement')).toBe(0.6);
+});
+
+test('applyAudioPrefs clamps stored values and does not fire onChange', () => {
+	const sound = new SoundSystem({ isTTY: false });
+	let changes = 0;
+	sound.onChange = () => changes++;
+	sound.applyAudioPrefs({
+		master: 9,
+		muted: false,
+		buses: { combat: -1, movement: 0.5, ui: 2 },
+	});
+	expect(sound.masterVolume).toBe(1);
+	expect(sound.busVolume('combat')).toBe(0);
+	expect(sound.busVolume('ui')).toBe(1);
+	expect(changes).toBe(0); // a load, not a user edit
+});
+
+test('every user-facing mixer change notifies onChange for write-through', () => {
+	const sound = new SoundSystem({ isTTY: false });
+	let changes = 0;
+	sound.onChange = () => changes++;
+	sound.setMasterVolume(0.5);
+	sound.setBusVolume('ui', 0.3);
+	sound.setMuted(true);
+	sound.toggleMute();
+	expect(changes).toBe(4);
+});
