@@ -86,6 +86,24 @@ test('an Avatar attack intent damages an adjacent Monster', () => {
 	expect(next.tick).toBe(1);
 });
 
+test('a skill intent damages a Monster and the server folds its cooldown + log', () => {
+	// Detailed skill gating (level/cooldown/override) is covered at the
+	// resolveCombat seam (combat.test.ts); here we only confirm a skill intent
+	// flows through a full stepZone tick and the server folds the result.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	const av = serverAvatar(7, 20); // level 1; Power Strike unlocks at L1
+	av.class = 'warrior';
+	av.skillCooldowns = {};
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const intent: AvatarIntent = { ...holdAt(7, av.avatar), skill: 1 };
+	const next = stepZone(state, [intent], 16);
+	// Power Strike (20 dmg) hit, not the 8-dmg basic swing.
+	expect(next.zone.monsters[0].hp).toBe(MONSTER.chaserHp - 20);
+	const me = next.avatars[0];
+	expect(me.skillCooldowns?.['power-strike']).toBeGreaterThan(0);
+	expect(me.log.at(-1)).toBe('Power Strike!');
+});
+
 test('a Monster hit emits one blood Effect at the Monster, intensity scaled by damage, dir = attacker facing', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	const av = serverAvatar(7, 20);
@@ -373,8 +391,10 @@ test('addAvatar spawns a Warrior at the safe point with its handle', () => {
 	expect(spawned.avatars[0].avatar.x).toBe(SPAWN.x);
 });
 
-test('clientStepAvatar predicts platformer movement and decays the swing timer', () => {
-	const a = { ...spawnAvatar(20, y), attackT: 0.3 };
+test('clientStepAvatar predicts platformer movement and decays the hurt timer', () => {
+	// attackT decay now lives in resolveCombat (the shared combat gate the frame
+	// loop runs); clientStepAvatar only advances physics and decays hurtT.
+	const a = { ...spawnAvatar(20, y), attackT: 0.3, hurtT: 0.3 };
 	const predicted = clientStepAvatar(
 		flatTerrain(),
 		a,
@@ -382,7 +402,8 @@ test('clientStepAvatar predicts platformer movement and decays the swing timer',
 		16,
 	);
 	expect(predicted.x).toBeGreaterThan(20); // ran right
-	expect(predicted.attackT).toBeLessThan(0.3); // cooldown ticked down locally
+	expect(predicted.hurtT).toBeLessThan(0.3); // hurt timer ticked down locally
+	expect(predicted.attackT).toBe(0.3); // attackT is no longer decayed here
 });
 
 test('projectile damage emits one blood Effect at the Avatar, dir = projectile travel, intensity = projectile damage', () => {

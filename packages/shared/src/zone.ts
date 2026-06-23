@@ -12,7 +12,7 @@ import {
 	deathGoreEffect,
 	entityBox,
 	hurtBloodEffect,
-	meleeHitbox,
+	resolveCombat,
 } from './combat';
 import {
 	BOX,
@@ -35,12 +35,7 @@ import type {
 	MonsterSnapshot,
 	ServerMessage,
 } from './protocol';
-import {
-	type PlayerClass,
-	skillForSlot,
-	skillHitbox,
-	skillUnlocked,
-} from './skills';
+import type { PlayerClass } from './skills';
 import { isSolid } from './terrain';
 import type {
 	Box,
@@ -105,8 +100,10 @@ export interface AvatarIntent {
 
 /**
  * Thin client-local prediction of the own Avatar: the shared platformer physics
- * plus local cooldown decay, so movement and the swing telegraph feel instant
+ * plus local timer decay, so movement and the swing telegraph feel instant
  * between ~20 Hz snapshots. The server still owns the authoritative result.
+ * `attackT` decay now lives in `resolveCombat` (the shared combat gate the
+ * caller runs each frame); this only advances physics and decays `hurtT`.
  */
 export function clientStepAvatar(
 	t: Terrain,
@@ -116,57 +113,53 @@ export function clientStepAvatar(
 ): Entity {
 	const dt = Math.min(dtMs / 1000, PHYS.maxDt);
 	const e = stepEntity(t, avatar, ctl, dt).e;
-	e.attackT = Math.max(0, e.attackT - dt);
 	e.hurtT = Math.max(0, e.hurtT - dt);
 	return e;
 }
 
-// The melee/skill hitbox an Avatar projects this tick, if any, plus the mutated
-// avatar (attack cooldown / skill cooldowns applied) and log additions.
+// Server-only adapter over the shared `resolveCombat` gate (combat.ts): the
+// melee/skill hitbox an Avatar projects this tick, if any, plus the folded
+// ServerAvatar (attack cooldown / skill cooldowns applied, hurtT decayed, log
+// appended). A reported tick trusts the client kinematics and runs the live
+// combat Intent; a missed report holds position and runs an empty Intent so the
+// same decay still happens (attackT AND skill cooldowns), projecting no hitbox.
 function resolveAvatarIntent(
 	src: ServerAvatar,
-	intent: AvatarIntent,
+	intent: AvatarIntent | undefined,
 	dt: number,
 ): { sa: ServerAvatar; hb: Box | null; damage: number } {
-	// Trust the client's reported kinematics; keep the server-owned vitals.
-	let avatar: Entity = {
-		...src.avatar,
-		x: intent.x,
-		y: intent.y,
-		vx: intent.vx,
-		vy: intent.vy,
-		facing: intent.facing,
-		onGround: intent.onGround,
-	};
-	avatar.attackT = Math.max(0, avatar.attackT - dt);
-	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
+	// Trust the client's reported kinematics; keep the server-owned vitals. With
+	// no report this tick, hold the prior kinematics in place.
+	const avatar: Entity = intent
+		? {
+				...src.avatar,
+				x: intent.x,
+				y: intent.y,
+				vx: intent.vx,
+				vy: intent.vy,
+				facing: intent.facing,
+				onGround: intent.onGround,
+			}
+		: { ...src.avatar };
 
 	const log = src.log.slice(-5);
+	const r = resolveCombat(
+		avatar,
+		src.skillCooldowns ?? {},
+		src.progress.level,
+		src.class ?? 'warrior',
+		intent ? { attack: intent.attack, skill: intent.skill } : { attack: false },
+		dt,
+	);
+	avatar.attackT = r.attackT;
+	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
+	if (r.skillFired) log.push(`${r.skillFired.name}!`);
 
-	// A basic swing and a Skill share one hitbox slot; a fired Skill overrides.
-	const attacking = intent.attack && avatar.attackT <= 0;
-	if (attacking) avatar = { ...avatar, attackT: COMBAT.attackCooldown };
-	let hb: Box | null = attacking ? meleeHitbox(avatar) : null;
-	let damage: number = COMBAT.meleeDamage;
-
-	const skillCooldowns: Record<string, number> = {};
-	for (const [id, cd] of Object.entries(src.skillCooldowns ?? {}))
-		skillCooldowns[id] = Math.max(0, cd - dt);
-	if (intent.skill) {
-		const skill = skillForSlot(src.class ?? 'warrior', intent.skill);
-		if (
-			skill &&
-			skillUnlocked(skill, src.progress.level) &&
-			(skillCooldowns[skill.id] ?? 0) <= 0
-		) {
-			skillCooldowns[skill.id] = skill.cooldown;
-			hb = skillHitbox(avatar, skill);
-			damage = skill.damage;
-			log.push(`${skill.name}!`);
-		}
-	}
-
-	return { sa: { ...src, avatar, log, skillCooldowns }, hb, damage };
+	return {
+		sa: { ...src, avatar, log, skillCooldowns: r.cooldowns },
+		hb: r.hitbox,
+		damage: r.damage,
+	};
 }
 
 // Index of the Avatar nearest a Monster on the x-axis (-1 if the Zone is empty).
@@ -204,17 +197,9 @@ export function stepZone(
 	const damages: number[] = [];
 	const avatars: ServerAvatar[] = state.avatars.map((src) => {
 		const intent = byId.get(src.sessionId);
-		if (!intent) {
-			// No report this tick: hold position, decay timers, project no hitbox.
-			const avatar = {
-				...src.avatar,
-				attackT: Math.max(0, src.avatar.attackT - dt),
-				hurtT: Math.max(0, src.avatar.hurtT - dt),
-			};
-			hitboxes.push(null);
-			damages.push(0);
-			return { ...src, avatar, log: src.log.slice(-5) };
-		}
+		// Both the reported and missed-report paths fold through resolveAvatarIntent
+		// so attackT AND skill cooldowns decay every tick (a missed report holds
+		// position and projects no hitbox).
 		const { sa, hb, damage } = resolveAvatarIntent(src, intent, dt);
 		hitboxes.push(hb);
 		damages.push(damage);

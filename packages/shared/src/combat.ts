@@ -1,5 +1,12 @@
 import { BOX, COMBAT } from './constants';
 import { HUES, type RGBAQuad, SCENE_PALETTE } from './sceneStyle';
+import {
+	type PlayerClass,
+	type Skill,
+	skillForSlot,
+	skillHitbox,
+	skillUnlocked,
+} from './skills';
 import { spriteFor } from './sprites';
 import type { Box, Effect, Entity, Facing, Tint } from './types';
 
@@ -114,4 +121,59 @@ export function predictHitEffects(
 		if (m.hurtT <= 0 && aabbOverlap(hitbox, entityBox(m)))
 			effects.push(bloodEffect(m, attackerFacing, damage));
 	return effects;
+}
+
+// The one shared, pure resolution of an Avatar's combat Intent for a tick: the
+// swing/skill/cooldown/hitbox/damage gate that both the authoritative server
+// step (`resolveAvatarIntent` in zone.ts) and the client's optimistic
+// prediction (the frame loop in client/src/index.ts) run, so the two can never
+// diverge. Owns the per-tick decay of `attackT` AND every skill cooldown (the
+// caller decays `hurtT` separately — that stays with vitals). Pure: inputs are
+// never mutated; the returned `cooldowns` is a fresh clone.
+//
+// `dt` is in SECONDS, consistent with stepZone (which clamps dtMs/1000 before
+// calling) and the client (which passes its own clamped `dtSec`).
+export function resolveCombat(
+	avatar: Entity,
+	cooldowns: Record<string, number>,
+	level: number,
+	cls: PlayerClass,
+	intent: { attack: boolean; skill?: number },
+	dt: number,
+): {
+	hitbox: Box | null;
+	damage: number;
+	attackT: number;
+	cooldowns: Record<string, number>;
+	skillFired?: Skill;
+} {
+	const attackT = Math.max(0, avatar.attackT - dt);
+	const decayed: Record<string, number> = {};
+	for (const [id, cd] of Object.entries(cooldowns))
+		decayed[id] = Math.max(0, cd - dt);
+
+	// A basic swing and a Skill share one hitbox slot; a fired Skill overrides.
+	const attacking = intent.attack && attackT <= 0;
+	let hitbox: Box | null = attacking ? meleeHitbox(avatar) : null;
+	let damage: number = COMBAT.meleeDamage;
+	const nextAttackT = attacking ? COMBAT.attackCooldown : attackT;
+	let skillFired: Skill | undefined;
+
+	if (intent.skill) {
+		const skill = skillForSlot(cls, intent.skill);
+		if (skill && skillUnlocked(skill, level) && (decayed[skill.id] ?? 0) <= 0) {
+			decayed[skill.id] = skill.cooldown;
+			hitbox = skillHitbox(avatar, skill);
+			damage = skill.damage;
+			skillFired = skill;
+		}
+	}
+
+	return {
+		hitbox,
+		damage,
+		attackT: nextAttackT,
+		cooldowns: decayed,
+		skillFired,
+	};
 }
