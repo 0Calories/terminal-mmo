@@ -1,10 +1,15 @@
-import type { Effect, Entity, GameState, Terrain } from '@mmo/shared';
+import type {
+	AttackPhase,
+	Effect,
+	Entity,
+	GameState,
+	Terrain,
+} from '@mmo/shared';
 import {
 	aabbOverlap,
 	activeZone,
 	BOX,
 	buildSceneStyle,
-	COMBAT,
 	drawEntitySprite,
 	emoteById,
 	entityBox,
@@ -17,6 +22,10 @@ import {
 	skillHitbox,
 	spriteFor,
 	spriteForNpc,
+	swingPhase,
+	swingPoseCell,
+	swingPoseGlyph,
+	swingProgress,
 } from '@mmo/shared';
 import {
 	type OptimizedBuffer,
@@ -271,6 +280,63 @@ function drawParticles(
 	}
 }
 
+// The swing an entity is rendering this frame, or null. Co-present entities carry
+// the authoritative `action` from the snapshot (ADR 0017 §10); the local Avatar has
+// no action set, so its swing is derived from the predicted `attackT` — both reduce
+// to the same (phase, progress), so one render path draws every swing.
+function swingRenderState(
+	e: Entity,
+): { phase: AttackPhase; progress: number } | null {
+	if (e.action && e.action.move !== 'idle')
+		return { phase: e.action.phase, progress: e.action.progress };
+	const phase = swingPhase(e.attackT);
+	return phase ? { phase, progress: swingProgress(e.attackT) } : null;
+}
+
+// Realize an entity's basic swing from its action-state (ADR 0017 §13a/b): a
+// per-phase weapon-tip pose accent every phase, plus a directional slash-arc swept
+// across the live melee hitbox during the `active` phase only. Drawn for the local
+// Avatar (predicted) and every co-present one (replicated) through one path, so a
+// swing looks identical to its owner and to everyone watching.
+function drawSwing(
+	buf: OptimizedBuffer,
+	e: Entity,
+	cam: { x: number; y: number },
+	sw: number,
+	sh: number,
+) {
+	const st = swingRenderState(e);
+	if (!st) return;
+
+	// Pose accent: the weapon tip, cocked-back → level → trailing across the phases.
+	const cell = swingPoseCell(e, st.phase);
+	const ax = Math.round(cell.x - cam.x);
+	const ay = Math.round(cell.y - cam.y);
+	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
+		buf.setCellWithAlphaBlending(
+			ax,
+			ay,
+			swingPoseGlyph(st.phase, e.facing),
+			C.melee,
+			C.transparent,
+		);
+
+	// Slash-arc only while the hitbox is live (active phase): a vivid sweep of the
+	// facing diagonal across the whole melee reach, so the dangerous window reads at
+	// a glance and matches exactly where damage lands.
+	if (st.phase !== 'active') return;
+	const hb = meleeHitbox(e);
+	const glyph = e.facing === 1 ? '╱' : '╲';
+	for (let yy = 0; yy < hb.h; yy++) {
+		for (let xx = 0; xx < hb.w; xx++) {
+			const px = Math.round(hb.x + xx - cam.x);
+			const py = Math.round(hb.y + yy - cam.y);
+			if (px >= 0 && px < sw && py >= 0 && py < sh)
+				buf.setCellWithAlphaBlending(px, py, glyph, C.melee, C.transparent);
+		}
+	}
+}
+
 function drawPlayfield(
 	buf: OptimizedBuffer,
 	game: GameState,
@@ -340,23 +406,10 @@ function drawPlayfield(
 		drawText(buf, sx, sy - 1, `↵ e  talk to ${onNpc.name}`, C.vendor, sw, sh);
 	}
 
-	if (p.attackT > COMBAT.attackCooldown - 0.12) {
-		const hb = meleeHitbox(p);
-		for (let yy = 0; yy < hb.h; yy++) {
-			for (let xx = 0; xx < hb.w; xx++) {
-				const px = Math.round(hb.x + xx - cam.x);
-				const py = Math.round(hb.y + yy - cam.y);
-				if (px >= 0 && px < sw && py >= 0 && py < sh)
-					buf.setCellWithAlphaBlending(
-						px,
-						py,
-						p.facing === 1 ? '/' : '\\',
-						C.melee,
-						C.transparent,
-					);
-			}
-		}
-	}
+	// Co-present Avatars' swings, drawn from their replicated action-state (ADR 0017
+	// §10) on top of the static scene — this is what makes another Player's attack
+	// visible. The local Avatar's swing is drawn after its Sprite, below.
+	for (const e of others) drawSwing(buf, e, cam, sw, sh);
 
 	// Detected from the freshly-set cooldown, mirroring the melee flash window.
 	for (let slot = 1; ; slot++) {
@@ -377,6 +430,9 @@ function drawPlayfield(
 
 	// The local Avatar is drawn last, on top of everyone (ADR 0003).
 	drawEntitySprite(buf, p, cam, STYLE);
+	// The local Avatar's own swing, realized from the same path as everyone else's —
+	// here predicted from `attackT` (its action-state is left unset) for zero-lag feel.
+	drawSwing(buf, p, cam, sw, sh);
 
 	// Second particle pass: airborne blood erupts in front of the Sprites (toward
 	// the camera), still below the over-head Speech bubbles / emotes that follow so

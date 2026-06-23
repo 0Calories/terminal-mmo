@@ -6,6 +6,7 @@ import {
 	decodeServerMessage,
 	encodeClientMessage,
 	encodeServerMessage,
+	IDLE_ACTION,
 } from '../src';
 
 test('hello round-trips the handle + release version + cosmetics', () => {
@@ -193,6 +194,8 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 				hp: 80,
 				maxHp: 92,
 				hurtT: 0.3,
+				// Mid-swing action-state (ADR 0017 §10) — exercises a non-idle round-trip.
+				action: { move: 'basic', phase: 'active', progress: 0.5, flags: 0 },
 			},
 		],
 		monsters: [
@@ -208,6 +211,7 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 				hp: 10,
 				maxHp: 16,
 				hurtT: 0,
+				action: IDLE_ACTION,
 			},
 		],
 		projectiles: [
@@ -231,6 +235,49 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 	};
 	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
+});
+
+test('snapshot round-trips the per-entity action-state across every phase (ADR 0017)', () => {
+	// Each Avatar carries a different swing phase + progress, and a Monster carries
+	// idle — encode/decode must preserve the move/phase/progress/flags exactly.
+	const action = (over: Partial<typeof IDLE_ACTION>): typeof IDLE_ACTION => ({
+		...IDLE_ACTION,
+		move: 'basic',
+		...over,
+	});
+	const avatar = (sessionId: number, act: typeof IDLE_ACTION) => ({
+		sessionId,
+		handle: `h${sessionId}`,
+		cosmetics: DEFAULT_COSMETICS,
+		x: 0,
+		y: 0,
+		vx: 0,
+		vy: 0,
+		facing: 1 as const,
+		onGround: true,
+		hp: 1,
+		maxHp: 1,
+		hurtT: 0,
+		action: act,
+	});
+	const msg: ServerMessage = {
+		t: 'snapshot',
+		tick: 9,
+		zoneId: 'field-01',
+		avatars: [
+			avatar(1, action({ phase: 'windup', progress: 0 })),
+			avatar(2, action({ phase: 'active', progress: 0.25, flags: 3 })),
+			avatar(3, action({ phase: 'recovery', progress: 0.99 })),
+			avatar(4, IDLE_ACTION),
+		],
+		monsters: [],
+		projectiles: [],
+		effects: [],
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		log: [],
+	};
+	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
 });
 
 test('snapshot round-trips a multi-Effect list across every dir (ADR 0013)', () => {

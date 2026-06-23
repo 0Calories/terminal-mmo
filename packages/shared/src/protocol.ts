@@ -5,6 +5,8 @@
 
 import { clampCosmetics, DEFAULT_COSMETICS } from './cosmetics';
 import type {
+	ActionState,
+	AttackPhase,
 	Cosmetics,
 	Effect,
 	EffectKind,
@@ -12,6 +14,7 @@ import type {
 	Facing,
 	Item,
 	ItemAffix,
+	MoveId,
 	PlayerProgress,
 	Projectile,
 	Rarity,
@@ -296,6 +299,9 @@ export interface AvatarSnapshot {
 	hp: number;
 	maxHp: number;
 	hurtT: number;
+	// What this Avatar is doing this tick (ADR 0017 §10): the replicated action-state
+	// that lets every other client render its swing (pose + slash-arc).
+	action: ActionState;
 }
 
 export interface MonsterSnapshot {
@@ -310,6 +316,10 @@ export interface MonsterSnapshot {
 	hp: number;
 	maxHp: number;
 	hurtT: number;
+	// Replicated action-state (ADR 0017 §10). Monsters keep their MVP behavior in
+	// this slice, so they broadcast an idle action; the field is here so the
+	// telegraphed Monster-offense rework needs no protocol change.
+	action: ActionState;
 }
 
 // `welcome` answers the handshake; `snapshot` is the authoritative Zone state for
@@ -371,6 +381,28 @@ const SERVER_TAG = {
 
 const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
 const EFFECT_KINDS: readonly EffectKind[] = ['blood', 'gore'];
+const MOVE_IDS: readonly MoveId[] = ['idle', 'basic'];
+const ATTACK_PHASES: readonly AttackPhase[] = ['windup', 'active', 'recovery'];
+
+// The per-entity action-state (ADR 0017 §10): move + phase as catalog-index bytes,
+// phase progress as an f64 (exact round-trip), flags as a u8 bitfield. ~11 bytes per
+// entity per tick. A forward-version move/phase index clamps to idle/wind-up on
+// decode so a newer server can never crash an older client's renderer.
+function writeAction(w: Writer, a: ActionState) {
+	w.u8(MOVE_IDS.indexOf(a.move));
+	w.u8(ATTACK_PHASES.indexOf(a.phase));
+	w.f64(a.progress);
+	w.u8(a.flags);
+}
+
+function readAction(r: Reader): ActionState {
+	return {
+		move: MOVE_IDS[r.u8()] ?? 'idle',
+		phase: ATTACK_PHASES[r.u8()] ?? 'windup',
+		progress: r.f64(),
+		flags: r.u8(),
+	};
+}
 const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory'];
 const RARITIES: readonly Rarity[] = [
 	'common',
@@ -393,6 +425,7 @@ function writeAvatar(w: Writer, a: AvatarSnapshot) {
 	w.f64(a.hp);
 	w.f64(a.maxHp);
 	w.f64(a.hurtT);
+	writeAction(w, a.action);
 }
 
 function readAvatar(r: Reader): AvatarSnapshot {
@@ -409,6 +442,7 @@ function readAvatar(r: Reader): AvatarSnapshot {
 		hp: r.f64(),
 		maxHp: r.f64(),
 		hurtT: r.f64(),
+		action: readAction(r),
 	};
 }
 
@@ -424,6 +458,7 @@ function writeMonster(w: Writer, m: MonsterSnapshot) {
 	w.f64(m.hp);
 	w.f64(m.maxHp);
 	w.f64(m.hurtT);
+	writeAction(w, m.action);
 }
 
 function readMonster(r: Reader): MonsterSnapshot {
@@ -439,6 +474,7 @@ function readMonster(r: Reader): MonsterSnapshot {
 		hp: r.f64(),
 		maxHp: r.f64(),
 		hurtT: r.f64(),
+		action: readAction(r),
 	};
 }
 

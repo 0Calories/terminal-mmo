@@ -8,10 +8,12 @@
 
 import {
 	aabbOverlap,
+	actionStateOf,
 	bloodEffect,
 	deathGoreEffect,
 	entityBox,
 	hurtBloodEffect,
+	IDLE_ACTION,
 	resolveCombat,
 } from './combat';
 import {
@@ -442,6 +444,9 @@ export function snapshotFor(
 		hp: a.avatar.hp,
 		maxHp: a.avatar.maxHp,
 		hurtT: a.avatar.hurtT,
+		// Derived from the Avatar's swing timer so every other client can render the
+		// swing (ADR 0017 §10) — this is what makes the basic attack visible to others.
+		action: actionStateOf(a.avatar),
 	}));
 	const monsters: MonsterSnapshot[] = state.zone.monsters.map((m) => ({
 		id: m.id,
@@ -455,6 +460,9 @@ export function snapshotFor(
 		hp: m.hp,
 		maxHp: m.maxHp,
 		hurtT: m.hurtT,
+		// Monsters keep their MVP behavior this slice, so they replicate idle; the
+		// field is present for the later telegraphed-offense rework (ADR 0017 §9).
+		action: IDLE_ACTION,
 	}));
 	// Originator-suppression (ADR 0013): an Effect is never sent back to the
 	// session that caused it — the acting client already predicted its own blood,

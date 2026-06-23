@@ -21,7 +21,14 @@ export const PHYS = {
 export const COMBAT = {
 	meleeReach: 6,
 	meleeDamage: 8,
-	attackCooldown: 0.35,
+	// The basic swing's three phases (ADR 0017 §1), authored in seconds (resolveCombat
+	// decays in seconds). The hitbox is live ONLY during `active` — never on the
+	// wind-up start tick or in recovery — which is the whole point of the phase model.
+	// The total (~0.38s) is close to the retired instant `attackCooldown` (0.35), so a
+	// swing's cadence is roughly unchanged while gaining a telegraph + a committed
+	// recovery. Durations are chunky enough to survive 30 Hz input quantization
+	// (ADR 0017 §11).
+	swing: { windup: 0.1, active: 0.12, recovery: 0.16 },
 	iframes: 0.6,
 	// Intensity of a death blood burst (ADR 0013). High enough to saturate the
 	// client speck count so a kill reads visibly bigger and wider than a chip hit;
