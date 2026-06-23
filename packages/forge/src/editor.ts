@@ -178,21 +178,22 @@ export function cursorEdge(
 export function docDiagnostics(
 	doc: EditorDoc,
 	catalogs: Catalogs,
+	id: string,
 ): Diagnostic[] {
 	const text = serializeDoc(doc);
 	let zone: ReturnType<typeof parseZone>;
 	try {
-		zone = parseZone(text, catalogs);
+		zone = parseZone(text, catalogs, id);
 	} catch (e) {
 		return [
 			{
 				severity: 'error',
-				zoneId: typeof doc.header.id === 'string' ? doc.header.id : '?',
+				zoneId: id,
 				message: `parse failed: ${(e as Error).message}`,
 			},
 		];
 	}
-	return [...validateZone(zone, catalogs), ...findOrphanGlyphs(text)];
+	return [...validateZone(zone, catalogs), ...findOrphanGlyphs(text, id)];
 }
 
 /** The inputs the status line summarizes. `tool`/`placeable` are the active
@@ -835,7 +836,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let freePlace = false; // `f` drops entities at the cursor instead of ground-snapping
 	let savedText = serializeDoc(trimDoc(doc));
 	let dirty = false;
-	let diags = docDiagnostics(doc, catalogs);
+	let diags = docDiagnostics(doc, catalogs, id);
 	let scene = sceneOf(loaded.zone); // last-good scene; kept on a parse failure
 	let pendingQuit = false;
 	let namePrompt: string | null = null; // name-edit modal buffer (null = closed)
@@ -851,9 +852,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 
 	const recompute = () => {
 		dirty = serializeDoc(trimDoc(doc)) !== savedText;
-		diags = docDiagnostics(doc, catalogs);
+		diags = docDiagnostics(doc, catalogs, id);
 		try {
-			scene = sceneOf(parseZone(serializeDoc(doc), catalogs));
+			scene = sceneOf(parseZone(serializeDoc(doc), catalogs, id));
 		} catch {
 			// Keep the last good scene so a transient empty/invalid grid doesn't blank
 			// the canvas mid-edit.

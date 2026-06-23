@@ -68,7 +68,6 @@ interface PortalSpec {
 	arrival: [number, number];
 }
 interface ZoneHeader {
-	id: string;
 	name?: string;
 	type: string;
 	spawns?: Record<string, string>;
@@ -86,8 +85,11 @@ type Glyph =
  * an ASCII grid. `#` is solid, `.` is empty, and every other glyph anchors one
  * entity (resolved through the header maps + catalogs). Grid extents are inferred;
  * entity boxes are engine-derived. No FS, no RNG — sibling to `parseTerrain`.
+ *
+ * `id` is the Zone's identity and comes from the FILENAME (ADR 0011), threaded in
+ * by the loader — never from the header, so the path and a header field can't drift.
  */
-export function parseZone(text: string, catalogs: Catalogs): Zone {
+export function parseZone(text: string, catalogs: Catalogs, id: string): Zone {
 	const lines = text.split('\n');
 	const di = lines.findIndex((l) => l.trim() === '---');
 	if (di === -1)
@@ -163,7 +165,7 @@ export function parseZone(text: string, catalogs: Catalogs): Zone {
 	}
 
 	const zone: Zone = {
-		id: header.id,
+		id,
 		type: header.type as ZoneType,
 		...(header.name !== undefined ? { name: header.name } : {}),
 		terrain: { w, h, cells } satisfies Terrain,
@@ -189,10 +191,12 @@ function parseHeader(text: string): ZoneHeader {
 			`header is not valid JSON: ${(e as Error).message}`,
 		);
 	}
-	if (typeof header.id !== 'string' || header.id.length === 0)
+	// A Zone's id is its filename (ADR 0011); a header `id` would be a second,
+	// drift-prone source of identity, so we reject it outright rather than ignore it.
+	if ('id' in header)
 		throw new ZoneParseError(
 			'bad-header',
-			'header.id must be a non-empty string',
+			"header must not carry an 'id' — a Zone's id is its filename (ADR 0011)",
 		);
 	if (header.type !== 'field' && header.type !== 'town')
 		throw new ZoneParseError(

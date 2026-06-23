@@ -11,14 +11,14 @@ const catalogs: Catalogs = {
 describe('renderZone', () => {
 	test('draws a faithful grid with terrain and entity glyphs plus a legend', () => {
 		const text = [
-			'{"id":"field-01","type":"field","spawns":{"m":"slime"}}',
+			'{"type":"field","spawns":{"m":"slime"}}',
 			'---',
 			'......',
 			'.m....',
 			'......',
 			'######',
 		].join('\n');
-		const zone = parseZone(text, catalogs);
+		const zone = parseZone(text, catalogs, 'field-01');
 
 		const out = renderZone(zone);
 

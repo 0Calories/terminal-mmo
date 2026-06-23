@@ -76,7 +76,7 @@ describe('trimDoc', () => {
 		// Erasing the far edge leaves redundant trailing dots and blank rows that
 		// `parseZone` would treat as empty anyway — trimming shrinks the extent.
 		const doc: EditorDoc = {
-			header: { id: 'z', type: 'field' },
+			header: { type: 'field' },
 			rows: ['##...', '.....', '#####', '.....', ''],
 		};
 		const trimmed = trimDoc(doc);
@@ -86,7 +86,7 @@ describe('trimDoc', () => {
 
 	test('keeps the header untouched', () => {
 		const doc: EditorDoc = {
-			header: { id: 'z', type: 'field', spawns: { c: 'chaser' } },
+			header: { type: 'field', spawns: { c: 'chaser' } },
 			rows: ['c...'],
 		};
 		expect(trimDoc(doc).header).toEqual(doc.header);
@@ -162,27 +162,27 @@ describe('docDiagnostics', () => {
 	test('a clean doc has no findings', () => {
 		// A town needs no spawns, so a bare floored grid validates clean.
 		const town: EditorDoc = {
-			header: { id: 't', type: 'town' },
+			header: { type: 'town' },
 			rows: ['.....', '.....', '#####'],
 		};
-		expect(docDiagnostics(town, CATALOGS)).toEqual([]);
+		expect(docDiagnostics(town, CATALOGS, 't')).toEqual([]);
 	});
 
 	test('surfaces the same orphan-glyph error that `zone check` would', () => {
 		// `c` is declared in the header but never placed in the grid.
 		const doc: EditorDoc = {
-			header: { id: 'z', type: 'field', spawns: { c: 'chaser' } },
+			header: { type: 'field', spawns: { c: 'chaser' } },
 			rows: ['.....', '#####'],
 		};
-		const diags = docDiagnostics(doc, CATALOGS);
+		const diags = docDiagnostics(doc, CATALOGS, 'z');
 		expect(diags.some((d) => d.severity === 'error')).toBe(true);
 		expect(diags.some((d) => d.message.includes("'c'"))).toBe(true);
 	});
 
 	test('reports a single parse error for an unparseable doc', () => {
 		// An all-empty grid fails `parseZone` (no cells).
-		const doc: EditorDoc = { header: { id: 'z', type: 'field' }, rows: [] };
-		const diags = docDiagnostics(doc, CATALOGS);
+		const doc: EditorDoc = { header: { type: 'field' }, rows: [] };
+		const diags = docDiagnostics(doc, CATALOGS, 'z');
 		expect(diags).toHaveLength(1);
 		expect(diags[0].severity).toBe('error');
 	});
