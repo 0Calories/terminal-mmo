@@ -9,6 +9,7 @@ import type {
 import {
 	addAvatar,
 	BOX,
+	COMBAT,
 	clientStepAvatar,
 	createZoneState,
 	DEFAULT_COSMETICS,
@@ -136,6 +137,26 @@ test('the Avatar landing the killing blow earns the XP and the loot roll', () =>
 	expect(me.progress.xp).toBe(XP_PER_KILL);
 	expect(me.inventory.length).toBe(1);
 	expect(me.inventory[0].id).toBe(1); // from the killer's own nextId
+});
+
+test('a Monster dying emits a radial, high-intensity blood Effect at the Monster', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 4; // one swing kills
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = 1;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
+	const next = stepZone(state, [intent], 16);
+	expect(next.zone.monsters.length).toBe(0); // dead
+	// the kill burst: radial (dir 0), intensity above the chip-hit damage
+	const death = next.effects?.find((fx) => fx.dir === 0);
+	expect(death?.kind).toBe('blood');
+	expect(death?.intensity).toBe(COMBAT.deathBurstIntensity);
+	expect(death?.x).toBeGreaterThanOrEqual(m.x);
+	expect(death?.x).toBeLessThanOrEqual(m.x + BOX.w);
+	// death burst is bigger than the chip hit it also emitted this tick
+	const chip = next.effects?.find((fx) => fx.dir !== 0);
+	expect(death?.intensity).toBeGreaterThan(chip?.intensity ?? 0);
 });
 
 test('a living Monster touching an Avatar deals server-owned contact damage', () => {
@@ -281,6 +302,24 @@ test('an Avatar reduced to 0 HP respawns at the safe point at full HP', () => {
 	expect(a.hp).toBe(a.maxHp);
 	expect(a.x).toBe(SPAWN.x);
 	expect(a.y).toBe(SPAWN.y);
+});
+
+test('an Avatar dying emits a radial blood Effect at the death position, before respawn', () => {
+	const av = serverAvatar(7, 20);
+	av.avatar.hp = 1;
+	const m = spawnMonster('chaser', 2, 20, y); // contact finishes the Avatar
+	m.onGround = true;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	// the killing contact also emits a hurt burst; the death burst is the radial,
+	// death-intensity one.
+	const death = next.effects?.find(
+		(fx) => fx.dir === 0 && fx.intensity === COMBAT.deathBurstIntensity,
+	);
+	expect(death?.kind).toBe('blood');
+	// at the death spot (~x 20), NOT the respawn point (SPAWN.x = 10)
+	expect(death?.x).toBeGreaterThanOrEqual(20);
+	expect(next.avatars[0].avatar.x).toBe(SPAWN.x); // respawn still happened
 });
 
 test('stepZone reports the sessions that died this tick in deaths', () => {

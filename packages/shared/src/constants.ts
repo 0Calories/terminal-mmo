@@ -23,6 +23,10 @@ export const COMBAT = {
 	meleeDamage: 8,
 	attackCooldown: 0.35,
 	iframes: 0.6,
+	// Intensity of a death blood burst (ADR 0013). High enough to saturate the
+	// client speck count so a kill reads visibly bigger and wider than a chip hit;
+	// paired with a radial dir 0 it sprays in every direction.
+	deathBurstIntensity: 30,
 } as const;
 
 export const MONSTER = {

@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
 	BOX,
 	bloodEffect,
+	COMBAT,
+	deathBloodEffect,
 	type Entity,
 	entityBox,
 	hurtBloodEffect,
@@ -66,6 +68,24 @@ describe('hurtBloodEffect', () => {
 
 	test('never attaches a source — hurt blood is server-sourced, delivered to the victim too', () => {
 		expect(hurtBloodEffect(monster(0, 0), -1, 6).source).toBeUndefined();
+	});
+});
+
+describe('deathBloodEffect', () => {
+	test('bursts radially (dir 0) at the entity centre, high intensity', () => {
+		const m = monster(10, 4);
+		const e = deathBloodEffect(m);
+		expect(e).toEqual({
+			kind: 'blood',
+			x: 10 + BOX.w / 2,
+			y: 4 + BOX.h / 2,
+			intensity: COMBAT.deathBurstIntensity,
+			dir: 0,
+		});
+	});
+
+	test('reads visibly bigger than a chip hit — intensity above melee damage', () => {
+		expect(COMBAT.deathBurstIntensity).toBeGreaterThan(COMBAT.meleeDamage);
 	});
 });
 
