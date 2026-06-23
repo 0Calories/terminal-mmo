@@ -96,12 +96,29 @@ test('the Effect.kind → ParticleType map routes gore (death) to the gore profi
 	expect(SPAWN_MAP.gore).toContain(GORE);
 });
 
-test('gore is a meatier, chunkier profile — distinct glyphs and slower than blood spray', () => {
+test('gore is a meatier, chunkier profile — distinct glyphs, flies out further, fewer chunks', () => {
 	expect(GORE).not.toBe(BLOOD);
-	// More gore than spray: heavier, slower specks (lower launch speed than blood).
-	expect(GORE.launchSpeed).toBeLessThan(BLOOD.launchSpeed);
+	// Fat meaty chunks that fly OUT — at least as fast as the fine blood spray.
+	expect(GORE.launchSpeed).toBeGreaterThanOrEqual(BLOOD.launchSpeed);
 	// A distinct, chunkier glyph set (not the fine blood mist).
 	expect(GORE.glyphs.airborne).not.toEqual(BLOOD.glyphs.airborne);
+	// Fewer specks per burst — they're fat chunks, not a dense mist.
+	expect(GORE.countScale).toBeLessThan(1);
+});
+
+test('a gore burst spawns fewer chunks than a blood spray of the same intensity', () => {
+	const gore = new ParticleSystem();
+	const blood = new ParticleSystem();
+	const at = (kind: EffectKind): Effect => ({
+		kind,
+		x: 5,
+		y: 5,
+		intensity: 24,
+		dir: 0,
+	});
+	stepParticles(gore, [at('gore')], 16, floorTerrain(), seededRng(1));
+	stepParticles(blood, [at('blood')], 16, floorTerrain(), seededRng(1));
+	expect(gore.activeCount).toBeLessThan(blood.activeCount);
 });
 
 test('a tinted gore Effect colours its specks by the tint, not the maroon blood palette (#139)', () => {
