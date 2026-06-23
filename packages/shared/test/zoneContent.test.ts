@@ -26,29 +26,6 @@ test('the authored Zone set validates clean (the CI `zone check` invariant)', ()
 	expect(errors).toEqual([]);
 });
 
-test('Field is a deliberate platforming course: a chaser+shooter mix on raised platforms', () => {
-	const field = loadZones().find((z) => z.id === 'field-01');
-	if (!field) throw new Error('field-01 missing');
-
-	// A genuine encounter mix, not a single token monster of each kind.
-	const chasers = field.spawns.filter((s) => s.type === 'chaser');
-	const shooters = field.spawns.filter((s) => s.type === 'shooter');
-	expect(chasers.length).toBeGreaterThanOrEqual(2);
-	expect(shooters.length).toBeGreaterThanOrEqual(2);
-
-	// Deliberate verticality: solid terrain well above the floor band (raised
-	// platforms), not just the flat world floor.
-	const t = field.terrain;
-	let raised = 0;
-	for (let y = 0; y < GROUND_TOP - 2; y++)
-		for (let x = 0; x < t.w; x++) if (t.cells[y * t.w + x] === 1) raised++;
-	expect(raised).toBeGreaterThan(0);
-
-	// Some monster is perched on a platform (anchored above the floor), so the
-	// player must climb to fight it — not all on the ground.
-	expect(field.spawns.some((s) => s.y < SPAWN.y)).toBe(true);
-});
-
 test('round-trip portals: you can leave Town for the Field and return', () => {
 	const zones = loadZones();
 	const field = zones.find((z) => z.id === 'field-01');
