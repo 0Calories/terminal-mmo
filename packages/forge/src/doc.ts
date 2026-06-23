@@ -7,6 +7,8 @@
 // text))` preserves exactly what was authored. All pure: no FS, sibling to the
 // readers in `io.ts` (which owns the disk side).
 
+import type { ZoneType } from '@mmo/shared';
+
 /** A `.zone` document held losslessly for editing: header object + grid rows. */
 export interface EditorDoc {
 	/** The header JSON, kept verbatim so nothing (orphan keys, catalog refs,
@@ -85,6 +87,50 @@ export function toggleSolid(doc: EditorDoc, x: number, y: number): EditorDoc {
 /** Reset `(x, y)` to empty (`.`). */
 export function clearCell(doc: EditorDoc, x: number, y: number): EditorDoc {
 	return setCell(doc, x, y, '.');
+}
+
+// --- Header fields: display name + zone type (#99) ----------------------------
+// Pure, immutable header mutators (like the grid ops above) — they return a fresh
+// doc so the editor's undo stack keeps snapshots. The header is kept verbatim, so a
+// name/type edit round-trips losslessly through serializeDoc.
+
+/** The optional display label (#99), or undefined when unset. */
+export function zoneName(doc: EditorDoc): string | undefined {
+	const n = doc.header.name;
+	return typeof n === 'string' ? n : undefined;
+}
+
+/** Set the display label (trimmed). An empty/whitespace name removes the key so the
+ *  header stays clean rather than serializing `"name": ""`. */
+export function setZoneName(doc: EditorDoc, name: string): EditorDoc {
+	const trimmed = name.trim();
+	const header = { ...doc.header };
+	if (trimmed) header.name = trimmed;
+	else delete header.name;
+	return { header, rows: doc.rows };
+}
+
+/** The Zone type (`field`|`town`); anything unexpected reads as `field`. */
+export function zoneType(doc: EditorDoc): ZoneType {
+	return doc.header.type === 'town' ? 'town' : 'field';
+}
+
+/** Set the Zone type (the `t` toggle). Decorative on its own — live validation flags
+ *  any monsters a Field→Town switch leaves invalid. */
+export function setZoneType(doc: EditorDoc, type: ZoneType): EditorDoc {
+	return { header: { ...doc.header, type }, rows: doc.rows };
+}
+
+/** Count grid cells anchored to a declared spawn glyph — the Monsters a Field→Town
+ *  switch would invalidate (Towns forbid spawns), used to warn before the toggle. */
+export function placedMonsterCount(doc: EditorDoc): number {
+	const spawns = doc.header.spawns;
+	if (!spawns || typeof spawns !== 'object') return 0;
+	const glyphs = new Set(Object.keys(spawns as Record<string, unknown>));
+	if (glyphs.size === 0) return 0;
+	let count = 0;
+	for (const row of doc.rows) for (const ch of row) if (glyphs.has(ch)) count++;
+	return count;
 }
 
 /** Stamp an (already-declared) entity glyph at `(x, y)`. */

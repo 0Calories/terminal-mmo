@@ -69,6 +69,7 @@ interface PortalSpec {
 }
 interface ZoneHeader {
 	id: string;
+	name?: string;
 	type: string;
 	spawns?: Record<string, string>;
 	npcs?: Record<string, string>;
@@ -164,6 +165,7 @@ export function parseZone(text: string, catalogs: Catalogs): Zone {
 	const zone: Zone = {
 		id: header.id,
 		type: header.type as ZoneType,
+		...(header.name !== undefined ? { name: header.name } : {}),
 		terrain: { w, h, cells } satisfies Terrain,
 		monsters,
 		projectiles: [],
@@ -196,6 +198,11 @@ function parseHeader(text: string): ZoneHeader {
 		throw new ZoneParseError(
 			'bad-header',
 			`header.type must be 'field' or 'town', got '${header.type}'`,
+		);
+	if (header.name !== undefined && typeof header.name !== 'string')
+		throw new ZoneParseError(
+			'bad-header',
+			`header.name must be a string when present, got ${typeof header.name}`,
 		);
 	return header;
 }

@@ -168,6 +168,35 @@ describe('parseZone — fails safely', () => {
 	});
 });
 
+describe('optional display name (#99)', () => {
+	test('header.name surfaces on the parsed Zone', () => {
+		const text =
+			'{ "id": "field-01", "type": "field", "name": "Sunny Meadow",\n  "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
+		expect(parseZone(text, catalogs).name).toBe('Sunny Meadow');
+	});
+
+	test('name is optional — absent leaves Zone.name undefined', () => {
+		const text =
+			'{ "id": "field-01", "type": "field", "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
+		expect(parseZone(text, catalogs).name).toBeUndefined();
+	});
+
+	test('a non-string name is a header error', () => {
+		const text =
+			'{ "id": "field-01", "type": "field", "name": 7, "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
+		expect(() => parseZone(text, catalogs)).toThrow(ZoneParseError);
+		expect(() => parseZone(text, catalogs)).toThrow(/name/i);
+	});
+
+	test('name never resolves a Zone — it is decorative, distinct from id', () => {
+		const text =
+			'{ "id": "field-01", "type": "field", "name": "field-99",\n  "spawns": { "c": "goblin-01" } }\n---\n..c..\n#####';
+		const zone = parseZone(text, catalogs);
+		expect(zone.id).toBe('field-01');
+		expect(zone.name).toBe('field-99');
+	});
+});
+
 describe('catalog resolvers', () => {
 	test('resolveMonster / resolveNpc find by id', () => {
 		expect(resolveMonster(monsters, 'archer-01').behavior).toBe('shooter');
