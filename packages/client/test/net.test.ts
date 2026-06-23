@@ -350,6 +350,26 @@ test('snapshotToGame stamps active bubbles onto the sender entities, incl. own',
 	expect(game.others?.[0]?.bubble).toBe('theirs');
 });
 
+test('NetClient routes an Access Gate `auth` reject to onReject as recoverable', () => {
+	const seen: Array<{ reason: string; code?: string }> = [];
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', (reason, code) =>
+		seen.push({ reason, code }),
+	);
+	net.ingest({ t: 'reject', reason: 'Incorrect password.', code: 'auth' }, 0);
+	expect(seen).toEqual([{ reason: 'Incorrect password.', code: 'auth' }]);
+	// An `auth` reject is recoverable: it must NOT be recorded as the fatal reason the
+	// caller exits on (the player re-prompts and retries).
+	expect(net.rejected).toBe(null);
+	net.close();
+});
+
+test('NetClient records a non-auth reject as the fatal reason', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	net.ingest({ t: 'reject', reason: 'Server is full.', code: 'full' }, 0);
+	expect(net.rejected).toBe('Server is full.');
+	net.close();
+});
+
 test('NetClient.ingest applies the welcome handshake and tracks the latest snapshot', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester');
 	net.ingest(

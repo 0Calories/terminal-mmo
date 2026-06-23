@@ -70,24 +70,27 @@ export class NetClient {
 	// connection cap (ADR 0009). The caller surfaces this and exits.
 	rejected: string | null = null;
 
+	// The hello fields, retained so a password retry can re-send the same handshake
+	// on the open socket (Access Gate, TEMPORARY). `password` starts unset: the first
+	// hello carries none, so a gate-off server admits us with no prompt; an `auth`
+	// reject then drives the modal, which calls submitPassword to re-hello.
+	private readonly handle: string;
+	private readonly cosmetics: Cosmetics;
+	private password?: string;
+
 	constructor(
 		url: string,
 		handle: string,
-		private onReject: (reason: string) => void = () => {},
+		// `code` lets the caller branch: `'auth'` re-prompts for the password (the modal
+		// retries via submitPassword); any other code is fatal and exits.
+		private onReject: (reason: string, code?: string) => void = () => {},
 		cosmetics: Cosmetics = DEFAULT_COSMETICS,
 	) {
+		this.handle = handle;
+		this.cosmetics = cosmetics;
 		this.ws = new WebSocket(url);
 		this.ws.binaryType = 'arraybuffer';
-		this.ws.onopen = () => {
-			this.ws.send(
-				encodeClientMessage({
-					t: 'hello',
-					handle,
-					version: CLIENT_VERSION,
-					cosmetics,
-				}),
-			);
-		};
+		this.ws.onopen = () => this.sendHello();
 		this.ws.onmessage = (ev) => {
 			const msg = decodeServerMessage(new Uint8Array(ev.data as ArrayBuffer));
 			this.ingest(msg, performance.now());
@@ -110,8 +113,10 @@ export class NetClient {
 			return;
 		}
 		if (msg.t === 'reject') {
-			this.rejected = msg.reason;
-			this.onReject(msg.reason);
+			// An `auth` reject (Access Gate, TEMPORARY) is recoverable: don't record it as
+			// the fatal `rejected` reason — the caller re-prompts and retries the hello.
+			if (msg.code !== 'auth') this.rejected = msg.reason;
+			this.onReject(msg.reason, msg.code);
 			return;
 		}
 		if (msg.t === 'chat') {
@@ -193,6 +198,27 @@ export class NetClient {
 			e.ttl -= dtSec;
 			if (e.ttl <= 0) this.emotes.delete(id);
 		}
+	}
+
+	// Send the hello handshake with the retained handle / cosmetics and the current
+	// password (omitted when unset). Called on open and again on each password retry.
+	private sendHello() {
+		this.ws.send(
+			encodeClientMessage({
+				t: 'hello',
+				handle: this.handle,
+				version: CLIENT_VERSION,
+				cosmetics: this.cosmetics,
+				...(this.password ? { password: this.password } : {}),
+			}),
+		);
+	}
+
+	// Re-send hello with a password after an Access Gate `auth` reject (TEMPORARY).
+	// The server kept the socket open, so this rides the same connection — no redial.
+	submitPassword(password: string) {
+		this.password = password;
+		if (this.ws.readyState === WebSocket.OPEN) this.sendHello();
 	}
 
 	send(msg: ClientMessage) {

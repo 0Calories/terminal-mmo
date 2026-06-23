@@ -18,6 +18,7 @@ import {
 	handleOf,
 	isReleaseVersion,
 	loadZones,
+	type RejectCode,
 	removeSession,
 	type ServerWorld,
 	sessionByHandle,
@@ -48,6 +49,15 @@ const MS_PER_TICK = 1000 / TICK_RATE;
 const MAX_CONNECTIONS = Number(process.env.MMO_MAX_CONN) || 200;
 const MAX_PER_IP = Number(process.env.MMO_MAX_PER_IP) || 10;
 
+// Access Gate — a TEMPORARY shared-password lock for the private playtest. When
+// MMO_PASSWORD is set, a client must echo it in `hello` (over the wss/TLS link) or
+// be refused; when unset, the gate is OFF and the server admits everyone, so local
+// dev and contributors are never prompted. It is a speed bump, not real auth: a
+// single shared secret stops casual access by anyone reading the open-source repo,
+// nothing more. To retire the gate, delete this const + the `gate` block in the
+// hello handler, the `password` field on `hello`, and the client password modal.
+const GATE_PASSWORD = process.env.MMO_PASSWORD ?? '';
+
 interface WsData {
 	sessionId: number;
 	ip: string;
@@ -71,10 +81,12 @@ function clientIp(req: Request, srv: Bun.Server<WsData>): string {
 }
 
 // Refuse a socket with a human reason the client surfaces, then close it (ADR
-// 0009). Used for both cap rejections and the protocol-version gate.
-function reject(ws: ServerWebSocket<WsData>, reason: string) {
+// 0009). Used for cap rejections and the protocol-version gate. The Access Gate's
+// `auth` refusal does NOT go through here — it leaves the socket open so the client
+// can re-prompt and retry hello on the same connection (see the hello handler).
+function reject(ws: ServerWebSocket<WsData>, reason: string, code: RejectCode) {
 	try {
-		ws.send(encodeServerMessage({ t: 'reject', reason }));
+		ws.send(encodeServerMessage({ t: 'reject', reason, code }));
 	} catch {}
 	ws.close();
 }
@@ -108,7 +120,28 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			reject(
 				ws,
 				`Your client is out of date — run \`bunx terminal-mmo@latest\` (server ${SERVER_VERSION}, your client ${msg.version || 'unknown'}).`,
+				'version',
 			);
+			return;
+		}
+		// Access Gate (TEMPORARY playtest lock): when a password is configured, admit a
+		// client only if its hello echoes it. Unlike the other refusals this does NOT
+		// close the socket — the client shows a password prompt and retries hello on the
+		// same connection, so a fat-fingered attempt costs no reconnect. The first hello
+		// carries no password (so the gate-off path never prompts), which yields the
+		// neutral "server is locked" message; a wrong guess yields "Incorrect password".
+		if (GATE_PASSWORD && msg.password !== GATE_PASSWORD) {
+			try {
+				ws.send(
+					encodeServerMessage({
+						t: 'reject',
+						reason: msg.password
+							? 'Incorrect password.'
+							: 'This server is locked for a private playtest. Enter the password to play.',
+						code: 'auth',
+					}),
+				);
+			} catch {}
 			return;
 		}
 		world = addSession(world, sessionId, msg.handle, msg.cosmetics);
@@ -250,11 +283,11 @@ const server = Bun.serve<WsData>({
 			const { ip } = ws.data;
 			const ipCount = perIp.get(ip) ?? 0;
 			if (openConnections >= MAX_CONNECTIONS) {
-				reject(ws, 'Server is full — please try again shortly.');
+				reject(ws, 'Server is full — please try again shortly.', 'full');
 				return;
 			}
 			if (ipCount >= MAX_PER_IP) {
-				reject(ws, 'Too many connections from your network.');
+				reject(ws, 'Too many connections from your network.', 'full');
 				return;
 			}
 			openConnections++;
