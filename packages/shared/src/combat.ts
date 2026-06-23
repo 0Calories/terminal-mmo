@@ -1,6 +1,21 @@
 import { BOX, COMBAT } from './constants';
 import type { Box, Effect, Entity, Facing } from './types';
 
+// The blood Effect a death emits (ADR 0013): a high-intensity radial (dir 0)
+// burst at the dying entity's centre, so a kill sprays in every direction and
+// reads visibly bigger and wider than a chip hit. Shared so Monster and Avatar
+// death — server and offline — produce identical bursts. Death Effects carry no
+// `source`: they are sent to everyone in range (the killer sees them too).
+export function deathBloodEffect(e: Entity): Effect {
+	return {
+		kind: 'blood',
+		x: e.x + BOX.w / 2,
+		y: e.y + BOX.h / 2,
+		intensity: COMBAT.deathBurstIntensity,
+		dir: 0,
+	};
+}
+
 export function entityBox(e: Entity): Box {
 	return { x: e.x, y: e.y, w: BOX.w, h: BOX.h };
 }
