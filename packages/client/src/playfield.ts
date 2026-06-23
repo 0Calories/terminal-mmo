@@ -8,6 +8,7 @@ import {
 	drawEntitySprite,
 	emoteById,
 	entityBox,
+	isSolid,
 	meleeHitbox,
 	type RenderStyle,
 	renderZoneScene,
@@ -44,7 +45,7 @@ const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 );
 
 // One lit interior cell of an over-head box: its glyph and colour. A `null` cell
-// is blank (the box's opaque background shows through).
+// is blank — it becomes interior padding (a frosted `▒` shade, ADR 0016).
 type BoxCell = { ch: string; fg: RGBA } | null;
 
 // The grid an over-head box frames: its size plus a per-cell lookup. Chat text and
@@ -90,15 +91,22 @@ function spriteContent(
 }
 
 // The shared over-head box behind both the chat Speech bubble (#59, ADR 0007) and
-// the emote (#38): a bordered, opaque box with a downward tail, anchored above the
+// the emote (#38): a bordered box with a downward tail, anchored above the
 // nameplate and re-projected through the camera each frame so it tracks the moving
-// Avatar. x-clamped to the viewport so it can't clip off-screen. The two callers
-// differ only in their CONTENT and border colour — the geometry is one place so
-// they can't drift.
+// Avatar. x-clamped to the viewport so it can't clip off-screen. Every cell sits on
+// the colour ALREADY under it — terrain (`terrainFg`) where solid ground is below,
+// sky (`bg`) otherwise (ADR 0016) — because terrain is a `█` FOREGROUND block: any
+// glyph the box draws replaces it, so the base must be re-supplied or the dark
+// `terrainBg` shows through (the "tint spilling outside the border" bug). On that
+// base: the frame + tail are the border glyph (no dark stamp); interior PADDING is a
+// `▒` frosted shade that dithers the base; and TEXT is a bright glyph on a ~50% dark
+// backing for legibility. The two callers differ only in their CONTENT and border
+// colour — the geometry is one place so they can't drift.
 function drawOverheadBox(
 	buf: OptimizedBuffer,
 	e: Entity,
 	cam: { x: number; y: number },
+	terrain: Terrain,
 	sw: number,
 	sh: number,
 	content: BoxContent,
@@ -109,6 +117,8 @@ function drawOverheadBox(
 	const boxW = content.w + 2;
 	const boxH = content.h + 2;
 
+	const camX = Math.round(cam.x);
+	const camY = Math.round(cam.y);
 	const cx = e.x + BOX.w / 2 - cam.x;
 	// Tail tip sits one row above the nameplate (which is at top - 1); the box bottom
 	// border is just above the tail.
@@ -118,6 +128,10 @@ function drawOverheadBox(
 	let left = Math.round(cx - boxW / 2);
 	left = Math.max(0, Math.min(left, sw - boxW)); // keep the whole box on screen
 
+	// The colour already on screen at a cell: terrain block, or sky.
+	const baseAt = (px: number, py: number) =>
+		isSolid(terrain, px + camX, py + camY) ? C.terrainFg : C.bg;
+
 	for (let ry = 0; ry < boxH; ry++) {
 		const py = topY + ry;
 		if (py < 0 || py >= sh) continue;
@@ -126,24 +140,31 @@ function drawOverheadBox(
 			const px = left + rx;
 			if (px < 0 || px >= sw) continue;
 			const lastCol = rx === boxW - 1;
-			let ch = ' ';
-			let fg = border;
-			if (ry === 0 || lastRow || rx === 0 || lastCol) {
+			const isBorder = ry === 0 || lastRow || rx === 0 || lastCol;
+			const base = baseAt(px, py);
+			if (isBorder) {
+				// Frame glyph over the sampled base: the cell matches its surroundings,
+				// with just the rounded line on top — no bleed outside the border.
+				let ch = '│';
 				if (ry === 0) ch = rx === 0 ? '╭' : lastCol ? '╮' : '─';
 				else if (lastRow) ch = rx === 0 ? '╰' : lastCol ? '╯' : '─';
-				else ch = '│';
-			} else {
-				const c = content.cell(rx - 1, ry - 1);
-				if (c) {
-					ch = c.ch;
-					fg = c.fg;
-				}
+				buf.setCell(px, py, ch, border, base);
+				continue;
 			}
-			buf.setCell(px, py, ch, fg, C.bubbleBg);
+			const c = content.cell(rx - 1, ry - 1);
+			if (c) {
+				// Behind text: bright glyph on a ~50% dark backing over the base.
+				buf.setCell(px, py, ' ', base, base);
+				buf.setCellWithAlphaBlending(px, py, c.ch, c.fg, C.bubbleBg);
+			} else {
+				// Interior padding: a frosted `▒` shade dithering the base, so terrain
+				// peeks through the stipple.
+				buf.setCell(px, py, '▒', C.bubbleShade, base);
+			}
 		}
 	}
 	if (tailY >= 0 && tailY < sh && tailX >= 0 && tailX < sw)
-		buf.setCell(tailX, tailY, '▼', border, C.bubbleBg);
+		buf.setCell(tailX, tailY, '▼', border, baseAt(tailX, tailY));
 }
 
 // The latest Chat line, word-wrapped, in the shared over-head box (#59, ADR 0007).
@@ -151,12 +172,13 @@ function drawSpeechBubble(
 	buf: OptimizedBuffer,
 	e: Entity,
 	cam: { x: number; y: number },
+	terrain: Terrain,
 	sw: number,
 	sh: number,
 ) {
 	if (!e.bubble) return;
 	const content = textContent(layoutBubble(e.bubble), C.bubbleFg);
-	drawOverheadBox(buf, e, cam, sw, sh, content, C.bubbleBorder);
+	drawOverheadBox(buf, e, cam, terrain, sw, sh, content, C.bubbleBorder);
 }
 
 // A transient emote (#38): the emote id resolved to its pixel-art Sprite, drawn in
@@ -167,6 +189,7 @@ function drawEmote(
 	buf: OptimizedBuffer,
 	e: Entity,
 	cam: { x: number; y: number },
+	terrain: Terrain,
 	sw: number,
 	sh: number,
 ) {
@@ -178,7 +201,7 @@ function drawEmote(
 		STYLE.palette,
 		STYLE.paletteDefault,
 	);
-	drawOverheadBox(buf, e, cam, sw, sh, content, C.emote);
+	drawOverheadBox(buf, e, cam, terrain, sw, sh, content, C.emote);
 }
 
 function drawText(
@@ -362,13 +385,13 @@ function drawPlayfield(
 	// Final pass after all Sprites + nameplates: over-head Speech bubbles for every
 	// chatter on screen, the local Avatar included (one uniform rule, ADR 0007). An
 	// absent sender simply has no entity here, so its bubble isn't drawn.
-	for (const e of others) drawSpeechBubble(buf, e, cam, sw, sh);
-	drawSpeechBubble(buf, p, cam, sw, sh);
+	for (const e of others) drawSpeechBubble(buf, e, cam, zone.terrain, sw, sh);
+	drawSpeechBubble(buf, p, cam, zone.terrain, sw, sh);
 
 	// Over-head emotes for every emoting Avatar on screen, the local one included —
 	// one uniform rule (#38, ADR 0003), on top of all Sprites and nameplates.
-	for (const e of others) drawEmote(buf, e, cam, sw, sh);
-	drawEmote(buf, p, cam, sw, sh);
+	for (const e of others) drawEmote(buf, e, cam, zone.terrain, sw, sh);
+	drawEmote(buf, p, cam, zone.terrain, sw, sh);
 
 	// Drawn last so nothing occludes an incoming shot.
 	for (const pr of zone.projectiles) {

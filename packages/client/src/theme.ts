@@ -17,11 +17,16 @@ export const COLORS = {
 	hp: RGBA.fromInts(90, 220, 120, 255),
 	dim: RGBA.fromInts(150, 156, 168, 255),
 	chat: RGBA.fromInts(120, 200, 235, 255),
-	// Over-head Speech bubble (#59, ADR 0007): opaque fill so terrain can't bleed
-	// through, a dim border + tail, and bright text.
+	// Over-head Speech bubble (#59, ADR 0007), ADR 0016: the frame + tail float over a
+	// transparent background (no square stamp, no corner bleed), the interior padding is
+	// a `▒` frosted shade so terrain reads through, and bright text sits on a ~50% dark
+	// backing for legibility. `bubbleBg` is that behind-text backing; `bubbleShade` is the
+	// opaque dark the `▒` glyph is drawn in — both blend to the same ~[45,53,69] over
+	// terrain, so padding and text read as one uniform frosted surface.
 	bubbleFg: RGBA.fromInts(236, 236, 242, 255),
 	bubbleBorder: RGBA.fromInts(120, 200, 235, 255),
-	bubbleBg: RGBA.fromInts(20, 24, 34, 255),
+	bubbleBg: RGBA.fromInts(20, 24, 34, 128),
+	bubbleShade: RGBA.fromInts(20, 24, 34, 255),
 	// Over-head emote glyph (#38): a bright, high-contrast reaction on the telegraph
 	// layer, drawn above all Sprites and self-clearing.
 	emote: RGBA.fromInts(255, 220, 110, 255),
