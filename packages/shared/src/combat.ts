@@ -44,6 +44,26 @@ export function bloodEffect(
 	return e;
 }
 
+// The blood Effect an Avatar taking damage emits (ADR 0013, #132): one burst at
+// the Avatar's centre, biased AWAY from the damage source (`dir` 0 = radial when
+// the direction is ambiguous), scaled by the damage taken. Unlike monster-hit
+// blood this is server-sourced only — never predicted — and carries NO `source`,
+// so the per-recipient snapshot filter delivers it to everyone in range including
+// the victim, landing in sync with the hurt-flash.
+export function hurtBloodEffect(
+	a: Entity,
+	dir: -1 | 0 | 1,
+	damage: number,
+): Effect {
+	return {
+		kind: 'blood',
+		x: a.x + BOX.w / 2,
+		y: a.y + BOX.h / 2,
+		intensity: damage,
+		dir,
+	};
+}
+
 // The blood Effects the local Avatar's outgoing hit produces this tick, mirroring
 // stepZone's monster-hit emission (same i-frame gate, centre, dir, intensity) so
 // the predicted burst matches the authoritative one the server suppresses back to

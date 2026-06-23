@@ -4,6 +4,7 @@ import {
 	bloodEffect,
 	type Entity,
 	entityBox,
+	hurtBloodEffect,
 	meleeHitbox,
 	predictHitEffects,
 } from '../src';
@@ -44,6 +45,27 @@ describe('bloodEffect', () => {
 		const e = bloodEffect(monster(0, 0), -1, 5, 42);
 		expect(e.dir).toBe(-1);
 		expect(e.source).toBe(42);
+	});
+});
+
+describe('hurtBloodEffect', () => {
+	test('bursts at the Avatar centre, biased away from the source, scaled by damage', () => {
+		const a = monster(10, 4);
+		expect(hurtBloodEffect(a, 1, 6)).toEqual({
+			kind: 'blood',
+			x: 10 + BOX.w / 2,
+			y: 4 + BOX.h / 2,
+			intensity: 6,
+			dir: 1,
+		});
+	});
+
+	test('carries a radial dir 0 when the direction is ambiguous', () => {
+		expect(hurtBloodEffect(monster(0, 0), 0, 7).dir).toBe(0);
+	});
+
+	test('never attaches a source — hurt blood is server-sourced, delivered to the victim too', () => {
+		expect(hurtBloodEffect(monster(0, 0), -1, 6).source).toBeUndefined();
 	});
 });
 

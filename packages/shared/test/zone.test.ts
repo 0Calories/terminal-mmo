@@ -88,6 +88,7 @@ test('a Monster hit emits one blood Effect at the Monster, intensity scaled by d
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	const av = serverAvatar(7, 20);
 	av.avatar.facing = 1; // swinging to the right, into the Monster
+	av.avatar.hurtT = 1; // i-framed, so the chasing Monster's contact draws no blood
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
@@ -107,6 +108,7 @@ test('no Effect is emitted when the hit lands on an i-framed Monster', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hurtT = 0.5; // still invulnerable
 	const av = serverAvatar(7, 20);
+	av.avatar.hurtT = 1; // i-framed, so the chasing Monster's contact draws no blood
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
@@ -145,6 +147,25 @@ test('a living Monster touching an Avatar deals server-owned contact damage', ()
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
 	expect(next.avatars[0].avatar.hp).toBe(before - MONSTER.contactDamage);
 	expect(next.avatars[0].avatar.hurtT).toBeGreaterThan(0);
+});
+
+test('contact damage emits one blood Effect at the Avatar, dir away from the Monster, intensity = contact damage', () => {
+	const m = spawnMonster('chaser', 2, 18, y); // touching, just left of the Avatar
+	m.onGround = true;
+	const av = serverAvatar(7, 20); // Avatar to the Monster's right
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(next.effects?.length).toBe(1);
+	const fx = next.effects?.[0];
+	expect(fx?.kind).toBe('blood');
+	expect(fx?.dir).toBe(1); // knocked away from the Monster (to the right)
+	expect(fx?.intensity).toBe(MONSTER.contactDamage);
+	// at the Avatar's footprint box
+	expect(fx?.x).toBeGreaterThanOrEqual(av.avatar.x);
+	expect(fx?.x).toBeLessThanOrEqual(av.avatar.x + BOX.w);
+	expect(fx?.y).toBeGreaterThanOrEqual(av.avatar.y);
+	expect(fx?.y).toBeLessThanOrEqual(av.avatar.y + BOX.h);
+	expect(fx?.source).toBeUndefined(); // server-sourced, never suppressed to the victim
 });
 
 test('a Monster targets and chases the nearest Avatar', () => {
@@ -321,6 +342,49 @@ test('clientStepAvatar predicts platformer movement and decays the swing timer',
 	);
 	expect(predicted.x).toBeGreaterThan(20); // ran right
 	expect(predicted.attackT).toBeLessThan(0.3); // cooldown ticked down locally
+});
+
+test('projectile damage emits one blood Effect at the Avatar, dir = projectile travel, intensity = projectile damage', () => {
+	const av = serverAvatar(7, 20);
+	const pr = {
+		id: 1,
+		x: 22, // overlapping the Avatar's box
+		y: av.avatar.y + 2,
+		vx: -36, // travelling left: away from a shooter on the right
+		vy: 0,
+		life: 1,
+		damage: 7,
+		ownerId: 999,
+	};
+	const zone: Zone = { ...zoneWith([]), projectiles: [pr] };
+	const state: ZoneState = { zone, avatars: [av], tick: 0 };
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp - 7); // took the hit
+	expect(next.effects?.length).toBe(1);
+	const fx = next.effects?.[0];
+	expect(fx?.kind).toBe('blood');
+	expect(fx?.dir).toBe(-1); // knocked along the projectile's travel
+	expect(fx?.intensity).toBe(7);
+	expect(fx?.source).toBeUndefined(); // server-sourced
+});
+
+test('an i-framed Avatar struck by a projectile bleeds no blood', () => {
+	const av = serverAvatar(7, 20);
+	av.avatar.hurtT = 0.5; // still invulnerable
+	const pr = {
+		id: 1,
+		x: 22,
+		y: av.avatar.y + 2,
+		vx: -36,
+		vy: 0,
+		life: 1,
+		damage: 7,
+		ownerId: 999,
+	};
+	const zone: Zone = { ...zoneWith([]), projectiles: [pr] };
+	const state: ZoneState = { zone, avatars: [av], tick: 0 };
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(next.effects ?? []).toEqual([]);
 });
 
 test('snapshotFor carries the zone state + the recipient private fields', () => {
