@@ -77,7 +77,7 @@ export const BLOOD: ParticleType = {
 	// airborne specks are sub-cell quadrant droplets; settled specks use
 	// lower-anchored blocks so the pool reads as resting on the floor.
 	glyphs: {
-		airborne: ['▖', '▗', '▘', '▝'],
+		airborne: ['▄', '▖', '▗', '▘', '▝'],
 		rest: ['▄', '▃', '▖', '▗'],
 	},
 	colors: [
@@ -169,6 +169,25 @@ export function particleGlyph(p: Particle): string {
 	const set =
 		p.stage === 'airborne' ? p.type.glyphs.airborne : p.type.glyphs.rest;
 	return set[Math.min(set.length - 1, Math.floor(p.seed * set.length))];
+}
+
+// The world row a speck should DRAW into, given the rounded cell the projection
+// picked. The physics keeps `floor(p.y)` empty (a speck never rests inside or
+// below solid), but rounding `p.y` for display can push the drawn cell one row
+// DOWN into the solid surface directly beneath a near-surface speck — a one-frame
+// flicker reading as blood sunk into the ground (#134). Bias the draw UP to the
+// nearest empty row (never down, so it can only float a hair high, never tunnel).
+// A no-op for a non-colliding profile, which is meant to pass through terrain.
+export function particleDrawRow(
+	p: Particle,
+	terrain: Terrain,
+	col: number,
+	row: number,
+): number {
+	if (!p.type.collide) return row;
+	let r = row;
+	while (r > 0 && isSolid(terrain, col, r)) r--;
+	return r;
 }
 
 // A fixed pool of Particles plus its spawn cursor. The simulator mutates the
