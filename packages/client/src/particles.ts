@@ -280,6 +280,24 @@ export function stepParticles(
 	}
 }
 
+// The row of the topmost solid cell a downward-moving speck crosses between `fromY`
+// and `toY` in column `col`, or -1 if it crosses none (or isn't descending). A
+// swept check over every crossed cell, so a fast speck collides with the surface
+// instead of tunneling through it.
+function surfaceHit(
+	terrain: Terrain,
+	col: number,
+	fromY: number,
+	toY: number,
+): number {
+	if (toY <= fromY) return -1; // not descending (rising / horizontal)
+	const start = Math.floor(fromY) + 1;
+	const end = Math.floor(toY);
+	for (let row = Math.max(0, start); row <= end; row++)
+		if (isSolid(terrain, col, row)) return row;
+	return -1;
+}
+
 // Move one active speck forward by `dt` seconds. Lifecycle:
 // airborne (gravity + one bounce + land) → rest → fade → cull.
 function advance(
@@ -295,14 +313,15 @@ function advance(
 		p.vy += type.gravity * dt;
 		const nx = p.x + p.vx * dt;
 		const ny = p.y + p.vy * dt;
-		const blocked =
-			type.collide && isSolid(terrain, Math.floor(nx), Math.floor(ny));
-		if (blocked) {
-			// Settle onto the surface: keep the contact column, and rest in the empty
-			// cell directly ABOVE the solid one (floor(ny) is the solid row itself —
-			// landing there would sink the speck into the platform).
+		const surface = type.collide
+			? surfaceHit(terrain, Math.floor(nx), p.y, ny)
+			: -1;
+		if (surface >= 0) {
+			// Land on the surface: the empty cell directly ABOVE the topmost solid
+			// row the speck crossed this frame (a swept check, so a fast speck can't
+			// tunnel into or below the platform before colliding).
 			p.x = nx;
-			p.y = Math.floor(ny) - 1;
+			p.y = surface - 1;
 			if (!p.bounced) {
 				// The single permitted bounce: reflect and damp.
 				p.vy = -Math.abs(p.vy) * type.restitution;

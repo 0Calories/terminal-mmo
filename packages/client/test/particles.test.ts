@@ -131,6 +131,25 @@ test('a speck runs the full lifecycle: airborne → bounce → rest → fade →
 	expect(isSolid(terrain, Math.floor(10), Math.floor(restY) + 1)).toBe(true);
 });
 
+test('a falling speck collides with the surface and never penetrates the ground', () => {
+	// A tall arena so a speck builds up enough speed (>1 cell/frame) to tunnel
+	// through the floor without swept collision.
+	const terrain = floorTerrain(40, 80);
+	const sys = new ParticleSystem();
+	stepParticles(sys, [bloodAt(10, 2, 24)], 16, terrain, seededRng(5));
+	for (let i = 0; i < 800; i++) {
+		stepParticles(sys, [], 16, terrain, seededRng(13));
+		for (const p of sys.particles) {
+			if (!p.active) continue;
+			const col = Math.floor(p.x);
+			if (col < 0 || col >= terrain.w) continue; // off-world horizontally (camera skips these)
+			// Within the world it never occupies a solid cell — it lands on the
+			// platform surface, not inside or below it.
+			expect(isSolid(terrain, col, Math.floor(p.y))).toBe(false);
+		}
+	}
+});
+
 test('a profile with no gravity and no terrain collision never settles (profile-driven)', () => {
 	const FLOATER: ParticleType = {
 		...BLOOD,
