@@ -3,9 +3,11 @@ import type { Effect, EffectKind, Terrain } from '@mmo/shared';
 import { isSolid, parseTerrain } from '@mmo/shared';
 import {
 	BLOOD,
+	type Particle,
 	ParticleSystem,
 	type ParticleType,
 	particleColor,
+	particleDrawRow,
 	SPAWN_MAP,
 	speckCount,
 	stepParticles,
@@ -177,6 +179,77 @@ test('specks spraying sideways into a wall never embed in the solid terrain', ()
 			expect(isSolid(terrain, cx, Math.floor(p.y))).toBe(false);
 		}
 	}
+});
+
+test('the draw row biases up out of a solid cell when rounding would sink a near-surface speck', () => {
+	// Floor along the bottom row (row 19). A speck physically resting just above it
+	// at y = 18.6 keeps its *physics* cell (floor 18) empty, but Math.round(18.6) =
+	// 19 lands the *draw* cell in the solid floor — the one-frame tunnel #134 reports.
+	const terrain = floorTerrain(40, 20);
+	const sunk: Particle = {
+		active: true,
+		type: BLOOD,
+		x: 10,
+		y: 18.6,
+		vx: 0,
+		vy: 0,
+		stage: 'airborne',
+		bounced: false,
+		ageMs: 0,
+		stageMs: 0,
+		born: 0,
+		seed: 0,
+	};
+	const col = Math.round(sunk.x);
+	expect(isSolid(terrain, col, Math.round(sunk.y))).toBe(true); // raw round = sunk
+	const row = particleDrawRow(sunk, terrain, col, Math.round(sunk.y));
+	expect(isSolid(terrain, col, row)).toBe(false); // biased up out of the floor
+	expect(row).toBe(18);
+});
+
+test('the draw row is a no-op when the rounded cell is already empty', () => {
+	const terrain = floorTerrain(40, 20);
+	const airborne: Particle = {
+		active: true,
+		type: BLOOD,
+		x: 10,
+		y: 5.4,
+		vx: 0,
+		vy: 0,
+		stage: 'airborne',
+		bounced: false,
+		ageMs: 0,
+		stageMs: 0,
+		born: 0,
+		seed: 0,
+	};
+	const col = Math.round(airborne.x);
+	const row = particleDrawRow(airborne, terrain, col, Math.round(airborne.y));
+	expect(row).toBe(Math.round(airborne.y)); // unchanged, already in open air
+});
+
+test('no active in-bounds speck ever DRAWS inside a solid cell over a real burst', () => {
+	// The #134 acceptance test: assert the *draw row* (not just the physics row) is
+	// never solid for any active speck across a full landing/bounce sequence — and
+	// prove the raw Math.round projection WOULD have sunk into terrain without the
+	// clamp (so the fix is load-bearing, not vacuous).
+	const terrain = floorTerrain(40, 24);
+	const sys = new ParticleSystem();
+	stepParticles(sys, [bloodAt(10, 18, 24)], 16, terrain, seededRng(5));
+	let rawWouldSink = false;
+	for (let i = 0; i < 400; i++) {
+		stepParticles(sys, [], 16, terrain, seededRng(17));
+		for (const p of sys.particles) {
+			if (!p.active) continue;
+			const col = Math.round(p.x);
+			if (col < 0 || col >= terrain.w) continue; // off-world (camera skips these)
+			const rawRow = Math.round(p.y);
+			if (isSolid(terrain, col, rawRow)) rawWouldSink = true;
+			const row = particleDrawRow(p, terrain, col, rawRow);
+			expect(isSolid(terrain, col, row)).toBe(false);
+		}
+	}
+	expect(rawWouldSink).toBe(true);
 });
 
 test('a profile with no gravity and no terrain collision never settles (profile-driven)', () => {

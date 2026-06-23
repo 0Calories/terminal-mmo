@@ -1,4 +1,4 @@
-import type { Entity, GameState } from '@mmo/shared';
+import type { Entity, GameState, Terrain } from '@mmo/shared';
 import {
 	aabbOverlap,
 	activeZone,
@@ -30,6 +30,7 @@ import {
 	type Particle,
 	ParticleSystem,
 	particleColor,
+	particleDrawRow,
 	particleGlyph,
 	stepParticles,
 } from './particles';
@@ -204,14 +205,28 @@ function drawParticles(
 	buf: OptimizedBuffer,
 	particles: ParticleSystem,
 	cam: { x: number; y: number },
+	terrain: Terrain,
 	sw: number,
 	sh: number,
 	keep: (p: Particle) => boolean,
 ) {
+	// Match the terrain layer's projection (render.ts): a world cell (col,row) draws
+	// at screen (col - round(cam.x), row - round(cam.y)). Resolving the draw cell in
+	// world space lets particleDrawRow check solidity against the SAME terrain the
+	// player sees, so the clamp can't drift from what's rendered.
+	const camX = Math.round(cam.x);
+	const camY = Math.round(cam.y);
 	for (const p of particles.particles) {
 		if (!p.active || !keep(p)) continue;
-		const px = Math.round(p.x - cam.x);
-		const py = Math.round(p.y - cam.y);
+		const col = Math.round(p.x - cam.x) + camX;
+		const row = particleDrawRow(
+			p,
+			terrain,
+			col,
+			Math.round(p.y - cam.y) + camY,
+		);
+		const px = col - camX;
+		const py = row - camY;
 		if (px < 0 || px >= sw || py < 0 || py >= sh) continue;
 		const c = particleColor(p);
 		buf.setCellWithAlphaBlending(
@@ -258,7 +273,15 @@ function drawPlayfield(
 	// First particle pass (ADR 0013): resting / fading blood draws just above
 	// terrain so it reads as splatter on the floor, behind the Sprites and the
 	// local Avatar that follow.
-	drawParticles(buf, particles, cam, sw, sh, (p) => p.stage !== 'airborne');
+	drawParticles(
+		buf,
+		particles,
+		cam,
+		zone.terrain,
+		sw,
+		sh,
+		(p) => p.stage !== 'airborne',
+	);
 
 	// Interaction prompts depend on the local Avatar's overlap, so they're
 	// client-only dynamic overlays drawn on top of the static scene.
@@ -326,7 +349,15 @@ function drawPlayfield(
 	// Second particle pass: airborne blood erupts in front of the Sprites (toward
 	// the camera), still below the over-head Speech bubbles / emotes that follow so
 	// chat stays legible.
-	drawParticles(buf, particles, cam, sw, sh, (pt) => pt.stage === 'airborne');
+	drawParticles(
+		buf,
+		particles,
+		cam,
+		zone.terrain,
+		sw,
+		sh,
+		(pt) => pt.stage === 'airborne',
+	);
 
 	// Final pass after all Sprites + nameplates: over-head Speech bubbles for every
 	// chatter on screen, the local Avatar included (one uniform rule, ADR 0007). An
