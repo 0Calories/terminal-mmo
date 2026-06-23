@@ -1,18 +1,36 @@
 import { BOX, COMBAT } from './constants';
-import type { Box, Effect, Entity, Facing } from './types';
+import { HUES, type RGBAQuad, SCENE_PALETTE } from './sceneStyle';
+import { spriteFor } from './sprites';
+import type { Box, Effect, Entity, Facing, Tint } from './types';
 
-// The blood Effect a death emits (ADR 0013): a high-intensity radial (dir 0)
-// burst at the dying entity's centre, so a kill sprays in every direction and
-// reads visibly bigger and wider than a chip hit. Shared so Monster and Avatar
-// death — server and offline — produce identical bursts. Death Effects carry no
-// `source`: they are sent to everyone in range (the killer sees them too).
-export function deathBloodEffect(e: Entity): Effect {
+const BODY_PALETTE: Record<string, RGBAQuad> = SCENE_PALETTE;
+
+// The body colour to tint an entity's death gore with (#139): an Avatar uses its
+// chosen cosmetic hue (a stray index falls back to the default), every other
+// entity uses its sprite's dominant body colour (the sprite `defaultKey`). One
+// lookup off the shared sprite/palette data so the tint can't drift from the art.
+export function entityTint(e: Entity): Tint {
+	const quad =
+		e.cosmetics !== undefined
+			? (HUES[e.cosmetics.hue] ?? HUES[0])
+			: (BODY_PALETTE[spriteFor(e.type).defaultKey] ?? BODY_PALETTE.p);
+	return { r: quad[0], g: quad[1], b: quad[2] };
+}
+
+// The gore Effect a death emits (ADR 0013, #139): a high-intensity radial (dir 0)
+// burst at the dying entity's centre, tinted to the dead entity's body colour, so
+// a kill sprays in every direction with chunkier, entity-coloured gore — visibly
+// distinct from a chip hit's fine maroon blood. Shared so Monster and Avatar death
+// — server and offline — produce identical bursts. Carries no `source`: it is sent
+// to everyone in range (the killer sees it too).
+export function deathGoreEffect(e: Entity): Effect {
 	return {
-		kind: 'blood',
+		kind: 'gore',
 		x: e.x + BOX.w / 2,
 		y: e.y + BOX.h / 2,
 		intensity: COMBAT.deathBurstIntensity,
 		dir: 0,
+		tint: entityTint(e),
 	};
 }
 
