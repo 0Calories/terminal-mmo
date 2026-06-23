@@ -29,6 +29,11 @@ curl -fsSL https://bun.sh/install | bash   # then: bunx terminal-mmo@latest
 Environment overrides: `MMO_SERVER=ws://localhost:8080` to point at your own
 server, `MMO_OFFLINE=1` to run the single-player loop with no network.
 
+In-game: press `m` to mute and `o` to open the audio options (master + per-bus
+volume). These prefs persist to `~/.config/terminal-mmo/config.json` (honoring
+`XDG_CONFIG_HOME`) — the only thing the client writes to your disk
+([ADR 0015](./docs/adr/0015-client-config-file.md)).
+
 ## Layout
 
 ```

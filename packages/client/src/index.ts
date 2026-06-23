@@ -21,14 +21,23 @@ import {
 	type Zone,
 } from '@mmo/shared';
 import { createCliRenderer } from '@opentui/core';
+import { AudioOptions } from './audio-options-view';
 import { CharacterCreator } from './character-creator';
 import { ChatInput, parseChatCommand } from './chat';
+import { ConfigStore } from './config';
 import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
 import { PlayfieldRenderable } from './playfield';
 import { resolveServerUrl } from './server-url';
 import { Shop } from './shop';
+import { SoundSystem } from './sound/system';
+import {
+	isMenuBlipKey,
+	jumpStarted,
+	landed,
+	leveledUp,
+} from './sound/triggers';
 import { CLIENT_VERSION } from './version';
 
 // The sim is dt-based, so this only affects smoothness + CPU, never game speed.
@@ -67,7 +76,24 @@ renderer.root.add(playfield);
 const hud = new Hud(renderer);
 hud.attach(renderer.root);
 
+// Best-effort, always-optional audio (ADR 0014). Init is attempted once here,
+// gated inside the facade on an interactive TTY, so a headless/piped launch
+// never touches the engine; every play() is a no-op when disabled.
+const sound = new SoundSystem({ debug: process.env.MMO_DEBUG === '1' });
+// The playfield voices per-tick combat Effects (hit/death) as spatialized world
+// SoundEffects from the same render path it spawns particles on (ADR 0014).
+playfield.sound = sound;
+
+// Persisted audio prefs (ADR 0015): the client's first on-disk config. Load it,
+// apply the saved mixer state (so a player who muted stays muted), then write any
+// later change back through onChange. Tolerant by construction — a missing/corrupt
+// file falls back to defaults and a failed write degrades to in-memory, never a crash.
+const config = new ConfigStore().load();
+sound.applyAudioPrefs(config.audio());
+sound.onChange = () => config.saveAudio(sound.audioPrefs());
+
 function quit(message?: string) {
+	sound.dispose(); // tear the engine down without blocking exit
 	try {
 		(renderer as unknown as { destroy?: () => void }).destroy?.();
 	} catch {}
@@ -100,6 +126,9 @@ function runOffline() {
 	let game = createGame();
 	const shop = new Shop(renderer);
 	shop.attach(renderer.root);
+	// Audio options modal (ADR 0014/0015): a global, Shop-class overlay opened with `o`.
+	const options = new AudioOptions(renderer, sound);
+	options.attach(renderer.root);
 
 	function vendorUnder(g: GameState) {
 		const zone = activeZone(g.world, g.player.zoneId);
@@ -129,6 +158,9 @@ function runOffline() {
 	}
 
 	function handleShopKey(name: string) {
+		// UI blip on menu navigation / confirm (ADR 0014): a centered, full-volume
+		// interface click. Close (e/esc) is silent — it marks moving *through* a menu.
+		if (isMenuBlipKey(name)) sound.play('ui');
 		const count = game.player.inventory.length;
 		switch (name) {
 			case 'up':
@@ -150,8 +182,24 @@ function runOffline() {
 
 	renderer.keyInput.on('keypress', (k) => {
 		if (k.name === 'q') quit();
+		// `m` toggles master mute instantly (ADR 0014), reachable even with the shop
+		// modal open — it's a global audio control, not a gameplay/menu key.
+		// While the options modal is open it owns the keyboard: arrows/m adjust the
+		// mixer (persisted live), o/esc close. Swallow every key so none hits the sim.
+		if (options.open) {
+			options.key(k.name);
+			return;
+		}
+		if (k.name === 'm') {
+			sound.toggleMute();
+			return;
+		}
 		if (shop.open) {
 			handleShopKey(k.name);
+			return;
+		}
+		if (k.name === 'o') {
+			options.show();
 			return;
 		}
 		// Swallow the key so it isn't also fed to the sim as a portal/interact intent.
@@ -165,12 +213,22 @@ function runOffline() {
 	renderer.keyInput.on('keyrelease', (k) => input.release(k.name));
 
 	const meter = fpsMeter();
+	let prevLevel = game.player.progress.level;
 	renderer.setFrameCallback(async (dt) => {
+		const prevAvatar = game.player.avatar;
 		game = step(
 			game,
 			shop.open ? IDLE_INPUT : input.poll(performance.now()),
 			dt,
 		);
+		// Self SoundEffects (client-local, centered, full volume): the jump blip on
+		// the take-off frame and the landing footfall on the touchdown frame.
+		if (jumpStarted(prevAvatar, game.player.avatar)) sound.play('jump');
+		if (landed(prevAvatar, game.player.avatar)) sound.play('land');
+		// Level-up flourish, once per rising edge of the Player's level.
+		const level = game.player.progress.level;
+		if (leveledUp(prevLevel, level)) sound.play('level-up');
+		prevLevel = level;
 		const fps = meter(dt);
 		playfield.game = game;
 		hud.update(game, fps);
@@ -211,6 +269,9 @@ function runNetworked(url: string) {
 	renderer.keyInput.on('keypress', (k) => {
 		if (started) return;
 		if (k.name === 'q') quit();
+		// UI blip on customize navigation / confirm (ADR 0014), the same menu click
+		// the shop uses — a centered, full-volume interface tick.
+		if (isMenuBlipKey(k.name)) sound.play('ui');
 		const chosen = creator.key(k.name);
 		if (!chosen) return;
 		started = true;
@@ -243,6 +304,9 @@ function runNetworked(url: string) {
 		const SEND_INTERVAL = 1000 / 30; // throttle input reports to ~30 Hz
 		let sendAcc = 0;
 		const chat = new ChatInput(); // Zone-local chat typing mode (#34)
+		// Audio options modal (ADR 0014/0015): a global overlay opened with `o` during play.
+		const options = new AudioOptions(renderer, sound);
+		options.attach(renderer.root);
 
 		renderer.keyInput.on('keypress', (k) => {
 			// While typing, chat OWNS the keyboard: every key edits the line (or sends /
@@ -263,6 +327,22 @@ function runNetworked(url: string) {
 				return;
 			}
 			if (k.name === 'q') quit();
+			// The options modal owns the keyboard while open (after the chat block, so
+			// typing still wins): arrows/m adjust the mixer (persisted live), o/esc close.
+			if (options.open) {
+				options.key(k.name);
+				return;
+			}
+			// `m` toggles master mute instantly (ADR 0014). Placed after the chat block
+			// so it edits the line while typing and only mutes during play.
+			if (k.name === 'm') {
+				sound.toggleMute();
+				return;
+			}
+			if (k.name === 'o') {
+				options.show();
+				return;
+			}
 			if (k.name === 'return') {
 				chat.start();
 				input.clear(); // a key held at the switch must not stick while typing
@@ -276,6 +356,10 @@ function runNetworked(url: string) {
 		});
 
 		const meter = fpsMeter();
+		// Level-up flourish: seeded from the first real snapshot (null until then) so a
+		// reconnect at an already-high level can't false-trigger; thereafter it fires
+		// once on each rising edge of the server-authoritative level.
+		let prevLevel: number | null = null;
 		renderer.setFrameCallback(async (dt) => {
 			// Freeze movement / combat while the chat line has the keyboard.
 			const inp = chat.open ? IDLE_INPUT : input.poll(performance.now());
@@ -298,17 +382,33 @@ function runNetworked(url: string) {
 					};
 			}
 
+			const prevOnGround = predicted.onGround;
 			predicted = clientStepAvatar(
 				zone.terrain,
 				predicted,
 				{ moveX: inp.moveX, jump: inp.jump },
 				dt,
 			);
-			// Optimistic local telegraph (story 17): run the same shared combat gate
-			// the server runs (resolveCombat) so the swing/skill flash shows before the
-			// snapshot confirms the hit, and the outgoing hitbox + damage feed blood
-			// prediction (ADR 0013). resolveCombat owns the attackT + cooldown decay and
-			// expects dt in SECONDS, so pass the clamped dtSec (matching stepZone).
+			// Self SoundEffects on our own predicted Avatar (client-local, centered,
+			// full volume): the jump blip on take-off, the footfall on touchdown.
+			if (jumpStarted({ onGround: prevOnGround }, predicted))
+				sound.play('jump');
+			if (landed({ onGround: prevOnGround }, predicted)) sound.play('land');
+			// Level-up flourish off the server-authoritative progression in the snapshot.
+			const snapLevel = net.latest?.progress.level;
+			if (snapLevel != null) {
+				if (prevLevel != null && leveledUp(prevLevel, snapLevel))
+					sound.play('level-up');
+				prevLevel = snapLevel;
+			}
+			// Optimistic local telegraph (story 17): mirror the server's cooldown gate
+			// so the swing/skill flash shows before the snapshot confirms the hit. The
+			// same gate yields the outgoing hitbox + damage for blood prediction (ADR
+			// 0013): a fired Skill overrides the basic swing, matching resolveAvatarIntent.
+			const swung = inp.attack && predicted.attackT <= 0;
+			if (swung) predicted.attackT = COMBAT.attackCooldown;
+			let hitbox = swung ? meleeHitbox(predicted) : null;
+			let hitDamage: number = COMBAT.meleeDamage;
 			const dtSec = Math.min(dt / 1000, PHYS.maxDt);
 			const r = resolveCombat(
 				predicted,

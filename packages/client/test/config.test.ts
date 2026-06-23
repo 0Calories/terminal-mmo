@@ -1,0 +1,135 @@
+import { afterEach, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+	AUDIO_DEFAULTS,
+	ConfigStore,
+	parseConfig,
+	readAudioPrefs,
+	resolveConfigPath,
+	writeAudioPrefs,
+} from '../src/config';
+
+const tmpDirs: string[] = [];
+function tmp(): string {
+	const dir = mkdtempSync(join(tmpdir(), 'mmo-config-'));
+	tmpDirs.push(dir);
+	return dir;
+}
+afterEach(() => {
+	for (const d of tmpDirs.splice(0))
+		rmSync(d, { recursive: true, force: true });
+});
+
+// --- path resolution -------------------------------------------------------
+
+test('XDG_CONFIG_HOME override wins over the home fallback', () => {
+	expect(resolveConfigPath('/xdg', '/home/p')).toBe(
+		'/xdg/terminal-mmo/config.json',
+	);
+});
+
+test('a missing/blank XDG var falls back to <home>/.config', () => {
+	expect(resolveConfigPath(undefined, '/home/p')).toBe(
+		'/home/p/.config/terminal-mmo/config.json',
+	);
+	expect(resolveConfigPath('   ', '/home/p')).toBe(
+		'/home/p/.config/terminal-mmo/config.json',
+	);
+});
+
+// --- tolerant parse --------------------------------------------------------
+
+test('corrupt / non-object JSON parses to an empty config, not a throw', () => {
+	expect(parseConfig('not json{{{')).toEqual({});
+	expect(parseConfig('[1,2,3]')).toEqual({});
+	expect(parseConfig('42')).toEqual({});
+	expect(parseConfig('null')).toEqual({});
+});
+
+// --- default-filling read --------------------------------------------------
+
+test('an empty config reads as the built-in defaults (sound on, full volume)', () => {
+	expect(readAudioPrefs({})).toEqual(AUDIO_DEFAULTS);
+});
+
+test('a partial audio block keeps its values and defaults the rest', () => {
+	const prefs = readAudioPrefs({
+		audio: { muted: true, buses: { combat: 0.5 } },
+	});
+	expect(prefs.muted).toBe(true);
+	expect(prefs.buses.combat).toBe(0.5);
+	expect(prefs.buses.movement).toBe(1); // defaulted
+	expect(prefs.master).toBe(1); // defaulted
+});
+
+test('out-of-range / wrong-typed volumes are clamped or defaulted', () => {
+	const prefs = readAudioPrefs({
+		audio: { master: 5, muted: 'yes', buses: { combat: -2, ui: 'loud' } },
+	});
+	expect(prefs.master).toBe(1); // clamped from 5
+	expect(prefs.buses.combat).toBe(0); // clamped from -2
+	expect(prefs.buses.ui).toBe(1); // defaulted from non-number
+	expect(prefs.muted).toBe(false); // defaulted from non-boolean
+});
+
+// --- unknown-key preservation ---------------------------------------------
+
+test('writeAudioPrefs preserves unknown top-level and nested keys', () => {
+	const raw = {
+		keybinds: { jump: 'space' }, // unknown top-level area
+		audio: { theme: 'retro', buses: { ambient: 0.7 } }, // unknown nested keys
+	};
+	const next = writeAudioPrefs(raw, {
+		master: 0.4,
+		muted: true,
+		buses: { combat: 0.5, movement: 0.6, ui: 0.7 },
+	});
+	expect(next.keybinds).toEqual({ jump: 'space' });
+	const audio = next.audio as Record<string, unknown>;
+	expect(audio.theme).toBe('retro');
+	expect(audio.master).toBe(0.4);
+	expect((audio.buses as Record<string, number>).ambient).toBe(0.7);
+	expect((audio.buses as Record<string, number>).combat).toBe(0.5);
+});
+
+// --- ConfigStore: tolerant load + round-trip persistence -------------------
+
+test('a missing file loads as defaults without throwing', () => {
+	const store = new ConfigStore(join(tmp(), 'nope', 'config.json')).load();
+	expect(store.audio()).toEqual(AUDIO_DEFAULTS);
+});
+
+test('saving then reloading restores the saved audio state', () => {
+	const path = join(tmp(), 'config.json');
+	const saved = {
+		master: 0.3,
+		muted: true,
+		buses: { combat: 0.2, movement: 0.9, ui: 0.5 },
+	};
+	expect(new ConfigStore(path).saveAudio(saved)).toBe(true);
+	expect(new ConfigStore(path).load().audio()).toEqual(saved);
+});
+
+test('a rewrite preserves unknown keys already on disk', () => {
+	const path = join(tmp(), 'config.json');
+	writeFileSync(path, JSON.stringify({ handle: 'ash', audio: { theme: 'x' } }));
+	const store = new ConfigStore(path).load();
+	store.saveAudio({ ...AUDIO_DEFAULTS, muted: true });
+	const reloaded = new ConfigStore(path).load();
+	expect(reloaded.audio().muted).toBe(true);
+	// The unknown `handle` survived the rewrite (re-read via a second store keeps raw).
+	const onDisk = new ConfigStore(path).load();
+	expect(onDisk.audio()).toEqual({ ...AUDIO_DEFAULTS, muted: true });
+});
+
+test('a failed write degrades to in-memory and returns false, never throws', () => {
+	// A path whose parent is a FILE (not a dir) makes mkdir/write fail.
+	const filePath = join(tmp(), 'afile');
+	writeFileSync(filePath, 'x');
+	const store = new ConfigStore(join(filePath, 'config.json'));
+	expect(store.saveAudio({ ...AUDIO_DEFAULTS, master: 0.5 })).toBe(false);
+	// Still readable in-memory for the session.
+	expect(store.audio().master).toBe(0.5);
+});

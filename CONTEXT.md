@@ -129,6 +129,18 @@ data entry, not new code. Distinct from `Effect.kind`: an Effect.kind is the
 ParticleTypes — the indirection that lets one event spawn several looks.
 _Avoid_: Effect.kind, ParticleKind, sprite
 
+**SoundEffect**:
+The client-side *audible* realization of a moment — the audio twin of a Particle.
+Where a Particle answers *what it looks like*, a SoundEffect answers *what it
+sounds like*. Two sources feed it: an authoritative **Effect** / death (so a
+nearby Avatar's hit or death is heard, spatialized by position) and a purely
+local interaction (your own jump, a menu blip — never on the wire). Always
+best-effort and non-authoritative: if there is no audio device, every SoundEffect
+is a silent no-op and the World behaves identically. The shared sim never
+references one — like a Sprite or Particle, it is the client's business alone.
+_Avoid_: Cue, sound, audio (reserve for the engine/files), Effect (that's the
+authoritative trigger, not the audible result), FX
+
 **Monster**:
 A hostile, server-controlled entity that Players fight for XP and loot. Lives in
 Fields.
