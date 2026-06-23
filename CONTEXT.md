@@ -153,18 +153,110 @@ _Avoid_: Vendor, bot
 
 **Combat**:
 Real-time PvE (Player vs Monster) fighting — a first-class pillar, not flavor.
-**Positional / directional hitbox** model with **8-directional, keyboard-driven
-aim** (no target-lock): you hit what you're aimed at and near. **Melee is
-forgiving** (a wide frontal arc — rewards getting in close, not precise aim);
-**ranged is precise** (directional projectiles — rewards aim). Clients send
-*intents*; the server resolves all outcomes authoritatively (hit, damage, kills,
-loot) and clients display what the server decides; the client may play an
-optimistic local telegraph (swing/projectile) before the authoritative result
-arrives. The combat slice of an Intent (attack/skill) is gated by a single
-shared resolver (`resolveCombat`) that both the authoritative server step and
-the client's optimistic telegraph run, so they can never gate a swing or skill
-differently.
+Built on **commitment**: an attack is not instant but occupies time in **phases**,
+so *when* you commit is itself a skill. **Positional / directional hitbox** model;
+melee aim is **contextual and forgiving** (a wide frontal arc, plus a vertical
+**Launcher**/**Spike**), ranged is **precise** (directional projectiles; mouse-aimed
+for ranged Classes later). Skill expression lives in timing (**Parry**, **Dodge**)
+and **Knockback**-driven **Juggles**, all regulated by **Poise**. Clients send
+*intents* and predict their own actions; the server resolves every outcome
+authoritatively (hit, damage, kills, loot). The combat slice of an Intent
+(attack/skill) is gated by a single shared resolver (`resolveCombat`) that both
+the authoritative server step and the client's optimistic telegraph run, so they
+can never gate a swing or skill differently. See ADR 0017.
 _Avoid_: Fighting, battle, PvE, tab-target (use "Combat")
+
+**Attack phase**:
+The three stages every attack — Player or Monster — passes through: **wind-up**
+(committed, telegraphed, interruptible), **active** (hitbox live), **recovery**
+(vulnerable, no act except a combo cancel). A "wind-up attack" is just the
+long-wind-up end of the spectrum, not a separate kind of attack.
+_Avoid_: Animation, frame, swing-state
+
+**Poise**:
+An entity's accumulating resistance to being staggered. Attacks deal **poise
+damage**; only when the pool *breaks* does a hit **Stagger**. It regenerates under
+no pressure and spikes during a wind-up (**Super-armor**). This is why weak
+Monsters never stagger you and strong ones only occasionally do.
+_Avoid_: Posture, stability, balance, stagger meter
+
+**Stagger**:
+The reaction state an entity enters the moment its **Poise** breaks — **Hitstun**
+plus **Knockback** — leaving it open to a combo. Triggered by a poise break, never
+by damage alone.
+_Avoid_: Stun, flinch, stunlock
+
+**Hitstun**:
+How long a **Staggered** entity is locked out of action. Control is locked but
+physics is not — the body still flies under **Knockback** and gravity, which is
+what being comboed feels like.
+_Avoid_: Stun, freeze, lock
+
+**Knockback**:
+The impulse a hit imparts to the victim's momentum on **Stagger** — a shove, a
+launch, or a spike. Scaled by the victim's **Mass**. Tuned snappy/arcade, not
+floaty.
+_Avoid_: Pushback, recoil, impulse
+
+**Mass**:
+An entity's resistance to **Knockback** distance — the same **Launcher** rockets a
+light Slime across the screen but barely lifts a heavy ogre.
+_Avoid_: Weight, heaviness
+
+**Super-armor**:
+The temporary **Poise** spike an entity holds during a wind-up, letting a heavy
+attack shrug off light hits without being interrupted.
+_Avoid_: Hyper-armor, armor (reserve for gear)
+
+**Launcher**:
+An attack (`up` + attack) that **Knocks** a poise-broken target upward and pops the
+attacker up to follow — the entry into an aerial **Juggle**.
+_Avoid_: Uppercut, pop-up
+
+**Spike**:
+An airborne attack (`down` + attack) that drives a **Juggled** target back down to
+the ground.
+_Avoid_: Slam, down-air, ground-pound (that is an active skill)
+
+**Juggle**:
+Keeping a **Staggered** target airborne with successive hits. Bounded by **combo
+decay** (each hit adds less **Hitstun** and the target falls faster) so it
+self-terminates back to neutral — never infinite.
+_Avoid_: Air combo, loop, infinite
+
+**Guard**:
+The unified, frontal-arc defensive stance. The opening window of a guard-raise is a
+**Parry**; held past that window it is a **Block**. Hits from behind ignore it.
+_Avoid_: Defend, stance, shield
+
+**Block**:
+Holding **Guard** to absorb a frontal hit for chip damage, draining **Poise** toward
+a guard-break. The safe, low-skill defense, available from level 1.
+_Avoid_: Shield, brace
+
+**Parry**:
+A hit caught in the opening window of a **Guard** — it negates the hit, dumps
+**Poise** damage onto the attacker (opening a punish), and **reflects** a
+projectile back at its source. The high-skill defense, an earned unlock.
+Deflecting a projectile is a Parry.
+_Avoid_: Deflect, riposte, counter, block (that is the held version)
+
+**Dodge**:
+A short horizontal hop granting brief invulnerability (i-frames) with committal
+recovery — the mobility-defense, available from level 1.
+_Avoid_: Roll, dash, evade
+
+**Moveset ability**:
+A passive, no-cooldown extension of what the attack button does — string
+extensions, the **Launcher**, aerials, the **Spike**, cancels, the **Parry** —
+unlocked by level (and later **Class**). Distinct from an **Active skill**; it is
+*how your character moves*, not a thing you fire.
+_Avoid_: Skill (reserve for active), passive, combo move
+
+**Active skill**:
+A slotted, cooldown-bound special move (e.g. Power Strike, Ground Pound) fired on
+its own input. Distinct from a passive **Moveset ability**.
+_Avoid_: Ability, spell, move
 
 **Intent**:
 The per-tick bundle of what an Avatar is trying to do, reported by the client
