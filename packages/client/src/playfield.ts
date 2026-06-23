@@ -26,6 +26,13 @@ import {
 } from '@opentui/core';
 import { layoutBubble } from './bubble';
 import { type CameraState, initCameraState, stepCamera } from './camera';
+import {
+	type Particle,
+	ParticleSystem,
+	particleColor,
+	particleGlyph,
+	stepParticles,
+} from './particles';
 import { COLORS as C } from './theme';
 
 // The colour binding for the shared, framework-agnostic renderer (@mmo/shared):
@@ -190,10 +197,38 @@ function drawText(
 	}
 }
 
+// Blit every active speck the `keep` filter selects, projected through the camera
+// and alpha-blended so overlapping blood reads denser. Colour + glyph come from
+// the pure particle helpers (ADR 0013), so this stays a thin blitter.
+function drawParticles(
+	buf: OptimizedBuffer,
+	particles: ParticleSystem,
+	cam: { x: number; y: number },
+	sw: number,
+	sh: number,
+	keep: (p: Particle) => boolean,
+) {
+	for (const p of particles.particles) {
+		if (!p.active || !keep(p)) continue;
+		const px = Math.round(p.x - cam.x);
+		const py = Math.round(p.y - cam.y);
+		if (px < 0 || px >= sw || py < 0 || py >= sh) continue;
+		const c = particleColor(p);
+		buf.setCellWithAlphaBlending(
+			px,
+			py,
+			particleGlyph(p),
+			RGBA.fromInts(c.r, c.g, c.b, c.a),
+			C.transparent,
+		);
+	}
+}
+
 function drawPlayfield(
 	buf: OptimizedBuffer,
 	game: GameState,
 	cam: { x: number; y: number },
+	particles: ParticleSystem,
 ) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
@@ -219,6 +254,11 @@ function drawPlayfield(
 		cam,
 		STYLE,
 	);
+
+	// First particle pass (ADR 0013): resting / fading blood draws just above
+	// terrain so it reads as splatter on the floor, behind the Sprites and the
+	// local Avatar that follow.
+	drawParticles(buf, particles, cam, sw, sh, (p) => p.stage !== 'airborne');
 
 	// Interaction prompts depend on the local Avatar's overlap, so they're
 	// client-only dynamic overlays drawn on top of the static scene.
@@ -283,6 +323,11 @@ function drawPlayfield(
 	// The local Avatar is drawn last, on top of everyone (ADR 0003).
 	drawEntitySprite(buf, p, cam, STYLE);
 
+	// Second particle pass: airborne blood erupts in front of the Sprites (toward
+	// the camera), still below the over-head Speech bubbles / emotes that follow so
+	// chat stays legible.
+	drawParticles(buf, particles, cam, sw, sh, (pt) => pt.stage === 'airborne');
+
 	// Final pass after all Sprites + nameplates: over-head Speech bubbles for every
 	// chatter on screen, the local Avatar included (one uniform rule, ADR 0007). An
 	// absent sender simply has no entity here, so its bubble isn't drawn.
@@ -308,6 +353,11 @@ export class PlayfieldRenderable extends Renderable {
 	game: GameState | null = null;
 
 	private camState: CameraState = initCameraState();
+	// The client-local particle system (ADR 0013): combat Effects off the sim feed
+	// it, it's advanced at render framerate, drawn two-pass by drawPlayfield.
+	private particles = new ParticleSystem();
+	private lastParticleTick = -1;
+	private lastTime = 0;
 
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
 		super(ctx, { width: '100%', height: '100%', live: true, ...options });
@@ -329,6 +379,26 @@ export class PlayfieldRenderable extends Renderable {
 				wh: zone.terrain.h,
 			},
 		);
-		if (this.camState.cam) drawPlayfield(buffer, this.game, this.camState.cam);
+		const cam = this.camState.cam;
+		if (!cam) return;
+
+		// Advance the particle system at render framerate. Fresh Effects are consumed
+		// once per sim tick (guarded by world.tick so a faster render loop can't spawn
+		// the same burst twice); off-camera bursts are skipped inside stepParticles.
+		const now = performance.now();
+		const dt = this.lastTime ? now - this.lastTime : 0;
+		this.lastTime = now;
+		const tick = this.game.world.tick;
+		const fresh =
+			tick !== this.lastParticleTick ? (this.game.effects ?? []) : [];
+		this.lastParticleTick = tick;
+		stepParticles(this.particles, fresh, dt, zone.terrain, Math.random, {
+			x: cam.x,
+			y: cam.y,
+			w: buffer.width,
+			h: buffer.height,
+		});
+
+		drawPlayfield(buffer, this.game, cam, this.particles);
 	}
 }

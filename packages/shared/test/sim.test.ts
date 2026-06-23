@@ -105,6 +105,17 @@ test('attacking damages an adjacent monster', () => {
 	expect(zone.monsters[0].hp).toBe(MONSTER.chaserHp - 8);
 });
 
+test('step surfaces the tick Effects so the offline loop can feed the particle system', () => {
+	const g = step(adjacentGame(), { moveX: 0, jump: false, attack: true }, 16);
+	expect(g.effects?.length).toBe(1);
+	expect(g.effects?.[0].kind).toBe('blood');
+});
+
+test('a step with no combat surfaces no Effects', () => {
+	const g = step(adjacentGame(), IDLE, 16);
+	expect(g.effects ?? []).toEqual([]);
+});
+
 test('killing a monster grants XP and an instanced loot drop', () => {
 	const g = step(adjacentGame(4), { moveX: 0, jump: false, attack: true }, 16);
 	expect(activeZone(g.world, g.player.zoneId).monsters.length).toBe(0);
