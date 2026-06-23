@@ -73,7 +73,13 @@ export const BLOOD: ParticleType = {
 	maxLifeMs: 6000,
 	launchSpeed: 14,
 	launchSpread: 10,
-	glyphs: { airborne: ['·', '•', '*'], rest: ['·', '.', ','] },
+	// Block "pixels" matching the game's pixel-art sprites (not ASCII punctuation):
+	// airborne specks are sub-cell quadrant droplets; settled specks use
+	// lower-anchored blocks so the pool reads as resting on the floor.
+	glyphs: {
+		airborne: ['▖', '▗', '▘', '▝'],
+		rest: ['▄', '▃', '▖', '▗'],
+	},
 	colors: [
 		{ t: 0, r: 220, g: 40, b: 40 }, // bright arterial red
 		{ t: 0.5, r: 150, g: 25, b: 25 },
