@@ -125,11 +125,10 @@ test('a speck runs the full lifecycle: airborne → bounce → rest → fade →
 	expect(sawRest).toBe(true);
 	expect(sawFade).toBe(true);
 	expect(p.active).toBe(false); // culled at the end of the fade
-	// It settled on the solid floor (its resting cell, or the one below, is solid).
-	expect(
-		isSolid(terrain, Math.floor(10), Math.floor(restY)) ||
-			isSolid(terrain, Math.floor(10), Math.floor(restY) + 1),
-	).toBe(true);
+	// It rests ON TOP of the platform, not sunk into it: its own cell is empty and
+	// the cell directly below is solid.
+	expect(isSolid(terrain, Math.floor(10), Math.floor(restY))).toBe(false);
+	expect(isSolid(terrain, Math.floor(10), Math.floor(restY) + 1)).toBe(true);
 });
 
 test('a profile with no gravity and no terrain collision never settles (profile-driven)', () => {

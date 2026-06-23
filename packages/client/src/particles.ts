@@ -298,9 +298,11 @@ function advance(
 		const blocked =
 			type.collide && isSolid(terrain, Math.floor(nx), Math.floor(ny));
 		if (blocked) {
-			// Settle x onto the contact column; hold y just above the solid cell.
+			// Settle onto the surface: keep the contact column, and rest in the empty
+			// cell directly ABOVE the solid one (floor(ny) is the solid row itself —
+			// landing there would sink the speck into the platform).
 			p.x = nx;
-			p.y = Math.floor(ny);
+			p.y = Math.floor(ny) - 1;
 			if (!p.bounced) {
 				// The single permitted bounce: reflect and damp.
 				p.vy = -Math.abs(p.vy) * type.restitution;
