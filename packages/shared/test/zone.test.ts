@@ -654,3 +654,65 @@ test('a Staggered Monster surfaces the staggered action-flag in the snapshot', (
 		ACTION_FLAG.staggered,
 	);
 });
+
+test('a default chaser Poise-breaks strictly before it dies (the break is observable)', () => {
+	// The tuning guard behind the demo: if a chaser broke only on the same hit that
+	// killed it, the Stagger would never be seen. Pure accumulation (regen is gated
+	// under a flurry), so hit counts come straight from the constants.
+	const hitsToBreak = Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage);
+	const hitsToKill = Math.ceil(MONSTER.chaserHp / COMBAT.meleeDamage);
+	expect(hitsToBreak).toBeLessThan(hitsToKill);
+});
+
+test('sustained real swings Stagger a chaser while it is still alive (regen is gated)', () => {
+	// Drive genuine swings (windup→active→recovery) tick by tick, keeping the Avatar
+	// in melee range as the Monster is knocked back. The regen delay must hold the
+	// pool down across swings so a break actually lands before the kill — an always-on
+	// regen would refill it between swings and this would never observe a Stagger.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	let state: ZoneState = {
+		zone: zoneWith([m]),
+		avatars: [serverAvatar(7, 20)],
+		tick: 0,
+	};
+	let staggeredAlive = false;
+	for (let i = 0; i < 120 && state.zone.monsters.length > 0; i++) {
+		const mon = state.zone.monsters[0];
+		// Report the Avatar just to the Monster's left, facing into it, swinging.
+		const intent: AvatarIntent = {
+			sessionId: 7,
+			x: mon.x - BOX.w,
+			y,
+			vx: 0,
+			vy: 0,
+			facing: 1,
+			onGround: true,
+			attack: true,
+		};
+		state = stepZone(state, [intent], 16);
+		const after = state.zone.monsters[0];
+		if (after && (after.stunT ?? 0) > 0 && after.hp > 0) staggeredAlive = true;
+	}
+	expect(staggeredAlive).toBe(true); // a Stagger was seen on a living chaser
+	expect(state.zone.monsters.length).toBe(0); // and the flurry eventually killed it
+});
+
+test('Poise regenerates once pressure stops (a spaced poke does not accumulate to a break)', () => {
+	// One hit chips the pool; then with no further hits the regen-delay drains and the
+	// pool climbs back to full — so the SAME single chip never compounds into a break.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 1000; // survive indefinitely
+	let state: ZoneState = {
+		zone: zoneWith([m]),
+		avatars: [primeSwing(serverAvatar(7, 20))],
+		tick: 0,
+	};
+	state = stepZone(state, [attackRight(state.avatars[0])], 16);
+	const chipped = state.zone.monsters[0].poise ?? 0;
+	expect(chipped).toBeLessThan(COMBAT.poise.max); // it was chipped
+	expect(state.zone.monsters[0].stunT ?? 0).toBe(0); // not staggered by one chip
+	// Now idle long enough for regen to resume and refill the pool.
+	const a = state.avatars[0].avatar;
+	for (let i = 0; i < 120; i++) state = stepZone(state, [holdAt(7, a)], 16);
+	expect(state.zone.monsters[0].poise).toBe(COMBAT.poise.max); // fully recovered
+});

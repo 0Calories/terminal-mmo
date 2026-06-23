@@ -86,6 +86,11 @@ export interface Entity {
 	// and a hit that drives it to 0 BREAKS (refilling it) and triggers Stagger. Absent
 	// == full (DEFAULT poise.max). Server-tracked; never on the wire.
 	poise?: number;
+	// Seconds remaining before Poise regen resumes (ADR 0017 §3): set to
+	// COMBAT.poise.regenDelay on every poise hit and counted down each tick, so the
+	// pool only regenerates "under no pressure" — under a flurry it purely accumulates
+	// and breaks. Absent == 0 (regen active). Server-tracked; never on the wire.
+	poiseT?: number;
 	// Hitstun (ADR 0017 §2): seconds of remaining Stagger. While > 0 the victim's
 	// CONTROL is locked (no AI / input drive) but its body still integrates Knockback
 	// + gravity, so a staggered entity flies. Absent == 0 (acting normally). The

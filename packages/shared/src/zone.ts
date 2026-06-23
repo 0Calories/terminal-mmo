@@ -239,7 +239,11 @@ export function stepZone(
 		// regenerate the Poise pool under no pressure. `stunned` locks CONTROL (no AI),
 		// not physics — the body below still integrates its Knockback impulse + gravity.
 		m.stunT = Math.max(0, (m.stunT ?? 0) - dt);
-		m.poise = regenPoise(m, dt);
+		// Poise regenerates only under no pressure (ADR 0017 §3): the regen-delay timer
+		// is reset on every hit below, so a flurry holds it > 0 and the pool purely
+		// accumulates (and breaks); once hits stop, it drains and regen resumes.
+		m.poiseT = Math.max(0, (m.poiseT ?? 0) - dt);
+		if ((m.poiseT ?? 0) <= 0) m.poise = regenPoise(m, dt);
 		const stunned = (m.stunT ?? 0) > 0;
 
 		const target = nearestAvatar(avatars, m.x);
@@ -294,7 +298,15 @@ export function stepZone(
 					? m.contributors
 					: [...(m.contributors ?? []), sid];
 				const { poise, broke } = applyPoiseDamage(m, COMBAT.poiseDamage);
-				m = { ...m, hp: m.hp - damages[i], poise, contributors };
+				// Reset the regen-delay so a sustained flurry keeps the pool from healing
+				// between swings (ADR 0017 §3).
+				m = {
+					...m,
+					hp: m.hp - damages[i],
+					poise,
+					poiseT: COMBAT.poise.regenDelay,
+					contributors,
+				};
 				if (broke) {
 					// Poise break → Stagger: lock control for Hitstun and throw the body with
 					// a Knockback impulse (applyImpulse scales by 1/Mass — a light Slime

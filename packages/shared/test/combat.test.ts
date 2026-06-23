@@ -412,18 +412,19 @@ describe('applyPoiseDamage', () => {
 		expect(r.poise).toBe(COMBAT.poise.max - COMBAT.poiseDamage);
 	});
 
-	test('accumulates across hits and breaks only when the pool reaches 0', () => {
-		// A Slime-sized pool (max 24) vs an 8-poise swing: chip, chip, BREAK on the 3rd.
+	test('accumulates across hits and breaks only when the pool empties', () => {
+		// Pure accumulation (no regen between hits): the pool depletes by poiseDamage
+		// each connect and breaks exactly when the accumulated damage empties it.
+		const hitsToBreak = Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage);
 		let poise: number = COMBAT.poise.max;
-		const hits: boolean[] = [];
-		for (let i = 0; i < 3; i++) {
+		let brokeAt = -1;
+		for (let i = 1; i <= hitsToBreak; i++) {
 			const r = applyPoiseDamage(monster(0, 0, { poise }), COMBAT.poiseDamage);
-			hits.push(r.broke);
+			if (r.broke && brokeAt < 0) brokeAt = i;
 			poise = r.poise;
 		}
-		expect(hits).toEqual([false, false, true]);
-		// A break refills the pool, so the next hit chips a fresh pool again.
-		expect(poise).toBe(COMBAT.poise.max);
+		expect(brokeAt).toBe(hitsToBreak); // earlier hits chip; only the last one breaks
+		expect(poise).toBe(COMBAT.poise.max); // a break refilled the pool
 	});
 
 	test('a low-poise-damage attacker never breaks a high-poise target', () => {
