@@ -46,8 +46,8 @@ const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 // above and below; the canvas is sized for the tallest possible stack so no selection
 // ever clips.
 export const PLAYER = spriteFor('player');
-// The boxed nameplate is 3 rows: top border, handle, bottom border (#103).
-export const NAMEPLATE_H = 3;
+// The nameplate pill is 2 rows: the handle row and a thin lip (#103, ADR 0016).
+export const NAMEPLATE_H = 2;
 const MAX_HAT_H = Math.max(0, ...HATS.map((h) => h.sprite?.h ?? 0));
 export const VPAD = 1;
 const PREVIEW_W = PLAYER.w + 12; // Sprite plus room for a short handle either side

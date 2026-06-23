@@ -51,12 +51,13 @@ const STYLE: RenderStyle<string> = {
 	transparent: 'tr',
 	hurt: 'h',
 	nameplate: 'name',
-	nameplateBg: 'namebg',
+	nameplateWash: 'wash',
 	palette: Object.fromEntries(Object.keys(SCENE_PALETTE).map((k) => [k, k])),
 	paletteDefault: '?',
 	cosmetics: {
 		hues: HUES.map((_, i) => `hue${i}`),
 		nameplates: NAMEPLATE_COLORS.map((_, i) => `np${i}`),
+		nameplateWashes: NAMEPLATE_COLORS.map((_, i) => `wash${i}`),
 	},
 };
 

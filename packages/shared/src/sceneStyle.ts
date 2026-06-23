@@ -17,12 +17,22 @@ export const SCENE_COLORS = {
 	portal: [180, 130, 255, 255],
 	transparent: [0, 0, 0, 0],
 	hurt: [255, 240, 120, 255],
+	// `nameplate` is the handle text colour (the cosmetic plate colour, #35). The
+	// nameplate is a 2-row pill chip drawn directly below the feet (#103, ADR 0016):
+	// over terrain it is a faint translucent WASH of the cosmetic colour (a tint of the
+	// terrain under it) with the handle on top at full opacity; off terrain the pill is
+	// not drawn at all and only the handle glyph shows. The wash alpha lives in
+	// `NAMEPLATE_WASH_ALPHA` since @mmo/shared can't derive a low-alpha colour at draw
+	// time (it only holds opaque resolved colours).
 	nameplate: [150, 156, 168, 255],
-	// Opaque dark fill behind the boxed nameplate (#103), matching the chat bubble's
-	// panel so handles read as labels rather than floating text.
-	nameplateBg: [20, 24, 34, 255],
 	paletteDefault: [232, 232, 238, 255],
 } as const satisfies Record<string, RGBAQuad>;
+
+// Opacity of the over-terrain nameplate pill, as an 8-bit alpha. The pill is the
+// cosmetic colour at this alpha, blended over the terrain beneath it (#103, ADR 0016);
+// ~8% reads as a barely-there wash that lets terrain show through while still framing the
+// handle. A judgement call, tuned in a real terminal.
+export const NAMEPLATE_WASH_ALPHA = 20;
 
 // The cosmetic Avatar hue catalog (#35, ADR 0003): the body-recolour options an
 // Avatar chooses from, indexed by the on-the-wire hue id. Index 0 is the default
@@ -82,6 +92,8 @@ export type ColorFactory<C> = (r: number, g: number, b: number, a: number) => C;
  */
 export function buildSceneStyle<C>(toColor: ColorFactory<C>): RenderStyle<C> {
 	const c = (q: RGBAQuad) => toColor(q[0], q[1], q[2], q[3]);
+	// Same RGB as `c`, but forced to the translucent nameplate-pill alpha (ADR 0016).
+	const wash = (q: RGBAQuad) => toColor(q[0], q[1], q[2], NAMEPLATE_WASH_ALPHA);
 	const palette: Record<string, C> = {};
 	for (const [k, q] of Object.entries(SCENE_PALETTE)) palette[k] = c(q);
 	return {
@@ -92,14 +104,18 @@ export function buildSceneStyle<C>(toColor: ColorFactory<C>): RenderStyle<C> {
 		transparent: c(SCENE_COLORS.transparent),
 		hurt: c(SCENE_COLORS.hurt),
 		nameplate: c(SCENE_COLORS.nameplate),
-		nameplateBg: c(SCENE_COLORS.nameplateBg),
+		// The default handle's pill wash (no cosmetics): the dim grey at the wash alpha.
+		nameplateWash: wash(SCENE_COLORS.nameplate),
 		palette,
 		paletteDefault: c(SCENE_COLORS.paletteDefault),
 		// Cosmetic catalogs resolved into the colour type once, so the renderer can
-		// index them per Avatar without re-resolving (#35).
+		// index them per Avatar without re-resolving (#35). `nameplateWashes` is the
+		// parallel low-alpha pill colour for each handle tint, prebuilt here because the
+		// generic renderer can't derive a translucent variant from an opaque `C`.
 		cosmetics: {
 			hues: HUES.map((q) => c(q)),
 			nameplates: NAMEPLATE_COLORS.map((q) => c(q)),
+			nameplateWashes: NAMEPLATE_COLORS.map((q) => wash(q)),
 		},
 	};
 }
