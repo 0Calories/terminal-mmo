@@ -1,7 +1,6 @@
 import {
 	aabbOverlap,
 	activeZone,
-	COMBAT,
 	type Cosmetics,
 	clientStepAvatar,
 	createGame,
@@ -10,16 +9,13 @@ import {
 	type GameState,
 	type Input,
 	loadZones,
-	meleeHitbox,
 	PHYS,
 	predictHitEffects,
 	randomCosmetics,
+	resolveCombat,
 	SPAWN,
 	saleValue,
 	sellItem,
-	skillForSlot,
-	skillHitbox,
-	skillUnlocked,
 	spawnAvatar,
 	step,
 	type Zone,
@@ -304,7 +300,7 @@ function runNetworked(url: string) {
 		// Own Avatar, predicted locally for zero input lag; the server corrects vitals
 		// (and snaps position on respawn) via snapshots.
 		let predicted: Entity = spawnAvatar(SPAWN.x, SPAWN.y);
-		const localCd: Record<string, number> = {}; // predicted skill cooldowns (off-wire)
+		let localCd: Record<string, number> = {}; // predicted skill cooldowns (off-wire)
 		const SEND_INTERVAL = 1000 / 30; // throttle input reports to ~30 Hz
 		let sendAcc = 0;
 		const chat = new ChatInput(); // Zone-local chat typing mode (#34)
@@ -409,25 +405,19 @@ function runNetworked(url: string) {
 			// so the swing/skill flash shows before the snapshot confirms the hit. The
 			// same gate yields the outgoing hitbox + damage for blood prediction (ADR
 			// 0013): a fired Skill overrides the basic swing, matching resolveAvatarIntent.
-			const swung = inp.attack && predicted.attackT <= 0;
-			if (swung) predicted.attackT = COMBAT.attackCooldown;
-			let hitbox = swung ? meleeHitbox(predicted) : null;
-			let hitDamage: number = COMBAT.meleeDamage;
 			const dtSec = Math.min(dt / 1000, PHYS.maxDt);
-			for (const id in localCd) localCd[id] = Math.max(0, localCd[id] - dtSec);
-			const level = net.latest?.progress.level ?? 1;
-			if (inp.skill) {
-				const skill = skillForSlot('warrior', inp.skill);
-				if (
-					skill &&
-					skillUnlocked(skill, level) &&
-					(localCd[skill.id] ?? 0) <= 0
-				) {
-					localCd[skill.id] = skill.cooldown;
-					hitbox = skillHitbox(predicted, skill);
-					hitDamage = skill.damage;
-				}
-			}
+			const r = resolveCombat(
+				predicted,
+				localCd,
+				net.latest?.progress.level ?? 1,
+				'warrior',
+				{ attack: inp.attack, skill: inp.skill },
+				dtSec,
+			);
+			predicted.attackT = r.attackT;
+			localCd = r.cooldowns;
+			const hitbox = r.hitbox;
+			const hitDamage = r.damage;
 
 			// Server owns vitals; reconcile HP/i-frames from snapshots. Position is NOT
 			// reconciled here: per ADR 0001 the client is authoritative over its own
