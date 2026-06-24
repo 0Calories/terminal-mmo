@@ -14,8 +14,7 @@ import type { WeaponSprite } from '../weapon-sprite';
 // VISUAL ARTEFACT — the art here needs design review / sign-off before merge.
 
 // Rest: blade upright at the side, steel rising from a dark guard (the hand cell).
-const idle = new Sprite(
-	`
+const idle = new Sprite(`
 ▐▌
 ▟▙
 ▝▘`,
@@ -23,11 +22,12 @@ const idle = new Sprite(
 );
 
 // Wind-up: blade cocked up-and-forward, raised to strike (above the hand).
-const windup = new Sprite(
-	`
-·╱
-╱·
-▐▌`,
+const windup = new Sprite(`
+
+·▙
+·▐▙
+··▝▘
+`,
 	{ defaultKey: 's' },
 );
 
@@ -35,43 +35,22 @@ const windup = new Sprite(
 // swingProgress — first frame at 0, last at 1. The blade rotates around the hand from
 // high (up-forward) through a level strike to low (down-forward); heft comes from the
 // weapon's phase DURATIONS, not from more frames.
-const active0 = new Sprite(
-	`
-··╱
-·╱·
-▐▌·`,
-	{ defaultKey: 's' },
-);
-const active1 = new Sprite(
-	`
-···
-···
-▐──`,
-	{ defaultKey: 's' },
-);
-const active2 = new Sprite(
-	`
-···
-···
-▐··
-·╲·
-··╲`,
-	{ defaultKey: 's' },
-);
 
-// Recovery: blade hangs low past the hand, the follow-through settling back toward rest.
-const recovery = new Sprite(
-	`
-··
-··
-▐▌
-·▌
-·▘`,
+
+// ▃▅▁▁▁▁
+// ▔▀▔▔▔▔
+
+const active1 = new Sprite(`
+·
+·
+▃▙▂▂▂▂
+ ▘▔▔▔▔
+`,
 	{ defaultKey: 's' },
 );
 
 export const sword: WeaponSprite = {
-	frames: { idle, windup, active: [active0, active1, active2], recovery },
+	frames: { idle, windup, active: [active1] },
 	// Bottom-of-rest cell (the guard) sits in the hand: grip-to-grip with the body grip,
 	// row 2 in every frame so the blade pivots around a fixed hand through the swing.
 	grip: { x: -1, y: 2 },
