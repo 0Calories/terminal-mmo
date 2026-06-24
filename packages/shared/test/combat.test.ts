@@ -9,7 +9,9 @@ import {
 	bladeEdgeArc,
 	bloodEffect,
 	COMBAT,
+	type CombatEvent,
 	canStartDodge,
+	combatEventAt,
 	DODGE_LOCKOUT,
 	DODGE_TOTAL,
 	deathGoreEffect,
@@ -17,8 +19,9 @@ import {
 	dodgePhase,
 	dodgeProgress,
 	dodgeReady,
+	type Effect,
 	type Entity,
-	entityBox,
+	effectsOf,
 	entityTint,
 	facingToward,
 	GROUND_POUND,
@@ -33,7 +36,7 @@ import {
 	POWER_STRIKE,
 	parryActive,
 	parryEffect,
-	predictHitEffects,
+	predictHits,
 	regenPoise,
 	resolveCombat,
 	resolveGuard,
@@ -41,6 +44,7 @@ import {
 	skillHitbox,
 	superArmorActive,
 	sweepIndex,
+	swingHitsTarget,
 	swingPhase,
 	swingPose,
 	swingPoseCell,
@@ -169,38 +173,80 @@ describe('deathGoreEffect', () => {
 	});
 });
 
-describe('predictHitEffects', () => {
-	test('emits one blood Effect per overlapping, non-i-framed monster', () => {
-		const attacker = monster(0, 0, { facing: 1 });
-		const hb = meleeHitbox(attacker);
-		// place a monster squarely inside the swing hitbox
+describe('swingHitsTarget', () => {
+	const attacker = monster(0, 0, { facing: 1 });
+	const hb = meleeHitbox(attacker);
+
+	test('strikes an overlapping target not yet in the swing registry', () => {
 		const target = monster(hb.x, hb.y, { id: 7 });
-		const effects = predictHitEffects(hb, 1, 8, [target]);
-		expect(effects).toHaveLength(1);
-		expect(effects[0]).toEqual(bloodEffect(target, 1, 8));
+		expect(swingHitsTarget(hb, new Set(), target)).toBe(true);
 	});
 
-	test('skips monsters in i-frames (hurtT > 0)', () => {
-		const attacker = monster(0, 0, { facing: 1 });
-		const hb = meleeHitbox(attacker);
-		const target = monster(hb.x, hb.y, { hurtT: 0.3 });
-		expect(predictHitEffects(hb, 1, 8, [target])).toHaveLength(0);
+	test('does NOT strike a target already in the registry — the dedup gate', () => {
+		const target = monster(hb.x, hb.y, { id: 7 });
+		expect(swingHitsTarget(hb, new Set([7]), target)).toBe(false);
 	});
 
-	test('skips monsters the hitbox does not overlap', () => {
-		const attacker = monster(0, 0, { facing: 1 });
-		const hb = meleeHitbox(attacker);
-		const far = monster(hb.x + 100, hb.y);
-		expect(predictHitEffects(hb, 1, 8, [far])).toHaveLength(0);
+	test('the registry, NOT hurtT, is the gate — an i-framed target still strikes', () => {
+		// The bug ADR 0019 fixes: a player hit never sets a Monster's hurtT, so a
+		// hurtT gate never closed and predicted blood sprayed every frame. The swing
+		// registry is the gate; hurtT is irrelevant to it.
+		const target = monster(hb.x, hb.y, { id: 7, hurtT: 0.3 });
+		expect(swingHitsTarget(hb, new Set(), target)).toBe(true);
 	});
 
-	test('never attaches a source — predicted Effects are not reported upward', () => {
-		const attacker = monster(0, 0, { facing: 1 });
-		const hb = meleeHitbox(attacker);
-		const target = monster(hb.x, hb.y);
-		expect(predictHitEffects(hb, 1, 8, [target])[0].source).toBeUndefined();
-		// sanity: the hitbox really does overlap the target
-		expect(entityBox(target).x).toBeLessThan(hb.x + hb.w);
+	test('no overlap and a null hitbox both miss', () => {
+		const far = monster(hb.x + 100, hb.y, { id: 7 });
+		expect(swingHitsTarget(hb, new Set(), far)).toBe(false);
+		expect(swingHitsTarget(null, new Set(), monster(hb.x, hb.y))).toBe(false);
+	});
+});
+
+describe('predictHits', () => {
+	const attacker = monster(0, 0, { facing: 1 });
+	const hb = meleeHitbox(attacker);
+
+	test('emits one hit CombatEvent per overlapping monster, at its centre', () => {
+		const target = monster(hb.x, hb.y, { id: 7 });
+		const events = predictHits(hb, 1, 8, new Set(), [target]);
+		expect(events).toEqual([combatEventAt('hit', target, 1, 8)]);
+	});
+
+	test('a null hitbox (no live swing) predicts nothing', () => {
+		expect(predictHits(null, 1, 8, new Set(), [monster(hb.x, hb.y)])).toEqual(
+			[],
+		);
+	});
+
+	test('never attaches a source — predicted events are not reported upward', () => {
+		const events = predictHits(hb, 1, 8, new Set(), [monster(hb.x, hb.y)]);
+		expect(events[0].source).toBeUndefined();
+	});
+
+	// The headline fix (ADR 0019): a swing's active window spans many render frames,
+	// but the per-swing registry means a single target yields exactly ONE predicted
+	// hit across the whole window — no rapid-fire blood/sound spray.
+	test('a multi-tick active window yields exactly one hit per target per swing', () => {
+		const target = monster(hb.x, hb.y, { id: 7 });
+		const swingHits = new Set<number>(); // cleared on swingStarted; persists across active ticks
+		let total = 0;
+		for (let tick = 0; tick < 14; tick++) {
+			const events = predictHits(hb, 1, 8, swingHits, [target]);
+			total += events.length;
+			for (const e of events) swingHits.add(e.targetId);
+		}
+		expect(total).toBe(1);
+		// A fresh swing clears the registry → the SAME target can be hit again.
+		swingHits.clear();
+		expect(predictHits(hb, 1, 8, swingHits, [target])).toHaveLength(1);
+	});
+
+	test('predicted hits project to source-less blood Effects via effectsOf', () => {
+		const target = monster(hb.x, hb.y, { id: 7 });
+		const effects: Effect[] = predictHits(hb, 1, 8, new Set(), [
+			target,
+		]).flatMap(effectsOf);
+		expect(effects).toEqual([bloodEffect(target, 1, 8)]);
 	});
 });
 
@@ -1139,5 +1185,52 @@ describe('resolveCombat threads the held Guard (ADR 0017 §5)', () => {
 			0.016,
 		);
 		expect(r.guardT).toBe(0);
+	});
+});
+
+describe('effectsOf', () => {
+	test('a hit projects to a single blood Effect, source passed through', () => {
+		const e: CombatEvent = {
+			kind: 'hit',
+			targetId: 1,
+			x: 12,
+			y: 5,
+			dir: 1,
+			intensity: 8,
+			source: 42,
+		};
+		expect(effectsOf(e)).toEqual([
+			{ kind: 'blood', x: 12, y: 5, intensity: 8, dir: 1, source: 42 },
+		]);
+	});
+
+	test('a break projects to a sourceless impact, heavier than the chip damage', () => {
+		const e: CombatEvent = {
+			kind: 'break',
+			targetId: 1,
+			x: 12,
+			y: 5,
+			dir: -1,
+			intensity: 8,
+		};
+		expect(effectsOf(e)).toEqual([
+			{
+				kind: 'impact',
+				x: 12,
+				y: 5,
+				intensity: 8 + COMBAT.poise.max,
+				dir: -1,
+			},
+		]);
+	});
+
+	test('death projects to gore, parry to a fixed-intensity parry flash', () => {
+		const at = { targetId: 1, x: 3, y: 4, dir: 1 as const, intensity: 9 };
+		expect(effectsOf({ kind: 'death', ...at })).toEqual([
+			{ kind: 'gore', x: 3, y: 4, intensity: 9, dir: 1 },
+		]);
+		expect(effectsOf({ kind: 'parry', ...at })).toEqual([
+			{ kind: 'parry', x: 3, y: 4, intensity: COMBAT.poise.max, dir: 1 },
+		]);
 	});
 });

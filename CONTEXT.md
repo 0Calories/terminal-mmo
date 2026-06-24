@@ -98,16 +98,30 @@ to the Avatar by session id, tracks the Avatar as it moves, and expires on a
 timer — the chat log stays the durable record.
 _Avoid_: Chat bubble, balloon, callout, tooltip
 
+**CombatEvent**:
+The resolved, *semantic* fact of a combat interaction — "target T was **hit** /
+**broke** (poise) / **died** / **parried**, at (x,y), facing →, intensity N." It is
+what Combat resolution produces; an **Effect** is its presentation projection (via
+the shared `effectsOf`), and a **Particle** is the Effect's realization. The
+authority *produces* a CombatEvent by applying damage/poise (the poise result is
+what makes a contact a hit vs a break vs a death); the local Player *predicts* only
+the optimistic `hit` event from contact, for zero-latency feedback. `break`/`death`/
+`parry` are authority-only. Distinct from Effect: a CombatEvent's `kind` is the game
+fact (`hit`), an Effect's `kind` is the look (`blood`). Shared-internal, never on the
+wire — it is projected to Effects before the snapshot is built (see ADR 0019).
+_Avoid_: Effect (that's the projection), HitEvent, Outcome
+
 **Effect**:
 A small, authoritative descriptor of a momentary world event worth showing —
-e.g. "a blood-hit landed at (x,y), facing →, intensity N." Produced
-deterministically in shared logic the moment Combat resolves, and broadcast to
-every session in the Zone (like an Emote) *except* the session that caused it
-(which predicts it locally). An Effect says *what happened*, never *what it
-looks like* — its visual realization is the client's business (see Particle).
-The local Player predicts their own Effects client-side for zero-latency
-feedback; the server derives the same Effects independently and authoritatively.
-_Avoid_: Event (too generic), FX, animation, particle (that's the realization)
+e.g. "a blood-hit landed at (x,y), facing →, intensity N." The **presentation
+projection of a CombatEvent** (`effectsOf`), produced deterministically in shared
+logic the moment Combat resolves, and broadcast to every session in the Zone (like
+an Emote) *except* the session that caused it (which predicts it locally). An Effect
+says *what it looks/sounds like*; the CombatEvent it came from says *what happened*.
+Its visual realization is the client's business (see Particle). The local Player
+predicts their own Effects client-side for zero-latency feedback; the server derives
+the same Effects independently and authoritatively.
+_Avoid_: Event (too generic — see CombatEvent), FX, animation, particle (that's the realization)
 
 **Particle**:
 A single client-side visual speck — one cell with a sub-cell position,

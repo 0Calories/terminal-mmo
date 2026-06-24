@@ -13,7 +13,9 @@ import {
 	applyPoiseDamage,
 	avatarHittable,
 	bloodEffect,
+	combatEventAt,
 	deathGoreEffect,
+	effectsOf,
 	entityBox,
 	hurtBloodEffect,
 	IDLE_ACTION,
@@ -25,6 +27,7 @@ import {
 	resolveCombat,
 	resolveGuard,
 	SWING_TOTAL,
+	swingHitsTarget,
 	swingPhase,
 } from './combat';
 import {
@@ -466,7 +469,7 @@ export function stepZone(
 		// helped shares in the kill (#37, stories 26/27).
 		for (let i = 0; i < avatars.length; i++) {
 			const hb = hitboxes[i];
-			if (hb && !swingHits[i].has(m.id) && aabbOverlap(hb, entityBox(m))) {
+			if (swingHitsTarget(hb, swingHits[i], m)) {
 				const sid = avatars[i].sessionId;
 				swingHits[i].add(m.id);
 				const facing = avatars[i].avatar.facing;
@@ -496,16 +499,24 @@ export function stepZone(
 					// camera-kick off. `source` attributes it for originator-suppression.
 					m = applyImpulse(m, wpn.knockback * facing, -wpn.knockbackUp);
 					m = { ...m, stunT: COMBAT.hitstun };
-					// No `source`: like the death gore burst, the break is a "big moment"
-					// delivered to EVERYONE in range — including the attacker, who needs it to
-					// fire the camera-kick + hitstop. The client predicts only chip blood
-					// (predictHitEffects), so there is no double-render of the impact spark.
-					effects.push(impactEffect(m, facing, damages[i]));
+					// The break resolves to a `break` CombatEvent, projected to its impact
+					// Effect by the shared `effectsOf` (ADR 0019). No `source`: like the death
+					// gore burst, the break is a "big moment" delivered to EVERYONE in range —
+					// including the attacker, who needs it to fire the camera-kick + hitstop.
+					// The client predicts only chip blood (`predictHits`), so there is no
+					// double-render of the impact spark.
+					effects.push(
+						...effectsOf(combatEventAt('break', m, facing, damages[i])),
+					);
 				} else {
-					// Chip: HP + Poise damage, no Stagger — the Slime barely flinches. One
-					// blood burst at the site, biased along the attacker's facing, scaled by
-					// the damage dealt (ADR 0013); `source` suppresses it back to the attacker.
-					effects.push(bloodEffect(m, facing, damages[i], sid));
+					// Chip: HP + Poise damage, no Stagger — the Slime barely flinches. The hit
+					// resolves to a `hit` CombatEvent → one blood burst at the site via the
+					// shared `effectsOf` (ADR 0019), biased along the attacker's facing and
+					// scaled by the damage dealt; `source` suppresses it back to the attacker,
+					// who already predicted it through the same projection.
+					effects.push(
+						...effectsOf(combatEventAt('hit', m, facing, damages[i], sid)),
+					);
 				}
 				break;
 			}

@@ -9,12 +9,13 @@ import {
 	createGame,
 	DEFAULT_WEAPON,
 	type Entity,
+	effectsOf,
 	entityBox,
 	type GameState,
 	type Input,
 	loadZones,
 	PHYS,
-	predictHitEffects,
+	predictHits,
 	randomCosmetics,
 	resolveCombat,
 	SPAWN,
@@ -498,6 +499,11 @@ function runNetworked(url: string) {
 			// lockstep with the prediction (ADR 0017 §5); the parry's damage-negation is
 			// server-authoritative and reconciles through HP + the snapshot's parry Effect.
 			predicted.guardT = r.guardT;
+			// A fresh swing clears the predicted per-swing hit registry so the new swing can
+			// connect again — mirroring the server exactly (ADR 0017 §2 / ADR 0019). This is
+			// what dedups predicted blood/sound to one burst per (swing, target); it replaces
+			// the inert `m.hurtT <= 0` gate, which a player hit never closed.
+			predicted.swingHits = r.swingStarted ? [] : (predicted.swingHits ?? []);
 			localCd = r.cooldowns;
 			const hitbox = r.hitbox;
 			const hitDamage = r.damage;
@@ -562,13 +568,24 @@ function runNetworked(url: string) {
 			playfield.game = game;
 			// Predict our own outgoing-hit blood off the rendered (interpolated)
 			// Monsters, so it erupts instantly; the server suppresses the matching
-			// Effect back to us, so there is no double-render (ADR 0013). A mispredicted
-			// swing leaves a harmless stray splat — no rollback.
+			// Effect back to us, so there is no double-render (ADR 0013). Resolve the
+			// optimistic `hit` CombatEvents through the SAME shared swing-hit gate the
+			// server uses — deduped by `predicted.swingHits`, not the old inert hurtT
+			// check — then project them to Effects via `effectsOf` (ADR 0019). A
+			// mispredicted swing leaves a harmless stray splat — no rollback.
 			if (hitbox) {
 				const monsters = activeZone(game.world, game.player.zoneId).monsters;
-				playfield.emitPredicted(
-					predictHitEffects(hitbox, predicted.facing, hitDamage, monsters),
+				const swung = new Set(predicted.swingHits ?? []);
+				const events = predictHits(
+					hitbox,
+					predicted.facing,
+					hitDamage,
+					swung,
+					monsters,
 				);
+				for (const e of events) swung.add(e.targetId);
+				predicted.swingHits = [...swung];
+				playfield.emitPredicted(events.flatMap(effectsOf));
 			}
 			hud.update(game, fps);
 			hud.updateChat(net.chatLog, chat.open, chat.text);
