@@ -9,6 +9,7 @@ import {
 import { HATS, type Sprite, spriteFor, spriteForNpc } from '../src/sprites';
 import { parseTerrain } from '../src/terrain';
 import type { Entity, EntityType, Facing } from '../src/types';
+import { weaponById } from '../src/weapons';
 
 interface Cell {
 	ch: string;
@@ -432,6 +433,64 @@ test('a cosmetic hat is overlaid directly above the head', () => {
 		1,
 		(key) => STYLE.palette[key] ?? STYLE.paletteDefault,
 	);
+});
+
+test('an equipped Avatar at rest renders the weapon idle frame at the mirrored grip, on top of the body (ADR 0018)', () => {
+	const weapon = weaponById(0).sprite; // default Sword
+	if (!weapon) throw new Error('expected the default weapon to have a sprite');
+	const frame = weapon.frames.idle;
+	if (!frame) throw new Error('expected an authored idle frame');
+
+	for (const facing of [1, -1] as Facing[]) {
+		const buf = new FakeBuffer(24, 16);
+		const e = makeEntity({ type: 'player', x: 10, y: 6, facing, weapon: 0 });
+		renderZoneScene(
+			buf,
+			{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+			{ x: 0, y: 0 },
+			STYLE,
+		);
+
+		const { sprite: body, ax: sx, ay: sy } = avatarTopLeft(e);
+		const grip = body.grip;
+		if (!grip) throw new Error('expected the body to declare a grip cell');
+		// Body grip cell, its column reflected across the body when facing left.
+		const bodyGripX = sx + (facing === 1 ? grip.x : body.w - 1 - grip.x);
+		const bodyGripY = sy + grip.y;
+		// Weapon grip cell, mirrored alongside the art so grip lands on grip.
+		const wgx = facing === 1 ? weapon.grip.x : frame.w - 1 - weapon.grip.x;
+		const wx = bodyGripX - wgx;
+		const wy = bodyGripY - weapon.grip.y;
+
+		// Every lit weapon glyph landed at the grip-anchored, facing-mirrored position.
+		expectSpriteAt(buf, frame, wx, wy, facing, fgFor);
+
+		// The grip cell is a lit BODY cell, but the weapon is drawn on top, so the
+		// composited cell shows the weapon's grip glyph — not the body's underneath.
+		const bodyGlyph =
+			body.rows(facing)[grip.y][facing === 1 ? grip.x : body.w - 1 - grip.x];
+		expect(bodyGlyph).not.toBe(' '); // the overlap is real (body cell is lit)
+		const weaponGlyph = frame.rows(facing)[weapon.grip.y][wgx];
+		expect(buf.at(bodyGripX, bodyGripY)?.ch).toBe(weaponGlyph);
+	}
+});
+
+test('a weaponless Avatar draws no weapon layer', () => {
+	const buf = new FakeBuffer(24, 16);
+	// Same body, but no equipped weapon (weapon undefined): the weapon layer is skipped.
+	const e = makeEntity({ type: 'player', x: 10, y: 6, facing: 1 });
+	renderZoneScene(
+		buf,
+		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+	const { sprite: body, ax: sx, ay: sy } = avatarTopLeft(e);
+	const grip = body.grip;
+	if (!grip) throw new Error('expected the body to declare a grip cell');
+	// The sword's blade tip sits a row above the body top when equipped; with no weapon
+	// that cell stays empty, proving the layer is gated on an equipped weapon.
+	expect(buf.at(sx + grip.x, sy - 1)).toBeUndefined();
 });
 
 test('over terrain the pill is a cosmetic-colour wash and the handle sits on it (ADR 0016)', () => {

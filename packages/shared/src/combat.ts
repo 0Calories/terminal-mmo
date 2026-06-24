@@ -7,7 +7,7 @@ import {
 	skillHitbox,
 	skillUnlocked,
 } from './skills';
-import { mirrorGlyph, spriteFor } from './sprites';
+import { mirrorGlyph, spriteFor, type WeaponFrameId } from './sprites';
 import type {
 	ActionState,
 	AttackPhase,
@@ -393,6 +393,22 @@ export function swingPose(
 	const glyph = facing === 1 ? weapon.glyph : mirrorGlyph(weapon.glyph);
 	const arc = phase === 'active' ? (facing === 1 ? '╱' : '╲') : null;
 	return { glyph, arc };
+}
+
+// The WeaponSprite frame an Avatar shows this frame (ADR 0018 §4): a PURE function
+// of its action — `idle` (the always-visible hold pose) for any non-swing, else the
+// swing phase's own frame. Pure and shared so the owner's prediction and every
+// observer's render agree on the appearance frame-for-frame, the same family as
+// swingPhase / swingProgress / swingPose. Returning an unauthored phase id (today
+// windup/active/recovery — only idle is authored) just draws no weapon layer; the
+// legacy swing overlay renders the swing until the sweep frames land. The `active`
+// sweep will later sample by swingProgress; that parameter joins when it does.
+export function weaponFrame(
+	move: MoveId,
+	phase: AttackPhase | null,
+): WeaponFrameId {
+	if (move !== 'basic' || phase === null) return 'idle';
+	return phase;
 }
 
 export function meleeHitbox(p: Entity, reach: number = COMBAT.meleeReach): Box {

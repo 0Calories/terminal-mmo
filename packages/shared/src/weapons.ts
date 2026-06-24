@@ -1,4 +1,5 @@
 import { COMBAT } from './constants';
+import { sword, type WeaponSprite } from './sprites';
 import type { SwingPhases } from './types';
 
 // The trail look a weapon may leave during its active sweep (ADR 0017 §14): a
@@ -28,6 +29,10 @@ export interface Weapon {
 	swing: SwingPhases; // wind-up → active → recovery phase durations (phase-speed)
 	// Optional trail ParticleType key the client renders during the active sweep.
 	trail?: WeaponTrail;
+	// The always-anchored animated appearance (ADR 0018): a WeaponSprite composited
+	// onto the Avatar at the grip every frame. Optional while art is authored weapon
+	// by weapon — an absent sprite simply draws no weapon layer.
+	sprite?: WeaponSprite;
 }
 
 // The catalog. Index 0 is the default Warrior sword, deliberately identical to the
@@ -44,6 +49,7 @@ export const WEAPONS: readonly Weapon[] = [
 		knockback: COMBAT.knockback,
 		knockbackUp: COMBAT.knockbackUp,
 		swing: { ...COMBAT.swing },
+		sprite: sword,
 	},
 	{
 		// Slow to commit, but each connect lands hard and staggers almost on its own.
