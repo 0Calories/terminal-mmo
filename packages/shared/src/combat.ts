@@ -16,6 +16,7 @@ import type {
 	Entity,
 	Facing,
 	MoveId,
+	Projectile,
 	SwingPhases,
 	Tint,
 } from './types';
@@ -577,7 +578,7 @@ export function bladeEdgeArc(progress: number, facing: Facing): ArcCell[] {
 // from an Effect (the presentation descriptor, ADR 0013) and a Particle (the client
 // realization). Shared-internal: it never rides the wire — the server projects it to
 // Effects via `effectsOf` BEFORE building each recipient's snapshot.
-export type CombatEventKind = 'hit' | 'break' | 'death' | 'parry';
+export type CombatEventKind = 'hit' | 'break' | 'death' | 'parry' | 'swat';
 
 export interface CombatEvent {
 	kind: CombatEventKind;
@@ -585,8 +586,14 @@ export interface CombatEvent {
 	source?: number; // attacker session, for originator-suppression; absent ⇒ "everyone"
 	x: number;
 	y: number;
-	dir: Facing; // horizontal bias of the blow
+	// Horizontal bias of the blow: -1 / 1 follow it, 0 is a radial burst (a death, or a
+	// hit whose source shares the victim's column). Matches `Effect.dir`, not `Facing` —
+	// a CombatEvent can resolve radially where a body's facing cannot.
+	dir: -1 | 0 | 1;
 	intensity: number; // damage dealt; drives particle count / sound volume
+	// The dead entity's body colour, carried only by a `death` event so `effectsOf`
+	// recolours the gore burst to what died (#139). Absent on every other kind.
+	tint?: Tint;
 }
 
 // A CombatEvent at the struck target's centre, biased along the blow (ADR 0019). The
@@ -598,7 +605,7 @@ export interface CombatEvent {
 export function combatEventAt(
 	kind: CombatEventKind,
 	target: Entity,
-	dir: Facing,
+	dir: -1 | 0 | 1,
 	intensity: number,
 	source?: number,
 ): CombatEvent {
@@ -612,6 +619,39 @@ export function combatEventAt(
 	};
 	if (source !== undefined) e.source = source;
 	return e;
+}
+
+// A `death` CombatEvent at the dying entity's centre (ADR 0013 §1 / #139, ADR 0019): a
+// radial (dir 0), high-intensity burst tinted to the entity's body colour, so a kill
+// sprays entity-coloured gore in every direction. Carries no `source` — it reaches
+// everyone in range, the killer included. The death-site twin of combatEventAt; its
+// projection through `effectsOf` is byte-identical to the retired inline deathGoreEffect.
+export function deathEvent(e: Entity): CombatEvent {
+	return {
+		kind: 'death',
+		targetId: e.id,
+		x: e.x + BOX.w / 2,
+		y: e.y + BOX.h / 2,
+		dir: 0,
+		intensity: COMBAT.deathBurstIntensity,
+		tint: entityTint(e),
+	};
+}
+
+// A `swat` CombatEvent at the shot itself (ADR 0017 §8, ADR 0019): a Player's melee
+// frame shattered a hostile Projectile. Unlike the entity-targeted constructors this
+// resolves against a Projectile, so it carries the SHOT's own position (not an entity-
+// box centre) and id, with the shot's `damage` as intensity. `dir` is the clink bias
+// (back along the swat). Source-less — the clink reaches everyone in range.
+export function swatEvent(pr: Projectile, dir: Facing): CombatEvent {
+	return {
+		kind: 'swat',
+		targetId: pr.id,
+		x: pr.x,
+		y: pr.y,
+		dir,
+		intensity: pr.damage,
+	};
 }
 
 // The presentation projection of a CombatEvent (ADR 0019): the single, shared, pure
@@ -646,10 +686,19 @@ export function effectsOf(e: CombatEvent): Effect[] {
 					dir: e.dir,
 				},
 			];
-		case 'death':
-			return [
-				{ kind: 'gore', x: e.x, y: e.y, intensity: e.intensity, dir: e.dir },
-			];
+		case 'death': {
+			// The gore recolours to the dead entity's body (#139): the tint rides the event,
+			// so it projects onto the burst. Omitted when the event carries none.
+			const fx: Effect = {
+				kind: 'gore',
+				x: e.x,
+				y: e.y,
+				intensity: e.intensity,
+				dir: e.dir,
+			};
+			if (e.tint !== undefined) fx.tint = e.tint;
+			return [fx];
+		}
 		case 'parry':
 			// Fixed intensity: the clash is about the catch, not the negated blow.
 			return [
@@ -660,6 +709,14 @@ export function effectsOf(e: CombatEvent): Effect[] {
 					intensity: COMBAT.poise.max,
 					dir: e.dir,
 				},
+			];
+		case 'swat':
+			// A Player's melee frame shattering a hostile shot (ADR 0017 §8, ADR 0019): a
+			// light clink, NOT a Poise break — so its impact reads at the shot's own damage
+			// with NO poise.max bump (the only `impact` projection that doesn't). Source-less,
+			// like every "big moment", so the clink + camera juice reaches everyone in range.
+			return [
+				{ kind: 'impact', x: e.x, y: e.y, intensity: e.intensity, dir: e.dir },
 			];
 	}
 }

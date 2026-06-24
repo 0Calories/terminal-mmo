@@ -14,6 +14,7 @@ import {
 	combatEventAt,
 	DODGE_LOCKOUT,
 	DODGE_TOTAL,
+	deathEvent,
 	deathGoreEffect,
 	dodgeInvulnerable,
 	dodgePhase,
@@ -34,6 +35,7 @@ import {
 	meleeActive,
 	meleeHitbox,
 	POWER_STRIKE,
+	type Projectile,
 	parryActive,
 	parryEffect,
 	predictHits,
@@ -43,6 +45,7 @@ import {
 	SWING_TOTAL,
 	skillHitbox,
 	superArmorActive,
+	swatEvent,
 	sweepIndex,
 	swingHitsTarget,
 	swingPhase,
@@ -71,6 +74,24 @@ function monster(x: number, y: number, over: Partial<Entity> = {}): Entity {
 		maxHp: 10,
 		hurtT: 0,
 		attackT: 0,
+		...over,
+	};
+}
+
+function projectile(over: Partial<Projectile> = {}): Projectile {
+	return {
+		id: 1,
+		x: 0,
+		y: 0,
+		vx: 0,
+		vy: 0,
+		life: 1,
+		damage: 7,
+		poiseDamage: 6,
+		knockback: 30,
+		knockbackUp: 10,
+		faction: 'monster',
+		ownerId: 99,
 		...over,
 	};
 }
@@ -170,6 +191,19 @@ describe('deathGoreEffect', () => {
 
 	test('carries no source — death gore is delivered to everyone in range', () => {
 		expect(deathGoreEffect(monster(0, 0)).source).toBeUndefined();
+	});
+
+	test('deathEvent projects through effectsOf to the SAME burst as deathGoreEffect', () => {
+		// The death site resolves a `death` CombatEvent (ADR 0019); its projection must be
+		// byte-identical to the inline deathGoreEffect it replaces — same centre, radial
+		// dir, high intensity, and entity tint — for an Avatar (cosmetic hue) and a Monster.
+		const m = monster(10, 4, { type: 'chaser' });
+		expect(effectsOf(deathEvent(m))).toEqual([deathGoreEffect(m)]);
+		const a = monster(10, 4, {
+			type: 'player',
+			cosmetics: { hue: 3, hat: 0, nameplate: 0 },
+		});
+		expect(effectsOf(deathEvent(a))).toEqual([deathGoreEffect(a)]);
 	});
 });
 
@@ -1231,6 +1265,66 @@ describe('effectsOf', () => {
 		]);
 		expect(effectsOf({ kind: 'parry', ...at })).toEqual([
 			{ kind: 'parry', x: 3, y: 4, intensity: COMBAT.poise.max, dir: 1 },
+		]);
+	});
+
+	test('a death carries its entity tint through to the gore burst', () => {
+		// The gore recolours to the dead entity's body (#139), so the tint rides the
+		// CombatEvent and `effectsOf` projects it onto the burst — absent on a tintless event.
+		const tint = { r: 1, g: 2, b: 3 };
+		const e: CombatEvent = {
+			kind: 'death',
+			targetId: 1,
+			x: 3,
+			y: 4,
+			dir: 0,
+			intensity: COMBAT.deathBurstIntensity,
+			tint,
+		};
+		expect(effectsOf(e)).toEqual([
+			{
+				kind: 'gore',
+				x: 3,
+				y: 4,
+				intensity: COMBAT.deathBurstIntensity,
+				dir: 0,
+				tint,
+			},
+		]);
+	});
+
+	test('swatEvent builds a swat at the shot itself (its position + id), keyed to its damage', () => {
+		// A swat resolves against a Projectile, not an Entity (ADR 0019), so it carries the
+		// shot's own position (NOT an entity-box centre) and id, and the shot's damage as
+		// intensity. dir is the clink bias (back along the swat). No source.
+		const pr = projectile({ id: 42, x: 27, y: 6, damage: 7 });
+		const e = swatEvent(pr, -1);
+		expect(e).toEqual({
+			kind: 'swat',
+			targetId: 42,
+			x: 27,
+			y: 6,
+			dir: -1,
+			intensity: 7,
+		});
+		expect(e.source).toBeUndefined();
+	});
+
+	test('a swat projects to a sourceless impact at the shot, NOT heavier than its damage', () => {
+		// The swat is a Player's melee frame shattering a hostile shot (ADR 0019): a light
+		// clink, not a Poise break — so unlike `break` it carries NO poise.max bump, just
+		// the shot's own damage as intensity. Source-less: the clink + camera juice reaches
+		// everyone in range, the attacker included.
+		const e: CombatEvent = {
+			kind: 'swat',
+			targetId: 9,
+			x: 27,
+			y: 6,
+			dir: -1,
+			intensity: 7,
+		};
+		expect(effectsOf(e)).toEqual([
+			{ kind: 'impact', x: 27, y: 6, intensity: 7, dir: -1 },
 		]);
 	});
 });

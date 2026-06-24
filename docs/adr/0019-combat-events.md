@@ -40,19 +40,24 @@ combat resolution → CombatEvent → effectsOf() → Effect → ParticleType[] 
 ```
 
 ```ts
-type CombatEventKind = 'hit' | 'break' | 'death' | 'parry';
+type CombatEventKind = 'hit' | 'break' | 'death' | 'parry' | 'swat';
 
 type CombatEvent = {
   kind: CombatEventKind;
-  targetId: number;   // who was struck (Monster or Avatar) — the resolution's subject
+  targetId: number;   // who was struck (Monster, Avatar, or a swatted Projectile) — the subject
   source?: number;    // attacker session, for originator-suppression; absent ⇒ "everyone"
   x: number; y: number;
-  dir: Facing;        // horizontal bias of the blow (0 = radial, per ADR 0013)
+  dir: -1 | 0 | 1;    // horizontal bias of the blow (0 = radial, per ADR 0013) — matches Effect.dir
   intensity: number;  // damage dealt; drives particle count / sound volume
+  tint?: Tint;        // a death only — the dead entity's body colour, projected onto the gore (#139)
 };
 
 function effectsOf(e: CombatEvent): Effect[]; // shared, pure (combat.ts)
 ```
+
+`effectsOf` maps `hit → blood`, `break → impact` (+`poise.max`, heavier), `death → gore`
+(tinted), `parry → parry` (fixed intensity), and `swat → impact` (the shot's own damage,
+**no** `poise.max` bump — a light clink, distinct from a break; #194).
 
 ## Decisions
 
@@ -100,6 +105,18 @@ function effectsOf(e: CombatEvent): Effect[]; // shared, pure (combat.ts)
   predicts via the shared gate). The other 12 sites keep their inline emission until
   migrated in follow-ups against this now-documented model. This is a deliberate,
   bounded mixed state, not an oversight.
+
+  **Update (#194): the migration is complete.** The remaining sites — monster-melee →
+  Avatar, projectile → Monster, projectile → Avatar, and both deaths — now resolve a
+  `CombatEvent` projected through `effectsOf`. No inline `*Effect()` push remains in
+  `stepZone`. Avatar-target events stay **server-only** (incoming hurt is never
+  predicted, ADR 0013 §3); `break`/`death`/`parry`/`swat` stay source-less. Two
+  additions the remaining sites forced: `CombatEvent.tint` (a death carries the dead
+  entity's body colour to its gore) and a fifth kind, **`swat`** — a Player's melee
+  frame shattering a hostile shot (ADR 0017 §8). A swat resolves against the
+  *Projectile* (its position + id, not an entity centre) and projects to a **light**
+  `impact` at the shot's own damage, with no `poise.max` bump: it is a clink, not a
+  Poise break, so it needs its own kind rather than reusing `break`.
 
 ## Considered and rejected
 
