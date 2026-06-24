@@ -292,6 +292,38 @@ the authoritative server step and the client's optimistic telegraph run, so they
 can never gate a swing or skill differently. See ADR 0017.
 _Avoid_: Fighting, battle, PvE, tab-target (use "Combat")
 
+**Strike**:
+A **projected attack** handed from a per-entity *project* pass to the *resolve* pass
+of the combat tick (ADR 0022) — _"this hitbox deals this HP + **Poise** damage, facing
+→, on behalf of this **Faction**, with this **ReactionProfile**."_ It is a projection,
+never applied where it is made: an Avatar swing, a **Melee committer**'s strike, and a
+travelling **Projectile** all emit Strikes, and `resolveCombat` resolves every one by a
+single rule — against overlapping, **hittable**, opposing-**Faction**, not-already-hit
+victims. The per-swing dedup ledger (`swingHits`, ADR 0017 §2) is *not* part of a
+Strike; it lives on the attacking entity (a multi-contact attack instance), so a
+single-contact Projectile carries none.
+_Avoid_: Hit (reserve for the resolved contact), Attack, Hitbox (a Strike is more)
+
+**Faction**:
+The allegiance key — `players` | `monsters` — that decides which entities a **Strike**
+may resolve against: opposing-Faction only. It makes two rules hold *by construction*
+rather than by scattered checks: **PvE** (two **Avatar**s share a Faction, so no Avatar
+ever damages an Avatar — PvP stays parked) and **Reflect-safety** (a **Reflect**
+re-factions a shot `monsters → players`, so the reflected shot is never tested against
+Avatars and can neither harm nor collide with another Player). See ADR 0022.
+_Avoid_: Team, side, alliance, allegiance (in the PvP/guild sense — Faction is the
+PvE damage filter, not a social group)
+
+**ReactionProfile**:
+The closed tagged union on a **Strike** — `{ melee }` | `{ projectile }` — describing
+how it behaves when it meets a raised **Guard**, and *only* that: a melee Strike
+**Parries** to a **Stagger** (+ attacker **Poise** dump), a projectile Strike
+**Reflects** or is **swatted**. Damage, Poise, **Guard-break**, and death apply
+identically regardless of profile, so the resolution path is not forked — only the
+guard interaction branches. A third attack kind is a new tag, not a new field. See
+ADR 0022.
+_Avoid_: Hit type, damage type, element
+
 **Attack phase**:
 The three stages every attack — Player or Monster — passes through: **wind-up**
 (committed, telegraphed, interruptible), **active** (hitbox live), **recovery**
