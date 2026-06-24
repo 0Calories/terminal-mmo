@@ -12,6 +12,7 @@ import {
 	formFrame,
 	HATS,
 	type Sprite,
+	STRIDE,
 	spriteFor,
 	spriteForNpc,
 	WEAPON_ACCENT_KEY,
@@ -423,6 +424,70 @@ test("an Avatar renders its Form's idle Pose as its body, through the bodyFrame 
 		expect(sprite).toBe(formFrame(FORMS[0], 'idle'));
 		expectSpriteAt(buf, sprite, ax, ay, facing, fgFor);
 	}
+});
+
+// Render one Avatar's body and assert the expected Pose grid landed at the body anchor.
+// Pins the render WIRING (which replicated signals reach the selector), not appearance:
+// the expected grid is pulled from the same Form the renderer uses, so it survives art
+// iteration. Every walk Pose shares idle's torso and differs only on the feet row, so a
+// pose assertion really discriminates on the animated feet.
+function expectBodyPose(over: Partial<Entity>, sprite: Sprite) {
+	const buf = new FakeBuffer(40, 16);
+	const e = makeEntity({ type: 'player', y: 7, facing: 1, ...over });
+	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE);
+	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
+	const ay = Math.round(e.y + BOX.h - sprite.h);
+	expectSpriteAt(buf, sprite, ax, ay, e.facing, fgFor);
+}
+
+test('a moving Avatar animates the distance-driven walk cycle; standing freezes to idle (ADR 0020 §7)', () => {
+	const idle = formFrame(FORMS[0], 'idle');
+	const walkA = formFrame(FORMS[0], 'walkA');
+	const walkB = formFrame(FORMS[0], 'walkB');
+
+	// Moving on the ground (vx ≠ 0): the foot frame is chosen from the Avatar's own
+	// replicated position — `walkA`/`walkB` flip at each STRIDE boundary of |x|. Position
+	// 2·STRIDE+3 sits in an even stride (walkA); 3·STRIDE+3 in the next, odd one (walkB).
+	expectBodyPose({ x: 2 * STRIDE + 3, vx: 3 }, walkA);
+	expectBodyPose({ x: 3 * STRIDE + 3, vx: 3 }, walkB);
+
+	// Standing still (vx 0) at that same walkB position holds idle: the cycle freezes to
+	// the rest Pose rather than locking mid-stride — gait is gated on actually moving.
+	expectBodyPose({ x: 3 * STRIDE + 3, vx: 0 }, idle);
+});
+
+test('an observer renders the same walk frame as the owner for a given position (ADR 0020 §7)', () => {
+	// The owner derives its action from the predicted `attackT` (no replicated `action`);
+	// an observer carries the snapshot `action`. The gait reads only `x`/`vx`/`onGround` —
+	// the same replicated fields for both — so both compute the identical foot frame.
+	const owner = makeEntity({ type: 'player', x: 3 * STRIDE + 3, y: 7, vx: 3 });
+	const observer = makeEntity({
+		type: 'player',
+		x: 3 * STRIDE + 3,
+		y: 7,
+		vx: 3,
+		action: { move: 'idle', phase: 'windup', progress: 0, flags: 0 },
+	});
+
+	const render = (e: Entity) => {
+		const buf = new FakeBuffer(40, 16);
+		drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE);
+		return buf;
+	};
+	const walkB = formFrame(FORMS[0], 'walkB');
+	const ax = Math.round(3 * STRIDE + 3 - Math.floor((walkB.w - BOX.w) / 2));
+	const ay = Math.round(7 + BOX.h - walkB.h);
+	// Both land the same walkB grid at the same anchor — owner/observer agree.
+	expectSpriteAt(render(owner), walkB, ax, ay, 1, fgFor);
+	expectSpriteAt(render(observer), walkB, ax, ay, 1, fgFor);
+});
+
+test('an airborne Avatar does not walk even while moving horizontally (ADR 0020 ladder)', () => {
+	// Off the ground the body sits above walk on the ladder (jump > walk). Jump is
+	// unauthored this slice, so it falls back to idle — proving the render path honours
+	// `airborne` and does NOT pose a walk frame for a horizontally-moving jumper.
+	const idle = formFrame(FORMS[0], 'idle');
+	expectBodyPose({ x: 3 * STRIDE + 3, vx: 3, onGround: false }, idle);
 });
 
 test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouched", () => {

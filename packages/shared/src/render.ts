@@ -218,9 +218,12 @@ export function drawEntitySprite<C>(
 	let grip: { x: number; y: number } | undefined;
 	let head: { x: number; y: number } | undefined;
 	if (body) {
-		// Locomotion gait (walk/jump) and emotes are authored in a later slice; until then
-		// the body holds idle. `airborne` is wired live (it has a replicated source); the
-		// distance-driven walk cycle (ADR 0020 §7) lands with the walk Poses.
+		// The walk cycle is driven entirely by replicated kinematics (ADR 0020 §7), so the
+		// owner and every observer compute the identical foot frame with no new wire field:
+		// `moving` gates the gait on input-driven horizontal velocity (exactly 0 at a
+		// standstill, ±speed striding, 0 into a wall), and `distanceX` is the Avatar's own
+		// world x — the selector flips `walkA↔walkB` every STRIDE cells of |x|, so cadence
+		// tracks speed for free. Emotes are authored in a later slice (held null here).
 		const pose = bodyFrame({
 			move,
 			phase,
@@ -228,8 +231,8 @@ export function drawEntitySprite<C>(
 			emote: null,
 			emoteT: 0,
 			airborne: !e.onGround,
-			moving: false,
-			distanceX: 0,
+			moving: e.vx !== 0,
+			distanceX: e.x,
 			staggered,
 		});
 		sprite = formFrame(body, pose.poseId, pose.frameIndex);
