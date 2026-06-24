@@ -14,6 +14,7 @@ import {
 	entityBox,
 	type GameState,
 	type Input,
+	initialEmoteT,
 	loadZones,
 	PHYS,
 	predictHits,
@@ -376,16 +377,17 @@ function runNetworked(url: string) {
 					else if (cmd.kind === 'whisper')
 						net.send({ t: 'whisper', to: cmd.to, text: cmd.text });
 					else if (cmd.kind === 'emote') {
-						// Trigger on the server AND predict locally so the wave plays with zero
-						// lag (ADR 0020 §9): arm the predicted Avatar's oneshot now; clientStepAvatar
-						// counts it down and cancels it on movement/combat, mirroring the server.
+						// Trigger on the server AND predict locally so the emote plays with zero
+						// lag (ADR 0020 §9): arm the predicted Avatar now (a oneshot seeds its
+						// countdown, a loop/hold its elapsed clock at 0); clientStepAvatar advances
+						// it and cancels it on movement/combat, mirroring the server.
 						net.send({ t: 'emote', emote: cmd.emote });
 						const def = emoteById(cmd.emote);
 						if (def)
 							predicted = {
 								...predicted,
 								emoteId: def.id,
-								emoteT: def.duration,
+								emoteT: initialEmoteT(def),
 							};
 					} else net.notice(cmd.message);
 				}

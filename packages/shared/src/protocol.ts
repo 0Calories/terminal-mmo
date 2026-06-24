@@ -449,9 +449,10 @@ const NO_EMOTE = 0xff;
 
 // The per-entity action-state (ADR 0017 §10, extended by ADR 0020 §9): move + phase as
 // catalog-index bytes, phase progress as an f64 (exact round-trip), flags as a u8
-// bitfield, then the active emote — its catalog index (0xFF == none) + remaining lifetime
-// as an f64. A forward-version move/phase/emote index clamps to idle/wind-up/none on
-// decode so a newer server can never crash an older client's renderer.
+// bitfield, then the active emote — its catalog index (0xFF == none) + its `emoteT` clock
+// as an f64 (a oneshot's remaining lifetime, a loop/hold's elapsed sim-time). A forward-
+// version move/phase/emote index clamps to idle/wind-up/none on decode so a newer server
+// can never crash an older client's renderer.
 function writeAction(w: Writer, a: ActionState) {
 	w.u8(MOVE_IDS.indexOf(a.move));
 	w.u8(ATTACK_PHASES.indexOf(a.phase));

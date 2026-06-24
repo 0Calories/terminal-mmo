@@ -38,7 +38,7 @@ import {
 	XP_PER_KILL,
 } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
-import { emoteById, emoteInterrupted, stepEmote } from './emote';
+import { emoteById, emoteInterrupted, initialEmoteT, stepEmote } from './emote';
 import { rollItem } from './loot';
 import { applyImpulse, stepEntity } from './physics';
 import { spawnAvatar } from './player';
@@ -218,15 +218,16 @@ function resolveAvatarIntent(
 	// the swing, so the server and the client's prediction can't disagree on a raise.
 	avatar.guardT = r.guardT;
 	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
-	// Body emote (ADR 0020 §9): a fresh `/em` trigger this tick arms the oneshot, then the
-	// shared step counts it down and cancels it the instant the Avatar acts (moving /
-	// combat / stagger, §6) — evaluated AFTER the swing + guard timers above so the cancel
-	// reads this tick's resolved state. The owner predicts the identical step client-side.
+	// Body emote (ADR 0020 §9): a fresh `/em` trigger this tick arms the emote (a oneshot
+	// seeds its countdown, a loop/hold its elapsed clock at 0), then the shared step
+	// advances it and cancels it the instant the Avatar acts (moving / combat / stagger,
+	// §6) — evaluated AFTER the swing + guard timers above so the cancel reads this tick's
+	// resolved state. The owner predicts the identical step client-side.
 	if (intent?.emote) {
 		const def = emoteById(intent.emote);
 		if (def) {
 			avatar.emoteId = def.id;
-			avatar.emoteT = def.duration;
+			avatar.emoteT = initialEmoteT(def);
 		}
 	}
 	const em = stepEmote(

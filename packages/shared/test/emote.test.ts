@@ -1,22 +1,40 @@
 import { expect, test } from 'bun:test';
-import { EMOTES, emoteById, emoteInterrupted, stepEmote } from '../src';
+import {
+	EMOTE_FPS,
+	EMOTES,
+	emoteById,
+	emoteInterrupted,
+	initialEmoteT,
+	stepEmote,
+} from '../src';
 
-test('EMOTES is a non-empty fixed set of distinct ids with a timed lifetime', () => {
+test('EMOTES is a non-empty fixed set of distinct ids with a known lifetime', () => {
 	expect(EMOTES.length).toBeGreaterThan(0);
 	const ids = EMOTES.map((e) => e.id);
 	expect(new Set(ids).size).toBe(ids.length); // no duplicate ids
 	for (const e of EMOTES) {
 		expect(e.id.length).toBeGreaterThan(0);
-		// This slice ships oneshot only; every emote plays for a positive duration.
-		expect(e.lifetime).toBe('oneshot');
-		expect(e.duration).toBeGreaterThan(0);
+		expect(['oneshot', 'loop', 'hold']).toContain(e.lifetime);
+		// A oneshot needs a positive duration to play; a persistent loop/hold ignores it.
+		if (e.lifetime === 'oneshot') expect(e.duration).toBeGreaterThan(0);
 	}
 });
 
-test('the launch set includes the oneshot wave (ADR 0020 §8)', () => {
+test('the launch set covers all three lifetime modes (ADR 0020 §8)', () => {
+	expect(emoteById('wave')?.lifetime).toBe('oneshot');
+	expect((emoteById('wave')?.duration ?? 0) > 0).toBe(true);
+	expect(emoteById('dance')?.lifetime).toBe('loop');
+	expect(emoteById('sit')?.lifetime).toBe('hold');
+});
+
+test('initialEmoteT seeds a oneshot countdown but a loop/hold elapsed clock at 0', () => {
 	const wave = emoteById('wave');
-	expect(wave?.lifetime).toBe('oneshot');
-	expect((wave?.duration ?? 0) > 0).toBe(true);
+	const dance = emoteById('dance');
+	const sit = emoteById('sit');
+	if (!wave || !dance || !sit) throw new Error('launch emotes missing');
+	expect(initialEmoteT(wave)).toBe(wave.duration);
+	expect(initialEmoteT(dance)).toBe(0);
+	expect(initialEmoteT(sit)).toBe(0);
 });
 
 test('emoteById resolves a known id and is undefined for an unknown one', () => {
@@ -37,6 +55,39 @@ test('stepEmote returns to idle once the oneshot timer elapses (ADR 0020 §8)', 
 	const r = stepEmote('wave', 0.1, false, 0.25); // dt overshoots the remaining time
 	expect(r.emoteId).toBeNull();
 	expect(r.emoteT).toBe(0);
+});
+
+test('stepEmote accumulates a loop/hold elapsed clock and never times out', () => {
+	// A loop/hold persists until interrupted; its emoteT counts UP as elapsed sim-time,
+	// the opposite of a oneshot's countdown. Even far past any oneshot duration it stays.
+	let s = { emoteId: 'dance' as string | null, emoteT: 0 };
+	for (let i = 0; i < 100; i++) s = stepEmote(s.emoteId, s.emoteT, false, 0.1);
+	expect(s.emoteId).toBe('dance');
+	expect(s.emoteT).toBeCloseTo(10); // 100 × 0.1s of elapsed time, no auto-clear
+	// hold behaves identically in the state machine (the frame freeze is in bodyFrame).
+	expect(stepEmote('sit', 5, false, 0.1).emoteId).toBe('sit');
+});
+
+test('a loop emote frame is a deterministic function of elapsed sim-time — owner and observers agree (ADR 0020 §9)', () => {
+	// AC: the loop frame index is a pure function of the replicated emoteT, so an owner who
+	// stepped the clock and an observer who only received the snapshot compute the SAME
+	// frame. We model both: drive emoteT forward by uneven dt (owner) vs read it whole
+	// (observer); equal emoteT ⇒ equal sampled frame for any FPS.
+	const frame = (t: number) => Math.floor(Math.max(0, t) * EMOTE_FPS);
+	// Owner integrates 0.07 + 0.13 + 0.05 = 0.25s of elapsed time across three ticks.
+	let owner = { emoteId: 'dance' as string | null, emoteT: 0 };
+	for (const dt of [0.07, 0.13, 0.05])
+		owner = stepEmote(owner.emoteId, owner.emoteT, false, dt);
+	expect(owner.emoteT).toBeCloseTo(0.25);
+	// Observer receives emoteT=0.25 on the wire and samples the identical frame.
+	expect(frame(owner.emoteT)).toBe(frame(0.25));
+});
+
+test('stepEmote drops an unknown (forward-version) emote id rather than posing it', () => {
+	expect(stepEmote('not-a-real-emote', 0.5, false, 0.1)).toEqual({
+		emoteId: null,
+		emoteT: 0,
+	});
 });
 
 test('stepEmote cancels the emote the instant the Avatar acts (ADR 0020 §6/§9)', () => {
