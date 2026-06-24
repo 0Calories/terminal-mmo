@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	COMBAT,
 	DEFAULT_WEAPON,
+	WEAPON_ACCENT_KEY,
 	WEAPONS,
 	type Weapon,
 	weaponById,
@@ -31,6 +32,33 @@ describe('WEAPONS catalog', () => {
 		expect(great.poiseDamage).toBeGreaterThan(dagger.poiseDamage);
 		expect(great.knockback).toBeGreaterThan(dagger.knockback);
 		expect(great.reach).toBeGreaterThan(dagger.reach);
+	});
+
+	test('greatsword and dagger each author a full WeaponSprite frame set (#184)', () => {
+		// A new weapon is DATA, not code: each references a WeaponSprite with the full
+		// idle / windup / active-sweep / recovery set, a grip cell, and a distinct accent.
+		const great = WEAPONS.find((w) => w.name === 'Greatsword') as Weapon;
+		const dagger = WEAPONS.find((w) => w.name === 'Dagger') as Weapon;
+		for (const w of [great, dagger]) {
+			expect(w.sprite).toBeDefined();
+			const f = w.sprite?.frames;
+			expect(f?.idle).toBeDefined();
+			expect(f?.windup).toBeDefined();
+			expect(f?.recovery).toBeDefined();
+			expect(f?.active?.length).toBeGreaterThan(0);
+			// The accent is a real palette key, distinct from the dynamic-channel key the
+			// blade cells carry (the renderer repaints `a` cells TO the accent colour).
+			expect(w.sprite?.accent.length).toBe(1);
+			expect(w.sprite?.accent).not.toBe(WEAPON_ACCENT_KEY);
+		}
+		// Each weapon carries its own accent — the three blades read apart by colour.
+		const sword = WEAPONS[DEFAULT_WEAPON];
+		const accents = [
+			sword.sprite?.accent,
+			great.sprite?.accent,
+			dagger.sprite?.accent,
+		];
+		expect(new Set(accents).size).toBe(3);
 	});
 });
 

@@ -35,4 +35,6 @@ export {
 	type WeaponFrameId,
 	type WeaponSprite,
 } from './weapon-sprite';
+export { dagger } from './weapons/dagger';
+export { greatsword } from './weapons/greatsword';
 export { sword } from './weapons/sword';

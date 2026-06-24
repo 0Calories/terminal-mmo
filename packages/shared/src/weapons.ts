@@ -1,5 +1,5 @@
 import { COMBAT } from './constants';
-import { sword, type WeaponSprite } from './sprites';
+import { dagger, greatsword, sword, type WeaponSprite } from './sprites';
 import type { SwingPhases } from './types';
 
 // The trail look a weapon may leave during its active sweep (ADR 0017 §14): a
@@ -62,6 +62,7 @@ export const WEAPONS: readonly Weapon[] = [
 		knockbackUp: 22,
 		swing: { windup: 0.24, active: 0.16, recovery: 0.3 },
 		trail: 'heavy',
+		sprite: greatsword,
 	},
 	{
 		// A blur of fast pokes that barely move a target — pressure, not impact.
@@ -74,6 +75,7 @@ export const WEAPONS: readonly Weapon[] = [
 		knockbackUp: 8,
 		swing: { windup: 0.05, active: 0.07, recovery: 0.08 },
 		trail: 'light',
+		sprite: dagger,
 	},
 ];
 
