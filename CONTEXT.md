@@ -145,6 +145,16 @@ cell granularity). View-only and non-authoritative; keyed off the `impact`
 **Effect**, so it fires for everyone who sees the break, attacker included.
 _Avoid_: screenshake, rumble, camera shake (it's a single decaying pop)
 
+**Lag compensation**:
+The server judging a timing defense (a **Parry**) against the Player's own delayed view,
+not raw server time (ADR 0017 §11). Each input carries a client timestamp; the server
+estimates how late it arrived and widens the Parry window by that slack (capped) so a
+catch timed right on the Player's screen still resolves when the input lands a tick or
+two late. A bounded tolerance, **not** rollback (rejected: too heavy for a persistent
+many-entity World) — windows are authored in ticks, deliberately chunky to absorb the
+30 Hz quantization the comp can't.
+_Avoid_: rollback, netcode rewind, prediction (that's the client side)
+
 **SoundEffect**:
 The client-side *audible* realization of a moment — the audio twin of a Particle.
 Where a Particle answers *what it looks like*, a SoundEffect answers *what it
@@ -267,6 +277,12 @@ _Avoid_: Defend, stance, shield
 Holding **Guard** to absorb a frontal hit for chip damage, draining **Poise** toward
 a guard-break. The safe, low-skill defense, available from level 1.
 _Avoid_: Shield, brace
+
+**Guard-break**:
+The **Stagger** a **Block** suffers when sustained chip drains its **Poise** pool to a
+break — turtling punished by the same accumulating-Poise system as any other break, not
+a separate guard meter. Distinct from a **Parry**, which spends no Poise.
+_Avoid_: Shield-break, stun
 
 **Parry**:
 A hit caught in the opening window of a **Guard** — it negates the hit, dumps

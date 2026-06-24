@@ -62,6 +62,7 @@ const IDLE_INPUT: Input = {
 	moveX: 0,
 	jump: false,
 	attack: false,
+	guard: false,
 	interact: false,
 };
 
@@ -460,11 +461,15 @@ function runNetworked(url: string) {
 				localCd,
 				net.latest?.progress.level ?? 1,
 				'warrior',
-				{ attack: inp.attack, skill: inp.skill },
+				{ attack: inp.attack, skill: inp.skill, guard: inp.guard },
 				dtSec,
 				weaponById(predicted.weapon),
 			);
 			predicted.attackT = r.attackT;
+			// Mirror the server's held-Guard timer so the local guard/parry pose stays in
+			// lockstep with the prediction (ADR 0017 §5); the parry's damage-negation is
+			// server-authoritative and reconciles through HP + the snapshot's parry Effect.
+			predicted.guardT = r.guardT;
 			localCd = r.cooldowns;
 			const hitbox = r.hitbox;
 			const hitDamage = r.damage;
@@ -495,8 +500,12 @@ function runNetworked(url: string) {
 					facing: predicted.facing,
 					onGround: predicted.onGround,
 					attack: inp.attack,
+					guard: inp.guard ?? false,
 					interact: inp.interact ?? false,
 					skill: inp.skill,
+					// Timestamp the input so the server can lag-compensate the Parry against
+					// the Player's own timeline (ADR 0017 §11).
+					clientTime: performance.now(),
 				});
 			}
 

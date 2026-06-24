@@ -13,6 +13,10 @@ export interface Control {
 
 export interface Input extends Control {
 	attack: boolean;
+	// Raise the Guard this tick (ADR 0017 §5): held, not a tap. The opening of a
+	// fresh raise is the Parry window, held past it is a Block — measured from
+	// press-time by the swing/guard gate, never a tap-vs-hold input measurement.
+	guard?: boolean;
 	interact?: boolean;
 	// 1-based slot of a Class Skill to activate this tick (absent == none).
 	skill?: number;
@@ -47,8 +51,10 @@ export type MoveId = 'idle' | 'basic';
 // from the entity's swing timer by `actionStateOf`, never hand-authored. `phase` +
 // `progress` drive the client's per-phase sprite pose and the slash-arc (live only
 // while `active`); `flags` is a bitfield surfacing reaction/defense state — the
-// `staggered` bit (ACTION_FLAG.staggered) is set here, with guarding / airborne bits
-// reserved for later slices. `phase`/`progress` are meaningless when `move` is idle.
+// `staggered`, `guarding`, and `parrying` bits (ACTION_FLAG.*) are set here so a
+// co-present Player's Stagger and Guard/Parry stance are visible to everyone (ADR 0017
+// §5/§10); an airborne bit is reserved for later. `phase`/`progress` are meaningless
+// when `move` is idle — a guard is a stance, not a move, riding `flags` over an idle action.
 export interface ActionState {
 	move: MoveId;
 	phase: AttackPhase;
@@ -106,6 +112,12 @@ export interface Entity {
 	// + gravity, so a staggered entity flies. Absent == 0 (acting normally). The
 	// staggered state is surfaced to clients through the action-state `flags` bit.
 	stunT?: number;
+	// Guard (ADR 0017 §5): seconds the Guard has been HELD this raise, counting up
+	// while the guard intent is held and reset to 0 on release / swing / Stagger. Its
+	// magnitude is the whole gradient: in (0, guard.parryWindow] the raise is a Parry,
+	// past it a Block. Absent == 0 (not guarding). Server-tracked AND predicted by the
+	// owner; replicated to others through the action-state `flags`, never as a raw number.
+	guardT?: number;
 	// Ids an in-flight basic swing has already hit (ADR 0017 §2): a swing connects
 	// with a given target at most once, the rate-limiter that replaced the removed
 	// automatic post-hit i-frames. Cleared when a fresh swing starts; a NEW swing (or
@@ -133,9 +145,11 @@ export interface Entity {
 // The semantic game event a burst represents. `blood` is the chip-hit MVP kind;
 // `gore` is the meatier, entity-tinted death burst (#139); `impact` is the heavy
 // Poise-break burst (ADR 0017 §13d) — bigger and sharper than a chip, the visual
-// twin of the Stagger that pairs with client hitstop + camera-kick. Future kinds
-// (parry clash, guard-break, launch) are added here as the system grows.
-export type EffectKind = 'blood' | 'gore' | 'impact';
+// twin of the Stagger that pairs with client hitstop + camera-kick. `parry` is the
+// parry-clash flash (ADR 0017 §5) — a bright, source-less burst the defender and
+// everyone in range sees when a Guard catches a hit in its opening window. Future
+// kinds (guard-break, launch) are added here as the system grows.
+export type EffectKind = 'blood' | 'gore' | 'impact' | 'parry';
 
 // An RGB colour carried on an Effect to tint its particles (#139), e.g. a death
 // burst recoloured to the dead entity's body. Each channel is 0..255.
