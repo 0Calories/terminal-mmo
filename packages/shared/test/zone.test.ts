@@ -80,6 +80,17 @@ function primeSwing(av: ServerAvatar): ServerAvatar {
 	return av;
 }
 
+// A chaser parked mid-active-phase so its melee hitbox is live THIS tick (ADR 0017
+// §9), placed to the left of an Avatar at x=20 and facing into it. `committed`
+// (attackT > 0) suppresses a re-commit, so it lands exactly one active-phase strike.
+function strikingCommitterAt20(): Entity {
+	const m = spawnMonster('chaser', 2, 16, y); // facing-right hitbox (21..27) covers x=20
+	m.onGround = true;
+	m.facing = 1;
+	m.attackT = MID_ACTIVE;
+	return m;
+}
+
 // hold position, no attack, reporting the avatar's current spot back to the server
 function holdAt(sessionId: number, e: Entity): AvatarIntent {
 	return {
@@ -223,34 +234,120 @@ test('a Monster dying emits a radial, high-intensity gore Effect at the Monster,
 	expect(death?.intensity).toBeGreaterThan(chip?.intensity ?? 0);
 });
 
-test('a living Monster touching an Avatar deals server-owned contact damage', () => {
+// --- Melee committer + no passive contact damage (ADR 0017 §9, #164) ---------
+
+// Step a Zone for `ticks` 16ms frames, threading each step's output into the next
+// while holding every Avatar in place (no attack). Returns the final state.
+function holdSteps(state: ZoneState, ticks: number): ZoneState {
+	let s = state;
+	for (let i = 0; i < ticks; i++) {
+		const intents = s.avatars.map((a) => holdAt(a.sessionId, a.avatar));
+		s = stepZone(s, intents, 16);
+	}
+	return s;
+}
+
+test('overlapping a Monster deals NO contact damage (passive contact damage removed)', () => {
+	// A chaser stacked on the Avatar but with its melee disabled (parked in a fake
+	// recovery so it cannot commit): pure overlap, many ticks, zero damage.
 	const m = spawnMonster('chaser', 2, 20, y); // stacked on the avatar
+	m.onGround = true;
+	m.attackT = SWING_TOTAL; // committed/recovering — never reaches the commit branch
+	const av = serverAvatar(7, 20);
+	const before = av.avatar.hp;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	state = holdSteps(state, 3); // only the wind-up elapses — no active strike yet
+	expect(state.avatars[0].avatar.hp).toBe(before); // never chipped by contact
+	expect(state.avatars[0].avatar.hurtT).toBe(0); // no hurt flash from a touch
+});
+
+test('a melee committer commits a telegraphed swing and damages ONLY in its active phase', () => {
+	// Chaser just inside melee range of a stationary Avatar. It commits on the first
+	// tick (wind-up, no damage), and the hit lands only once the swing reaches active.
+	const m = spawnMonster('chaser', 2, 20 + MONSTER.meleeRange, y);
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
 	const before = av.avatar.hp;
-	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
-	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
-	expect(next.avatars[0].avatar.hp).toBe(before - MONSTER.contactDamage);
-	expect(next.avatars[0].avatar.hurtT).toBeGreaterThan(0);
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+
+	// First tick: it commits — the action-state replicates a 'basic' swing in wind-up,
+	// and no damage has landed yet (the telegraph the Player reads).
+	state = stepZone(state, [holdAt(7, av.avatar)], 16);
+	const snap = snapshotFor(state, 7);
+	expect(snap.monsters[0].action.move).toBe('basic');
+	expect(snap.monsters[0].action.phase).toBe('windup');
+	expect(state.avatars[0].avatar.hp).toBe(before); // wind-up does not damage
+
+	// March through the swing: HP only drops once, and on the damaging tick the
+	// Monster's swing is in its active phase (the only window the hitbox is live).
+	let damagedPhase: string | undefined;
+	for (let i = 0; i < 30 && damagedPhase === undefined; i++) {
+		const hpBefore = state.avatars[0].avatar.hp;
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+		if (state.avatars[0].avatar.hp < hpBefore)
+			damagedPhase = swingPhase(state.zone.monsters[0].attackT) ?? 'idle';
+	}
+	expect(damagedPhase).toBe('active'); // damage lands ONLY in the active window
+	expect(state.avatars[0].avatar.hp).toBe(before - MONSTER.meleeDamage);
 });
 
-test('contact damage emits one blood Effect at the Avatar, dir away from the Monster, intensity = contact damage', () => {
-	const m = spawnMonster('chaser', 2, 18, y); // touching, just left of the Avatar
+test('a committer cannot re-attack during its recovery — a punishable opening', () => {
+	// Drive a full swing and find the recovery window: the Monster's attackT is still
+	// > 0 (committed) yet its phase is recovery, so it deals no damage and the swing
+	// has not restarted — the Player can punish.
+	const m = spawnMonster('chaser', 2, 20 + MONSTER.meleeRange, y);
 	m.onGround = true;
-	const av = serverAvatar(7, 20); // Avatar to the Monster's right
-	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
-	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
-	expect(next.effects?.length).toBe(1);
-	const fx = next.effects?.[0];
-	expect(fx?.kind).toBe('blood');
-	expect(fx?.dir).toBe(1); // knocked away from the Monster (to the right)
-	expect(fx?.intensity).toBe(MONSTER.contactDamage);
-	// at the Avatar's footprint box
-	expect(fx?.x).toBeGreaterThanOrEqual(av.avatar.x);
-	expect(fx?.x).toBeLessThanOrEqual(av.avatar.x + BOX.w);
-	expect(fx?.y).toBeGreaterThanOrEqual(av.avatar.y);
-	expect(fx?.y).toBeLessThanOrEqual(av.avatar.y + BOX.h);
-	expect(fx?.source).toBeUndefined(); // server-sourced, never suppressed to the victim
+	const av = serverAvatar(7, 20);
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	// Make the Avatar immune to incoming damage so its presence can't be staggered
+	// away — we only want to observe the Monster's swing timeline.
+	state.avatars[0].avatar.hurtT = 100;
+
+	let sawRecovery = false;
+	for (let i = 0; i < 40; i++) {
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+		const mon = state.zone.monsters[0];
+		if (swingPhase(mon.attackT) === 'recovery') {
+			sawRecovery = true;
+			// During recovery the committer is exposed: a Player swing connects and the
+			// Monster takes the hit without it interrupting/cancelling the recovery.
+			const punisher = primeSwing(
+				serverAvatar(9, 20 + MONSTER.meleeRange - BOX.w),
+			);
+			punisher.avatar.facing = 1;
+			const hpBefore = mon.hp;
+			const punished = stepZone(
+				{ ...state, avatars: [...state.avatars, punisher] },
+				[
+					holdAt(7, state.avatars[0].avatar),
+					{ ...holdAt(9, punisher.avatar), attack: true },
+				],
+				16,
+			);
+			expect(punished.zone.monsters[0].hp).toBeLessThan(hpBefore); // recovery is punishable
+			break;
+		}
+	}
+	expect(sawRecovery).toBe(true);
+});
+
+test('a committer in its active phase can Stagger a poise-broken Avatar (full hit-reaction payload)', () => {
+	// Prove the committer's strike carries the universal hit-reaction payload: with the
+	// Avatar's Poise pre-broken-low, the active hit Staggers it (Hitstun + Knockback).
+	const m = spawnMonster('chaser', 2, 20 + MONSTER.meleeRange, y);
+	m.onGround = true;
+	const av = serverAvatar(7, 20);
+	av.avatar.poise = 1; // one chip from a break
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	// Advance until the Avatar takes its hit.
+	let staggered = false;
+	for (let i = 0; i < 30 && !staggered; i++) {
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+		if ((state.avatars[0].avatar.stunT ?? 0) > 0) staggered = true;
+	}
+	expect(staggered).toBe(true);
+	expect(state.avatars[0].avatar.ivx ?? 0).not.toBe(0); // knocked back
+	expect(state.effects?.some((e) => e.kind === 'impact')).toBe(true);
 });
 
 test('a Monster targets and chases the nearest Avatar', () => {
@@ -358,8 +455,7 @@ test('a non-contributor present at a shared kill receives nothing', () => {
 test('an Avatar reduced to 0 HP respawns at the safe point at full HP', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.hp = 1;
-	const m = spawnMonster('chaser', 2, 20, y); // contact will finish it
-	m.onGround = true;
+	const m = strikingCommitterAt20(); // active-phase strike finishes the 1-HP Avatar
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
 	const a = next.avatars[0].avatar;
@@ -371,8 +467,7 @@ test('an Avatar reduced to 0 HP respawns at the safe point at full HP', () => {
 test('an Avatar dying emits a radial gore Effect at the death position, before respawn', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.hp = 1;
-	const m = spawnMonster('chaser', 2, 20, y); // contact finishes the Avatar
-	m.onGround = true;
+	const m = strikingCommitterAt20(); // active-phase strike finishes the 1-HP Avatar
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
 	// the killing contact also emits a hurt burst; the death burst is the radial,
@@ -389,8 +484,7 @@ test('an Avatar dying emits a radial gore Effect at the death position, before r
 test('stepZone reports the sessions that died this tick in deaths', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.hp = 1;
-	const m = spawnMonster('chaser', 2, 20, y); // contact finishes the Avatar
-	m.onGround = true;
+	const m = strikingCommitterAt20(); // active-phase strike finishes the 1-HP Avatar
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
 	expect(next.deaths).toEqual([7]);

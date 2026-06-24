@@ -167,6 +167,15 @@ A non-hostile, server-controlled character (shopkeeper, quest-giver, etc.).
 Distinct from Monster — NPCs are never fought.
 _Avoid_: Vendor, bot
 
+**Melee committer**:
+A Monster archetype that deals damage *only* through a telegraphed melee **Attack
+phase** — approach/space → **wind-up** (committed, replicated for the Player to
+read) → **active** (the one damaging window) → **recovery** (a punishable opening,
+it cannot re-commit or cancel). The reworked chaser is the first one. Monsters have
+**no passive contact damage**: overlapping a Monster does nothing, so every point of
+incoming damage was dodgeable/punishable. See ADR 0017 §9.
+_Avoid_: Melee mob, contact damage, walk-into-you damage
+
 **Combat**:
 Real-time PvE (Player vs Monster) fighting — a first-class pillar, not flavor.
 Built on **commitment**: an attack is not instant but occupies time in **phases**,

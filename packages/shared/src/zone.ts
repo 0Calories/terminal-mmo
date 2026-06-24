@@ -17,8 +17,11 @@ import {
 	hurtBloodEffect,
 	IDLE_ACTION,
 	impactEffect,
+	meleeActive,
+	meleeHitbox,
 	regenPoise,
 	resolveCombat,
+	SWING_TOTAL,
 } from './combat';
 import {
 	BOX,
@@ -250,6 +253,11 @@ export function stepZone(
 		m.poiseT = Math.max(0, (m.poiseT ?? 0) - dt);
 		if ((m.poiseT ?? 0) <= 0) m.poise = regenPoise(m, dt);
 		const stunned = (m.stunT ?? 0) > 0;
+		// A chaser that has begun a swing is COMMITTED for the whole
+		// wind-up→active→recovery: it neither moves nor re-targets nor re-commits until
+		// the swing fully recovers (attackT decays to 0). That commitment is precisely
+		// what makes the recovery a punishable opening (ADR 0017 §9).
+		const committed = m.type === 'chaser' && m.attackT > 0;
 
 		const target = nearestAvatar(avatars, m.x);
 		const dx = target >= 0 ? avatars[target].avatar.x - m.x : 0;
@@ -257,8 +265,9 @@ export function stepZone(
 		const engaged =
 			!stunned && target >= 0 && m.type === 'shooter' && adx < SHOOTER.aggro;
 		let moveX: -1 | 0 | 1;
-		if (stunned)
-			// Staggered: no input drive. stepEntity still carries ivx (Knockback) + gravity.
+		if (stunned || committed)
+			// Staggered or mid-swing: no input drive. stepEntity still carries ivx
+			// (Knockback) + gravity, and a committed swing holds its ground to strike.
 			moveX = 0;
 		else if (target >= 0 && m.type === 'chaser' && adx < MONSTER.chaserAggro)
 			// hold (moveX 0) inside the deadzone so facing doesn't flip-flop frame
@@ -269,8 +278,9 @@ export function stepZone(
 		const res = stepEntity(t, m, { moveX, jump: false }, dt);
 		m = res.e;
 
-		// patrol turn-around at walls and platform edges (suppressed while staggered)
-		if (!stunned && m.onGround && !engaged) {
+		// patrol turn-around at walls and platform edges (suppressed while staggered or
+		// committed to a swing — a committer faces its locked-in target, not its patrol)
+		if (!stunned && !committed && m.onGround && !engaged) {
 			const lead = moveX >= 0 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x);
 			const footY = Math.ceil(m.y + BOX.h);
 			if (res.hitWall || !isSolid(t, lead, footY))
@@ -283,6 +293,67 @@ export function stepZone(
 			if (m.attackT <= 0) {
 				fired.push(spawnProjectile(nextProjectileId++, m, dir));
 				m = { ...m, attackT: SHOOTER.fireCooldown };
+			}
+		}
+
+		// Melee committer (ADR 0017 §9): the reworked chaser deals damage ONLY through a
+		// telegraphed phased swing — never by contact. When an Avatar is within reach and
+		// the chaser is free (not staggered, not already mid-swing), it COMMITS: it faces
+		// the target and loads the full wind-up→active→recovery into `attackT`. The
+		// wind-up replicates through the action-state (snapshotFor) for the Player to
+		// read; the active phase below is the only damaging window; and because `attackT`
+		// stays > 0 through recovery, the committer cannot re-commit or cancel — that
+		// recovery is the Player's punish opening.
+		if (
+			!stunned &&
+			!committed &&
+			m.type === 'chaser' &&
+			target >= 0 &&
+			adx <= MONSTER.meleeRange
+		) {
+			m.facing = dx >= 0 ? 1 : -1;
+			m = { ...m, attackT: SWING_TOTAL };
+		}
+
+		// The committer's strike: during its active phase ONLY, project the melee hitbox
+		// and apply the universal hit-reaction payload to each overlapping Avatar — the
+		// exact same payload a Player's swing carries (ADR 0017 §2), so a committer can
+		// Stagger a poise-broken Player. Gated by the victim's i-frames so the multi-tick
+		// active window lands once. A break Staggers (Hitstun + a Mass-scaled Knockback
+		// impulse); a chip just damages + flinches.
+		if (m.type === 'chaser' && meleeActive(m.attackT)) {
+			const hb = meleeHitbox(m);
+			for (let i = 0; i < avatars.length; i++) {
+				const a = avatars[i].avatar;
+				if (a.hurtT > 0 || !aabbOverlap(hb, entityBox(a))) continue;
+				const { poise, broke } = applyPoiseDamage(a, COMBAT.poiseDamage);
+				let na: Entity = {
+					...a,
+					hp: a.hp - MONSTER.meleeDamage,
+					hurtT: COMBAT.iframes,
+					poise,
+					poiseT: COMBAT.poise.regenDelay,
+				};
+				if (broke) {
+					// Stagger the Player: throw the body away from the Monster (Mass-scaled)
+					// with a small upward pop and lock control for Hitstun. The impact Effect
+					// carries NO `source`, so — like a Monster break — it reaches everyone in
+					// range, including the victim's client (hitstop + camera-kick).
+					na = applyImpulse(
+						na,
+						COMBAT.knockback * m.facing,
+						-COMBAT.knockbackUp,
+					);
+					na = { ...na, stunT: COMBAT.hitstun };
+					effects.push(impactEffect(a, m.facing, MONSTER.meleeDamage));
+				} else {
+					// Hurt blood at the Avatar, biased away from the Monster (0 when they share
+					// a column). Server-sourced — no `source` — so the snapshot delivers it to
+					// the victim too, in sync with the hurt-flash (ADR 0013, #132).
+					const dir: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
+					effects.push(hurtBloodEffect(a, dir, MONSTER.meleeDamage));
+				}
+				avatars[i] = { ...avatars[i], avatar: na };
 			}
 		}
 
@@ -340,29 +411,9 @@ export function stepZone(
 			}
 		}
 
-		// Contact damage to each Avatar that is touching a still-living Monster.
-		if (m.hp > 0) {
-			for (let i = 0; i < avatars.length; i++) {
-				const a = avatars[i].avatar;
-				if (a.hurtT <= 0 && aabbOverlap(entityBox(a), entityBox(m))) {
-					avatars[i] = {
-						...avatars[i],
-						avatar: {
-							...a,
-							hp: a.hp - MONSTER.contactDamage,
-							hurtT: 0.6,
-						},
-					};
-					// Hurt blood at the Avatar, knocked away from the Monster (0 when
-					// they share a column). Server-sourced — no `source` — so the
-					// snapshot delivers it to the victim too, in sync with the
-					// hurt-flash (ADR 0013, #132). Inside the i-frame gate, so an
-					// i-framed Avatar bleeds nothing.
-					const dir: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
-					effects.push(hurtBloodEffect(a, dir, MONSTER.contactDamage));
-				}
-			}
-		}
+		// Passive contact damage is GONE (ADR 0017 §9): overlapping a Monster does
+		// nothing. All Monster melee now flows through the telegraphed active-phase
+		// strike above, so every point of incoming damage was dodgeable/punishable.
 
 		if (m.hp > 0) {
 			monsters.push(m);
@@ -541,11 +592,15 @@ export function snapshotFor(
 		hp: m.hp,
 		maxHp: m.maxHp,
 		hurtT: m.hurtT,
-		// Monsters keep their MVP offense this slice, so they replicate an idle move —
-		// but a Staggered Monster surfaces its reaction through the action `flags`, so
-		// observers can render the hit reaction (ADR 0017 §3/§10). The phased-offense
-		// rework is a later slice (ADR 0017 §9).
-		action: { ...IDLE_ACTION, flags: actionFlags(m) },
+		// A melee-committer chaser runs the phase machine on its `attackT`, so it
+		// replicates its real swing action-state — this is what makes its wind-up
+		// visible to the Player (ADR 0017 §9/§10). The shooter keeps its MVP offense
+		// (its `attackT` is a fire cooldown, not a swing), so it replicates idle; either
+		// way a Staggered Monster surfaces its reaction through the action `flags`.
+		action:
+			m.type === 'chaser'
+				? actionStateOf(m)
+				: { ...IDLE_ACTION, flags: actionFlags(m) },
 	}));
 	// Originator-suppression (ADR 0013): an Effect is never sent back to the
 	// session that caused it — the acting client already predicted its own blood,

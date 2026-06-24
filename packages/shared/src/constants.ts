@@ -77,7 +77,17 @@ export const MONSTER = {
 	// Hold position once this close instead of homing on the exact Avatar x:
 	// otherwise dx flips sign each frame, flipping facing — visible jitter.
 	chaserDeadzone: 2,
-	contactDamage: 6,
+	// The reworked chaser is a MELEE COMMITTER (ADR 0017 §9): it has no passive
+	// contact damage. When an Avatar comes within `meleeRange` it COMMITS a
+	// telegraphed swing (the shared wind-up→active→recovery phase machine) and deals
+	// `meleeDamage` ONLY during the active phase, carrying the full hit-reaction
+	// payload (Poise + Stagger on a break). `meleeRange` is kept just inside the
+	// hitbox reach so the active strike connects on a target that holds its ground,
+	// while the wind-up gives a reading Player the window to step out and punish the
+	// recovery. `meleeDamage` is a touch heavier than the retired contact chip (6),
+	// since it is now telegraphed and avoidable rather than unavoidable.
+	meleeDamage: 8,
+	meleeRange: 4,
 } as const;
 
 export const SHOOTER = {
