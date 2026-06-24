@@ -14,7 +14,8 @@ import type { WeaponSprite } from '../weapon-sprite';
 // VISUAL ARTEFACT — the art here needs design review / sign-off before merge.
 
 // Rest: blade upright at the side, steel rising from a dark guard (the hand cell).
-const idle = new Sprite(`
+const idle = new Sprite(
+	`
 ▐▌
 ▟▙
 ▝▘`,
@@ -22,19 +23,20 @@ const idle = new Sprite(`
 );
 
 // Wind-up: blade cocked up-and-forward, raised to strike (above the hand).
-const windup = new Sprite(`
+const windup = new Sprite(
+	`
 ·▙
 ·▐▙
 ··▝▘
 `,
-  {
-    defaultKey: 's', colors:
-`
+	{
+		defaultKey: 's',
+		colors: `
 ·s
 ·ss
 ··kk
-`
-  },
+`,
+	},
 );
 
 // Active sweep (ADR 0018 §4): a fixed-length ordered arc the renderer samples by
@@ -42,28 +44,28 @@ const windup = new Sprite(`
 // high (up-forward) through a level strike to low (down-forward); heft comes from the
 // weapon's phase DURATIONS, not from more frames.
 
-
 // ▃▅▁▁▁▁
 // ▔▀▔▔▔▔
 
 // ▃▙▂▂▂▂
 //  ▘▔▔▔▔
 
-const active1 = new Sprite(`
+const active1 = new Sprite(
+	`
 ·
 ▂▙▂▂▂
 ▔▛▔▔▔
 ·
 `,
-  {
-    defaultKey: 's', colors:
-`
+	{
+		defaultKey: 's',
+		colors: `
 ·
 kssss
 kssss
 ·
-`
-  },
+`,
+	},
 );
 
 export const sword: WeaponSprite = {
