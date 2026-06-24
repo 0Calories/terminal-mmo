@@ -466,7 +466,14 @@ test('an observer renders the same walk frame as the owner for a given position 
 		x: 3 * STRIDE + 3,
 		y: 7,
 		vx: 3,
-		action: { move: 'idle', phase: 'windup', progress: 0, flags: 0 },
+		action: {
+			move: 'idle',
+			phase: 'windup',
+			progress: 0,
+			flags: 0,
+			emote: null,
+			emoteT: 0,
+		},
 	});
 
 	const render = (e: Entity) => {
@@ -617,7 +624,14 @@ test('mid-active-swing the composited weapon plays the sweep frame, and no box-f
 	const buf = new FakeBuffer(28, 16);
 	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
 	// An observer reads the swing from the replicated action-state (move/phase/progress).
-	e.action = { move: 'basic', phase: 'active', progress, flags: 0 };
+	e.action = {
+		move: 'basic',
+		phase: 'active',
+		progress,
+		flags: 0,
+		emote: null,
+		emoteT: 0,
+	};
 	renderZoneScene(
 		buf,
 		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
@@ -670,7 +684,14 @@ test('the active phase renders the blade-edge arc in the accent colour; other ph
 	// colour (drawn on top of the blade). The arc traces the tip — NOT a hitbox fill.
 	const active = new FakeBuffer(28, 16);
 	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
-	e.action = { move: 'basic', phase: 'active', progress, flags: 0 };
+	e.action = {
+		move: 'basic',
+		phase: 'active',
+		progress,
+		flags: 0,
+		emote: null,
+		emoteT: 0,
+	};
 	renderZoneScene(
 		active,
 		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },

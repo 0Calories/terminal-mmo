@@ -30,6 +30,7 @@ export {
 	type BodyState,
 	bodyFrame,
 	DEFAULT_FORM,
+	EMOTE_FPS,
 	type EmotePoseId,
 	FORMS,
 	formById,

@@ -50,8 +50,30 @@ const jump = new Sprite(
 	{ defaultKey: 'p' },
 );
 
+// The `wave` emote (ADR 0020 §8/§9) — the launch `oneshot`. The body holds idle's torso
+// and feet (an emote is a "standing still and posing" moment, §6) and raises the leading
+// arm, animated as a two-frame sweep the selector samples by `emoteT` (EMOTE_FPS): the
+// raised hand alternates between `waveA` and `waveB` so the arm visibly waves before the
+// oneshot elapses and the body drops back to idle. Same 9×3 footprint, so the grip/head
+// anchors and logical box are unchanged; the renderer mirrors it on facing.
+const waveA = new Sprite(
+	`
+▗▟██▜█▜▌·
+·▐█████▛▘
+··▀···▀··`,
+	{ defaultKey: 'p' },
+);
+
+const waveB = new Sprite(
+	`
+·▐██▜█▜▌·
+▝▜█████▛▘
+··▀···▀··`,
+	{ defaultKey: 'p' },
+);
+
 export const buddy: BodySprite = {
-	frames: { idle: player, walkA, walkB, jump },
+	frames: { idle: player, walkA, walkB, jump, 'emote:wave': [waveA, waveB] },
 	grip: { x: 7, y: 1 },
 	head: { x: 4, y: 0 },
 };

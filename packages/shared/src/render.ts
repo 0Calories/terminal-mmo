@@ -195,17 +195,26 @@ export function drawEntitySprite<C>(
 	let phase: AttackPhase | null;
 	let progress: number;
 	let staggered: boolean;
+	// The active body emote (ADR 0020 §9): an observer reads it from the replicated
+	// action-state; the local Avatar (no `action`) reads its predicted entity fields. Fed
+	// into the same `bodyFrame` ladder below, so the wave poses on owner and observer alike.
+	let emote: string | null;
+	let emoteT: number;
 	if (e.action) {
 		move = e.action.move;
 		phase = e.action.phase;
 		progress = e.action.progress;
 		staggered = (e.action.flags & ACTION_FLAG.staggered) !== 0;
+		emote = e.action.emote;
+		emoteT = e.action.emoteT;
 	} else {
 		const swing = weaponById(e.weapon).swing;
 		phase = swingPhase(e.attackT, swing);
 		move = phase ? 'basic' : 'idle';
 		progress = phase ? swingProgress(e.attackT, swing) : 0;
 		staggered = (e.stunT ?? 0) > 0;
+		emote = e.emoteId ?? null;
+		emoteT = e.emoteT ?? 0;
 	}
 
 	// The body: an Avatar poses its Form through the shared `bodyFrame` selector and
@@ -223,13 +232,14 @@ export function drawEntitySprite<C>(
 		// `moving` gates the gait on input-driven horizontal velocity (exactly 0 at a
 		// standstill, ±speed striding, 0 into a wall), and `distanceX` is the Avatar's own
 		// world x — the selector flips `walkA↔walkB` every STRIDE cells of |x|, so cadence
-		// tracks speed for free. Emotes are authored in a later slice (held null here).
+		// tracks speed for free. An active emote (resolved above) poses below walk, so it
+		// shows only while standing still (ADR 0020 §6).
 		const pose = bodyFrame({
 			move,
 			phase,
 			swingProgress: progress,
-			emote: null,
-			emoteT: 0,
+			emote,
+			emoteT,
 			airborne: !e.onGround,
 			moving: e.vx !== 0,
 			distanceX: e.x,

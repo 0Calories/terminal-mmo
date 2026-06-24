@@ -38,6 +38,7 @@ import {
 	XP_PER_KILL,
 } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
+import { emoteById, emoteInterrupted, stepEmote } from './emote';
 import { rollItem } from './loot';
 import { applyImpulse, stepEntity } from './physics';
 import { spawnAvatar } from './player';
@@ -116,6 +117,11 @@ export interface AvatarIntent {
 	interact?: boolean; // request a Portal transition; resolved by the world layer
 	dodge?: boolean; // start an i-frame Dodge hop this tick (ADR 0017 §5)
 	skill?: number;
+	// A freshly-triggered body emote this tick (ADR 0020 §9): the `/em <id>` the Player
+	// typed, set on the avatar as `emoteId`/`emoteT` and replicated through the action-
+	// state. A one-shot edge — present only on the tick the trigger arrives, not every
+	// input — so it doesn't re-fire while held. An unknown id is dropped.
+	emote?: string;
 	// Input staleness in ms (ADR 0017 §11): how late this input reached the server,
 	// derived from its client timestamp by the impure server layer. Widens the Parry
 	// window (clamped to COMBAT.guard.lagComp) so a Parry timed right on the Player's
@@ -139,6 +145,13 @@ export function clientStepAvatar(
 	const dt = Math.min(dtMs / 1000, PHYS.maxDt);
 	const e = stepEntity(t, avatar, ctl, dt).e;
 	e.hurtT = Math.max(0, e.hurtT - dt);
+	// Predict the local Avatar's active emote the same way the server advances it (ADR
+	// 0020 §9): count the oneshot down and cancel it the instant we move/fight, so the
+	// owner sees its own `/em wave` immediately and walking cancels it with no round-trip.
+	// The trigger itself is applied where the chat command is parsed (index.ts).
+	const em = stepEmote(e.emoteId, e.emoteT ?? 0, emoteInterrupted(e), dt);
+	e.emoteId = em.emoteId ?? undefined;
+	e.emoteT = em.emoteT;
 	return e;
 }
 
@@ -205,6 +218,25 @@ function resolveAvatarIntent(
 	// the swing, so the server and the client's prediction can't disagree on a raise.
 	avatar.guardT = r.guardT;
 	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
+	// Body emote (ADR 0020 §9): a fresh `/em` trigger this tick arms the oneshot, then the
+	// shared step counts it down and cancels it the instant the Avatar acts (moving /
+	// combat / stagger, §6) — evaluated AFTER the swing + guard timers above so the cancel
+	// reads this tick's resolved state. The owner predicts the identical step client-side.
+	if (intent?.emote) {
+		const def = emoteById(intent.emote);
+		if (def) {
+			avatar.emoteId = def.id;
+			avatar.emoteT = def.duration;
+		}
+	}
+	const em = stepEmote(
+		avatar.emoteId,
+		avatar.emoteT ?? 0,
+		emoteInterrupted(avatar),
+		dt,
+	);
+	avatar.emoteId = em.emoteId ?? undefined;
+	avatar.emoteT = em.emoteT;
 	// A fresh swing clears the per-swing hit list so it can connect again; an
 	// in-flight swing keeps its list so it lands on each target only once (ADR 0017
 	// §2 — the rate-limiter that replaced automatic post-hit i-frames).

@@ -44,7 +44,4 @@ export const COLORS = {
 	bubbleBorder: RGBA.fromInts(120, 200, 235, 255),
 	bubbleBg: RGBA.fromInts(20, 24, 34, 128),
 	bubbleShade: RGBA.fromInts(20, 24, 34, 255),
-	// Over-head emote glyph (#38): a bright, high-contrast reaction on the telegraph
-	// layer, drawn above all Sprites and self-clearing.
-	emote: RGBA.fromInts(255, 220, 110, 255),
 };

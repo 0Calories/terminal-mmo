@@ -166,15 +166,11 @@ test('whisper (server -> client) round-trips sender session + both handles + tex
 	expect(decoded).toEqual(msg);
 });
 
-test('emote (client -> server) round-trips the emote id (#38)', () => {
+test('emote (client -> server) round-trips the trigger id (#38, ADR 0020 §9)', () => {
+	// The client->server `/em` trigger is retained; the server->client relay is gone —
+	// the active emote now rides the snapshot action-state instead (see the snapshot test).
 	const msg: ClientMessage = { t: 'emote', emote: 'wave' };
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
-	expect(decoded).toEqual(msg);
-});
-
-test('emote (server -> client) round-trips the sender session + emote id (#38)', () => {
-	const msg: ServerMessage = { t: 'emote', sessionId: 7, emote: 'laugh' };
-	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
 });
 
@@ -230,8 +226,16 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 				hurtT: 0.3,
 				// Equipped Weapon index joins the broadcast appearance (ADR 0017 §14).
 				weapon: 2,
-				// Mid-swing action-state (ADR 0017 §10) — exercises a non-idle round-trip.
-				action: { move: 'basic', phase: 'active', progress: 0.5, flags: 0 },
+				// Mid-swing action-state (ADR 0017 §10) carrying an active body emote (ADR
+				// 0020 §9) — exercises a non-idle, emoting round-trip.
+				action: {
+					move: 'basic',
+					phase: 'active',
+					progress: 0.5,
+					flags: 0,
+					emote: 'wave',
+					emoteT: 1.25,
+				},
 			},
 		],
 		monsters: [

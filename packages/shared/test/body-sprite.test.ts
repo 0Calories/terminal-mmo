@@ -4,6 +4,7 @@ import {
 	type BodyState,
 	bodyFrame,
 	DEFAULT_FORM,
+	EMOTE_FPS,
 	FORMS,
 	formById,
 	formFrame,
@@ -65,12 +66,30 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 	});
 
 	test('an unauthored Pose still falls back to idle (ADR 0020 §5)', () => {
-		// Beyond the required core (+ the authored `jump`), every other Pose resolves to
-		// the idle grid until a later slice authors it (combat leans / hurt / emotes).
+		// Beyond the required core (+ the authored `jump` and `emote:wave`), every other
+		// Pose resolves to the idle grid until a later slice authors it (combat leans /
+		// hurt / the deferred dance + sit emotes).
 		const idle = formFrame(FORMS[0], 'idle');
 		for (const pose of ['windup', 'active', 'recovery', 'hurt'] as const)
 			expect(formFrame(FORMS[0], pose)).toBe(idle);
-		expect(formFrame(FORMS[0], 'emote:wave')).toBe(idle);
+		expect(formFrame(FORMS[0], 'emote:dance')).toBe(idle);
+	});
+
+	test('the launch Form authors the wave emote as a distinct multi-frame sweep (ADR 0020 §9)', () => {
+		// `wave` ships as the launch oneshot: a real two-frame sweep (not an idle fallback),
+		// each frame the idle footprint so the body anchor is stable, sampled by the
+		// selector's frameIndex so the raised arm visibly waves.
+		const idle = formFrame(FORMS[0], 'idle');
+		const f0 = formFrame(FORMS[0], 'emote:wave', 0);
+		const f1 = formFrame(FORMS[0], 'emote:wave', 1);
+		expect(f0).toBeInstanceOf(Sprite);
+		expect(f0).not.toBe(idle);
+		expect(f0.rows(1)).not.toEqual(idle.rows(1));
+		expect(f1.rows(1)).not.toEqual(f0.rows(1)); // the two sweep frames differ
+		// frameIndex wraps into range, so an out-of-bounds sample is safe.
+		expect(formFrame(FORMS[0], 'emote:wave', 2).rows(1)).toEqual(f0.rows(1));
+		expect(f0.w).toBe(idle.w);
+		expect(f0.h).toBe(idle.h);
 	});
 
 	test('the launch Form authors a distinct jump Pose for airborne (ADR 0020 §6)', () => {
@@ -174,5 +193,21 @@ describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
 		expect(
 			bodyFrame({ ...REST, emote: 'wave', moving: true, distanceX: 0 }).poseId,
 		).toBe('walkA');
+		// Combat (and stagger) also outrank the emote — they sit higher on the ladder.
+		expect(
+			bodyFrame({ ...REST, emote: 'wave', move: 'basic', phase: 'active' })
+				.poseId,
+		).toBe('active');
+	});
+
+	test('an emote frame is sampled from emoteT so the sweep animates (ADR 0020 §9)', () => {
+		// frameIndex = floor(emoteT * EMOTE_FPS), so the Pose advances as its timer runs.
+		expect(bodyFrame({ ...REST, emote: 'wave', emoteT: 0 }).frameIndex).toBe(0);
+		expect(
+			bodyFrame({ ...REST, emote: 'wave', emoteT: 1 / EMOTE_FPS }).frameIndex,
+		).toBe(1);
+		expect(
+			bodyFrame({ ...REST, emote: 'wave', emoteT: 2 / EMOTE_FPS }).frameIndex,
+		).toBe(2);
 	});
 });

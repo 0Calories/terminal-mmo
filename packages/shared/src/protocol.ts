@@ -5,6 +5,7 @@
 
 import { SHOOTER } from './constants';
 import { clampCosmetics, DEFAULT_COSMETICS } from './cosmetics';
+import { EMOTES } from './emote';
 import type {
 	ActionState,
 	AttackPhase,
@@ -411,11 +412,6 @@ export type ServerMessage =
 	  }
 	// A sender-only system line (#40): e.g. whispering a handle that is not online.
 	| { t: 'notice'; text: string }
-	// An emote relayed to every session in the sender's Channel (#38), Zone-local
-	// like chat. `sessionId` keys the transient over-head glyph to the sender's
-	// sprite (the handle is a display label, not an identity); `emote` is an
-	// EMOTES id the recipient resolves to a glyph.
-	| { t: 'emote'; sessionId: number; emote: string }
 	// The server is refusing the connection and will close it (ADR 0009): a
 	// protocol-version mismatch, or a connection cap (global / per-IP). `reason` is
 	// a human-readable line the client surfaces before exiting.
@@ -428,7 +424,6 @@ const SERVER_TAG = {
 	reject: 4,
 	whisper: 5,
 	notice: 6,
-	emote: 7,
 } as const;
 
 const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
@@ -445,16 +440,26 @@ const EFFECT_KINDS: readonly EffectKind[] = [
 // goes on the END and a forward-version index clamps to `idle` on decode.
 const MOVE_IDS: readonly MoveId[] = ['idle', 'basic', 'dodge'];
 const ATTACK_PHASES: readonly AttackPhase[] = ['windup', 'active', 'recovery'];
+// Append-only emote catalog for the wire (ADR 0020 §9): the index is the encoding, so a
+// new emote goes on the END. `NO_EMOTE` (0xFF) is the "no active emote" sentinel; a
+// forward-version index that isn't in the catalog decodes to null, so a newer server's
+// emote can never crash an older client's renderer (it just shows idle).
+const EMOTE_IDS: readonly string[] = EMOTES.map((e) => e.id);
+const NO_EMOTE = 0xff;
 
-// The per-entity action-state (ADR 0017 §10): move + phase as catalog-index bytes,
-// phase progress as an f64 (exact round-trip), flags as a u8 bitfield. ~11 bytes per
-// entity per tick. A forward-version move/phase index clamps to idle/wind-up on
+// The per-entity action-state (ADR 0017 §10, extended by ADR 0020 §9): move + phase as
+// catalog-index bytes, phase progress as an f64 (exact round-trip), flags as a u8
+// bitfield, then the active emote — its catalog index (0xFF == none) + remaining lifetime
+// as an f64. A forward-version move/phase/emote index clamps to idle/wind-up/none on
 // decode so a newer server can never crash an older client's renderer.
 function writeAction(w: Writer, a: ActionState) {
 	w.u8(MOVE_IDS.indexOf(a.move));
 	w.u8(ATTACK_PHASES.indexOf(a.phase));
 	w.f64(a.progress);
 	w.u8(a.flags);
+	const ei = a.emote ? EMOTE_IDS.indexOf(a.emote) : -1;
+	w.u8(ei >= 0 ? ei : NO_EMOTE);
+	w.f64(a.emoteT);
 }
 
 function readAction(r: Reader): ActionState {
@@ -463,6 +468,8 @@ function readAction(r: Reader): ActionState {
 		phase: ATTACK_PHASES[r.u8()] ?? 'windup',
 		progress: r.f64(),
 		flags: r.u8(),
+		emote: EMOTE_IDS[r.u8()] ?? null,
+		emoteT: r.f64(),
 	};
 }
 const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory'];
@@ -692,11 +699,6 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			w.u8(SERVER_TAG.notice);
 			w.str(msg.text);
 			break;
-		case 'emote':
-			w.u8(SERVER_TAG.emote);
-			w.u32(msg.sessionId);
-			w.str(msg.emote);
-			break;
 		case 'reject':
 			w.u8(SERVER_TAG.reject);
 			w.str(msg.reason);
@@ -761,8 +763,6 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			};
 		case SERVER_TAG.notice:
 			return { t: 'notice', text: r.str() };
-		case SERVER_TAG.emote:
-			return { t: 'emote', sessionId: r.u32(), emote: r.str() };
 		case SERVER_TAG.reject:
 			return { t: 'reject', reason: r.str() };
 		default:

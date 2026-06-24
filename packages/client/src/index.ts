@@ -10,6 +10,7 @@ import {
 	DEFAULT_WEAPON,
 	type Entity,
 	effectsOf,
+	emoteById,
 	entityBox,
 	type GameState,
 	type Input,
@@ -374,9 +375,19 @@ function runNetworked(url: string) {
 					if (cmd.kind === 'say') net.send({ t: 'chat', text: cmd.text });
 					else if (cmd.kind === 'whisper')
 						net.send({ t: 'whisper', to: cmd.to, text: cmd.text });
-					else if (cmd.kind === 'emote')
+					else if (cmd.kind === 'emote') {
+						// Trigger on the server AND predict locally so the wave plays with zero
+						// lag (ADR 0020 §9): arm the predicted Avatar's oneshot now; clientStepAvatar
+						// counts it down and cancels it on movement/combat, mirroring the server.
 						net.send({ t: 'emote', emote: cmd.emote });
-					else net.notice(cmd.message);
+						const def = emoteById(cmd.emote);
+						if (def)
+							predicted = {
+								...predicted,
+								emoteId: def.id,
+								emoteT: def.duration,
+							};
+					} else net.notice(cmd.message);
 				}
 				return;
 			}
@@ -555,7 +566,6 @@ function runNetworked(url: string) {
 			// Age over-head Speech bubbles by wall time, then stamp the live ones onto
 			// their senders' entities for the playfield to draw (#59, ADR 0007).
 			net.decayBubbles(dt / 1000);
-			net.decayEmotes(dt / 1000);
 			const game = snapshotToGame(
 				zone,
 				predicted,
@@ -563,7 +573,6 @@ function runNetworked(url: string) {
 				view,
 				localCd,
 				net.bubbles,
-				net.emotes,
 			);
 			playfield.game = game;
 			// Predict our own outgoing-hit blood off the rendered (interpolated)
