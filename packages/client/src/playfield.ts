@@ -427,6 +427,11 @@ function drawPlayfield(
 	// visible. The local Avatar's swing is drawn after its Sprite, below.
 	for (const e of others) drawSwing(buf, e, cam, sw, sh);
 
+	// Monster swings, from the same replicated action-state: a melee committer's
+	// telegraphed wind-up + active slash is exactly what the Player reads to step
+	// away and punish the recovery (ADR 0017 §9).
+	for (const m of zone.monsters) drawSwing(buf, m, cam, sw, sh);
+
 	// Detected from the freshly-set cooldown, mirroring the melee flash window.
 	for (let slot = 1; ; slot++) {
 		const skill = skillForSlot(player.class ?? 'warrior', slot);
