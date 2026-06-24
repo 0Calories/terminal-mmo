@@ -36,23 +36,6 @@ export function entityTint(e: Entity): Tint {
 	return { r: quad[0], g: quad[1], b: quad[2] };
 }
 
-// The gore Effect a death emits (ADR 0013, #139): a high-intensity radial (dir 0)
-// burst at the dying entity's centre, tinted to the dead entity's body colour, so
-// a kill sprays in every direction with chunkier, entity-coloured gore — visibly
-// distinct from a chip hit's fine maroon blood. Shared so Monster and Avatar death
-// — server and offline — produce identical bursts. Carries no `source`: it is sent
-// to everyone in range (the killer sees it too).
-export function deathGoreEffect(e: Entity): Effect {
-	return {
-		kind: 'gore',
-		x: e.x + BOX.w / 2,
-		y: e.y + BOX.h / 2,
-		intensity: COMBAT.deathBurstIntensity,
-		dir: 0,
-		tint: entityTint(e),
-	};
-}
-
 export function entityBox(e: Entity): Box {
 	return { x: e.x, y: e.y, w: BOX.w, h: BOX.h };
 }
@@ -406,21 +389,6 @@ export function resolveGuard(
 	};
 }
 
-// The parry-clash Effect a successful Parry emits (ADR 0017 §5/§13d): a bright, sharp
-// flash at the defender, biased back along the blow. Its intensity is fixed (the hit's
-// damage was negated, so it does NOT scale with damage) — the clash is about the catch,
-// not the blow. Like the impact burst it carries NO `source`, so it reaches everyone in
-// range including the parrier, who needs it for the clash flash + camera juice + sound.
-export function parryEffect(defender: Entity, dir: Facing): Effect {
-	return {
-		kind: 'parry',
-		x: defender.x + BOX.w / 2,
-		y: defender.y + BOX.h / 2,
-		intensity: COMBAT.poise.max,
-		dir,
-	};
-}
-
 // The world cell the guard-stance glyph occupies: just past the defender's leading
 // edge at mid-height, so the brace reads as held up in front. Pure geometry, the guard
 // twin of swingPoseCell.
@@ -580,44 +548,61 @@ export function bladeEdgeArc(progress: number, facing: Facing): ArcCell[] {
 // Effects via `effectsOf` BEFORE building each recipient's snapshot.
 export type CombatEventKind = 'hit' | 'break' | 'death' | 'parry' | 'swat';
 
-export interface CombatEvent {
-	kind: CombatEventKind;
-	targetId: number; // who was struck — the resolution's subject
-	source?: number; // attacker session, for originator-suppression; absent ⇒ "everyone"
+// The fields every CombatEvent shares, whatever its kind. `targetId` is the struck
+// subject (an Entity for hit/break/death/parry, a Projectile for swat); `intensity` is
+// the damage dealt and drives particle count / sound volume (the presentation scaling
+// itself lives in `effectsOf`, not here). The kind-specific fields hang off the union
+// members below.
+interface CombatEventBase {
+	targetId: number;
 	x: number;
 	y: number;
-	// Horizontal bias of the blow: -1 / 1 follow it, 0 is a radial burst (a death, or a
-	// hit whose source shares the victim's column). Matches `Effect.dir`, not `Facing` —
-	// a CombatEvent can resolve radially where a body's facing cannot.
-	dir: -1 | 0 | 1;
-	intensity: number; // damage dealt; drives particle count / sound volume
-	// The dead entity's body colour, carried only by a `death` event so `effectsOf`
-	// recolours the gore burst to what died (#139). Absent on every other kind.
-	tint?: Tint;
+	intensity: number;
 }
 
-// A CombatEvent at the struck target's centre, biased along the blow (ADR 0019). The
+// A CombatEvent is discriminated on `kind` so each kind carries ONLY the fields it can
+// meaningfully hold — illegal combinations (a tinted `hit`, a sourced `death`, a radial
+// `swat`) are unrepresentable rather than merely unused:
+//   - `source` rides a predicted `hit` alone — it keys originator-suppression so the
+//     server drops the chip blood back to the predicting attacker (ADR 0013 §3). The
+//     "big moments" (break/death/parry/swat) are source-less and reach everyone.
+//   - `tint` rides a `death` alone — the dead entity's body colour, so `effectsOf`
+//     recolours the gore burst to what died (#139).
+//   - `dir` is typed to the biases each kind can actually resolve to: a `death` is
+//     ALWAYS radial (0); a `swat` is NEVER radial (it only lands facing the shot, so
+//     ±1); only a `hit` spans both — 0 when the source shares the victim's column.
+//     It widens to `Effect.dir`, not `Facing`, where a body's facing cannot go radial.
+export type CombatEvent =
+	| (CombatEventBase & { kind: 'hit'; dir: -1 | 0 | 1; source?: number })
+	| (CombatEventBase & { kind: 'break'; dir: -1 | 0 | 1 })
+	| (CombatEventBase & { kind: 'parry'; dir: -1 | 0 | 1 })
+	| (CombatEventBase & { kind: 'swat'; dir: Facing })
+	| (CombatEventBase & { kind: 'death'; dir: 0; tint?: Tint });
+
+// A CombatEvent at the struck Entity's centre, biased along the blow (ADR 0019). The
 // shared constructor both the server resolution and the client prediction build their
-// player-melee events with, so the resolved fact — and thus its projected Effect — is
-// computed in exactly one place. `intensity` is the damage dealt (the presentation
-// scaling lives in `effectsOf`, not here). `source` is omitted when the event reaches
-// everyone (breaks/deaths/parries) or when the client predicts its own hit.
+// entity-targeted events with, so the resolved fact — and thus its projected Effect —
+// is computed in exactly one place. Builds the entity-centred kinds only; `death` and
+// `swat` have their own constructors (`deathEvent` carries a tint, `swatEvent` resolves
+// against a Projectile). `intensity` is the damage dealt (the presentation scaling lives
+// in `effectsOf`, not here). `source` is honoured for a `hit` alone — it is dropped on a
+// break/parry, which reach everyone in range (ADR 0013 §3).
 export function combatEventAt(
-	kind: CombatEventKind,
+	kind: 'hit' | 'break' | 'parry',
 	target: Entity,
 	dir: -1 | 0 | 1,
 	intensity: number,
 	source?: number,
 ): CombatEvent {
-	const e: CombatEvent = {
+	const e = {
 		kind,
 		targetId: target.id,
 		x: target.x + BOX.w / 2,
 		y: target.y + BOX.h / 2,
 		dir,
 		intensity,
-	};
-	if (source !== undefined) e.source = source;
+	} as CombatEvent;
+	if (e.kind === 'hit' && source !== undefined) e.source = source;
 	return e;
 }
 
