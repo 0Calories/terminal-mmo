@@ -194,7 +194,9 @@ export type ClientMessage =
 	| { t: 'emote'; emote: string };
 
 // Cosmetics are three small catalog indices (#35): one u8 each. Decode clamps to a
-// valid index so a forward-version / garbled value can never crash the renderer.
+// valid index so a forward-version / garbled value can never crash the renderer. The
+// `form` index (ADR 0020) is NOT on the wire yet — only one Form exists, so it defaults
+// — keeping this slice's per-frame wire cost unchanged; it joins when a second Form ships.
 function writeCosmetics(w: Writer, c: Cosmetics) {
 	w.u8(c.hue);
 	w.u8(c.hat);
@@ -202,7 +204,12 @@ function writeCosmetics(w: Writer, c: Cosmetics) {
 }
 
 function readCosmetics(r: Reader): Cosmetics {
-	return clampCosmetics({ hue: r.u8(), hat: r.u8(), nameplate: r.u8() });
+	return clampCosmetics({
+		hue: r.u8(),
+		hat: r.u8(),
+		nameplate: r.u8(),
+		form: DEFAULT_COSMETICS.form,
+	});
 }
 
 const CLIENT_TAG = {

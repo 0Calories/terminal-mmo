@@ -16,7 +16,7 @@ test('hello round-trips the handle + release version + cosmetics + weapon', () =
 		t: 'hello',
 		handle: 'neo',
 		version: '0.3.0',
-		cosmetics: { hue: 3, hat: 2, nameplate: 5 },
+		cosmetics: { hue: 3, hat: 2, nameplate: 5, form: 0 },
 		weapon: 2,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
@@ -49,14 +49,14 @@ test('hello clamps an out-of-range cosmetic index to the default on decode', () 
 		t: 'hello',
 		handle: 'forward',
 		version: '0.3.0',
-		cosmetics: { hue: 2, hat: 250, nameplate: 1 },
+		cosmetics: { hue: 2, hat: 250, nameplate: 1, form: 0 },
 		weapon: 1,
 	});
 	expect(decodeClientMessage(encoded)).toEqual({
 		t: 'hello',
 		handle: 'forward',
 		version: '0.3.0',
-		cosmetics: { hue: 2, hat: 0, nameplate: 1 },
+		cosmetics: { hue: 2, hat: 0, nameplate: 1, form: 0 },
 		weapon: 1,
 	});
 });
@@ -218,7 +218,7 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 			{
 				sessionId: 7,
 				handle: 'neo',
-				cosmetics: { hue: 1, hat: 4, nameplate: 3 },
+				cosmetics: { hue: 1, hat: 4, nameplate: 3, form: 0 },
 				x: 12.5,
 				y: 31.25,
 				vx: -22,

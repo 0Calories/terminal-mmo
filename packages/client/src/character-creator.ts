@@ -86,7 +86,7 @@ export function previewAvatar(cosmetics: Cosmetics, name: string): Entity {
 // (renderZoneScene -> Sprite + hat + nameplate), so the preview is exactly what ships
 // in-world. `live` so it redraws every frame; `avatar` is swapped on each picker change.
 class PreviewRenderable extends Renderable {
-	avatar: Entity = previewAvatar({ hue: 0, hat: 0, nameplate: 0 }, '');
+	avatar: Entity = previewAvatar({ hue: 0, hat: 0, nameplate: 0, form: 0 }, '');
 
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
 		// `buffered` gives this node its OWN frame buffer: renderSelf draws into it at

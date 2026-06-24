@@ -8,6 +8,8 @@ import {
 	renderZoneScene,
 } from '../src/render';
 import {
+	FORMS,
+	formFrame,
 	HATS,
 	type Sprite,
 	spriteFor,
@@ -395,11 +397,33 @@ test('a named entity gets a 2-row pill nameplate below its sprite', () => {
 // The own Avatar is drawn directly (not via the z-ordered scene loop), so the
 // cosmetic tests render through drawEntitySprite to pin the per-Avatar overrides.
 function avatarTopLeft(e: Entity) {
-	const sprite = spriteFor('player');
+	// The Avatar body is now its Form's resolved Pose (idle this slice); the grip/head
+	// anchors live on the Form, not the Sprite (ADR 0020).
+	const form = FORMS[e.cosmetics?.form ?? 0];
+	const sprite = formFrame(form, 'idle');
 	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
 	const ay = Math.round(e.y + BOX.h - sprite.h);
-	return { sprite, ax, ay };
+	return { sprite, ax, ay, grip: form.grip, head: form.head };
 }
+
+test("an Avatar renders its Form's idle Pose as its body, through the bodyFrame selector (ADR 0020)", () => {
+	const buf = new FakeBuffer(20, 16);
+	// A resting Avatar: the body must be FORMS[0]'s `idle` grid (drawn via bodyFrame +
+	// formFrame), not a hardcoded sprite. Mirrored correctly when facing left.
+	for (const facing of [1, -1] as Facing[]) {
+		buf.clear('BG');
+		const e = makeEntity({ type: 'player', x: 8, y: 7, facing });
+		renderZoneScene(
+			buf,
+			{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+			{ x: 0, y: 0 },
+			STYLE,
+		);
+		const { sprite, ax, ay } = avatarTopLeft(e);
+		expect(sprite).toBe(formFrame(FORMS[0], 'idle'));
+		expectSpriteAt(buf, sprite, ax, ay, facing, fgFor);
+	}
+});
 
 test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouched", () => {
 	const buf = new FakeBuffer(20, 16);
@@ -408,7 +432,7 @@ test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouch
 		type: 'player',
 		x: 8,
 		y: 7,
-		cosmetics: { hue: 2, hat: 0, nameplate: 0 },
+		cosmetics: { hue: 2, hat: 0, nameplate: 0, form: 0 },
 	});
 
 	renderZoneScene(
@@ -431,7 +455,7 @@ test('a cosmetic hat is overlaid directly above the head', () => {
 		type: 'player',
 		x: 8,
 		y: 7,
-		cosmetics: { hue: 0, hat: hatIdx, nameplate: 0 },
+		cosmetics: { hue: 0, hat: hatIdx, nameplate: 0, form: 0 },
 	});
 
 	renderZoneScene(
@@ -472,9 +496,7 @@ test('an equipped Avatar at rest renders the weapon idle frame at the mirrored g
 			STYLE,
 		);
 
-		const { sprite: body, ax: sx, ay: sy } = avatarTopLeft(e);
-		const grip = body.grip;
-		if (!grip) throw new Error('expected the body to declare a grip cell');
+		const { sprite: body, ax: sx, ay: sy, grip } = avatarTopLeft(e);
 		// Body grip cell, its column reflected across the body when facing left.
 		const bodyGripX = sx + (facing === 1 ? grip.x : body.w - 1 - grip.x);
 		const bodyGripY = sy + grip.y;
@@ -538,9 +560,7 @@ test('mid-active-swing the composited weapon plays the sweep frame, and no box-f
 		STYLE,
 	);
 
-	const { sprite: body, ax: sx, ay: sy } = avatarTopLeft(e);
-	const grip = body.grip;
-	if (!grip) throw new Error('expected the body to declare a grip cell');
+	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
 	const bodyGripX = sx + grip.x; // facing 1
 	const bodyGripY = sy + grip.y;
 	const wgx = weapon.grip.x; // facing 1
@@ -592,9 +612,7 @@ test('the active phase renders the blade-edge arc in the accent colour; other ph
 		{ x: 0, y: 0 },
 		STYLE,
 	);
-	const { ax: sx, ay: sy, sprite: body } = avatarTopLeft(e);
-	const grip = body.grip;
-	if (!grip) throw new Error('expected the body to declare a grip cell');
+	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
 	const bodyGripX = sx + grip.x; // facing 1
 	const bodyGripY = sy + grip.y;
 
@@ -638,9 +656,7 @@ test('a weaponless Avatar draws no weapon layer', () => {
 		{ x: 0, y: 0 },
 		STYLE,
 	);
-	const { sprite: body, ax: sx, ay: sy } = avatarTopLeft(e);
-	const grip = body.grip;
-	if (!grip) throw new Error('expected the body to declare a grip cell');
+	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
 	// The sword's blade tip sits a row above the body top when equipped; with no weapon
 	// that cell stays empty, proving the layer is gated on an equipped weapon.
 	expect(buf.at(sx + grip.x, sy - 1)).toBeUndefined();
@@ -654,7 +670,7 @@ test('over terrain the pill is a cosmetic-colour wash and the handle sits on it 
 		y: 7,
 		name: 'neo',
 		// hat present to prove it no longer affects the (now below-feet) chip position
-		cosmetics: { hue: 0, hat: 3, nameplate: 4 },
+		cosmetics: { hue: 0, hat: 3, nameplate: 4, form: 0 },
 	});
 
 	renderZoneScene(
@@ -728,7 +744,7 @@ test('the nameplate position is independent of hat height', () => {
 			x: 8,
 			y: 7,
 			name: 'a',
-			cosmetics: { hue: 0, hat, nameplate: 0 },
+			cosmetics: { hue: 0, hat, nameplate: 0, form: 0 },
 		});
 		renderZoneScene(
 			buf,

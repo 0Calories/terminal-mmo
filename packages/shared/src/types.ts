@@ -76,6 +76,7 @@ export interface Cosmetics {
 	hue: number; // index into HUES
 	hat: number; // index into HATS; 0 == bareheaded
 	nameplate: number; // index into NAMEPLATE_COLORS
+	form: number; // index into FORMS — the Avatar's body Pose set (ADR 0020); 0 == default humanoid
 }
 
 export interface Entity {

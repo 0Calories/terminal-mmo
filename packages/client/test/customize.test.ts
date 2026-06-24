@@ -41,7 +41,7 @@ test('return confirms with the chosen cosmetics, leaving them unchanged', () => 
 	s = reduceCustomize(s, 'right').state; // hue -> 1
 	const { state, confirm } = reduceCustomize(s, 'return');
 	expect(confirm).toBe(true);
-	expect(state.cosmetics).toEqual({ hue: 1, hat: 0, nameplate: 0 });
+	expect(state.cosmetics).toEqual({ hue: 1, hat: 0, nameplate: 0, form: 0 });
 });
 
 test('customizeRows yields one focused-marked row per field, hat named from catalog', () => {

@@ -98,7 +98,7 @@ console.log(
 );
 for (let hat = 0; hat < HATS.length; hat++)
 	console.log(
-		`${frame(`[${hat}] ${HATS[hat].name}`, { hue: 0, hat, nameplate: 0 })}\n`,
+		`${frame(`[${hat}] ${HATS[hat].name}`, { hue: 0, hat, nameplate: 0, form: 0 })}\n`,
 	);
 
 console.log(`=== Hue catalog (${HUES.length}) — body recolour, RGBA ===`);
