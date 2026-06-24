@@ -1,16 +1,22 @@
 import { expect, test } from 'bun:test';
-import { EMOTES, emoteById } from '../src';
+import { EMOTES, emoteById, emoteInterrupted, stepEmote } from '../src';
 
-test('EMOTES is a non-empty fixed set of distinct ids', () => {
+test('EMOTES is a non-empty fixed set of distinct ids with a timed lifetime', () => {
 	expect(EMOTES.length).toBeGreaterThan(0);
 	const ids = EMOTES.map((e) => e.id);
 	expect(new Set(ids).size).toBe(ids.length); // no duplicate ids
-	// Every emote carries an id and a non-empty pixel-art Sprite to render.
 	for (const e of EMOTES) {
 		expect(e.id.length).toBeGreaterThan(0);
-		expect(e.sprite.w).toBeGreaterThan(0);
-		expect(e.sprite.h).toBeGreaterThan(0);
+		// This slice ships oneshot only; every emote plays for a positive duration.
+		expect(e.lifetime).toBe('oneshot');
+		expect(e.duration).toBeGreaterThan(0);
 	}
+});
+
+test('the launch set includes the oneshot wave (ADR 0020 §8)', () => {
+	const wave = emoteById('wave');
+	expect(wave?.lifetime).toBe('oneshot');
+	expect((wave?.duration ?? 0) > 0).toBe(true);
 });
 
 test('emoteById resolves a known id and is undefined for an unknown one', () => {
@@ -19,36 +25,41 @@ test('emoteById resolves a known id and is undefined for an unknown one', () => 
 	expect(emoteById('definitely-not-an-emote')).toBeUndefined();
 });
 
-// The three expression faces (laugh/cry/angry) must each read distinctly — the
-// point of #82. These assert the *features* that carry each expression, not the
-// exact art, so a redraw that keeps the intent stays green.
-const face = (id: string) => {
-	const def = emoteById(id);
-	if (!def) throw new Error(`missing emote ${id}`);
-	return def.sprite;
-};
-
-test('angry shows lowered brows — a dark feature key in its top row', () => {
-	const top = face('angry').colorKeys(1)[0];
-	expect(top).toContain('k'); // brows painted across the forehead, not a blank face
+// The pure emote-state machine the owner predicts and the server runs identically
+// (ADR 0020 §9). These lock in the precedence-ladder cancel and the oneshot lifetime.
+test('stepEmote counts a oneshot down while the Avatar stands still', () => {
+	const r = stepEmote('wave', 1.0, false, 0.25);
+	expect(r.emoteId).toBe('wave');
+	expect(r.emoteT).toBeCloseTo(0.75);
 });
 
-test('cry streams tears — cyan runs down more than one row', () => {
-	const rowsWithTears = face('cry')
-		.colorKeys(1)
-		.filter((r) => r.includes('c'));
-	expect(rowsWithTears.length).toBeGreaterThan(1);
+test('stepEmote returns to idle once the oneshot timer elapses (ADR 0020 §8)', () => {
+	const r = stepEmote('wave', 0.1, false, 0.25); // dt overshoots the remaining time
+	expect(r.emoteId).toBeNull();
+	expect(r.emoteT).toBe(0);
 });
 
-test('laugh has scrunched squinting eyes — a wide dark eye row', () => {
-	const eyeRow = face('laugh').colorKeys(1)[1];
-	const darkCells = [...eyeRow].filter((c) => c === 'k').length;
-	expect(darkCells).toBeGreaterThanOrEqual(4); // two ≥2-cell happy eyes, not pinpricks
+test('stepEmote cancels the emote the instant the Avatar acts (ADR 0020 §6/§9)', () => {
+	// `acting` true (moving / combat / stagger) clears it even with time to spare, and it
+	// does not resume — the cleared id is what the next tick steps from.
+	const r = stepEmote('wave', 1.0, true, 0.05);
+	expect(r.emoteId).toBeNull();
+	expect(r.emoteT).toBe(0);
 });
 
-test('the three expression faces are pairwise distinct', () => {
-	const grids = ['laugh', 'cry', 'angry'].map((id) =>
-		face(id).colorKeys(1).join('\n'),
-	);
-	expect(new Set(grids).size).toBe(grids.length);
+test('stepEmote is a no-op when there is no active emote', () => {
+	expect(stepEmote(undefined, 0, false, 0.1)).toEqual({
+		emoteId: null,
+		emoteT: 0,
+	});
+});
+
+test('emoteInterrupted: moving or any combat / reaction state outranks an emote', () => {
+	const REST = { vx: 0, attackT: 0 };
+	expect(emoteInterrupted(REST)).toBe(false);
+	expect(emoteInterrupted({ ...REST, vx: -3 })).toBe(true); // moving (either direction)
+	expect(emoteInterrupted({ ...REST, attackT: 0.2 })).toBe(true); // mid-swing
+	expect(emoteInterrupted({ ...REST, dodgeT: 0.2 })).toBe(true); // dodging
+	expect(emoteInterrupted({ ...REST, guardT: 0.2 })).toBe(true); // guarding
+	expect(emoteInterrupted({ ...REST, stunT: 0.2 })).toBe(true); // Staggered
 });

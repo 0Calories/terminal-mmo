@@ -65,6 +65,12 @@ export interface ActionState {
 	phase: AttackPhase;
 	progress: number; // 0..1 through the current phase
 	flags: number; // reaction/defense bitfield (ACTION_FLAG.*)
+	// The active body emote (ADR 0020 §9): the emote id its body is posing, or null when
+	// none, plus the seconds remaining on its lifetime. Replicated in the action-state
+	// (not a fire-and-forget event) so an observer who arrives mid-emote still sees the
+	// pose; the owner predicts its own. `emoteT` drives the pose's frame sweep.
+	emote: string | null;
+	emoteT: number;
 }
 
 // One Avatar's cosmetic choices (#35, ADR 0003): a body hue, one cosmetic hat
@@ -159,7 +165,13 @@ export interface Entity {
 	// before. Monsters leave it unset (their offense rework is a later slice).
 	weapon?: number;
 	bubble?: string; // latest Chat line shown as an over-head Speech bubble (#59); render-only
-	emote?: string; // active emote id shown over the head (#38); render-only
+	// Active body emote (ADR 0020 §9): the emote id the Avatar's body is posing and the
+	// seconds remaining on its `oneshot` lifetime. Authoritative entity state — the server
+	// owns it, the owning client predicts it, and it rides the wire inside the action-state
+	// (not as render-only metadata). Absent == no active emote. Set on the `/em` trigger,
+	// counted down each tick, and cleared the instant the Avatar moves or fights (§6).
+	emoteId?: string;
+	emoteT?: number;
 	// Replicated action-state for a co-present entity (ADR 0017 §10): set by the
 	// client when rebuilding an Entity from a snapshot so the renderer can draw its
 	// swing (pose + slash-arc). The local Avatar leaves this absent — its swing is

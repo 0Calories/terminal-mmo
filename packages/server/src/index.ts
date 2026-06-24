@@ -92,6 +92,10 @@ let world: ServerWorld = createServerWorld({
 let nextSessionId = 1;
 const sockets = new Map<number, ServerWebSocket<WsData>>(); // joined sessions
 const intents = new Map<number, AvatarIntent>(); // latest reported intent
+// Body emotes triggered since the last tick (ADR 0020 §9), keyed by session. Consumed
+// in `tick` by folding onto that session's intent as a one-shot edge — so the emote arms
+// once instead of re-firing every input tick the way a sticky intent flag would.
+const pendingEmotes = new Map<number, string>();
 
 // Per-session clock baseline for light lag compensation (ADR 0017 §11). The client and
 // server clocks are unsynced, so we never compare them directly: instead we keep the
@@ -203,21 +207,14 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		return;
 	}
 	if (msg.t === 'emote') {
-		// Relay a Zone-local emote to every session in the sender's Channel (#38),
-		// keyed to the sender's sprite. Drop an unknown id rather than relay it. Like
-		// chat, the sender is in its own Channel, so it sees its own emote echoed back.
+		// A body-emote trigger (ADR 0020 §9): no longer relayed as a fire-and-forget
+		// event — it arms authoritative state on the Avatar that rides the next snapshot's
+		// action-state, so a late arrival still sees a held/looping pose. Validate the id
+		// and queue it; `tick` folds it into this session's intent (a one-shot edge, so it
+		// fires once rather than every tick). An unknown id is dropped.
 		if (!emoteById(msg.emote)) return;
-		const me = zoneStateOf(world, sessionId)?.avatars.find(
-			(a) => a.sessionId === sessionId,
-		);
-		if (me === undefined) return; // emote before hello; ignore
-		const frame = encodeServerMessage({
-			t: 'emote',
-			sessionId,
-			emote: msg.emote,
-		});
-		for (const sid of sessionsInChannel(world, sessionId))
-			sockets.get(sid)?.send(frame);
+		if (zoneStateOf(world, sessionId) === undefined) return; // emote before hello
+		pendingEmotes.set(sessionId, msg.emote);
 		return;
 	}
 	// input: trust the reported position with only a loose bounds clamp (against the
@@ -246,7 +243,16 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 }
 
 function tick() {
-	world = stepServerWorld(world, [...intents.values()], MS_PER_TICK);
+	// Fold any queued body emote onto its session's intent for this tick (ADR 0020 §9),
+	// consuming it so it fires exactly once. A queued emote with no input this cycle waits
+	// (input flows continuously at ~30 Hz), so it isn't dropped.
+	const tickIntents = [...intents.values()].map((i) => {
+		const em = pendingEmotes.get(i.sessionId);
+		if (em === undefined) return i;
+		pendingEmotes.delete(i.sessionId);
+		return { ...i, emote: em };
+	});
+	world = stepServerWorld(world, tickIntents, MS_PER_TICK);
 	for (const [sessionId, ws] of sockets)
 		ws.send(encodeServerMessage(worldSnapshotFor(world, sessionId)));
 }
@@ -311,6 +317,7 @@ const server = Bun.serve<WsData>({
 			}
 			sockets.delete(sessionId);
 			intents.delete(sessionId);
+			pendingEmotes.delete(sessionId);
 			clockBaseline.delete(sessionId);
 			world = removeSession(world, sessionId);
 			console.log(`session ${sessionId} left`);

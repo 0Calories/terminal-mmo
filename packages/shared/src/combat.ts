@@ -205,6 +205,8 @@ export const IDLE_ACTION: ActionState = {
 	phase: 'recovery',
 	progress: 0,
 	flags: 0,
+	emote: null,
+	emoteT: 0,
 };
 
 // --- Poise + hit-reaction (ADR 0017 §2/§3) ----------------------------------
@@ -262,6 +264,11 @@ export function actionStateOf(
 	swing: SwingPhases = COMBAT.swing,
 ): ActionState {
 	const flags = actionFlags(e);
+	// The active body emote rides every action-state (ADR 0020 §9), so an observer
+	// renders the same Pose the owner predicts. It is authoritative entity state here,
+	// not a derived value — the swing-derived move slot below carries it through.
+	const emote = e.emoteId ?? null;
+	const emoteT = e.emoteT ?? 0;
 	// A Dodge takes precedence over the swing for the `move` slot (you cannot do both
 	// at once); its active/recovery phases reuse the AttackPhase names (ADR 0017 §5).
 	const dPhase = dodgePhase(e.dodgeT ?? 0);
@@ -271,14 +278,18 @@ export function actionStateOf(
 			phase: dPhase,
 			progress: dodgeProgress(e.dodgeT ?? 0),
 			flags,
+			emote,
+			emoteT,
 		};
 	const phase = swingPhase(e.attackT, swing);
-	if (!phase) return flags ? { ...IDLE_ACTION, flags } : IDLE_ACTION;
+	if (!phase) return { ...IDLE_ACTION, flags, emote, emoteT };
 	return {
 		move: 'basic',
 		phase,
 		progress: swingProgress(e.attackT, swing),
 		flags,
+		emote,
+		emoteT,
 	};
 }
 

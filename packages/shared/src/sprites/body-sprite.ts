@@ -88,6 +88,13 @@ export function formFrame(
 // and the owner and every observer compute the identical foot frame-for-frame.
 export const STRIDE = 6;
 
+// Frames-per-second an emote Pose's multi-frame sweep advances at (ADR 0020 §9): the
+// selector samples `emote:<id>` by `floor(emoteT * EMOTE_FPS)`, wrapped into range by
+// `formFrame`, so a two-frame wave alternates as its `emoteT` counts down. A single-
+// frame emote ignores it (every index wraps to 0). Derived from the replicated
+// `emoteT`, so the owner and every observer animate the identical frame.
+export const EMOTE_FPS = 5;
+
 // The state the body Pose is selected from — the replicated signals a BodySprite poses
 // against every frame (ADR 0020 §1/§6/§7). Mirrors the WeaponSprite's `(move, phase,
 // swingProgress)` but broader: it also reads locomotion (airborne/moving/distanceX),
@@ -125,7 +132,11 @@ export function bodyFrame(s: BodyState): {
 		const stride = Math.floor(Math.abs(s.distanceX) / STRIDE);
 		return { poseId: stride % 2 === 0 ? 'walkA' : 'walkB', frameIndex: 0 };
 	}
-	if (s.emote) return { poseId: `emote:${s.emote}`, frameIndex: 0 };
+	if (s.emote)
+		return {
+			poseId: `emote:${s.emote}`,
+			frameIndex: Math.floor(Math.max(0, s.emoteT) * EMOTE_FPS),
+		};
 	return { poseId: 'idle', frameIndex: 0 };
 }
 

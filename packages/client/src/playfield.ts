@@ -14,7 +14,6 @@ import {
 	BOX,
 	buildSceneStyle,
 	drawEntitySprite,
-	emoteById,
 	entityBox,
 	guardPhase,
 	guardPoseCell,
@@ -23,7 +22,6 @@ import {
 	type RenderStyle,
 	renderZoneScene,
 	SCENE_PALETTE,
-	type Sprite,
 	skillForSlot,
 	skillHitbox,
 	spriteFor,
@@ -119,27 +117,6 @@ function textContent(lines: readonly string[], fg: RGBA): BoxContent {
 	};
 }
 
-// A Sprite as box content: its lit glyphs coloured through the renderer's palette
-// (the same resolution entity Sprites use), transparent cells left blank. This is
-// what makes an emote a sized-up, glyph-style pixel-art image (#38).
-function spriteContent(
-	sprite: Sprite,
-	palette: Readonly<Record<string, RGBA>>,
-	paletteDefault: RGBA,
-): BoxContent {
-	const rows = sprite.rows(1);
-	const keys = sprite.colorKeys(1);
-	return {
-		w: sprite.w,
-		h: sprite.h,
-		cell(x, y) {
-			const ch = rows[y]?.[x];
-			if (!ch || ch === ' ') return null;
-			return { ch, fg: palette[keys[y]?.[x]] ?? paletteDefault };
-		},
-	};
-}
-
 // The shared over-head box behind both the chat Speech bubble (#59, ADR 0007) and
 // the emote (#38): a bordered box with a downward tail, anchored above the
 // nameplate and re-projected through the camera each frame so it tracks the moving
@@ -229,29 +206,6 @@ function drawSpeechBubble(
 	if (!e.bubble) return;
 	const content = textContent(layoutBubble(e.bubble), C.bubbleFg);
 	drawOverheadBox(buf, e, cam, terrain, sw, sh, content, C.bubbleBorder);
-}
-
-// A transient emote (#38): the emote id resolved to its pixel-art Sprite, drawn in
-// the SAME over-head box as a Speech bubble (one shared renderer) on the telegraph
-// layer (above all Sprites, ADR 0003), self-clearing upstream. The warm emote
-// border distinguishes a reaction from a chat line at a glance.
-function drawEmote(
-	buf: OptimizedBuffer,
-	e: Entity,
-	cam: { x: number; y: number },
-	terrain: Terrain,
-	sw: number,
-	sh: number,
-) {
-	if (!e.emote) return;
-	const def = emoteById(e.emote);
-	if (!def) return;
-	const content = spriteContent(
-		def.sprite,
-		STYLE.palette,
-		STYLE.paletteDefault,
-	);
-	drawOverheadBox(buf, e, cam, terrain, sw, sh, content, C.emote);
 }
 
 function drawText(
@@ -573,11 +527,6 @@ function drawPlayfield(
 	// absent sender simply has no entity here, so its bubble isn't drawn.
 	for (const e of others) drawSpeechBubble(buf, e, cam, zone.terrain, sw, sh);
 	drawSpeechBubble(buf, p, cam, zone.terrain, sw, sh);
-
-	// Over-head emotes for every emoting Avatar on screen, the local one included —
-	// one uniform rule (#38, ADR 0003), on top of all Sprites and nameplates.
-	for (const e of others) drawEmote(buf, e, cam, zone.terrain, sw, sh);
-	drawEmote(buf, p, cam, zone.terrain, sw, sh);
 
 	// Drawn last so nothing occludes an incoming shot.
 	for (const pr of zone.projectiles) {
