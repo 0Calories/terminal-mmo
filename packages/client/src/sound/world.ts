@@ -26,6 +26,10 @@ export const EFFECT_SOUND_MAP: Record<EffectKind, SoundKind> = {
 	// reads distinctly from the meaty `hit`, so a deflection sounds like a deflection. A
 	// dedicated clash synth is deferred with the rest of the combat-audio pass.
 	parry: 'ui',
+	// A Launch (ADR 0017 §6) reuses the meaty `hit` voice — the launch camera-kick +
+	// the rising particle column carry the "this opened a juggle" weight; a dedicated
+	// launch whoosh is deferred with the rest of the combat-audio pass.
+	launch: 'hit',
 };
 
 // Hard cutoff radius (world cells, horizontal): an Effect farther than this from

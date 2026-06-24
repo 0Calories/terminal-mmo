@@ -9,6 +9,28 @@ test('clear() releases all held keys so they cannot stick after a mode switch', 
 	expect(input.poll(0).moveX).toBe(0);
 });
 
+test('jump is on space only; up/down are the vertical attack modifiers (ADR 0017 §6/§12)', () => {
+	const input = new InputState();
+	// `space` jumps…
+	input.press('space', 0);
+	expect(input.poll(0).jump).toBe(true);
+	input.release('space');
+	expect(input.poll(0).jump).toBe(false);
+
+	// …`up` no longer jumps — it is the Launcher modifier (and `down` the Spike one).
+	input.press('up', 0);
+	let p = input.poll(0);
+	expect(p.jump).toBe(false);
+	expect(p.up).toBe(true);
+	expect(p.moveX).toBe(0); // a held modifier doesn't move the Avatar
+	input.release('up');
+
+	input.press('down', 0);
+	p = input.poll(0);
+	expect(p.jump).toBe(false);
+	expect(p.down).toBe(true);
+});
+
 test('keyboard scheme: j attacks, u/i fire skill slots 1/2 (ADR 0017 §12)', () => {
 	const input = new InputState('keyboard');
 	expect(input.poll(0).attack).toBe(false);
@@ -108,6 +130,8 @@ test('both schemes map their bindings to identical intents', () => {
 		jump: true,
 		attack: true,
 		guard: false,
+		up: false,
+		down: false,
 		interact: false,
 		skill: 1,
 	});

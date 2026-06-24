@@ -26,6 +26,7 @@ import {
 	spawnMonster,
 	stepZone,
 	swingPhase,
+	TANK,
 	WEAPONS,
 	weaponById,
 	weaponSwingTotal,
@@ -996,4 +997,240 @@ test('snapshotFor derives an Avatar action from its weapon phase durations', () 
 	const snap = snapshotFor(state, 7);
 	expect(snap.avatars[0].action.move).toBe('basic');
 	expect(snap.avatars[0].action.phase).toBe('active');
+});
+
+// --- Combo substrate: cancel-on-connect, vertical moves, juggle decay, poise-tank
+// (ADR 0017 §6, #167) --------------------------------------------------------
+
+// A primed swing carrying a chosen move variant (set directly, since a primed swing
+// skips the start tick that would select it). The hit-reaction reads attackMove.
+function primeMove(av: ServerAvatar, move: Entity['attackMove']): ServerAvatar {
+	av.avatar.attackT = MID_ACTIVE;
+	av.avatar.attackMove = move;
+	av.avatar.swingHits = [];
+	return av;
+}
+
+// An attack intent carrying the vertical modifiers.
+function attackIntent(
+	sessionId: number,
+	e: Entity,
+	mods: { up?: boolean; down?: boolean } = {},
+): AvatarIntent {
+	return {
+		...holdAt(sessionId, e),
+		attack: true,
+		up: mods.up,
+		down: mods.down,
+	};
+}
+
+test('cancel-on-connect: a CONNECTED swing in recovery cancels into a fresh swing', () => {
+	// Avatar primed mid-active next to a high-HP Monster so the swing connects, then
+	// drive it into recovery while holding attack — the recovery cancels into a new swing.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 500;
+	const av = primeSwing(serverAvatar(7, 20));
+	av.avatar.facing = 1;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+
+	// Tick 1: the active swing connects (records the Monster in swingHits).
+	state = stepZone(state, [attackIntent(7, av.avatar)], 16);
+	expect(state.avatars[0].avatar.swingHits ?? []).toContain(m.id);
+
+	// March to the recovery phase, holding attack the whole time; the moment the swing
+	// reaches recovery while still connected, the held attack restarts it (attackT jumps
+	// back up to a full swing) instead of decaying to idle.
+	let restarted = false;
+	for (let i = 0; i < 20; i++) {
+		const a = state.avatars[0].avatar;
+		const before = a.attackT;
+		state = stepZone(state, [attackIntent(7, state.avatars[0].avatar)], 16);
+		const after = state.avatars[0].avatar.attackT;
+		if (before > 0.02 && after > before) {
+			restarted = true; // attackT jumped UP — a cancel into a fresh swing
+			break;
+		}
+	}
+	expect(restarted).toBe(true);
+});
+
+test('no cancel on a WHIFF: an unconnected swing runs its full recovery to idle', () => {
+	// Same drive but with NO Monster in reach — the swing never connects, so swingHits
+	// stays empty and the recovery is fully committal (attackT only ever decays).
+	const m = spawnMonster('chaser', 2, 200, y); // far away, never hit
+	// Attack is NOT held here: hold the swing through its recovery with no further press,
+	// so the only way attackT could jump back up is an (illegitimate) recovery cancel.
+	const av = primeSwing(serverAvatar(7, 20));
+	av.avatar.facing = 1;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	let everCanceled = false;
+	let sawRecovery = false;
+	for (let i = 0; i < 40; i++) {
+		const before = state.avatars[0].avatar.attackT;
+		state = stepZone(state, [attackIntent(7, state.avatars[0].avatar)], 16);
+		const after = state.avatars[0].avatar.attackT;
+		if (swingPhase(before) === 'recovery') sawRecovery = true;
+		// A cancel jumps attackT UP from WELL inside recovery (before ≫ one dt); the only
+		// legitimate restart is from the recovery tail (before ≤ one dt, attackT hitting 0).
+		// A whiff has nothing to cancel, so no such mid-recovery jump ever occurs.
+		if (after > before && before > 0.03) everCanceled = true;
+	}
+	expect(sawRecovery).toBe(true); // the swing did reach its recovery window
+	expect(everCanceled).toBe(false); // a whiff never cancels its recovery
+});
+
+test('Launcher launches a poise-broken target upward and Staggers it', () => {
+	// Monster one chip from a break, struck by an up+attack Launcher: it breaks, is
+	// thrown UP (vy negative) and Staggered, and a `launch` Effect fires.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 200;
+	m.poise = 1; // deep into the red — breaks on this hit (regen can't save it)
+	const av = primeMove(serverAvatar(7, 20), 'launch');
+	av.avatar.facing = 1;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [attackIntent(7, av.avatar, { up: true })], 16);
+	const hit = next.zone.monsters[0];
+	expect(hit.vy).toBeLessThan(0); // launched UP
+	expect(hit.stunT ?? 0).toBeGreaterThan(0); // Staggered
+	expect(next.effects?.some((e) => e.kind === 'launch')).toBe(true);
+});
+
+test('a grounded Launcher pops the attacker up to follow', () => {
+	// Driven from idle so the swing starts and the launch attacker-pop applies.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = 1;
+	av.avatar.onGround = true;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(
+		state,
+		[{ ...attackIntent(7, av.avatar, { up: true }), onGround: true }],
+		16,
+	);
+	expect(next.avatars[0].avatar.vy).toBeLessThan(0); // the attacker popped up
+});
+
+test('airborne Spike drives a juggled target DOWN', () => {
+	// An already-juggled (airborne + Staggered) Monster struck by a Spike is driven down.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 200;
+	m.onGround = false;
+	m.stunT = 0.2; // already in a juggle
+	m.vy = 0;
+	const av = primeMove(serverAvatar(7, 20), 'spike');
+	av.avatar.facing = 1;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(
+		state,
+		[attackIntent(7, av.avatar, { down: true })],
+		16,
+	);
+	expect(next.zone.monsters[0].vy).toBeGreaterThan(COMBAT.spikeDown / 2); // slammed down
+});
+
+test('a plain air swing keeps a juggled target aloft (upward lift, re-stagger)', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 200;
+	m.onGround = false;
+	m.stunT = 0.2; // already in a juggle
+	m.vy = 0;
+	const av = primeMove(serverAvatar(7, 20), 'aerial');
+	av.avatar.facing = 1;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [attackIntent(7, av.avatar)], 16);
+	const hit = next.zone.monsters[0];
+	expect(hit.vy).toBeLessThan(0); // kept aloft (lifted up, not dropped)
+	expect(hit.stunT ?? 0).toBeGreaterThan(0); // re-staggered to continue the juggle
+});
+
+test('combo decay bounds a juggle: comboCount caps at maxHits and Hitstun decays', () => {
+	// Enter a juggle, then force a connect every tick (reset swingHits + pin the Monster
+	// in the hitbox) and watch the combo escalate. It must cap at maxHits and the applied
+	// Hitstun must be non-increasing — the juggle self-terminates within a bounded count.
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 1000; // survives the whole juggle so we observe the bound, not a death
+	m.poise = 1; // deep in the red so the entry break lands immediately
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = 1;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+
+	let maxCombo = 0;
+	let everExceeded = false;
+	const stunAtCombo = new Map<number, number>();
+	for (let i = 0; i < 30; i++) {
+		// Pin the Monster in the swing hitbox and keep it "airborne + struck" so the
+		// forced hit always lands and continues the same juggle.
+		const cur = state.zone.monsters[0];
+		const pinned: Entity = {
+			...cur,
+			x: 20 + BOX.w,
+			y,
+			vy: 0,
+			onGround: false,
+		};
+		const me = primeMove({ ...state.avatars[0] } as ServerAvatar, 'launch');
+		state = {
+			...state,
+			zone: { ...state.zone, monsters: [pinned] },
+			avatars: [me],
+		};
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+		const after = state.zone.monsters[0];
+		const c = after.comboCount ?? 0;
+		if (c > maxCombo) maxCombo = c;
+		if (c > COMBAT.combo.maxHits) everExceeded = true;
+		if (c > 0 && !stunAtCombo.has(c)) stunAtCombo.set(c, after.stunT ?? 0);
+	}
+	expect(everExceeded).toBe(false); // never runs past the cap
+	expect(maxCombo).toBe(COMBAT.combo.maxHits); // the juggle reaches its bound
+	// Hitstun strictly decays across the first few combo steps (the self-terminator).
+	expect(stunAtCombo.get(2) ?? 0).toBeLessThan(stunAtCombo.get(1) ?? 0);
+	expect(stunAtCombo.get(3) ?? 0).toBeLessThan(stunAtCombo.get(2) ?? 0);
+});
+
+test('poise-tank resists a Launch until its Poise is chipped down, then juggles', () => {
+	// A full-Poise tank struck by a Launcher does NOT break, so it stays grounded — the
+	// launch-gating. With its Poise chipped near a break, the same Launcher lifts it.
+	const tank = spawnMonster('tank', 2, 20 + BOX.w, y);
+	tank.onGround = true;
+	const av = primeMove(serverAvatar(7, 20), 'launch');
+	av.avatar.facing = 1;
+
+	const resisted = stepZone(
+		{ zone: zoneWith([tank]), avatars: [av], tick: 0 },
+		[attackIntent(7, av.avatar, { up: true })],
+		16,
+	);
+	const r = resisted.zone.monsters[0];
+	expect(r.stunT ?? 0).toBe(0); // not Staggered — Poise held
+	expect(r.vy).toBeGreaterThanOrEqual(0); // not launched up
+
+	// Now chip its Poise to one hit from a break and Launch again.
+	const chipped = spawnMonster('tank', 2, 20 + BOX.w, y);
+	chipped.onGround = true;
+	chipped.poise = 1; // chipped deep into the red — breaks this hit
+	const av2 = primeMove(serverAvatar(8, 20), 'launch');
+	av2.avatar.facing = 1;
+	const launched = stepZone(
+		{ zone: zoneWith([chipped]), avatars: [av2], tick: 0 },
+		[attackIntent(8, av2.avatar, { up: true })],
+		16,
+	);
+	const l = launched.zone.monsters[0];
+	expect(l.vy).toBeLessThan(0); // now launched UP
+	expect(l.stunT ?? 0).toBeGreaterThan(0); // and Staggered into the juggle
+});
+
+test('snapshotFor replicates a poise-tank as a committer action-state', () => {
+	// A tank commits a telegraphed swing like a chaser, so its swing replicates (not idle).
+	const tank = spawnMonster('tank', 2, 20 + TANK.meleeRange, y);
+	tank.onGround = true;
+	const av = serverAvatar(7, 20);
+	let state: ZoneState = { zone: zoneWith([tank]), avatars: [av], tick: 0 };
+	state = stepZone(state, [holdAt(7, av.avatar)], 16);
+	const snap = snapshotFor(state, 7);
+	expect(snap.monsters[0].type).toBe('tank');
+	expect(snap.monsters[0].action.move).toBe('basic');
+	expect(snap.monsters[0].action.phase).toBe('windup');
 });

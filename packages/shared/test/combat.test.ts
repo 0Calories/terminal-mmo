@@ -7,6 +7,7 @@ import {
 	BOX,
 	bloodEffect,
 	COMBAT,
+	comboReaction,
 	deathGoreEffect,
 	type Entity,
 	entityBox,
@@ -19,6 +20,7 @@ import {
 	hurtBloodEffect,
 	IDLE_ACTION,
 	impactEffect,
+	launchEffect,
 	meleeActive,
 	meleeHitbox,
 	POWER_STRIKE,
@@ -29,6 +31,7 @@ import {
 	resolveCombat,
 	resolveGuard,
 	SWING_TOTAL,
+	selectMove,
 	skillHitbox,
 	superArmorActive,
 	swingPhase,
@@ -855,5 +858,195 @@ describe('resolveCombat threads the held Guard (ADR 0017 §5)', () => {
 			0.016,
 		);
 		expect(r.guardT).toBe(0);
+	});
+});
+
+// --- Combo substrate (ADR 0017 §6) ------------------------------------------
+
+describe('selectMove — vertical move selection', () => {
+	test('up+attack is a Launcher, on the ground or in the air', () => {
+		expect(selectMove({ up: true }, true)).toBe('launch');
+		expect(selectMove({ up: true }, false)).toBe('launch');
+	});
+
+	test('airborne down+attack is a Spike; grounded down is just a basic swing', () => {
+		expect(selectMove({ down: true }, false)).toBe('spike');
+		// `down` on the ground is the reserved crouch/drop verb, not a Spike.
+		expect(selectMove({ down: true }, true)).toBe('basic');
+	});
+
+	test('a plain air swing keeps a target aloft (aerial); a plain ground swing is basic', () => {
+		expect(selectMove({}, false)).toBe('aerial');
+		expect(selectMove({}, true)).toBe('basic');
+	});
+
+	test('up wins over down when both are held', () => {
+		expect(selectMove({ up: true, down: true }, false)).toBe('launch');
+	});
+});
+
+describe('comboReaction — combo decay bounds a juggle', () => {
+	const base = COMBAT.hitstun;
+	const lift = COMBAT.launchUp;
+
+	test('the first hit (n=0) is full Hitstun + full lift', () => {
+		const r = comboReaction(base, lift, 0);
+		expect(r.hitstun).toBeCloseTo(base, 5);
+		expect(r.lift).toBeCloseTo(lift, 5);
+		expect(r.terminal).toBe(false);
+	});
+
+	test('each successive hit decays both Hitstun and lift', () => {
+		const a = comboReaction(base, lift, 1);
+		const b = comboReaction(base, lift, 2);
+		expect(a.hitstun).toBeLessThan(base);
+		expect(b.hitstun).toBeLessThan(a.hitstun);
+		expect(b.lift).toBeLessThan(a.lift);
+	});
+
+	test('Hitstun never decays below the floor', () => {
+		const r = comboReaction(base, lift, COMBAT.combo.maxHits - 1);
+		expect(r.hitstun).toBeGreaterThanOrEqual(COMBAT.combo.minHitstun);
+	});
+
+	test('at the hit cap the reaction is terminal — no stun, no lift', () => {
+		const r = comboReaction(base, lift, COMBAT.combo.maxHits);
+		expect(r.terminal).toBe(true);
+		expect(r.hitstun).toBe(0);
+		expect(r.lift).toBe(0);
+	});
+});
+
+describe('resolveCombat — cancel-on-connect (ADR 0017 §6)', () => {
+	const avatar = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, ...over });
+	// An attackT positioned inside the recovery phase.
+	const inRecovery =
+		SWING_TOTAL - (COMBAT.swing.windup + COMBAT.swing.active + 0.01);
+
+	test('a CONNECTED swing can cancel its recovery into a fresh swing', () => {
+		// swingHits non-empty = the swing has hit a target.
+		const a = avatar({ attackT: inRecovery, swingHits: [99] });
+		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.016);
+		expect(r.swingStarted).toBe(true);
+		expect(r.attackT).toBe(SWING_TOTAL); // a brand new swing loaded
+	});
+
+	test('a WHIFFED swing (no hits) stays fully committal — no cancel', () => {
+		const a = avatar({ attackT: inRecovery, swingHits: [] });
+		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.016);
+		expect(r.swingStarted).toBe(false);
+		expect(r.attackT).toBeCloseTo(inRecovery - 0.016, 5); // just decayed, not reset
+	});
+
+	test('cancel is gated to recovery — a connected swing in wind-up/active cannot cancel', () => {
+		const inWindup = SWING_TOTAL - COMBAT.swing.windup / 2;
+		const a = avatar({ attackT: inWindup, swingHits: [99] });
+		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.016);
+		expect(r.swingStarted).toBe(false);
+	});
+});
+
+describe('resolveCombat — move variant + attacker pop (ADR 0017 §6)', () => {
+	const avatar = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, onGround: true, ...over });
+
+	test('a fresh up+attack starts a launch swing and pops the grounded attacker up', () => {
+		const r = resolveCombat(
+			avatar({ attackT: 0 }),
+			{},
+			1,
+			'warrior',
+			{ attack: true, up: true },
+			0.016,
+		);
+		expect(r.attackMove).toBe('launch');
+		expect(r.attackerPop).toBe(COMBAT.launchPop);
+	});
+
+	test('a launch in the AIR does not pop the attacker (no double-jump)', () => {
+		const r = resolveCombat(
+			avatar({ attackT: 0, onGround: false }),
+			{},
+			1,
+			'warrior',
+			{ attack: true, up: true },
+			0.016,
+		);
+		expect(r.attackMove).toBe('launch');
+		expect(r.attackerPop).toBe(0);
+	});
+
+	test('a basic swing pops nothing and the move is held while the swing runs', () => {
+		const start = resolveCombat(
+			avatar({ attackT: 0 }),
+			{},
+			1,
+			'warrior',
+			{ attack: true },
+			0.016,
+		);
+		expect(start.attackMove).toBe('basic');
+		expect(start.attackerPop).toBe(0);
+		// Mid-swing the variant is held off the Entity, even with no modifier this tick.
+		const mid = resolveCombat(
+			avatar({ attackT: start.attackT, attackMove: 'launch' }),
+			{},
+			1,
+			'warrior',
+			{ attack: false },
+			0.016,
+		);
+		expect(mid.attackMove).toBe('launch');
+	});
+
+	test('an idle entity reports the idle move', () => {
+		const r = resolveCombat(
+			avatar({ attackT: 0 }),
+			{},
+			1,
+			'warrior',
+			{ attack: false },
+			0.016,
+		);
+		expect(r.attackMove).toBe('idle');
+	});
+});
+
+describe('actionStateOf reflects the swing variant', () => {
+	test('a launch swing replicates as move "launch", not "basic"', () => {
+		const inActive =
+			SWING_TOTAL - (COMBAT.swing.windup + COMBAT.swing.active / 2);
+		const e = monster(0, 0, {
+			type: 'player',
+			attackT: inActive,
+			attackMove: 'launch',
+		});
+		expect(actionStateOf(e).move).toBe('launch');
+	});
+});
+
+describe('launchEffect', () => {
+	test('is a source-less, radial (dir 0) launch burst at the target centre', () => {
+		const m = monster(10, 6);
+		const fx = launchEffect(m, COMBAT.meleeDamage);
+		expect(fx.kind).toBe('launch');
+		expect(fx.dir).toBe(0);
+		expect(fx.source).toBeUndefined();
+		expect(fx.x).toBeCloseTo(10 + BOX.w / 2, 5);
+		expect(fx.intensity).toBeGreaterThan(COMBAT.meleeDamage);
+	});
+});
+
+describe('per-entity poise ceiling (poise-tank gating)', () => {
+	test('a large poiseMax resists a break that would shatter a default pool', () => {
+		// One Sword hit (poiseDamage 8) breaks a near-empty default pool…
+		const weak = monster(0, 0, { poise: 8 });
+		expect(applyPoiseDamage(weak, COMBAT.poiseDamage).broke).toBe(true);
+		// …but the same hit barely dents a tank's large full pool.
+		const tank = monster(0, 0, { poiseMax: 40, poise: 40 });
+		const r = applyPoiseDamage(tank, COMBAT.poiseDamage);
+		expect(r.broke).toBe(false);
+		expect(r.poise).toBe(40 - COMBAT.poiseDamage);
 	});
 });

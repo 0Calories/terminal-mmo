@@ -120,7 +120,14 @@ export function meleeActive(
 // `guarding` is a raised Guard and `parrying` its opening window (ADR 0017 §5) — set
 // together so a parrier reads as both guarding and flashing. Round-trips as the
 // action's u8; an airborne bit joins as later slices land.
-export const ACTION_FLAG = { staggered: 1, guarding: 2, parrying: 4 } as const;
+export const ACTION_FLAG = {
+	staggered: 1,
+	guarding: 2,
+	parrying: 4,
+	// Off the ground (ADR 0017 §6/§10): set whenever an entity isn't grounded so a
+	// co-present client can render an airborne pose (an air swing, a juggled body).
+	airborne: 8,
+} as const;
 
 // The reaction/defense flags an entity broadcasts this tick: `staggered` (Hitstun in
 // flight) plus the Guard stance derived from `guardT` — `guarding` whenever a Guard is
@@ -131,6 +138,7 @@ export function actionFlags(e: Entity): number {
 	const guard = guardPhase(e.guardT ?? 0);
 	if (guard) flags |= ACTION_FLAG.guarding;
 	if (guard === 'parry') flags |= ACTION_FLAG.parrying;
+	if (!e.onGround) flags |= ACTION_FLAG.airborne;
 	return flags;
 }
 
@@ -169,7 +177,9 @@ export function applyPoiseDamage(
 	e: Entity,
 	poiseDamage: number,
 ): { poise: number; broke: boolean } {
-	const max = COMBAT.poise.max;
+	// Per-entity ceiling (ADR 0017 §6): a poise-tank's large pool is what gates the
+	// Launch — it takes many chips to break, where a Slime's small pool breaks fast.
+	const max = e.poiseMax ?? COMBAT.poise.max;
 	const cur = e.poise ?? max;
 	if (superArmorActive(e))
 		return { poise: Math.max(0, cur - poiseDamage), broke: false };
@@ -182,10 +192,8 @@ export function applyPoiseDamage(
 // regen is the MVP of "regenerates under no pressure" — a hit depletes far faster
 // than this refills, preserving the chip-then-break rhythm. Pure.
 export function regenPoise(e: Entity, dt: number): number {
-	return Math.min(
-		COMBAT.poise.max,
-		(e.poise ?? COMBAT.poise.max) + COMBAT.poise.regen * dt,
-	);
+	const max = e.poiseMax ?? COMBAT.poise.max;
+	return Math.min(max, (e.poise ?? max) + COMBAT.poise.regen * dt);
 }
 
 // The action-state to broadcast for an entity, derived from its swing timer
@@ -200,10 +208,74 @@ export function actionStateOf(
 	const phase = swingPhase(e.attackT, swing);
 	if (!phase) return flags ? { ...IDLE_ACTION, flags } : IDLE_ACTION;
 	return {
-		move: 'basic',
+		// The in-flight swing's variant (ADR 0017 §6): a Launch / Spike / aerial reads
+		// as its own move to observers, not a plain basic, so the pose matches. Absent
+		// (a Monster's committed swing) falls back to the basic horizontal swing.
+		move: e.attackMove ?? 'basic',
 		phase,
 		progress: swingProgress(e.attackT, swing),
 		flags,
+	};
+}
+
+// --- Combo substrate: move selection + combo decay (ADR 0017 §6) -------------
+//
+// Melee has no free aim — the vertical move is the attack button OR'd with a vertical
+// modifier and the attacker's air-state. A pure function so the server step and the
+// client prediction pick the SAME variant for one input, and it is unit-tested in
+// isolation from the hit resolution it feeds.
+
+// The basic-swing variant a fresh attack starts, given the held vertical modifiers and
+// whether the attacker is on the ground (ADR 0017 §6):
+//   - `up`+attack            → launch (the uppercut, ground or air)
+//   - airborne `down`+attack → spike  (drives a target down — only meaningful aloft)
+//   - airborne, no modifier  → aerial (a plain air swing that keeps a target aloft)
+//   - grounded, no/`down`    → basic  (the ground horizontal string; `down` on the
+//                                       ground is the reserved crouch/drop verb)
+export function selectMove(
+	intent: { up?: boolean; down?: boolean },
+	onGround: boolean,
+): MoveId {
+	if (intent.up) return 'launch';
+	if (!onGround) return intent.down ? 'spike' : 'aerial';
+	return 'basic';
+}
+
+// The decayed hit-reaction for the n-th hit in one stagger (ADR 0017 §6): combo decay,
+// the juggle-loop analog of Poise. Each successive juggle hit gets less Hitstun and less
+// lift, so a juggle self-terminates instead of looping forever. At `maxHits` the hit is
+// `terminal` — it no longer re-staggers, so the target falls out and returns to neutral.
+// PURE: the caller (stepZone) feeds n = the victim's `comboCount` and applies the result.
+export interface ComboReaction {
+	hitstun: number; // seconds of Stagger this hit applies (0 when terminal)
+	lift: number; // upward impulse magnitude this hit applies (decayed; 0 when terminal)
+	terminal: boolean; // the juggle has bottomed out — this hit does NOT re-stagger
+}
+export function comboReaction(
+	baseHitstun: number,
+	baseLift: number,
+	n: number,
+	cfg: typeof COMBAT.combo = COMBAT.combo,
+): ComboReaction {
+	if (n >= cfg.maxHits) return { hitstun: 0, lift: 0, terminal: true };
+	return {
+		hitstun: Math.max(cfg.minHitstun, baseHitstun * cfg.hitstunDecay ** n),
+		lift: baseLift * cfg.liftDecay ** n,
+		terminal: false,
+	};
+}
+
+// The upward burst a Launcher's poise-break emits (ADR 0017 §6/§13d): like the impact
+// burst it carries NO `source` (delivered to everyone in range, including the attacker
+// who fires the launch camera-kick), but its `dir` is fixed 0 (radial/upward) — a launch
+// throws straight up, not along the blow. Intensity reads bigger than a chip.
+export function launchEffect(m: Entity, intensity: number): Effect {
+	return {
+		kind: 'launch',
+		x: m.x + BOX.w / 2,
+		y: m.y + BOX.h / 2,
+		intensity: intensity + COMBAT.poise.max,
+		dir: 0,
 	};
 }
 
@@ -510,7 +582,13 @@ export function resolveCombat(
 	cooldowns: Record<string, number>,
 	level: number,
 	cls: PlayerClass,
-	intent: { attack: boolean; skill?: number; guard?: boolean },
+	intent: {
+		attack: boolean;
+		skill?: number;
+		guard?: boolean;
+		up?: boolean;
+		down?: boolean;
+	},
 	dt: number,
 	weapon: Weapon = weaponById(DEFAULT_WEAPON),
 ): {
@@ -523,6 +601,14 @@ export function resolveCombat(
 	// per-swing hit list so the new swing can connect again, the rate-limiter that
 	// replaced automatic post-hit i-frames.
 	swingStarted: boolean;
+	// The variant of the swing in flight (ADR 0017 §6): set from the vertical modifier +
+	// air-state when a swing starts, held while it runs. The caller folds it onto
+	// `attackMove`; the hit-reaction reads it to Launch / Spike / keep aloft. 'idle' = no swing.
+	attackMove: MoveId;
+	// Upward velocity to give the ATTACKER this tick (ADR 0017 §6): non-zero only on the
+	// tick a grounded Launcher starts, popping the attacker up to follow the launched
+	// target. The caller (who owns the attacker's physics) applies it to `vy`. 0 otherwise.
+	attackerPop: number;
 	// Seconds the Guard has been held this raise (ADR 0017 §5): accumulates while the
 	// guard intent is held and the entity is free to guard, resets to 0 otherwise. The
 	// caller folds it onto `guardT`; rendering + hit resolution derive parry/block from it.
@@ -545,8 +631,30 @@ export function resolveCombat(
 	// start while the Guard is held, and the Guard can't rise mid-swing or while
 	// Staggered — so a raised brace and an attack never coexist on one entity.
 	const guarding = intent.guard === true;
-	const starting = intent.attack && attackT <= 0 && !guarding;
+	// Cancel-on-connect (ADR 0017 §6): a fresh swing normally starts only from idle
+	// (attackT <= 0), but its RECOVERY can be canceled into the next attack ONCE the
+	// swing has CONNECTED — a non-empty `swingHits` is exactly that signal. A whiff
+	// leaves `swingHits` empty, so flailing at air stays fully committal (no cancel),
+	// while landed hits flow into a string. Wind-up / active never cancel.
+	const connected = (avatar.swingHits?.length ?? 0) > 0;
+	const canCancel =
+		connected && swingPhase(attackT, weapon.swing) === 'recovery';
+	const starting = intent.attack && (attackT <= 0 || canCancel) && !guarding;
 	const nextAttackT = starting ? swingTotal(weapon.swing) : attackT;
+	// The variant of the swing in flight: chosen from the vertical modifier + air-state
+	// on the tick it starts, otherwise the already-running swing's move (held on the
+	// Entity), or 'idle' when not swinging.
+	const attackMove: MoveId = starting
+		? selectMove(intent, avatar.onGround)
+		: nextAttackT > 0
+			? (avatar.attackMove ?? 'basic')
+			: 'idle';
+	// A grounded Launcher pops its attacker up to follow the launched target (ADR 0017
+	// §6) — applied by whoever owns the attacker's physics, only on the start tick.
+	const attackerPop =
+		starting && attackMove === 'launch' && avatar.onGround
+			? COMBAT.launchPop
+			: 0;
 	// Accumulate the held-guard timer only when free to guard (not mid-swing, not
 	// Staggered); any other tick resets it to 0 (a fresh raise reopens the Parry
 	// window). Clamped just past the Parry+lag window so an indefinite Block doesn't
@@ -581,6 +689,8 @@ export function resolveCombat(
 		cooldowns: decayed,
 		skillFired,
 		swingStarted: starting,
+		attackMove,
+		attackerPop,
 		guardT,
 	};
 }

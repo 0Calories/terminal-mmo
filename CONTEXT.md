@@ -186,6 +186,12 @@ it cannot re-commit or cancel). The reworked chaser is the first one. Monsters h
 incoming damage was dodgeable/punishable. See ADR 0017 §9.
 _Avoid_: Melee mob, contact damage, walk-into-you damage
 
+**Poise-tank**:
+A heavy **Melee committer** archetype with a large **Poise** pool — it must be
+poise-chipped down before a **Launcher** can break it, so it can't be juggled on
+sight. The first showcase Monster for the launch → **Juggle** → **Spike** loop.
+_Avoid_: Brute, heavy (reserve for weapon class), armored mob
+
 **Combat**:
 Real-time PvE (Player vs Monster) fighting — a first-class pillar, not flavor.
 Built on **commitment**: an attack is not instant but occupies time in **phases**,
@@ -267,6 +273,19 @@ Keeping a **Staggered** target airborne with successive hits. Bounded by **combo
 decay** (each hit adds less **Hitstun** and the target falls faster) so it
 self-terminates back to neutral — never infinite.
 _Avoid_: Air combo, loop, infinite
+
+**Cancel-on-connect**:
+The rule that lets an attack's **recovery** be canceled into the next attack *only
+once it has hit* — landed hits flow into a string while a whiff stays fully
+committal. The substrate that makes combos possible without making whiffs free.
+_Avoid_: Cancel (unqualified), buffer, link
+
+**Combo decay**:
+The juggle-loop analog of **Poise**: each successive hit in one **Stagger** adds
+less **Hitstun** and less upward lift, so a **Juggle** self-terminates within a
+bounded number of hits. Without it the first **Poise** break would be a death
+sentence.
+_Avoid_: Diminishing returns, scaling, gravity (reserve for physics)
 
 **Guard**:
 The unified, frontal-arc defensive stance. The opening window of a guard-raise is a

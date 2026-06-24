@@ -169,6 +169,11 @@ export type ClientMessage =
 			// Raise the Guard this tick (ADR 0017 §5). The server folds it into the held
 			// `guardT` and resolves Block / Parry authoritatively.
 			guard: boolean;
+			// Vertical attack modifiers (ADR 0017 §6): `up`+attack Launches, airborne
+			// `down`+attack Spikes. Held, resolved by the server's combo gate. Trail the
+			// timestamp on the wire (append-only); a pre-combo client omits them.
+			up: boolean;
+			down: boolean;
 			interact: boolean;
 			skill?: number;
 			// Client monotonic timestamp (ms) of when this input was produced (ADR 0017
@@ -233,6 +238,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			// older decoder that stops after `skill` still reads a valid input.
 			w.bool(msg.guard);
 			w.f64(msg.clientTime);
+			// Vertical modifiers trail the timestamp (append-only, ADR 0017 §6); a pre-combo
+			// decoder that stops earlier still reads a valid input.
+			w.bool(msg.up);
+			w.bool(msg.down);
 			break;
 		case 'chat':
 			w.u8(CLIENT_TAG.chat);
@@ -285,6 +294,10 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			// them, so default to no-guard / 0 (no lag-comp) when the bytes are absent.
 			const guard = r.remaining() >= 1 ? r.bool() : false;
 			const clientTime = r.remaining() >= 8 ? r.f64() : 0;
+			// Vertical modifiers trail the timestamp (ADR 0017 §6); a pre-combo client omits
+			// them, so default to no-modifier when the bytes are absent.
+			const up = r.remaining() >= 1 ? r.bool() : false;
+			const down = r.remaining() >= 1 ? r.bool() : false;
 			const msg: ClientMessage = {
 				t: 'input',
 				x,
@@ -295,6 +308,8 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 				onGround,
 				attack,
 				guard,
+				up,
+				down,
 				interact,
 				clientTime,
 			};
@@ -414,7 +429,14 @@ const SERVER_TAG = {
 	emote: 7,
 } as const;
 
-const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
+// Append-only (the index is the wire encoding): `tank` (the poise-tank, ADR 0017 §6)
+// goes on the END so existing type indices are unchanged for back-compat decode.
+const ENTITY_TYPES: readonly EntityType[] = [
+	'player',
+	'chaser',
+	'shooter',
+	'tank',
+];
 // Append-only: indices are the wire encoding, so a new kind goes on the END (a
 // reorder would remap existing Effects). A forward-version kind clamps to `blood`
 // on decode (see readEffect) so a newer server can't crash an older client.
@@ -423,8 +445,17 @@ const EFFECT_KINDS: readonly EffectKind[] = [
 	'gore',
 	'impact',
 	'parry',
+	'launch',
 ];
-const MOVE_IDS: readonly MoveId[] = ['idle', 'basic'];
+// Append-only, like the Effect catalog: the new vertical-move ids (ADR 0017 §6) go on
+// the END, and a forward-version index clamps to 'idle' on decode (see readAction).
+const MOVE_IDS: readonly MoveId[] = [
+	'idle',
+	'basic',
+	'launch',
+	'spike',
+	'aerial',
+];
 const ATTACK_PHASES: readonly AttackPhase[] = ['windup', 'active', 'recovery'];
 
 // The per-entity action-state (ADR 0017 §10): move + phase as catalog-index bytes,

@@ -4,13 +4,16 @@ import type { Input } from '@mmo/shared';
 // release events a held key would stick, so it's dropped after this idle (M0).
 const HELD_MS = 220;
 
-// The abstract action set bindings resolve onto (ADR 0017 §12). Dodge / `down` are
-// reserved for the later combo + mobility slices; this slice adds `guard` (the unified
-// directional defense) to movement, jump, attack, interact, and the two skill slots.
+// The abstract action set bindings resolve onto (ADR 0017 §12). Dodge stays reserved
+// for the mobility slice; this slice adds the contextual vertical attack modifiers
+// `up` / `down` (the Launcher / Spike inputs, ADR 0017 §6) and moves jump to `space`
+// only so `up` is free as the launcher modifier.
 type Action =
 	| 'left'
 	| 'right'
 	| 'jump'
+	| 'up'
+	| 'down'
 	| 'attack'
 	| 'guard'
 	| 'interact'
@@ -23,13 +26,18 @@ export type Scheme = 'keyboard' | 'mouse';
 
 // Keyboard-only: attack on `j` (and the legacy `x`), Guard on `k` (ADR 0017 §5/§12 —
 // `l` stays reserved for the later Dodge verb), active skills on `u`/`i`. `e` interacts.
+// Jump is `space` ONLY now (ADR 0017 §12): the arrow `up`/`down` keys (and `w`/`s`) are
+// the contextual vertical attack modifiers — `up`+attack Launches, `down`+attack Spikes.
 const KEYBOARD_BINDINGS: Readonly<Record<string, Action>> = {
 	left: 'left',
 	a: 'left',
 	right: 'right',
 	d: 'right',
-	up: 'jump',
 	space: 'jump',
+	up: 'up',
+	w: 'up',
+	down: 'down',
+	s: 'down',
 	j: 'attack',
 	x: 'attack',
 	k: 'guard',
@@ -48,8 +56,11 @@ const MOUSE_BINDINGS: Readonly<Record<string, Action>> = {
 	a: 'left',
 	right: 'right',
 	d: 'right',
-	up: 'jump',
 	space: 'jump',
+	up: 'up',
+	w: 'up',
+	down: 'down',
+	s: 'down',
 	k: 'guard',
 	f: 'interact',
 	e: 'skill1',
@@ -124,6 +135,11 @@ export class InputState {
 			jump: this.held.has('jump'),
 			attack: this.held.has('attack') || this.mouseAttack,
 			guard: this.held.has('guard') || this.mouseGuard,
+			// Contextual vertical attack modifiers (ADR 0017 §6): OR'd with attack by the
+			// combo gate to pick Launcher / Spike. They are also movement-neutral here —
+			// `up`/`down` no longer jump, so a held modifier doesn't move the Avatar.
+			up: this.held.has('up'),
+			down: this.held.has('down'),
 			interact: this.held.has('interact'),
 			skill: this.held.has('skill1')
 				? 1

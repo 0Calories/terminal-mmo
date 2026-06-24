@@ -235,6 +235,9 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		onGround: msg.onGround,
 		attack: msg.attack,
 		guard: msg.guard,
+		// Vertical attack modifiers (ADR 0017 §6): Launcher / Spike selectors.
+		up: msg.up,
+		down: msg.down,
 		interact: msg.interact,
 		skill: msg.skill,
 		// Lag credit for this input's Parry resolution, from its client timestamp (ADR

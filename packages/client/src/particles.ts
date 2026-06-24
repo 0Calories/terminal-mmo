@@ -179,6 +179,32 @@ export const PARRY: ParticleType = {
 	z: 0,
 };
 
+// The `launch` profile (the Launcher's upward burst, ADR 0017 §6/§13d): a column of
+// bright sparks that RISE (negative gravity) rather than fall, so the burst reads as a
+// launch — the body going up. Warm gold like the impact spark but lighter and longer-
+// lived so the lift lingers a beat as the juggle opens.
+export const LAUNCH: ParticleType = {
+	gravity: -36, // sparks rise — the signature of a launch
+	restitution: 0.1,
+	collide: false,
+	restMs: 0,
+	fadeMs: 260,
+	maxLifeMs: 480,
+	launchSpeed: 22,
+	launchSpread: 10, // narrow, so the burst reads as a vertical column, not a ring
+	countScale: 0.9,
+	glyphs: {
+		airborne: ['↑', '✦', '✧', '•', '＊'],
+		rest: ['·'],
+	},
+	colors: [
+		{ t: 0, r: 255, g: 250, b: 215 }, // hot near-white
+		{ t: 0.5, r: 255, g: 214, b: 120 }, // gold spark
+		{ t: 1, r: 235, g: 160, b: 70 }, // fading warm ember
+	],
+	z: 0,
+};
+
 // Weapon swing trails (ADR 0017 §14): a faint streak that follows a weapon's active
 // sweep, defined per-weapon by a WeaponTrail key the renderer resolves here. These
 // are spawned directly by the renderer along the swept arc (not off a wire Effect),
@@ -235,6 +261,7 @@ export const SPAWN_MAP: Record<EffectKind, ParticleType[]> = {
 	gore: [GORE],
 	impact: [IMPACT],
 	parry: [PARRY],
+	launch: [LAUNCH],
 };
 
 // Fixed, preallocated pool — newest action always renders (evict-oldest), and the

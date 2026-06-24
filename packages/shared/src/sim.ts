@@ -120,6 +120,9 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		onGround: predicted.onGround,
 		attack: input.attack,
 		guard: input.guard,
+		// Vertical attack modifiers (ADR 0017 §6): Launcher / Spike selectors.
+		up: input.up,
+		down: input.down,
 		skill: input.skill,
 		// Offline is a single clock with zero transit lag, so no Parry-window slack.
 		lagMs: 0,

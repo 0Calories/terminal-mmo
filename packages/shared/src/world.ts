@@ -1,4 +1,4 @@
-import { DEFAULT_MASS, MONSTER, SHOOTER } from './constants';
+import { DEFAULT_MASS, MONSTER, SHOOTER, TANK } from './constants';
 import type {
 	Box,
 	Entity,
@@ -52,9 +52,19 @@ export function spawnMonster(
 	y: number,
 	spawnIndex?: number,
 ): Entity {
-	const hp = type === 'shooter' ? SHOOTER.hp : MONSTER.chaserHp;
-	const speed = type === 'shooter' ? SHOOTER.speed : MONSTER.chaserSpeed;
-	return {
+	const hp =
+		type === 'shooter'
+			? SHOOTER.hp
+			: type === 'tank'
+				? TANK.hp
+				: MONSTER.chaserHp;
+	const speed =
+		type === 'shooter'
+			? SHOOTER.speed
+			: type === 'tank'
+				? TANK.speed
+				: MONSTER.chaserSpeed;
+	const e: Entity = {
 		id,
 		type,
 		x,
@@ -71,4 +81,13 @@ export function spawnMonster(
 		mass: DEFAULT_MASS,
 		spawnIndex,
 	};
+	// The poise-tank (ADR 0017 §6): a heavy body with a LARGE Poise pool, so a single
+	// Launcher can't break it — it must be chipped down first (the launch-gating). Its
+	// pool seeds full so the first hits are pure chip.
+	if (type === 'tank') {
+		e.mass = TANK.mass;
+		e.poiseMax = TANK.poiseMax;
+		e.poise = TANK.poiseMax;
+	}
+	return e;
 }

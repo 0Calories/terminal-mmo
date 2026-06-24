@@ -64,6 +64,32 @@ export const COMBAT = {
 	// let it recover — the "sustained pressure breaks you" rhythm the ADR requires. An
 	// always-on regen instead refilled the pool between swings and the break never came.
 	poise: { max: 16, regen: 12, regenDelay: 0.6 } as const,
+	// The combo substrate (ADR 0017 §6): the DMC-style juggle. A Poise break OPENS a
+	// juggle; while a target is already Staggered, every connecting hit re-staggers it
+	// (no fresh break needed) — that is what keeps it aloft. Combo DECAY bounds the loop
+	// so it can't be an infinite: each successive hit in one stagger adds less Hitstun
+	// and less lift, so the target falls out and returns to neutral.
+	combo: {
+		// Each successive juggle hit multiplies Hitstun by this (n = hits so far), so
+		// control returns sooner and the juggle self-terminates.
+		hitstunDecay: 0.7,
+		// Floor on the decayed Hitstun (seconds) — a juggle hit still briefly stuns.
+		minHitstun: 0.05,
+		// Each successive juggle hit multiplies the upward lift by this, so the target
+		// stops rising and gravity pulls it down out of the juggle.
+		liftDecay: 0.5,
+		// Hard cap: at this many hits in one stagger a hit no longer re-staggers (lift +
+		// stun bottomed out), guaranteeing the juggle terminates within a bounded count.
+		maxHits: 6,
+	} as const,
+	// Vertical-move impulses (ADR 0017 §6). A Launcher sends a poise-broken target UP
+	// (far higher than a basic break's small pop) and pops the grounded attacker up to
+	// follow; a Spike drives an airborne target DOWN hard; a plain air swing keeps a
+	// target aloft with a gentle lift so the juggle continues.
+	launchUp: 60, // upward impulse on a Launcher break (vs knockbackUp 14 for a basic)
+	launchPop: 30, // upward velocity the Launcher gives its own grounded attacker
+	spikeDown: 70, // downward impulse a Spike drives into an airborne target
+	aerialUp: 12, // gentle lift a plain air swing keeps a juggled target aloft with
 	// Guard (ADR 0017 §5): one held input with a skill gradient. The opening window
 	// of any guard-raise is the Parry; held past it is a Block. Windows are authored
 	// in SECONDS but kept deliberately chunky in ticks (30 Hz) to survive input
@@ -112,6 +138,23 @@ export const MONSTER = {
 	// recovery. `meleeDamage` is a touch heavier than the retired contact chip (6),
 	// since it is now telegraphed and avoidable rather than unavoidable.
 	meleeDamage: 8,
+	meleeRange: 4,
+} as const;
+
+// The poise-tank (ADR 0017 §6/§9): the juggle-loop showcase Monster. It is a melee
+// committer like the chaser (it reuses that AI + telegraphed strike), but slow,
+// heavy, and — the point — it carries a LARGE Poise pool, so a single Launcher can't
+// break it. You must chip its Poise down first; only then does a Launch break it and
+// open the juggle. Its big Mass also means each launch lifts it less than a Slime,
+// reading as a heavy body. HP is high so the demo juggle has room to play out.
+export const TANK = {
+	hp: 60,
+	speed: 7,
+	mass: 3,
+	// Large enough that one Sword hit (poiseDamage 8) is far from a break — the launch-
+	// gating: ~5 chips to break, demonstrating "poise-chip before you can launch it".
+	poiseMax: 40,
+	meleeDamage: 10,
 	meleeRange: 4,
 } as const;
 

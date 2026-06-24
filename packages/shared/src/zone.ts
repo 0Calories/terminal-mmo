@@ -12,11 +12,13 @@ import {
 	actionStateOf,
 	applyPoiseDamage,
 	bloodEffect,
+	comboReaction,
 	deathGoreEffect,
 	entityBox,
 	hurtBloodEffect,
 	IDLE_ACTION,
 	impactEffect,
+	launchEffect,
 	meleeActive,
 	meleeHitbox,
 	parryEffect,
@@ -33,6 +35,7 @@ import {
 	RESPAWN,
 	SHOOTER,
 	SPAWN,
+	TANK,
 	XP_PER_KILL,
 } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
@@ -107,6 +110,10 @@ export interface AvatarIntent {
 	onGround: boolean;
 	attack: boolean;
 	guard?: boolean; // raise the Guard this tick (ADR 0017 §5); absent == false
+	// Vertical attack modifiers (ADR 0017 §6): `up`+attack Launches, airborne `down`+attack
+	// Spikes. Resolved by the shared combo gate into the swing's move variant. Absent == false.
+	up?: boolean;
+	down?: boolean;
 	interact?: boolean; // request a Portal transition; resolved by the world layer
 	skill?: number;
 	// Input staleness in ms (ADR 0017 §11): how late this input reached the server,
@@ -170,12 +177,29 @@ function resolveAvatarIntent(
 		src.progress.level,
 		src.class ?? 'warrior',
 		intent
-			? { attack: intent.attack, skill: intent.skill, guard: intent.guard }
+			? {
+					attack: intent.attack,
+					skill: intent.skill,
+					guard: intent.guard,
+					up: intent.up,
+					down: intent.down,
+				}
 			: { attack: false },
 		dt,
 		weaponById(avatar.weapon),
 	);
 	avatar.attackT = r.attackT;
+	// The in-flight swing's move variant (ADR 0017 §6): held on the Entity so the
+	// hit-reaction below knows whether this swing Launches / Spikes / keeps aloft.
+	avatar.attackMove = r.attackMove;
+	// A grounded Launcher pops the attacker up to follow (ADR 0017 §6). The Avatar's
+	// kinematics are client-reported (ADR 0001), so for the networked client this is a
+	// prediction concern applied there too; applying it here keeps the offline single
+	// loop (which owns the Avatar's physics through stepZone) correct.
+	if (r.attackerPop > 0) {
+		avatar.vy = -r.attackerPop;
+		avatar.onGround = false;
+	}
 	// The held-Guard timer (ADR 0017 §5): accumulated by the same shared gate that owns
 	// the swing, so the server and the client's prediction can't disagree on a raise.
 	avatar.guardT = r.guardT;
@@ -266,11 +290,17 @@ export function stepZone(
 		m.poiseT = Math.max(0, (m.poiseT ?? 0) - dt);
 		if ((m.poiseT ?? 0) <= 0) m.poise = regenPoise(m, dt);
 		const stunned = (m.stunT ?? 0) > 0;
-		// A chaser that has begun a swing is COMMITTED for the whole
-		// wind-up→active→recovery: it neither moves nor re-targets nor re-commits until
-		// the swing fully recovers (attackT decays to 0). That commitment is precisely
-		// what makes the recovery a punishable opening (ADR 0017 §9).
-		const committed = m.type === 'chaser' && m.attackT > 0;
+		// Combo decay (ADR 0017 §6): once a juggled body escapes the Stagger (stunT back
+		// to 0) the combo is over, so its hit counter resets — the next break opens a
+		// fresh juggle at full Hitstun/lift. While it stays Staggered the counter persists
+		// and each juggle hit decays (see the hit loop below), self-terminating the juggle.
+		if (!stunned) m.comboCount = 0;
+		// A melee committer (chaser AND the poise-tank, ADR 0017 §9/§6) that has begun a
+		// swing is COMMITTED for the whole wind-up→active→recovery: it neither moves nor
+		// re-targets nor re-commits until the swing fully recovers (attackT decays to 0).
+		// That commitment is precisely what makes the recovery a punishable opening.
+		const committer = m.type === 'chaser' || m.type === 'tank';
+		const committed = committer && m.attackT > 0;
 
 		const target = nearestAvatar(avatars, m.x);
 		const dx = target >= 0 ? avatars[target].avatar.x - m.x : 0;
@@ -282,7 +312,7 @@ export function stepZone(
 			// Staggered or mid-swing: no input drive. stepEntity still carries ivx
 			// (Knockback) + gravity, and a committed swing holds its ground to strike.
 			moveX = 0;
-		else if (target >= 0 && m.type === 'chaser' && adx < MONSTER.chaserAggro)
+		else if (target >= 0 && committer && adx < MONSTER.chaserAggro)
 			// hold (moveX 0) inside the deadzone so facing doesn't flip-flop frame
 			// to frame when the Avatar is sitting on top of the chaser
 			moveX = adx < MONSTER.chaserDeadzone ? 0 : dx > 0 ? 1 : -1;
@@ -317,12 +347,13 @@ export function stepZone(
 		// read; the active phase below is the only damaging window; and because `attackT`
 		// stays > 0 through recovery, the committer cannot re-commit or cancel — that
 		// recovery is the Player's punish opening.
+		const meleeRange = m.type === 'tank' ? TANK.meleeRange : MONSTER.meleeRange;
 		if (
 			!stunned &&
 			!committed &&
-			m.type === 'chaser' &&
+			committer &&
 			target >= 0 &&
-			adx <= MONSTER.meleeRange
+			adx <= meleeRange
 		) {
 			m.facing = dx >= 0 ? 1 : -1;
 			m = { ...m, attackT: SWING_TOTAL };
@@ -334,7 +365,9 @@ export function stepZone(
 		// Stagger a poise-broken Player. Gated by the victim's i-frames so the multi-tick
 		// active window lands once. A break Staggers (Hitstun + a Mass-scaled Knockback
 		// impulse); a chip just damages + flinches.
-		if (m.type === 'chaser' && meleeActive(m.attackT)) {
+		if (committer && meleeActive(m.attackT)) {
+			const meleeDamage =
+				m.type === 'tank' ? TANK.meleeDamage : MONSTER.meleeDamage;
 			const hb = meleeHitbox(m);
 			for (let i = 0; i < avatars.length; i++) {
 				const a = avatars[i].avatar;
@@ -346,7 +379,7 @@ export function stepZone(
 				// delayed screen still resolves. The i-frame (set on every branch) gates the
 				// multi-tick active window to one resolution per swing.
 				const lagSlack = (byId.get(avatars[i].sessionId)?.lagMs ?? 0) / 1000;
-				const g = resolveGuard(a, m.x, MONSTER.meleeDamage, lagSlack);
+				const g = resolveGuard(a, m.x, meleeDamage, lagSlack);
 				// Direction away from the Monster (0 when they share a column), reused by the
 				// hurt-blood bias and the parry-clash flash.
 				const away: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
@@ -400,13 +433,13 @@ export function stepZone(
 						-COMBAT.knockbackUp,
 					);
 					na = { ...na, stunT: COMBAT.hitstun };
-					effects.push(impactEffect(a, m.facing, MONSTER.meleeDamage));
+					effects.push(impactEffect(a, m.facing, meleeDamage));
 				} else if (g.result !== 'block') {
 					// Hurt blood at the Avatar, biased away from the Monster (0 when they share
 					// a column). Server-sourced — no `source` — so the snapshot delivers it to
 					// the victim too, in sync with the hurt-flash (ADR 0013, #132). A clean Block
 					// emits no blood — the brace soaked it, only the chip + Poise drain show.
-					effects.push(hurtBloodEffect(a, away, MONSTER.meleeDamage));
+					effects.push(hurtBloodEffect(a, away, meleeDamage));
 				}
 				avatars[i] = { ...avatars[i], avatar: na };
 			}
@@ -433,6 +466,11 @@ export function stepZone(
 				const contributors = m.contributors?.includes(sid)
 					? m.contributors
 					: [...(m.contributors ?? []), sid];
+				// The attack's move variant drives the vertical reaction (ADR 0017 §6): a
+				// Launch throws UP, a Spike drives DOWN, a plain swing keeps a target aloft,
+				// a basic swing knocks back horizontally as before.
+				const move = avatars[i].avatar.attackMove ?? 'basic';
+				const wasStunned = (m.stunT ?? 0) > 0;
 				const { poise, broke } = applyPoiseDamage(m, wpn.poiseDamage);
 				// Reset the regen-delay so a sustained flurry keeps the pool from healing
 				// between swings (ADR 0017 §3).
@@ -443,19 +481,46 @@ export function stepZone(
 					poiseT: COMBAT.poise.regenDelay,
 					contributors,
 				};
-				if (broke) {
-					// Poise break → Stagger: lock control for Hitstun and throw the body with
-					// a Knockback impulse (applyImpulse scales by 1/Mass — a light Slime
-					// rockets, a heavy body barely nudges), plus a small upward pop. The
-					// impact Effect is the break punctuation the client keys hitstop +
-					// camera-kick off. `source` attributes it for originator-suppression.
-					m = applyImpulse(m, wpn.knockback * facing, -wpn.knockbackUp);
-					m = { ...m, stunT: COMBAT.hitstun };
-					// No `source`: like the death gore burst, the break is a "big moment"
-					// delivered to EVERYONE in range — including the attacker, who needs it to
-					// fire the camera-kick + hitstop. The client predicts only chip blood
-					// (predictHitEffects), so there is no double-render of the impact spark.
-					effects.push(impactEffect(m, facing, damages[i]));
+				// A juggle is OPEN if this hit BROKE Poise (the entry — what gates a Launch on
+				// a poise-tank) OR the target is ALREADY Staggered (a mid-air juggle hit
+				// re-staggers with no fresh break — that is what keeps it aloft, ADR 0017 §6).
+				if (broke || wasStunned) {
+					const n = m.comboCount ?? 0;
+					// Base upward lift for this move; Spike drives down instead (handled below).
+					const baseLift =
+						move === 'launch'
+							? COMBAT.launchUp
+							: move === 'aerial'
+								? COMBAT.aerialUp
+								: move === 'spike'
+									? 0
+									: wpn.knockbackUp;
+					// Combo decay (ADR 0017 §6): the n-th hit in this stagger gets less Hitstun
+					// and less lift, so the juggle self-terminates. At the cap it is `terminal`.
+					const rx = comboReaction(COMBAT.hitstun, baseLift, n);
+					if (rx.terminal) {
+						// The juggle bottomed out: deal the damage but do NOT re-Stagger, so the
+						// body falls out and returns to neutral. Leave `comboCount` high so further
+						// hits this Stagger also terminate; the top-of-loop reset clears it once the
+						// target finally escapes (stunT back to 0). A plain blood burst, no impact.
+						effects.push(bloodEffect(m, facing, damages[i], sid));
+					} else {
+						// Horizontal Knockback only on a basic swing; the vertical moves keep the
+						// target in its column so it stays juggleable. Spike adds a downward impulse,
+						// every other move a (decayed) upward lift.
+						const horiz = move === 'basic' ? wpn.knockback * facing : 0;
+						const iy = move === 'spike' ? COMBAT.spikeDown : -rx.lift;
+						m = applyImpulse(m, horiz, iy);
+						m = { ...m, stunT: rx.hitstun, comboCount: n + 1 };
+						// A Launch emits its own upward burst (the juggle opening); every other
+						// break emits the heavy impact burst. Both carry NO `source`, so they reach
+						// everyone in range — including the attacker, who fires the camera-kick.
+						effects.push(
+							move === 'launch'
+								? launchEffect(m, damages[i])
+								: impactEffect(m, facing, damages[i]),
+						);
+					}
 				} else {
 					// Chip: HP + Poise damage, no Stagger — the Slime barely flinches. One
 					// blood burst at the site, biased along the attacker's facing, scaled by
@@ -653,7 +718,7 @@ export function snapshotFor(
 		// (its `attackT` is a fire cooldown, not a swing), so it replicates idle; either
 		// way a Staggered Monster surfaces its reaction through the action `flags`.
 		action:
-			m.type === 'chaser'
+			m.type === 'chaser' || m.type === 'tank'
 				? actionStateOf(m)
 				: { ...IDLE_ACTION, flags: actionFlags(m) },
 	}));
@@ -702,7 +767,7 @@ export function addAvatar(
 		avatar: { ...spawnAvatar(SPAWN.x, SPAWN.y), id: sessionId, weapon },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
-		log: ['Welcome. Hunt the chasers (j attack, k guard/parry).'],
+		log: ['Welcome. Hunt the chasers (j attack, up+j launch, k guard, space jump).'],
 		nextId: 1,
 		rngState: sessionId,
 		class: 'warrior',
