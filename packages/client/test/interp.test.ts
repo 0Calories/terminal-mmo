@@ -13,7 +13,7 @@ function avatar(sessionId: number, x: number, y: number): AvatarSnapshot {
 	return {
 		sessionId,
 		handle: 'p',
-		cosmetics: { hue: 0, hat: 0, nameplate: 0 },
+		cosmetics: { hue: 0, hat: 0, nameplate: 0, form: 0 },
 		x,
 		y,
 		vx: 0,

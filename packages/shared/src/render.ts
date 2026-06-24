@@ -1,4 +1,5 @@
 import {
+	ACTION_FLAG,
 	bladeEdgeArc,
 	sweepIndex,
 	swingPhase,
@@ -7,7 +8,11 @@ import {
 } from './combat';
 import { BOX } from './constants';
 import {
+	bodyFrame,
+	formById,
+	formFrame,
 	HATS,
+	mirrorAnchorX,
 	type Sprite,
 	spriteFor,
 	spriteForNpc,
@@ -183,7 +188,58 @@ export function drawEntitySprite<C>(
 	style: RenderStyle<C>,
 	ghost?: GhostStyle<C>,
 ): void {
-	const sprite = spriteFor(e.type);
+	// The action an entity is performing this frame (ADR 0017 §10): observers read the
+	// replicated action-state; the local Avatar predicts its swing from `attackT`. Drives
+	// BOTH the body Pose and the weapon frame, so the two layers always agree.
+	let move: MoveId;
+	let phase: AttackPhase | null;
+	let progress: number;
+	let staggered: boolean;
+	if (e.action) {
+		move = e.action.move;
+		phase = e.action.phase;
+		progress = e.action.progress;
+		staggered = (e.action.flags & ACTION_FLAG.staggered) !== 0;
+	} else {
+		const swing = weaponById(e.weapon).swing;
+		phase = swingPhase(e.attackT, swing);
+		move = phase ? 'basic' : 'idle';
+		progress = phase ? swingProgress(e.attackT, swing) : 0;
+		staggered = (e.stunT ?? 0) > 0;
+	}
+
+	// The body: an Avatar poses its Form through the shared `bodyFrame` selector and
+	// resolves the grid via `formFrame` (ADR 0020), so its body is animated state — not a
+	// hardcoded grid — and owner/observer agree frame-for-frame. A Monster keeps its
+	// single-frame Sprite until it adopts a BodySprite. This slice authors only `idle`, so
+	// every Pose resolves to idle; the per-Form grip/head anchors carry the weapon and hat.
+	const body = e.type === 'player' ? formById(e.cosmetics?.form) : null;
+	let sprite: Sprite;
+	let grip: { x: number; y: number } | undefined;
+	let head: { x: number; y: number } | undefined;
+	if (body) {
+		// Locomotion gait (walk/jump) and emotes are authored in a later slice; until then
+		// the body holds idle. `airborne` is wired live (it has a replicated source); the
+		// distance-driven walk cycle (ADR 0020 §7) lands with the walk Poses.
+		const pose = bodyFrame({
+			move,
+			phase,
+			swingProgress: progress,
+			emote: null,
+			emoteT: 0,
+			airborne: !e.onGround,
+			moving: false,
+			distanceX: 0,
+			staggered,
+		});
+		sprite = formFrame(body, pose.poseId, pose.frameIndex);
+		grip = body.grip;
+		head = body.head;
+	} else {
+		sprite = spriteFor(e.type);
+		grip = sprite.grip;
+	}
+
 	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2) - cam.x);
 	const sy = Math.round(e.y + BOX.h - sprite.h - cam.y);
 	const hurt = e.hurtT > 0.3;
@@ -205,22 +261,7 @@ export function drawEntitySprite<C>(
 	// the `active` phase plays an ordered sweep sampled by swingProgress. One code
 	// path: "attacking" only changes which frame is selected (ADR 0018 §1/§4).
 	const ws = weaponSpriteFor(e);
-	if (ws && sprite.grip) {
-		let move: MoveId;
-		let phase: AttackPhase | null;
-		let progress: number;
-		if (e.action) {
-			// Observers (and any entity carrying replicated action-state): read it.
-			move = e.action.move;
-			phase = e.action.phase;
-			progress = e.action.progress;
-		} else {
-			// The local Avatar predicts its swing from attackT against its weapon's phases.
-			const swing = weaponById(e.weapon).swing;
-			phase = swingPhase(e.attackT, swing);
-			move = phase ? 'basic' : 'idle';
-			progress = phase ? swingProgress(e.attackT, swing) : 0;
-		}
+	if (ws && grip) {
 		const id = weaponFrame(move, phase);
 		// `active` is an ordered sweep indexed by progress; the other ids are single poses.
 		const frame =
@@ -228,9 +269,8 @@ export function drawEntitySprite<C>(
 				? ws.frames.active?.[sweepIndex(progress, ws.frames.active.length)]
 				: ws.frames[id];
 		// Body grip cell, its column reflected across the body when facing left.
-		const bodyGripX =
-			sx + (e.facing === 1 ? sprite.grip.x : sprite.w - 1 - sprite.grip.x);
-		const bodyGripY = sy + sprite.grip.y;
+		const bodyGripX = sx + mirrorAnchorX(grip.x, sprite.w, e.facing);
+		const bodyGripY = sy + grip.y;
 		// The one dynamic accent colour (ADR 0018 §6): the weapon's `accent` palette key
 		// resolved to a colour, fed to the blade highlight AND the blade-edge arc — so the
 		// weapon reads in one colour and re-tints wholesale when rarity feeds this channel.
@@ -271,12 +311,17 @@ export function drawEntitySprite<C>(
 		}
 	}
 
-	// The cosmetic hat sits directly above the head (its bottom row on the row above
-	// the Sprite top), centred over the Sprite, mirrored with the Avatar's facing.
+	// The cosmetic hat rides the body's head anchor (ADR 0018 §3 / ADR 0020 §4): centred
+	// over the head cell and sitting just above it, the column mirrored with facing — the
+	// same data-driven anchor as the weapon's grip, so a hat composites onto ANY Form. A
+	// body with no declared head anchor falls back to centring over the Sprite.
 	const hat = hatFor(e);
 	if (hat) {
-		const hx = sx + Math.round((sprite.w - hat.w) / 2);
-		const hy = sy - hat.h;
+		const headX = head
+			? mirrorAnchorX(head.x, sprite.w, e.facing)
+			: (sprite.w - 1) / 2;
+		const hx = sx + Math.round(headX - (hat.w - 1) / 2);
+		const hy = sy + (head?.y ?? 0) - hat.h;
 		blitSprite(buf, hat, hx, hy, e.facing, hurt, style, undefined, ghost);
 	}
 }

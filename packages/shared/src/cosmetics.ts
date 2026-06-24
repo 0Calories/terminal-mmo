@@ -8,6 +8,7 @@
 // (art); this module owns the type, the defaults, and the index logic.
 
 import { HUES, NAMEPLATE_COLORS } from './sceneStyle';
+import { FORMS } from './sprites/body-sprite';
 import { HATS } from './sprites/hats';
 import type { Cosmetics } from './types';
 
@@ -17,14 +18,20 @@ export type { Cosmetics };
 
 // The bareheaded, default-amber, grey-nameplate look (every index 0). What an
 // Avatar shows before any choice is made and the fallback for a bad wire value.
-export const DEFAULT_COSMETICS: Cosmetics = { hue: 0, hat: 0, nameplate: 0 };
+export const DEFAULT_COSMETICS: Cosmetics = {
+	hue: 0,
+	hat: 0,
+	nameplate: 0,
+	form: 0,
+};
 
 // Counts of each catalog (the valid index range is [0, count)). Exported so the
-// (later) picker and tests can enumerate the options without reaching into three
-// modules.
+// (later) picker and tests can enumerate the options without reaching into the
+// underlying modules.
 export const HUE_COUNT = HUES.length;
 export const HAT_COUNT = HATS.length;
 export const NAMEPLATE_COUNT = NAMEPLATE_COLORS.length;
+export const FORM_COUNT = FORMS.length;
 
 // A whole index in [0, count); anything else (negative, fractional, NaN, past the
 // catalog) collapses to 0 — the default — so a decoded or forward-version value can
@@ -41,6 +48,7 @@ export function clampCosmetics(c: Cosmetics): Cosmetics {
 		hue: clampIndex(c.hue, HUE_COUNT),
 		hat: clampIndex(c.hat, HAT_COUNT),
 		nameplate: clampIndex(c.nameplate, NAMEPLATE_COUNT),
+		form: clampIndex(c.form, FORM_COUNT),
 	};
 }
 
@@ -49,7 +57,7 @@ export function clampCosmetics(c: Cosmetics): Cosmetics {
 // be defaulted or randomized at connect"). Pure (no global RNG) so it is testable
 // and reproducible; the caller supplies the seed (e.g. a per-connect random int).
 export function randomCosmetics(seed: number): Cosmetics {
-	// xorshift32: a tiny, dependency-free integer PRNG. Three decorrelated draws.
+	// xorshift32: a tiny, dependency-free integer PRNG. One decorrelated draw per index.
 	let s = seed | 0 || 1;
 	const next = () => {
 		s ^= s << 13;
@@ -57,9 +65,12 @@ export function randomCosmetics(seed: number): Cosmetics {
 		s ^= s << 5;
 		return (s >>> 0) % 1_000_000;
 	};
+	// `form` is drawn last so the hue/hat/nameplate sequence is unchanged; today FORMS
+	// holds a single Form, so it is always 0 until more Forms ship.
 	return {
 		hue: next() % HUE_COUNT,
 		hat: next() % HAT_COUNT,
 		nameplate: next() % NAMEPLATE_COUNT,
+		form: next() % FORM_COUNT,
 	};
 }

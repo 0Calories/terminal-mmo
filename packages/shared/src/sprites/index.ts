@@ -25,6 +25,19 @@ export function spriteForNpc(kind: Npc['kind']): Sprite {
 	return NPC_REGISTRY[kind];
 }
 
+export {
+	type BodySprite,
+	type BodyState,
+	bodyFrame,
+	DEFAULT_FORM,
+	type EmotePoseId,
+	FORMS,
+	formById,
+	formFrame,
+	mirrorAnchorX,
+	type PoseId,
+	STRIDE,
+} from './body-sprite';
 export { HATS, type HatDef } from './hats';
 // The art palette is keyed by single-char codes but its colours are renderer-
 // specific (opentui RGBA), so it stays with the consumer; shared owns only the

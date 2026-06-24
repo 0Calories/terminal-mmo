@@ -11,7 +11,8 @@ import {
 // The resolved Sprite top row, undoing previewAvatar's inverse of drawEntitySprite's
 // placement (entity.y is offset up by BOX.h - PLAYER.h so the Sprite lands at this row).
 const spriteTopOf = (hat: number) =>
-	previewAvatar({ hue: 0, hat, nameplate: 0 }, 'name').y + (BOX.h - PLAYER.h);
+	previewAvatar({ hue: 0, hat, nameplate: 0, form: 0 }, 'name').y +
+	(BOX.h - PLAYER.h);
 
 test('cycling the hat keeps the Sprite anchored at a fixed vertical position', () => {
 	const tops = HATS.map((_, hat) => spriteTopOf(hat));
