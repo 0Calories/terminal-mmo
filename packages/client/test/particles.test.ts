@@ -341,6 +341,7 @@ test('a profile with no gravity and no terrain collision never settles (profile-
 		gore: [FLOATER],
 		impact: [FLOATER],
 		parry: [FLOATER],
+		launch: [FLOATER],
 	};
 	const terrain = floorTerrain();
 	const sys = new ParticleSystem();

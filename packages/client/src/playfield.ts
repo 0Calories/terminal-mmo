@@ -656,9 +656,15 @@ export class PlayfieldRenderable extends Renderable {
 		// A successful Parry (ADR 0017 §5) is a "big moment" too: the `parry` clash gets
 		// the same camera-kick + hitstop, so a clean catch feels as meaty as a break and
 		// is felt by the parrier (the source-less Effect reaches them).
+		// A Launch (ADR 0017 §6) is a "big moment" too — the juggle opening. Its Effect
+		// carries dir 0 (the throw is straight up), so the kick pops UPWARD (no horizontal
+		// bias) to sell the lift, plus the same brief hitstop.
 		for (const fx of fresh)
 			if (fx.kind === 'impact' || fx.kind === 'parry') {
 				this.kick = applyKick(this.kick, fx.dir * CAMERA_KICK.maxCells, -1);
+				this.hitstop = triggerHitstop(this.hitstop);
+			} else if (fx.kind === 'launch') {
+				this.kick = applyKick(this.kick, 0, -CAMERA_KICK.maxCells);
 				this.hitstop = triggerHitstop(this.hitstop);
 			}
 		// Layer the decaying kick onto the follow camera for this frame's draw.

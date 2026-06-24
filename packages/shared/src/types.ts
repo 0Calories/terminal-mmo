@@ -17,12 +17,20 @@ export interface Input extends Control {
 	// fresh raise is the Parry window, held past it is a Block — measured from
 	// press-time by the swing/guard gate, never a tap-vs-hold input measurement.
 	guard?: boolean;
+	// Vertical attack modifiers (ADR 0017 §6/§12): melee has no free aim — verticality
+	// is contextual. `up`+attack is the Launcher; `down`+attack while airborne is the
+	// Spike (and `down` alone is the reserved crouch/drop verb). Held, OR'd with attack
+	// by the combo gate to pick the swing variant. Jump is now `space` only.
+	up?: boolean;
+	down?: boolean;
 	interact?: boolean;
 	// 1-based slot of a Class Skill to activate this tick (absent == none).
 	skill?: number;
 }
 
-export type EntityType = 'player' | 'chaser' | 'shooter';
+// `tank` is the poise-tank archetype (ADR 0017 §6/§9): a melee-committer that must be
+// poise-chipped before it can be Launched, the first showcase of the juggle loop.
+export type EntityType = 'player' | 'chaser' | 'shooter' | 'tank';
 
 // The three phases every attack runs through (ADR 0017 §1): `windup` commits the
 // attacker (telegraphed, no hitbox yet), `active` is the only window the hitbox is
@@ -41,9 +49,11 @@ export interface SwingPhases {
 	recovery: number;
 }
 
-// The move an entity is performing. `idle` = nothing; `basic` = the basic melee
-// swing. Skills and Monster moves join this set as later combat slices land.
-export type MoveId = 'idle' | 'basic';
+// The move an entity is performing. `idle` = nothing; `basic` = the ground
+// horizontal swing; `launch` = the `up`+attack uppercut (ADR 0017 §6); `spike` =
+// the airborne `down`+attack slam; `aerial` = a plain air swing that keeps a
+// juggled target aloft. Skills and Monster moves join this set as later slices land.
+export type MoveId = 'idle' | 'basic' | 'launch' | 'spike' | 'aerial';
 
 // A compact, authoritative description of what an entity is *doing* this tick,
 // broadcast for every entity in the snapshot so offense is visible to everyone
@@ -102,6 +112,11 @@ export interface Entity {
 	// and a hit that drives it to 0 BREAKS (refilling it) and triggers Stagger. Absent
 	// == full (DEFAULT poise.max). Server-tracked; never on the wire.
 	poise?: number;
+	// Per-entity Poise ceiling (ADR 0017 §3/§6): the pool's max + refill target. Absent
+	// == COMBAT.poise.max. A poise-tank carries a large value here so a single Launcher
+	// can't break it — it must be chipped down first (the launch-gating showcase).
+	// Server-tracked; never on the wire.
+	poiseMax?: number;
 	// Seconds remaining before Poise regen resumes (ADR 0017 §3): set to
 	// COMBAT.poise.regenDelay on every poise hit and counted down each tick, so the
 	// pool only regenerates "under no pressure" — under a flurry it purely accumulates
@@ -122,7 +137,19 @@ export interface Entity {
 	// with a given target at most once, the rate-limiter that replaced the removed
 	// automatic post-hit i-frames. Cleared when a fresh swing starts; a NEW swing (or
 	// another attacker) can still hit a target that is mid-Stagger. Server-internal.
+	// A non-empty list ALSO means the current swing has CONNECTED — the gate the
+	// combo's cancel-on-connect reads to allow a recovery cancel (ADR 0017 §6).
 	swingHits?: number[];
+	// The move variant of the swing currently in flight (ADR 0017 §6): set when a
+	// swing starts (from the vertical modifier + air-state) and held for its duration,
+	// so the hit-reaction knows whether to Launch up / Spike down / keep aloft. Drives
+	// the replicated action-state's `move` too. Absent == a basic horizontal swing.
+	attackMove?: MoveId;
+	// Combo counter (ADR 0017 §6): how many hits the entity has taken in the CURRENT
+	// stagger/juggle. Each successive juggle hit decays its Hitstun and lift (comboReaction)
+	// so a juggle self-terminates; reset to 0 once the entity escapes the Stagger (stunT
+	// reaches 0). Absent == 0. Server-tracked; never on the wire.
+	comboCount?: number;
 	spawnIndex?: number; // index into its Zone's spawns[], if Field-spawned
 	contributors?: number[]; // Monster-only: session ids that have damaged it, for shared-kill rewards (#37)
 	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
@@ -148,8 +175,10 @@ export interface Entity {
 // twin of the Stagger that pairs with client hitstop + camera-kick. `parry` is the
 // parry-clash flash (ADR 0017 §5) — a bright, source-less burst the defender and
 // everyone in range sees when a Guard catches a hit in its opening window. Future
-// kinds (guard-break, launch) are added here as the system grows.
-export type EffectKind = 'blood' | 'gore' | 'impact' | 'parry';
+// kinds (guard-break) are added here as the system grows. `launch` is the upward
+// burst a Launcher's poise-break emits (ADR 0017 §6/§13d): a vertical-biased spark
+// that pairs with the launch camera-kick, the visual punctuation of a juggle opening.
+export type EffectKind = 'blood' | 'gore' | 'impact' | 'parry' | 'launch';
 
 // An RGB colour carried on an Effect to tint its particles (#139), e.g. a death
 // burst recoloured to the dead entity's body. Each channel is 0..255.

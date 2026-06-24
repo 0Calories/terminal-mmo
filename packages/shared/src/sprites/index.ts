@@ -4,12 +4,14 @@ import { merchant } from './merchant';
 import { player } from './player';
 import { shooter } from './shooter';
 import type { Sprite } from './sprite';
+import { tank } from './tank';
 
 // `Record<EntityType, …>` forces every entity type to have art at compile time.
 const REGISTRY: Record<EntityType, Sprite> = {
 	player,
 	chaser,
 	shooter,
+	tank,
 };
 
 export function spriteFor(type: EntityType): Sprite {

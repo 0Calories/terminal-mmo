@@ -47,7 +47,7 @@ export function spawnPlayerState(
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
 		zoneId,
-		log: ['Welcome. Hunt the chasers (j attack, k guard/parry).'],
+		log: ['Welcome. Hunt the chasers (j attack, up+j launch, k guard, space jump).'],
 		nextId: 1,
 		rngState: seed,
 		class: 'warrior',

@@ -63,6 +63,8 @@ const IDLE_INPUT: Input = {
 	jump: false,
 	attack: false,
 	guard: false,
+	up: false,
+	down: false,
 	interact: false,
 };
 
@@ -461,11 +463,29 @@ function runNetworked(url: string) {
 				localCd,
 				net.latest?.progress.level ?? 1,
 				'warrior',
-				{ attack: inp.attack, skill: inp.skill, guard: inp.guard },
+				{
+					attack: inp.attack,
+					skill: inp.skill,
+					guard: inp.guard,
+					up: inp.up,
+					down: inp.down,
+				},
 				dtSec,
 				weaponById(predicted.weapon),
 			);
 			predicted.attackT = r.attackT;
+			// Predict the in-flight swing's move variant so the local pose matches (ADR 0017
+			// §6); the hit-reaction itself is server-authoritative.
+			predicted.attackMove = r.attackMove;
+			// A fresh swing clears the predicted per-swing hit list so cancel-on-connect can
+			// re-arm; otherwise keep what this swing has predicted-hit (filled below).
+			if (r.swingStarted) predicted.swingHits = [];
+			// A grounded Launcher pops the attacker up to follow (ADR 0017 §6). Position is
+			// client-authoritative (ADR 0001), so the pop is applied to the local prediction.
+			if (r.attackerPop > 0) {
+				predicted.vy = -r.attackerPop;
+				predicted.onGround = false;
+			}
 			// Mirror the server's held-Guard timer so the local guard/parry pose stays in
 			// lockstep with the prediction (ADR 0017 §5); the parry's damage-negation is
 			// server-authoritative and reconciles through HP + the snapshot's parry Effect.
@@ -501,6 +521,10 @@ function runNetworked(url: string) {
 					onGround: predicted.onGround,
 					attack: inp.attack,
 					guard: inp.guard ?? false,
+					// Vertical attack modifiers (ADR 0017 §6): the server's combo gate reads
+					// them to resolve a Launcher / Spike.
+					up: inp.up ?? false,
+					down: inp.down ?? false,
 					interact: inp.interact ?? false,
 					skill: inp.skill,
 					// Timestamp the input so the server can lag-compensate the Parry against
@@ -538,6 +562,14 @@ function runNetworked(url: string) {
 				playfield.emitPredicted(
 					predictHitEffects(hitbox, predicted.facing, hitDamage, monsters),
 				);
+				// Predict cancel-on-connect (ADR 0017 §6): record which Monsters this swing
+				// overlaps so the next frame's resolveCombat sees a non-empty `swingHits` and
+				// lets the recovery cancel into a follow-up — matching the server's registry,
+				// which is the authority. A mispredict just costs one early/late cancel.
+				const seen = new Set(predicted.swingHits ?? []);
+				for (const mo of monsters)
+					if (aabbOverlap(hitbox, entityBox(mo))) seen.add(mo.id);
+				predicted.swingHits = [...seen];
 			}
 			hud.update(game, fps);
 			hud.updateChat(net.chatLog, chat.open, chat.text);

@@ -9,6 +9,11 @@
 			"id": "shooter",
 			"behavior": "shooter",
 			"name": "Sporeling"
+		},
+		{
+			"id": "tank",
+			"behavior": "tank",
+			"name": "Bulwark"
 		}
 	],
 	"npcs": [

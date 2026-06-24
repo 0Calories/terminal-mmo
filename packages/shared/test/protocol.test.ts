@@ -72,6 +72,8 @@ test('input round-trips reported kinematics + combat intents', () => {
 		onGround: true,
 		attack: true,
 		guard: false,
+		up: false,
+		down: false,
 		interact: false,
 		skill: 1,
 		clientTime: 1234.5,
@@ -91,6 +93,8 @@ test('input round-trips with no skill intent', () => {
 		onGround: false,
 		attack: false,
 		guard: false,
+		up: false,
+		down: false,
 		interact: false,
 		clientTime: 0,
 	};
@@ -109,6 +113,8 @@ test('input round-trips the interact (portal) intent', () => {
 		onGround: true,
 		attack: false,
 		guard: false,
+		up: false,
+		down: false,
 		interact: true,
 		clientTime: 99,
 	};
@@ -127,8 +133,30 @@ test('input round-trips the Guard intent + client timestamp (ADR 0017 §5/§11)'
 		onGround: true,
 		attack: false,
 		guard: true,
+		up: false,
+		down: false,
 		interact: false,
 		clientTime: 4567.25,
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('input round-trips the vertical attack modifiers (ADR 0017 §6)', () => {
+	const msg: ClientMessage = {
+		t: 'input',
+		x: 1,
+		y: 2,
+		vx: 0,
+		vy: 0,
+		facing: 1,
+		onGround: false,
+		attack: true,
+		guard: false,
+		up: true,
+		down: true,
+		interact: false,
+		clientTime: 10,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
@@ -353,6 +381,49 @@ test('snapshot round-trips the impact Poise-break Effect kind (ADR 0017)', () =>
 	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
 	if (decoded.t === 'snapshot') expect(decoded.effects[0].kind).toBe('impact');
+});
+
+test('snapshot round-trips the launch Effect kind + a poise-tank Monster on a launch move (ADR 0017 §6)', () => {
+	const msg: ServerMessage = {
+		t: 'snapshot',
+		tick: 11,
+		zoneId: 'field-01',
+		avatars: [],
+		monsters: [
+			{
+				id: 5,
+				type: 'tank', // the new poise-tank type round-trips (append-only catalog)
+				x: 40,
+				y: 30,
+				vx: 0,
+				vy: -8,
+				facing: 1,
+				onGround: false,
+				hp: 50,
+				maxHp: 60,
+				hurtT: 0,
+				// A launch move + airborne flag round-trip (append-only move catalog).
+				action: {
+					move: 'launch',
+					phase: 'active',
+					progress: 0.4,
+					flags: ACTION_FLAG.airborne,
+				},
+			},
+		],
+		projectiles: [],
+		effects: [{ kind: 'launch', x: 42, y: 31, intensity: 24, dir: 0 }],
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		log: [],
+	};
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	expect(decoded).toEqual(msg);
+	if (decoded.t === 'snapshot') {
+		expect(decoded.monsters[0].type).toBe('tank');
+		expect(decoded.monsters[0].action.move).toBe('launch');
+		expect(decoded.effects[0].kind).toBe('launch');
+	}
 });
 
 test('snapshot round-trips a Monster carrying the staggered action-flag (ADR 0017)', () => {
