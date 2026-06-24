@@ -19,7 +19,6 @@ import {
 	guardPoseCell,
 	guardPoseGlyph,
 	isSolid,
-	meleeHitbox,
 	type RenderStyle,
 	renderZoneScene,
 	type Sprite,
@@ -319,11 +318,12 @@ function swingRenderState(
 	return phase ? { phase, progress: swingProgress(e.attackT, swing) } : null;
 }
 
-// Realize an entity's basic swing from its action-state (ADR 0017 §13a/b): a
-// per-phase weapon-tip pose accent every phase, plus a directional slash-arc swept
-// across the live melee hitbox during the `active` phase only. Drawn for the local
-// Avatar (predicted) and every co-present one (replicated) through one path, so a
-// swing looks identical to its owner and to everyone watching.
+// Realize an entity's basic swing (ADR 0018 §5). A weaponed Avatar's swing is the
+// composited WeaponSprite itself — its blade plays windup → active sweep → recovery
+// through `drawEntitySprite`, so there is NOTHING to overlay here and we bail. Only an
+// unarmed entity (a Monster has no equipped weapon, hence no sprite) falls back to a
+// minimal single-glyph tip telegraph so its attack still reads. The legacy `╱`/`╲`
+// box-fill across the melee hitbox is RETIRED — the hitbox is purely logical, never drawn.
 function drawSwing(
 	buf: OptimizedBuffer,
 	e: Entity,
@@ -331,37 +331,20 @@ function drawSwing(
 	sw: number,
 	sh: number,
 ) {
+	// Weaponed: the blade sweep is the composited weapon layer (drawEntitySprite); no overlay.
+	if (e.weapon !== undefined) return;
 	const st = swingRenderState(e);
 	if (!st) return;
-	// Composite the equipped WEAPON onto the per-phase pose (ADR 0017 §13b/§14): the
-	// weapon's own glyph as the tip accent, swept by the shared pose system, plus its
-	// reach for the slash-arc. The selection is the shared pure swingPose, so the
-	// weapon looks identical to its owner and to every observer.
-	const weapon = weaponById(e.weapon);
 	const move = e.action && e.action.move !== 'idle' ? e.action.move : 'basic';
-	const pose = swingPose(move, st.phase, weapon, e.facing);
+	const pose = swingPose(move, st.phase, weaponById(e.weapon), e.facing);
 	if (!pose) return;
-
-	// Pose accent: the weapon tip, cocked-back → level → trailing across the phases.
+	// A single tip glyph, cocked-back → level → trailing across the phases — the
+	// unarmed telegraph, with no fill flooding the hitbox cells.
 	const cell = swingPoseCell(e, st.phase);
 	const ax = Math.round(cell.x - cam.x);
 	const ay = Math.round(cell.y - cam.y);
 	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
 		buf.setCellWithAlphaBlending(ax, ay, pose.glyph, C.melee, C.transparent);
-
-	// Slash-arc only while the hitbox is live (active phase): a vivid sweep of the
-	// facing diagonal across the whole WEAPON reach, so the dangerous window reads at
-	// a glance and matches exactly where damage lands (a greatsword's arc is wider).
-	if (!pose.arc) return;
-	const hb = meleeHitbox(e, weapon.reach);
-	for (let yy = 0; yy < hb.h; yy++) {
-		for (let xx = 0; xx < hb.w; xx++) {
-			const px = Math.round(hb.x + xx - cam.x);
-			const py = Math.round(hb.y + yy - cam.y);
-			if (px >= 0 && px < sw && py >= 0 && py < sh)
-				buf.setCellWithAlphaBlending(px, py, pose.arc, C.melee, C.transparent);
-		}
-	}
 }
 
 // The Guard phase an entity is bracing in this frame, or null. Co-present entities

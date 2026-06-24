@@ -31,6 +31,7 @@ import {
 	SWING_TOTAL,
 	skillHitbox,
 	superArmorActive,
+	sweepIndex,
 	swingPhase,
 	swingPose,
 	swingPoseCell,
@@ -629,6 +630,37 @@ describe('weaponFrame — WeaponSprite frame selector (pure fn of move, phase)',
 		expect(weaponFrame('basic', 'windup')).toBe('windup');
 		expect(weaponFrame('basic', 'active')).toBe('active');
 		expect(weaponFrame('basic', 'recovery')).toBe('recovery');
+	});
+});
+
+describe('sweepIndex — active-sweep frame for a swingProgress (ADR 0018 §4)', () => {
+	test('the boundary frames: first at progress 0, last at progress 1', () => {
+		expect(sweepIndex(0, 3)).toBe(0); // first frame at the start of the active phase
+		expect(sweepIndex(1, 3)).toBe(2); // last frame at the end (len-1, not out of range)
+	});
+
+	test('progress is partitioned into len equal slices', () => {
+		// 3 frames: [0,1/3)→0, [1/3,2/3)→1, [2/3,1]→2.
+		expect(sweepIndex(0.2, 3)).toBe(0);
+		expect(sweepIndex(0.5, 3)).toBe(1);
+		expect(sweepIndex(0.8, 3)).toBe(2);
+	});
+
+	test('the sweep is monotonic non-decreasing across progress', () => {
+		let prev = -1;
+		for (let p = 0; p <= 1.0001; p += 0.05) {
+			const i = sweepIndex(p, 4);
+			expect(i).toBeGreaterThanOrEqual(prev);
+			expect(i).toBeLessThanOrEqual(3); // never past the last frame
+			prev = i;
+		}
+	});
+
+	test('out-of-range progress clamps into the sweep, and a single/empty sweep is index 0', () => {
+		expect(sweepIndex(-0.5, 3)).toBe(0); // clamps below
+		expect(sweepIndex(1.5, 3)).toBe(2); // clamps above to the last frame
+		expect(sweepIndex(0.5, 1)).toBe(0); // a single-frame sweep
+		expect(sweepIndex(0.5, 0)).toBe(0); // an empty sweep never indexes out of range
 	});
 });
 

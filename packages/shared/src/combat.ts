@@ -395,20 +395,29 @@ export function swingPose(
 	return { glyph, arc };
 }
 
-// The WeaponSprite frame an Avatar shows this frame (ADR 0018 §4): a PURE function
-// of its action — `idle` (the always-visible hold pose) for any non-swing, else the
-// swing phase's own frame. Pure and shared so the owner's prediction and every
-// observer's render agree on the appearance frame-for-frame, the same family as
-// swingPhase / swingProgress / swingPose. Returning an unauthored phase id (today
-// windup/active/recovery — only idle is authored) just draws no weapon layer; the
-// legacy swing overlay renders the swing until the sweep frames land. The `active`
-// sweep will later sample by swingProgress; that parameter joins when it does.
+// The WeaponSprite frame-set an Avatar shows this frame (ADR 0018 §4): a PURE
+// function of its action — `idle` (the always-visible hold pose) for any non-swing,
+// else the swing phase's own frame id (`windup`/`active`/`recovery`). Pure and
+// shared so the owner's prediction and every observer's render agree on the
+// appearance frame-for-frame, the same family as swingPhase / swingProgress. The
+// `active` phase is an ordered SWEEP, indexed by `sweepIndex(swingProgress, len)`.
 export function weaponFrame(
 	move: MoveId,
 	phase: AttackPhase | null,
 ): WeaponFrameId {
 	if (move !== 'basic' || phase === null) return 'idle';
 	return phase;
+}
+
+// The frame of an `active` sweep that plays at a given `swingProgress` (ADR 0018 §4):
+// the sweep is partitioned into `len` equal slices, first frame at progress 0, last at
+// progress 1. Monotonic non-decreasing in progress; clamped to [0, len-1] so a progress
+// at or past the active-phase boundary still resolves to a real frame. Pure + shared so
+// owner-prediction and observer-render land on the SAME sweep frame. `len <= 1` → 0.
+export function sweepIndex(progress: number, len: number): number {
+	if (len <= 1) return 0;
+	const p = progress < 0 ? 0 : progress > 1 ? 1 : progress;
+	return Math.min(len - 1, Math.floor(p * len));
 }
 
 export function meleeHitbox(p: Entity, reach: number = COMBAT.meleeReach): Box {

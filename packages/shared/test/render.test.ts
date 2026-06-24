@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { meleeHitbox, sweepIndex } from '../src/combat';
 import { BOX } from '../src/constants';
 import {
 	type CellBuffer,
@@ -491,6 +492,57 @@ test('an equipped Avatar at rest renders the weapon idle frame at the mirrored g
 		}
 		expect(overlaps).toBeGreaterThan(0);
 	}
+});
+
+test('mid-active-swing the composited weapon plays the sweep frame, and no box-fill floods the melee hitbox (ADR 0018 §4/§5)', () => {
+	const weapon = weaponById(0).sprite; // default Sword
+	if (!weapon) throw new Error('expected the default weapon to have a sprite');
+	const sweep = weapon.frames.active;
+	if (!sweep || sweep.length === 0)
+		throw new Error('expected authored active sweep frames');
+
+	// Half-way through the active phase samples the middle sweep frame (first at 0,
+	// last at 1) — the same pure mapping owner-prediction and observer-render share.
+	const progress = 0.5;
+	const frame = sweep[sweepIndex(progress, sweep.length)];
+
+	const buf = new FakeBuffer(28, 16);
+	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
+	// An observer reads the swing from the replicated action-state (move/phase/progress).
+	e.action = { move: 'basic', phase: 'active', progress, flags: 0 };
+	renderZoneScene(
+		buf,
+		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	const { sprite: body, ax: sx, ay: sy } = avatarTopLeft(e);
+	const grip = body.grip;
+	if (!grip) throw new Error('expected the body to declare a grip cell');
+	const bodyGripX = sx + grip.x; // facing 1
+	const bodyGripY = sy + grip.y;
+	const wgx = weapon.grip.x; // facing 1
+	const wx = bodyGripX - wgx;
+	const wy = bodyGripY - weapon.grip.y;
+
+	// The active sweep frame's lit blade cells land at the grip-anchored position.
+	expectSpriteAt(buf, frame, wx, wy, 1, fgFor);
+
+	// The legacy `╱`/`╲` box-fill is RETIRED: the melee hitbox is purely logical and is
+	// never flood-filled. Prove it — count the written cells across the hitbox region;
+	// a fill would have written EVERY cell, so at least one must remain untouched.
+	const hb = meleeHitbox(e, weaponById(0).reach);
+	let written = 0;
+	let total = 0;
+	for (let yy = 0; yy < hb.h; yy++) {
+		for (let xx = 0; xx < hb.w; xx++) {
+			total++;
+			if (buf.at(Math.round(hb.x + xx), Math.round(hb.y + yy))) written++;
+		}
+	}
+	expect(total).toBeGreaterThan(0);
+	expect(written).toBeLessThan(total); // not a solid fill — the box-fill is gone
 });
 
 test('a weaponless Avatar draws no weapon layer', () => {
