@@ -23,12 +23,18 @@ const idle = new Sprite(`
 
 // Wind-up: blade cocked up-and-forward, raised to strike (above the hand).
 const windup = new Sprite(`
-
 ·▙
 ·▐▙
 ··▝▘
 `,
-	{ defaultKey: 's' },
+  {
+    defaultKey: 's', colors:
+`
+·s
+·ss
+··kk
+`
+  },
 );
 
 // Active sweep (ADR 0018 §4): a fixed-length ordered arc the renderer samples by
@@ -40,13 +46,24 @@ const windup = new Sprite(`
 // ▃▅▁▁▁▁
 // ▔▀▔▔▔▔
 
+// ▃▙▂▂▂▂
+//  ▘▔▔▔▔
+
 const active1 = new Sprite(`
 ·
+▂▙▂▂▂
+▔▛▔▔▔
 ·
-▃▙▂▂▂▂
- ▘▔▔▔▔
 `,
-	{ defaultKey: 's' },
+  {
+    defaultKey: 's', colors:
+`
+·
+kssss
+kssss
+·
+`
+  },
 );
 
 export const sword: WeaponSprite = {
