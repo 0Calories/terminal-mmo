@@ -25,9 +25,13 @@ import {
 	skillHitbox,
 	superArmorActive,
 	swingPhase,
+	swingPose,
 	swingPoseCell,
 	swingPoseGlyph,
 	swingProgress,
+	WEAPONS,
+	weaponById,
+	weaponSwingTotal,
 } from '../src';
 
 function monster(x: number, y: number, over: Partial<Entity> = {}): Entity {
@@ -524,5 +528,83 @@ describe('resolveCombat swingStarted', () => {
 		const mid = monster(20, 0, { type: 'player', attackT: fresh.attackT });
 		const cont = resolveCombat(mid, {}, 1, 'warrior', { attack: true }, 0.016);
 		expect(cont.swingStarted).toBe(false);
+	});
+});
+
+describe('resolveCombat with a weapon stat block', () => {
+	const avatar = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, ...over });
+	const great = weaponById(WEAPONS.findIndex((w) => w.name === 'Greatsword'));
+	const dagger = weaponById(WEAPONS.findIndex((w) => w.name === 'Dagger'));
+
+	test('a fresh swing loads the WEAPON phase total, not the default', () => {
+		const r = resolveCombat(
+			avatar({ attackT: 0 }),
+			{},
+			1,
+			'warrior',
+			{ attack: true },
+			0.016,
+			great,
+		);
+		expect(r.attackT).toBe(weaponSwingTotal(great));
+	});
+
+	test('damage and hitbox reach come from the weapon, not the constants', () => {
+		// Position attackT inside the greatsword's own active window.
+		const inActive =
+			weaponSwingTotal(great) - (great.swing.windup + great.swing.active / 2);
+		const r = resolveCombat(
+			avatar({ attackT: inActive }),
+			{},
+			1,
+			'warrior',
+			{ attack: false },
+			0,
+			great,
+		);
+		expect(r.damage).toBe(great.damage);
+		expect(r.hitbox).toEqual(meleeHitbox(avatar(), great.reach));
+		expect(r.hitbox?.w).toBe(great.reach);
+	});
+
+	test('two weapons produce measurably different phase timing from data alone', () => {
+		const swing = (w: typeof great) =>
+			resolveCombat(
+				avatar({ attackT: 0 }),
+				{},
+				1,
+				'warrior',
+				{ attack: true },
+				0.016,
+				w,
+			).attackT;
+		expect(swing(great)).toBeGreaterThan(swing(dagger));
+	});
+});
+
+describe('swingPose — composited weapon visual (pure fn of move, phase, weapon)', () => {
+	const sword = weaponById(0);
+	const great = weaponById(WEAPONS.findIndex((w) => w.name === 'Greatsword'));
+
+	test('returns null for a non-basic (idle / future) move', () => {
+		expect(swingPose('idle', 'windup', sword, 1)).toBeNull();
+	});
+
+	test('the accent glyph is the weapon glyph, oriented by facing', () => {
+		expect(swingPose('basic', 'windup', sword, 1)?.glyph).toBe(sword.glyph);
+		// facing -1 mirrors the diagonal (╱ → ╲)
+		expect(swingPose('basic', 'windup', sword, -1)?.glyph).toBe('╲');
+	});
+
+	test('different weapons composite different glyphs from data alone', () => {
+		expect(swingPose('basic', 'active', great, 1)?.glyph).toBe(great.glyph);
+		expect(swingPose('basic', 'active', great, 1)?.glyph).not.toBe(sword.glyph);
+	});
+
+	test('the slash-arc sweep is present ONLY during the active phase', () => {
+		expect(swingPose('basic', 'windup', sword, 1)?.arc).toBeNull();
+		expect(swingPose('basic', 'active', sword, 1)?.arc).not.toBeNull();
+		expect(swingPose('basic', 'recovery', sword, 1)?.arc).toBeNull();
 	});
 });

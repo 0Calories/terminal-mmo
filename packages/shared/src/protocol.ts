@@ -20,6 +20,7 @@ import type {
 	Rarity,
 	Slot,
 } from './types';
+import { DEFAULT_WEAPON } from './weapons';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -147,7 +148,15 @@ class Reader {
 // Avatar kinematics (ADR 0001: position is client-authoritative) plus the combat
 // intents for the tick. A `skill` of 0 means none was pressed.
 export type ClientMessage =
-	| { t: 'hello'; handle: string; version: string; cosmetics: Cosmetics }
+	| {
+			t: 'hello';
+			handle: string;
+			version: string;
+			cosmetics: Cosmetics;
+			// Equipped Weapon catalog index, declared at connect like cosmetics (ADR 0017
+			// §14): it joins the Avatar's broadcast appearance and keys its stat block.
+			weapon: number;
+	  }
 	| {
 			t: 'input';
 			x: number;
@@ -199,6 +208,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.str(msg.handle);
 			w.str(msg.version);
 			writeCosmetics(w, msg.cosmetics);
+			w.u8(msg.weapon);
 			break;
 		case 'input':
 			w.u8(CLIENT_TAG.input);
@@ -244,7 +254,10 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			// bareheaded look (it is rejected by the version gate regardless).
 			const cosmetics =
 				r.remaining() >= 3 ? readCosmetics(r) : DEFAULT_COSMETICS;
-			return { t: 'hello', handle, version, cosmetics };
+			// Weapon (ADR 0017 §14) trails cosmetics; a client predating it defaults to
+			// the Warrior sword (it is rejected by the version gate regardless).
+			const weapon = r.remaining() >= 1 ? r.u8() : DEFAULT_WEAPON;
+			return { t: 'hello', handle, version, cosmetics, weapon };
 		}
 		case CLIENT_TAG.input: {
 			const x = r.f64();
@@ -299,6 +312,10 @@ export interface AvatarSnapshot {
 	hp: number;
 	maxHp: number;
 	hurtT: number;
+	// Equipped Weapon catalog index (ADR 0017 §14): part of replicated appearance, so
+	// every other client renders this Avatar's weapon (composited sprite + trail) and
+	// reads its swing against the weapon's phase durations.
+	weapon: number;
 	// What this Avatar is doing this tick (ADR 0017 §10): the replicated action-state
 	// that lets every other client render its swing (pose + slash-arc).
 	action: ActionState;
@@ -428,6 +445,7 @@ function writeAvatar(w: Writer, a: AvatarSnapshot) {
 	w.f64(a.hp);
 	w.f64(a.maxHp);
 	w.f64(a.hurtT);
+	w.u8(a.weapon);
 	writeAction(w, a.action);
 }
 
@@ -445,6 +463,7 @@ function readAvatar(r: Reader): AvatarSnapshot {
 		hp: r.f64(),
 		maxHp: r.f64(),
 		hurtT: r.f64(),
+		weapon: r.u8(),
 		action: readAction(r),
 	};
 }

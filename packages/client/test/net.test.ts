@@ -40,6 +40,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 				hp: 50,
 				maxHp: 80,
 				hurtT: 0,
+				weapon: 0,
 				action: IDLE_ACTION,
 			},
 		],
@@ -85,6 +86,7 @@ function withOther(): Extract<ServerMessage, { t: 'snapshot' }> {
 		hp: 30,
 		maxHp: 80,
 		hurtT: 0.5,
+		weapon: 2,
 		action: IDLE_ACTION,
 	});
 	return s;
@@ -117,6 +119,17 @@ test('snapshotToGame threads cosmetics onto co-present Avatars and the own Avata
 		hat: 1,
 		nameplate: 4,
 	});
+});
+
+test('snapshotToGame threads the replicated weapon onto co-present + own Avatars (ADR 0017 §14)', () => {
+	const field = loadField();
+	const predicted = spawnAvatar(33, y);
+	const game = snapshotToGame(field, predicted, 1, withOther(), {});
+	// The co-present rival's weapon comes from its snapshot, so we render ITS weapon.
+	expect(game.others?.[0]?.weapon).toBe(2);
+	// The own (predicted) Avatar is stamped with its own snapshot weapon, so the local
+	// view composites the same weapon every other client sees.
+	expect(game.player.avatar.weapon).toBe(0);
 });
 
 test('snapshotToGame renders snapshot monsters/projectiles with the predicted own Avatar', () => {

@@ -23,6 +23,7 @@ function avatar(sessionId: number, x: number, y: number): AvatarSnapshot {
 		hp: 80,
 		maxHp: 80,
 		hurtT: 0,
+		weapon: 0,
 		action: IDLE_ACTION,
 	};
 }

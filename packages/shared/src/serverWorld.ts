@@ -184,6 +184,7 @@ export function addSession(
 	sessionId: number,
 	handle: string,
 	cosmetics?: Cosmetics,
+	weapon?: number,
 ): ServerWorld {
 	const channels = { ...world.channels };
 	const channel = openRoute(
@@ -193,7 +194,13 @@ export function addSession(
 		world.startZone,
 	);
 	const key = channelKey(world.startZone, channel);
-	channels[key] = addAvatar(channels[key], sessionId, handle, cosmetics);
+	channels[key] = addAvatar(
+		channels[key],
+		sessionId,
+		handle,
+		cosmetics,
+		weapon,
+	);
 	return {
 		...world,
 		channels,

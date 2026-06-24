@@ -23,9 +23,10 @@ import {
 	spriteFor,
 	spriteForNpc,
 	swingPhase,
+	swingPose,
 	swingPoseCell,
-	swingPoseGlyph,
 	swingProgress,
+	weaponById,
 } from '@mmo/shared';
 import {
 	type OptimizedBuffer,
@@ -59,6 +60,7 @@ import {
 	particleDrawRow,
 	particleGlyph,
 	stepParticles,
+	WEAPON_TRAILS,
 } from './particles';
 import type { SoundKind } from './sound/registry';
 import { effectSoundCues } from './sound/world';
@@ -305,8 +307,11 @@ function swingRenderState(
 ): { phase: AttackPhase; progress: number } | null {
 	if (e.action && e.action.move !== 'idle')
 		return { phase: e.action.phase, progress: e.action.progress };
-	const phase = swingPhase(e.attackT);
-	return phase ? { phase, progress: swingProgress(e.attackT) } : null;
+	// The local Avatar's swing is predicted from attackT and read against its WEAPON's
+	// phase durations (ADR 0017 §14), so a slow greatsword's phases read as slow.
+	const swing = weaponById(e.weapon).swing;
+	const phase = swingPhase(e.attackT, swing);
+	return phase ? { phase, progress: swingProgress(e.attackT, swing) } : null;
 }
 
 // Realize an entity's basic swing from its action-state (ADR 0017 §13a/b): a
@@ -323,33 +328,57 @@ function drawSwing(
 ) {
 	const st = swingRenderState(e);
 	if (!st) return;
+	// Composite the equipped WEAPON onto the per-phase pose (ADR 0017 §13b/§14): the
+	// weapon's own glyph as the tip accent, swept by the shared pose system, plus its
+	// reach for the slash-arc. The selection is the shared pure swingPose, so the
+	// weapon looks identical to its owner and to every observer.
+	const weapon = weaponById(e.weapon);
+	const move = e.action && e.action.move !== 'idle' ? e.action.move : 'basic';
+	const pose = swingPose(move, st.phase, weapon, e.facing);
+	if (!pose) return;
 
 	// Pose accent: the weapon tip, cocked-back → level → trailing across the phases.
 	const cell = swingPoseCell(e, st.phase);
 	const ax = Math.round(cell.x - cam.x);
 	const ay = Math.round(cell.y - cam.y);
 	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
-		buf.setCellWithAlphaBlending(
-			ax,
-			ay,
-			swingPoseGlyph(st.phase, e.facing),
-			C.melee,
-			C.transparent,
-		);
+		buf.setCellWithAlphaBlending(ax, ay, pose.glyph, C.melee, C.transparent);
 
 	// Slash-arc only while the hitbox is live (active phase): a vivid sweep of the
-	// facing diagonal across the whole melee reach, so the dangerous window reads at
-	// a glance and matches exactly where damage lands.
-	if (st.phase !== 'active') return;
-	const hb = meleeHitbox(e);
-	const glyph = e.facing === 1 ? '╱' : '╲';
+	// facing diagonal across the whole WEAPON reach, so the dangerous window reads at
+	// a glance and matches exactly where damage lands (a greatsword's arc is wider).
+	if (!pose.arc) return;
+	const hb = meleeHitbox(e, weapon.reach);
 	for (let yy = 0; yy < hb.h; yy++) {
 		for (let xx = 0; xx < hb.w; xx++) {
 			const px = Math.round(hb.x + xx - cam.x);
 			const py = Math.round(hb.y + yy - cam.y);
 			if (px >= 0 && px < sw && py >= 0 && py < sh)
-				buf.setCellWithAlphaBlending(px, py, glyph, C.melee, C.transparent);
+				buf.setCellWithAlphaBlending(px, py, pose.arc, C.melee, C.transparent);
 		}
+	}
+}
+
+// Spawn a weapon's active-sweep trail (ADR 0017 §14): for every Avatar mid-swing in
+// its active phase whose equipped Weapon defines a trail, drop a wisp at the swept
+// arc tip, biased along facing. Driven straight off the render frame (not a wire
+// Effect), so the streak follows the live blade; the short-lived, non-colliding
+// profiles wink out fast. Both the local Avatar and co-present ones go through one
+// path, so everyone sees everyone's trail.
+function emitWeaponTrails(
+	particles: ParticleSystem,
+	game: GameState,
+	rng: () => number,
+) {
+	const swingers = [game.player.avatar, ...(game.others ?? [])];
+	for (const e of swingers) {
+		if (e.type !== 'player') continue;
+		const trail = weaponById(e.weapon).trail;
+		if (!trail) continue;
+		const st = swingRenderState(e);
+		if (st?.phase !== 'active') continue;
+		const cell = swingPoseCell(e, 'active');
+		particles.spawn(WEAPON_TRAILS[trail], cell.x, cell.y, e.facing, rng);
 	}
 }
 
@@ -583,6 +612,11 @@ export class PlayfieldRenderable extends Renderable {
 			w: buffer.width,
 			h: buffer.height,
 		});
+
+		// Weapon swing trails (ADR 0017 §14): spawned per render frame off any live
+		// active-phase swing, so the streak follows the blade. Stepped next frame with
+		// the rest of the pool.
+		emitWeaponTrails(this.particles, this.game, Math.random);
 
 		// Voice the same fresh Effects as world SoundEffects (ADR 0014), spatialized
 		// against the live camera: pan by horizontal offset, volume by distance, y

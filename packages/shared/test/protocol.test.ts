@@ -3,6 +3,7 @@ import type { ClientMessage, ServerMessage } from '../src';
 import {
 	ACTION_FLAG,
 	DEFAULT_COSMETICS,
+	DEFAULT_WEAPON,
 	decodeClientMessage,
 	decodeServerMessage,
 	encodeClientMessage,
@@ -10,18 +11,19 @@ import {
 	IDLE_ACTION,
 } from '../src';
 
-test('hello round-trips the handle + release version + cosmetics', () => {
+test('hello round-trips the handle + release version + cosmetics + weapon', () => {
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'neo',
 		version: '0.3.0',
 		cosmetics: { hue: 3, hat: 2, nameplate: 5 },
+		weapon: 2,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
 });
 
-test('a truncated hello (no version field) decodes to empty version + default cosmetics', () => {
+test('a truncated hello (no version field) decodes to empty version + default cosmetics + weapon', () => {
 	// Hand-roll a hello with only tag(1) + u32 length-prefixed handle and nothing
 	// after: decode must not throw, and the absent Version becomes '' — which fails
 	// the server's equality gate cleanly.
@@ -35,6 +37,7 @@ test('a truncated hello (no version field) decodes to empty version + default co
 		handle: 'legacy',
 		version: '',
 		cosmetics: DEFAULT_COSMETICS,
+		weapon: DEFAULT_WEAPON,
 	});
 });
 
@@ -47,12 +50,14 @@ test('hello clamps an out-of-range cosmetic index to the default on decode', () 
 		handle: 'forward',
 		version: '0.3.0',
 		cosmetics: { hue: 2, hat: 250, nameplate: 1 },
+		weapon: 1,
 	});
 	expect(decodeClientMessage(encoded)).toEqual({
 		t: 'hello',
 		handle: 'forward',
 		version: '0.3.0',
 		cosmetics: { hue: 2, hat: 0, nameplate: 1 },
+		weapon: 1,
 	});
 });
 
@@ -195,6 +200,8 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 				hp: 80,
 				maxHp: 92,
 				hurtT: 0.3,
+				// Equipped Weapon index joins the broadcast appearance (ADR 0017 §14).
+				weapon: 2,
 				// Mid-swing action-state (ADR 0017 §10) — exercises a non-idle round-trip.
 				action: { move: 'basic', phase: 'active', progress: 0.5, flags: 0 },
 			},
@@ -259,6 +266,7 @@ test('snapshot round-trips the per-entity action-state across every phase (ADR 0
 		hp: 1,
 		maxHp: 1,
 		hurtT: 0,
+		weapon: DEFAULT_WEAPON,
 		action: act,
 	});
 	const msg: ServerMessage = {

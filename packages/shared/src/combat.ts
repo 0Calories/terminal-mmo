@@ -7,7 +7,7 @@ import {
 	skillHitbox,
 	skillUnlocked,
 } from './skills';
-import { spriteFor } from './sprites';
+import { mirrorGlyph, spriteFor } from './sprites';
 import type {
 	ActionState,
 	AttackPhase,
@@ -15,8 +15,11 @@ import type {
 	Effect,
 	Entity,
 	Facing,
+	MoveId,
+	SwingPhases,
 	Tint,
 } from './types';
+import { DEFAULT_WEAPON, type Weapon, weaponById } from './weapons';
 
 const BODY_PALETTE: Record<string, RGBAQuad> = SCENE_PALETTE;
 
@@ -62,34 +65,53 @@ export function entityBox(e: Entity): Box {
 // (the action-state is derived, not stored extra) and means client prediction and
 // the server share the exact same scalar through `resolveCombat`.
 
-export const SWING_TOTAL =
-	COMBAT.swing.windup + COMBAT.swing.active + COMBAT.swing.recovery;
+// The total committed duration of a swing under a given phase config. The phase
+// functions interpret `attackT` (time remaining) against this total, so a weapon's
+// own `swing` (ADR 0017 §14) reshapes the machine without any other change.
+export function swingTotal(swing: SwingPhases = COMBAT.swing): number {
+	return swing.windup + swing.active + swing.recovery;
+}
+
+// The default-attack total, retained as a constant for the unarmed/default path and
+// the many call sites + tests that key off it (a weapon passes its own `swing`).
+export const SWING_TOTAL = swingTotal();
 
 // The phase of a basic swing for a given `attackT` (time remaining), or null when
-// idle. Pure; the single source of truth for "what phase is this swing in".
-export function swingPhase(attackT: number): AttackPhase | null {
+// idle. Pure; the single source of truth for "what phase is this swing in". `swing`
+// defaults to the standard attack — a weapon passes its own phase durations so the
+// same function drives a slow greatsword and a fast dagger (ADR 0017 §14).
+export function swingPhase(
+	attackT: number,
+	swing: SwingPhases = COMBAT.swing,
+): AttackPhase | null {
 	if (attackT <= 0) return null;
-	const elapsed = SWING_TOTAL - attackT;
-	if (elapsed < COMBAT.swing.windup) return 'windup';
-	if (elapsed < COMBAT.swing.windup + COMBAT.swing.active) return 'active';
+	const elapsed = swingTotal(swing) - attackT;
+	if (elapsed < swing.windup) return 'windup';
+	if (elapsed < swing.windup + swing.active) return 'active';
 	return 'recovery';
 }
 
 // Progress 0..1 through the CURRENT phase, for render interpolation (pose lean,
 // arc sweep). 0 at a phase's start, →1 at its end. Idle reads 0.
-export function swingProgress(attackT: number): number {
-	const phase = swingPhase(attackT);
+export function swingProgress(
+	attackT: number,
+	swing: SwingPhases = COMBAT.swing,
+): number {
+	const phase = swingPhase(attackT, swing);
 	if (!phase) return 0;
-	const { windup, active, recovery } = COMBAT.swing;
-	const elapsed = SWING_TOTAL - attackT;
+	const { windup, active, recovery } = swing;
+	const elapsed = swingTotal(swing) - attackT;
 	if (phase === 'windup') return windup > 0 ? elapsed / windup : 1;
 	if (phase === 'active') return active > 0 ? (elapsed - windup) / active : 1;
 	return recovery > 0 ? (elapsed - windup - active) / recovery : 1;
 }
 
 // The melee hitbox is live ONLY during the active phase (ADR 0017 §1).
-export function meleeActive(attackT: number): boolean {
-	return swingPhase(attackT) === 'active';
+export function meleeActive(
+	attackT: number,
+	swing: SwingPhases = COMBAT.swing,
+): boolean {
+	return swingPhase(attackT, swing) === 'active';
 }
 
 // The action-state `flags` bitfield (ADR 0017 §10): a compact set of reaction /
@@ -124,8 +146,11 @@ export const IDLE_ACTION: ActionState = {
 // Super-armor (ADR 0017 §3): while an attacker is in its own attack wind-up, a hit
 // chips its Poise but cannot break it — so a jab can't interrupt a committed heavy
 // swing. A pure function of the swing timer, symmetric for every entity.
-export function superArmorActive(e: Entity): boolean {
-	return swingPhase(e.attackT) === 'windup';
+export function superArmorActive(
+	e: Entity,
+	swing: SwingPhases = COMBAT.swing,
+): boolean {
+	return swingPhase(e.attackT, swing) === 'windup';
 }
 
 // Apply a hit's poise damage to an entity, returning its new pool and whether the
@@ -160,11 +185,19 @@ export function regenPoise(e: Entity, dt: number): number {
 // (`attackT`). In this slice only Avatars run the phase machine; the snapshot
 // builder calls this for Avatars and replicates IDLE_ACTION for Monsters (their
 // offense rework is a later slice). Pure — the wire field is computed, not stored.
-export function actionStateOf(e: Entity): ActionState {
+export function actionStateOf(
+	e: Entity,
+	swing: SwingPhases = COMBAT.swing,
+): ActionState {
 	const flags = actionFlags(e);
-	const phase = swingPhase(e.attackT);
+	const phase = swingPhase(e.attackT, swing);
 	if (!phase) return flags ? { ...IDLE_ACTION, flags } : IDLE_ACTION;
-	return { move: 'basic', phase, progress: swingProgress(e.attackT), flags };
+	return {
+		move: 'basic',
+		phase,
+		progress: swingProgress(e.attackT, swing),
+		flags,
+	};
 }
 
 // --- Slash-arc + per-phase pose realization data (ADR 0017 §13a/b) ----------
@@ -197,8 +230,30 @@ export function swingPoseCell(
 	return { x: lead, y: row };
 }
 
-export function meleeHitbox(p: Entity): Box {
-	const w = COMBAT.meleeReach;
+// The composited weapon visual for a swing phase (ADR 0017 §13b/§14): the weapon's
+// own glyph posed as the weapon tip, plus the slash-arc sweep glyph during the active
+// phase. A PURE function of (move, phase, weapon, facing) ONLY — no entity, no
+// renderer state — so the pose↔phase↔weapon mapping is deterministic and unit-tested,
+// and the SAME weapon renders identically for its owner and every observer. Returns
+// null when the move isn't a basic swing (idle / future moves draw no weapon accent).
+export interface SwingPose {
+	glyph: string; // weapon-tip accent, already oriented for facing
+	arc: string | null; // slash-arc sweep glyph (active phase only), else null
+}
+export function swingPose(
+	move: MoveId,
+	phase: AttackPhase,
+	weapon: Weapon,
+	facing: Facing,
+): SwingPose | null {
+	if (move !== 'basic') return null;
+	const glyph = facing === 1 ? weapon.glyph : mirrorGlyph(weapon.glyph);
+	const arc = phase === 'active' ? (facing === 1 ? '╱' : '╲') : null;
+	return { glyph, arc };
+}
+
+export function meleeHitbox(p: Entity, reach: number = COMBAT.meleeReach): Box {
+	const w = reach;
 	return {
 		x: p.facing === 1 ? p.x + BOX.w : p.x - w,
 		y: p.y,
@@ -314,6 +369,7 @@ export function resolveCombat(
 	cls: PlayerClass,
 	intent: { attack: boolean; skill?: number },
 	dt: number,
+	weapon: Weapon = weaponById(DEFAULT_WEAPON),
 ): {
 	hitbox: Box | null;
 	damage: number;
@@ -339,11 +395,11 @@ export function resolveCombat(
 	// shared hitbox slot and keeps its instant cooldown behavior (active-skill rework
 	// is out of this slice's scope).
 	const starting = intent.attack && attackT <= 0;
-	const nextAttackT = starting ? SWING_TOTAL : attackT;
-	let hitbox: Box | null = meleeActive(nextAttackT)
-		? meleeHitbox(avatar)
+	const nextAttackT = starting ? swingTotal(weapon.swing) : attackT;
+	let hitbox: Box | null = meleeActive(nextAttackT, weapon.swing)
+		? meleeHitbox(avatar, weapon.reach)
 		: null;
-	let damage: number = COMBAT.meleeDamage;
+	let damage: number = weapon.damage;
 	let skillFired: Skill | undefined;
 
 	if (intent.skill) {

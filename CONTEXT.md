@@ -283,6 +283,23 @@ A slotted, cooldown-bound special move (e.g. Power Strike, Ground Pound) fired o
 its own input. Distinct from a passive **Moveset ability**.
 _Avoid_: Ability, spell, move
 
+**Weapon stat block**:
+The data an equipped Weapon **Item** contributes to combat and visuals (ADR 0017
+§14): damage, arc size (melee reach), **Poise** damage, **Knockback**, and the
+**Attack phase** durations (phase-speed), plus a pose glyph and an optional
+**Trail**. Drives a greatsword's slow-and-heavy feel vs a dagger's fast-and-light
+one through the *same* resolution path — no per-weapon special-casing. The
+weapon's catalog index joins the Avatar's replicated appearance, so others see
+your weapon. All weapons share the one Warrior **Moveset** for now.
+_Avoid_: Weapon type, weapon class (reserve **Class** for the Avatar archetype)
+
+**Trail**:
+A short-lived particle streak that follows a **Weapon**'s blade through its
+**active** phase (ADR 0017 §14), defined per-weapon by a key the client resolves
+to a ParticleType — the same shared-owns-the-fact / client-owns-the-pixels seam as
+an Effect. Purely visual; absent on a weapon means no trail.
+_Avoid_: Swoosh, slash effect (reserve "slash-arc" for the hitbox sweep glyph)
+
 **Intent**:
 The per-tick bundle of what an Avatar is trying to do, reported by the client
 and resolved authoritatively by the server (ADR 0001): the Avatar's reported
