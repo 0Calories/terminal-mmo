@@ -16,7 +16,7 @@ import {
 } from '../src/sprites';
 import { parseTerrain } from '../src/terrain';
 import type { Entity, EntityType, Facing } from '../src/types';
-import { weaponById } from '../src/weapons';
+import { WEAPONS, weaponById } from '../src/weapons';
 
 interface Cell {
 	ch: string;
@@ -626,6 +626,81 @@ test('the active phase renders the blade-edge arc in the accent colour; other ph
 	expect(forward.length).toBeGreaterThan(0);
 	for (const c of forward)
 		expect(idle.at(bodyGripX + c.dx, bodyGripY + c.dy)).toBeUndefined();
+});
+
+test('the three weapons render distinct idle silhouettes and accents through the shared renderer (#184)', () => {
+	const indices = [
+		0, // Sword (default)
+		WEAPONS.findIndex((w) => w.name === 'Greatsword'),
+		WEAPONS.findIndex((w) => w.name === 'Dagger'),
+	];
+
+	// Render each weapon at rest and read its composited idle layer back from the buffer,
+	// so the check exercises the REAL shared compositing path (not just the sprite data).
+	const signatures = indices.map((wi) => {
+		const weapon = weaponById(wi);
+		const ws = weapon.sprite;
+		const frame = ws?.frames.idle;
+		if (!ws || !frame)
+			throw new Error(`weapon ${weapon.name} must author an idle frame`);
+
+		const buf = new FakeBuffer(24, 16);
+		const e = makeEntity({
+			type: 'player',
+			x: 10,
+			y: 6,
+			facing: 1,
+			weapon: wi,
+		});
+		renderZoneScene(
+			buf,
+			{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+			{ x: 0, y: 0 },
+			STYLE,
+		);
+
+		const { sprite: body, ax: sx, ay: sy } = avatarTopLeft(e);
+		const grip = body.grip;
+		if (!grip) throw new Error('expected the body to declare a grip cell');
+		const bodyGripX = sx + grip.x; // facing 1
+		const bodyGripY = sy + grip.y;
+		const wx = bodyGripX - ws.grip.x;
+		const wy = bodyGripY - ws.grip.y;
+
+		// Footprint signature: each lit idle cell's relative position + glyph, confirmed
+		// against the rendered buffer; the set of foreground colours it actually painted.
+		const glyphs = frame.rows(1);
+		const footprint: string[] = [];
+		const fgs = new Set<string>();
+		for (let ry = 0; ry < frame.h; ry++) {
+			for (let rx = 0; rx < frame.w; rx++) {
+				const ch = glyphs[ry][rx];
+				if (ch === ' ') continue;
+				const cell = buf.at(wx + rx, wy + ry);
+				expect(cell?.ch).toBe(ch);
+				footprint.push(`${rx},${ry}:${ch}`);
+				if (cell?.fg) fgs.add(cell.fg);
+			}
+		}
+		return {
+			name: weapon.name,
+			footprint: footprint.join('|'),
+			accentFg: accentFg(ws.accent),
+			fgs,
+		};
+	});
+
+	// Silhouettes are pairwise distinct — the three weapons read apart at rest by shape.
+	const footprints = signatures.map((s) => s.footprint);
+	expect(new Set(footprints).size).toBe(signatures.length);
+
+	// Accents are pairwise distinct AND each weapon's accent colour actually reaches the
+	// screen — its blade (`a`) cells render in that hue (the dynamic accent channel, §6).
+	const accents = signatures.map((s) => s.accentFg);
+	expect(new Set(accents).size).toBe(signatures.length);
+	for (const s of signatures) {
+		expect(s.fgs.has(s.accentFg)).toBe(true);
+	}
 });
 
 test('a weaponless Avatar draws no weapon layer', () => {

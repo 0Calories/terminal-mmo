@@ -855,6 +855,25 @@ describe('sweepIndex — active-sweep frame for a swingProgress (ADR 0018 §4)',
 		expect(sweepIndex(0.5, 1)).toBe(0); // a single-frame sweep
 		expect(sweepIndex(0.5, 0)).toBe(0); // an empty sweep never indexes out of range
 	});
+
+	// Heft is DURATION-driven, not frame-count-driven (ADR 0018 §4, #184): a heavy and a
+	// light weapon author the SAME fixed-length sweep, so at any given swingProgress they
+	// select the SAME sweep frame — what differs is how long each frame lingers (the
+	// weapon's phase durations), never the number of frames.
+	test('a heavy and a light weapon select the same sweep frame at the same progress', () => {
+		const great = weaponById(WEAPONS.findIndex((w) => w.name === 'Greatsword'))
+			.sprite?.frames.active;
+		const dagger = weaponById(WEAPONS.findIndex((w) => w.name === 'Dagger'))
+			.sprite?.frames.active;
+		if (!great || !dagger)
+			throw new Error('expected greatsword and dagger to author active sweeps');
+		// Same number of frames — the engine fixes sweep length; the weapon supplies art.
+		expect(great.length).toBe(dagger.length);
+		// And so the SAME progress lands on the SAME frame index for both, end to end.
+		for (let p = 0; p <= 1.0001; p += 0.05) {
+			expect(sweepIndex(p, great.length)).toBe(sweepIndex(p, dagger.length));
+		}
+	});
 });
 
 describe('bladeEdgeArc — blade-edge arc smear (ADR 0018 §5)', () => {
