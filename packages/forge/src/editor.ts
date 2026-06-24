@@ -1060,7 +1060,14 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				const sceneCam = { x: cam.x - GUTTER_W, y: cam.y - RULER_H };
 				const ghost = ghostEntity(catalogs, ghostP, a.x, a.y);
 				if (ghost?.kind === 'entity') {
-					drawEntitySprite(buf, ghost.entity, sceneCam, style, ghostStyle);
+					drawEntitySprite(
+						buf,
+						ghost.entity,
+						sceneCam,
+						style,
+						undefined,
+						ghostStyle,
+					);
 				} else if (ghost?.kind === 'npc') {
 					drawNpcSprite(buf, ghost.npc, sceneCam, style, ghostStyle);
 				} else {

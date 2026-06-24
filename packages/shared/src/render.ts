@@ -109,6 +109,19 @@ export interface GhostStyle<C> {
 // the cosmetic body hue uses to repaint the Avatar's `p` cells per Avatar (#35),
 // leaving the shared palette untouched. An optional `ghost` keeps every glyph as-is
 // but fades each cell's colour (via `ghost.fade`) over an opaque tint (#118).
+// The per-cell terrain context a body/sprite blit needs to plant onto the ground
+// (ADR 0021): the world grid plus the whole-cell camera offset, so the blit can ask
+// `isSolid` under each screen cell. When a lit cell sits over solid terrain its
+// background is painted with the visible block colour (`terrainFg`) and written
+// OPAQUELY — never alpha-blended over the existing cell, which would composite over the
+// hidden `terrainBg` and stamp a dark notch (the base-then-blend lesson from ADR 0016).
+// Absent → the sprite blits transparently as before (the forge ghost, off-terrain feet).
+interface PlantContext {
+	terrain: Terrain;
+	camX: number;
+	camY: number;
+}
+
 function blitSprite<C>(
 	buf: CellBuffer<C>,
 	sprite: Sprite,
@@ -119,6 +132,7 @@ function blitSprite<C>(
 	style: RenderStyle<C>,
 	recolor?: Readonly<Record<string, C>>,
 	ghost?: GhostStyle<C>,
+	plant?: PlantContext,
 ): void {
 	const sw = buf.width;
 	const sh = buf.height;
@@ -145,6 +159,15 @@ function blitSprite<C>(
 				? style.hurt
 				: (recolor?.[key] ?? style.palette[key] ?? style.paletteDefault);
 			if (ghost) buf.setCell(px, py, ch, ghost.fade(fg), ghost.bg);
+			else if (
+				plant &&
+				isSolid(plant.terrain, px + plant.camX, py + plant.camY)
+			)
+				// Over solid ground: paint the cell's background with the visible terrain
+				// block colour and write OPAQUELY, so a half-block foot's air-side reads as
+				// ground (the boot's top half stays the body colour). Opaque, not blended,
+				// so it never composites over the hidden terrainBg (ADR 0021 / ADR 0016).
+				buf.setCell(px, py, ch, fg, style.terrainFg);
 			else buf.setCellWithAlphaBlending(px, py, ch, fg, style.transparent);
 		}
 	}
@@ -186,6 +209,7 @@ export function drawEntitySprite<C>(
 	e: Entity,
 	cam: { x: number; y: number },
 	style: RenderStyle<C>,
+	terrain?: Terrain,
 	ghost?: GhostStyle<C>,
 ): void {
 	// The action an entity is performing this frame (ADR 0017 §10): observers read the
@@ -215,6 +239,7 @@ export function drawEntitySprite<C>(
 	// every Pose resolves to idle; the per-Form grip/head anchors carry the weapon and hat.
 	const body = e.type === 'player' ? formById(e.cosmetics?.form) : null;
 	let sprite: Sprite;
+	let baseline: number;
 	let grip: { x: number; y: number } | undefined;
 	let head: { x: number; y: number } | undefined;
 	if (body) {
@@ -236,16 +261,32 @@ export function drawEntitySprite<C>(
 			staggered,
 		});
 		sprite = formFrame(body, pose.poseId, pose.frameIndex);
+		// The baseline is a per-Form property (applies across the whole frame set), not a
+		// per-frame one, so it rides the BodySprite — not the resolved Pose grid (ADR 0021).
+		baseline = body.baseline ?? 0;
 		grip = body.grip;
 		head = body.head;
 	} else {
 		sprite = spriteFor(e.type);
+		// The legacy single-frame Monster path reads its baseline off the Sprite itself.
+		baseline = sprite.baseline;
 		grip = sprite.grip;
 	}
 
 	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2) - cam.x);
-	const sy = Math.round(e.y + BOX.h - sprite.h - cam.y);
+	// `baseline` shifts the WHOLE sprite down so its bottom row plants on the terrain
+	// surface row (`e.y + BOX.h`) instead of one cell above (ADR 0021); default 0 leaves
+	// the anchor exactly where it was.
+	const sy = Math.round(e.y + BOX.h - sprite.h + baseline - cam.y);
 	const hurt = e.hurtT > 0.3;
+	// The body/sprite layer plants onto solid ground (ADR 0021): pass the terrain context
+	// so each cell over solid terrain is composited opaquely against `terrainFg`. Skipped
+	// in ghost mode (the forge preview owns its own background). The whole-cell camera
+	// matches the terrain layer's, so solidity lines up with the drawn blocks.
+	const plant: PlantContext | undefined =
+		terrain && !ghost
+			? { terrain, camX: Math.round(cam.x), camY: Math.round(cam.y) }
+			: undefined;
 	blitSprite(
 		buf,
 		sprite,
@@ -256,6 +297,7 @@ export function drawEntitySprite<C>(
 		style,
 		recolorFor(e, style),
 		ghost,
+		plant,
 	);
 
 	// The equipped weapon: an always-anchored layer composited ON TOP of the body at
@@ -292,6 +334,7 @@ export function drawEntitySprite<C>(
 				// Repaint the blade's accent cells to the dynamic accent colour for this blit.
 				{ [WEAPON_ACCENT_KEY]: accent },
 				ghost,
+				plant,
 			);
 		}
 		// The blade-edge arc (ADR 0018 §5): a short fading smear of curve glyphs tracing the
@@ -325,7 +368,18 @@ export function drawEntitySprite<C>(
 			: (sprite.w - 1) / 2;
 		const hx = sx + Math.round(headX - (hat.w - 1) / 2);
 		const hy = sy + (head?.y ?? 0) - hat.h;
-		blitSprite(buf, hat, hx, hy, e.facing, hurt, style, undefined, ghost);
+		blitSprite(
+			buf,
+			hat,
+			hx,
+			hy,
+			e.facing,
+			hurt,
+			style,
+			undefined,
+			ghost,
+			plant,
+		);
 	}
 }
 
@@ -471,8 +525,29 @@ export function renderZoneScene<C>(
 		const wy = sy + camY;
 		for (let sx = 0; sx < sw; sx++) {
 			const wx = sx + camX;
-			if (isSolid(terrain, wx, wy) && wx >= 0 && wx < ww && wy >= 0 && wy < wh)
-				buf.setCell(sx, sy, '█', style.terrainFg, style.terrainBg);
+			if (
+				isSolid(terrain, wx, wy) &&
+				wx >= 0 &&
+				wx < ww &&
+				wy >= 0 &&
+				wy < wh
+			) {
+				// A top-surface solid cell (air directly above) renders as the lower-half
+				// block `▄`, dropping the visible ground line to the cell's vertical middle;
+				// interior cells stay full `█` (ADR 0021). This is the other half of planting:
+				// a slim top-ink `▀` foot composited into the surface cell now rests ON the
+				// lowered line (boot in the top half, ground in the bottom) instead of being
+				// buried by a full-height block. Non-`▀`-footed sprites float a half-cell over
+				// the lowered line until they adopt contact feet — the accepted transitional
+				// state of the one-sprite-at-a-time convergence.
+				// The surface cell's empty TOP half is sky, so its background must be the scene
+				// `bg`, NOT `terrainBg` (the dark shade that hides behind a full `█`) — else
+				// every exposed ground edge stamps a faint mismatched band above it. Interior
+				// `█` cells fully cover their bg, so they keep `terrainBg`.
+				const surface = !isSolid(terrain, wx, wy - 1);
+				if (surface) buf.setCell(sx, sy, '▄', style.terrainFg, style.bg);
+				else buf.setCell(sx, sy, '█', style.terrainFg, style.terrainBg);
+			}
 		}
 	}
 
@@ -503,7 +578,7 @@ export function renderZoneScene<C>(
 	// gets correct depth without duplicating the rule.
 	const sprites = [...scene.entities].sort((a, b) => a.y - b.y);
 	for (const e of sprites) {
-		drawEntitySprite(buf, e, cam, style);
+		drawEntitySprite(buf, e, cam, style, terrain);
 		drawNameplate(buf, e, cam, terrain, style);
 	}
 }

@@ -66,14 +66,39 @@ and render it **into the terrain surface cell itself**.
    tucked-foot styling; we do not sample terrain per foot column or author a
    half-planted pose.
 
+5. **The terrain top surface renders as a lower-half block `▄`, dropping the visible
+   ground line half a cell.** Decisions 1–3 alone *bury* the foot: dropping the figure
+   a full cell lands the slim `▀` boot — whose ink is only the cell's *top* half — into
+   a full-`█` surface cell, so the boot reads as half-sunk below a ground line that sits
+   at the cell's top edge. The fix is to move the **ground**, not the figure: a solid
+   cell with air directly above (`!isSolid(wx, wy-1)`) draws as `▄`, so its visible top
+   edge falls to the cell's vertical middle. A `▀` boot composited into that cell then
+   rests its bottom edge *on* that line — boot in the top half (above the line), ground
+   in the bottom half (the composite) — while staying joined to the body in the cell
+   above. This is what makes a slim, top-ink foot **simultaneously connected, slim, and
+   flush** — the trilemma the half-block grid otherwise forbids (a top-ink foot's bottom
+   edge lands at a cell *middle*, so no integer baseline alone can make it flush). Only
+   the exposed top row lowers; interior cells stay `█`.
+
+   The cost is borne by sprites that have **not** adopted ink-top contact feet: a
+   full-block or lower-ink foot ends at a cell *bottom*, so it can only be flush against
+   a ground line at a cell *top* (the old `█` surface). Once the line drops to `▄`,
+   `merchant`/`chaser`/`shooter` and the NPCs float a half-cell until re-arted. This is
+   accepted as the transitional state of the one-sprite-at-a-time convergence (it is the
+   same end-state the rejected "global anchor change" below describes, reached gradually):
+   the buddy plants flush now; each other sprite plants the day it gains `▀` feet +
+   `baseline: 1`. The `█` surface is no longer reachable, so full-block contact feet are
+   no longer a fallback — every grounded sprite converges on ink-top contact feet.
+
 ## Considered and rejected
 
 - **Lower the feet ink to `▄` at the current anchor.** Plants the foot on the
   surface but severs it from the body — the air-half now faces up, opening an
   ankle-height gap. Rejected; it trades the float for a detachment.
 - **Full-block `█` feet.** Connects both up and down with no anchor or render
-  change, but discards the slim half-block foot the redesign is built around.
-  Retained only as a fallback if compositing looks muddy in a real terminal.
+  change, but discards the slim half-block foot the redesign is built around. Was
+  retained as a fallback, but decision 5 lowers the ground line to `▄`, which a
+  full-block foot can no longer sit flush on — so this is now ruled out, not a fallback.
 - **A fourth sprite row.** Gives the foot its own cell but changes world-scale;
   ADR 0020 fixed the footprint at 9×3 so platform spacing and jump height stay
   valid. Rejected as the expensive option.
@@ -97,6 +122,13 @@ and render it **into the terrain surface cell itself**.
 - The convention is precedent-setting: every future pose, Form, and (eventually)
   animated Monster inherits "planted when over ground, floating when not" for free,
   and authoring a new grounded sprite is "ink-top feet + `baseline: 1`."
-- The shooter's identical float is left in place until its next redraw, which fixes
-  it with the same two-line move.
+- `renderZoneScene` renders a top-surface solid cell (air directly above) as `▄`
+  instead of `█` (decision 5). This is a global, sprite-agnostic terrain change, so the
+  visible ground line is half a cell lower everywhere — a thinner surface line, the same
+  through the forge preview and the live client (one shared render path).
+- `merchant`, `chaser`, `shooter`, and the NPCs float a half-cell over the lowered
+  line until each adopts `▀` feet + `baseline: 1`. This is the deliberate transitional
+  cost of decision 5, not a regression to fix in isolation; it resolves per sprite as
+  the art converges. (It supersedes the earlier "merchant/chaser render exactly as
+  today" expectation, which assumed the `█` surface.)
 </content>

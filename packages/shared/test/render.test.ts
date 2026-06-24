@@ -159,8 +159,19 @@ function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
 const flat20 = () =>
 	parseTerrain(Array.from({ length: 16 }, () => '.'.repeat(20)));
 
-test('terrain: solid cells render as a block; empty cells stay cleared', () => {
-	// 6 wide, 4 tall, a single solid cell at world (3, 2).
+// A ground plane: every row at or below the terrain surface (the row the planted
+// feet land on, `e.y + BOX.h`) is solid, so an Avatar's feet row samples solid
+// ground while its body rows above do not.
+const groundUnder = (e: Entity) => {
+	const surface = Math.round(e.y + BOX.h);
+	return parseTerrain(
+		Array.from({ length: 16 }, (_, r) => (r >= surface ? '#' : '.').repeat(20)),
+	);
+};
+
+test('terrain: a solid cell renders as a block; empty cells stay cleared', () => {
+	// 6 wide, 4 tall, a single solid cell at world (3, 2). With air directly above, it is a
+	// top surface, so it renders as the lower-half block `▄` (the lowered ground line, ADR 0021).
 	const terrain = parseTerrain(['......', '......', '...#..', '......']);
 	const buf = new FakeBuffer(6, 4);
 
@@ -172,12 +183,31 @@ test('terrain: solid cells render as a block; empty cells stay cleared', () => {
 	);
 
 	expect(buf.cleared).toBe('BG');
-	expect(buf.at(3, 2)).toEqual({ ch: '█', fg: 'TFG', bg: 'TBG' });
+	// Surface cell: ground in the lower half (`▄`/`TFG`), sky in the upper half — so its bg
+	// is the scene `BG`, not `terrainBg`, and the empty half vanishes into the background.
+	expect(buf.at(3, 2)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' });
 	expect(buf.at(0, 0)).toBeUndefined();
 });
 
+test('the terrain top surface lowers to ▄; interior cells stay █ (ADR 0021)', () => {
+	// Two stacked solid rows: the upper is a top surface (air above) → `▄`; the lower has
+	// solid above → full `█`. The half-cell ground line lets slim contact feet plant flush.
+	const terrain = parseTerrain(['......', '...#..', '...#..', '......']);
+	const buf = new FakeBuffer(6, 4);
+
+	renderZoneScene(
+		buf,
+		{ terrain, portals: [], npcs: [], entities: [] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	expect(buf.at(3, 1)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' }); // surface: sky bg
+	expect(buf.at(3, 2)).toEqual({ ch: '█', fg: 'TFG', bg: 'TBG' }); // interior
+});
+
 test('terrain scrolls with the camera', () => {
-	// Solid at world (3, 2); camera at (2, 1) shifts it to screen (1, 1).
+	// Solid at world (3, 2); camera at (2, 1) shifts it to screen (1, 1). Air above → `▄`.
 	const terrain = parseTerrain(['......', '......', '...#..', '......']);
 	const buf = new FakeBuffer(6, 4);
 
@@ -188,7 +218,7 @@ test('terrain scrolls with the camera', () => {
 		STYLE,
 	);
 
-	expect(buf.at(1, 1)).toEqual({ ch: '█', fg: 'TFG', bg: 'TBG' });
+	expect(buf.at(1, 1)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' }); // surface: sky bg
 	expect(buf.at(3, 2)).toBeUndefined();
 });
 
@@ -231,7 +261,10 @@ test('ghost mode keeps every glyph as-is and fades the colour over the tint (#11
 	// every one must survive unchanged (no glyph swap) — only the colour is faded.
 	const e = makeEntity({ type: 'shooter', x: 6, y: 6 });
 	const fade = (fg: string) => `FADED(${fg})`;
-	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE, { bg: 'TINT', fade });
+	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE, undefined, {
+		bg: 'TINT',
+		fade,
+	});
 
 	const sprite = spriteFor('shooter');
 	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
@@ -340,9 +373,9 @@ test('entities are z-ordered by y: a lower entity is drawn over a higher one', (
 	);
 
 	// front's sprite top row should win over back's overlapping body.
-	const sprite = spriteFor('player');
+	const sprite = formFrame(FORMS[0], 'idle');
 	const ax = Math.round(front.x - Math.floor((sprite.w - BOX.w) / 2));
-	const ay = Math.round(front.y + BOX.h - sprite.h);
+	const ay = Math.round(front.y + BOX.h - sprite.h + (FORMS[0].baseline ?? 0));
 	const glyphs = sprite.rows(1);
 	for (let rx = 0; rx < sprite.w; rx++) {
 		const ch = glyphs[0][rx];
@@ -403,7 +436,9 @@ function avatarTopLeft(e: Entity) {
 	const form = FORMS[e.cosmetics?.form ?? 0];
 	const sprite = formFrame(form, 'idle');
 	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
-	const ay = Math.round(e.y + BOX.h - sprite.h);
+	// The Form's baseline shifts the whole body down so its feet plant on the surface
+	// (ADR 0021); the buddy carries `baseline: 1`, so the anchor must include it.
+	const ay = Math.round(e.y + BOX.h - sprite.h + (form.baseline ?? 0));
 	return { sprite, ax, ay, grip: form.grip, head: form.head };
 }
 
@@ -436,7 +471,7 @@ function expectBodyPose(over: Partial<Entity>, sprite: Sprite) {
 	const e = makeEntity({ type: 'player', y: 7, facing: 1, ...over });
 	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE);
 	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
-	const ay = Math.round(e.y + BOX.h - sprite.h);
+	const ay = Math.round(e.y + BOX.h - sprite.h + (FORMS[0].baseline ?? 0));
 	expectSpriteAt(buf, sprite, ax, ay, e.facing, fgFor);
 }
 
@@ -476,7 +511,7 @@ test('an observer renders the same walk frame as the owner for a given position 
 	};
 	const walkB = formFrame(FORMS[0], 'walkB');
 	const ax = Math.round(3 * STRIDE + 3 - Math.floor((walkB.w - BOX.w) / 2));
-	const ay = Math.round(7 + BOX.h - walkB.h);
+	const ay = Math.round(7 + BOX.h - walkB.h + (FORMS[0].baseline ?? 0));
 	// Both land the same walkB grid at the same anchor — owner/observer agree.
 	expectSpriteAt(render(owner), walkB, ax, ay, 1, fgFor);
 	expectSpriteAt(render(observer), walkB, ax, ay, 1, fgFor);
@@ -787,10 +822,14 @@ test('off terrain the pill is omitted and only the handle shows (ADR 0016)', () 
 	const boxTop = Math.round(e.y + BOX.h);
 	const cx = e.x + BOX.w / 2;
 	const left = Math.round(cx - ('neo'.length + 4) / 2);
-	// The pill body (corner, pad, lip) is not drawn at all off terrain.
-	expect(buf.at(left, boxTop)).toBeUndefined();
-	expect(buf.at(left + 1, boxTop)).toBeUndefined();
+	// The pill body (corner, lip) is not drawn at all off terrain. The buddy's planted
+	// baseline now lands its feet ON the chip's top row (ADR 0021), so a foot may float
+	// transparently over a top-row pad cell — assert pill-omission on the bottom lip row,
+	// which is below the feet and pure pill territory.
+	const lastCol = 'neo'.length + 4 - 1;
 	expect(buf.at(left, boxTop + 1)).toBeUndefined();
+	expect(buf.at(left + 1, boxTop + 1)).toBeUndefined();
+	expect(buf.at(left + lastCol, boxTop + 1)).toBeUndefined();
 	// Only the handle glyph shows, floating on whatever is behind (transparent bg, the
 	// default dim-grey ink since this entity has no cosmetics).
 	expect(buf.at(left + 2, boxTop)).toEqual({
@@ -827,4 +866,283 @@ test('the nameplate position is independent of hat height', () => {
 	// either way, since the chip anchors below the feet now (#103).
 	expect(render(0).at(left + 2, boxTop)?.ch).toBe('a');
 	expect(render(3).at(left + 2, boxTop)?.ch).toBe('a');
+});
+
+// --- Sprite ground contact: planted feet (#210, ADR 0021) ------------------
+
+// The screen anchor of an Avatar's resolved Pose, baseline included. The buddy Form
+// carries `baseline: 1`, which shifts the WHOLE sprite down one cell so its bottom
+// (feet) row lands on the terrain surface row instead of one cell above it (ADR 0021).
+function bodyAnchor(e: Entity, sprite: Sprite) {
+	const form = FORMS[e.cosmetics?.form ?? 0];
+	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
+	const ay = Math.round(e.y + BOX.h - sprite.h + (form.baseline ?? 0));
+	return { ax, ay };
+}
+
+test('a buddy Avatar plants its feet: each foot cell on the terrain surface is opaque, bg = terrainFg (ADR 0021)', () => {
+	const buf = new FakeBuffer(20, 16);
+	const e = makeEntity({ type: 'player', x: 8, y: 7 });
+
+	renderZoneScene(
+		buf,
+		{ terrain: groundUnder(e), portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	const sprite = formFrame(FORMS[0], 'idle');
+	const { ax, ay } = bodyAnchor(e, sprite);
+	const surface = Math.round(e.y + BOX.h);
+	// The baseline lands the sprite's last row exactly on the terrain surface row.
+	expect(ay + sprite.h - 1).toBe(surface);
+
+	const glyphs = sprite.rows(1);
+	const keys = sprite.colorKeys(1);
+	const footRow = sprite.h - 1;
+	let feet = 0;
+	for (let rx = 0; rx < sprite.w; rx++) {
+		const ch = glyphs[footRow][rx];
+		if (ch === ' ') continue;
+		feet++;
+		const cell = buf.at(ax + rx, surface);
+		// Foot glyph kept, fg = body colour, bg painted with the visible terrain block
+		// colour — written OPAQUELY (no dark terrainBg notch under the boot).
+		expect(cell?.ch).toBe(ch);
+		expect(cell?.fg).toBe(fgFor(keys[footRow][rx]));
+		expect(cell?.bg).toBe('TFG');
+		expect(cell?.blended).toBeFalsy();
+	}
+	expect(feet).toBeGreaterThan(0);
+});
+
+// Assert every lit cell of `sprite`'s bottom (feet) row that lands over solid ground is
+// planted: foot glyph kept, body-colour fg, opaque `terrainFg` background. Shared so the
+// idle / walk frames are all checked on the one general over-solid rule (ADR 0021).
+function expectPlantedFeet(buf: FakeBuffer, e: Entity, sprite: Sprite) {
+	const { ax } = bodyAnchor(e, sprite);
+	const surface = Math.round(e.y + BOX.h);
+	const glyphs = sprite.rows(1);
+	const keys = sprite.colorKeys(1);
+	const footRow = sprite.h - 1;
+	let feet = 0;
+	for (let rx = 0; rx < sprite.w; rx++) {
+		const ch = glyphs[footRow][rx];
+		if (ch === ' ') continue;
+		feet++;
+		const cell = buf.at(ax + rx, surface);
+		expect(cell?.ch).toBe(ch);
+		expect(cell?.fg).toBe(fgFor(keys[footRow][rx]));
+		expect(cell?.bg).toBe('TFG');
+		expect(cell?.blended).toBeFalsy();
+	}
+	expect(feet).toBeGreaterThan(0);
+}
+
+test('the walk frames plant on the same general over-solid rule, no pose-specific code (ADR 0021)', () => {
+	// Drive the distance-driven selector to each walk frame and confirm BOTH plant — the
+	// rule keys on `isSolid` under each cell, not on which Pose is showing.
+	for (const [x, pose] of [
+		[2 * STRIDE + 3, 'walkA'],
+		[3 * STRIDE + 3, 'walkB'],
+	] as const) {
+		const buf = new FakeBuffer(40, 16);
+		const e = makeEntity({ type: 'player', x, y: 7, vx: 3 });
+		renderZoneScene(
+			buf,
+			{ terrain: groundUnder(e), portals: [], npcs: [], entities: [e] },
+			{ x: 0, y: 0 },
+			STYLE,
+		);
+		expectPlantedFeet(buf, e, formFrame(FORMS[0], pose));
+	}
+});
+
+test('an airborne Avatar floats: its jump feet render transparent, not planted (ADR 0021)', () => {
+	const buf = new FakeBuffer(20, 16);
+	// Off the ground and above empty space (no solid under the feet row): the baseline
+	// still applies every frame, but the over-solid composite does NOT fire, so the feet
+	// stay see-through `▀` hanging in air — the correct read for feet touching nothing.
+	const e = makeEntity({ type: 'player', x: 8, y: 7, onGround: false });
+	renderZoneScene(
+		buf,
+		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	const jump = formFrame(FORMS[0], 'jump');
+	const { ax } = bodyAnchor(e, jump);
+	const surface = Math.round(e.y + BOX.h);
+	const glyphs = jump.rows(1);
+	const footRow = jump.h - 1;
+	let feet = 0;
+	for (let rx = 0; rx < jump.w; rx++) {
+		const ch = glyphs[footRow][rx];
+		if (ch === ' ') continue;
+		feet++;
+		const cell = buf.at(ax + rx, surface);
+		expect(cell?.ch).toBe(ch);
+		// Transparent / alpha-blended — bg is NOT the terrain block colour.
+		expect(cell?.bg).toBe('TR');
+		expect(cell?.bg).not.toBe('TFG');
+		expect(cell?.blended).toBe(true);
+	}
+	expect(feet).toBeGreaterThan(0);
+});
+
+test('one foot past a platform edge floats while the other stays planted (ADR 0021)', () => {
+	const buf = new FakeBuffer(20, 16);
+	const e = makeEntity({ type: 'player', x: 8, y: 7 });
+	const sprite = formFrame(FORMS[0], 'idle');
+	const { ax } = bodyAnchor(e, sprite);
+	const surface = Math.round(e.y + BOX.h);
+	// The idle feet sit at the sprite's outer columns; build a platform whose lip falls
+	// between them, so the left foot is over solid ground and the right foot hangs past it.
+	const glyphs = sprite.rows(1);
+	const footRow = sprite.h - 1;
+	const footCols: number[] = [];
+	for (let rx = 0; rx < sprite.w; rx++)
+		if (glyphs[footRow][rx] !== ' ') footCols.push(ax + rx);
+	const leftFoot = footCols[0];
+	const rightFoot = footCols[footCols.length - 1];
+	const lip = Math.floor((leftFoot + rightFoot) / 2); // solid up to here, air after
+
+	const terrain = parseTerrain(
+		Array.from({ length: 16 }, (_, r) =>
+			r >= surface ? '#'.repeat(lip + 1).padEnd(20, '.') : '.'.repeat(20),
+		),
+	);
+
+	renderZoneScene(
+		buf,
+		{ terrain, portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	// The planted foot is opaque over the terrain colour; the foot past the lip floats.
+	expect(buf.at(leftFoot, surface)?.bg).toBe('TFG');
+	expect(buf.at(leftFoot, surface)?.blended).toBeFalsy();
+	expect(buf.at(rightFoot, surface)?.bg).toBe('TR');
+	expect(buf.at(rightFoot, surface)?.blended).toBe(true);
+});
+
+test('an Avatar on a one-cell-thick platform still plants on its surface (ADR 0021)', () => {
+	const buf = new FakeBuffer(20, 16);
+	const e = makeEntity({ type: 'player', x: 8, y: 7 });
+	const surface = Math.round(e.y + BOX.h);
+	// A single solid row (air above and below) — the over-solid check is per cell on the
+	// surface row, so the feet plant regardless of how thick the ground is beneath.
+	const terrain = parseTerrain(
+		Array.from({ length: 16 }, (_, r) =>
+			(r === surface ? '#' : '.').repeat(20),
+		),
+	);
+
+	renderZoneScene(
+		buf,
+		{ terrain, portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	expectPlantedFeet(buf, e, formFrame(FORMS[0], 'idle'));
+});
+
+test('a baseline-0 monster (chaser) blits unchanged — no planting (ADR 0021)', () => {
+	const buf = new FakeBuffer(20, 16);
+	const e = makeEntity({ type: 'chaser', x: 8, y: 6 });
+	renderZoneScene(
+		buf,
+		{ terrain: groundUnder(e), portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	const sprite = spriteFor('chaser');
+	expect(sprite.baseline).toBe(0);
+	// baseline 0 keeps the anchor exactly where it was — feet one cell ABOVE the surface,
+	// over air — so the over-solid composite never fires and every cell blits transparently
+	// just like before. (The sprite is unchanged; with the lowered `▄` ground line it now
+	// floats a half-cell until it adopts `▀` contact feet — the accepted transitional state,
+	// ADR 0021 decision 5.) Pin the unchanged placement and transparent backgrounds.
+	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
+	const ay = Math.round(e.y + BOX.h - sprite.h);
+	expectSpriteAt(buf, sprite, ax, ay, 1, fgFor);
+	const glyphs = sprite.rows(1);
+	for (let ry = 0; ry < sprite.h; ry++)
+		for (let rx = 0; rx < sprite.w; rx++) {
+			if (glyphs[ry][rx] === ' ') continue;
+			const cell = buf.at(ax + rx, ay + ry);
+			expect(cell?.bg).toBe('TR');
+			expect(cell?.blended).toBe(true);
+		}
+});
+
+test('a cosmetic-hue Avatar keeps its recoloured body fg on the planted foot ink half (ADR 0021)', () => {
+	const buf = new FakeBuffer(20, 16);
+	// hue 2 -> 'hue2'; the body (incl. the feet) is the 'p' key, so the planted foot's ink
+	// half must carry the recoloured hue over the terrain-colour background.
+	const e = makeEntity({
+		type: 'player',
+		x: 8,
+		y: 7,
+		cosmetics: { hue: 2, hat: 0, nameplate: 0, form: 0 },
+	});
+	renderZoneScene(
+		buf,
+		{ terrain: groundUnder(e), portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	const sprite = formFrame(FORMS[0], 'idle');
+	const { ax } = bodyAnchor(e, sprite);
+	const surface = Math.round(e.y + BOX.h);
+	const glyphs = sprite.rows(1);
+	const footRow = sprite.h - 1;
+	let feet = 0;
+	for (let rx = 0; rx < sprite.w; rx++) {
+		if (glyphs[footRow][rx] === ' ') continue;
+		feet++;
+		const cell = buf.at(ax + rx, surface);
+		expect(cell?.fg).toBe('hue2'); // recoloured body ink, not the default 'cP'
+		expect(cell?.bg).toBe('TFG'); // planted over the terrain colour
+		expect(cell?.blended).toBeFalsy();
+	}
+	expect(feet).toBeGreaterThan(0);
+});
+
+test('combat telegraphs are exempt from planting: the blade-edge arc keeps its own bg over solid ground (ADR 0021)', () => {
+	const buf = new FakeBuffer(28, 16);
+	// Terrain solid EVERYWHERE, so every body/weapon cell would plant — but the blade-edge
+	// arc renders above with its own transparent bg and must stay exempt (it is a
+	// live-motion telegraph, not part of the body/sprite layer).
+	const terrain = parseTerrain(
+		Array.from({ length: 16 }, () => '#'.repeat(28)),
+	);
+	const progress = 0.5;
+	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
+	e.action = { move: 'basic', phase: 'active', progress, flags: 0 };
+	renderZoneScene(
+		buf,
+		{ terrain, portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+
+	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
+	const bodyGripX = sx + grip.x;
+	const bodyGripY = sy + grip.y;
+	const arc = bladeEdgeArc(progress, 1);
+	expect(arc.length).toBeGreaterThan(0);
+	for (const c of arc) {
+		const cell = buf.at(bodyGripX + c.dx, bodyGripY + c.dy);
+		// Arc cell carries its own translucent bg — NOT painted with the terrain colour.
+		expect(cell?.ch).toBe(c.glyph);
+		expect(cell?.bg).toBe('TR');
+		expect(cell?.bg).not.toBe('TFG');
+		expect(cell?.blended).toBe(true);
+	}
 });

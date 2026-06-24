@@ -54,4 +54,10 @@ export const buddy: BodySprite = {
 	frames: { idle: player, walkA, walkB, jump },
 	grip: { x: 7, y: 1 },
 	head: { x: 4, y: 0 },
+	// The feet are ink-top half-blocks (`▀`), so the whole figure drops one cell to land its
+	// feet row in the terrain surface cell. The renderer lowers that cell's visible ground to
+	// the lower-half block `▄`, so the boot (top half) rests ON the ground line while its
+	// air-half shows ground via per-cell compositing — slim, connected, and flush (ADR 0021).
+	// idle/walk/jump all share this baseline.
+	baseline: 1,
 };
