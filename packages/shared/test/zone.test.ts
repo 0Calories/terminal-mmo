@@ -449,6 +449,21 @@ test('Block: a frontal committer strike is chipped, not full, and drains Poise',
 	expect(next.effects?.some((e) => e.kind === 'blood')).toBeFalsy();
 });
 
+test('an unguarded committer chip emits source-less hurt-blood biased away from the Monster', () => {
+	// Incoming hurt is NEVER predicted (ADR 0013 §3 / ADR 0019): the chip resolves to a
+	// `hit` CombatEvent with NO `source`, so the snapshot delivers the blood to the victim
+	// too, in lockstep with the hurt-flash. Biased away from the Monster (committer at
+	// x=16, Avatar at x=20 → dir +1). An unbroken Avatar takes a chip, not a Stagger.
+	const m = strikingCommitterAt20();
+	const av = serverAvatar(7, 20); // full Poise → one strike chips, never breaks
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	const blood = next.effects?.find((e) => e.kind === 'blood');
+	expect(blood?.dir).toBe(1); // away from the committer on the left
+	expect(blood?.source).toBeUndefined(); // server-authoritative, unpredicted
+	expect(next.avatars[0].avatar.stunT ?? 0).toBe(0); // a chip, not a break
+});
+
 test('Block to a Poise break is a guard-break Stagger', () => {
 	const m = strikingCommitterAt20();
 	const av = serverAvatar(7, 20);
@@ -927,6 +942,12 @@ test('Swat: a live active melee frame DESTROYS a hostile shot with no reflect', 
 	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp); // took no damage
 	// No reflect: nothing player-faction was created.
 	expect(next.zone.projectiles.some((p) => p.faction === 'player')).toBe(false);
+	// The swat emits a `swat` CombatEvent → a LIGHT impact clink (ADR 0019): at the
+	// shot, intensity = the shot's own damage with NO poise.max bump (unlike a break),
+	// and source-less so everyone in range gets the clink + camera juice.
+	const clink = next.effects?.find((e) => e.kind === 'impact');
+	expect(clink?.intensity).toBe(7); // the shot's damage, not damage + poise.max
+	expect(clink?.source).toBeUndefined();
 });
 
 test('snapshotFor carries the zone state + the recipient private fields', () => {

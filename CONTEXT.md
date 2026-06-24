@@ -144,15 +144,22 @@ _Avoid_: Emoji, reaction, gesture (one word — an emote is a body pose, not a p
 
 **CombatEvent**:
 The resolved, *semantic* fact of a combat interaction — "target T was **hit** /
-**broke** (poise) / **died** / **parried**, at (x,y), facing →, intensity N." It is
-what Combat resolution produces; an **Effect** is its presentation projection (via
-the shared `effectsOf`), and a **Particle** is the Effect's realization. The
+**broke** (poise) / **died** / **parried** / **swatted**, at (x,y), facing →, intensity
+N." It is what Combat resolution produces; an **Effect** is its presentation projection
+(via the shared `effectsOf`), and a **Particle** is the Effect's realization. The
 authority *produces* a CombatEvent by applying damage/poise (the poise result is
 what makes a contact a hit vs a break vs a death); the local Player *predicts* only
-the optimistic `hit` event from contact, for zero-latency feedback. `break`/`death`/
-`parry` are authority-only. Distinct from Effect: a CombatEvent's `kind` is the game
-fact (`hit`), an Effect's `kind` is the look (`blood`). Shared-internal, never on the
-wire — it is projected to Effects before the snapshot is built (see ADR 0019).
+the optimistic `hit` event from its own outgoing swing, for zero-latency feedback.
+`break`/`death`/`parry`/`swat` are authority-only, and so is *incoming* hurt — an
+Avatar-target `hit` is never predicted (ADR 0013 §3). Every combat Effect in a snapshot
+is `effectsOf(CombatEvent)` — no site emits an Effect inline (the migration completed in
+#194). The kinds map `hit → blood`, `break → impact` (heavier), `death → gore` (tinted),
+`parry → parry`, `swat → impact` (a light clink — a melee frame shattering a shot, ADR
+0017 §8 — at the shot's own damage, no poise bump). Distinct from Effect: a CombatEvent's
+`kind` is the game fact (`hit`), an Effect's `kind` is the look (`blood`). Shared-internal,
+never on the wire — it is projected to Effects before the snapshot is built (see ADR 0019).
+Modeled as a discriminated union on `kind`, so each kind carries only the fields it can
+mean — `source` on a predicted `hit`, `tint` (the dead body's colour) on a `death`.
 _Avoid_: Effect (that's the projection), HitEvent, Outcome
 
 **Effect**:

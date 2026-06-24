@@ -12,21 +12,18 @@ import {
 	actionStateOf,
 	applyPoiseDamage,
 	avatarHittable,
-	bloodEffect,
 	combatEventAt,
-	deathGoreEffect,
+	deathEvent,
 	effectsOf,
 	entityBox,
-	hurtBloodEffect,
 	IDLE_ACTION,
-	impactEffect,
 	meleeActive,
 	meleeHitbox,
-	parryEffect,
 	regenPoise,
 	resolveCombat,
 	resolveGuard,
 	SWING_TOTAL,
+	swatEvent,
 	swingHitsTarget,
 	swingPhase,
 } from './combat';
@@ -411,10 +408,12 @@ export function stepZone(
 						);
 						m = { ...m, stunT: COMBAT.hitstun };
 					}
-					// The parry-clash flash carries no `source`, so it reaches the parrier too
-					// (clash flash + camera juice + sound). Keep the raised Guard; i-frame the
-					// Avatar so the same active window can't re-trigger.
-					effects.push(parryEffect(a, (away || 1) as Facing));
+					// The parry resolves to a `parry` CombatEvent → the clash flash via the shared
+					// `effectsOf` (ADR 0019). No `source`, so it reaches the parrier too (clash
+					// flash + camera juice + sound); intensity is irrelevant (the blow was
+					// negated — `effectsOf` fixes the flash intensity). Keep the raised Guard;
+					// i-frame the Avatar so the same active window can't re-trigger.
+					effects.push(...effectsOf(combatEventAt('parry', a, away || 1, 0)));
 					avatars[i] = {
 						...avatars[i],
 						avatar: { ...a, hurtT: COMBAT.iframes },
@@ -448,13 +447,23 @@ export function stepZone(
 						-COMBAT.knockbackUp,
 					);
 					na = { ...na, stunT: COMBAT.hitstun };
-					effects.push(impactEffect(a, m.facing, MONSTER.meleeDamage));
+					// The break resolves to a `break` CombatEvent → its impact via `effectsOf`
+					// (ADR 0019). No `source`, so — like a Monster break — it reaches everyone in
+					// range including the victim's client (hitstop + camera-kick).
+					effects.push(
+						...effectsOf(
+							combatEventAt('break', a, m.facing, MONSTER.meleeDamage),
+						),
+					);
 				} else if (g.result !== 'block') {
-					// Hurt blood at the Avatar, biased away from the Monster (0 when they share
-					// a column). Server-sourced — no `source` — so the snapshot delivers it to
-					// the victim too, in sync with the hurt-flash (ADR 0013, #132). A clean Block
-					// emits no blood — the brace soaked it, only the chip + Poise drain show.
-					effects.push(hurtBloodEffect(a, away, MONSTER.meleeDamage));
+					// Incoming hurt resolves to a `hit` CombatEvent → blood via `effectsOf` (ADR
+					// 0019), biased away from the Monster (0 when they share a column). NO `source`
+					// — incoming hurt is never predicted (ADR 0013 §3), so the snapshot delivers it
+					// to the victim too, in sync with the hurt-flash. A clean Block emits no blood —
+					// the brace soaked it, only the chip + Poise drain show.
+					effects.push(
+						...effectsOf(combatEventAt('hit', a, away, MONSTER.meleeDamage)),
+					);
 				}
 				avatars[i] = { ...avatars[i], avatar: na };
 			}
@@ -529,10 +538,11 @@ export function stepZone(
 		if (m.hp > 0) {
 			monsters.push(m);
 		} else {
-			// A radial, high-intensity gore burst at the kill site (ADR 0013, #139):
-			// tinted to the Monster's body colour, no `source`, so every Player in
-			// range — including the killer — sees it.
-			effects.push(deathGoreEffect(m));
+			// The kill resolves to a `death` CombatEvent → a radial, high-intensity gore
+			// burst tinted to the Monster's body colour, via the shared `effectsOf` (ADR
+			// 0013 #139 / ADR 0019). No `source`, so every Player in range — including the
+			// killer — sees it.
+			effects.push(...effectsOf(deathEvent(m)));
 			// Every contributor earns full XP (shared, not split) and rolls its own
 			// private, per-Player-seeded loot — instanced, so there is no shared pile
 			// and no kill-stealing (#37). Each grant updates only that Avatar's state;
@@ -597,9 +607,17 @@ export function stepZone(
 				if (broke) {
 					nm = applyImpulse(nm, pr.knockback * travel, -pr.knockbackUp);
 					nm = { ...nm, stunT: COMBAT.hitstun };
-					effects.push(impactEffect(tm, (travel || 1) as Facing, pr.damage));
+					// A reflected shot's break → a `break` CombatEvent → impact via `effectsOf`
+					// (ADR 0019); source-less like every break.
+					effects.push(
+						...effectsOf(combatEventAt('break', tm, travel || 1, pr.damage)),
+					);
 				} else {
-					effects.push(bloodEffect(tm, (travel || 1) as Facing, pr.damage));
+					// A reflected shot's chip → a `hit` CombatEvent → blood via `effectsOf`. No
+					// `source`: a projectile hit is server-authoritative, never predicted.
+					effects.push(
+						...effectsOf(combatEventAt('hit', tm, travel || 1, pr.damage)),
+					);
 				}
 				monsters[mi] = nm;
 				consumed = true;
@@ -617,13 +635,11 @@ export function stepZone(
 		for (let i = 0; i < avatars.length; i++) {
 			const hb = hitboxes[i];
 			if (hb && aabbOverlap(hb, projectileBox(pr))) {
-				effects.push({
-					kind: 'impact',
-					x: pr.x,
-					y: pr.y,
-					intensity: pr.damage,
-					dir: (-travel || 1) as -1 | 0 | 1,
-				});
+				// The swat resolves to a `swat` CombatEvent at the shot → its impact via the
+				// shared `effectsOf` (ADR 0019): a light clink (the shot's own damage, no Poise
+				// bump — distinct from a break), source-less so the clink + camera juice reach
+				// everyone in range. Biased back along the swat (`-travel`).
+				effects.push(...effectsOf(swatEvent(pr, (-travel || 1) as Facing)));
 				consumed = true;
 				break;
 			}
@@ -656,7 +672,9 @@ export function stepZone(
 					faction: 'player',
 					ownerId: avatars[i].sessionId,
 				});
-				effects.push(parryEffect(a, (travel || 1) as Facing));
+				// The reflect's clash → a `parry` CombatEvent → flash via `effectsOf` (ADR
+				// 0019); source-less, fixed intensity (the shot was negated).
+				effects.push(...effectsOf(combatEventAt('parry', a, travel || 1, 0)));
 				avatars[i] = {
 					...avatars[i],
 					avatar: { ...a, hurtT: COMBAT.iframes },
@@ -682,11 +700,17 @@ export function stepZone(
 			if (broke) {
 				na = applyImpulse(na, pr.knockback * travel, -pr.knockbackUp);
 				na = { ...na, stunT: COMBAT.hitstun };
-				effects.push(impactEffect(a, (travel || 1) as Facing, pr.damage));
+				// The shot's break → a `break` CombatEvent → impact via `effectsOf` (ADR 0019);
+				// source-less (hitstop + camera-kick for everyone, the victim included).
+				effects.push(
+					...effectsOf(combatEventAt('break', a, travel || 1, pr.damage)),
+				);
 			} else if (g.result !== 'block') {
-				// Hurt blood biased along the shot's travel; a clean Block soaked it (no blood,
-				// only the chip + Poise drain). Server-sourced — delivered to the victim too.
-				effects.push(hurtBloodEffect(a, travel, pr.damage));
+				// Incoming hurt → a `hit` CombatEvent → blood via `effectsOf`, biased along the
+				// shot's travel. NO `source`: incoming hurt is never predicted (ADR 0013 §3), so
+				// the snapshot delivers it to the victim too. A clean Block soaked it (no blood,
+				// only the chip + Poise drain).
+				effects.push(...effectsOf(combatEventAt('hit', a, travel, pr.damage)));
 			}
 			avatars[i] = { ...avatars[i], avatar: na };
 			consumed = true;
@@ -703,10 +727,10 @@ export function stepZone(
 		const a = avatars[i].avatar;
 		if (a.hp <= 0) {
 			deaths.push(avatars[i].sessionId);
-			// Radial gore burst at the spot the Avatar fell, tinted to the Avatar's
-			// cosmetic hue — emitted before the teleport below moves them to the safe
-			// point (ADR 0013, #139).
-			effects.push(deathGoreEffect(a));
+			// The fall resolves to a `death` CombatEvent → a radial gore burst tinted to the
+			// Avatar's cosmetic hue, via the shared `effectsOf` (ADR 0013 #139 / ADR 0019) —
+			// emitted before the teleport below moves them to the safe point.
+			effects.push(...effectsOf(deathEvent(a)));
 			avatars[i] = {
 				...avatars[i],
 				avatar: {
