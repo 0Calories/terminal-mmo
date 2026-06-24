@@ -10,4 +10,10 @@ const COLORS = `
 ppppppppp
 ··pp·pp··`;
 
-export const player = new Sprite(GLYPH, { defaultKey: 'p', colors: COLORS });
+// The named grip cell (the hand): the leading mid-body cell the weapon layer
+// anchors to, grip-to-grip, mirrored across the body when facing left (ADR 0018 §3).
+export const player = new Sprite(GLYPH, {
+	defaultKey: 'p',
+	colors: COLORS,
+	grip: { x: 7, y: 1 },
+});

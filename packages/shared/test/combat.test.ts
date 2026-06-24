@@ -38,6 +38,7 @@ import {
 	swingProgress,
 	WEAPONS,
 	weaponById,
+	weaponFrame,
 	weaponSwingTotal,
 } from '../src';
 
@@ -613,6 +614,21 @@ describe('swingPose — composited weapon visual (pure fn of move, phase, weapon
 		expect(swingPose('basic', 'windup', sword, 1)?.arc).toBeNull();
 		expect(swingPose('basic', 'active', sword, 1)?.arc).not.toBeNull();
 		expect(swingPose('basic', 'recovery', sword, 1)?.arc).toBeNull();
+	});
+});
+
+describe('weaponFrame — WeaponSprite frame selector (pure fn of move, phase)', () => {
+	test('a non-attacking Avatar shows the idle hold frame', () => {
+		// At rest there is no swing phase, so the always-visible hold pose is selected.
+		expect(weaponFrame('idle', null)).toBe('idle');
+		// An idle move keeps the idle frame even with a residual phase (e.g. IDLE_ACTION).
+		expect(weaponFrame('idle', 'recovery')).toBe('idle');
+	});
+
+	test('a basic swing selects its own per-phase frame', () => {
+		expect(weaponFrame('basic', 'windup')).toBe('windup');
+		expect(weaponFrame('basic', 'active')).toBe('active');
+		expect(weaponFrame('basic', 'recovery')).toBe('recovery');
 	});
 });
 
