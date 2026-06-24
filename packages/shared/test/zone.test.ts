@@ -14,11 +14,14 @@ import {
 	clientStepAvatar,
 	createZoneState,
 	DEFAULT_COSMETICS,
+	DODGE_TOTAL,
+	dodgePhase,
 	entityTint,
 	GROUND_TOP,
 	MONSTER,
 	removeAvatar,
 	rollItem,
+	SHOOTER,
 	SPAWN,
 	SWING_TOTAL,
 	snapshotFor,
@@ -348,6 +351,77 @@ test('a committer in its active phase can Stagger a poise-broken Avatar (full hi
 	expect(staggered).toBe(true);
 	expect(state.avatars[0].avatar.ivx ?? 0).not.toBe(0); // knocked back
 	expect(state.effects?.some((e) => e.kind === 'impact')).toBe(true);
+});
+
+// --- Dodge i-frames (ADR 0017 §5, #165) -------------------------------------
+
+test('a Dodge negates a Monster strike during its i-frame active window', () => {
+	// A committer lands an active-phase strike on an Avatar at x=20 THIS tick; the
+	// Avatar is mid-Dodge (active window), so the hit is negated — the demo: dodge
+	// through the active frames untouched.
+	const m = strikingCommitterAt20();
+	const av = serverAvatar(7, 20);
+	// dodgeT in the active window even after one tick of decay (elapsed < active).
+	av.avatar.dodgeT = COMBAT.dodge.recovery + COMBAT.dodge.active * 0.5;
+	const before = av.avatar.hp;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(next.avatars[0].avatar.hp).toBe(before); // i-frames negate the hit
+	expect(next.avatars[0].avatar.hurtT).toBe(0); // no hurt flash
+	expect(next.effects ?? []).toEqual([]); // no hurt blood either
+});
+
+test('a Dodge in its recovery window does NOT grant i-frames — the hit connects', () => {
+	// Same striking committer, but the Avatar's Dodge has decayed into recovery: it is
+	// exposed and committed, so the strike lands (a mistimed Dodge is punishable).
+	const m = strikingCommitterAt20();
+	const av = serverAvatar(7, 20);
+	av.avatar.dodgeT = COMBAT.dodge.recovery * 0.5; // mid recovery, vulnerable
+	const before = av.avatar.hp;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(next.avatars[0].avatar.hp).toBe(before - MONSTER.meleeDamage); // connects
+});
+
+test('a Dodge slips a projectile during its active window but not its recovery', () => {
+	// The same i-frame gate covers ranged hits: an active Dodge passes through a shot.
+	const shot = {
+		id: 1,
+		x: 20,
+		y,
+		vx: 0,
+		vy: 0,
+		life: 1,
+		damage: SHOOTER.projDamage,
+		ownerId: 999,
+	};
+	const zone: Zone = { ...zoneWith([]), projectiles: [shot] };
+	const av = serverAvatar(7, 20);
+	av.avatar.dodgeT = COMBAT.dodge.recovery + COMBAT.dodge.active * 0.5; // active
+	const before = av.avatar.hp;
+	const next = stepZone(
+		{ zone, avatars: [av], tick: 0 },
+		[holdAt(7, av.avatar)],
+		16,
+	);
+	expect(next.avatars[0].avatar.hp).toBe(before); // slipped — no damage
+	expect(next.zone.projectiles.length).toBe(1); // and the shot was NOT consumed
+});
+
+test('a dodge intent loads the i-frame timer through stepZone (active on the first tick)', () => {
+	const av = serverAvatar(7, 20);
+	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
+	// The report carries the client's already-gated `dodge` decision (grounded + moving
+	// were verified client-side pre-hop); the server loads the i-frame timer on trust.
+	const next = stepZone(state, [{ ...holdAt(7, av.avatar), dodge: true }], 16);
+	const d = next.avatars[0].avatar.dodgeT ?? 0;
+	expect(d).toBeGreaterThan(0);
+	expect(d).toBeLessThanOrEqual(DODGE_TOTAL);
+	expect(dodgePhase(d)).toBe('active'); // invulnerable on the start tick
+	// And the action-state replicates the dodge so other Players can see it.
+	const snap = snapshotFor(next, 7);
+	const me = snap.avatars.find((a) => a.sessionId === 7);
+	expect(me?.action.move).toBe('dodge');
 });
 
 // --- Guard: Block + Parry vs a committer's strike (ADR 0017 §5, #166) --------

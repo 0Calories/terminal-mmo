@@ -1,7 +1,7 @@
-import { aabbOverlap, entityBox } from './combat';
-import { PHYS, SPAWN } from './constants';
+import { aabbOverlap, canStartDodge, entityBox } from './combat';
+import { COMBAT, PHYS, SPAWN } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
-import { stepEntity } from './physics';
+import { applyImpulse, stepEntity } from './physics';
 import { type PlayerState, spawnPlayerState } from './player';
 import type { Effect, Entity, Input } from './types';
 import type { World, Zone } from './world';
@@ -89,11 +89,27 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		}
 	}
 
+	// A Dodge hop (ADR 0017 §5) is a momentum-body impulse on the client-authoritative
+	// body, applied BEFORE physics so stepEntity integrates it this tick. Gated by the
+	// same `canStartDodge` predicate `resolveCombat` (inside stepZone) uses to load
+	// `dodgeT`, so the impulse and the i-frame window begin on the same tick. The full
+	// gate (grounded + held direction + off cooldown) is evaluated HERE, pre-hop, before
+	// the upward pop ungrounds the body; the gated decision is passed to stepZone as the
+	// `dodge` intent so resolveCombat loads `dodgeT` iff the hop fired. Direction = moveX.
+	let body = game.player.avatar;
+	const dodging = (input.dodge ?? false) && canStartDodge(body, input.moveX);
+	if (dodging)
+		body = applyImpulse(
+			body,
+			input.moveX * COMBAT.dodge.impulse,
+			-COMBAT.dodge.up,
+		);
+
 	// Predict this Avatar's own platformer physics, then let the Zone resolve every
 	// consequence under server authority.
 	const predicted = stepEntity(
 		t,
-		game.player.avatar,
+		body,
 		{ moveX: input.moveX, jump: input.jump },
 		dt,
 	).e;
@@ -116,9 +132,15 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		y: predicted.y,
 		vx: predicted.vx,
 		vy: predicted.vy,
+		// Carry the integrated impulse residual so the hop persists across ticks (the
+		// returned avatar is rebuilt from this intent, ADR 0001).
+		ivx: predicted.ivx,
 		facing: predicted.facing,
 		onGround: predicted.onGround,
 		attack: input.attack,
+		// The gated Dodge decision (ADR 0017 §5): true only if the hop actually fired, so
+		// resolveCombat loads the i-frame timer in lockstep with the impulse above.
+		dodge: dodging,
 		guard: input.guard,
 		skill: input.skill,
 		// Offline is a single clock with zero transit lag, so no Parry-window slack.

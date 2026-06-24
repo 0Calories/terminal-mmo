@@ -52,6 +52,14 @@ import {
 	stepKick,
 } from './camera';
 import {
+	type DodgeEcho,
+	drawDodgeEchoes,
+	isDodging,
+	SAMPLE_INTERVAL_MS,
+	spawnDodgeEcho,
+	stepDodgeEchoes,
+} from './dodge-echo';
+import {
 	type Hitstop,
 	isFrozen,
 	NO_HITSTOP,
@@ -431,6 +439,7 @@ function drawPlayfield(
 	game: GameState,
 	cam: { x: number; y: number },
 	particles: ParticleSystem,
+	dodgeEchoes: readonly DodgeEcho[],
 ) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
@@ -527,6 +536,11 @@ function drawPlayfield(
 		}
 	}
 
+	// Dodge after-images (ADR 0017 §5/§13e): every live echo — local and co-present —
+	// in one pass, planted at the launch spots and fading on their own render clock.
+	// Drawn just under the Sprites so a ghost never occludes a live body.
+	drawDodgeEchoes(buf, dodgeEchoes, cam, sw, sh);
+
 	// The local Avatar is drawn last, on top of everyone (ADR 0003).
 	drawEntitySprite(buf, p, cam, STYLE);
 	// The local Avatar's own swing, realized from the same path as everyone else's —
@@ -569,6 +583,17 @@ function drawPlayfield(
 	}
 }
 
+// Last-frame snapshot of an Avatar, kept per id to detect a dodge-start edge, recover its
+// pre-hop position for the first after-image sample, and pace the sampling that follows
+// (ADR 0017 §13e).
+type DodgeTrack = {
+	x: number;
+	y: number;
+	facing: Entity['facing'];
+	dodging: boolean;
+	sinceSampleMs: number; // time since the last after-image was captured, while dodging
+};
+
 export class PlayfieldRenderable extends Renderable {
 	game: GameState | null = null;
 
@@ -588,6 +613,13 @@ export class PlayfieldRenderable extends Renderable {
 	private particles = new ParticleSystem();
 	private lastParticleTick = -1;
 	private lastTime = 0;
+	// Dodge after-images (ADR 0017 §5/§13e): live echoes + the per-entity bookkeeping
+	// to spot a dodge-start edge. Each frame we compare every on-screen Avatar's
+	// dodging-state to last frame's; a rising edge plants an echo at that entity's
+	// PREVIOUS position (the pre-hop spot). Keyed by entity id; rebuilt each frame so
+	// departed co-present Avatars drop out. Render-only, on its own clock.
+	private dodgeEchoes: DodgeEcho[] = [];
+	private dodgeTrack = new Map<number, DodgeTrack>();
 	// Locally-predicted Effects awaiting the next frame (ADR 0013): the acting
 	// client spawns its own outgoing-hit blood immediately, off the server tick,
 	// so it isn't gated by lastParticleTick. Drained every renderSelf.
@@ -672,6 +704,48 @@ export class PlayfieldRenderable extends Renderable {
 			h: buffer.height,
 		});
 
+		// Sample Dodge after-images along each Avatar's hop (ADR 0017 §13e): scan the local
+		// Avatar + co-present others, and while dodging capture a silhouette every
+		// SAMPLE_INTERVAL_MS — the first at the pre-hop spot (last frame's position, on the
+		// false→true edge), the rest at the live position as it dashes. The trail spans the
+		// whole path; the newest sample lands where the Avatar ends up. Then age the live
+		// echoes on the render clock. Fully decoupled from the i-frame `dodgeT`.
+		const nextTrack = new Map<number, DodgeTrack>();
+		for (const e of [a, ...(this.game.others ?? [])]) {
+			const dodging = isDodging(e);
+			const prev = this.dodgeTrack.get(e.id);
+			const started = dodging && !prev?.dodging;
+			let sinceSampleMs = (prev?.sinceSampleMs ?? 0) + dt;
+			if (started) {
+				// First sample at the pre-hop origin (last frame's position).
+				spawnDodgeEcho(this.dodgeEchoes, {
+					x: prev?.x ?? e.x,
+					y: prev?.y ?? e.y,
+					facing: e.facing,
+					type: e.type,
+				});
+				sinceSampleMs = 0;
+			} else if (dodging && sinceSampleMs >= SAMPLE_INTERVAL_MS) {
+				// Subsequent samples at the live position as the dash carries it forward.
+				spawnDodgeEcho(this.dodgeEchoes, {
+					x: e.x,
+					y: e.y,
+					facing: e.facing,
+					type: e.type,
+				});
+				sinceSampleMs = 0;
+			}
+			nextTrack.set(e.id, {
+				x: e.x,
+				y: e.y,
+				facing: e.facing,
+				dodging,
+				sinceSampleMs,
+			});
+		}
+		this.dodgeTrack = nextTrack;
+		this.dodgeEchoes = stepDodgeEchoes(this.dodgeEchoes, dt);
+
 		// Weapon swing trails (ADR 0017 §14): spawned per render frame off any live
 		// active-phase swing, so the streak follows the blade. Stepped next frame with
 		// the rest of the pool.
@@ -690,6 +764,6 @@ export class PlayfieldRenderable extends Renderable {
 				this.sound.play(cue.kind, { volume: cue.volume, pan: cue.pan });
 		}
 
-		drawPlayfield(buffer, this.game, cam, this.particles);
+		drawPlayfield(buffer, this.game, cam, this.particles, this.dodgeEchoes);
 	}
 }

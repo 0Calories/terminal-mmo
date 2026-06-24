@@ -1,7 +1,10 @@
 import {
 	aabbOverlap,
 	activeZone,
+	applyImpulse,
+	COMBAT,
 	type Cosmetics,
+	canStartDodge,
 	clientStepAvatar,
 	createGame,
 	DEFAULT_WEAPON,
@@ -432,6 +435,22 @@ function runNetworked(url: string) {
 					};
 			}
 
+			// A Dodge hop (ADR 0017 §5) is a momentum-body impulse applied BEFORE physics
+			// so clientStepAvatar integrates it this frame; gated by the same
+			// full Dodge gate (grounded + held direction + off cooldown), evaluated HERE
+			// before the hop's upward pop ungrounds the body; the gated decision drives the
+			// impulse, the i-frame timer (resolveCombat below), and the report to the server,
+			// so all three agree on whether the hop fired. Direction is `inp.moveX`.
+			const dodging =
+				(inp.dodge ?? false) && canStartDodge(predicted, inp.moveX);
+			if (dodging) {
+				predicted = applyImpulse(
+					predicted,
+					inp.moveX * COMBAT.dodge.impulse,
+					-COMBAT.dodge.up,
+				);
+			}
+
 			const prevOnGround = predicted.onGround;
 			predicted = clientStepAvatar(
 				zone.terrain,
@@ -461,11 +480,20 @@ function runNetworked(url: string) {
 				localCd,
 				net.latest?.progress.level ?? 1,
 				'warrior',
-				{ attack: inp.attack, skill: inp.skill, guard: inp.guard },
+				{
+					attack: inp.attack,
+					skill: inp.skill,
+					dodge: dodging,
+					guard: inp.guard,
+				},
 				dtSec,
 				weaponById(predicted.weapon),
 			);
 			predicted.attackT = r.attackT;
+			// Mirror the server's i-frame Dodge timer + its post-recovery cooldown so the
+			// local pose and both gates stay in lockstep with the prediction (ADR 0017 §5).
+			predicted.dodgeT = r.dodgeT;
+			predicted.dodgeCdT = r.dodgeCdT;
 			// Mirror the server's held-Guard timer so the local guard/parry pose stays in
 			// lockstep with the prediction (ADR 0017 §5); the parry's damage-negation is
 			// server-authoritative and reconciles through HP + the snapshot's parry Effect.
@@ -502,6 +530,9 @@ function runNetworked(url: string) {
 					attack: inp.attack,
 					guard: inp.guard ?? false,
 					interact: inp.interact ?? false,
+					// the gated decision, so the server starts the i-frame timer iff the hop
+					// fired client-side (grounded + moving), not on every key-press (ADR 0017 §5).
+					dodge: dodging,
 					skill: inp.skill,
 					// Timestamp the input so the server can lag-compensate the Parry against
 					// the Player's own timeline (ADR 0017 §11).

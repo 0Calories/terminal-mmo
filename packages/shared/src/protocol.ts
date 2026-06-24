@@ -170,6 +170,10 @@ export type ClientMessage =
 			// `guardT` and resolves Block / Parry authoritatively.
 			guard: boolean;
 			interact: boolean;
+			// Dodge intent for the tick (ADR 0017 §5): the server loads the i-frame hop
+			// timer so its damage gates honour the Dodge. The hop displacement itself is
+			// client-authoritative (ADR 0001) and never re-simulated server-side.
+			dodge: boolean;
 			skill?: number;
 			// Client monotonic timestamp (ms) of when this input was produced (ADR 0017
 			// §11): the timestamped-input channel light lag compensation judges a Parry
@@ -229,8 +233,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.bool(msg.attack);
 			w.bool(msg.interact);
 			w.u8(msg.skill ?? 0);
-			// Guard + the input timestamp trail the legacy fields (ADR 0017 §5/§11), so an
-			// older decoder that stops after `skill` still reads a valid input.
+			// Trailing intents after the legacy fields (ADR 0017 §5/§11), so an older
+			// decoder that stops after `skill` still reads a valid input: Dodge, then
+			// Guard + the input timestamp. Decode reads them back in this same order.
+			w.bool(msg.dodge);
 			w.bool(msg.guard);
 			w.f64(msg.clientTime);
 			break;
@@ -281,8 +287,10 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			const attack = r.bool();
 			const interact = r.bool();
 			const skill = r.u8();
-			// Guard + client timestamp trail the legacy fields; a pre-Guard client omits
-			// them, so default to no-guard / 0 (no lag-comp) when the bytes are absent.
+			// Trailing intents (ADR 0017 §5/§11), read back in the encode order; a client
+			// predating any of them omits the bytes, so guard each read and default: no
+			// Dodge / no Guard / 0 lag-comp.
+			const dodge = r.remaining() >= 1 ? r.bool() : false;
 			const guard = r.remaining() >= 1 ? r.bool() : false;
 			const clientTime = r.remaining() >= 8 ? r.f64() : 0;
 			const msg: ClientMessage = {
@@ -296,6 +304,7 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 				attack,
 				guard,
 				interact,
+				dodge,
 				clientTime,
 			};
 			if (skill !== 0) msg.skill = skill;
@@ -424,7 +433,9 @@ const EFFECT_KINDS: readonly EffectKind[] = [
 	'impact',
 	'parry',
 ];
-const MOVE_IDS: readonly MoveId[] = ['idle', 'basic'];
+// Append-only (like EFFECT_KINDS): the index is the wire encoding, so a new move
+// goes on the END and a forward-version index clamps to `idle` on decode.
+const MOVE_IDS: readonly MoveId[] = ['idle', 'basic', 'dodge'];
 const ATTACK_PHASES: readonly AttackPhase[] = ['windup', 'active', 'recovery'];
 
 // The per-entity action-state (ADR 0017 §10): move + phase as catalog-index bytes,

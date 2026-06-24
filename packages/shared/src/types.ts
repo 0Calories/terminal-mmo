@@ -18,6 +18,9 @@ export interface Input extends Control {
 	// press-time by the swing/guard gate, never a tap-vs-hold input measurement.
 	guard?: boolean;
 	interact?: boolean;
+	// Dodge intent (ADR 0017 §5): a dedicated key, not a double-tap. When the Avatar
+	// is free it starts an i-frame hop in the held (or facing) direction.
+	dodge?: boolean;
 	// 1-based slot of a Class Skill to activate this tick (absent == none).
 	skill?: number;
 }
@@ -42,8 +45,10 @@ export interface SwingPhases {
 }
 
 // The move an entity is performing. `idle` = nothing; `basic` = the basic melee
-// swing. Skills and Monster moves join this set as later combat slices land.
-export type MoveId = 'idle' | 'basic';
+// swing; `dodge` = the i-frame hop (ADR 0017 §5), whose `active`/`recovery` phases
+// reuse the AttackPhase values. Skills and Monster moves join this set as later
+// combat slices land.
+export type MoveId = 'idle' | 'basic' | 'dodge';
 
 // A compact, authoritative description of what an entity is *doing* this tick,
 // broadcast for every entity in the snapshot so offense is visible to everyone
@@ -112,6 +117,20 @@ export interface Entity {
 	// + gravity, so a staggered entity flies. Absent == 0 (acting normally). The
 	// staggered state is surfaced to clients through the action-state `flags` bit.
 	stunT?: number;
+	// Dodge (ADR 0017 §5): seconds remaining in an i-frame hop (active + recovery),
+	// counting down to 0 (ready). The `active` window grants invulnerability; the
+	// `recovery` tail leaves the Avatar exposed and committed (no re-dodge). Derived
+	// into the action-state for replication, exactly like `attackT` drives the swing.
+	// Absent == 0 (not dodging). Server-tracked for the i-frame gate; the hop impulse
+	// itself lives on the client-authoritative momentum body (ADR 0001).
+	dodgeT?: number;
+	// Dodge cooldown (ADR 0017 §5): seconds remaining in the post-recovery lockout
+	// before a fresh hop can START. Set to the full lockout (active + recovery +
+	// cooldown) at dodge start and counted down each tick, so it outlives `dodgeT` by
+	// the `cooldown` tail — the spam-gate. Absent == 0 (ready). Owner-local: gates the
+	// owning Avatar's `canStartDodge` on client + server alike; never replicated (no
+	// other client renders it), so it stays OFF the wire.
+	dodgeCdT?: number;
 	// Guard (ADR 0017 §5): seconds the Guard has been HELD this raise, counting up
 	// while the guard intent is held and reset to 0 on release / swing / Stagger. Its
 	// magnitude is the whole gradient: in (0, guard.parryWindow] the raise is a Parry,

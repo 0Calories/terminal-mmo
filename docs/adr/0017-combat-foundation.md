@@ -154,7 +154,7 @@ commits the attacker.** Every other decision hangs off that.
     and a **keyboard + mouse** scheme (left-click attack / right-click guard, skills on
     `e`/`r`). **Mouse position is reserved as the free-aim input for ranged Classes.**
 
-13. **Game feel is a foundation, not polish.** Four data-driven client layers, all
+13. **Game feel is a foundation, not polish.** Five data-driven client layers, all
     realizations of authoritative state (consistent with ADRs 0003/0005/0013):
     (a) a new **per-phase sprite-pose** animation system driven by the replicated
     `(move, phase)` (no extra wire cost); (b) **slash-arc** rendering that sweeps
@@ -164,7 +164,13 @@ commits the attacker.** Every other decision hangs off that.
     <150ms, decaying** viewport offset on big moments only (heavy hits, poise-breaks,
     launches, spikes; light hits get at most a brightness flash — micro-shake reads as
     jank at cell granularity); (d) extended **ParticleType**s (impact spark, Parry
-    clash, poise-break flash).
+    clash, poise-break flash); (e) the **Dodge after-image (echo)** — a free-running
+    client visual effect spawned on the dodge-start edge (`dodgeStarted`, per entity),
+    ticked on the **render clock** and fully decoupled from the i-frame timing it
+    illustrates. It plants fading cyan silhouettes of the Avatar's sprite at the
+    pre-hop origin (a "breadcrumb" trail: staggered births + a fast linear fade reusing
+    the particle fade curve). Supersedes the earlier render that derived the echo from
+    `dodgeT`; the off-wire `dodgeOx/dodgeOy` it needed are removed (#165).
 
 14. **Weapons feed the combat model.** An equipped **Item** in the Weapon slot
     contributes three things, each into an existing system: a replicated **sprite id**

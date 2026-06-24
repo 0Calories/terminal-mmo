@@ -296,6 +296,14 @@ A short horizontal hop granting brief invulnerability (i-frames) with committal
 recovery — the mobility-defense, available from level 1.
 _Avoid_: Roll, dash, evade
 
+**Dodge after-image (echo)**:
+The cyan ghost trail a **Dodge** leaves at its launch spot — a short string of
+fading silhouettes of the Avatar's own sprite, planted where the hop began and
+trailing opposite the hop. Purely a **client visual effect** with its own render
+clock: spawned on the dodge-start edge and decoupled from the i-frame timing it
+illustrates (ADR 0017 §13). Not part of the sim and never on the wire.
+_Avoid_: Trail, smear, blur (reserve "echo" for this)
+
 **Moveset ability**:
 A passive, no-cooldown extension of what the attack button does — string
 extensions, the **Launcher**, aerials, the **Spike**, cancels, the **Parry** —

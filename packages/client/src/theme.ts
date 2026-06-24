@@ -9,6 +9,9 @@ export const COLORS = {
 	transparent: RGBA.fromInts(0, 0, 0, 0),
 	hurt: RGBA.fromInts(255, 240, 120, 255),
 	melee: RGBA.fromInts(255, 245, 200, 255),
+	// The Dodge after-image (ADR 0017 §5): a cool, bright streak — distinct from the
+	// warm melee flash — so an evasive hop reads apart from an attack at a glance.
+	dodge: RGBA.fromInts(150, 220, 255, 255),
 	// Guard brace (ADR 0017 §5): a cool steel bar for a Block, distinct from the warm
 	// melee flash so a defensive stance reads apart from an attack at a glance…
 	guard: RGBA.fromInts(150, 200, 255, 255),
