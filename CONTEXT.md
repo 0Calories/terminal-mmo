@@ -334,7 +334,11 @@ _Avoid_: Trail, smear, blur (reserve "echo" for this)
 A passive, no-cooldown extension of what the attack button does — string
 extensions, the **Launcher**, aerials, the **Spike**, cancels, the **Parry** —
 unlocked by level (and later **Class**). Distinct from an **Active skill**; it is
-*how your character moves*, not a thing you fire.
+*how your character moves*, not a thing you fire. Gated in `resolveCombat` /
+the Guard hit-resolution: a locked ability simply doesn't fire (a no-op, not an
+error). The **level-1 floor** is therefore basic attack + hold-**Block** +
+**Dodge** only — Parry and every combo extension are earned unlocks on the Warrior
+curve (order: string extensions → Launcher → aerials → Spike → cancels → Parry).
 _Avoid_: Skill (reserve for active), passive, combo move
 
 **Active skill**:

@@ -3,6 +3,7 @@ export * from './constants';
 export * from './cosmetics';
 export * from './emote';
 export * from './loot';
+export * from './moveset';
 export * from './physics';
 export * from './player';
 export * from './progression';

@@ -1024,6 +1024,25 @@ describe('resolveGuard', () => {
 			).result,
 		).toBe('parry');
 	});
+
+	test('Parry is gated by the Moveset unlock (#170): canParry=false Blocks the opening window', () => {
+		// Identical opening-window catch resolves Parry by default but Block when the
+		// defender has not unlocked the Parry Moveset ability — falls through to a Block
+		// (chip + Poise drain), the level-1 floor (basic attack + Block + Dodge only).
+		const inOpening = defender({ guardT: parryWindow });
+		expect(resolveGuard(inOpening, attackerX, 8).result).toBe('parry');
+		const blocked = resolveGuard(
+			inOpening,
+			attackerX,
+			8,
+			0,
+			COMBAT.guard,
+			false,
+		);
+		expect(blocked.result).toBe('block');
+		expect(blocked.hpDamage).toBe(Math.ceil(8 * blockChip));
+		expect(blocked.attackerPoiseDump).toBe(0);
+	});
 });
 
 describe('parryEffect', () => {
@@ -1062,6 +1081,13 @@ describe('actionFlags surfaces the Guard stance (ADR 0017 §5/§10)', () => {
 		const f = actionFlags(monster(0, 0, { guardT: 0 }));
 		expect(f & ACTION_FLAG.guarding).toBeFalsy();
 		expect(f & ACTION_FLAG.parrying).toBeFalsy();
+	});
+	test('canParry=false keeps the parry stance off but still reads as guarding (#170)', () => {
+		// A locked defender braces in the opening window: the guarding bit stays set (it
+		// IS raising the Guard) but the parry sigil never flashes, matching resolveGuard.
+		const locked = actionFlags(monster(0, 0, { guardT: 0.01 }), false);
+		expect(locked & ACTION_FLAG.guarding).toBeTruthy();
+		expect(locked & ACTION_FLAG.parrying).toBeFalsy();
 	});
 });
 
