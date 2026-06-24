@@ -39,6 +39,7 @@ import {
 } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
 import { rollItem } from './loot';
+import { movesetUnlocked } from './moveset';
 import { applyImpulse, stepEntity } from './physics';
 import { spawnAvatar } from './player';
 import { applyXp, maxHpForLevel } from './progression';
@@ -391,7 +392,21 @@ export function stepZone(
 				// delayed screen still resolves. The i-frame (set on every branch) gates the
 				// multi-tick active window to one resolution per swing.
 				const lagSlack = (byId.get(avatars[i].sessionId)?.lagMs ?? 0) / 1000;
-				const g = resolveGuard(a, m.x, MONSTER.meleeDamage, lagSlack);
+				// Parry is a progression-gated Moveset ability (#170): a defender who has not
+				// unlocked it Blocks even in the opening window. resolveGuard folds the gate in.
+				const canParry = movesetUnlocked(
+					'parry',
+					avatars[i].progress.level,
+					avatars[i].class ?? 'warrior',
+				);
+				const g = resolveGuard(
+					a,
+					m.x,
+					MONSTER.meleeDamage,
+					lagSlack,
+					COMBAT.guard,
+					canParry,
+				);
 				// Direction away from the Monster (0 when they share a column), reused by the
 				// hurt-blood bias and the parry-clash flash.
 				const away: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
@@ -629,9 +644,23 @@ export function stepZone(
 			if (!avatarHittable(a) || !aabbOverlap(projectileBox(pr), entityBox(a)))
 				continue;
 			const lagSlack = (byId.get(avatars[i].sessionId)?.lagMs ?? 0) / 1000;
+			// Parry-reflect is gated by the same Parry unlock (#170): un-unlocked, the shot
+			// Blocks (chip) rather than reflecting. The gate flows through resolveGuard.
+			const canParry = movesetUnlocked(
+				'parry',
+				avatars[i].progress.level,
+				avatars[i].class ?? 'warrior',
+			);
 			// The shot's source is back along its travel; resolveGuard's frontal-arc
 			// check needs a point on that side (a stationary shot is treated as frontal).
-			const g = resolveGuard(a, a.x - travel, pr.damage, lagSlack);
+			const g = resolveGuard(
+				a,
+				a.x - travel,
+				pr.damage,
+				lagSlack,
+				COMBAT.guard,
+				canParry,
+			);
 			if (g.result === 'parry') {
 				// Parry → REFLECT (ADR 0017 §8): the shot reverses, becomes the parrier's
 				// (faction `player`, ownerId the parrier) and flies back to threaten the
@@ -784,8 +813,14 @@ export function snapshotFor(
 		weapon: a.avatar.weapon ?? DEFAULT_WEAPON,
 		// Derived from the Avatar's swing timer AGAINST its weapon's phase durations, so
 		// every other client can render the swing (ADR 0017 §10) — this is what makes the
-		// basic attack visible to others, and a slow greatsword read as slow.
-		action: actionStateOf(a.avatar, weaponById(a.avatar.weapon).swing),
+		// basic attack visible to others, and a slow greatsword read as slow. The parry
+		// stance flag is gated by the Parry Moveset unlock (#170) so observers never see a
+		// not-yet-earned defender flash a parry it cannot perform.
+		action: actionStateOf(
+			a.avatar,
+			weaponById(a.avatar.weapon).swing,
+			movesetUnlocked('parry', a.progress.level, a.class ?? 'warrior'),
+		),
 	}));
 	const monsters: MonsterSnapshot[] = state.zone.monsters.map((m) => ({
 		id: m.id,

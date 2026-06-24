@@ -28,6 +28,7 @@ import {
 	spawnMonster,
 	stepZone,
 	swingPhase,
+	WARRIOR_MOVESET,
 	WEAPONS,
 	weaponById,
 	weaponSwingTotal,
@@ -37,17 +38,23 @@ import { flatTerrain, makeProjectile } from './helpers';
 
 const y = GROUND_TOP - BOX.h;
 
+// The level at which the Warrior unlocks Parry (#170). Below it the Guard Blocks even in
+// the opening window — so the Parry-expecting tests run a leveled Avatar.
+const PARRY_LEVEL = WARRIOR_MOVESET.find((a) => a.id === 'parry')
+	?.unlockLevel as number;
+
 function serverAvatar(
 	sessionId: number,
 	x: number,
 	handle = 'hero',
+	level = 1,
 ): ServerAvatar {
 	return {
 		sessionId,
 		handle,
 		cosmetics: DEFAULT_COSMETICS,
 		avatar: { ...spawnAvatar(x, y), id: sessionId },
-		progress: { level: 1, xp: 0, gold: 0 },
+		progress: { level, xp: 0, gold: 0 },
 		inventory: [],
 		log: [],
 		nextId: 1,
@@ -465,7 +472,7 @@ test('Block to a Poise break is a guard-break Stagger', () => {
 
 test('Parry: a frontal strike in the opening window negates damage and staggers the attacker', () => {
 	const m = strikingCommitterAt20();
-	const av = serverAvatar(7, 20);
+	const av = serverAvatar(7, 20, 'hero', PARRY_LEVEL); // Parry unlocked (#170)
 	av.avatar.facing = -1; // frontal
 	av.avatar.guardT = 0; // a FRESH raise this tick → opening Parry window after resolveCombat
 	const hpBefore = av.avatar.hp;
@@ -476,6 +483,37 @@ test('Parry: a frontal strike in the opening window negates damage and staggers 
 	// The attacker's Poise is dumped → broken → Staggered (the punish opening).
 	expect(next.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0);
 	expect(next.effects?.some((e) => e.kind === 'parry')).toBe(true);
+});
+
+test('the level-1 floor: a fresh Guard raise BLOCKS, not Parries — Parry is a gated unlock (#170)', () => {
+	// Identical to the Parry test but at level 1, where Parry is locked. The same
+	// opening-window catch falls through to a Block: the Avatar takes the chip (not a
+	// full negate), the attacker is NOT staggered, and no parry-clash flashes.
+	const m = strikingCommitterAt20();
+	const av = serverAvatar(7, 20); // level 1 — Parry NOT unlocked
+	av.avatar.facing = -1; // frontal
+	av.avatar.guardT = 0; // a FRESH raise → opening window, but Parry is locked
+	const hpBefore = av.avatar.hp;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
+	const out = next.avatars[0].avatar;
+	// Chip damage, not a full negate (a Block, not a Parry).
+	expect(hpBefore - out.hp).toBe(
+		Math.ceil(MONSTER.meleeDamage * COMBAT.guard.blockChip),
+	);
+	expect(next.zone.monsters[0].stunT ?? 0).toBe(0); // attacker NOT punished
+	expect(next.effects?.some((e) => e.kind === 'parry')).toBeFalsy();
+});
+
+test('a level-1 Avatar in the opening window never replicates the parrying stance flag (#170)', () => {
+	const av = serverAvatar(7, 20); // level 1 — Parry locked
+	av.avatar.facing = -1;
+	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
+	const flags = snapshotFor(next, 9).avatars[0].action.flags;
+	// It IS guarding (Block is in the level-1 floor) but the parry sigil stays dark.
+	expect(flags & ACTION_FLAG.guarding).toBeTruthy();
+	expect(flags & ACTION_FLAG.parrying).toBeFalsy();
 });
 
 test('Guard only protects the frontal arc — a rear strike ignores it', () => {
@@ -498,7 +536,7 @@ test('lag compensation resolves a Parry that was valid on the client timeline (A
 		COMBAT.guard.parryWindow + COMBAT.guard.lagComp / 2 - 0.016;
 	const run = (lagMs: number) => {
 		const m = strikingCommitterAt20();
-		const av = serverAvatar(7, 20);
+		const av = serverAvatar(7, 20, 'hero', PARRY_LEVEL); // Parry unlocked (#170)
 		av.avatar.facing = -1; // frontal
 		av.avatar.guardT = justPastWindow; // +0.016 after resolveCombat → just past window
 		const hpBefore = av.avatar.hp;
@@ -517,7 +555,7 @@ test('lag compensation resolves a Parry that was valid on the client timeline (A
 });
 
 test('a guarding Avatar replicates the guarding/parrying flags to others (ADR 0017 §10)', () => {
-	const av = serverAvatar(7, 20);
+	const av = serverAvatar(7, 20, 'hero', PARRY_LEVEL); // Parry unlocked (#170)
 	av.avatar.facing = -1;
 	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
@@ -837,7 +875,7 @@ test('Block: a frontal Guard chips a projectile, drains Poise, and consumes the 
 });
 
 test('Parry: a frontal Guard in the opening window REFLECTS the shot — owned by the parrier, flying back', () => {
-	const av = serverAvatar(7, 20);
+	const av = serverAvatar(7, 20, 'hero', PARRY_LEVEL); // Parry unlocked (#170)
 	av.avatar.facing = 1; // frontal to a shot coming from the right
 	av.avatar.guardT = 0.05; // inside the Parry window
 	const pr = makeProjectile({

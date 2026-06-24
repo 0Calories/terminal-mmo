@@ -206,11 +206,15 @@ export const ACTION_FLAG = {
 // during its opening window), and `dodging` (an i-frame hop in flight) — so Stagger,
 // Guard/Parry, AND Dodge are visible to everyone (ADR 0017 §3/§5/§10), for Avatars and
 // Monsters alike. The bits OR together.
-export function actionFlags(e: Entity): number {
+export function actionFlags(e: Entity, canParry = true): number {
 	let flags = (e.stunT ?? 0) > 0 ? ACTION_FLAG.staggered : 0;
 	const guard = guardPhase(e.guardT ?? 0);
 	if (guard) flags |= ACTION_FLAG.guarding;
-	if (guard === 'parry') flags |= ACTION_FLAG.parrying;
+	// The parry STANCE reads only when the entity can actually Parry (#170): a defender
+	// who has not unlocked the Parry Moveset ability brace-Blocks even in the opening
+	// window, so it must never flash the parry sigil. Keeps the replicated stance honest —
+	// observers and the owner read a block, matching what `resolveGuard` resolves.
+	if (guard === 'parry' && canParry) flags |= ACTION_FLAG.parrying;
 	if ((e.dodgeT ?? 0) > 0) flags |= ACTION_FLAG.dodging;
 	return flags;
 }
@@ -276,8 +280,9 @@ export function regenPoise(e: Entity, dt: number): number {
 export function actionStateOf(
 	e: Entity,
 	swing: SwingPhases = COMBAT.swing,
+	canParry = true,
 ): ActionState {
-	const flags = actionFlags(e);
+	const flags = actionFlags(e, canParry);
 	// A Dodge takes precedence over the swing for the `move` slot (you cannot do both
 	// at once); its active/recovery phases reuse the AttackPhase names (ADR 0017 §5).
 	const dPhase = dodgePhase(e.dodgeT ?? 0);
@@ -369,6 +374,13 @@ export function resolveGuard(
 	hpDamage: number,
 	lagSlack = 0,
 	cfg: typeof COMBAT.guard = COMBAT.guard,
+	// Whether the defender has unlocked the PARRY Moveset ability (#170). Parry is an
+	// earned unlock on the progression curve (`movesetUnlocked('parry', level)`); a
+	// defender who has not unlocked it still RAISES the Guard and Blocks, but the opening
+	// window is inert — it falls through to a Block rather than negating the hit. Defaults
+	// to true so the pure helper and its tests stay level-agnostic; the live caller passes
+	// the gated decision.
+	canParry = true,
 ): GuardOutcome {
 	const guardT = defender.guardT ?? 0;
 	const pool = defender.poise ?? COMBAT.poise.max;
@@ -383,8 +395,9 @@ export function resolveGuard(
 	if (!guardPhase(guardT, cfg) || !facingToward(defender, attackerX))
 		return none;
 	// Parry: the opening window (lag-comp-extended) negates the hit and dumps Poise on
-	// the attacker. Checked before Block so a window the lag slack rescues parries.
-	if (parryActive(guardT, lagSlack, cfg))
+	// the attacker. Checked before Block so a window the lag slack rescues parries. Gated
+	// by the Moveset unlock (#170): a defender without Parry skips straight to Block.
+	if (canParry && parryActive(guardT, lagSlack, cfg))
 		return {
 			result: 'parry',
 			hpDamage: 0,

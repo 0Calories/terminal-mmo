@@ -20,6 +20,7 @@ import {
 	guardPoseCell,
 	guardPoseGlyph,
 	isSolid,
+	movesetUnlocked,
 	type RenderStyle,
 	renderZoneScene,
 	SCENE_PALETTE,
@@ -367,12 +368,17 @@ function drawSwing(
 // carry it in the replicated action `flags` (ADR 0017 §10: `guarding` + `parrying`
 // bits); the local Avatar has no action set, so its Guard is derived from the predicted
 // `guardT` — both reduce to the same GuardPhase, one render path for every brace.
-function guardRenderState(e: Entity): GuardPhase | null {
+// `canParry` gates the LOCAL Avatar's predicted opening-window stance by the Parry Moveset
+// unlock (#170): without it the brace reads as a Block, matching the server's resolution
+// and the (already gated) replicated flag co-present Avatars carry. Defaults true for the
+// flag-driven path, which is authoritative for everyone but the predicting owner.
+function guardRenderState(e: Entity, canParry = true): GuardPhase | null {
 	if (e.action) {
 		if (!(e.action.flags & ACTION_FLAG.guarding)) return null;
 		return e.action.flags & ACTION_FLAG.parrying ? 'parry' : 'block';
 	}
-	return guardPhase(e.guardT ?? 0);
+	const phase = guardPhase(e.guardT ?? 0);
+	return phase === 'parry' && !canParry ? 'block' : phase;
 }
 
 // Realize an entity's raised Guard as a frontal brace glyph (ADR 0017 §5/§13a): a solid
@@ -386,8 +392,9 @@ function drawGuard(
 	cam: { x: number; y: number },
 	sw: number,
 	sh: number,
+	canParry = true,
 ) {
-	const phase = guardRenderState(e);
+	const phase = guardRenderState(e, canParry);
 	if (!phase) return;
 	const cell = guardPoseCell(e);
 	const ax = Math.round(cell.x - cam.x);
@@ -551,8 +558,17 @@ function drawPlayfield(
 	// The local Avatar's own swing, realized from the same path as everyone else's —
 	// here predicted from `attackT` (its action-state is left unset) for zero-lag feel.
 	drawSwing(buf, p, cam, sw, sh);
-	// The local Avatar's own Guard brace, predicted from `guardT` for zero-lag feel.
-	drawGuard(buf, p, cam, sw, sh);
+	// The local Avatar's own Guard brace, predicted from `guardT` for zero-lag feel. Gate
+	// the parry stance by the local Player's Parry Moveset unlock (#170) so a not-yet-earned
+	// brace predicts a Block, matching the server's resolution.
+	drawGuard(
+		buf,
+		p,
+		cam,
+		sw,
+		sh,
+		movesetUnlocked('parry', player.progress.level, player.class ?? 'warrior'),
+	);
 
 	// Second particle pass: airborne blood erupts in front of the Sprites (toward
 	// the camera), still below the over-head Speech bubbles / emotes that follow so
