@@ -562,7 +562,10 @@ function drawPlayfield(
 		const py = Math.round(pr.y - cam.y);
 		if (px < 0 || px >= sw || py < 0 || py >= sh) continue;
 		const ch = pr.vx < 0 ? '◄' : pr.vx > 0 ? '►' : '●';
-		buf.setCellWithAlphaBlending(px, py, ch, C.projectile, C.transparent);
+		// A reflected shot reads as the Player's (ADR 0017 §8) — bright Parry-white vs the
+		// hostile warm-orange pebble.
+		const col = pr.faction === 'player' ? C.projectileReflected : C.projectile;
+		buf.setCellWithAlphaBlending(px, py, ch, col, C.transparent);
 	}
 }
 

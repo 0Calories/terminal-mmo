@@ -108,7 +108,20 @@ test('discrete and private fields come from the newer bracket, not lerped', () =
 	const newer: ReturnType<typeof snap> = {
 		...snap(2, [a2]),
 		projectiles: [
-			{ id: 9, x: 70, y: 10, vx: -36, vy: 0, life: 2, damage: 7, ownerId: 3 },
+			{
+				id: 9,
+				x: 70,
+				y: 10,
+				vx: -36,
+				vy: 0,
+				life: 2,
+				damage: 7,
+				poiseDamage: 6,
+				knockback: 30,
+				knockbackUp: 10,
+				faction: 'monster',
+				ownerId: 3,
+			},
 		],
 		progress: { level: 4, xp: 30, gold: 11 },
 		log: ['Level up!'],

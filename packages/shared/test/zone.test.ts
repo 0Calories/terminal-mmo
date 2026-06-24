@@ -21,7 +21,6 @@ import {
 	MONSTER,
 	removeAvatar,
 	rollItem,
-	SHOOTER,
 	SPAWN,
 	SWING_TOTAL,
 	snapshotFor,
@@ -34,7 +33,7 @@ import {
 	weaponSwingTotal,
 	XP_PER_KILL,
 } from '../src';
-import { flatTerrain } from './helpers';
+import { flatTerrain, makeProjectile } from './helpers';
 
 const y = GROUND_TOP - BOX.h;
 
@@ -385,16 +384,7 @@ test('a Dodge in its recovery window does NOT grant i-frames — the hit connect
 
 test('a Dodge slips a projectile during its active window but not its recovery', () => {
 	// The same i-frame gate covers ranged hits: an active Dodge passes through a shot.
-	const shot = {
-		id: 1,
-		x: 20,
-		y,
-		vx: 0,
-		vy: 0,
-		life: 1,
-		damage: SHOOTER.projDamage,
-		ownerId: 999,
-	};
+	const shot = makeProjectile({ x: 20, y, life: 1, ownerId: 999 });
 	const zone: Zone = { ...zoneWith([]), projectiles: [shot] };
 	const av = serverAvatar(7, 20);
 	av.avatar.dodgeT = COMBAT.dodge.recovery + COMBAT.dodge.active * 0.5; // active
@@ -733,16 +723,14 @@ test('clientStepAvatar predicts platformer movement and decays the hurt timer', 
 
 test('projectile damage emits one blood Effect at the Avatar, dir = projectile travel, intensity = projectile damage', () => {
 	const av = serverAvatar(7, 20);
-	const pr = {
-		id: 1,
+	const pr = makeProjectile({
 		x: 22, // overlapping the Avatar's box
 		y: av.avatar.y + 2,
 		vx: -36, // travelling left: away from a shooter on the right
-		vy: 0,
-		life: 1,
 		damage: 7,
+		life: 1,
 		ownerId: 999,
-	};
+	});
 	const zone: Zone = { ...zoneWith([]), projectiles: [pr] };
 	const state: ZoneState = { zone, avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
@@ -758,20 +746,187 @@ test('projectile damage emits one blood Effect at the Avatar, dir = projectile t
 test('an i-framed Avatar struck by a projectile bleeds no blood', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.hurtT = 0.5; // still invulnerable
-	const pr = {
-		id: 1,
+	const pr = makeProjectile({
 		x: 22,
 		y: av.avatar.y + 2,
 		vx: -36,
-		vy: 0,
-		life: 1,
 		damage: 7,
+		life: 1,
 		ownerId: 999,
-	};
+	});
 	const zone: Zone = { ...zoneWith([]), projectiles: [pr] };
 	const state: ZoneState = { zone, avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
 	expect(next.effects ?? []).toEqual([]);
+});
+
+// --- Ranged poker + first-class projectiles + counterplay (ADR 0017 §8, #169) ----
+
+test('a ranged poker telegraphs through stepZone: it commits a swing and fires only on the active frame', () => {
+	// A shooter within aggro of an Avatar commits the wind-up→active→recovery swing
+	// (visible action-state) but does NOT fire on the commit tick — the pebble appears
+	// only when the swing crosses into `active` (no auto-fire, ADR 0017 §8).
+	const m = spawnMonster('shooter', 2, 50, y);
+	m.onGround = true;
+	const av = serverAvatar(7, 20);
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	state = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(state.zone.monsters[0].attackT).toBeGreaterThan(0); // committed
+	expect(state.zone.projectiles.length).toBe(0); // but no shot yet (wind-up)
+	// The wind-up is replicated so the Player can read the telegraph.
+	const snap = snapshotFor(state, 7);
+	expect(snap.monsters[0].action.move).toBe('basic');
+	// Drive the swing into its active phase; exactly one shot is fired, aimed at the Avatar.
+	let fired = state.zone.projectiles;
+	for (let i = 0; i < 12 && fired.length === 0; i++) {
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+		fired = state.zone.projectiles;
+	}
+	expect(fired.length).toBe(1);
+	expect(fired[0].vx).toBeLessThan(0); // aimed left, toward the Avatar at x=20
+});
+
+test('an unguarded heavy projectile Staggers the Avatar on a Poise break, like a melee hit', () => {
+	// First-class hit (ADR 0017 §8): the payload, not just damage. A shot whose poise
+	// damage empties the pool breaks it → Hitstun + a Knockback impulse, the same path a
+	// melee connect uses.
+	const av = serverAvatar(7, 20);
+	const pr = makeProjectile({
+		x: 22,
+		y: av.avatar.y + 2,
+		vx: 36, // travelling right
+		damage: 7,
+		poiseDamage: 20, // > the Avatar's pool (16) → break
+		knockback: 40,
+		life: 1,
+		ownerId: 999,
+	});
+	const state: ZoneState = {
+		zone: { ...zoneWith([]), projectiles: [pr] },
+		avatars: [av],
+		tick: 0,
+	};
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16).avatars[0].avatar;
+	expect(next.hp).toBe(av.avatar.hp - 7);
+	expect(next.stunT ?? 0).toBeGreaterThan(0); // Staggered
+	expect(next.ivx ?? 0).toBeGreaterThan(0); // thrown along the shot's travel
+});
+
+test('Block: a frontal Guard chips a projectile, drains Poise, and consumes the shot', () => {
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = 1; // face the shot coming from the right (frontal)
+	av.avatar.guardT = COMBAT.guard.parryWindow + 0.05; // past the Parry window → Block
+	const pr = makeProjectile({
+		x: 22,
+		y: av.avatar.y + 2,
+		vx: -36, // travelling left, from the right
+		damage: 8,
+		life: 1,
+		ownerId: 999,
+	});
+	const state: ZoneState = {
+		zone: { ...zoneWith([]), projectiles: [pr] },
+		avatars: [av],
+		tick: 0,
+	};
+	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
+	const a = next.avatars[0].avatar;
+	expect(a.hp).toBe(av.avatar.hp - Math.ceil(8 * COMBAT.guard.blockChip)); // chip, not full
+	expect(a.poise ?? COMBAT.poise.max).toBeLessThan(COMBAT.poise.max); // Poise drained
+	expect(next.zone.projectiles.length).toBe(0); // the brace stopped the shot
+});
+
+test('Parry: a frontal Guard in the opening window REFLECTS the shot — owned by the parrier, flying back', () => {
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = 1; // frontal to a shot coming from the right
+	av.avatar.guardT = 0.05; // inside the Parry window
+	const pr = makeProjectile({
+		x: 22,
+		y: av.avatar.y + 2,
+		vx: -36, // incoming, travelling left
+		damage: 7,
+		life: 1,
+		ownerId: 999,
+	});
+	const state: ZoneState = {
+		zone: { ...zoneWith([]), projectiles: [pr] },
+		avatars: [av],
+		tick: 0,
+	};
+	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
+	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp); // negated, no damage
+	expect(next.zone.projectiles.length).toBe(1); // NOT consumed — it flies back
+	const reflected = next.zone.projectiles[0];
+	expect(reflected.faction).toBe('player'); // now the parrier's
+	expect(reflected.ownerId).toBe(7);
+	expect(reflected.vx).toBeGreaterThan(0); // reversed, heading back toward the shooter
+});
+
+test('a reflected (player-owned) projectile damages a Monster and credits the parrier', () => {
+	const m = spawnMonster('shooter', 2, 30, y);
+	m.hp = 100; // survive so we can read the hit
+	const reflected = makeProjectile({
+		x: m.x + 1, // overlapping the Monster
+		y: m.y + 2,
+		vx: 36, // flying into it
+		damage: 7,
+		faction: 'player',
+		ownerId: 7, // the parrier's session
+	});
+	const av = serverAvatar(7, 20);
+	const state: ZoneState = {
+		zone: { ...zoneWith([m]), projectiles: [reflected] },
+		avatars: [av],
+		tick: 0,
+	};
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(next.zone.monsters[0].hp).toBe(100 - 7); // the shooter took its own shot back
+	expect(next.zone.monsters[0].contributors).toContain(7); // parrier credited for the kill
+	expect(next.zone.projectiles.length).toBe(0); // the reflected shot was consumed
+});
+
+test('a reflected shot does not threaten Avatars (only Monsters)', () => {
+	// Ownership matters: a player-faction shot overlapping an Avatar passes harmlessly.
+	const av = serverAvatar(7, 20);
+	const friendly = makeProjectile({
+		x: 22,
+		y: av.avatar.y + 2,
+		vx: 36,
+		damage: 7,
+		faction: 'player',
+		ownerId: 7,
+		life: 1,
+	});
+	const state: ZoneState = {
+		zone: { ...zoneWith([]), projectiles: [friendly] },
+		avatars: [av],
+		tick: 0,
+	};
+	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
+	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp); // unharmed by its own shot
+});
+
+test('Swat: a live active melee frame DESTROYS a hostile shot with no reflect', () => {
+	const av = primeSwing(serverAvatar(7, 20)); // swing live in its active phase this tick
+	av.avatar.facing = 1; // hitbox projects to the right (x 25..31)
+	const pr = makeProjectile({
+		x: 27, // inside the melee hitbox, outside the body box
+		y: av.avatar.y + 2,
+		vx: -36, // a hostile shot incoming from the right
+		damage: 7,
+		life: 1,
+		ownerId: 999,
+	});
+	const state: ZoneState = {
+		zone: { ...zoneWith([]), projectiles: [pr] },
+		avatars: [av],
+		tick: 0,
+	};
+	const next = stepZone(state, [{ ...holdAt(7, av.avatar), attack: true }], 16);
+	expect(next.zone.projectiles.length).toBe(0); // swatted out of the air
+	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp); // took no damage
+	// No reflect: nothing player-faction was created.
+	expect(next.zone.projectiles.some((p) => p.faction === 'player')).toBe(false);
 });
 
 test('snapshotFor carries the zone state + the recipient private fields', () => {

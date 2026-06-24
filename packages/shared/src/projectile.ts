@@ -6,6 +6,10 @@ export function projectileBox(p: Projectile): Box {
 	return { x: p.x, y: p.y, w: PROJECTILE.w, h: PROJECTILE.h };
 }
 
+// Spawn a shooter's telegraphed pebble (ADR 0017 §8): launched ahead of the owner in
+// `dir`, carrying the full SHOOTER hit-reaction payload (damage + Poise + Knockback) so
+// it resolves through the same gate a melee hit does. Faction `monster` — it threatens
+// Avatars until a Parry reflects it (which flips the faction in stepZone).
 export function spawnProjectile(
 	id: number,
 	owner: Entity,
@@ -19,6 +23,10 @@ export function spawnProjectile(
 		vy: 0,
 		life: SHOOTER.projLife,
 		damage: SHOOTER.projDamage,
+		poiseDamage: SHOOTER.projPoise,
+		knockback: SHOOTER.projKnockback,
+		knockbackUp: SHOOTER.projKnockbackUp,
+		faction: 'monster',
 		ownerId: owner.id,
 	};
 }

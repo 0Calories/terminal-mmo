@@ -92,6 +92,11 @@ export interface Entity {
 	maxHp: number;
 	hurtT: number; // remaining invulnerability, seconds
 	attackT: number; // remaining attack cooldown, seconds
+	// Ranged-poker fire cadence (ADR 0017 §8): seconds remaining before a shooter may
+	// COMMIT its next telegraphed shot, set on firing and counted down each tick so the
+	// poker paces its shots rather than auto-firing. Distinct from `attackT` (the swing
+	// telegraph itself). Absent == 0 (ready). Server-internal; never on the wire.
+	fireCdT?: number;
 	// Momentum body (ADR 0017). Every entity — Avatar or Monster — integrates on
 	// one body so a later slice can throw it with a Knockback impulse and reuse the
 	// same gravity + drag + Terrain collision.
@@ -218,6 +223,19 @@ export interface Box {
 	h: number;
 }
 
+// The side a Projectile belongs to (ADR 0017 §8): `monster` is a hostile shot
+// (resolves against Avatars — Dodge/Block/Parry/swat), `player` is one a Parry
+// REFLECTED back (now owned by the parrier, resolves against Monsters). A reflect
+// flips the faction (and ownership), so the same travelling hit can change whom it
+// threatens. Absent on a decoded legacy shot defaults to `monster`.
+export type ProjectileFaction = 'monster' | 'player';
+
+// A first-class hit that travels (ADR 0017 §8): a Projectile carries the SAME
+// hit-reaction payload a melee swing does — HP `damage`, `poiseDamage` toward a
+// Poise break, and the `knockback` (+ `knockbackUp` pop) thrown on that break — so a
+// heavy shot can Stagger exactly like a melee connect (scaled by Mass), while a
+// pebble only chips. It travels at a reactable speed (not hitscan) and is countered
+// by the whole defensive kit. `faction` decides whom it threatens (see above).
 export interface Projectile {
 	id: number;
 	x: number;
@@ -226,6 +244,13 @@ export interface Projectile {
 	vy: number;
 	life: number; // remaining lifetime, seconds
 	damage: number;
+	// The full hit-reaction payload (ADR 0017 §8), mirroring a Weapon's stat block:
+	// Poise damage toward a break, and the Knockback impulse (+ upward pop) thrown on
+	// one. Absent on a decoded legacy shot defaults to the SHOOTER pebble values.
+	poiseDamage: number;
+	knockback: number;
+	knockbackUp: number;
+	faction: ProjectileFaction;
 	ownerId: number;
 }
 
