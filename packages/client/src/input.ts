@@ -4,14 +4,15 @@ import type { Input } from '@mmo/shared';
 // release events a held key would stick, so it's dropped after this idle (M0).
 const HELD_MS = 220;
 
-// The abstract action set bindings resolve onto (ADR 0017 §12). Dodge / `down` are
-// reserved for the later combo + mobility slices; this slice adds `guard` (the unified
-// directional defense) to movement, jump, attack, interact, and the two skill slots.
+// The abstract action set bindings resolve onto (ADR 0017 §12). `down` is reserved for
+// the later combo slice; this slice adds both `dodge` (the i-frame hop) and `guard` (the
+// unified directional defense) to movement, jump, attack, interact, and the two skill slots.
 type Action =
 	| 'left'
 	| 'right'
 	| 'jump'
 	| 'attack'
+	| 'dodge'
 	| 'guard'
 	| 'interact'
 	| 'skill1'
@@ -21,8 +22,8 @@ type Action =
 // so a poll() yields identical Input intents whichever the Player runs.
 export type Scheme = 'keyboard' | 'mouse';
 
-// Keyboard-only: attack on `j` (and the legacy `x`), Guard on `k` (ADR 0017 §5/§12 —
-// `l` stays reserved for the later Dodge verb), active skills on `u`/`i`. `e` interacts.
+// Keyboard-only: attack on `j` (and the legacy `x`), Guard on `k`, Dodge on `l` (ADR 0017
+// §5/§12), active skills on `u`/`i`. `e` interacts.
 const KEYBOARD_BINDINGS: Readonly<Record<string, Action>> = {
 	left: 'left',
 	a: 'left',
@@ -33,6 +34,7 @@ const KEYBOARD_BINDINGS: Readonly<Record<string, Action>> = {
 	j: 'attack',
 	x: 'attack',
 	k: 'guard',
+	l: 'dodge',
 	e: 'interact',
 	u: 'skill1',
 	i: 'skill2',
@@ -51,6 +53,7 @@ const MOUSE_BINDINGS: Readonly<Record<string, Action>> = {
 	up: 'jump',
 	space: 'jump',
 	k: 'guard',
+	l: 'dodge',
 	f: 'interact',
 	e: 'skill1',
 	r: 'skill2',
@@ -123,6 +126,7 @@ export class InputState {
 			moveX: moveX as -1 | 0 | 1,
 			jump: this.held.has('jump'),
 			attack: this.held.has('attack') || this.mouseAttack,
+			dodge: this.held.has('dodge'),
 			guard: this.held.has('guard') || this.mouseGuard,
 			interact: this.held.has('interact'),
 			skill: this.held.has('skill1')

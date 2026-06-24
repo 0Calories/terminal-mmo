@@ -236,6 +236,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		attack: msg.attack,
 		guard: msg.guard,
 		interact: msg.interact,
+		dodge: msg.dodge,
 		skill: msg.skill,
 		// Lag credit for this input's Parry resolution, from its client timestamp (ADR
 		// 0017 §11). stepZone consumes this number deterministically; the wall clock that

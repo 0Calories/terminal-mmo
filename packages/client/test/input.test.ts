@@ -26,23 +26,33 @@ test('keyboard scheme: j attacks, u/i fire skill slots 1/2 (ADR 0017 §12)', () 
 	expect(input.poll(0).skill).toBe(2);
 });
 
-test('keyboard scheme: k raises Guard, l stays reserved for the later Dodge verb (ADR 0017 §5/§12)', () => {
+test('keyboard scheme: l is Dodge, k is Guard — distinct verbs (ADR 0017 §5/§12)', () => {
 	const input = new InputState('keyboard');
+	expect(input.poll(0).dodge).toBe(false);
 	expect(input.poll(0).guard).toBe(false);
+
+	input.press('l', 0); // dedicated Dodge key
+	let polled = input.poll(0);
+	expect(polled.dodge).toBe(true);
+	expect(polled.guard).toBe(false); // Dodge is not Guard
+	expect(polled.skill).toBeUndefined(); // not a skill
+	input.release('l');
+	expect(input.poll(0).dodge).toBe(false);
 
 	input.press('k', 0); // dedicated Guard key
-	const polled = input.poll(0);
+	polled = input.poll(0);
 	expect(polled.guard).toBe(true);
-	expect(polled.skill).toBeUndefined(); // not a skill
+	expect(polled.dodge).toBe(false); // Guard is not Dodge
 	expect(polled.attack).toBe(false); // not an attack
+	expect(polled.skill).toBeUndefined();
 	input.release('k');
 	expect(input.poll(0).guard).toBe(false);
+});
 
-	// `l` is still unbound (reserved for the later Dodge verb): no intent.
+test('mouse scheme: l also maps to Dodge (shared keyboard binding)', () => {
+	const input = new InputState('mouse');
 	input.press('l', 0);
-	const l = input.poll(0);
-	expect(l.guard).toBe(false);
-	expect(l.skill).toBeUndefined();
+	expect(input.poll(0).dodge).toBe(true);
 });
 
 test('mouse scheme: left-click attacks, right-click guards, e/r fire skill slots (ADR 0017 §5/§12)', () => {
@@ -107,6 +117,7 @@ test('both schemes map their bindings to identical intents', () => {
 		moveX: 1,
 		jump: true,
 		attack: true,
+		dodge: false,
 		guard: false,
 		interact: false,
 		skill: 1,

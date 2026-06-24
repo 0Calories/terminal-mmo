@@ -11,6 +11,7 @@ import {
 	actionFlags,
 	actionStateOf,
 	applyPoiseDamage,
+	avatarHittable,
 	bloodEffect,
 	deathGoreEffect,
 	entityBox,
@@ -103,11 +104,16 @@ export interface AvatarIntent {
 	y: number;
 	vx: number;
 	vy: number;
+	// External-impulse channel of the reported momentum body (ADR 0017): carried so a
+	// client-applied Dodge/Knockback hop persists server-side across ticks (the server
+	// trusts client kinematics and never re-simulates position). Absent == unchanged.
+	ivx?: number;
 	facing: Facing;
 	onGround: boolean;
 	attack: boolean;
 	guard?: boolean; // raise the Guard this tick (ADR 0017 §5); absent == false
 	interact?: boolean; // request a Portal transition; resolved by the world layer
+	dodge?: boolean; // start an i-frame Dodge hop this tick (ADR 0017 §5)
 	skill?: number;
 	// Input staleness in ms (ADR 0017 §11): how late this input reached the server,
 	// derived from its client timestamp by the impure server layer. Widens the Parry
@@ -155,6 +161,10 @@ function resolveAvatarIntent(
 				y: intent.y,
 				vx: intent.vx,
 				vy: intent.vy,
+				// Carry the reported impulse channel so a Dodge/Knockback hop the client
+				// integrated persists into this tick's authoritative avatar (absent == keep
+				// the prior residual).
+				ivx: intent.ivx ?? src.avatar.ivx,
 				facing: intent.facing,
 				onGround: intent.onGround,
 			}
@@ -169,13 +179,27 @@ function resolveAvatarIntent(
 		src.skillCooldowns ?? {},
 		src.progress.level,
 		src.class ?? 'warrior',
+		// `dodge` is the client's already-gated decision (grounded + moving checked at the
+		// impulse site before the hop ungrounds the body, ADR 0017 §5 / ADR 0001); the
+		// server only re-enforces the tick-stable timing (cooldown etc.) in resolveCombat.
+		// `guard` raises the held Guard, resolved authoritatively here.
 		intent
-			? { attack: intent.attack, skill: intent.skill, guard: intent.guard }
+			? {
+					attack: intent.attack,
+					skill: intent.skill,
+					dodge: intent.dodge,
+					guard: intent.guard,
+				}
 			: { attack: false },
 		dt,
 		weaponById(avatar.weapon),
 	);
 	avatar.attackT = r.attackT;
+	// The i-frame Dodge timer + its post-recovery cooldown (ADR 0017 §5): both server-
+	// tracked so the damage gates below negate hits during the active window and the
+	// spam-gate bars a re-dodge. The hop impulse is the client's (ADR 0001).
+	avatar.dodgeT = r.dodgeT;
+	avatar.dodgeCdT = r.dodgeCdT;
 	// The held-Guard timer (ADR 0017 §5): accumulated by the same shared gate that owns
 	// the swing, so the server and the client's prediction can't disagree on a raise.
 	avatar.guardT = r.guardT;
@@ -338,7 +362,10 @@ export function stepZone(
 			const hb = meleeHitbox(m);
 			for (let i = 0; i < avatars.length; i++) {
 				const a = avatars[i].avatar;
-				if (a.hurtT > 0 || !aabbOverlap(hb, entityBox(a))) continue;
+				// i-frame gate (ADR 0017 §5): a connect's automatic i-frames OR an active
+				// Dodge negate the strike (avatarHittable folds in dodgeInvulnerable).
+				// Dodging through the active frames is the demo.
+				if (!avatarHittable(a) || !aabbOverlap(hb, entityBox(a))) continue;
 				// Resolve the hit against the Avatar's Guard FIRST (ADR 0017 §5): a frontal
 				// raise Parries it (in the opening window) or Blocks it (held past), a rear
 				// hit ignores Guard. Lag-comp widens the Parry window by this input's
@@ -514,7 +541,8 @@ export function stepZone(
 		let consumed = false;
 		for (let i = 0; i < avatars.length; i++) {
 			const a = avatars[i].avatar;
-			if (a.hurtT <= 0 && aabbOverlap(projectileBox(pr), entityBox(a))) {
+			// Same i-frame gate as melee: an active Dodge slips a projectile too (ADR 0017 §5).
+			if (avatarHittable(a) && aabbOverlap(projectileBox(pr), entityBox(a))) {
 				avatars[i] = {
 					...avatars[i],
 					avatar: { ...a, hp: a.hp - pr.damage, hurtT: COMBAT.iframes },

@@ -411,3 +411,45 @@ test("only the active Zone ticks; the Avatar's persistent state lives above it",
 	expect(g.world.zones['field-02']).toBe(before);
 	expect(g.player.zoneId).toBe('town-01');
 });
+
+// --- Dodge hop (ADR 0017 §5, #165) ------------------------------------------
+// The hop is a client-authoritative momentum-body impulse (ADR 0001), so it is
+// exercised through the full offline prediction path (step → applyImpulse →
+// stepEntity → stepZone), which is where direction + impulse become observable.
+
+test('a Dodge hops in the held direction via a momentum-body impulse', () => {
+	let g = createGame();
+	g.player.avatar.onGround = true; // grounded — the hop is a grounded move
+	const x0 = g.player.avatar.x;
+	g = step(g, { moveX: 1, jump: false, attack: false, dodge: true }, 16);
+	expect(g.player.avatar.dodgeT ?? 0).toBeGreaterThan(0); // the Dodge started
+	expect(g.player.avatar.ivx ?? 0).toBeGreaterThan(0); // rightward impulse
+	expect(g.player.avatar.x).toBeGreaterThan(x0); // hopped right
+});
+
+test('the hop follows the held direction (left)', () => {
+	let g = createGame();
+	g.player.avatar.onGround = true;
+	g = step(g, { moveX: -1, jump: false, attack: false, dodge: true }, 16);
+	expect(g.player.avatar.ivx ?? 0).toBeLessThan(0); // hops LEFT with the held dir
+});
+
+test('a standstill dodge does nothing — a direction must be held', () => {
+	let g = createGame();
+	g.player.avatar.onGround = true;
+	g = step(g, { moveX: 0, jump: false, attack: false, dodge: true }, 16);
+	expect(g.player.avatar.dodgeT ?? 0).toBe(0); // no hop started
+	expect(g.player.avatar.ivx ?? 0).toBe(0); // no impulse
+});
+
+test('a Dodge cannot be re-triggered mid-hop (committal)', () => {
+	let g = createGame();
+	g.player.avatar.onGround = true;
+	g = step(g, { moveX: 1, jump: false, attack: false, dodge: true }, 16);
+	const ivxAfterStart = g.player.avatar.ivx ?? 0;
+	// Holding dodge again next tick must not re-impulse — ivx only DECAYS, never jumps
+	// back up to a fresh hop.
+	g = step(g, { moveX: 1, jump: false, attack: false, dodge: true }, 16);
+	expect(g.player.avatar.ivx ?? 0).toBeLessThan(ivxAfterStart); // decayed, not re-kicked
+	expect(g.player.avatar.ivx ?? 0).toBeGreaterThan(0);
+});
