@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	type BodySprite,
 	type BodyState,
 	bodyFrame,
 	DEFAULT_FORM,
@@ -64,18 +65,46 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 	});
 
 	test('an unauthored Pose still falls back to idle (ADR 0020 §5)', () => {
-		// Beyond the required core, every other Pose resolves to the idle grid until a
-		// later slice authors it (jump / combat leans / hurt / emotes).
+		// Beyond the required core (+ the authored `jump`), every other Pose resolves to
+		// the idle grid until a later slice authors it (combat leans / hurt / emotes).
 		const idle = formFrame(FORMS[0], 'idle');
-		for (const pose of [
-			'jump',
-			'windup',
-			'active',
-			'recovery',
-			'hurt',
-		] as const)
+		for (const pose of ['windup', 'active', 'recovery', 'hurt'] as const)
 			expect(formFrame(FORMS[0], pose)).toBe(idle);
 		expect(formFrame(FORMS[0], 'emote:wave')).toBe(idle);
+	});
+
+	test('the launch Form authors a distinct jump Pose for airborne (ADR 0020 §6)', () => {
+		// The airborne pose is a real grid (not the idle fallback) and differs from idle
+		// and the walk cycle, so being in the air is immediately legible.
+		const idle = formFrame(FORMS[0], 'idle');
+		const jump = formFrame(FORMS[0], 'jump');
+		expect(jump).toBeInstanceOf(Sprite);
+		expect(jump).not.toBe(idle);
+		expect(jump.rows(1)).not.toEqual(idle.rows(1));
+		expect(jump.rows(1)).not.toEqual(formFrame(FORMS[0], 'walkA').rows(1));
+		expect(jump.rows(1)).not.toEqual(formFrame(FORMS[0], 'walkB').rows(1));
+		// Same 9×3 footprint as idle, so the grip/head anchors and logical box are stable.
+		expect(jump.w).toBe(idle.w);
+		expect(jump.h).toBe(idle.h);
+	});
+
+	test('the jump Pose mirrors left/right by facing (ADR 0020)', () => {
+		const jump = formFrame(FORMS[0], 'jump');
+		// Authored right-facing; facing left reflects the asymmetric pose, same width.
+		expect(jump.rows(-1)).not.toEqual(jump.rows(1));
+		expect(jump.rows(-1)[0].length).toBe(jump.w);
+	});
+
+	test('a Form without an authored jump Pose falls back to idle (ADR 0020 §5)', () => {
+		// The airborne rung resolves through the same idle fallback, so a Form that only
+		// authors the required core still renders (as idle) when it never authors `jump`.
+		const idle = new Sprite('x', { defaultKey: 'p' });
+		const minimal: BodySprite = {
+			frames: { idle },
+			grip: { x: 0, y: 0 },
+			head: { x: 0, y: 0 },
+		};
+		expect(formFrame(minimal, 'jump')).toBe(idle);
 	});
 
 	test('the walk Poses mirror left/right by facing (ADR 0020)', () => {
