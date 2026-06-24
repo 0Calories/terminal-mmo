@@ -90,7 +90,7 @@ export class Hud {
 		);
 		this.skills = new TextRenderable(ctx, {
 			content: '',
-			fg: COLORS.melee,
+			fg: COLORS.telegraph,
 			bg: COLORS.bg,
 		});
 		this.bottom.add(this.skills);
@@ -109,7 +109,7 @@ export class Hud {
 		this.bottom.add(this.chat);
 		this.chatInput = new TextRenderable(ctx, {
 			content: '',
-			fg: COLORS.melee,
+			fg: COLORS.telegraph,
 			bg: COLORS.bg,
 		});
 		this.bottom.add(this.chatInput);

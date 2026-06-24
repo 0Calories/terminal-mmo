@@ -30,5 +30,9 @@ export { HATS, type HatDef } from './hats';
 // specific (opentui RGBA), so it stays with the consumer; shared owns only the
 // framework-agnostic glyph/colour-key grids.
 export { mirrorGlyph, SENTINEL, Sprite } from './sprite';
-export type { WeaponFrameId, WeaponSprite } from './weapon-sprite';
+export {
+	WEAPON_ACCENT_KEY,
+	type WeaponFrameId,
+	type WeaponSprite,
+} from './weapon-sprite';
 export { sword } from './weapons/sword';
