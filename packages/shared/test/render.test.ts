@@ -1145,7 +1145,14 @@ test('combat telegraphs are exempt from planting: the blade-edge arc keeps its o
 	);
 	const progress = 0.5;
 	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
-	e.action = { move: 'basic', phase: 'active', progress, flags: 0 };
+	e.action = {
+		move: 'basic',
+		phase: 'active',
+		progress,
+		flags: 0,
+		emote: null,
+		emoteT: 0,
+	};
 	renderZoneScene(
 		buf,
 		{ terrain, portals: [], npcs: [], entities: [e] },
