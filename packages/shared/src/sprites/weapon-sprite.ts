@@ -1,9 +1,9 @@
 import type { Sprite } from './sprite';
 
-// The frames a WeaponSprite may pose through (ADR 0018 §4). Only `idle` (a hold
-// pose) is authored in this slice; `windup`/`active`/`recovery` land with the swing
-// rework. The selector returns a frame id every frame; an unauthored frame simply
-// draws no weapon layer (the legacy swing overlay covers the swing for now).
+// The frames a WeaponSprite may pose through (ADR 0018 §4). `idle`, `windup` and
+// `recovery` are single hold poses chosen by phase; `active` is an ORDERED SWEEP of
+// frames sampled by `swingProgress` (first frame at progress 0, last at 1). The
+// selector returns a frame id every frame; an unauthored frame draws no weapon layer.
 export type WeaponFrameId = 'idle' | 'windup' | 'active' | 'recovery';
 
 // A WeaponSprite is a dedicated ANIMATED sprite type (ADR 0018 §2), distinct from
@@ -12,9 +12,16 @@ export type WeaponFrameId = 'idle' | 'windup' | 'active' | 'recovery';
 // It is a named frame set (each frame an authored glyph+colour grid like any Sprite),
 // plus a grip anchor (§3) and a single dynamic accent colour (§6).
 export interface WeaponSprite {
-	// The named frame set. `idle` is the always-visible hold pose; the rest are
-	// optional until authored, so the selection seam falls back gracefully.
-	frames: Partial<Record<WeaponFrameId, Sprite>>;
+	// The named frame set. `idle`/`windup`/`recovery` are single hold poses; `active`
+	// is an ordered sweep the renderer indexes by `swingProgress` (ADR 0018 §4 — first
+	// frame at 0, last at 1). Every member is optional, so the selection seam falls
+	// back gracefully (an unauthored phase simply draws no weapon layer).
+	frames: {
+		idle?: Sprite;
+		windup?: Sprite;
+		active?: readonly Sprite[];
+		recovery?: Sprite;
+	};
 	// The cell within the weapon art (right-facing coords) aligned to the BODY's
 	// grip cell, grip-to-grip (ADR 0018 §3). Mirrored alongside the art on facing.
 	grip: { x: number; y: number };

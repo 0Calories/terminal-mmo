@@ -1,4 +1,4 @@
-import { swingPhase, weaponFrame } from './combat';
+import { sweepIndex, swingPhase, swingProgress, weaponFrame } from './combat';
 import { BOX } from './constants';
 import {
 	HATS,
@@ -194,24 +194,32 @@ export function drawEntitySprite<C>(
 
 	// The equipped weapon: an always-anchored layer composited ON TOP of the body at
 	// the body's grip cell, mirrored with facing (ADR 0018 §1/§3). The frame is the
-	// pure shared selector's choice — `idle` at rest. A swing frame that isn't authored
-	// yet (windup/active/recovery) resolves to no art, so the weapon layer is skipped
-	// mid-swing and the legacy swing overlay renders it (transitional, until the sweep
-	// frames land). One code path: "attacking" only changes which frame is selected.
+	// pure shared selector's choice — `idle` at rest, else the swing phase's pose;
+	// the `active` phase plays an ordered sweep sampled by swingProgress. One code
+	// path: "attacking" only changes which frame is selected (ADR 0018 §1/§4).
 	const ws = weaponSpriteFor(e);
 	if (ws && sprite.grip) {
 		let move: MoveId;
 		let phase: AttackPhase | null;
+		let progress: number;
 		if (e.action) {
 			// Observers (and any entity carrying replicated action-state): read it.
 			move = e.action.move;
 			phase = e.action.phase;
+			progress = e.action.progress;
 		} else {
 			// The local Avatar predicts its swing from attackT against its weapon's phases.
-			phase = swingPhase(e.attackT, weaponById(e.weapon).swing);
+			const swing = weaponById(e.weapon).swing;
+			phase = swingPhase(e.attackT, swing);
 			move = phase ? 'basic' : 'idle';
+			progress = phase ? swingProgress(e.attackT, swing) : 0;
 		}
-		const frame = ws.frames[weaponFrame(move, phase)];
+		const id = weaponFrame(move, phase);
+		// `active` is an ordered sweep indexed by progress; the other ids are single poses.
+		const frame =
+			id === 'active'
+				? ws.frames.active?.[sweepIndex(progress, ws.frames.active.length)]
+				: ws.frames[id];
 		if (frame) {
 			// Body grip cell, its column reflected across the body when facing left.
 			const bodyGripX =
