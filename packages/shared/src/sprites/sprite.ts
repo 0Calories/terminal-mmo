@@ -81,6 +81,13 @@ export interface SpriteOptions {
 	 *  The weapon layer composites grip-to-grip onto this cell; facing-left mirrors
 	 *  the column across the body via the renderer. Absent for art with no anchor. */
 	grip?: { x: number; y: number };
+	/** Vertical anchor offset (cells, default `0`): added to the sprite's `sy` so the
+	 *  whole figure shifts as a unit, landing its bottom row on the terrain surface
+	 *  row instead of one cell above. `1` for ink-top "contact feet" art that should
+	 *  plant on the ground; `0` for full-block / lower-ink feet that already touch it
+	 *  (ADR 0021). The legacy single-frame Monster path reads it here; a Form declares
+	 *  its own on the BodySprite so it applies across the whole frame set. */
+	baseline?: number;
 }
 
 export class Sprite {
@@ -92,6 +99,10 @@ export class Sprite {
 	// A named anchor cell (right-facing art coords) another layer aligns to — the
 	// body's grip cell for the weapon layer (ADR 0018 §3). Undefined when unanchored.
 	readonly grip?: { x: number; y: number };
+	// Vertical anchor offset (cells, default 0): shifts the whole sprite down so its
+	// bottom row plants on the terrain surface row (ADR 0021). Read by the renderer's
+	// `sy` for the legacy single-frame Monster path; a Form carries its own baseline.
+	readonly baseline: number;
 	private readonly glyphRight: readonly string[];
 	private readonly glyphLeft: readonly string[];
 	private readonly colorRight: readonly string[];
@@ -105,6 +116,7 @@ export class Sprite {
 			);
 		this.defaultKey = defaultKey;
 		this.grip = opts.grip;
+		this.baseline = opts.baseline ?? 0;
 
 		const glyphRows = splitTrimPad(glyph).map((r) =>
 			r.replaceAll(SENTINEL, ' '),
