@@ -44,19 +44,19 @@ const idle = new Sprite(
 // Wind-up: the heavy blade hauled up-and-back, cocked for the overhead chop.
 const windup = new Sprite(
 	`
-·█···
-·██··
-··██·
+█···
+██··
+·██·
 ·▟█▙·
-··█··`,
+···█·`,
 	{
 		defaultKey: 'a',
 		colors: `
-·a···
-·aa··
-··aa·
+a···
+aa··
+·aa·
 ·kak·
-··k··`,
+···k·`,
 	},
 );
 
