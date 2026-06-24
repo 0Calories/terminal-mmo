@@ -44,12 +44,47 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 		expect(formFrame(FORMS[0], 'idle')).toBe(FORMS[0].frames.idle as Sprite);
 	});
 
-	test('an unauthored Pose falls back to idle (ADR 0020 §5)', () => {
-		// This slice authors only `idle`, so every other Pose resolves to the idle grid.
+	test('the launch Form authors the required walk core as distinct grids (ADR 0020 §5)', () => {
+		// `idle`/`walkA`/`walkB` are the required core every Form must author. The two
+		// walk Poses are real grids (not idle fallbacks) and differ from each other and
+		// from idle, so the stride visibly alternates the feet.
 		const idle = formFrame(FORMS[0], 'idle');
-		for (const pose of ['walkA', 'walkB', 'jump', 'windup', 'hurt'] as const)
+		const walkA = formFrame(FORMS[0], 'walkA');
+		const walkB = formFrame(FORMS[0], 'walkB');
+		expect(walkA).toBeInstanceOf(Sprite);
+		expect(walkB).toBeInstanceOf(Sprite);
+		expect(walkA).not.toBe(idle);
+		expect(walkB).not.toBe(idle);
+		expect(walkA.rows(1)).not.toEqual(walkB.rows(1));
+		// Same footprint as idle (9×3), so the body anchor is stable across the cycle.
+		expect(walkA.w).toBe(idle.w);
+		expect(walkA.h).toBe(idle.h);
+		expect(walkB.w).toBe(idle.w);
+		expect(walkB.h).toBe(idle.h);
+	});
+
+	test('an unauthored Pose still falls back to idle (ADR 0020 §5)', () => {
+		// Beyond the required core, every other Pose resolves to the idle grid until a
+		// later slice authors it (jump / combat leans / hurt / emotes).
+		const idle = formFrame(FORMS[0], 'idle');
+		for (const pose of [
+			'jump',
+			'windup',
+			'active',
+			'recovery',
+			'hurt',
+		] as const)
 			expect(formFrame(FORMS[0], pose)).toBe(idle);
 		expect(formFrame(FORMS[0], 'emote:wave')).toBe(idle);
+	});
+
+	test('the walk Poses mirror left/right by facing (ADR 0020)', () => {
+		for (const pose of ['walkA', 'walkB'] as const) {
+			const grid = formFrame(FORMS[0], pose);
+			// Authored right-facing; facing left reflects the asymmetric stride, same width.
+			expect(grid.rows(-1)).not.toEqual(grid.rows(1));
+			expect(grid.rows(-1)[0].length).toBe(grid.w);
+		}
 	});
 
 	test('the body Pose mirrors left/right (the body grid carries the free mirror)', () => {
