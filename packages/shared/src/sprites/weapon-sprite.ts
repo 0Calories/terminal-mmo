@@ -1,5 +1,12 @@
 import type { Sprite } from './sprite';
 
+// The art colour key whose cells are the weapon's dynamic ACCENT (ADR 0018 §6): the
+// renderer repaints these to the resolved `accent` colour every frame, so the blade,
+// the blade-edge arc and the motion Trail all read in one weapon colour — and the whole
+// blade re-tints when a rarity tier later feeds the accent channel. Structural cells
+// (guard, grip) keep their authored keys, so only the one dynamic channel moves.
+export const WEAPON_ACCENT_KEY = 'a';
+
 // The frames a WeaponSprite may pose through (ADR 0018 §4). `idle`, `windup` and
 // `recovery` are single hold poses chosen by phase; `active` is an ORDERED SWEEP of
 // frames sampled by `swingProgress` (first frame at progress 0, last at 1). The

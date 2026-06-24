@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { meleeHitbox, sweepIndex } from '../src/combat';
+import { bladeEdgeArc, meleeHitbox, sweepIndex } from '../src/combat';
 import { BOX } from '../src/constants';
 import {
 	type CellBuffer,
@@ -7,7 +7,13 @@ import {
 	type RenderStyle,
 	renderZoneScene,
 } from '../src/render';
-import { HATS, type Sprite, spriteFor, spriteForNpc } from '../src/sprites';
+import {
+	HATS,
+	type Sprite,
+	spriteFor,
+	spriteForNpc,
+	WEAPON_ACCENT_KEY,
+} from '../src/sprites';
 import { parseTerrain } from '../src/terrain';
 import type { Entity, EntityType, Facing } from '../src/types';
 import { weaponById } from '../src/weapons';
@@ -68,6 +74,9 @@ function expectSpriteAt(
 	ay: number,
 	facing: Facing,
 	expectedFg: (key: string) => string,
+	// Screen cells another layer legitimately overwrites (e.g. the blade-edge arc drawn
+	// on top of the active blade) — skipped so the frame check survives that overlay.
+	skip?: (px: number, py: number) => boolean,
 ) {
 	const glyphs = sprite.rows(facing);
 	const keys = sprite.colorKeys(facing);
@@ -75,6 +84,7 @@ function expectSpriteAt(
 		for (let rx = 0; rx < sprite.w; rx++) {
 			const ch = glyphs[ry][rx];
 			if (ch === ' ') continue;
+			if (skip?.(ax + rx, ay + ry)) continue;
 			const cell = buf.at(ax + rx, ay + ry);
 			expect(cell?.ch).toBe(ch);
 			expect(cell?.fg).toBe(expectedFg(keys[ry][rx]));
@@ -114,6 +124,16 @@ const STYLE: RenderStyle<string> = {
 };
 
 const fgFor = (key: string) => STYLE.palette[key] ?? STYLE.paletteDefault;
+
+// The colour resolved for the weapon's dynamic ACCENT palette key (ADR 0018 §6).
+const accentFg = (accent: string) =>
+	STYLE.palette[accent] ?? STYLE.paletteDefault;
+
+// Weapon-frame fg: the blade's accent cells are repainted to the resolved accent colour
+// (ADR 0018 §6), so a weapon-frame assertion resolves `WEAPON_ACCENT_KEY` to the accent,
+// not the (absent) palette entry for `a`. Other keys (the guard) use the normal palette.
+const weaponFgFor = (accent: string) => (key: string) =>
+	key === WEAPON_ACCENT_KEY ? accentFg(accent) : fgFor(key);
 
 function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
 	return {
@@ -465,8 +485,9 @@ test('an equipped Avatar at rest renders the weapon idle frame at the mirrored g
 		const wx: number = bodyGripX - wgx;
 		const wy: number = bodyGripY - weapon.grip.y;
 
-		// Every lit weapon glyph landed at the grip-anchored, facing-mirrored position.
-		expectSpriteAt(buf, frame, wx, wy, facing, fgFor);
+		// Every lit weapon glyph landed at the grip-anchored, facing-mirrored position,
+		// the blade in the resolved accent colour (ADR 0018 §6).
+		expectSpriteAt(buf, frame, wx, wy, facing, weaponFgFor(weapon.accent));
 
 		// Where a lit weapon cell lands on a lit BODY cell, the weapon is drawn on top,
 		// so the composited cell shows the weapon glyph — not the body's underneath. Found
@@ -526,8 +547,17 @@ test('mid-active-swing the composited weapon plays the sweep frame, and no box-f
 	const wx = bodyGripX - wgx;
 	const wy = bodyGripY - weapon.grip.y;
 
-	// The active sweep frame's lit blade cells land at the grip-anchored position.
-	expectSpriteAt(buf, frame, wx, wy, 1, fgFor);
+	// The active sweep frame's lit blade cells land at the grip-anchored position, in the
+	// resolved accent colour (ADR 0018 §6) — skipping the cells the blade-edge arc draws on
+	// top of (asserted separately below).
+	const arcCells = new Set(
+		bladeEdgeArc(progress, 1).map(
+			(c) => `${bodyGripX + c.dx},${bodyGripY + c.dy}`,
+		),
+	);
+	expectSpriteAt(buf, frame, wx, wy, 1, weaponFgFor(weapon.accent), (px, py) =>
+		arcCells.has(`${px},${py}`),
+	);
 
 	// The legacy `╱`/`╲` box-fill is RETIRED: the melee hitbox is purely logical and is
 	// never flood-filled. Prove it — count the written cells across the hitbox region;
@@ -543,6 +573,59 @@ test('mid-active-swing the composited weapon plays the sweep frame, and no box-f
 	}
 	expect(total).toBeGreaterThan(0);
 	expect(written).toBeLessThan(total); // not a solid fill — the box-fill is gone
+});
+
+test('the active phase renders the blade-edge arc in the accent colour; other phases draw none (ADR 0018 §5/§6)', () => {
+	const weapon = weaponById(0).sprite; // default Sword
+	if (!weapon) throw new Error('expected the default weapon to have a sprite');
+	const accent = accentFg(weapon.accent);
+	const progress = 0.5;
+
+	// Mid-active: every blade-edge arc cell is written, as its curve glyph in the accent
+	// colour (drawn on top of the blade). The arc traces the tip — NOT a hitbox fill.
+	const active = new FakeBuffer(28, 16);
+	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
+	e.action = { move: 'basic', phase: 'active', progress, flags: 0 };
+	renderZoneScene(
+		active,
+		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+	const { ax: sx, ay: sy, sprite: body } = avatarTopLeft(e);
+	const grip = body.grip;
+	if (!grip) throw new Error('expected the body to declare a grip cell');
+	const bodyGripX = sx + grip.x; // facing 1
+	const bodyGripY = sy + grip.y;
+
+	const arc = bladeEdgeArc(progress, 1);
+	expect(arc.length).toBeGreaterThan(0);
+	for (const c of arc) {
+		const cell = active.at(bodyGripX + c.dx, bodyGripY + c.dy);
+		expect(cell?.ch).toBe(c.glyph);
+		expect(cell?.fg).toBe(accent); // the accent colour reaches the arc cells
+	}
+
+	// At rest (idle: no action, attackT 0) there is NO arc. The forward arc cells (|dx| = 3)
+	// sit clear of the narrow idle blade and the body, so they stay untouched.
+	const idle = new FakeBuffer(28, 16);
+	const rest = makeEntity({
+		type: 'player',
+		x: 12,
+		y: 6,
+		facing: 1,
+		weapon: 0,
+	});
+	renderZoneScene(
+		idle,
+		{ terrain: flat20(), portals: [], npcs: [], entities: [rest] },
+		{ x: 0, y: 0 },
+		STYLE,
+	);
+	const forward = arc.filter((c) => Math.abs(c.dx) === 3);
+	expect(forward.length).toBeGreaterThan(0);
+	for (const c of forward)
+		expect(idle.at(bodyGripX + c.dx, bodyGripY + c.dy)).toBeUndefined();
 });
 
 test('a weaponless Avatar draws no weapon layer', () => {

@@ -1,10 +1,17 @@
-import { sweepIndex, swingPhase, swingProgress, weaponFrame } from './combat';
+import {
+	bladeEdgeArc,
+	sweepIndex,
+	swingPhase,
+	swingProgress,
+	weaponFrame,
+} from './combat';
 import { BOX } from './constants';
 import {
 	HATS,
 	type Sprite,
 	spriteFor,
 	spriteForNpc,
+	WEAPON_ACCENT_KEY,
 	type WeaponSprite,
 } from './sprites';
 import { isSolid } from './terrain';
@@ -220,11 +227,15 @@ export function drawEntitySprite<C>(
 			id === 'active'
 				? ws.frames.active?.[sweepIndex(progress, ws.frames.active.length)]
 				: ws.frames[id];
+		// Body grip cell, its column reflected across the body when facing left.
+		const bodyGripX =
+			sx + (e.facing === 1 ? sprite.grip.x : sprite.w - 1 - sprite.grip.x);
+		const bodyGripY = sy + sprite.grip.y;
+		// The one dynamic accent colour (ADR 0018 §6): the weapon's `accent` palette key
+		// resolved to a colour, fed to the blade highlight AND the blade-edge arc — so the
+		// weapon reads in one colour and re-tints wholesale when rarity feeds this channel.
+		const accent = style.palette[ws.accent] ?? style.paletteDefault;
 		if (frame) {
-			// Body grip cell, its column reflected across the body when facing left.
-			const bodyGripX =
-				sx + (e.facing === 1 ? sprite.grip.x : sprite.w - 1 - sprite.grip.x);
-			const bodyGripY = sy + sprite.grip.y;
 			// Weapon grip cell, mirrored alongside the art so grip lands on grip.
 			const wgx = e.facing === 1 ? ws.grip.x : frame.w - 1 - ws.grip.x;
 			blitSprite(
@@ -235,9 +246,28 @@ export function drawEntitySprite<C>(
 				e.facing,
 				hurt,
 				style,
-				undefined,
+				// Repaint the blade's accent cells to the dynamic accent colour for this blit.
+				{ [WEAPON_ACCENT_KEY]: accent },
 				ghost,
 			);
+		}
+		// The blade-edge arc (ADR 0018 §5): a short fading smear of curve glyphs tracing the
+		// blade tip through the active strike, in the accent colour — NOT a hitbox fill.
+		// Drawn ON TOP of the blade so the eye reads the swing's speed and direction; other
+		// phases draw no arc, and ghost previews (forge) omit it (it's a live-motion layer).
+		if (phase === 'active' && !ghost) {
+			for (const c of bladeEdgeArc(progress, e.facing)) {
+				const ax = bodyGripX + c.dx;
+				const ay = bodyGripY + c.dy;
+				if (ax < 0 || ax >= buf.width || ay < 0 || ay >= buf.height) continue;
+				buf.setCellWithAlphaBlending(
+					ax,
+					ay,
+					c.glyph,
+					accent,
+					style.transparent,
+				);
+			}
 		}
 	}
 

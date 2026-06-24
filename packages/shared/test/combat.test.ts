@@ -6,6 +6,7 @@ import {
 	applyPoiseDamage,
 	avatarHittable,
 	BOX,
+	bladeEdgeArc,
 	bloodEffect,
 	COMBAT,
 	canStartDodge,
@@ -853,6 +854,49 @@ describe('sweepIndex — active-sweep frame for a swingProgress (ADR 0018 §4)',
 		expect(sweepIndex(1.5, 3)).toBe(2); // clamps above to the last frame
 		expect(sweepIndex(0.5, 1)).toBe(0); // a single-frame sweep
 		expect(sweepIndex(0.5, 0)).toBe(0); // an empty sweep never indexes out of range
+	});
+});
+
+describe('bladeEdgeArc — blade-edge arc smear (ADR 0018 §5)', () => {
+	test('returns a smear of curve cells that traces the tip top→bottom through the swing', () => {
+		// The tip starts up-forward (negative dy) and ends down-forward (positive dy).
+		const start = bladeEdgeArc(0, 1);
+		const end = bladeEdgeArc(1, 1);
+		expect(start.length).toBeGreaterThan(0);
+		expect(end.length).toBeGreaterThan(0);
+		expect(start[0].dy).toBeLessThan(0); // up-forward at the strike's start
+		expect(end[0].dy).toBeGreaterThan(0); // down-forward at its end
+		// Every cell is a curve glyph (never a hitbox fill char).
+		for (const c of bladeEdgeArc(0.5, 1))
+			expect(['╲', '╱', '─']).toContain(c.glyph);
+	});
+
+	test('the tip advances forward and downward as the swing progresses', () => {
+		// The leading sample (index 0 = current tip) sweeps monotonically downward.
+		let prevDy = Number.NEGATIVE_INFINITY;
+		for (let p = 0; p <= 1.0001; p += 0.1) {
+			const head = bladeEdgeArc(Math.min(1, p), 1)[0];
+			expect(head.dy).toBeGreaterThanOrEqual(prevDy);
+			expect(head.dx).toBeGreaterThan(0); // forward of the grip when facing right
+			prevDy = head.dy;
+		}
+	});
+
+	test('facing mirrors the arc across the grip and flips the diagonal glyphs', () => {
+		const right = bladeEdgeArc(0.5, 1);
+		const left = bladeEdgeArc(0.5, -1);
+		expect(left.length).toBe(right.length);
+		for (let i = 0; i < right.length; i++) {
+			expect(left[i].dx).toBe(-right[i].dx); // mirrored across the grip column
+			expect(left[i].dy).toBe(right[i].dy); // same height
+			const flip: Record<string, string> = { '╲': '╱', '╱': '╲', '─': '─' };
+			expect(left[i].glyph).toBe(flip[right[i].glyph]);
+		}
+	});
+
+	test('progress clamps into range', () => {
+		expect(bladeEdgeArc(-1, 1)).toEqual(bladeEdgeArc(0, 1));
+		expect(bladeEdgeArc(2, 1)).toEqual(bladeEdgeArc(1, 1));
 	});
 });
 

@@ -516,6 +516,60 @@ export function sweepIndex(progress: number, len: number): number {
 	return Math.min(len - 1, Math.floor(p * len));
 }
 
+// One cell of a blade-edge arc: a curve glyph at an offset (dx,dy) FROM THE GRIP, in
+// cells. The renderer blits it in the weapon's accent colour at the grip-anchored
+// position (ADR 0018 §5/§6).
+export interface ArcCell {
+	dx: number;
+	dy: number;
+	glyph: string;
+}
+
+// The blade tip pivots around the grip from up-forward at the start of the active phase
+// down to down-forward at its end — a quarter-circle on the leading side. Radius and
+// angular span are fixed by the engine (heft comes from phase DURATIONS, ADR 0018 §4),
+// so every weapon traces the same readable arc.
+const ARC_RADIUS = 3;
+const ARC_FROM = -Math.PI / 3; // up-forward at progress 0 (~-60°)
+const ARC_TO = Math.PI / 4; // down-forward at progress 1 (~+45°)
+const ARC_SMEAR = 3; // current tip + trailing samples
+const ARC_STEP = 0.16; // progress between trailing samples
+
+// The curve glyph for an arc cell at vertical offset `dy` from the grip, oriented for
+// facing: a steep diagonal above the hand, a level bar level with it, the mirror
+// diagonal below — so the smear reads as a quarter-circle traced top→bottom.
+function arcGlyph(dy: number, facing: Facing): string {
+	if (dy < 0) return facing === 1 ? '╲' : '╱';
+	if (dy > 0) return facing === 1 ? '╱' : '╲';
+	return '─';
+}
+
+// The blade-edge arc for an active-phase swing (ADR 0018 §5): a short fading smear of
+// curve glyphs tracing the blade TIP through its arc around the grip, biased by facing.
+// The returned cells are the current tip plus a couple of trailing samples (newest
+// first), each an offset FROM THE GRIP — so the eye reads the swing's speed and
+// direction. A PURE function of (progress, facing) only — no entity, no colour, not a
+// hitbox fill — so the owner's prediction and every observer's render trace the same arc.
+// Duplicate cells (rounding collisions between samples) are dropped, keeping the smear's
+// newest position. Call only during the active phase; other phases draw no arc.
+export function bladeEdgeArc(progress: number, facing: Facing): ArcCell[] {
+	const head = progress < 0 ? 0 : progress > 1 ? 1 : progress;
+	const cells: ArcCell[] = [];
+	const seen = new Set<string>();
+	for (let i = 0; i < ARC_SMEAR; i++) {
+		const s = head - i * ARC_STEP;
+		if (s < 0) break;
+		const theta = ARC_FROM + (ARC_TO - ARC_FROM) * s;
+		const dx = Math.round(ARC_RADIUS * Math.cos(theta)) * facing;
+		const dy = Math.round(ARC_RADIUS * Math.sin(theta));
+		const key = `${dx},${dy}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		cells.push({ dx, dy, glyph: arcGlyph(dy, facing) });
+	}
+	return cells;
+}
+
 export function meleeHitbox(p: Entity, reach: number = COMBAT.meleeReach): Box {
 	const w = reach;
 	return {
