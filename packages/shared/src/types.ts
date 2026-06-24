@@ -13,6 +13,10 @@ export interface Control {
 
 export interface Input extends Control {
 	attack: boolean;
+	// Raise the Guard this tick (ADR 0017 §5): held, not a tap. The opening of a
+	// fresh raise is the Parry window, held past it is a Block — measured from
+	// press-time by the swing/guard gate, never a tap-vs-hold input measurement.
+	guard?: boolean;
 	interact?: boolean;
 	// Dodge intent (ADR 0017 §5): a dedicated key, not a double-tap. When the Avatar
 	// is free it starts an i-frame hop in the held (or facing) direction.
@@ -30,6 +34,16 @@ export type EntityType = 'player' | 'chaser' | 'shooter';
 // an idle action-state.
 export type AttackPhase = 'windup' | 'active' | 'recovery';
 
+// The three phase durations (seconds) of a swing's wind-up → active → recovery
+// machine (ADR 0017 §1). Authored once as COMBAT.swing for the default attack and
+// per-weapon in the Weapon stat block (ADR 0017 §14), so a greatsword's slow phases
+// and a dagger's fast ones are pure data fed through the same phase functions.
+export interface SwingPhases {
+	windup: number;
+	active: number;
+	recovery: number;
+}
+
 // The move an entity is performing. `idle` = nothing; `basic` = the basic melee
 // swing; `dodge` = the i-frame hop (ADR 0017 §5), whose `active`/`recovery` phases
 // reuse the AttackPhase values. Skills and Monster moves join this set as later
@@ -42,8 +56,10 @@ export type MoveId = 'idle' | 'basic' | 'dodge';
 // from the entity's swing timer by `actionStateOf`, never hand-authored. `phase` +
 // `progress` drive the client's per-phase sprite pose and the slash-arc (live only
 // while `active`); `flags` is a bitfield surfacing reaction/defense state — the
-// `staggered` bit (ACTION_FLAG.staggered) is set here, with guarding / airborne bits
-// reserved for later slices. `phase`/`progress` are meaningless when `move` is idle.
+// `staggered`, `guarding`, and `parrying` bits (ACTION_FLAG.*) are set here so a
+// co-present Player's Stagger and Guard/Parry stance are visible to everyone (ADR 0017
+// §5/§10); an airborne bit is reserved for later. `phase`/`progress` are meaningless
+// when `move` is idle — a guard is a stance, not a move, riding `flags` over an idle action.
 export interface ActionState {
 	move: MoveId;
 	phase: AttackPhase;
@@ -115,6 +131,12 @@ export interface Entity {
 	// owning Avatar's `canStartDodge` on client + server alike; never replicated (no
 	// other client renders it), so it stays OFF the wire.
 	dodgeCdT?: number;
+	// Guard (ADR 0017 §5): seconds the Guard has been HELD this raise, counting up
+	// while the guard intent is held and reset to 0 on release / swing / Stagger. Its
+	// magnitude is the whole gradient: in (0, guard.parryWindow] the raise is a Parry,
+	// past it a Block. Absent == 0 (not guarding). Server-tracked AND predicted by the
+	// owner; replicated to others through the action-state `flags`, never as a raw number.
+	guardT?: number;
 	// Ids an in-flight basic swing has already hit (ADR 0017 §2): a swing connects
 	// with a given target at most once, the rate-limiter that replaced the removed
 	// automatic post-hit i-frames. Cleared when a fresh swing starts; a NEW swing (or
@@ -124,6 +146,12 @@ export interface Entity {
 	contributors?: number[]; // Monster-only: session ids that have damaged it, for shared-kill rewards (#37)
 	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
 	cosmetics?: Cosmetics; // Avatar customization (#35); render-only, absent for Monsters
+	// Equipped Weapon catalog index (ADR 0017 §14): part of an Avatar's replicated
+	// appearance, and the key to its stat block — it drives the swing's damage / arc /
+	// poise / Knockback / phase durations AND its composited visual + trail. Absent ==
+	// the default Warrior sword (DEFAULT_WEAPON), so an unarmed entity plays exactly as
+	// before. Monsters leave it unset (their offense rework is a later slice).
+	weapon?: number;
 	bubble?: string; // latest Chat line shown as an over-head Speech bubble (#59); render-only
 	emote?: string; // active emote id shown over the head (#38); render-only
 	// Replicated action-state for a co-present entity (ADR 0017 §10): set by the
@@ -136,9 +164,11 @@ export interface Entity {
 // The semantic game event a burst represents. `blood` is the chip-hit MVP kind;
 // `gore` is the meatier, entity-tinted death burst (#139); `impact` is the heavy
 // Poise-break burst (ADR 0017 §13d) — bigger and sharper than a chip, the visual
-// twin of the Stagger that pairs with client hitstop + camera-kick. Future kinds
-// (parry clash, guard-break, launch) are added here as the system grows.
-export type EffectKind = 'blood' | 'gore' | 'impact';
+// twin of the Stagger that pairs with client hitstop + camera-kick. `parry` is the
+// parry-clash flash (ADR 0017 §5) — a bright, source-less burst the defender and
+// everyone in range sees when a Guard catches a hit in its opening window. Future
+// kinds (guard-break, launch) are added here as the system grows.
+export type EffectKind = 'blood' | 'gore' | 'impact' | 'parry';
 
 // An RGB colour carried on an Effect to tint its particles (#139), e.g. a death
 // burst recoloured to the dead entity's body. Each channel is 0..255.

@@ -20,6 +20,7 @@ import type {
 	Rarity,
 	Slot,
 } from './types';
+import { DEFAULT_WEAPON } from './weapons';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -147,7 +148,15 @@ class Reader {
 // Avatar kinematics (ADR 0001: position is client-authoritative) plus the combat
 // intents for the tick. A `skill` of 0 means none was pressed.
 export type ClientMessage =
-	| { t: 'hello'; handle: string; version: string; cosmetics: Cosmetics }
+	| {
+			t: 'hello';
+			handle: string;
+			version: string;
+			cosmetics: Cosmetics;
+			// Equipped Weapon catalog index, declared at connect like cosmetics (ADR 0017
+			// §14): it joins the Avatar's broadcast appearance and keys its stat block.
+			weapon: number;
+	  }
 	| {
 			t: 'input';
 			x: number;
@@ -157,12 +166,20 @@ export type ClientMessage =
 			facing: Facing;
 			onGround: boolean;
 			attack: boolean;
+			// Raise the Guard this tick (ADR 0017 §5). The server folds it into the held
+			// `guardT` and resolves Block / Parry authoritatively.
+			guard: boolean;
 			interact: boolean;
 			// Dodge intent for the tick (ADR 0017 §5): the server loads the i-frame hop
 			// timer so its damage gates honour the Dodge. The hop displacement itself is
 			// client-authoritative (ADR 0001) and never re-simulated server-side.
 			dodge: boolean;
 			skill?: number;
+			// Client monotonic timestamp (ms) of when this input was produced (ADR 0017
+			// §11): the timestamped-input channel light lag compensation judges a Parry
+			// against — the Player's own timeline, so a correctly-timed Parry that arrives
+			// a tick late still resolves within tolerance.
+			clientTime: number;
 	  }
 	// A Zone-local chat line; the server attributes it to the sender's handle and
 	// relays it to the sender's Channel (#34).
@@ -203,6 +220,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.str(msg.handle);
 			w.str(msg.version);
 			writeCosmetics(w, msg.cosmetics);
+			w.u8(msg.weapon);
 			break;
 		case 'input':
 			w.u8(CLIENT_TAG.input);
@@ -215,9 +233,12 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.bool(msg.attack);
 			w.bool(msg.interact);
 			w.u8(msg.skill ?? 0);
-			// Appended after `skill` so an older decoder (which stops before it) simply
-			// reads no Dodge, defaulting it false (see decode's remaining-guard).
+			// Trailing intents after the legacy fields (ADR 0017 §5/§11), so an older
+			// decoder that stops after `skill` still reads a valid input: Dodge, then
+			// Guard + the input timestamp. Decode reads them back in this same order.
 			w.bool(msg.dodge);
+			w.bool(msg.guard);
+			w.f64(msg.clientTime);
 			break;
 		case 'chat':
 			w.u8(CLIENT_TAG.chat);
@@ -251,7 +272,10 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			// bareheaded look (it is rejected by the version gate regardless).
 			const cosmetics =
 				r.remaining() >= 3 ? readCosmetics(r) : DEFAULT_COSMETICS;
-			return { t: 'hello', handle, version, cosmetics };
+			// Weapon (ADR 0017 §14) trails cosmetics; a client predating it defaults to
+			// the Warrior sword (it is rejected by the version gate regardless).
+			const weapon = r.remaining() >= 1 ? r.u8() : DEFAULT_WEAPON;
+			return { t: 'hello', handle, version, cosmetics, weapon };
 		}
 		case CLIENT_TAG.input: {
 			const x = r.f64();
@@ -263,9 +287,12 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			const attack = r.bool();
 			const interact = r.bool();
 			const skill = r.u8();
-			// Trailing (ADR 0017 §5): a pre-Dodge client stops here, so guard the read and
-			// default the intent false rather than throwing on the short buffer.
+			// Trailing intents (ADR 0017 §5/§11), read back in the encode order; a client
+			// predating any of them omits the bytes, so guard each read and default: no
+			// Dodge / no Guard / 0 lag-comp.
 			const dodge = r.remaining() >= 1 ? r.bool() : false;
+			const guard = r.remaining() >= 1 ? r.bool() : false;
+			const clientTime = r.remaining() >= 8 ? r.f64() : 0;
 			const msg: ClientMessage = {
 				t: 'input',
 				x,
@@ -275,8 +302,10 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 				facing,
 				onGround,
 				attack,
+				guard,
 				interact,
 				dodge,
+				clientTime,
 			};
 			if (skill !== 0) msg.skill = skill;
 			return msg;
@@ -310,6 +339,10 @@ export interface AvatarSnapshot {
 	hp: number;
 	maxHp: number;
 	hurtT: number;
+	// Equipped Weapon catalog index (ADR 0017 §14): part of replicated appearance, so
+	// every other client renders this Avatar's weapon (composited sprite + trail) and
+	// reads its swing against the weapon's phase durations.
+	weapon: number;
 	// What this Avatar is doing this tick (ADR 0017 §10): the replicated action-state
 	// that lets every other client render its swing (pose + slash-arc).
 	action: ActionState;
@@ -394,7 +427,12 @@ const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
 // Append-only: indices are the wire encoding, so a new kind goes on the END (a
 // reorder would remap existing Effects). A forward-version kind clamps to `blood`
 // on decode (see readEffect) so a newer server can't crash an older client.
-const EFFECT_KINDS: readonly EffectKind[] = ['blood', 'gore', 'impact'];
+const EFFECT_KINDS: readonly EffectKind[] = [
+	'blood',
+	'gore',
+	'impact',
+	'parry',
+];
 // Append-only (like EFFECT_KINDS): the index is the wire encoding, so a new move
 // goes on the END and a forward-version index clamps to `idle` on decode.
 const MOVE_IDS: readonly MoveId[] = ['idle', 'basic', 'dodge'];
@@ -441,6 +479,7 @@ function writeAvatar(w: Writer, a: AvatarSnapshot) {
 	w.f64(a.hp);
 	w.f64(a.maxHp);
 	w.f64(a.hurtT);
+	w.u8(a.weapon);
 	writeAction(w, a.action);
 }
 
@@ -458,6 +497,7 @@ function readAvatar(r: Reader): AvatarSnapshot {
 		hp: r.f64(),
 		maxHp: r.f64(),
 		hurtT: r.f64(),
+		weapon: r.u8(),
 		action: readAction(r),
 	};
 }

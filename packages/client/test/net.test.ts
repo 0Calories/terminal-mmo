@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import {
+	ACTION_FLAG,
 	BOX,
 	GROUND_TOP,
 	IDLE_ACTION,
@@ -40,6 +41,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 				hp: 50,
 				maxHp: 80,
 				hurtT: 0,
+				weapon: 0,
 				action: IDLE_ACTION,
 			},
 		],
@@ -85,6 +87,7 @@ function withOther(): Extract<ServerMessage, { t: 'snapshot' }> {
 		hp: 30,
 		maxHp: 80,
 		hurtT: 0.5,
+		weapon: 2,
 		action: IDLE_ACTION,
 	});
 	return s;
@@ -117,6 +120,35 @@ test('snapshotToGame threads cosmetics onto co-present Avatars and the own Avata
 		hat: 1,
 		nameplate: 4,
 	});
+});
+
+test('snapshotToGame threads the replicated weapon onto co-present + own Avatars (ADR 0017 §14)', () => {
+	const field = loadField();
+	const predicted = spawnAvatar(33, y);
+	const game = snapshotToGame(field, predicted, 1, withOther(), {});
+	// The co-present rival's weapon comes from its snapshot, so we render ITS weapon.
+	expect(game.others?.[0]?.weapon).toBe(2);
+	// The own (predicted) Avatar is stamped with its own snapshot weapon, so the local
+	// view composites the same weapon every other client sees.
+	expect(game.player.avatar.weapon).toBe(0);
+});
+
+test('snapshotToGame threads a co-present Avatar Guard stance onto its entity action (ADR 0017 §5/§10)', () => {
+	const field = loadField();
+	const s = withOther();
+	// The rival is mid-block: guarding, not in the parry window.
+	s.avatars[1].action = {
+		move: 'idle',
+		phase: 'recovery',
+		progress: 0,
+		flags: ACTION_FLAG.guarding,
+	};
+	const game = snapshotToGame(field, spawnAvatar(33, y), 1, s, {});
+	const other = game.others?.[0];
+	// The replicated `flags` ride onto the rebuilt entity's action — the exact seam the
+	// playfield's drawGuard reads to render another Player's brace.
+	expect(other?.action?.flags).toBe(ACTION_FLAG.guarding);
+	expect((other?.action?.flags ?? 0) & ACTION_FLAG.parrying).toBeFalsy();
 });
 
 test('snapshotToGame renders snapshot monsters/projectiles with the predicted own Avatar', () => {

@@ -26,22 +26,27 @@ test('keyboard scheme: j attacks, u/i fire skill slots 1/2 (ADR 0017 §12)', () 
 	expect(input.poll(0).skill).toBe(2);
 });
 
-test('keyboard scheme: l is Dodge, k stays reserved for Guard (ADR 0017 §12)', () => {
+test('keyboard scheme: l is Dodge, k is Guard — distinct verbs (ADR 0017 §5/§12)', () => {
 	const input = new InputState('keyboard');
 	expect(input.poll(0).dodge).toBe(false);
+	expect(input.poll(0).guard).toBe(false);
 
 	input.press('l', 0); // dedicated Dodge key
-	const polled = input.poll(0);
+	let polled = input.poll(0);
 	expect(polled.dodge).toBe(true);
+	expect(polled.guard).toBe(false); // Dodge is not Guard
 	expect(polled.skill).toBeUndefined(); // not a skill
 	input.release('l');
 	expect(input.poll(0).dodge).toBe(false);
 
-	// `k` is still unbound (reserved for the later Guard verb): no intent.
-	input.press('k', 0);
-	const k = input.poll(0);
-	expect(k.dodge).toBe(false);
-	expect(k.skill).toBeUndefined();
+	input.press('k', 0); // dedicated Guard key
+	polled = input.poll(0);
+	expect(polled.guard).toBe(true);
+	expect(polled.dodge).toBe(false); // Guard is not Dodge
+	expect(polled.attack).toBe(false); // not an attack
+	expect(polled.skill).toBeUndefined();
+	input.release('k');
+	expect(input.poll(0).guard).toBe(false);
 });
 
 test('mouse scheme: l also maps to Dodge (shared keyboard binding)', () => {
@@ -50,18 +55,22 @@ test('mouse scheme: l also maps to Dodge (shared keyboard binding)', () => {
 	expect(input.poll(0).dodge).toBe(true);
 });
 
-test('mouse scheme: left-click attacks, e/r fire skill slots 1/2 (ADR 0017 §12)', () => {
+test('mouse scheme: left-click attacks, right-click guards, e/r fire skill slots (ADR 0017 §5/§12)', () => {
 	const input = new InputState('mouse');
 
 	input.mouseDown(0); // left button
 	expect(input.poll(0).attack).toBe(true);
+	expect(input.poll(0).guard).toBe(false);
 	input.mouseUp(0);
 	expect(input.poll(0).attack).toBe(false);
 
-	// A non-left button (right = Guard, reserved) is not an attack.
+	// Right button (button 2) raises Guard, not attack.
 	input.mouseDown(2);
-	expect(input.poll(0).attack).toBe(false);
+	const g = input.poll(0);
+	expect(g.guard).toBe(true);
+	expect(g.attack).toBe(false);
 	input.mouseUp(2);
+	expect(input.poll(0).guard).toBe(false);
 
 	input.press('e', 0);
 	expect(input.poll(0).skill).toBe(1);
@@ -69,6 +78,20 @@ test('mouse scheme: left-click attacks, e/r fire skill slots 1/2 (ADR 0017 §12)
 
 	input.press('r', 0);
 	expect(input.poll(0).skill).toBe(2);
+});
+
+test('k also raises Guard in the mouse scheme (shared keyboard binding)', () => {
+	const input = new InputState('mouse');
+	input.press('k', 0);
+	expect(input.poll(0).guard).toBe(true);
+});
+
+test('clear() drops a held right-click Guard so it cannot stick across a mode switch', () => {
+	const input = new InputState('mouse');
+	input.mouseDown(2);
+	expect(input.poll(0).guard).toBe(true);
+	input.clear();
+	expect(input.poll(0).guard).toBe(false);
 });
 
 test('both schemes map their bindings to identical intents', () => {
@@ -95,6 +118,7 @@ test('both schemes map their bindings to identical intents', () => {
 		jump: true,
 		attack: true,
 		dodge: false,
+		guard: false,
 		interact: false,
 		skill: 1,
 	});

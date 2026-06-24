@@ -7,6 +7,7 @@ import {
 	canStartDodge,
 	clientStepAvatar,
 	createGame,
+	DEFAULT_WEAPON,
 	type Entity,
 	entityBox,
 	type GameState,
@@ -21,6 +22,8 @@ import {
 	sellItem,
 	spawnAvatar,
 	step,
+	WEAPONS,
+	weaponById,
 	type Zone,
 } from '@mmo/shared';
 import { createCliRenderer } from '@opentui/core';
@@ -62,6 +65,7 @@ const IDLE_INPUT: Input = {
 	moveX: 0,
 	jump: false,
 	attack: false,
+	guard: false,
 	interact: false,
 };
 
@@ -79,6 +83,25 @@ const renderer = await createCliRenderer({
 // difference. The mouse scheme also binds the playfield's mouse buttons below.
 const SCHEME = process.env.MMO_SCHEME === 'mouse' ? 'mouse' : 'keyboard';
 const input = new InputState(SCHEME);
+
+// Equipped Weapon (ADR 0017 §14). There is no in-game equip UI yet, so MMO_WEAPON
+// selects the demo weapon by NAME (e.g. MMO_WEAPON=greatsword / dagger) or by catalog
+// index; an unknown value falls back to the default Warrior sword. This is the seam
+// the "equip a heavy greatsword vs a fast dagger and feel the difference" demo uses,
+// and it drives BOTH the local prediction and the broadcast appearance.
+function selectWeapon(): number {
+	const raw = (process.env.MMO_WEAPON ?? '').trim();
+	if (!raw) return DEFAULT_WEAPON;
+	const byName = WEAPONS.findIndex(
+		(w) => w.name.toLowerCase() === raw.toLowerCase(),
+	);
+	if (byName >= 0) return byName;
+	const idx = Number(raw);
+	return Number.isInteger(idx) && idx >= 0 && idx < WEAPONS.length
+		? idx
+		: DEFAULT_WEAPON;
+}
+const WEAPON = selectWeapon();
 const playfield = new PlayfieldRenderable(renderer);
 renderer.root.add(playfield);
 // In the mouse scheme, route the playfield's left mouse button to the attack intent
@@ -139,6 +162,15 @@ function fpsMeter() {
 
 function runOffline() {
 	let game = createGame();
+	// Equip the chosen demo Weapon (ADR 0017 §14): it lives on the Avatar entity, so
+	// stepZone's combat resolution and the renderer both read it from one place.
+	game = {
+		...game,
+		player: {
+			...game.player,
+			avatar: { ...game.player.avatar, weapon: WEAPON },
+		},
+	};
 	const shop = new Shop(renderer);
 	shop.attach(renderer.root);
 	// Audio options modal (ADR 0014/0015): a global, Shop-class overlay opened with `o`.
@@ -305,6 +337,7 @@ function runNetworked(url: string) {
 				quit(reason);
 			},
 			cosmetics,
+			WEAPON,
 		);
 		hud.showAlphaNotice(); // ephemeral live World (ADR 0009)
 		// The Zone we currently render + predict against; swapped when the server moves
@@ -313,8 +346,13 @@ function runNetworked(url: string) {
 		let zone = localZone(zoneId);
 
 		// Own Avatar, predicted locally for zero input lag; the server corrects vitals
-		// (and snaps position on respawn) via snapshots.
-		let predicted: Entity = spawnAvatar(SPAWN.x, SPAWN.y);
+		// (and snaps position on respawn) via snapshots. Seeded with the chosen Weapon so
+		// the local swing predicts with its stat block and renders it before the first
+		// snapshot echoes it back (ADR 0017 §14).
+		let predicted: Entity = {
+			...spawnAvatar(SPAWN.x, SPAWN.y),
+			weapon: WEAPON,
+		};
 		let localCd: Record<string, number> = {}; // predicted skill cooldowns (off-wire)
 		const SEND_INTERVAL = 1000 / 30; // throttle input reports to ~30 Hz
 		let sendAcc = 0;
@@ -442,14 +480,24 @@ function runNetworked(url: string) {
 				localCd,
 				net.latest?.progress.level ?? 1,
 				'warrior',
-				{ attack: inp.attack, skill: inp.skill, dodge: dodging },
+				{
+					attack: inp.attack,
+					skill: inp.skill,
+					dodge: dodging,
+					guard: inp.guard,
+				},
 				dtSec,
+				weaponById(predicted.weapon),
 			);
 			predicted.attackT = r.attackT;
 			// Mirror the server's i-frame Dodge timer + its post-recovery cooldown so the
 			// local pose and both gates stay in lockstep with the prediction (ADR 0017 §5).
 			predicted.dodgeT = r.dodgeT;
 			predicted.dodgeCdT = r.dodgeCdT;
+			// Mirror the server's held-Guard timer so the local guard/parry pose stays in
+			// lockstep with the prediction (ADR 0017 §5); the parry's damage-negation is
+			// server-authoritative and reconciles through HP + the snapshot's parry Effect.
+			predicted.guardT = r.guardT;
 			localCd = r.cooldowns;
 			const hitbox = r.hitbox;
 			const hitDamage = r.damage;
@@ -480,11 +528,15 @@ function runNetworked(url: string) {
 					facing: predicted.facing,
 					onGround: predicted.onGround,
 					attack: inp.attack,
+					guard: inp.guard ?? false,
 					interact: inp.interact ?? false,
 					// the gated decision, so the server starts the i-frame timer iff the hop
 					// fired client-side (grounded + moving), not on every key-press (ADR 0017 §5).
 					dodge: dodging,
 					skill: inp.skill,
+					// Timestamp the input so the server can lag-compensate the Parry against
+					// the Player's own timeline (ADR 0017 §11).
+					clientTime: performance.now(),
 				});
 			}
 

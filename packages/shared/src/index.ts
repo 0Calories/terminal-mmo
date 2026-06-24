@@ -19,6 +19,7 @@ export * from './terrain';
 export * from './types';
 export * from './vendor';
 export * from './version';
+export * from './weapons';
 export * from './world';
 export * from './zone';
 export * from './zoneContent';

@@ -12,6 +12,12 @@ export const COLORS = {
 	// The Dodge after-image (ADR 0017 §5): a cool, bright streak — distinct from the
 	// warm melee flash — so an evasive hop reads apart from an attack at a glance.
 	dodge: RGBA.fromInts(150, 220, 255, 255),
+	// Guard brace (ADR 0017 §5): a cool steel bar for a Block, distinct from the warm
+	// melee flash so a defensive stance reads apart from an attack at a glance…
+	guard: RGBA.fromInts(150, 200, 255, 255),
+	// …and a bright near-white for the Parry window + clash, so the high-skill opening
+	// pops against the steel Block.
+	parry: RGBA.fromInts(245, 250, 255, 255),
 	projectile: RGBA.fromInts(255, 120, 80, 255),
 	portal: RGBA.fromInts(180, 130, 255, 255),
 	vendor: RGBA.fromInts(255, 200, 90, 255),

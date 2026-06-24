@@ -76,6 +76,31 @@ export const COMBAT = {
 	// let it recover — the "sustained pressure breaks you" rhythm the ADR requires. An
 	// always-on regen instead refilled the pool between swings and the break never came.
 	poise: { max: 16, regen: 12, regenDelay: 0.6 } as const,
+	// Guard (ADR 0017 §5): one held input with a skill gradient. The opening window
+	// of any guard-raise is the Parry; held past it is a Block. Windows are authored
+	// in SECONDS but kept deliberately chunky in ticks (30 Hz) to survive input
+	// quantization, jitter, and the non-Kitty held-key fallback (ADR 0017 §11).
+	guard: {
+		// The opening window of a raise that PARRIES (~0.16s ≈ 5 ticks at 30 Hz). A
+		// hostile active frame landing inside it is negated and dumps Poise onto the
+		// attacker; held past the window the raise is a Block.
+		parryWindow: 0.16,
+		// A Block reduces a frontal hit to this fraction of its HP damage (chip)…
+		blockChip: 0.25,
+		// …and drains this much Poise per blocked hit toward a guard-break. Tuned so a
+		// committer's hit breaks a turtling Player's pool (max 16) after a few blocks —
+		// turtling is punished by the Poise system, no separate guard meter (ADR 0017 §5).
+		blockPoise: 6,
+		// Poise dumped on the ATTACKER on a Parry — larger than a foundational Monster's
+		// pool (max 16) so a clean Parry breaks it in one catch, opening the punish.
+		parryPoiseDamage: 24,
+		// Light lag compensation (ADR 0017 §11): max SECONDS of slack added to the
+		// server's Parry window so a Parry the Player timed correctly on their delayed
+		// screen still resolves when the timestamped input arrives a tick or two late.
+		// A tolerance, not a rewind (rollback is rejected); the input's client timestamp
+		// bounds the slack actually applied per hit.
+		lagComp: 0.1,
+	} as const,
 	// Intensity of a death blood burst (ADR 0013). High enough to saturate the
 	// client speck count so a kill reads visibly bigger and wider than a chip hit;
 	// paired with a radial dir 0 it sprays in every direction.

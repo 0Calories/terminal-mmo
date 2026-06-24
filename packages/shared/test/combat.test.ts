@@ -19,23 +19,35 @@ import {
 	type Entity,
 	entityBox,
 	entityTint,
+	facingToward,
 	GROUND_POUND,
+	guardPhase,
+	guardPoseCell,
+	guardPoseGlyph,
 	hurtBloodEffect,
 	IDLE_ACTION,
 	impactEffect,
 	meleeActive,
 	meleeHitbox,
 	POWER_STRIKE,
+	parryActive,
+	parryEffect,
 	predictHitEffects,
 	regenPoise,
 	resolveCombat,
+	resolveGuard,
 	SWING_TOTAL,
 	skillHitbox,
 	superArmorActive,
 	swingPhase,
+	swingPose,
 	swingPoseCell,
 	swingPoseGlyph,
 	swingProgress,
+	WEAPONS,
+	weaponById,
+	weaponFrame,
+	weaponSwingTotal,
 } from '../src';
 
 function monster(x: number, y: number, over: Partial<Entity> = {}): Entity {
@@ -716,5 +728,340 @@ describe('dodge action-state + pose', () => {
 		const f = actionFlags(player({ dodgeT: DODGE_TOTAL, stunT: 0.1 }));
 		expect(f & ACTION_FLAG.dodging).toBe(ACTION_FLAG.dodging);
 		expect(f & ACTION_FLAG.staggered).toBe(ACTION_FLAG.staggered);
+	});
+});
+
+describe('resolveCombat with a weapon stat block', () => {
+	const avatar = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, ...over });
+	const great = weaponById(WEAPONS.findIndex((w) => w.name === 'Greatsword'));
+	const dagger = weaponById(WEAPONS.findIndex((w) => w.name === 'Dagger'));
+
+	test('a fresh swing loads the WEAPON phase total, not the default', () => {
+		const r = resolveCombat(
+			avatar({ attackT: 0 }),
+			{},
+			1,
+			'warrior',
+			{ attack: true },
+			0.016,
+			great,
+		);
+		expect(r.attackT).toBe(weaponSwingTotal(great));
+	});
+
+	test('damage and hitbox reach come from the weapon, not the constants', () => {
+		// Position attackT inside the greatsword's own active window.
+		const inActive =
+			weaponSwingTotal(great) - (great.swing.windup + great.swing.active / 2);
+		const r = resolveCombat(
+			avatar({ attackT: inActive }),
+			{},
+			1,
+			'warrior',
+			{ attack: false },
+			0,
+			great,
+		);
+		expect(r.damage).toBe(great.damage);
+		expect(r.hitbox).toEqual(meleeHitbox(avatar(), great.reach));
+		expect(r.hitbox?.w).toBe(great.reach);
+	});
+
+	test('two weapons produce measurably different phase timing from data alone', () => {
+		const swing = (w: typeof great) =>
+			resolveCombat(
+				avatar({ attackT: 0 }),
+				{},
+				1,
+				'warrior',
+				{ attack: true },
+				0.016,
+				w,
+			).attackT;
+		expect(swing(great)).toBeGreaterThan(swing(dagger));
+	});
+});
+
+describe('swingPose — composited weapon visual (pure fn of move, phase, weapon)', () => {
+	const sword = weaponById(0);
+	const great = weaponById(WEAPONS.findIndex((w) => w.name === 'Greatsword'));
+
+	test('returns null for a non-basic (idle / future) move', () => {
+		expect(swingPose('idle', 'windup', sword, 1)).toBeNull();
+	});
+
+	test('the accent glyph is the weapon glyph, oriented by facing', () => {
+		expect(swingPose('basic', 'windup', sword, 1)?.glyph).toBe(sword.glyph);
+		// facing -1 mirrors the diagonal (╱ → ╲)
+		expect(swingPose('basic', 'windup', sword, -1)?.glyph).toBe('╲');
+	});
+
+	test('different weapons composite different glyphs from data alone', () => {
+		expect(swingPose('basic', 'active', great, 1)?.glyph).toBe(great.glyph);
+		expect(swingPose('basic', 'active', great, 1)?.glyph).not.toBe(sword.glyph);
+	});
+
+	test('the slash-arc sweep is present ONLY during the active phase', () => {
+		expect(swingPose('basic', 'windup', sword, 1)?.arc).toBeNull();
+		expect(swingPose('basic', 'active', sword, 1)?.arc).not.toBeNull();
+		expect(swingPose('basic', 'recovery', sword, 1)?.arc).toBeNull();
+	});
+});
+
+describe('weaponFrame — WeaponSprite frame selector (pure fn of move, phase)', () => {
+	test('a non-attacking Avatar shows the idle hold frame', () => {
+		// At rest there is no swing phase, so the always-visible hold pose is selected.
+		expect(weaponFrame('idle', null)).toBe('idle');
+		// An idle move keeps the idle frame even with a residual phase (e.g. IDLE_ACTION).
+		expect(weaponFrame('idle', 'recovery')).toBe('idle');
+	});
+
+	test('a basic swing selects its own per-phase frame', () => {
+		expect(weaponFrame('basic', 'windup')).toBe('windup');
+		expect(weaponFrame('basic', 'active')).toBe('active');
+		expect(weaponFrame('basic', 'recovery')).toBe('recovery');
+	});
+});
+
+// --- Guard: Block + Parry (ADR 0017 §5) -------------------------------------
+
+describe('guardPhase', () => {
+	const { parryWindow } = COMBAT.guard;
+	test('not guarding (guardT 0) reads null', () => {
+		expect(guardPhase(0)).toBeNull();
+	});
+	test('the opening window of a raise is the Parry', () => {
+		expect(guardPhase(0.001)).toBe('parry');
+		expect(guardPhase(parryWindow)).toBe('parry');
+	});
+	test('held past the opening window is a Block', () => {
+		expect(guardPhase(parryWindow + 0.001)).toBe('block');
+		expect(guardPhase(5)).toBe('block'); // still blocking after holding indefinitely
+	});
+});
+
+describe('parryActive (lag compensation, ADR 0017 §11)', () => {
+	const { parryWindow, lagComp } = COMBAT.guard;
+	test('within the raw window with no lag is a Parry; past it is not', () => {
+		expect(parryActive(parryWindow)).toBe(true);
+		expect(parryActive(parryWindow + 0.001)).toBe(false);
+	});
+	test('lag slack widens the Parry window so a slightly-late catch still parries', () => {
+		const late = parryWindow + lagComp / 2; // would read as Block with no comp
+		expect(parryActive(late, 0)).toBe(false);
+		expect(parryActive(late, lagComp)).toBe(true);
+	});
+	test('the slack is clamped to lagComp — an absurd timestamp cannot widen it forever', () => {
+		const tooLate = parryWindow + lagComp + 0.05;
+		expect(parryActive(tooLate, 999)).toBe(false);
+	});
+});
+
+describe('facingToward (frontal arc, ADR 0017 §5)', () => {
+	const a = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', ...over });
+	test('an attacker on the side the defender faces is frontal', () => {
+		expect(facingToward(a({ facing: 1 }), 30)).toBe(true); // facing right, attacker right
+		expect(facingToward(a({ facing: -1 }), 10)).toBe(true); // facing left, attacker left
+	});
+	test('an attacker behind the defender is NOT frontal', () => {
+		expect(facingToward(a({ facing: 1 }), 10)).toBe(false); // facing right, attacker left
+		expect(facingToward(a({ facing: -1 }), 30)).toBe(false);
+	});
+	test('an attacker sharing the column is treated as frontal (defender favour)', () => {
+		expect(facingToward(a({ facing: 1, x: 20 }), 20)).toBe(true);
+	});
+});
+
+describe('resolveGuard', () => {
+	const { parryWindow, blockChip, blockPoise, parryPoiseDamage } = COMBAT.guard;
+	// A defender facing right (+1) with an attacker to the right (frontal).
+	const defender = (over: Partial<Entity> = {}) =>
+		monster(20, 4, {
+			type: 'player',
+			facing: 1,
+			poise: COMBAT.poise.max,
+			...over,
+		});
+	const attackerX = 26;
+
+	test('no Guard raised → full damage, no attacker dump', () => {
+		const g = resolveGuard(defender({ guardT: 0 }), attackerX, 8);
+		expect(g.result).toBe('none');
+		expect(g.hpDamage).toBe(8);
+		expect(g.attackerPoiseDump).toBe(0);
+	});
+
+	test('a rear hit ignores Guard even mid-block (frontal-arc gating)', () => {
+		// Guard up and blocking, but the attacker is BEHIND (to the left of a right-facer).
+		const g = resolveGuard(defender({ guardT: parryWindow + 0.1 }), 10, 8);
+		expect(g.result).toBe('none');
+		expect(g.hpDamage).toBe(8);
+	});
+
+	test('Block: frontal hit chips HP and drains Poise', () => {
+		const g = resolveGuard(
+			defender({ guardT: parryWindow + 0.1 }),
+			attackerX,
+			8,
+		);
+		expect(g.result).toBe('block');
+		expect(g.hpDamage).toBe(Math.ceil(8 * blockChip));
+		expect(g.defenderPoise).toBe(COMBAT.poise.max - blockPoise);
+		expect(g.guardBroke).toBe(false);
+		expect(g.attackerPoiseDump).toBe(0);
+	});
+
+	test('Block to a Poise break is a guard-break Stagger', () => {
+		// A nearly-empty pool: one block drains it past 0 → break.
+		const g = resolveGuard(
+			defender({ guardT: parryWindow + 0.1, poise: blockPoise - 1 }),
+			attackerX,
+			8,
+		);
+		expect(g.result).toBe('block');
+		expect(g.guardBroke).toBe(true);
+	});
+
+	test('Parry: a frontal hit in the opening window negates damage + dumps Poise on the attacker', () => {
+		const g = resolveGuard(defender({ guardT: parryWindow }), attackerX, 8);
+		expect(g.result).toBe('parry');
+		expect(g.hpDamage).toBe(0);
+		expect(g.attackerPoiseDump).toBe(parryPoiseDamage);
+		expect(g.guardBroke).toBe(false);
+	});
+
+	test('lag-comp resolves a Parry that was valid on the client timeline (ADR 0017 §11)', () => {
+		// A catch a hair past the raw window — a Block with no comp, a Parry once the
+		// input's staleness (its client timestamp) extends the window.
+		const late = parryWindow + COMBAT.guard.lagComp / 2;
+		expect(resolveGuard(defender({ guardT: late }), attackerX, 8).result).toBe(
+			'block',
+		);
+		expect(
+			resolveGuard(
+				defender({ guardT: late }),
+				attackerX,
+				8,
+				COMBAT.guard.lagComp,
+			).result,
+		).toBe('parry');
+	});
+});
+
+describe('parryEffect', () => {
+	test('a source-less clash flash at the defender, fixed intensity (damage is negated)', () => {
+		const d = monster(20, 4, { type: 'player' });
+		const e = parryEffect(d, 1);
+		expect(e.kind).toBe('parry');
+		expect(e.x).toBe(20 + BOX.w / 2);
+		expect(e.source).toBeUndefined();
+		expect(e.intensity).toBe(COMBAT.poise.max);
+	});
+});
+
+describe('guard pose realization', () => {
+	test('the Parry window flashes a brighter sigil than a Block brace', () => {
+		expect(guardPoseGlyph('parry')).not.toBe(guardPoseGlyph('block'));
+	});
+	test('guardPoseCell sits just past the leading edge, mirrored by facing', () => {
+		expect(guardPoseCell(monster(20, 4, { facing: 1 })).x).toBe(20 + BOX.w);
+		expect(guardPoseCell(monster(20, 4, { facing: -1 })).x).toBe(20 - 1);
+	});
+});
+
+describe('actionFlags surfaces the Guard stance (ADR 0017 §5/§10)', () => {
+	test('a raised Guard sets the guarding bit; its opening also sets parrying', () => {
+		const parrying = actionFlags(monster(0, 0, { guardT: 0.01 }));
+		expect(parrying & ACTION_FLAG.guarding).toBeTruthy();
+		expect(parrying & ACTION_FLAG.parrying).toBeTruthy();
+		const blocking = actionFlags(
+			monster(0, 0, { guardT: COMBAT.guard.parryWindow + 0.1 }),
+		);
+		expect(blocking & ACTION_FLAG.guarding).toBeTruthy();
+		expect(blocking & ACTION_FLAG.parrying).toBeFalsy();
+	});
+	test('not guarding sets neither bit', () => {
+		const f = actionFlags(monster(0, 0, { guardT: 0 }));
+		expect(f & ACTION_FLAG.guarding).toBeFalsy();
+		expect(f & ACTION_FLAG.parrying).toBeFalsy();
+	});
+});
+
+describe('resolveCombat threads the held Guard (ADR 0017 §5)', () => {
+	const avatar = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, ...over });
+
+	test('holding Guard accumulates guardT; releasing resets it to 0', () => {
+		const raised = resolveCombat(
+			avatar({ guardT: 0 }),
+			{},
+			1,
+			'warrior',
+			{
+				attack: false,
+				guard: true,
+			},
+			0.05,
+		);
+		expect(raised.guardT).toBeCloseTo(0.05, 5);
+		const held = resolveCombat(
+			avatar({ guardT: 0.05 }),
+			{},
+			1,
+			'warrior',
+			{
+				attack: false,
+				guard: true,
+			},
+			0.05,
+		);
+		expect(held.guardT).toBeCloseTo(0.1, 5);
+		const released = resolveCombat(
+			avatar({ guardT: 0.1 }),
+			{},
+			1,
+			'warrior',
+			{
+				attack: false,
+				guard: false,
+			},
+			0.05,
+		);
+		expect(released.guardT).toBe(0);
+	});
+
+	test('Guard and the basic swing are mutually exclusive', () => {
+		// Pressing attack + guard the same tick raises Guard, no swing starts.
+		const r = resolveCombat(
+			avatar({ attackT: 0 }),
+			{},
+			1,
+			'warrior',
+			{
+				attack: true,
+				guard: true,
+			},
+			0.016,
+		);
+		expect(r.attackT).toBe(0); // no swing
+		expect(r.hitbox).toBeNull();
+		expect(r.guardT).toBeGreaterThan(0); // guard raised instead
+	});
+
+	test('Guard cannot rise mid-swing — guardT stays 0 until the swing recovers', () => {
+		const r = resolveCombat(
+			avatar({ attackT: 0.1 }),
+			{},
+			1,
+			'warrior',
+			{
+				attack: false,
+				guard: true,
+			},
+			0.016,
+		);
+		expect(r.guardT).toBe(0);
 	});
 });

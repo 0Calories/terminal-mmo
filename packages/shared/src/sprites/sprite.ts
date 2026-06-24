@@ -18,6 +18,8 @@ const MIRROR: Record<string, string> = {
 	'>': '<',
 	'/': '\\',
 	'\\': '/',
+	'╱': '╲',
+	'╲': '╱',
 	'`': "'",
 	"'": '`',
 	'▌': '▐',
@@ -33,6 +35,14 @@ const MIRROR: Record<string, string> = {
 	'▚': '▞',
 	'▞': '▚',
 };
+
+// Mirror a single glyph across the vertical axis (the block-element / bracket swap
+// table above), or return it unchanged if it has no distinct mirror. Exposed so the
+// combat layer can orient a weapon's pose glyph by facing with the SAME table the
+// sprite mirroring uses, instead of duplicating the map (ADR 0017 §13b).
+export function mirrorGlyph(glyph: string): string {
+	return MIRROR[glyph] ?? glyph;
+}
 
 function splitTrimPad(art: string): string[] {
 	const lines = art.split('\n');
@@ -65,6 +75,12 @@ export interface SpriteOptions {
 	/** Colour-key grid aligned cell-for-cell to the glyph grid; `·`/space fall
 	 *  back to `defaultKey`. Must match the glyph grid's dimensions. */
 	colors?: string;
+	/** A named anchor cell in the (right-facing) art that another layer aligns to —
+	 *  the body template's **grip cell** (the hand position) is declared here, the
+	 *  same data-driven mechanism as the cosmetic hat's head placement (ADR 0018 §3).
+	 *  The weapon layer composites grip-to-grip onto this cell; facing-left mirrors
+	 *  the column across the body via the renderer. Absent for art with no anchor. */
+	grip?: { x: number; y: number };
 }
 
 export class Sprite {
@@ -73,6 +89,9 @@ export class Sprite {
 	// The fallback colour key for any cell without an explicit one — the entity's
 	// dominant body colour, reused as its death-gore tint (#139).
 	readonly defaultKey: string;
+	// A named anchor cell (right-facing art coords) another layer aligns to — the
+	// body's grip cell for the weapon layer (ADR 0018 §3). Undefined when unanchored.
+	readonly grip?: { x: number; y: number };
 	private readonly glyphRight: readonly string[];
 	private readonly glyphLeft: readonly string[];
 	private readonly colorRight: readonly string[];
@@ -85,6 +104,7 @@ export class Sprite {
 				`Sprite defaultKey must be a single char, got "${defaultKey}"`,
 			);
 		this.defaultKey = defaultKey;
+		this.grip = opts.grip;
 
 		const glyphRows = splitTrimPad(glyph).map((r) =>
 			r.replaceAll(SENTINEL, ' '),

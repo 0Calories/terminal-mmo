@@ -1,7 +1,22 @@
+import { swingPhase, weaponFrame } from './combat';
 import { BOX } from './constants';
-import { HATS, type Sprite, spriteFor, spriteForNpc } from './sprites';
+import {
+	HATS,
+	type Sprite,
+	spriteFor,
+	spriteForNpc,
+	type WeaponSprite,
+} from './sprites';
 import { isSolid } from './terrain';
-import type { Entity, Facing, Npc, Terrain } from './types';
+import type {
+	AttackPhase,
+	Entity,
+	Facing,
+	MoveId,
+	Npc,
+	Terrain,
+} from './types';
+import { weaponById } from './weapons';
 import type { Portal } from './world';
 
 // A framework-agnostic cell sink, the subset of opentui's OptimizedBuffer the
@@ -130,6 +145,14 @@ function hatFor(e: Entity): Sprite | null {
 	return e.cosmetics ? (HATS[e.cosmetics.hat]?.sprite ?? null) : null;
 }
 
+// The WeaponSprite an Entity wields this frame, or null (unarmed Monster, or a
+// weapon with no authored art yet). Rides the replicated `Entity.weapon` index, so
+// observers resolve the same held weapon the owner does (ADR 0018 §1).
+function weaponSpriteFor(e: Entity): WeaponSprite | null {
+	if (e.weapon === undefined) return null;
+	return weaponById(e.weapon).sprite ?? null;
+}
+
 // The per-Avatar body recolour for its chosen hue, or undefined (no cosmetics /
 // stray index). Repaints the Sprite's `p` body cells; a stray hue index falls back
 // to the unrecoloured palette (#35).
@@ -168,6 +191,47 @@ export function drawEntitySprite<C>(
 		recolorFor(e, style),
 		ghost,
 	);
+
+	// The equipped weapon: an always-anchored layer composited ON TOP of the body at
+	// the body's grip cell, mirrored with facing (ADR 0018 §1/§3). The frame is the
+	// pure shared selector's choice — `idle` at rest. A swing frame that isn't authored
+	// yet (windup/active/recovery) resolves to no art, so the weapon layer is skipped
+	// mid-swing and the legacy swing overlay renders it (transitional, until the sweep
+	// frames land). One code path: "attacking" only changes which frame is selected.
+	const ws = weaponSpriteFor(e);
+	if (ws && sprite.grip) {
+		let move: MoveId;
+		let phase: AttackPhase | null;
+		if (e.action) {
+			// Observers (and any entity carrying replicated action-state): read it.
+			move = e.action.move;
+			phase = e.action.phase;
+		} else {
+			// The local Avatar predicts its swing from attackT against its weapon's phases.
+			phase = swingPhase(e.attackT, weaponById(e.weapon).swing);
+			move = phase ? 'basic' : 'idle';
+		}
+		const frame = ws.frames[weaponFrame(move, phase)];
+		if (frame) {
+			// Body grip cell, its column reflected across the body when facing left.
+			const bodyGripX =
+				sx + (e.facing === 1 ? sprite.grip.x : sprite.w - 1 - sprite.grip.x);
+			const bodyGripY = sy + sprite.grip.y;
+			// Weapon grip cell, mirrored alongside the art so grip lands on grip.
+			const wgx = e.facing === 1 ? ws.grip.x : frame.w - 1 - ws.grip.x;
+			blitSprite(
+				buf,
+				frame,
+				bodyGripX - wgx,
+				bodyGripY - ws.grip.y,
+				e.facing,
+				hurt,
+				style,
+				undefined,
+				ghost,
+			);
+		}
+	}
 
 	// The cosmetic hat sits directly above the head (its bottom row on the row above
 	// the Sprite top), centred over the Sprite, mirrored with the Avatar's facing.

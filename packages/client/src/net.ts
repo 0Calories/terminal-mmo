@@ -75,6 +75,7 @@ export class NetClient {
 		handle: string,
 		private onReject: (reason: string) => void = () => {},
 		cosmetics: Cosmetics = DEFAULT_COSMETICS,
+		weapon = 0,
 	) {
 		this.ws = new WebSocket(url);
 		this.ws.binaryType = 'arraybuffer';
@@ -85,6 +86,9 @@ export class NetClient {
 					handle,
 					version: CLIENT_VERSION,
 					cosmetics,
+					// The chosen Weapon rides the connect handshake (ADR 0017 §14), so every
+					// client sees it the moment this Avatar spawns in.
+					weapon,
 				}),
 			);
 		};
@@ -222,6 +226,10 @@ function avatarEntity(a: AvatarSnapshot): Entity {
 		type: 'player',
 		name: a.handle,
 		cosmetics: a.cosmetics,
+		// The replicated Weapon index (ADR 0017 §14): the renderer composites this
+		// Avatar's weapon onto its pose + slash-arc and reads its swing arc from the
+		// weapon's reach — this is what makes another Player's weapon visible.
+		weapon: a.weapon,
 		x: a.x,
 		y: a.y,
 		vx: a.vx,
@@ -293,11 +301,13 @@ export function snapshotToGame(
 	const ownEmote = emotes.get(ownSessionId)?.id;
 	// Own cosmetics come from the snapshot too, so the local Avatar renders the same
 	// hue / hat / nameplate every other client sees — one uniform source (#35).
-	const ownCosmetics = snapshot?.avatars.find(
-		(a) => a.sessionId === ownSessionId,
-	)?.cosmetics;
+	const ownSnap = snapshot?.avatars.find((a) => a.sessionId === ownSessionId);
+	const ownCosmetics = ownSnap?.cosmetics;
 	let avatar = predicted;
 	if (ownCosmetics) avatar = { ...avatar, cosmetics: ownCosmetics };
+	// Own weapon comes from the snapshot too, so the local Avatar composites the same
+	// weapon every other client sees — one uniform source (ADR 0017 §14).
+	if (ownSnap) avatar = { ...avatar, weapon: ownSnap.weapon };
 	if (ownBubble) avatar = { ...avatar, bubble: ownBubble };
 	if (ownEmote) avatar = { ...avatar, emote: ownEmote };
 	const progress = snapshot?.progress ?? { level: 1, xp: 0, gold: 0 };

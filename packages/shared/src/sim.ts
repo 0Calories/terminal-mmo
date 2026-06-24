@@ -141,7 +141,10 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		// The gated Dodge decision (ADR 0017 §5): true only if the hop actually fired, so
 		// resolveCombat loads the i-frame timer in lockstep with the impulse above.
 		dodge: dodging,
+		guard: input.guard,
 		skill: input.skill,
+		// Offline is a single clock with zero transit lag, so no Parry-window slack.
+		lagMs: 0,
 	};
 	const next = stepZone(
 		{ zone, avatars: [sa], tick: game.world.tick },

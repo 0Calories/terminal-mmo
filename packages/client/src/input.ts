@@ -4,15 +4,16 @@ import type { Input } from '@mmo/shared';
 // release events a held key would stick, so it's dropped after this idle (M0).
 const HELD_MS = 220;
 
-// The abstract action set bindings resolve onto (ADR 0017 §12). Guard / `down` are
-// reserved for the later defensive + combo slices; this slice adds `dodge` to the
-// movement, jump, attack, interact, and two active-skill slots.
+// The abstract action set bindings resolve onto (ADR 0017 §12). `down` is reserved for
+// the later combo slice; this slice adds both `dodge` (the i-frame hop) and `guard` (the
+// unified directional defense) to movement, jump, attack, interact, and the two skill slots.
 type Action =
 	| 'left'
 	| 'right'
 	| 'jump'
 	| 'attack'
 	| 'dodge'
+	| 'guard'
 	| 'interact'
 	| 'skill1'
 	| 'skill2';
@@ -21,8 +22,8 @@ type Action =
 // so a poll() yields identical Input intents whichever the Player runs.
 export type Scheme = 'keyboard' | 'mouse';
 
-// Keyboard-only: attack on `j` (and the legacy `x`), Dodge on `l` (ADR 0017 §12 — `k`
-// stays reserved for the later Guard verb), active skills on `u`/`i`. `e` interacts.
+// Keyboard-only: attack on `j` (and the legacy `x`), Guard on `k`, Dodge on `l` (ADR 0017
+// §5/§12), active skills on `u`/`i`. `e` interacts.
 const KEYBOARD_BINDINGS: Readonly<Record<string, Action>> = {
 	left: 'left',
 	a: 'left',
@@ -32,16 +33,18 @@ const KEYBOARD_BINDINGS: Readonly<Record<string, Action>> = {
 	space: 'jump',
 	j: 'attack',
 	x: 'attack',
+	k: 'guard',
 	l: 'dodge',
 	e: 'interact',
 	u: 'skill1',
 	i: 'skill2',
 };
 
-// Keyboard + mouse: attack is the left mouse button (see `mouseDown`), active skills
-// move to `e`/`r`. Since `e` is now skill1, interact relocates to `f` so portals /
-// vendors stay reachable. Movement + jump are shared with the keyboard scheme, so the
-// intents are identical. Mouse-position aim is stubbed (reserved for ranged Classes).
+// Keyboard + mouse: attack is the left mouse button, Guard the right (see `mouseDown`);
+// active skills move to `e`/`r`. Since `e` is now skill1, interact relocates to `f` so
+// portals / vendors stay reachable. `k` still raises Guard from the keyboard too (shared
+// binding). Movement + jump are shared with the keyboard scheme, so the intents are
+// identical. Mouse-position aim is stubbed (reserved for ranged Classes).
 const MOUSE_BINDINGS: Readonly<Record<string, Action>> = {
 	left: 'left',
 	a: 'left',
@@ -49,6 +52,7 @@ const MOUSE_BINDINGS: Readonly<Record<string, Action>> = {
 	d: 'right',
 	up: 'jump',
 	space: 'jump',
+	k: 'guard',
 	l: 'dodge',
 	f: 'interact',
 	e: 'skill1',
@@ -63,6 +67,10 @@ export class InputState {
 	// apart from `held` because mouse releases are always reported, so it needs no
 	// held-key timeout fallback and is OR'd into the attack intent in poll().
 	private mouseAttack = false;
+	// Right mouse button held (keyboard+mouse scheme Guard, ADR 0017 §5/§12). Tracked
+	// apart from `held` for the same reason as `mouseAttack` (mouse releases are always
+	// reported) and OR'd into the guard intent in poll().
+	private mouseGuard = false;
 	private readonly bindings: Readonly<Record<string, Action>>;
 
 	constructor(scheme: Scheme = 'keyboard') {
@@ -86,16 +94,17 @@ export class InputState {
 		if (a) this.held.delete(a);
 	}
 
-	// Left-click (button 0) is attack in the keyboard+mouse scheme (ADR 0017 §12);
-	// other buttons are reserved (right = Guard, a later slice). OpenTUI fires these
-	// alongside held movement keys (verified in the Forge editor), so a click while
-	// running still attacks — and an attack press fires beside held movement.
+	// Left-click (button 0) is attack and right-click (button 2) is Guard in the
+	// keyboard+mouse scheme (ADR 0017 §5/§12). OpenTUI fires these alongside held
+	// movement keys (verified in the Forge editor), so a click while running still acts.
 	mouseDown(button: number) {
 		if (button === 0) this.mouseAttack = true;
+		else if (button === 2) this.mouseGuard = true;
 	}
 
 	mouseUp(button: number) {
 		if (button === 0) this.mouseAttack = false;
+		else if (button === 2) this.mouseGuard = false;
 	}
 
 	// Drop every held input. Used when handing control to a modal (chat typing) so a
@@ -103,6 +112,7 @@ export class InputState {
 	clear() {
 		this.held.clear();
 		this.mouseAttack = false;
+		this.mouseGuard = false;
 	}
 
 	poll(now: number): Input {
@@ -117,6 +127,7 @@ export class InputState {
 			jump: this.held.has('jump'),
 			attack: this.held.has('attack') || this.mouseAttack,
 			dodge: this.held.has('dodge'),
+			guard: this.held.has('guard') || this.mouseGuard,
 			interact: this.held.has('interact'),
 			skill: this.held.has('skill1')
 				? 1

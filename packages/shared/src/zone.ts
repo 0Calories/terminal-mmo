@@ -20,8 +20,10 @@ import {
 	impactEffect,
 	meleeActive,
 	meleeHitbox,
+	parryEffect,
 	regenPoise,
 	resolveCombat,
+	resolveGuard,
 	SWING_TOTAL,
 } from './combat';
 import {
@@ -60,6 +62,7 @@ import type {
 	Projectile,
 	Terrain,
 } from './types';
+import { DEFAULT_WEAPON, weaponById } from './weapons';
 import { spawnMonster, type Zone } from './world';
 
 // Server-authoritative per-Avatar state. Position/facing are client-reported
@@ -108,9 +111,15 @@ export interface AvatarIntent {
 	facing: Facing;
 	onGround: boolean;
 	attack: boolean;
+	guard?: boolean; // raise the Guard this tick (ADR 0017 §5); absent == false
 	interact?: boolean; // request a Portal transition; resolved by the world layer
 	dodge?: boolean; // start an i-frame Dodge hop this tick (ADR 0017 §5)
 	skill?: number;
+	// Input staleness in ms (ADR 0017 §11): how late this input reached the server,
+	// derived from its client timestamp by the impure server layer. Widens the Parry
+	// window (clamped to COMBAT.guard.lagComp) so a Parry timed right on the Player's
+	// delayed screen still resolves. Absent / 0 == no lag (offline, single clock).
+	lagMs?: number;
 }
 
 /**
@@ -162,6 +171,9 @@ function resolveAvatarIntent(
 		: { ...src.avatar };
 
 	const log = src.log.slice(-5);
+	// The equipped Weapon drives the swing's phase durations, damage, and arc through
+	// the shared gate (ADR 0017 §14) — no special-casing per weapon, just its stat
+	// block. Absent == the default sword.
 	const r = resolveCombat(
 		avatar,
 		src.skillCooldowns ?? {},
@@ -170,10 +182,17 @@ function resolveAvatarIntent(
 		// `dodge` is the client's already-gated decision (grounded + moving checked at the
 		// impulse site before the hop ungrounds the body, ADR 0017 §5 / ADR 0001); the
 		// server only re-enforces the tick-stable timing (cooldown etc.) in resolveCombat.
+		// `guard` raises the held Guard, resolved authoritatively here.
 		intent
-			? { attack: intent.attack, skill: intent.skill, dodge: intent.dodge }
+			? {
+					attack: intent.attack,
+					skill: intent.skill,
+					dodge: intent.dodge,
+					guard: intent.guard,
+				}
 			: { attack: false },
 		dt,
+		weaponById(avatar.weapon),
 	);
 	avatar.attackT = r.attackT;
 	// The i-frame Dodge timer + its post-recovery cooldown (ADR 0017 §5): both server-
@@ -181,6 +200,9 @@ function resolveAvatarIntent(
 	// spam-gate bars a re-dodge. The hop impulse is the client's (ADR 0001).
 	avatar.dodgeT = r.dodgeT;
 	avatar.dodgeCdT = r.dodgeCdT;
+	// The held-Guard timer (ADR 0017 §5): accumulated by the same shared gate that owns
+	// the swing, so the server and the client's prediction can't disagree on a raise.
+	avatar.guardT = r.guardT;
 	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
 	// A fresh swing clears the per-swing hit list so it can connect again; an
 	// in-flight swing keeps its list so it lands on each target only once (ADR 0017
@@ -341,12 +363,54 @@ export function stepZone(
 			for (let i = 0; i < avatars.length; i++) {
 				const a = avatars[i].avatar;
 				// i-frame gate (ADR 0017 §5): a connect's automatic i-frames OR an active
-				// Dodge negate the strike. Dodging through the active frames is the demo.
+				// Dodge negate the strike (avatarHittable folds in dodgeInvulnerable).
+				// Dodging through the active frames is the demo.
 				if (!avatarHittable(a) || !aabbOverlap(hb, entityBox(a))) continue;
-				const { poise, broke } = applyPoiseDamage(a, COMBAT.poiseDamage);
+				// Resolve the hit against the Avatar's Guard FIRST (ADR 0017 §5): a frontal
+				// raise Parries it (in the opening window) or Blocks it (held past), a rear
+				// hit ignores Guard. Lag-comp widens the Parry window by this input's
+				// staleness (clamped in resolveGuard) so a Parry timed right on the Player's
+				// delayed screen still resolves. The i-frame (set on every branch) gates the
+				// multi-tick active window to one resolution per swing.
+				const lagSlack = (byId.get(avatars[i].sessionId)?.lagMs ?? 0) / 1000;
+				const g = resolveGuard(a, m.x, MONSTER.meleeDamage, lagSlack);
+				// Direction away from the Monster (0 when they share a column), reused by the
+				// hurt-blood bias and the parry-clash flash.
+				const away: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
+				if (g.result === 'parry') {
+					// Parry: negate the hit and dump big Poise onto the ATTACKER — a clean catch
+					// breaks its pool and Staggers it, the Player's punish opening (ADR 0017 §5).
+					const ap = applyPoiseDamage(m, g.attackerPoiseDump);
+					m = { ...m, poise: ap.poise, poiseT: COMBAT.poise.regenDelay };
+					if (ap.broke) {
+						m = applyImpulse(
+							m,
+							COMBAT.knockback * -m.facing,
+							-COMBAT.knockbackUp,
+						);
+						m = { ...m, stunT: COMBAT.hitstun };
+					}
+					// The parry-clash flash carries no `source`, so it reaches the parrier too
+					// (clash flash + camera juice + sound). Keep the raised Guard; i-frame the
+					// Avatar so the same active window can't re-trigger.
+					effects.push(parryEffect(a, (away || 1) as Facing));
+					avatars[i] = {
+						...avatars[i],
+						avatar: { ...a, hurtT: COMBAT.iframes },
+					};
+					continue;
+				}
+				// Block (chip + Poise drain → possible guard-break) or an unguarded/rear hit
+				// (full payload). resolveGuard already reduced the HP and drained Poise for a
+				// Block; for an unguarded hit, apply the full Poise damage here. A guard-break
+				// and an unguarded Poise break both Stagger the Avatar through the same path.
+				const unguarded =
+					g.result === 'none' ? applyPoiseDamage(a, COMBAT.poiseDamage) : null;
+				const broke = unguarded ? unguarded.broke : g.guardBroke;
+				const poise = unguarded ? unguarded.poise : g.defenderPoise;
 				let na: Entity = {
 					...a,
-					hp: a.hp - MONSTER.meleeDamage,
+					hp: a.hp - g.hpDamage,
 					hurtT: COMBAT.iframes,
 					poise,
 					poiseT: COMBAT.poise.regenDelay,
@@ -355,7 +419,8 @@ export function stepZone(
 					// Stagger the Player: throw the body away from the Monster (Mass-scaled)
 					// with a small upward pop and lock control for Hitstun. The impact Effect
 					// carries NO `source`, so — like a Monster break — it reaches everyone in
-					// range, including the victim's client (hitstop + camera-kick).
+					// range, including the victim's client (hitstop + camera-kick). A guard-break
+					// Staggers through the same path, so turtling to a break is punished.
 					na = applyImpulse(
 						na,
 						COMBAT.knockback * m.facing,
@@ -363,12 +428,12 @@ export function stepZone(
 					);
 					na = { ...na, stunT: COMBAT.hitstun };
 					effects.push(impactEffect(a, m.facing, MONSTER.meleeDamage));
-				} else {
+				} else if (g.result !== 'block') {
 					// Hurt blood at the Avatar, biased away from the Monster (0 when they share
 					// a column). Server-sourced — no `source` — so the snapshot delivers it to
-					// the victim too, in sync with the hurt-flash (ADR 0013, #132).
-					const dir: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
-					effects.push(hurtBloodEffect(a, dir, MONSTER.meleeDamage));
+					// the victim too, in sync with the hurt-flash (ADR 0013, #132). A clean Block
+					// emits no blood — the brace soaked it, only the chip + Poise drain show.
+					effects.push(hurtBloodEffect(a, away, MONSTER.meleeDamage));
 				}
 				avatars[i] = { ...avatars[i], avatar: na };
 			}
@@ -387,10 +452,15 @@ export function stepZone(
 				const sid = avatars[i].sessionId;
 				swingHits[i].add(m.id);
 				const facing = avatars[i].avatar.facing;
+				// The attacker's Weapon drives the hit-reaction too (ADR 0017 §14): its
+				// poise damage decides whether this connect breaks, and its Knockback the
+				// throw on a break — so a greatsword staggers and launches where a dagger
+				// only chips, from the stat block alone.
+				const wpn = weaponById(avatars[i].avatar.weapon);
 				const contributors = m.contributors?.includes(sid)
 					? m.contributors
 					: [...(m.contributors ?? []), sid];
-				const { poise, broke } = applyPoiseDamage(m, COMBAT.poiseDamage);
+				const { poise, broke } = applyPoiseDamage(m, wpn.poiseDamage);
 				// Reset the regen-delay so a sustained flurry keeps the pool from healing
 				// between swings (ADR 0017 §3).
 				m = {
@@ -406,7 +476,7 @@ export function stepZone(
 					// rockets, a heavy body barely nudges), plus a small upward pop. The
 					// impact Effect is the break punctuation the client keys hitstop +
 					// camera-kick off. `source` attributes it for originator-suppression.
-					m = applyImpulse(m, COMBAT.knockback * facing, -COMBAT.knockbackUp);
+					m = applyImpulse(m, wpn.knockback * facing, -wpn.knockbackUp);
 					m = { ...m, stunT: COMBAT.hitstun };
 					// No `source`: like the death gore burst, the break is a "big moment"
 					// delivered to EVERYONE in range — including the attacker, who needs it to
@@ -585,9 +655,13 @@ export function snapshotFor(
 		hp: a.avatar.hp,
 		maxHp: a.avatar.maxHp,
 		hurtT: a.avatar.hurtT,
-		// Derived from the Avatar's swing timer so every other client can render the
-		// swing (ADR 0017 §10) — this is what makes the basic attack visible to others.
-		action: actionStateOf(a.avatar),
+		// The equipped Weapon index joins the broadcast appearance (ADR 0017 §14), so
+		// every other client renders THIS Avatar's weapon — composited sprite + trail.
+		weapon: a.avatar.weapon ?? DEFAULT_WEAPON,
+		// Derived from the Avatar's swing timer AGAINST its weapon's phase durations, so
+		// every other client can render the swing (ADR 0017 §10) — this is what makes the
+		// basic attack visible to others, and a slow greatsword read as slow.
+		action: actionStateOf(a.avatar, weaponById(a.avatar.weapon).swing),
 	}));
 	const monsters: MonsterSnapshot[] = state.zone.monsters.map((m) => ({
 		id: m.id,
@@ -645,15 +719,18 @@ export function addAvatar(
 	sessionId: number,
 	handle: string,
 	cosmetics: Cosmetics = DEFAULT_COSMETICS,
+	weapon: number = DEFAULT_WEAPON,
 ): ZoneState {
 	const sa: ServerAvatar = {
 		sessionId,
 		handle,
 		cosmetics,
-		avatar: { ...spawnAvatar(SPAWN.x, SPAWN.y), id: sessionId },
+		// The chosen Weapon rides the connect handshake (ADR 0017 §14) and lives on the
+		// Avatar entity, where it drives both combat resolution and the broadcast look.
+		avatar: { ...spawnAvatar(SPAWN.x, SPAWN.y), id: sessionId, weapon },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
-		log: ['Welcome. Hunt the chasers (j to attack).'],
+		log: ['Welcome. Hunt the chasers (j attack, k guard/parry).'],
 		nextId: 1,
 		rngState: sessionId,
 		class: 'warrior',
