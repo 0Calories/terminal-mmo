@@ -101,6 +101,13 @@ export function meleeActive(attackT: number): boolean {
 
 export const DODGE_TOTAL = COMBAT.dodge.active + COMBAT.dodge.recovery;
 
+// The full re-dodge lockout (ADR 0017 §5): the hop (active + recovery) plus the
+// `cooldown` tail, armed as `dodgeCdT` on the start tick and counted down. Anchoring
+// the whole lockout at dodge start — rather than detecting recovery-end — keeps the
+// spam-gate a single scalar set beside `dodgeT`, while leaving `dodgeT` (i-frames +
+// replication) untouched. Outlives `dodgeT` by exactly `cooldown`.
+export const DODGE_LOCKOUT = DODGE_TOTAL + COMBAT.dodge.cooldown;
+
 // The phase of a Dodge for a given `dodgeT` (time remaining), or null when not
 // dodging. Pure; the single source of truth for the i-frame window.
 export function dodgePhase(dodgeT: number): AttackPhase | null {
@@ -125,12 +132,29 @@ export function dodgeInvulnerable(e: Entity): boolean {
 	return dodgePhase(e.dodgeT ?? 0) === 'active';
 }
 
-// Whether an Avatar can START a fresh Dodge this tick (ADR 0017 §5): only when it
-// is free — not mid-Dodge (committal), not mid-swing, and not Staggered. The shared
-// gate so the client physics prediction (which applies the hop impulse) and
-// `resolveCombat` (which loads `dodgeT`) agree on exactly when a Dodge begins.
-export function canStartDodge(e: Entity): boolean {
-	return (e.dodgeT ?? 0) <= 0 && e.attackT <= 0 && (e.stunT ?? 0) <= 0;
+// The TIMING half of the Dodge gate (ADR 0017 §5): the server-authoritative, tick-
+// stable preconditions — off cooldown (`dodgeCdT`, the spam-gate), not mid-Dodge, not
+// mid-swing, not Staggered. These survive the hop, so `resolveCombat` re-checks them
+// post-physics to load `dodgeT` (the i-frame window) without trusting the client on
+// cooldown. The movement half (grounded + moving) lives in `canStartDodge` only.
+export function dodgeReady(e: Entity): boolean {
+	return (
+		(e.dodgeCdT ?? 0) <= 0 &&
+		(e.dodgeT ?? 0) <= 0 &&
+		e.attackT <= 0 &&
+		(e.stunT ?? 0) <= 0
+	);
+}
+
+// Whether an Avatar can START a fresh Dodge this tick (ADR 0017 §5): the full gate —
+// `dodgeReady` timing PLUS grounded while holding a direction (`moveX !== 0`). A Dodge
+// is an earned, committed reposition: no air-dodge, no standstill panic-hop. Evaluated
+// ONLY at the client/sim impulse site, BEFORE the hop's upward pop ungrounds the body —
+// the movement conditions cannot be re-derived post-physics, so the caller authors a
+// gated `dodge` intent that `resolveCombat` trusts (client-authoritative movement, ADR
+// 0001). The hop direction is `moveX`, so the same signal gates the move and aims it.
+export function canStartDodge(e: Entity, moveX: number): boolean {
+	return dodgeReady(e) && e.onGround && moveX !== 0;
 }
 
 // The universal "can this Avatar take a hit this tick" gate (ADR 0017 §5): blocked
@@ -261,21 +285,10 @@ export function swingPoseCell(
 	return { x: lead, y: row };
 }
 
-// The Dodge after-image (ADR 0017 §5/§13a): a motion-streak glyph drawn behind the
-// hopping Avatar — bright/sharp during the i-frame `active` window, a fading trail
-// through `recovery` — so the hop reads as a quick evasive dash and the invulnerable
-// frames are legible. Pure (phase, facing) → glyph, the same seam as the swing pose.
-export function dodgePoseGlyph(phase: AttackPhase, facing: Facing): string {
-	const trail = phase === 'active' ? '»' : '·';
-	return facing === 1 ? trail : trail === '»' ? '«' : trail;
-}
-
-// The world cell the after-image occupies: just BEHIND the Avatar's trailing edge
-// (opposite its facing), mid-body — the space it just vacated. Pure geometry.
-export function dodgePoseCell(e: Entity): { x: number; y: number } {
-	const back = e.facing === 1 ? e.x - 1 : e.x + BOX.w;
-	return { x: back, y: e.y + 1 };
-}
+// The Dodge after-image is a self-contained client visual effect spawned on the
+// dodge-start edge and ticked on the render clock (see client `dodge-echo.ts`,
+// ADR 0017 §13e) — decoupled from this timing, so the dodge needs no pure pose helper
+// here. `dodgePhase`/`dodgeProgress` above still feed the replicated action-state.
 
 export function meleeHitbox(p: Entity): Box {
 	const w = COMBAT.meleeReach;
@@ -392,6 +405,10 @@ export function resolveCombat(
 	cooldowns: Record<string, number>,
 	level: number,
 	cls: PlayerClass,
+	// `dodge` is the caller's ALREADY-GATED decision (ADR 0017 §5): the impulse site
+	// runs the full `canStartDodge` (grounded + moving) before the hop ungrounds the
+	// body and passes the result here, so this only re-checks the tick-stable timing
+	// (`dodgeReady`) — it never re-derives the movement conditions post-physics.
 	intent: { attack?: boolean; skill?: number; dodge?: boolean },
 	dt: number,
 ): {
@@ -401,6 +418,9 @@ export function resolveCombat(
 	// Time remaining in the Dodge hop (ADR 0017 §5): the caller folds this back onto
 	// the Entity, and on `dodgeStarted` applies the hop impulse to its momentum body.
 	dodgeT: number;
+	// Time remaining in the post-recovery re-dodge lockout (the spam-gate); the caller
+	// folds it back onto the Entity as `dodgeCdT`. Outlives `dodgeT` by `cooldown`.
+	dodgeCdT: number;
 	dodgeStarted: boolean;
 	cooldowns: Record<string, number>;
 	skillFired?: Skill;
@@ -420,10 +440,16 @@ export function resolveCombat(
 	// timer just decays. The hop IMPULSE is applied by the caller (it owns the
 	// client-authoritative momentum body, ADR 0001) — here we only track its timing
 	// for the i-frame window + replication.
-	const dodgeStarted = (intent.dodge ?? false) && canStartDodge(avatar);
+	const dodgeStarted = (intent.dodge ?? false) && dodgeReady(avatar);
 	const dodgeT = dodgeStarted
 		? DODGE_TOTAL
 		: Math.max(0, (avatar.dodgeT ?? 0) - dt);
+	// The spam-gate lockout (ADR 0017 §5): armed to the full lockout on the start tick,
+	// otherwise just decays — so it lingers `cooldown` past `dodgeT` and bars the next
+	// hop. The caller folds this onto `avatar.dodgeCdT`; `canStartDodge` reads it back.
+	const dodgeCdT = dodgeStarted
+		? DODGE_LOCKOUT
+		: Math.max(0, (avatar.dodgeCdT ?? 0) - dt);
 
 	// The basic swing is now a wind-up → active → recovery phase machine (ADR 0017
 	// §1). A fresh swing starts only when idle (the prior swing has fully recovered),
@@ -458,6 +484,7 @@ export function resolveCombat(
 		damage,
 		attackT: nextAttackT,
 		dodgeT,
+		dodgeCdT,
 		dodgeStarted,
 		cooldowns: decayed,
 		skillFired,

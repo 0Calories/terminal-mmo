@@ -108,6 +108,13 @@ export interface Entity {
 	// Absent == 0 (not dodging). Server-tracked for the i-frame gate; the hop impulse
 	// itself lives on the client-authoritative momentum body (ADR 0001).
 	dodgeT?: number;
+	// Dodge cooldown (ADR 0017 §5): seconds remaining in the post-recovery lockout
+	// before a fresh hop can START. Set to the full lockout (active + recovery +
+	// cooldown) at dodge start and counted down each tick, so it outlives `dodgeT` by
+	// the `cooldown` tail — the spam-gate. Absent == 0 (ready). Owner-local: gates the
+	// owning Avatar's `canStartDodge` on client + server alike; never replicated (no
+	// other client renders it), so it stays OFF the wire.
+	dodgeCdT?: number;
 	// Ids an in-flight basic swing has already hit (ADR 0017 §2): a swing connects
 	// with a given target at most once, the rate-limiter that replaced the removed
 	// automatic post-hit i-frames. Cleared when a fresh swing starts; a NEW swing (or

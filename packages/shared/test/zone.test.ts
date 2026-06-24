@@ -408,6 +408,8 @@ test('a Dodge slips a projectile during its active window but not its recovery',
 test('a dodge intent loads the i-frame timer through stepZone (active on the first tick)', () => {
 	const av = serverAvatar(7, 20);
 	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
+	// The report carries the client's already-gated `dodge` decision (grounded + moving
+	// were verified client-side pre-hop); the server loads the i-frame timer on trust.
 	const next = stepZone(state, [{ ...holdAt(7, av.avatar), dodge: true }], 16);
 	const d = next.avatars[0].avatar.dodgeT ?? 0;
 	expect(d).toBeGreaterThan(0);

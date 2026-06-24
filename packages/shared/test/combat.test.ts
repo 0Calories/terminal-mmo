@@ -9,13 +9,13 @@ import {
 	bloodEffect,
 	COMBAT,
 	canStartDodge,
+	DODGE_LOCKOUT,
 	DODGE_TOTAL,
 	deathGoreEffect,
 	dodgeInvulnerable,
 	dodgePhase,
-	dodgePoseCell,
-	dodgePoseGlyph,
 	dodgeProgress,
+	dodgeReady,
 	type Entity,
 	entityBox,
 	entityTint,
@@ -578,14 +578,37 @@ describe('canStartDodge', () => {
 	const player = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, attackT: 0, ...over });
 
-	test('a free Avatar can start a Dodge', () => {
-		expect(canStartDodge(player())).toBe(true);
+	test('a free, grounded Avatar can start a Dodge while moving', () => {
+		expect(canStartDodge(player(), 1)).toBe(true);
+		expect(canStartDodge(player(), -1)).toBe(true);
+	});
+
+	test('cannot dodge from a standstill — only while a direction is held', () => {
+		expect(canStartDodge(player(), 0)).toBe(false);
 	});
 
 	test('cannot dodge mid-Dodge (committal), mid-swing, or while Staggered', () => {
-		expect(canStartDodge(player({ dodgeT: 0.1 }))).toBe(false);
-		expect(canStartDodge(player({ attackT: 0.1 }))).toBe(false);
-		expect(canStartDodge(player({ stunT: 0.1 }))).toBe(false);
+		expect(canStartDodge(player({ dodgeT: 0.1 }), 1)).toBe(false);
+		expect(canStartDodge(player({ attackT: 0.1 }), 1)).toBe(false);
+		expect(canStartDodge(player({ stunT: 0.1 }), 1)).toBe(false);
+	});
+
+	test('cannot dodge while the post-recovery cooldown is still draining', () => {
+		// dodgeCdT outlives dodgeT: the spam-gate that keeps a fresh hop from
+		// starting the instant the i-frame timer hits 0 (ADR 0017 §5 committal).
+		expect(canStartDodge(player({ dodgeT: 0, dodgeCdT: 0.5 }), 1)).toBe(false);
+	});
+
+	test('cannot dodge while airborne — the hop is a grounded move', () => {
+		expect(canStartDodge(player({ onGround: false }), 1)).toBe(false);
+	});
+
+	test('dodgeReady is the timing half only — ignores grounded + moving', () => {
+		// Airborne and standstill still read "ready" by timing alone; the movement gate
+		// lives in canStartDodge (pre-hop), not in the server-side timing re-check.
+		expect(dodgeReady(player({ onGround: false }))).toBe(true);
+		expect(dodgeReady(player({ dodgeCdT: 0.3 }))).toBe(false); // cooldown blocks
+		expect(dodgeReady(player({ attackT: 0.1 }))).toBe(false); // mid-swing blocks
 	});
 });
 
@@ -593,11 +616,41 @@ describe('resolveCombat dodge', () => {
 	const player = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, attackT: 0, ...over });
 
-	test('a dodge intent on a free Avatar loads the full hop and flags dodgeStarted', () => {
+	// resolveCombat receives the caller's ALREADY-GATED `dodge` decision (the impulse
+	// site ran the full grounded+moving `canStartDodge` pre-hop); here it only re-checks
+	// the tick-stable timing (`dodgeReady`) and loads the timers.
+	test('a gated dodge intent loads the full hop, arms the cooldown, flags dodgeStarted', () => {
 		const r = resolveCombat(player(), {}, 1, 'warrior', { dodge: true }, 0.016);
 		expect(r.dodgeStarted).toBe(true);
 		expect(r.dodgeT).toBe(DODGE_TOTAL);
 		expect(dodgePhase(r.dodgeT)).toBe('active'); // i-frames live on the start tick
+		expect(r.dodgeCdT).toBeCloseTo(DODGE_LOCKOUT, 9); // full lockout armed at start
+	});
+
+	test('a dodge intent is refused while the cooldown is still draining', () => {
+		const r = resolveCombat(
+			player({ dodgeT: 0, dodgeCdT: 0.5 }),
+			{},
+			1,
+			'warrior',
+			{ dodge: true },
+			0.016,
+		);
+		expect(r.dodgeStarted).toBe(false); // spam-gate holds even with dodgeT at 0
+		expect(r.dodgeT).toBe(0);
+	});
+
+	test('dodgeCdT decays each tick and outlives dodgeT (the cooldown tail)', () => {
+		const r = resolveCombat(
+			player({ dodgeT: 0, dodgeCdT: 0.5 }),
+			{},
+			1,
+			'warrior',
+			{},
+			0.02,
+		);
+		expect(r.dodgeStarted).toBe(false);
+		expect(r.dodgeCdT).toBeCloseTo(0.48, 5);
 	});
 
 	test('a dodge in flight only decays — holding the key does not restart it', () => {
@@ -663,14 +716,5 @@ describe('dodge action-state + pose', () => {
 		const f = actionFlags(player({ dodgeT: DODGE_TOTAL, stunT: 0.1 }));
 		expect(f & ACTION_FLAG.dodging).toBe(ACTION_FLAG.dodging);
 		expect(f & ACTION_FLAG.staggered).toBe(ACTION_FLAG.staggered);
-	});
-
-	test('dodgePoseGlyph + dodgePoseCell place the after-image behind the facing', () => {
-		const right = player({ facing: 1, dodgeT: DODGE_TOTAL });
-		expect(dodgePoseGlyph('active', 1)).toBe('»');
-		expect(dodgePoseCell(right).x).toBe(right.x - 1); // trail is behind a right-facing hop
-		const left = player({ facing: -1 });
-		expect(dodgePoseGlyph('active', -1)).toBe('«');
-		expect(dodgePoseCell(left).x).toBe(left.x + BOX.w); // behind a left-facing hop
 	});
 });

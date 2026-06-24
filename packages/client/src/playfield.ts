@@ -10,10 +10,6 @@ import {
 	activeZone,
 	BOX,
 	buildSceneStyle,
-	dodgePhase,
-	dodgePoseCell,
-	dodgePoseGlyph,
-	dodgeProgress,
 	drawEntitySprite,
 	emoteById,
 	entityBox,
@@ -49,6 +45,14 @@ import {
 	stepCamera,
 	stepKick,
 } from './camera';
+import {
+	type DodgeEcho,
+	drawDodgeEchoes,
+	isDodging,
+	SAMPLE_INTERVAL_MS,
+	spawnDodgeEcho,
+	stepDodgeEchoes,
+} from './dodge-echo';
 import {
 	type Hitstop,
 	isFrozen,
@@ -357,51 +361,12 @@ function drawSwing(
 	}
 }
 
-// The Dodge phase an entity is rendering this frame, or null. Co-present entities
-// carry the authoritative `action` (move 'dodge') from the snapshot (ADR 0017 §10);
-// the local Avatar has no action set, so its Dodge is derived from the predicted
-// `dodgeT` — both reduce to the same (phase, progress), one render path.
-function dodgeRenderState(
-	e: Entity,
-): { phase: AttackPhase; progress: number } | null {
-	if (e.action && e.action.move === 'dodge')
-		return { phase: e.action.phase, progress: e.action.progress };
-	const phase = dodgePhase(e.dodgeT ?? 0);
-	return phase ? { phase, progress: dodgeProgress(e.dodgeT ?? 0) } : null;
-}
-
-// Realize an entity's Dodge as a trailing after-image (ADR 0017 §5/§13a): a streak
-// glyph in the space behind the hop, bright on the invulnerable `active` frames and
-// faint through `recovery`. Drawn for the local Avatar (predicted) and every
-// co-present one (replicated) through one path, so a Dodge looks the same to its
-// owner and to everyone watching.
-function drawDodge(
-	buf: OptimizedBuffer,
-	e: Entity,
-	cam: { x: number; y: number },
-	sw: number,
-	sh: number,
-) {
-	const st = dodgeRenderState(e);
-	if (!st) return;
-	const cell = dodgePoseCell(e);
-	const ax = Math.round(cell.x - cam.x);
-	const ay = Math.round(cell.y - cam.y);
-	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
-		buf.setCellWithAlphaBlending(
-			ax,
-			ay,
-			dodgePoseGlyph(st.phase, e.facing),
-			C.dodge,
-			C.transparent,
-		);
-}
-
 function drawPlayfield(
 	buf: OptimizedBuffer,
 	game: GameState,
 	cam: { x: number; y: number },
 	particles: ParticleSystem,
+	dodgeEchoes: readonly DodgeEcho[],
 ) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
@@ -469,12 +434,7 @@ function drawPlayfield(
 	// Co-present Avatars' swings, drawn from their replicated action-state (ADR 0017
 	// §10) on top of the static scene — this is what makes another Player's attack
 	// visible. The local Avatar's swing is drawn after its Sprite, below.
-	for (const e of others) {
-		drawSwing(buf, e, cam, sw, sh);
-		// A co-present Player's Dodge after-image (ADR 0017 §5), so an evasive hop is
-		// visible to everyone, not just its owner.
-		drawDodge(buf, e, cam, sw, sh);
-	}
+	for (const e of others) drawSwing(buf, e, cam, sw, sh);
 
 	// Monster swings, from the same replicated action-state: a melee committer's
 	// telegraphed wind-up + active slash is exactly what the Player reads to step
@@ -498,13 +458,16 @@ function drawPlayfield(
 		}
 	}
 
+	// Dodge after-images (ADR 0017 §5/§13e): every live echo — local and co-present —
+	// in one pass, planted at the launch spots and fading on their own render clock.
+	// Drawn just under the Sprites so a ghost never occludes a live body.
+	drawDodgeEchoes(buf, dodgeEchoes, cam, sw, sh);
+
 	// The local Avatar is drawn last, on top of everyone (ADR 0003).
 	drawEntitySprite(buf, p, cam, STYLE);
 	// The local Avatar's own swing, realized from the same path as everyone else's —
 	// here predicted from `attackT` (its action-state is left unset) for zero-lag feel.
 	drawSwing(buf, p, cam, sw, sh);
-	// The local Avatar's own Dodge after-image, predicted from `dodgeT` for zero-lag.
-	drawDodge(buf, p, cam, sw, sh);
 
 	// Second particle pass: airborne blood erupts in front of the Sprites (toward
 	// the camera), still below the over-head Speech bubbles / emotes that follow so
@@ -540,6 +503,17 @@ function drawPlayfield(
 	}
 }
 
+// Last-frame snapshot of an Avatar, kept per id to detect a dodge-start edge, recover its
+// pre-hop position for the first after-image sample, and pace the sampling that follows
+// (ADR 0017 §13e).
+type DodgeTrack = {
+	x: number;
+	y: number;
+	facing: Entity['facing'];
+	dodging: boolean;
+	sinceSampleMs: number; // time since the last after-image was captured, while dodging
+};
+
 export class PlayfieldRenderable extends Renderable {
 	game: GameState | null = null;
 
@@ -559,6 +533,13 @@ export class PlayfieldRenderable extends Renderable {
 	private particles = new ParticleSystem();
 	private lastParticleTick = -1;
 	private lastTime = 0;
+	// Dodge after-images (ADR 0017 §5/§13e): live echoes + the per-entity bookkeeping
+	// to spot a dodge-start edge. Each frame we compare every on-screen Avatar's
+	// dodging-state to last frame's; a rising edge plants an echo at that entity's
+	// PREVIOUS position (the pre-hop spot). Keyed by entity id; rebuilt each frame so
+	// departed co-present Avatars drop out. Render-only, on its own clock.
+	private dodgeEchoes: DodgeEcho[] = [];
+	private dodgeTrack = new Map<number, DodgeTrack>();
 	// Locally-predicted Effects awaiting the next frame (ADR 0013): the acting
 	// client spawns its own outgoing-hit blood immediately, off the server tick,
 	// so it isn't gated by lastParticleTick. Drained every renderSelf.
@@ -640,6 +621,48 @@ export class PlayfieldRenderable extends Renderable {
 			h: buffer.height,
 		});
 
+		// Sample Dodge after-images along each Avatar's hop (ADR 0017 §13e): scan the local
+		// Avatar + co-present others, and while dodging capture a silhouette every
+		// SAMPLE_INTERVAL_MS — the first at the pre-hop spot (last frame's position, on the
+		// false→true edge), the rest at the live position as it dashes. The trail spans the
+		// whole path; the newest sample lands where the Avatar ends up. Then age the live
+		// echoes on the render clock. Fully decoupled from the i-frame `dodgeT`.
+		const nextTrack = new Map<number, DodgeTrack>();
+		for (const e of [a, ...(this.game.others ?? [])]) {
+			const dodging = isDodging(e);
+			const prev = this.dodgeTrack.get(e.id);
+			const started = dodging && !prev?.dodging;
+			let sinceSampleMs = (prev?.sinceSampleMs ?? 0) + dt;
+			if (started) {
+				// First sample at the pre-hop origin (last frame's position).
+				spawnDodgeEcho(this.dodgeEchoes, {
+					x: prev?.x ?? e.x,
+					y: prev?.y ?? e.y,
+					facing: e.facing,
+					type: e.type,
+				});
+				sinceSampleMs = 0;
+			} else if (dodging && sinceSampleMs >= SAMPLE_INTERVAL_MS) {
+				// Subsequent samples at the live position as the dash carries it forward.
+				spawnDodgeEcho(this.dodgeEchoes, {
+					x: e.x,
+					y: e.y,
+					facing: e.facing,
+					type: e.type,
+				});
+				sinceSampleMs = 0;
+			}
+			nextTrack.set(e.id, {
+				x: e.x,
+				y: e.y,
+				facing: e.facing,
+				dodging,
+				sinceSampleMs,
+			});
+		}
+		this.dodgeTrack = nextTrack;
+		this.dodgeEchoes = stepDodgeEchoes(this.dodgeEchoes, dt);
+
 		// Voice the same fresh Effects as world SoundEffects (ADR 0014), spatialized
 		// against the live camera: pan by horizontal offset, volume by distance, y
 		// ignored, out-of-range dropped. Snapshot Effects fire once per tick and
@@ -653,6 +676,6 @@ export class PlayfieldRenderable extends Renderable {
 				this.sound.play(cue.kind, { volume: cue.volume, pan: cue.pan });
 		}
 
-		drawPlayfield(buffer, this.game, cam, this.particles);
+		drawPlayfield(buffer, this.game, cam, this.particles, this.dodgeEchoes);
 	}
 }

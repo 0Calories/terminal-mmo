@@ -167,15 +167,20 @@ function resolveAvatarIntent(
 		src.skillCooldowns ?? {},
 		src.progress.level,
 		src.class ?? 'warrior',
+		// `dodge` is the client's already-gated decision (grounded + moving checked at the
+		// impulse site before the hop ungrounds the body, ADR 0017 §5 / ADR 0001); the
+		// server only re-enforces the tick-stable timing (cooldown etc.) in resolveCombat.
 		intent
 			? { attack: intent.attack, skill: intent.skill, dodge: intent.dodge }
 			: { attack: false },
 		dt,
 	);
 	avatar.attackT = r.attackT;
-	// The i-frame Dodge timer (ADR 0017 §5): server-tracked so the damage gates below
-	// negate hits during its active window. The hop impulse is the client's (ADR 0001).
+	// The i-frame Dodge timer + its post-recovery cooldown (ADR 0017 §5): both server-
+	// tracked so the damage gates below negate hits during the active window and the
+	// spam-gate bars a re-dodge. The hop impulse is the client's (ADR 0001).
 	avatar.dodgeT = r.dodgeT;
+	avatar.dodgeCdT = r.dodgeCdT;
 	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
 	// A fresh swing clears the per-swing hit list so it can connect again; an
 	// in-flight swing keeps its list so it lands on each target only once (ADR 0017

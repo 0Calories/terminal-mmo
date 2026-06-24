@@ -51,8 +51,10 @@ export const COMBAT = {
 	// does. This is the first EARNED invulnerability after automatic post-hit i-frames
 	// were removed in #163. Durations are chunky enough to survive 30 Hz input
 	// quantization (ADR 0017 §11); the active window is shorter than the recovery, so
-	// a mistimed Dodge is punishable.
-	dodge: { active: 0.18, recovery: 0.22, impulse: 34, up: 10 },
+	// a mistimed Dodge is punishable. `cooldown` is the extra lockout AFTER recovery
+	// ends before another hop can start — the spam-gate, anchored at dodge start as a
+	// single `dodgeCdT` lockout of (active + recovery + cooldown) = 1.2s.
+	dodge: { active: 0.18, recovery: 0.22, impulse: 90, up: 10, cooldown: 0.8 },
 	// The universal hit-reaction payload a landed basic swing carries (ADR 0017 §2):
 	// it always deals `meleeDamage` HP, chips `poiseDamage` off the victim's Poise,
 	// and — only on a Poise break — Staggers (Hitstun locks control) and Knocks back

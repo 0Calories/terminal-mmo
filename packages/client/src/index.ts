@@ -399,13 +399,16 @@ function runNetworked(url: string) {
 
 			// A Dodge hop (ADR 0017 §5) is a momentum-body impulse applied BEFORE physics
 			// so clientStepAvatar integrates it this frame; gated by the same
-			// `canStartDodge` predicate resolveCombat uses below, so the hop and the
-			// i-frame window begin together. Direction follows the held move, else facing.
-			if (inp.dodge && canStartDodge(predicted)) {
-				const dir = inp.moveX !== 0 ? inp.moveX : predicted.facing;
+			// full Dodge gate (grounded + held direction + off cooldown), evaluated HERE
+			// before the hop's upward pop ungrounds the body; the gated decision drives the
+			// impulse, the i-frame timer (resolveCombat below), and the report to the server,
+			// so all three agree on whether the hop fired. Direction is `inp.moveX`.
+			const dodging =
+				(inp.dodge ?? false) && canStartDodge(predicted, inp.moveX);
+			if (dodging) {
 				predicted = applyImpulse(
 					predicted,
-					dir * COMBAT.dodge.impulse,
+					inp.moveX * COMBAT.dodge.impulse,
 					-COMBAT.dodge.up,
 				);
 			}
@@ -439,13 +442,14 @@ function runNetworked(url: string) {
 				localCd,
 				net.latest?.progress.level ?? 1,
 				'warrior',
-				{ attack: inp.attack, skill: inp.skill, dodge: inp.dodge },
+				{ attack: inp.attack, skill: inp.skill, dodge: dodging },
 				dtSec,
 			);
 			predicted.attackT = r.attackT;
-			// Mirror the server's i-frame Dodge timer so the local pose + the gate stay in
-			// lockstep with the prediction (ADR 0017 §5).
+			// Mirror the server's i-frame Dodge timer + its post-recovery cooldown so the
+			// local pose and both gates stay in lockstep with the prediction (ADR 0017 §5).
 			predicted.dodgeT = r.dodgeT;
+			predicted.dodgeCdT = r.dodgeCdT;
 			localCd = r.cooldowns;
 			const hitbox = r.hitbox;
 			const hitDamage = r.damage;
@@ -477,7 +481,9 @@ function runNetworked(url: string) {
 					onGround: predicted.onGround,
 					attack: inp.attack,
 					interact: inp.interact ?? false,
-					dodge: inp.dodge ?? false,
+					// the gated decision, so the server starts the i-frame timer iff the hop
+					// fired client-side (grounded + moving), not on every key-press (ADR 0017 §5).
+					dodge: dodging,
 					skill: inp.skill,
 				});
 			}
