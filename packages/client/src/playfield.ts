@@ -5,6 +5,7 @@ import type {
 	GameState,
 	GuardPhase,
 	Terrain,
+	Tint,
 } from '@mmo/shared';
 import {
 	ACTION_FLAG,
@@ -21,6 +22,7 @@ import {
 	isSolid,
 	type RenderStyle,
 	renderZoneScene,
+	SCENE_PALETTE,
 	type Sprite,
 	skillForSlot,
 	skillHitbox,
@@ -352,7 +354,13 @@ function drawSwing(
 	const ax = Math.round(cell.x - cam.x);
 	const ay = Math.round(cell.y - cam.y);
 	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
-		buf.setCellWithAlphaBlending(ax, ay, pose.glyph, C.melee, C.transparent);
+		buf.setCellWithAlphaBlending(
+			ax,
+			ay,
+			pose.glyph,
+			C.telegraph,
+			C.transparent,
+		);
 }
 
 // The Guard phase an entity is bracing in this frame, or null. Co-present entities
@@ -408,13 +416,27 @@ function emitWeaponTrails(
 	const swingers = [game.player.avatar, ...(game.others ?? [])];
 	for (const e of swingers) {
 		if (e.type !== 'player') continue;
-		const trail = weaponById(e.weapon).trail;
+		const weapon = weaponById(e.weapon);
+		const trail = weapon.trail;
 		if (!trail) continue;
 		const st = swingRenderState(e);
 		if (st?.phase !== 'active') continue;
 		const cell = swingPoseCell(e, 'active');
-		particles.spawn(WEAPON_TRAILS[trail], cell.x, cell.y, e.facing, rng);
+		// Tint the motion Trail by the weapon's accent (ADR 0018 §6) so the streak reads
+		// in the same colour as the blade and edge-arc — one cooperating weapon look.
+		const tint = weapon.sprite ? accentTint(weapon.sprite.accent) : undefined;
+		particles.spawn(WEAPON_TRAILS[trail], cell.x, cell.y, e.facing, rng, tint);
 	}
+}
+
+// The Tint (RGB) a weapon's accent palette key resolves to (ADR 0018 §6), for tinting its
+// motion Trail particles. Resolved from the shared art palette so the Trail matches the
+// blade/arc the shared renderer paints; an unknown key falls back to the bright default.
+function accentTint(accent: string): Tint {
+	const q =
+		SCENE_PALETTE[accent as keyof typeof SCENE_PALETTE] ??
+		([232, 232, 238, 255] as const);
+	return { r: q[0], g: q[1], b: q[2] };
 }
 
 function drawPlayfield(
@@ -514,7 +536,7 @@ function drawPlayfield(
 				const px = Math.round(hb.x + xx - cam.x);
 				const py = Math.round(hb.y + yy - cam.y);
 				if (px >= 0 && px < sw && py >= 0 && py < sh)
-					buf.setCellWithAlphaBlending(px, py, '✦', C.melee, C.transparent);
+					buf.setCellWithAlphaBlending(px, py, '✦', C.telegraph, C.transparent);
 			}
 		}
 	}

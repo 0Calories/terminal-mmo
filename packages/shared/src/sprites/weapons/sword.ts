@@ -14,12 +14,14 @@ import type { WeaponSprite } from '../weapon-sprite';
 // VISUAL ARTEFACT — the art here needs design review / sign-off before merge.
 
 // Rest: blade upright at the side, steel rising from a dark guard (the hand cell).
+// Blade cells carry the dynamic ACCENT key (`a`, ADR 0018 §6) so the whole blade reads
+// in the weapon's accent colour and re-tints with rarity later; the guard stays authored.
 const idle = new Sprite(
 	`
 ▐▌
 ▟▙
 ▝▘`,
-	{ defaultKey: 's', colors: `\nss\nss\nkk` },
+	{ defaultKey: 'a', colors: `\naa\naa\nkk` },
 );
 
 // Wind-up: blade cocked up-and-forward, raised to strike (above the hand).
@@ -30,10 +32,10 @@ const windup = new Sprite(
 ··▝▘
 `,
 	{
-		defaultKey: 's',
+		defaultKey: 'a',
 		colors: `
-·s
-·ss
+·a
+·aa
 ··kk
 `,
 	},
@@ -58,11 +60,11 @@ const active1 = new Sprite(
 ·
 `,
 	{
-		defaultKey: 's',
+		defaultKey: 'a',
 		colors: `
 ·
-kssss
-kssss
+kaaaa
+kaaaa
 ·
 `,
 	},
