@@ -116,11 +116,13 @@ test('a forgiving death respawns the Avatar in Town with full HP and no loss', (
 	av.inventory = [
 		{ id: 1, base: 'sword', slot: 'weapon', rarity: 'rare', affixes: [] },
 	];
-	// Stand on a ground-level Field Monster so its contact damage finishes the
-	// Avatar this tick (perched Monsters sit above the Avatar's hold height).
+	// Stand just inside a ground-level Field chaser's melee reach so it commits a
+	// telegraphed swing whose active strike finishes the 1-HP Avatar (contact damage
+	// is gone — ADR 0017 §9). Drive a few ticks for the wind-up→active to land.
 	const m = channelsOf(w, 'field-01')[0].zone.monsters.find((mm) => mm.y === y);
 	if (!m) throw new Error('expected a ground-level Monster in field-01');
-	w = stepServerWorld(w, [holdAt(7, m.x)], 16);
+	for (let i = 0; i < 20 && zoneOf(w, 7) !== 'town-01'; i++)
+		w = stepServerWorld(w, [holdAt(7, m.x + 3)], 16);
 
 	expect(zoneOf(w, 7)).toBe('town-01');
 	expect(
