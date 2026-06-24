@@ -59,6 +59,7 @@ import type {
 	Projectile,
 	Terrain,
 } from './types';
+import { DEFAULT_WEAPON, weaponById } from './weapons';
 import { spawnMonster, type Zone } from './world';
 
 // Server-authoritative per-Avatar state. Position/facing are client-reported
@@ -152,6 +153,9 @@ function resolveAvatarIntent(
 		: { ...src.avatar };
 
 	const log = src.log.slice(-5);
+	// The equipped Weapon drives the swing's phase durations, damage, and arc through
+	// the shared gate (ADR 0017 §14) — no special-casing per weapon, just its stat
+	// block. Absent == the default sword.
 	const r = resolveCombat(
 		avatar,
 		src.skillCooldowns ?? {},
@@ -159,6 +163,7 @@ function resolveAvatarIntent(
 		src.class ?? 'warrior',
 		intent ? { attack: intent.attack, skill: intent.skill } : { attack: false },
 		dt,
+		weaponById(avatar.weapon),
 	);
 	avatar.attackT = r.attackT;
 	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
@@ -365,10 +370,15 @@ export function stepZone(
 				const sid = avatars[i].sessionId;
 				swingHits[i].add(m.id);
 				const facing = avatars[i].avatar.facing;
+				// The attacker's Weapon drives the hit-reaction too (ADR 0017 §14): its
+				// poise damage decides whether this connect breaks, and its Knockback the
+				// throw on a break — so a greatsword staggers and launches where a dagger
+				// only chips, from the stat block alone.
+				const wpn = weaponById(avatars[i].avatar.weapon);
 				const contributors = m.contributors?.includes(sid)
 					? m.contributors
 					: [...(m.contributors ?? []), sid];
-				const { poise, broke } = applyPoiseDamage(m, COMBAT.poiseDamage);
+				const { poise, broke } = applyPoiseDamage(m, wpn.poiseDamage);
 				// Reset the regen-delay so a sustained flurry keeps the pool from healing
 				// between swings (ADR 0017 §3).
 				m = {
@@ -384,7 +394,7 @@ export function stepZone(
 					// rockets, a heavy body barely nudges), plus a small upward pop. The
 					// impact Effect is the break punctuation the client keys hitstop +
 					// camera-kick off. `source` attributes it for originator-suppression.
-					m = applyImpulse(m, COMBAT.knockback * facing, -COMBAT.knockbackUp);
+					m = applyImpulse(m, wpn.knockback * facing, -wpn.knockbackUp);
 					m = { ...m, stunT: COMBAT.hitstun };
 					// No `source`: like the death gore burst, the break is a "big moment"
 					// delivered to EVERYONE in range — including the attacker, who needs it to
@@ -562,9 +572,13 @@ export function snapshotFor(
 		hp: a.avatar.hp,
 		maxHp: a.avatar.maxHp,
 		hurtT: a.avatar.hurtT,
-		// Derived from the Avatar's swing timer so every other client can render the
-		// swing (ADR 0017 §10) — this is what makes the basic attack visible to others.
-		action: actionStateOf(a.avatar),
+		// The equipped Weapon index joins the broadcast appearance (ADR 0017 §14), so
+		// every other client renders THIS Avatar's weapon — composited sprite + trail.
+		weapon: a.avatar.weapon ?? DEFAULT_WEAPON,
+		// Derived from the Avatar's swing timer AGAINST its weapon's phase durations, so
+		// every other client can render the swing (ADR 0017 §10) — this is what makes the
+		// basic attack visible to others, and a slow greatsword read as slow.
+		action: actionStateOf(a.avatar, weaponById(a.avatar.weapon).swing),
 	}));
 	const monsters: MonsterSnapshot[] = state.zone.monsters.map((m) => ({
 		id: m.id,
@@ -622,12 +636,15 @@ export function addAvatar(
 	sessionId: number,
 	handle: string,
 	cosmetics: Cosmetics = DEFAULT_COSMETICS,
+	weapon: number = DEFAULT_WEAPON,
 ): ZoneState {
 	const sa: ServerAvatar = {
 		sessionId,
 		handle,
 		cosmetics,
-		avatar: { ...spawnAvatar(SPAWN.x, SPAWN.y), id: sessionId },
+		// The chosen Weapon rides the connect handshake (ADR 0017 §14) and lives on the
+		// Avatar entity, where it drives both combat resolution and the broadcast look.
+		avatar: { ...spawnAvatar(SPAWN.x, SPAWN.y), id: sessionId, weapon },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
 		log: ['Welcome. Hunt the chasers (j to attack).'],

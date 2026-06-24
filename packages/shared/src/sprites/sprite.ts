@@ -18,6 +18,8 @@ const MIRROR: Record<string, string> = {
 	'>': '<',
 	'/': '\\',
 	'\\': '/',
+	'╱': '╲',
+	'╲': '╱',
 	'`': "'",
 	"'": '`',
 	'▌': '▐',
@@ -33,6 +35,14 @@ const MIRROR: Record<string, string> = {
 	'▚': '▞',
 	'▞': '▚',
 };
+
+// Mirror a single glyph across the vertical axis (the block-element / bracket swap
+// table above), or return it unchanged if it has no distinct mirror. Exposed so the
+// combat layer can orient a weapon's pose glyph by facing with the SAME table the
+// sprite mirroring uses, instead of duplicating the map (ADR 0017 §13b).
+export function mirrorGlyph(glyph: string): string {
+	return MIRROR[glyph] ?? glyph;
+}
 
 function splitTrimPad(art: string): string[] {
 	const lines = art.split('\n');
