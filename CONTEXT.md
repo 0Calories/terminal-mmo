@@ -19,15 +19,49 @@ _Avoid_: User, gamer
 The in-world character a Player controls and customizes; one Avatar per Player.
 Rendered as an **expressive multi-row ASCII-art figure** (~4–6 rows, roughly the
 level of detail of the Claude mascot), NOT a single glyph or 2-cell blob.
-Customizable via: a chosen color/hue, one cosmetic accessory slot (e.g. hat;
-cosmetic-only, separate from gear stats), and a nameplate (name + color).
+Customizable via: a chosen **Form**, a color/hue, one cosmetic accessory slot (e.g.
+hat; cosmetic-only, separate from gear stats), and a nameplate (name + color).
 _Avoid_: Character, hero
+
+**Form**:
+The cosmetic appearance identity a Player picks for their Avatar — a variation within
+the shared humanoid body plan (build, silhouette, physical quirks); players are always
+humanoid, never a different creature. Purely visual: a Form changes only the **Body
+sprite**, never the logical collision box, stats, or combat numbers, so every Avatar
+plays identically whatever its Form (ADR 0020). Forms live in a registry selected by a
+`cosmetics.form` index, alongside hue/hat/nameplate. Not a gameplay class.
+_Avoid_: Race, species, class, skin (a Form is the body, not a recolor)
 
 **Sprite**:
 The visual ASCII-art representation of an entity (Avatar, Monster, NPC). Purely
 decorative and client-side; deliberately decoupled from the entity's small
-logical collision/hitbox footprint (see ADR on visual architecture).
+logical collision/hitbox footprint (see ADR on visual architecture). A single,
+static frame; the animated, multi-frame body is a **Body sprite**.
 _Avoid_: Art, model, skin
+
+**Body sprite**:
+The animated ASCII-art of an entity's body — a named set of whole-frame **Pose**s
+(`idle`, `walkA`/`walkB`, `jump`, the emote frames, …), the body's analogue of the
+**Weapon sprite** (ADR 0020). Each Avatar **Form** is one Body sprite; the type is
+entity-agnostic, so Monsters become a consumer when they animate later. A pose is a
+*whole frame*, not a composited skeleton — at terminal fidelity a limb is a cell or
+two, so animating is redrawing the grid. Every Body sprite must author the core
+`idle`, `walkA`, `walkB`; any missing pose falls back to `idle`.
+_Avoid_: Body model, rig, skeleton (poses are whole frames, there is no rig)
+
+**Pose**:
+One selectable whole frame of a **Body sprite** (or **Weapon sprite**), chosen each
+render by a pure, shared function of replicated state so owner and observers agree.
+Body-pose priority is a fixed ladder — `hurt/stagger > combat > airborne > walk >
+emote > idle` — where, deliberately, walking cancels an **Emote**.
+_Avoid_: Frame (reserve for an individual grid), stance, animation state
+
+**Walk cycle**:
+The `walkA↔walkB` alternation that animates a moving Avatar, flipped every stride of
+**accumulated horizontal distance travelled** (not a clock), so it costs no wire data,
+quickens with speed, and stays identical for owner and observers (ADR 0020). Freezes
+when idle or airborne.
+_Avoid_: Walk animation, gait timer (it is distance-driven, not timed)
 
 **World**:
 The single, persistent, shared space that all Players inhabit. There is one
@@ -86,8 +120,8 @@ _Avoid_: Username, nick, name, identity
 **Chat**:
 Real-time text communication between Players. The first form is **Zone chat**: a
 message is relayed to every session in the sender's Zone *and* Channel and shown
-in each recipient's chat log, attributed to the sender's Handle. (Whisper and
-emote come later.)
+in each recipient's chat log, attributed to the sender's Handle. (Whisper comes
+later; **Emote** is a separate, body-animation mechanism.)
 _Avoid_: Say, talk, message
 
 **Speech bubble**:
@@ -98,17 +132,34 @@ to the Avatar by session id, tracks the Avatar as it moves, and expires on a
 timer — the chat log stays the durable record.
 _Avoid_: Chat bubble, balloon, callout, tooltip
 
+**Emote**:
+A pose the Avatar's own body performs to express itself (e.g. `wave`, `dance`,
+`sit`) — a **Pose** played on the **Body sprite**, triggered by the `/em`/`/emote`
+chat command (ADR 0020). Each emote has a **lifetime mode**: `oneshot` (plays once,
+then returns to idle), `loop` (cycles until interrupted), or `hold` (one sustained
+pose). The active emote is replicated in the per-entity action-state, so a late
+arrival still sees a held or looping emote; movement or combat clears it. *Not* the
+retired overhead face-glyph popup, which it replaced.
+_Avoid_: Emoji, reaction, gesture (one word — an emote is a body pose, not a popup icon)
+
 **CombatEvent**:
 The resolved, *semantic* fact of a combat interaction — "target T was **hit** /
-**broke** (poise) / **died** / **parried**, at (x,y), facing →, intensity N." It is
-what Combat resolution produces; an **Effect** is its presentation projection (via
-the shared `effectsOf`), and a **Particle** is the Effect's realization. The
+**broke** (poise) / **died** / **parried** / **swatted**, at (x,y), facing →, intensity
+N." It is what Combat resolution produces; an **Effect** is its presentation projection
+(via the shared `effectsOf`), and a **Particle** is the Effect's realization. The
 authority *produces* a CombatEvent by applying damage/poise (the poise result is
 what makes a contact a hit vs a break vs a death); the local Player *predicts* only
-the optimistic `hit` event from contact, for zero-latency feedback. `break`/`death`/
-`parry` are authority-only. Distinct from Effect: a CombatEvent's `kind` is the game
-fact (`hit`), an Effect's `kind` is the look (`blood`). Shared-internal, never on the
-wire — it is projected to Effects before the snapshot is built (see ADR 0019).
+the optimistic `hit` event from its own outgoing swing, for zero-latency feedback.
+`break`/`death`/`parry`/`swat` are authority-only, and so is *incoming* hurt — an
+Avatar-target `hit` is never predicted (ADR 0013 §3). Every combat Effect in a snapshot
+is `effectsOf(CombatEvent)` — no site emits an Effect inline (the migration completed in
+#194). The kinds map `hit → blood`, `break → impact` (heavier), `death → gore` (tinted),
+`parry → parry`, `swat → impact` (a light clink — a melee frame shattering a shot, ADR
+0017 §8 — at the shot's own damage, no poise bump). Distinct from Effect: a CombatEvent's
+`kind` is the game fact (`hit`), an Effect's `kind` is the look (`blood`). Shared-internal,
+never on the wire — it is projected to Effects before the snapshot is built (see ADR 0019).
+Modeled as a discriminated union on `kind`, so each kind carries only the fields it can
+mean — `source` on a predicted `hit`, `tint` (the dead body's colour) on a `death`.
 _Avoid_: Effect (that's the projection), HitEvent, Outcome
 
 **Effect**:
@@ -116,7 +167,7 @@ A small, authoritative descriptor of a momentary world event worth showing —
 e.g. "a blood-hit landed at (x,y), facing →, intensity N." The **presentation
 projection of a CombatEvent** (`effectsOf`), produced deterministically in shared
 logic the moment Combat resolves, and broadcast to every session in the Zone (like
-an Emote) *except* the session that caused it (which predicts it locally). An Effect
+a Chat message) *except* the session that caused it (which predicts it locally). An Effect
 says *what it looks/sounds like*; the CombatEvent it came from says *what happened*.
 Its visual realization is the client's business (see Particle). The local Player
 predicts their own Effects client-side for zero-latency feedback; the server derives
