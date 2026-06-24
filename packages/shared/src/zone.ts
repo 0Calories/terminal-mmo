@@ -11,6 +11,7 @@ import {
 	actionFlags,
 	actionStateOf,
 	applyPoiseDamage,
+	avatarHittable,
 	bloodEffect,
 	deathGoreEffect,
 	entityBox,
@@ -100,10 +101,15 @@ export interface AvatarIntent {
 	y: number;
 	vx: number;
 	vy: number;
+	// External-impulse channel of the reported momentum body (ADR 0017): carried so a
+	// client-applied Dodge/Knockback hop persists server-side across ticks (the server
+	// trusts client kinematics and never re-simulates position). Absent == unchanged.
+	ivx?: number;
 	facing: Facing;
 	onGround: boolean;
 	attack: boolean;
 	interact?: boolean; // request a Portal transition; resolved by the world layer
+	dodge?: boolean; // start an i-frame Dodge hop this tick (ADR 0017 §5)
 	skill?: number;
 }
 
@@ -146,6 +152,10 @@ function resolveAvatarIntent(
 				y: intent.y,
 				vx: intent.vx,
 				vy: intent.vy,
+				// Carry the reported impulse channel so a Dodge/Knockback hop the client
+				// integrated persists into this tick's authoritative avatar (absent == keep
+				// the prior residual).
+				ivx: intent.ivx ?? src.avatar.ivx,
 				facing: intent.facing,
 				onGround: intent.onGround,
 			}
@@ -157,10 +167,15 @@ function resolveAvatarIntent(
 		src.skillCooldowns ?? {},
 		src.progress.level,
 		src.class ?? 'warrior',
-		intent ? { attack: intent.attack, skill: intent.skill } : { attack: false },
+		intent
+			? { attack: intent.attack, skill: intent.skill, dodge: intent.dodge }
+			: { attack: false },
 		dt,
 	);
 	avatar.attackT = r.attackT;
+	// The i-frame Dodge timer (ADR 0017 §5): server-tracked so the damage gates below
+	// negate hits during its active window. The hop impulse is the client's (ADR 0001).
+	avatar.dodgeT = r.dodgeT;
 	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
 	// A fresh swing clears the per-swing hit list so it can connect again; an
 	// in-flight swing keeps its list so it lands on each target only once (ADR 0017
@@ -320,7 +335,9 @@ export function stepZone(
 			const hb = meleeHitbox(m);
 			for (let i = 0; i < avatars.length; i++) {
 				const a = avatars[i].avatar;
-				if (a.hurtT > 0 || !aabbOverlap(hb, entityBox(a))) continue;
+				// i-frame gate (ADR 0017 §5): a connect's automatic i-frames OR an active
+				// Dodge negate the strike. Dodging through the active frames is the demo.
+				if (!avatarHittable(a) || !aabbOverlap(hb, entityBox(a))) continue;
 				const { poise, broke } = applyPoiseDamage(a, COMBAT.poiseDamage);
 				let na: Entity = {
 					...a,
@@ -449,7 +466,8 @@ export function stepZone(
 		let consumed = false;
 		for (let i = 0; i < avatars.length; i++) {
 			const a = avatars[i].avatar;
-			if (a.hurtT <= 0 && aabbOverlap(projectileBox(pr), entityBox(a))) {
+			// Same i-frame gate as melee: an active Dodge slips a projectile too (ADR 0017 §5).
+			if (avatarHittable(a) && aabbOverlap(projectileBox(pr), entityBox(a))) {
 				avatars[i] = {
 					...avatars[i],
 					avatar: { ...a, hp: a.hp - pr.damage, hurtT: COMBAT.iframes },

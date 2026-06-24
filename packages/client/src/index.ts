@@ -1,7 +1,10 @@
 import {
 	aabbOverlap,
 	activeZone,
+	applyImpulse,
+	COMBAT,
 	type Cosmetics,
+	canStartDodge,
 	clientStepAvatar,
 	createGame,
 	type Entity,
@@ -394,6 +397,19 @@ function runNetworked(url: string) {
 					};
 			}
 
+			// A Dodge hop (ADR 0017 §5) is a momentum-body impulse applied BEFORE physics
+			// so clientStepAvatar integrates it this frame; gated by the same
+			// `canStartDodge` predicate resolveCombat uses below, so the hop and the
+			// i-frame window begin together. Direction follows the held move, else facing.
+			if (inp.dodge && canStartDodge(predicted)) {
+				const dir = inp.moveX !== 0 ? inp.moveX : predicted.facing;
+				predicted = applyImpulse(
+					predicted,
+					dir * COMBAT.dodge.impulse,
+					-COMBAT.dodge.up,
+				);
+			}
+
 			const prevOnGround = predicted.onGround;
 			predicted = clientStepAvatar(
 				zone.terrain,
@@ -423,10 +439,13 @@ function runNetworked(url: string) {
 				localCd,
 				net.latest?.progress.level ?? 1,
 				'warrior',
-				{ attack: inp.attack, skill: inp.skill },
+				{ attack: inp.attack, skill: inp.skill, dodge: inp.dodge },
 				dtSec,
 			);
 			predicted.attackT = r.attackT;
+			// Mirror the server's i-frame Dodge timer so the local pose + the gate stay in
+			// lockstep with the prediction (ADR 0017 §5).
+			predicted.dodgeT = r.dodgeT;
 			localCd = r.cooldowns;
 			const hitbox = r.hitbox;
 			const hitDamage = r.damage;
@@ -458,6 +477,7 @@ function runNetworked(url: string) {
 					onGround: predicted.onGround,
 					attack: inp.attack,
 					interact: inp.interact ?? false,
+					dodge: inp.dodge ?? false,
 					skill: inp.skill,
 				});
 			}

@@ -92,17 +92,71 @@ export function meleeActive(attackT: number): boolean {
 	return swingPhase(attackT) === 'active';
 }
 
+// --- Dodge phase machine (ADR 0017 §5) --------------------------------------
+//
+// The Dodge is the swing machine's sibling: one scalar `dodgeT` (time remaining)
+// runs an `active` window (i-frames) then a `recovery` tail (exposed, committed).
+// It reuses the AttackPhase value names so it round-trips through the same
+// action-state — only `active` and `recovery` ever appear (a Dodge has no wind-up).
+
+export const DODGE_TOTAL = COMBAT.dodge.active + COMBAT.dodge.recovery;
+
+// The phase of a Dodge for a given `dodgeT` (time remaining), or null when not
+// dodging. Pure; the single source of truth for the i-frame window.
+export function dodgePhase(dodgeT: number): AttackPhase | null {
+	if (dodgeT <= 0) return null;
+	return DODGE_TOTAL - dodgeT < COMBAT.dodge.active ? 'active' : 'recovery';
+}
+
+// Progress 0..1 through the CURRENT Dodge phase, for the client hop pose.
+export function dodgeProgress(dodgeT: number): number {
+	const phase = dodgePhase(dodgeT);
+	if (!phase) return 0;
+	const { active, recovery } = COMBAT.dodge;
+	const elapsed = DODGE_TOTAL - dodgeT;
+	if (phase === 'active') return active > 0 ? elapsed / active : 1;
+	return recovery > 0 ? (elapsed - active) / recovery : 1;
+}
+
+// The i-frame window: a Dodge negates incoming hits ONLY during its `active`
+// phase (ADR 0017 §5). The `recovery` tail is vulnerable — the whole point of the
+// committal. Pure; the universal "can this Avatar be hit" gate folds this in.
+export function dodgeInvulnerable(e: Entity): boolean {
+	return dodgePhase(e.dodgeT ?? 0) === 'active';
+}
+
+// Whether an Avatar can START a fresh Dodge this tick (ADR 0017 §5): only when it
+// is free — not mid-Dodge (committal), not mid-swing, and not Staggered. The shared
+// gate so the client physics prediction (which applies the hop impulse) and
+// `resolveCombat` (which loads `dodgeT`) agree on exactly when a Dodge begins.
+export function canStartDodge(e: Entity): boolean {
+	return (e.dodgeT ?? 0) <= 0 && e.attackT <= 0 && (e.stunT ?? 0) <= 0;
+}
+
+// The universal "can this Avatar take a hit this tick" gate (ADR 0017 §5): blocked
+// by either automatic i-frames (`hurtT`, set on a connect) or earned Dodge i-frames.
+// One predicate so every Avatar damage site — Monster melee, projectiles — honours a
+// Dodge identically.
+export function avatarHittable(a: Entity): boolean {
+	return a.hurtT <= 0 && !dodgeInvulnerable(a);
+}
+
 // The action-state `flags` bitfield (ADR 0017 §10): a compact set of reaction /
 // defense bits replicated for every entity so a client can render the state (a
-// staggered sprite, later a guard pose). Only `staggered` exists in this slice;
-// guarding / airborne join as later slices land. Round-trips as the action's u8.
-export const ACTION_FLAG = { staggered: 1 } as const;
+// staggered sprite, a dodge after-image). `staggered` (Hitstun) and `dodging` (the
+// i-frame hop, ADR 0017 §5) exist now; guarding / airborne join as later slices
+// land. Round-trips as the action's u8.
+export const ACTION_FLAG = { staggered: 1, dodging: 2 } as const;
 
-// The reaction/defense flags an entity broadcasts this tick. In this slice the only
-// bit is `staggered` (Hitstun in flight) — surfacing Poise/Stagger state through the
-// action-state exactly as ADR 0017 §3 requires, for Avatars and Monsters alike.
+// The reaction/defense flags an entity broadcasts this tick: `staggered` (Hitstun in
+// flight) and `dodging` (an i-frame hop in flight, ADR 0017 §5) — surfacing reaction
+// /defense state through the action-state exactly as ADR 0017 §3/§10 requires, so a
+// co-present Player can see the Dodge. The bits OR together.
 export function actionFlags(e: Entity): number {
-	return (e.stunT ?? 0) > 0 ? ACTION_FLAG.staggered : 0;
+	return (
+		((e.stunT ?? 0) > 0 ? ACTION_FLAG.staggered : 0) |
+		((e.dodgeT ?? 0) > 0 ? ACTION_FLAG.dodging : 0)
+	);
 }
 
 // The action-state every entity replicates when idle: no move, no live hitbox.
@@ -162,6 +216,16 @@ export function regenPoise(e: Entity, dt: number): number {
 // offense rework is a later slice). Pure — the wire field is computed, not stored.
 export function actionStateOf(e: Entity): ActionState {
 	const flags = actionFlags(e);
+	// A Dodge takes precedence over the swing for the `move` slot (you cannot do both
+	// at once); its active/recovery phases reuse the AttackPhase names (ADR 0017 §5).
+	const dPhase = dodgePhase(e.dodgeT ?? 0);
+	if (dPhase)
+		return {
+			move: 'dodge',
+			phase: dPhase,
+			progress: dodgeProgress(e.dodgeT ?? 0),
+			flags,
+		};
 	const phase = swingPhase(e.attackT);
 	if (!phase) return flags ? { ...IDLE_ACTION, flags } : IDLE_ACTION;
 	return { move: 'basic', phase, progress: swingProgress(e.attackT), flags };
@@ -195,6 +259,22 @@ export function swingPoseCell(
 	const row =
 		phase === 'windup' ? e.y : phase === 'active' ? e.y + 1 : e.y + BOX.h - 1;
 	return { x: lead, y: row };
+}
+
+// The Dodge after-image (ADR 0017 §5/§13a): a motion-streak glyph drawn behind the
+// hopping Avatar — bright/sharp during the i-frame `active` window, a fading trail
+// through `recovery` — so the hop reads as a quick evasive dash and the invulnerable
+// frames are legible. Pure (phase, facing) → glyph, the same seam as the swing pose.
+export function dodgePoseGlyph(phase: AttackPhase, facing: Facing): string {
+	const trail = phase === 'active' ? '»' : '·';
+	return facing === 1 ? trail : trail === '»' ? '«' : trail;
+}
+
+// The world cell the after-image occupies: just BEHIND the Avatar's trailing edge
+// (opposite its facing), mid-body — the space it just vacated. Pure geometry.
+export function dodgePoseCell(e: Entity): { x: number; y: number } {
+	const back = e.facing === 1 ? e.x - 1 : e.x + BOX.w;
+	return { x: back, y: e.y + 1 };
 }
 
 export function meleeHitbox(p: Entity): Box {
@@ -312,12 +392,16 @@ export function resolveCombat(
 	cooldowns: Record<string, number>,
 	level: number,
 	cls: PlayerClass,
-	intent: { attack: boolean; skill?: number },
+	intent: { attack?: boolean; skill?: number; dodge?: boolean },
 	dt: number,
 ): {
 	hitbox: Box | null;
 	damage: number;
 	attackT: number;
+	// Time remaining in the Dodge hop (ADR 0017 §5): the caller folds this back onto
+	// the Entity, and on `dodgeStarted` applies the hop impulse to its momentum body.
+	dodgeT: number;
+	dodgeStarted: boolean;
 	cooldowns: Record<string, number>;
 	skillFired?: Skill;
 	// True on the tick a fresh swing begins (ADR 0017 §2): the caller clears the
@@ -330,6 +414,17 @@ export function resolveCombat(
 	for (const [id, cd] of Object.entries(cooldowns))
 		decayed[id] = Math.max(0, cd - dt);
 
+	// The Dodge (ADR 0017 §5) resolves first: it both gates and is gated by the swing
+	// (you cannot dodge mid-swing, nor swing on the tick a dodge starts). A fresh hop
+	// loads DODGE_TOTAL only when the Avatar is free (`canStartDodge`); otherwise the
+	// timer just decays. The hop IMPULSE is applied by the caller (it owns the
+	// client-authoritative momentum body, ADR 0001) — here we only track its timing
+	// for the i-frame window + replication.
+	const dodgeStarted = (intent.dodge ?? false) && canStartDodge(avatar);
+	const dodgeT = dodgeStarted
+		? DODGE_TOTAL
+		: Math.max(0, (avatar.dodgeT ?? 0) - dt);
+
 	// The basic swing is now a wind-up → active → recovery phase machine (ADR 0017
 	// §1). A fresh swing starts only when idle (the prior swing has fully recovered),
 	// loading the full sequence into attackT; the resulting phase is wind-up, so the
@@ -338,7 +433,9 @@ export function resolveCombat(
 	// multi-tick active window down to a single hit. A fired Skill still overrides the
 	// shared hitbox slot and keeps its instant cooldown behavior (active-skill rework
 	// is out of this slice's scope).
-	const starting = intent.attack && attackT <= 0;
+	// A swing can't start while a Dodge is in flight (including the tick it begins) —
+	// the two moves are mutually exclusive (ADR 0017 §5).
+	const starting = (intent.attack ?? false) && attackT <= 0 && dodgeT <= 0;
 	const nextAttackT = starting ? SWING_TOTAL : attackT;
 	let hitbox: Box | null = meleeActive(nextAttackT)
 		? meleeHitbox(avatar)
@@ -360,6 +457,8 @@ export function resolveCombat(
 		hitbox,
 		damage,
 		attackT: nextAttackT,
+		dodgeT,
+		dodgeStarted,
 		cooldowns: decayed,
 		skillFired,
 		swingStarted: starting,

@@ -43,6 +43,16 @@ export const COMBAT = {
 	// (ADR 0017 §11).
 	swing: { windup: 0.1, active: 0.12, recovery: 0.16 },
 	iframes: 0.6,
+	// The Dodge (ADR 0017 §5): a short horizontal hop that grants i-frames for its
+	// `active` window then leaves the Avatar exposed through `recovery` (committal —
+	// it can't be re-entered until the whole hop ends, so it isn't a free panic
+	// button). The hop itself is a momentum-body impulse (`impulse` horizontal + a
+	// small `up` pop), reusing the same Knockback channel + drag the Stagger shove
+	// does. This is the first EARNED invulnerability after automatic post-hit i-frames
+	// were removed in #163. Durations are chunky enough to survive 30 Hz input
+	// quantization (ADR 0017 §11); the active window is shorter than the recovery, so
+	// a mistimed Dodge is punishable.
+	dodge: { active: 0.18, recovery: 0.22, impulse: 34, up: 10 },
 	// The universal hit-reaction payload a landed basic swing carries (ADR 0017 §2):
 	// it always deals `meleeDamage` HP, chips `poiseDamage` off the victim's Poise,
 	// and — only on a Poise break — Staggers (Hitstun locks control) and Knocks back

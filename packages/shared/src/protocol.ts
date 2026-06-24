@@ -158,6 +158,10 @@ export type ClientMessage =
 			onGround: boolean;
 			attack: boolean;
 			interact: boolean;
+			// Dodge intent for the tick (ADR 0017 §5): the server loads the i-frame hop
+			// timer so its damage gates honour the Dodge. The hop displacement itself is
+			// client-authoritative (ADR 0001) and never re-simulated server-side.
+			dodge: boolean;
 			skill?: number;
 	  }
 	// A Zone-local chat line; the server attributes it to the sender's handle and
@@ -211,6 +215,9 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.bool(msg.attack);
 			w.bool(msg.interact);
 			w.u8(msg.skill ?? 0);
+			// Appended after `skill` so an older decoder (which stops before it) simply
+			// reads no Dodge, defaulting it false (see decode's remaining-guard).
+			w.bool(msg.dodge);
 			break;
 		case 'chat':
 			w.u8(CLIENT_TAG.chat);
@@ -256,6 +263,9 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			const attack = r.bool();
 			const interact = r.bool();
 			const skill = r.u8();
+			// Trailing (ADR 0017 §5): a pre-Dodge client stops here, so guard the read and
+			// default the intent false rather than throwing on the short buffer.
+			const dodge = r.remaining() >= 1 ? r.bool() : false;
 			const msg: ClientMessage = {
 				t: 'input',
 				x,
@@ -266,6 +276,7 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 				onGround,
 				attack,
 				interact,
+				dodge,
 			};
 			if (skill !== 0) msg.skill = skill;
 			return msg;
@@ -384,7 +395,9 @@ const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
 // reorder would remap existing Effects). A forward-version kind clamps to `blood`
 // on decode (see readEffect) so a newer server can't crash an older client.
 const EFFECT_KINDS: readonly EffectKind[] = ['blood', 'gore', 'impact'];
-const MOVE_IDS: readonly MoveId[] = ['idle', 'basic'];
+// Append-only (like EFFECT_KINDS): the index is the wire encoding, so a new move
+// goes on the END and a forward-version index clamps to `idle` on decode.
+const MOVE_IDS: readonly MoveId[] = ['idle', 'basic', 'dodge'];
 const ATTACK_PHASES: readonly AttackPhase[] = ['windup', 'active', 'recovery'];
 
 // The per-entity action-state (ADR 0017 §10): move + phase as catalog-index bytes,

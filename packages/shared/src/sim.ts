@@ -1,7 +1,7 @@
-import { aabbOverlap, entityBox } from './combat';
-import { PHYS, SPAWN } from './constants';
+import { aabbOverlap, canStartDodge, entityBox } from './combat';
+import { COMBAT, PHYS, SPAWN } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
-import { stepEntity } from './physics';
+import { applyImpulse, stepEntity } from './physics';
 import { type PlayerState, spawnPlayerState } from './player';
 import type { Effect, Entity, Input } from './types';
 import type { World, Zone } from './world';
@@ -89,11 +89,22 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		}
 	}
 
+	// A Dodge hop (ADR 0017 §5) is a momentum-body impulse on the client-authoritative
+	// body, applied BEFORE physics so stepEntity integrates it this tick. Gated by the
+	// same `canStartDodge` predicate `resolveCombat` (inside stepZone) uses to load
+	// `dodgeT`, so the impulse and the i-frame window begin on the same tick. Direction
+	// follows the held move, else the facing.
+	let body = game.player.avatar;
+	if (input.dodge && canStartDodge(body)) {
+		const dir = input.moveX !== 0 ? input.moveX : body.facing;
+		body = applyImpulse(body, dir * COMBAT.dodge.impulse, -COMBAT.dodge.up);
+	}
+
 	// Predict this Avatar's own platformer physics, then let the Zone resolve every
 	// consequence under server authority.
 	const predicted = stepEntity(
 		t,
-		game.player.avatar,
+		body,
 		{ moveX: input.moveX, jump: input.jump },
 		dt,
 	).e;
@@ -116,9 +127,13 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		y: predicted.y,
 		vx: predicted.vx,
 		vy: predicted.vy,
+		// Carry the integrated impulse residual so the hop persists across ticks (the
+		// returned avatar is rebuilt from this intent, ADR 0001).
+		ivx: predicted.ivx,
 		facing: predicted.facing,
 		onGround: predicted.onGround,
 		attack: input.attack,
+		dodge: input.dodge,
 		skill: input.skill,
 	};
 	const next = stepZone(

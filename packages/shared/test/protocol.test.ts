@@ -67,6 +67,7 @@ test('input round-trips reported kinematics + combat intents', () => {
 		onGround: true,
 		attack: true,
 		interact: false,
+		dodge: true,
 		skill: 1,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
@@ -84,6 +85,7 @@ test('input round-trips with no skill intent', () => {
 		onGround: false,
 		attack: false,
 		interact: false,
+		dodge: false,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
@@ -100,6 +102,24 @@ test('input round-trips the interact (portal) intent', () => {
 		onGround: true,
 		attack: false,
 		interact: true,
+		dodge: false,
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('input round-trips the dodge intent (ADR 0017 §5)', () => {
+	const msg: ClientMessage = {
+		t: 'input',
+		x: 5,
+		y: 6,
+		vx: 1,
+		vy: 0,
+		facing: -1,
+		onGround: true,
+		attack: false,
+		interact: false,
+		dodge: true,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);

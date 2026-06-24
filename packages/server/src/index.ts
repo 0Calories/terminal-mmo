@@ -214,6 +214,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		onGround: msg.onGround,
 		attack: msg.attack,
 		interact: msg.interact,
+		dodge: msg.dodge,
 		skill: msg.skill,
 	});
 }

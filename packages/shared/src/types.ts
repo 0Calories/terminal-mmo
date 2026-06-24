@@ -14,6 +14,9 @@ export interface Control {
 export interface Input extends Control {
 	attack: boolean;
 	interact?: boolean;
+	// Dodge intent (ADR 0017 §5): a dedicated key, not a double-tap. When the Avatar
+	// is free it starts an i-frame hop in the held (or facing) direction.
+	dodge?: boolean;
 	// 1-based slot of a Class Skill to activate this tick (absent == none).
 	skill?: number;
 }
@@ -28,8 +31,10 @@ export type EntityType = 'player' | 'chaser' | 'shooter';
 export type AttackPhase = 'windup' | 'active' | 'recovery';
 
 // The move an entity is performing. `idle` = nothing; `basic` = the basic melee
-// swing. Skills and Monster moves join this set as later combat slices land.
-export type MoveId = 'idle' | 'basic';
+// swing; `dodge` = the i-frame hop (ADR 0017 §5), whose `active`/`recovery` phases
+// reuse the AttackPhase values. Skills and Monster moves join this set as later
+// combat slices land.
+export type MoveId = 'idle' | 'basic' | 'dodge';
 
 // A compact, authoritative description of what an entity is *doing* this tick,
 // broadcast for every entity in the snapshot so offense is visible to everyone
@@ -96,6 +101,13 @@ export interface Entity {
 	// + gravity, so a staggered entity flies. Absent == 0 (acting normally). The
 	// staggered state is surfaced to clients through the action-state `flags` bit.
 	stunT?: number;
+	// Dodge (ADR 0017 §5): seconds remaining in an i-frame hop (active + recovery),
+	// counting down to 0 (ready). The `active` window grants invulnerability; the
+	// `recovery` tail leaves the Avatar exposed and committed (no re-dodge). Derived
+	// into the action-state for replication, exactly like `attackT` drives the swing.
+	// Absent == 0 (not dodging). Server-tracked for the i-frame gate; the hop impulse
+	// itself lives on the client-authoritative momentum body (ADR 0001).
+	dodgeT?: number;
 	// Ids an in-flight basic swing has already hit (ADR 0017 §2): a swing connects
 	// with a given target at most once, the rate-limiter that replaced the removed
 	// automatic post-hit i-frames. Cleared when a fresh swing starts; a NEW swing (or

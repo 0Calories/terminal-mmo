@@ -4,10 +4,18 @@ import {
 	actionFlags,
 	actionStateOf,
 	applyPoiseDamage,
+	avatarHittable,
 	BOX,
 	bloodEffect,
 	COMBAT,
+	canStartDodge,
+	DODGE_TOTAL,
 	deathGoreEffect,
+	dodgeInvulnerable,
+	dodgePhase,
+	dodgePoseCell,
+	dodgePoseGlyph,
+	dodgeProgress,
 	type Entity,
 	entityBox,
 	entityTint,
@@ -524,5 +532,145 @@ describe('resolveCombat swingStarted', () => {
 		const mid = monster(20, 0, { type: 'player', attackT: fresh.attackT });
 		const cont = resolveCombat(mid, {}, 1, 'warrior', { attack: true }, 0.016);
 		expect(cont.swingStarted).toBe(false);
+	});
+});
+
+// --- Dodge (ADR 0017 §5) ----------------------------------------------------
+
+describe('dodge phase machine', () => {
+	const { active, recovery } = COMBAT.dodge;
+	const player = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, ...over });
+
+	test('DODGE_TOTAL is the sum of the active + recovery windows', () => {
+		expect(DODGE_TOTAL).toBeCloseTo(active + recovery, 9);
+	});
+
+	test('dodgePhase walks active → recovery → null by time remaining', () => {
+		expect(dodgePhase(0)).toBeNull(); // not dodging
+		expect(dodgePhase(DODGE_TOTAL)).toBe('active'); // just started
+		expect(dodgePhase(DODGE_TOTAL - active + 0.001)).toBe('active'); // end of i-frames
+		expect(dodgePhase(DODGE_TOTAL - active - 0.001)).toBe('recovery'); // exposed tail
+		expect(dodgePhase(0.0001)).toBe('recovery'); // last sliver is recovery
+	});
+
+	test('dodgeInvulnerable is true ONLY during the active window', () => {
+		expect(dodgeInvulnerable(player({ dodgeT: DODGE_TOTAL }))).toBe(true);
+		expect(dodgeInvulnerable(player({ dodgeT: recovery * 0.5 }))).toBe(false);
+		expect(dodgeInvulnerable(player({ dodgeT: 0 }))).toBe(false);
+	});
+
+	test('dodgeProgress runs 0→1 within each phase', () => {
+		expect(dodgeProgress(DODGE_TOTAL)).toBeCloseTo(0, 5); // start of active
+		expect(dodgeProgress(recovery)).toBeCloseTo(0, 5); // start of recovery
+		expect(dodgeProgress(0.0001)).toBeGreaterThan(0.9); // end of recovery
+	});
+
+	test('avatarHittable folds both i-frame sources (hurtT OR active Dodge)', () => {
+		expect(avatarHittable(player({ hurtT: 0, dodgeT: 0 }))).toBe(true);
+		expect(avatarHittable(player({ hurtT: 0.5 }))).toBe(false); // connect i-frames
+		expect(avatarHittable(player({ dodgeT: DODGE_TOTAL }))).toBe(false); // dodge i-frames
+		expect(avatarHittable(player({ dodgeT: recovery * 0.5 }))).toBe(true); // recovery exposed
+	});
+});
+
+describe('canStartDodge', () => {
+	const player = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, attackT: 0, ...over });
+
+	test('a free Avatar can start a Dodge', () => {
+		expect(canStartDodge(player())).toBe(true);
+	});
+
+	test('cannot dodge mid-Dodge (committal), mid-swing, or while Staggered', () => {
+		expect(canStartDodge(player({ dodgeT: 0.1 }))).toBe(false);
+		expect(canStartDodge(player({ attackT: 0.1 }))).toBe(false);
+		expect(canStartDodge(player({ stunT: 0.1 }))).toBe(false);
+	});
+});
+
+describe('resolveCombat dodge', () => {
+	const player = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, attackT: 0, ...over });
+
+	test('a dodge intent on a free Avatar loads the full hop and flags dodgeStarted', () => {
+		const r = resolveCombat(player(), {}, 1, 'warrior', { dodge: true }, 0.016);
+		expect(r.dodgeStarted).toBe(true);
+		expect(r.dodgeT).toBe(DODGE_TOTAL);
+		expect(dodgePhase(r.dodgeT)).toBe('active'); // i-frames live on the start tick
+	});
+
+	test('a dodge in flight only decays — holding the key does not restart it', () => {
+		const r = resolveCombat(
+			player({ dodgeT: 0.2 }),
+			{},
+			1,
+			'warrior',
+			{ dodge: true },
+			0.02,
+		);
+		expect(r.dodgeStarted).toBe(false);
+		expect(r.dodgeT).toBeCloseTo(0.18, 5); // just decayed
+	});
+
+	test('a swing cannot start on the tick a Dodge begins (mutually exclusive)', () => {
+		const r = resolveCombat(
+			player(),
+			{},
+			1,
+			'warrior',
+			{ attack: true, dodge: true },
+			0.016,
+		);
+		expect(r.dodgeStarted).toBe(true);
+		expect(r.swingStarted).toBe(false); // the Dodge wins the tick
+		expect(r.attackT).toBe(0);
+	});
+
+	test('cannot dodge mid-swing — the swing keeps running', () => {
+		const r = resolveCombat(
+			player({ attackT: 0.2 }),
+			{},
+			1,
+			'warrior',
+			{ dodge: true },
+			0.016,
+		);
+		expect(r.dodgeStarted).toBe(false);
+		expect(r.dodgeT).toBe(0);
+	});
+});
+
+describe('dodge action-state + pose', () => {
+	const player = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, attackT: 0, ...over });
+
+	test('actionStateOf reports the dodge move + the dodging flag while hopping', () => {
+		const a = actionStateOf(player({ dodgeT: DODGE_TOTAL }));
+		expect(a.move).toBe('dodge');
+		expect(a.phase).toBe('active');
+		expect(a.flags & ACTION_FLAG.dodging).toBe(ACTION_FLAG.dodging);
+	});
+
+	test('a Dodge takes the move slot over a concurrent swing timer', () => {
+		// Both timers nonzero (a dodge started while a swing was mid-recovery shouldn't
+		// happen via resolveCombat, but actionStateOf must still pick one move): dodge wins.
+		const a = actionStateOf(player({ dodgeT: DODGE_TOTAL, attackT: 0.1 }));
+		expect(a.move).toBe('dodge');
+	});
+
+	test('actionFlags ORs staggered + dodging', () => {
+		const f = actionFlags(player({ dodgeT: DODGE_TOTAL, stunT: 0.1 }));
+		expect(f & ACTION_FLAG.dodging).toBe(ACTION_FLAG.dodging);
+		expect(f & ACTION_FLAG.staggered).toBe(ACTION_FLAG.staggered);
+	});
+
+	test('dodgePoseGlyph + dodgePoseCell place the after-image behind the facing', () => {
+		const right = player({ facing: 1, dodgeT: DODGE_TOTAL });
+		expect(dodgePoseGlyph('active', 1)).toBe('»');
+		expect(dodgePoseCell(right).x).toBe(right.x - 1); // trail is behind a right-facing hop
+		const left = player({ facing: -1 });
+		expect(dodgePoseGlyph('active', -1)).toBe('«');
+		expect(dodgePoseCell(left).x).toBe(left.x + BOX.w); // behind a left-facing hop
 	});
 });

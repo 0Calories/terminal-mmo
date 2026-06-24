@@ -4,14 +4,15 @@ import type { Input } from '@mmo/shared';
 // release events a held key would stick, so it's dropped after this idle (M0).
 const HELD_MS = 220;
 
-// The abstract action set bindings resolve onto (ADR 0017 §12). Guard / Dodge /
-// `down` are reserved for the later defensive + combo slices; this foundation wires
-// movement, jump, attack, interact, and the two active-skill slots.
+// The abstract action set bindings resolve onto (ADR 0017 §12). Guard / `down` are
+// reserved for the later defensive + combo slices; this slice adds `dodge` to the
+// movement, jump, attack, interact, and two active-skill slots.
 type Action =
 	| 'left'
 	| 'right'
 	| 'jump'
 	| 'attack'
+	| 'dodge'
 	| 'interact'
 	| 'skill1'
 	| 'skill2';
@@ -20,8 +21,8 @@ type Action =
 // so a poll() yields identical Input intents whichever the Player runs.
 export type Scheme = 'keyboard' | 'mouse';
 
-// Keyboard-only: attack on `j` (and the legacy `x`), active skills moved to `u`/`i`
-// — freeing `k`/`l` for the Guard/Dodge verbs a later slice adds. `e` interacts.
+// Keyboard-only: attack on `j` (and the legacy `x`), Dodge on `l` (ADR 0017 §12 — `k`
+// stays reserved for the later Guard verb), active skills on `u`/`i`. `e` interacts.
 const KEYBOARD_BINDINGS: Readonly<Record<string, Action>> = {
 	left: 'left',
 	a: 'left',
@@ -31,6 +32,7 @@ const KEYBOARD_BINDINGS: Readonly<Record<string, Action>> = {
 	space: 'jump',
 	j: 'attack',
 	x: 'attack',
+	l: 'dodge',
 	e: 'interact',
 	u: 'skill1',
 	i: 'skill2',
@@ -47,6 +49,7 @@ const MOUSE_BINDINGS: Readonly<Record<string, Action>> = {
 	d: 'right',
 	up: 'jump',
 	space: 'jump',
+	l: 'dodge',
 	f: 'interact',
 	e: 'skill1',
 	r: 'skill2',
@@ -113,6 +116,7 @@ export class InputState {
 			moveX: moveX as -1 | 0 | 1,
 			jump: this.held.has('jump'),
 			attack: this.held.has('attack') || this.mouseAttack,
+			dodge: this.held.has('dodge'),
 			interact: this.held.has('interact'),
 			skill: this.held.has('skill1')
 				? 1

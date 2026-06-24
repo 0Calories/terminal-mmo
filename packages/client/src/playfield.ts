@@ -10,6 +10,10 @@ import {
 	activeZone,
 	BOX,
 	buildSceneStyle,
+	dodgePhase,
+	dodgePoseCell,
+	dodgePoseGlyph,
+	dodgeProgress,
 	drawEntitySprite,
 	emoteById,
 	entityBox,
@@ -353,6 +357,46 @@ function drawSwing(
 	}
 }
 
+// The Dodge phase an entity is rendering this frame, or null. Co-present entities
+// carry the authoritative `action` (move 'dodge') from the snapshot (ADR 0017 §10);
+// the local Avatar has no action set, so its Dodge is derived from the predicted
+// `dodgeT` — both reduce to the same (phase, progress), one render path.
+function dodgeRenderState(
+	e: Entity,
+): { phase: AttackPhase; progress: number } | null {
+	if (e.action && e.action.move === 'dodge')
+		return { phase: e.action.phase, progress: e.action.progress };
+	const phase = dodgePhase(e.dodgeT ?? 0);
+	return phase ? { phase, progress: dodgeProgress(e.dodgeT ?? 0) } : null;
+}
+
+// Realize an entity's Dodge as a trailing after-image (ADR 0017 §5/§13a): a streak
+// glyph in the space behind the hop, bright on the invulnerable `active` frames and
+// faint through `recovery`. Drawn for the local Avatar (predicted) and every
+// co-present one (replicated) through one path, so a Dodge looks the same to its
+// owner and to everyone watching.
+function drawDodge(
+	buf: OptimizedBuffer,
+	e: Entity,
+	cam: { x: number; y: number },
+	sw: number,
+	sh: number,
+) {
+	const st = dodgeRenderState(e);
+	if (!st) return;
+	const cell = dodgePoseCell(e);
+	const ax = Math.round(cell.x - cam.x);
+	const ay = Math.round(cell.y - cam.y);
+	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
+		buf.setCellWithAlphaBlending(
+			ax,
+			ay,
+			dodgePoseGlyph(st.phase, e.facing),
+			C.dodge,
+			C.transparent,
+		);
+}
+
 function drawPlayfield(
 	buf: OptimizedBuffer,
 	game: GameState,
@@ -425,7 +469,12 @@ function drawPlayfield(
 	// Co-present Avatars' swings, drawn from their replicated action-state (ADR 0017
 	// §10) on top of the static scene — this is what makes another Player's attack
 	// visible. The local Avatar's swing is drawn after its Sprite, below.
-	for (const e of others) drawSwing(buf, e, cam, sw, sh);
+	for (const e of others) {
+		drawSwing(buf, e, cam, sw, sh);
+		// A co-present Player's Dodge after-image (ADR 0017 §5), so an evasive hop is
+		// visible to everyone, not just its owner.
+		drawDodge(buf, e, cam, sw, sh);
+	}
 
 	// Monster swings, from the same replicated action-state: a melee committer's
 	// telegraphed wind-up + active slash is exactly what the Player reads to step
@@ -454,6 +503,8 @@ function drawPlayfield(
 	// The local Avatar's own swing, realized from the same path as everyone else's —
 	// here predicted from `attackT` (its action-state is left unset) for zero-lag feel.
 	drawSwing(buf, p, cam, sw, sh);
+	// The local Avatar's own Dodge after-image, predicted from `dodgeT` for zero-lag.
+	drawDodge(buf, p, cam, sw, sh);
 
 	// Second particle pass: airborne blood erupts in front of the Sprites (toward
 	// the camera), still below the over-head Speech bubbles / emotes that follow so

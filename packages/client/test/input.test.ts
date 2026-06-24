@@ -26,11 +26,28 @@ test('keyboard scheme: j attacks, u/i fire skill slots 1/2 (ADR 0017 §12)', () 
 	expect(input.poll(0).skill).toBe(2);
 });
 
-test('keyboard scheme: legacy k/l no longer fire skills (freed for Guard/Dodge)', () => {
+test('keyboard scheme: l is Dodge, k stays reserved for Guard (ADR 0017 §12)', () => {
 	const input = new InputState('keyboard');
+	expect(input.poll(0).dodge).toBe(false);
+
+	input.press('l', 0); // dedicated Dodge key
+	const polled = input.poll(0);
+	expect(polled.dodge).toBe(true);
+	expect(polled.skill).toBeUndefined(); // not a skill
+	input.release('l');
+	expect(input.poll(0).dodge).toBe(false);
+
+	// `k` is still unbound (reserved for the later Guard verb): no intent.
 	input.press('k', 0);
+	const k = input.poll(0);
+	expect(k.dodge).toBe(false);
+	expect(k.skill).toBeUndefined();
+});
+
+test('mouse scheme: l also maps to Dodge (shared keyboard binding)', () => {
+	const input = new InputState('mouse');
 	input.press('l', 0);
-	expect(input.poll(0).skill).toBeUndefined();
+	expect(input.poll(0).dodge).toBe(true);
 });
 
 test('mouse scheme: left-click attacks, e/r fire skill slots 1/2 (ADR 0017 §12)', () => {
@@ -77,6 +94,7 @@ test('both schemes map their bindings to identical intents', () => {
 		moveX: 1,
 		jump: true,
 		attack: true,
+		dodge: false,
 		interact: false,
 		skill: 1,
 	});
