@@ -186,6 +186,32 @@ it cannot re-commit or cancel). The reworked chaser is the first one. Monsters h
 incoming damage was dodgeable/punishable. See ADR 0017 §9.
 _Avoid_: Melee mob, contact damage, walk-into-you damage
 
+**Ranged poker**:
+A Monster archetype that fights at distance — the reworked shooter. Like the **melee
+committer** it deals damage *only* through a telegraphed **Attack phase**: it
+maintains distance, and on a commit runs the same **wind-up** → **active** →
+**recovery** swing, **firing exactly one Projectile on the active frame** (never
+auto-firing). The wind-up is the Player's cue to **Dodge**/**Block**/**Parry** the
+shot or close in to punish the recovery. See ADR 0017 §8.
+_Avoid_: Archer, turret, auto-shooter, hitscan mob
+
+**Projectile**:
+A **first-class hit that travels** — not a special-case ranged poke. It carries the
+*same* hit-reaction payload a melee swing does (**HP damage** + **poise damage** +
+**Knockback**), so a heavy shot **Staggers** on a **Poise** break exactly like a
+melee connect while a pebble only chips, and it resolves through the same hit path.
+It travels at a **reactable** speed (not hitscan). Countered by the whole defensive
+kit: **Dodge** through it (i-frames), **Block** it (chip + poise drain), **Parry to
+reflect** it, or **swat** it with a melee active frame. See ADR 0017 §8.
+_Avoid_: Bullet, missile, hitscan
+
+**Reflect**:
+The result of **Parrying** a **Projectile**: the shot reverses and becomes *yours*
+(now owned by the parrier), flying back to threaten the shooter — the ranged
+counterpart to a melee Parry's punish opening. Distinct from a **swat**, which
+*destroys* a shot with a melee active frame (no reflect). See ADR 0017 §8.
+_Avoid_: Deflect, return, bounce
+
 **Combat**:
 Real-time PvE (Player vs Monster) fighting — a first-class pillar, not flavor.
 Built on **commitment**: an attack is not instant but occupies time in **phases**,

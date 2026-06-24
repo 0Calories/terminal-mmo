@@ -25,6 +25,7 @@ import {
 	resolveCombat,
 	resolveGuard,
 	SWING_TOTAL,
+	swingPhase,
 } from './combat';
 import {
 	BOX,
@@ -279,7 +280,13 @@ export function stepZone(
 	for (const m0 of zone.monsters) {
 		let m: Entity = { ...m0 };
 		m.hurtT = Math.max(0, m.hurtT - dt);
+		// The swing timer BEFORE this tick's decay — so the ranged-poker fire below can
+		// detect the exact tick the swing crosses into its `active` phase (fire-on-active-
+		// entry, the one-shot gate) without a per-monster "has fired" flag.
+		const attackTBefore = m.attackT;
 		m.attackT = Math.max(0, m.attackT - dt);
+		// Ranged-poker fire cadence (ADR 0017 §8): decays toward 0, gating the next commit.
+		m.fireCdT = Math.max(0, (m.fireCdT ?? 0) - dt);
 		// Hitstun + Poise bookkeeping (ADR 0017 §2/§3): decay the Stagger timer and
 		// regenerate the Poise pool under no pressure. `stunned` locks CONTROL (no AI),
 		// not physics — the body below still integrates its Knockback impulse + gravity.
@@ -290,11 +297,13 @@ export function stepZone(
 		m.poiseT = Math.max(0, (m.poiseT ?? 0) - dt);
 		if ((m.poiseT ?? 0) <= 0) m.poise = regenPoise(m, dt);
 		const stunned = (m.stunT ?? 0) > 0;
-		// A chaser that has begun a swing is COMMITTED for the whole
-		// wind-up→active→recovery: it neither moves nor re-targets nor re-commits until
-		// the swing fully recovers (attackT decays to 0). That commitment is precisely
-		// what makes the recovery a punishable opening (ADR 0017 §9).
-		const committed = m.type === 'chaser' && m.attackT > 0;
+		// A committer (chaser melee OR shooter ranged poker) that has begun a swing is
+		// COMMITTED for the whole wind-up→active→recovery: it neither moves nor re-targets
+		// nor re-commits until the swing fully recovers (attackT decays to 0). That
+		// commitment is precisely what makes the recovery a punishable opening (ADR 0017
+		// §9): the poker, too, holds its ground through the telegraph rather than kiting.
+		const committed =
+			(m.type === 'chaser' || m.type === 'shooter') && m.attackT > 0;
 
 		const target = nearestAvatar(avatars, m.x);
 		const dx = target >= 0 ? avatars[target].avatar.x - m.x : 0;
@@ -324,13 +333,22 @@ export function stepZone(
 				m.facing = m.facing === 1 ? -1 : 1;
 		}
 
-		if (engaged) {
-			const dir: Facing = dx >= 0 ? 1 : -1;
-			m.facing = dir;
-			if (m.attackT <= 0) {
-				fired.push(spawnProjectile(nextProjectileId++, m, dir));
-				m = { ...m, attackT: SHOOTER.fireCooldown };
-			}
+		// Ranged poker (ADR 0017 §8): the reworked shooter never auto-fires. While engaged
+		// and free it FACES its target and, once off its fire cadence, COMMITS the shared
+		// wind-up→active→recovery swing (the visible telegraph). It then fires exactly one
+		// shot on the tick the swing crosses into its `active` phase, and arms `fireCdT` to
+		// pace the next commit — so the Player reads the wind-up, then dodges/blocks/parries
+		// the reactable shot or closes in to punish the recovery.
+		if (engaged && !committed) m.facing = dx >= 0 ? 1 : -1;
+		if (engaged && !committed && (m.fireCdT ?? 0) <= 0 && m.attackT <= 0)
+			m = { ...m, attackT: SWING_TOTAL };
+		if (
+			m.type === 'shooter' &&
+			swingPhase(attackTBefore) !== 'active' &&
+			meleeActive(m.attackT)
+		) {
+			fired.push(spawnProjectile(nextProjectileId++, m, m.facing));
+			m = { ...m, fireCdT: SHOOTER.fireCooldown };
 		}
 
 		// Melee committer (ADR 0017 §9): the reworked chaser deals damage ONLY through a
@@ -533,29 +551,135 @@ export function stepZone(
 		);
 	}
 
-	// Append this tick's fresh shots last, so they don't move or hit until next tick.
+	// Projectiles are first-class hits with a full counterplay set (ADR 0017 §8). Each
+	// surviving shot resolves through the SAME hit path melee does — i-frame gate,
+	// Guard, Poise break — so a heavy shot Staggers exactly like a swing. A `monster`
+	// shot threatens Avatars (Dodge / Block / Parry-reflect / melee-swat); a `player`
+	// shot — one a Parry reflected — threatens Monsters.
 	const projectiles: Projectile[] = [];
 	for (const pr0 of zone.projectiles) {
 		const pr = stepProjectile(t, pr0, dt);
 		if (!pr) continue;
-		let consumed = false;
-		for (let i = 0; i < avatars.length; i++) {
-			const a = avatars[i].avatar;
-			// Same i-frame gate as melee: an active Dodge slips a projectile too (ADR 0017 §5).
-			if (avatarHittable(a) && aabbOverlap(projectileBox(pr), entityBox(a))) {
-				avatars[i] = {
-					...avatars[i],
-					avatar: { ...a, hp: a.hp - pr.damage, hurtT: COMBAT.iframes },
+		// Travel direction, reused as the Knockback push + Effect bias (0 for a
+		// stationary shot, e.g. a test fixture or a reflected zero-velocity pebble).
+		const travel: -1 | 0 | 1 = pr.vx > 0 ? 1 : pr.vx < 0 ? -1 : 0;
+
+		// A reflected (player-owned) shot threatens Monsters: it applies the full
+		// hit-reaction payload through the same Poise-break path a Player's swing does,
+		// crediting the parrier so a reflect kill earns XP/loot. Bounded to one Monster.
+		if (pr.faction === 'player') {
+			let consumed = false;
+			for (let mi = 0; mi < monsters.length; mi++) {
+				const tm = monsters[mi];
+				if (!aabbOverlap(projectileBox(pr), entityBox(tm))) continue;
+				const { poise, broke } = applyPoiseDamage(tm, pr.poiseDamage);
+				const contributors = tm.contributors?.includes(pr.ownerId)
+					? tm.contributors
+					: [...(tm.contributors ?? []), pr.ownerId];
+				let nm: Entity = {
+					...tm,
+					hp: tm.hp - pr.damage,
+					poise,
+					poiseT: COMBAT.poise.regenDelay,
+					contributors,
 				};
-				// Hurt blood at the Avatar, knocked along the projectile's travel
-				// (0 for a stationary shot). Server-sourced — no `source` — so the
-				// snapshot delivers it to the victim too, in sync with the
-				// hurt-flash (ADR 0013, #132). Inside the i-frame gate.
-				const dir: -1 | 0 | 1 = pr.vx > 0 ? 1 : pr.vx < 0 ? -1 : 0;
-				effects.push(hurtBloodEffect(a, dir, pr.damage));
+				if (broke) {
+					nm = applyImpulse(nm, pr.knockback * travel, -pr.knockbackUp);
+					nm = { ...nm, stunT: COMBAT.hitstun };
+					effects.push(impactEffect(tm, (travel || 1) as Facing, pr.damage));
+				} else {
+					effects.push(bloodEffect(tm, (travel || 1) as Facing, pr.damage));
+				}
+				monsters[mi] = nm;
 				consumed = true;
 				break;
 			}
+			if (!consumed) projectiles.push(pr);
+			continue;
+		}
+
+		// Melee swat (ADR 0017 §8): a Player's live active melee/skill hitbox DESTROYS a
+		// hostile shot on contact — no reflect, the shot is simply gone. Checked before
+		// the body hit so a well-timed swing is a valid counter. The impact burst (no
+		// source) gives the clink + camera juice to everyone in range.
+		let consumed = false;
+		for (let i = 0; i < avatars.length; i++) {
+			const hb = hitboxes[i];
+			if (hb && aabbOverlap(hb, projectileBox(pr))) {
+				effects.push({
+					kind: 'impact',
+					x: pr.x,
+					y: pr.y,
+					intensity: pr.damage,
+					dir: (-travel || 1) as -1 | 0 | 1,
+				});
+				consumed = true;
+				break;
+			}
+		}
+		if (consumed) continue;
+
+		// Otherwise the shot resolves against an Avatar's body. The i-frame gate
+		// (automatic hurtT OR an active Dodge) negates it WITHOUT consuming it, so a
+		// Dodge slips it and it flies on (ADR 0017 §5). A frontal Guard then Parries it
+		// (reflect) or Blocks it (chip + Poise drain); an unguarded/rear hit takes the
+		// full payload, Staggering on a Poise break exactly like a melee connect.
+		for (let i = 0; i < avatars.length; i++) {
+			const a = avatars[i].avatar;
+			if (!avatarHittable(a) || !aabbOverlap(projectileBox(pr), entityBox(a)))
+				continue;
+			const lagSlack = (byId.get(avatars[i].sessionId)?.lagMs ?? 0) / 1000;
+			// The shot's source is back along its travel; resolveGuard's frontal-arc
+			// check needs a point on that side (a stationary shot is treated as frontal).
+			const g = resolveGuard(a, a.x - travel, pr.damage, lagSlack);
+			if (g.result === 'parry') {
+				// Parry → REFLECT (ADR 0017 §8): the shot reverses, becomes the parrier's
+				// (faction `player`, ownerId the parrier) and flies back to threaten the
+				// shooter. Negated for the Avatar, who keeps the raised Guard and i-frames so
+				// the same shot can't immediately re-resolve. The reflect IS the punish, so —
+				// unlike a melee Parry — no attacker Poise dump here (the shooter is at range).
+				projectiles.push({
+					...pr,
+					vx: -pr.vx,
+					vy: -pr.vy,
+					faction: 'player',
+					ownerId: avatars[i].sessionId,
+				});
+				effects.push(parryEffect(a, (travel || 1) as Facing));
+				avatars[i] = {
+					...avatars[i],
+					avatar: { ...a, hurtT: COMBAT.iframes },
+				};
+				consumed = true;
+				break;
+			}
+			// Block (chip + Poise drain → possible guard-break) or unguarded/rear (full
+			// payload). resolveGuard already reduced the HP + drained Poise for a Block; an
+			// unguarded hit applies the shot's full Poise damage here. Either break Staggers
+			// through the same path — the shot can throw the body like a melee hit.
+			const unguarded =
+				g.result === 'none' ? applyPoiseDamage(a, pr.poiseDamage) : null;
+			const broke = unguarded ? unguarded.broke : g.guardBroke;
+			const poise = unguarded ? unguarded.poise : g.defenderPoise;
+			let na: Entity = {
+				...a,
+				hp: a.hp - g.hpDamage,
+				hurtT: COMBAT.iframes,
+				poise,
+				poiseT: COMBAT.poise.regenDelay,
+			};
+			if (broke) {
+				na = applyImpulse(na, pr.knockback * travel, -pr.knockbackUp);
+				na = { ...na, stunT: COMBAT.hitstun };
+				effects.push(impactEffect(a, (travel || 1) as Facing, pr.damage));
+			} else if (g.result !== 'block') {
+				// Hurt blood biased along the shot's travel; a clean Block soaked it (no blood,
+				// only the chip + Poise drain). Server-sourced — delivered to the victim too.
+				effects.push(hurtBloodEffect(a, travel, pr.damage));
+			}
+			avatars[i] = { ...avatars[i], avatar: na };
+			consumed = true;
+			break;
 		}
 		if (!consumed) projectiles.push(pr);
 	}
@@ -675,13 +799,13 @@ export function snapshotFor(
 		hp: m.hp,
 		maxHp: m.maxHp,
 		hurtT: m.hurtT,
-		// A melee-committer chaser runs the phase machine on its `attackT`, so it
-		// replicates its real swing action-state — this is what makes its wind-up
-		// visible to the Player (ADR 0017 §9/§10). The shooter keeps its MVP offense
-		// (its `attackT` is a fire cooldown, not a swing), so it replicates idle; either
-		// way a Staggered Monster surfaces its reaction through the action `flags`.
+		// Both committer archetypes — the melee chaser and the ranged-poker shooter — run
+		// the shared phase machine on their `attackT`, so each replicates its real swing
+		// action-state and its wind-up telegraph is visible to the Player (ADR 0017
+		// §8/§9/§10). A Staggered Monster of either type surfaces its reaction through the
+		// action `flags`.
 		action:
-			m.type === 'chaser'
+			m.type === 'chaser' || m.type === 'shooter'
 				? actionStateOf(m)
 				: { ...IDLE_ACTION, flags: actionFlags(m) },
 	}));

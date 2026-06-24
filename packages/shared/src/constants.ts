@@ -132,10 +132,23 @@ export const SHOOTER = {
 	speed: 9,
 	aggro: 46,
 	keepDist: 20, // retreats if the Avatar comes closer than this
+	// Seconds between telegraphed shots (ADR 0017 §8): the reworked shooter is a RANGED
+	// POKER — it COMMITS the shared wind-up→active→recovery swing and fires ONE shot on
+	// the active frame, never auto-firing. This paces the next commit so a reading Player
+	// has time to react to the telegraph, dodge/block/parry the shot, or close in to punish
+	// the recovery. Generous vs the swing total (~0.38s) so the cadence stays readable.
 	fireCooldown: 1.4,
-	projSpeed: 36,
+	// Travel speed (cells/s): deliberately reactable, NOT hitscan (ADR 0017 §8) — slow
+	// enough that a Player can visibly respond AFTER the wind-up telegraph.
+	projSpeed: 30,
 	projLife: 2.4,
+	// The pebble's hit-reaction payload (ADR 0017 §8): light HP + a small Poise bite that
+	// only Staggers under sustained fire, and a modest Knockback thrown on that break —
+	// the same payload shape a melee hit carries, so the shot resolves through one path.
 	projDamage: 7,
+	projPoise: 6,
+	projKnockback: 30,
+	projKnockbackUp: 10,
 } as const;
 
 export const PROJECTILE = { w: 1, h: 1 } as const;

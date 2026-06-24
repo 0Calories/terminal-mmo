@@ -16,7 +16,7 @@ import {
 	step,
 	XP_PER_KILL,
 } from '../src';
-import { flatTerrain } from './helpers';
+import { flatTerrain, makeProjectile } from './helpers';
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false };
 
@@ -225,18 +225,44 @@ function shooterGame(gap: number): GameState {
 	return { player, world: { zones: { [zone.id]: zone }, tick: 0 } };
 }
 
-test('a shooter with the Avatar in range fires a projectile and goes on cooldown', () => {
-	const g = step(shooterGame(30), IDLE, 16);
-	const zone = activeZone(g.world, g.player.zoneId);
-	expect(zone.projectiles.length).toBe(1);
-	expect(zone.monsters[0].attackT).toBeGreaterThan(0);
+test('a ranged poker telegraphs a swing before firing — no shot on the commit tick', () => {
+	// The reworked shooter is a ranged poker (ADR 0017 §8): it never auto-fires. The
+	// first tick in range COMMITS the wind-up→active→recovery swing (attackT loaded) but
+	// projects NO shot; the pebble appears only once the swing crosses into `active`.
+	let g = step(shooterGame(30), IDLE, 16);
+	expect(
+		activeZone(g.world, g.player.zoneId).monsters[0].attackT,
+	).toBeGreaterThan(0);
+	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(0);
+	// Drive the telegraph forward; the shot lands during the active phase.
+	let fired = 0;
+	for (let i = 0; i < 12 && fired === 0; i++) {
+		g = step(g, IDLE, 16);
+		fired = activeZone(g.world, g.player.zoneId).projectiles.length;
+	}
+	expect(fired).toBe(1);
 });
 
-test('a shooter on cooldown does not fire again', () => {
-	let g = step(shooterGame(30), IDLE, 16);
-	const first = activeZone(g.world, g.player.zoneId).projectiles.length;
-	g = step(g, IDLE, 16); // still on cooldown
-	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(first);
+test('a ranged poker does not auto-fire a second shot during its cooldown', () => {
+	// After the active-frame shot, `fireCdT` paces the next commit — stepping on does not
+	// immediately spit a second pebble.
+	let g = shooterGame(30);
+	let fired = 0;
+	for (let i = 0; i < 12 && fired === 0; i++) {
+		g = step(g, IDLE, 16);
+		fired = activeZone(g.world, g.player.zoneId).projectiles.length;
+	}
+	expect(fired).toBe(1);
+	// A few more ticks: the single shot may travel/expire, but no NEW one is fired while
+	// the cooldown holds.
+	const idAfterFirst = activeZone(g.world, g.player.zoneId).projectiles[0]?.id;
+	let extraFired = false;
+	for (let i = 0; i < 6; i++) {
+		g = step(g, IDLE, 16);
+		const ps = activeZone(g.world, g.player.zoneId).projectiles;
+		if (ps.some((p) => p.id !== idAfterFirst)) extraFired = true;
+	}
+	expect(extraFired).toBe(false);
 });
 
 test('a shooter does not fire when the Avatar is out of range', () => {
@@ -254,16 +280,10 @@ test('a shooter backs away when the Avatar gets too close', () => {
 test('a projectile overlapping the Avatar damages it and applies i-frames', () => {
 	const y = GROUND_TOP - BOX.h;
 	const avatar = spawnAvatar(40, y);
-	const proj: Projectile = {
-		id: 1,
+	const proj: Projectile = makeProjectile({
 		x: avatar.x + 1,
 		y: avatar.y + 1,
-		vx: 0,
-		vy: 0,
-		life: 2,
-		damage: SHOOTER.projDamage,
-		ownerId: 2,
-	};
+	});
 	const zone: Zone = {
 		id: 'field-01',
 		type: 'field',

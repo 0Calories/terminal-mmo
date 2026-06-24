@@ -3,6 +3,7 @@
 // round-trip testable. Floats use f64 so encode -> decode is exact (bandwidth is
 // trivial at this scale; quant/delta-encoding is a later concern).
 
+import { SHOOTER } from './constants';
 import { clampCosmetics, DEFAULT_COSMETICS } from './cosmetics';
 import type {
 	ActionState,
@@ -543,10 +544,17 @@ function writeProjectile(w: Writer, p: Projectile) {
 	w.f64(p.life);
 	w.f64(p.damage);
 	w.u32(p.ownerId);
+	// The first-class hit payload + faction (ADR 0017 §8), appended after the original
+	// fields so the struct stays back-compat: a faction byte (0 monster, 1 player) then
+	// the Poise + Knockback payload that makes a heavy shot Stagger like a melee hit.
+	w.u8(p.faction === 'player' ? 1 : 0);
+	w.f64(p.poiseDamage);
+	w.f64(p.knockback);
+	w.f64(p.knockbackUp);
 }
 
 function readProjectile(r: Reader): Projectile {
-	return {
+	const base = {
 		id: r.u32(),
 		x: r.f64(),
 		y: r.f64(),
@@ -555,6 +563,25 @@ function readProjectile(r: Reader): Projectile {
 		life: r.f64(),
 		damage: r.f64(),
 		ownerId: r.u32(),
+	};
+	// A pre-§8 shot carried none of the payload fields; fall back to the SHOOTER pebble
+	// values + the `monster` faction so an older snapshot decodes as the legacy hostile
+	// shot rather than crashing on a short read.
+	if (r.remaining() < 1)
+		return {
+			...base,
+			poiseDamage: SHOOTER.projPoise,
+			knockback: SHOOTER.projKnockback,
+			knockbackUp: SHOOTER.projKnockbackUp,
+			faction: 'monster',
+		};
+	const faction: Projectile['faction'] = r.u8() === 1 ? 'player' : 'monster';
+	return {
+		...base,
+		faction,
+		poiseDamage: r.f64(),
+		knockback: r.f64(),
+		knockbackUp: r.f64(),
 	};
 }
 
