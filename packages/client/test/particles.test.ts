@@ -340,6 +340,7 @@ test('a profile with no gravity and no terrain collision never settles (profile-
 		blood: [FLOATER],
 		gore: [FLOATER],
 		impact: [FLOATER],
+		parry: [FLOATER],
 	};
 	const terrain = floorTerrain();
 	const sys = new ParticleSystem();

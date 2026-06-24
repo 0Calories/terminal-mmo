@@ -3,9 +3,11 @@ import type {
 	Effect,
 	Entity,
 	GameState,
+	GuardPhase,
 	Terrain,
 } from '@mmo/shared';
 import {
+	ACTION_FLAG,
 	aabbOverlap,
 	activeZone,
 	BOX,
@@ -13,6 +15,9 @@ import {
 	drawEntitySprite,
 	emoteById,
 	entityBox,
+	guardPhase,
+	guardPoseCell,
+	guardPoseGlyph,
 	isSolid,
 	meleeHitbox,
 	type RenderStyle,
@@ -359,6 +364,45 @@ function drawSwing(
 	}
 }
 
+// The Guard phase an entity is bracing in this frame, or null. Co-present entities
+// carry it in the replicated action `flags` (ADR 0017 §10: `guarding` + `parrying`
+// bits); the local Avatar has no action set, so its Guard is derived from the predicted
+// `guardT` — both reduce to the same GuardPhase, one render path for every brace.
+function guardRenderState(e: Entity): GuardPhase | null {
+	if (e.action) {
+		if (!(e.action.flags & ACTION_FLAG.guarding)) return null;
+		return e.action.flags & ACTION_FLAG.parrying ? 'parry' : 'block';
+	}
+	return guardPhase(e.guardT ?? 0);
+}
+
+// Realize an entity's raised Guard as a frontal brace glyph (ADR 0017 §5/§13a): a solid
+// bar while Blocking, a brighter sigil through the Parry window, held just past the
+// leading edge. Drawn for the local Avatar (predicted from `guardT`) and every co-present
+// one (replicated via `flags`) through one path, so a brace looks the same to its owner
+// and to everyone watching — a read for an attacker deciding whether to commit.
+function drawGuard(
+	buf: OptimizedBuffer,
+	e: Entity,
+	cam: { x: number; y: number },
+	sw: number,
+	sh: number,
+) {
+	const phase = guardRenderState(e);
+	if (!phase) return;
+	const cell = guardPoseCell(e);
+	const ax = Math.round(cell.x - cam.x);
+	const ay = Math.round(cell.y - cam.y);
+	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
+		buf.setCellWithAlphaBlending(
+			ax,
+			ay,
+			guardPoseGlyph(phase),
+			phase === 'parry' ? C.parry : C.guard,
+			C.transparent,
+		);
+}
+
 // Spawn a weapon's active-sweep trail (ADR 0017 §14): for every Avatar mid-swing in
 // its active phase whose equipped Weapon defines a trail, drop a wisp at the swept
 // arc tip, biased along facing. Driven straight off the render frame (not a wire
@@ -454,7 +498,12 @@ function drawPlayfield(
 	// Co-present Avatars' swings, drawn from their replicated action-state (ADR 0017
 	// §10) on top of the static scene — this is what makes another Player's attack
 	// visible. The local Avatar's swing is drawn after its Sprite, below.
-	for (const e of others) drawSwing(buf, e, cam, sw, sh);
+	for (const e of others) {
+		drawSwing(buf, e, cam, sw, sh);
+		// A co-present Player's raised Guard (ADR 0017 §5), so a brace / parry is visible
+		// to everyone — another Player turtling or timing a parry reads at a glance.
+		drawGuard(buf, e, cam, sw, sh);
+	}
 
 	// Monster swings, from the same replicated action-state: a melee committer's
 	// telegraphed wind-up + active slash is exactly what the Player reads to step
@@ -483,6 +532,8 @@ function drawPlayfield(
 	// The local Avatar's own swing, realized from the same path as everyone else's —
 	// here predicted from `attackT` (its action-state is left unset) for zero-lag feel.
 	drawSwing(buf, p, cam, sw, sh);
+	// The local Avatar's own Guard brace, predicted from `guardT` for zero-lag feel.
+	drawGuard(buf, p, cam, sw, sh);
 
 	// Second particle pass: airborne blood erupts in front of the Sprites (toward
 	// the camera), still below the over-head Speech bubbles / emotes that follow so
@@ -602,8 +653,11 @@ export class PlayfieldRenderable extends Renderable {
 		// only on a break — fires a camera-kick (a ≤2-cell pop toward the hit, decaying
 		// to zero in <150ms) and a brief hitstop. Light chip hits emit `blood` and get
 		// none of this, exactly as the ADR wants ("big moments only").
+		// A successful Parry (ADR 0017 §5) is a "big moment" too: the `parry` clash gets
+		// the same camera-kick + hitstop, so a clean catch feels as meaty as a break and
+		// is felt by the parrier (the source-less Effect reaches them).
 		for (const fx of fresh)
-			if (fx.kind === 'impact') {
+			if (fx.kind === 'impact' || fx.kind === 'parry') {
 				this.kick = applyKick(this.kick, fx.dir * CAMERA_KICK.maxCells, -1);
 				this.hitstop = triggerHitstop(this.hitstop);
 			}

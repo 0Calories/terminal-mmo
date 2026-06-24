@@ -10,6 +10,7 @@ import {
 	addSession,
 	CHANNEL,
 	CHAT_MAX_LEN,
+	COMBAT,
 	channelOf,
 	createServerWorld,
 	decodeClientMessage,
@@ -91,6 +92,26 @@ let world: ServerWorld = createServerWorld({
 let nextSessionId = 1;
 const sockets = new Map<number, ServerWebSocket<WsData>>(); // joined sessions
 const intents = new Map<number, AvatarIntent>(); // latest reported intent
+
+// Per-session clock baseline for light lag compensation (ADR 0017 §11). The client and
+// server clocks are unsynced, so we never compare them directly: instead we keep the
+// MINIMUM observed `(serverRecvMs - clientTime)` per session — the offset of the
+// lowest-latency packet seen. A given input's delay above that baseline estimates how
+// stale it is (jitter / latency variation), which widens the Parry window so a Parry
+// timed right on the Player's screen still resolves when the input lands late.
+const clockBaseline = new Map<number, number>();
+
+// The lag (ms) to credit this input, from its client timestamp and the session's
+// baseline offset. Clamped to the Parry-window comp budget so a spoofed/garbled
+// timestamp can't widen the window without bound (resolveGuard re-clamps too).
+const LAG_COMP_MS = COMBAT.guard.lagComp * 1000;
+function inputLagMs(sessionId: number, clientTime: number): number {
+	if (!Number.isFinite(clientTime) || clientTime <= 0) return 0;
+	const sample = Date.now() - clientTime;
+	const baseline = Math.min(clockBaseline.get(sessionId) ?? sample, sample);
+	clockBaseline.set(sessionId, baseline);
+	return Math.max(0, Math.min(sample - baseline, LAG_COMP_MS));
+}
 
 const clamp = (v: number, hi: number) =>
 	Number.isFinite(v) ? Math.max(0, Math.min(v, hi)) : 0;
@@ -213,8 +234,13 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		facing: msg.facing,
 		onGround: msg.onGround,
 		attack: msg.attack,
+		guard: msg.guard,
 		interact: msg.interact,
 		skill: msg.skill,
+		// Lag credit for this input's Parry resolution, from its client timestamp (ADR
+		// 0017 §11). stepZone consumes this number deterministically; the wall clock that
+		// produced it stays here in the impure session layer.
+		lagMs: inputLagMs(sessionId, msg.clientTime),
 	});
 }
 
@@ -284,6 +310,7 @@ const server = Bun.serve<WsData>({
 			}
 			sockets.delete(sessionId);
 			intents.delete(sessionId);
+			clockBaseline.delete(sessionId);
 			world = removeSession(world, sessionId);
 			console.log(`session ${sessionId} left`);
 		},

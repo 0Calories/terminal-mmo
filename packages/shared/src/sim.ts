@@ -119,7 +119,10 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		facing: predicted.facing,
 		onGround: predicted.onGround,
 		attack: input.attack,
+		guard: input.guard,
 		skill: input.skill,
+		// Offline is a single clock with zero transit lag, so no Parry-window slack.
+		lagMs: 0,
 	};
 	const next = stepZone(
 		{ zone, avatars: [sa], tick: game.world.tick },

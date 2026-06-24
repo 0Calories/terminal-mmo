@@ -350,6 +350,119 @@ test('a committer in its active phase can Stagger a poise-broken Avatar (full hi
 	expect(state.effects?.some((e) => e.kind === 'impact')).toBe(true);
 });
 
+// --- Guard: Block + Parry vs a committer's strike (ADR 0017 §5, #166) --------
+//
+// strikingCommitterAt20() is a chaser parked mid-active at x=16 (to the LEFT of an
+// Avatar at x=20), striking THIS tick. A frontal Guard needs the Avatar to face the
+// committer (-1); facing away (+1) is a rear hit Guard ignores. A guard intent for a
+// stationary Avatar at x=20.
+function guardIntent(
+	sessionId: number,
+	e: Entity,
+	over: Partial<AvatarIntent> = {},
+): AvatarIntent {
+	return { ...holdAt(sessionId, e), guard: true, ...over };
+}
+
+test('Block: a frontal committer strike is chipped, not full, and drains Poise', () => {
+	const m = strikingCommitterAt20();
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = -1; // face the committer on the left (frontal)
+	av.avatar.guardT = COMBAT.guard.parryWindow + 0.05; // already past the Parry window → Block
+	const poiseBefore = av.avatar.poise ?? COMBAT.poise.max;
+	const hpBefore = av.avatar.hp;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
+	const out = next.avatars[0].avatar;
+	// Chip, not the full MONSTER.meleeDamage.
+	expect(hpBefore - out.hp).toBe(
+		Math.ceil(MONSTER.meleeDamage * COMBAT.guard.blockChip),
+	);
+	expect(hpBefore - out.hp).toBeLessThan(MONSTER.meleeDamage);
+	expect(out.poise ?? COMBAT.poise.max).toBeLessThan(poiseBefore); // Poise drained
+	expect(out.stunT ?? 0).toBe(0); // a chip-block does not Stagger
+	// A clean Block emits no hurt-blood — the brace soaked it.
+	expect(next.effects?.some((e) => e.kind === 'blood')).toBeFalsy();
+});
+
+test('Block to a Poise break is a guard-break Stagger', () => {
+	const m = strikingCommitterAt20();
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = -1;
+	av.avatar.guardT = COMBAT.guard.parryWindow + 0.05; // Block
+	av.avatar.poise = COMBAT.guard.blockPoise - 1; // one block empties the pool
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
+	const out = next.avatars[0].avatar;
+	expect(out.stunT ?? 0).toBeGreaterThan(0); // guard-break Staggers the turtler
+	expect(out.ivx ?? 0).not.toBe(0); // and throws the body
+	expect(next.effects?.some((e) => e.kind === 'impact')).toBe(true);
+});
+
+test('Parry: a frontal strike in the opening window negates damage and staggers the attacker', () => {
+	const m = strikingCommitterAt20();
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = -1; // frontal
+	av.avatar.guardT = 0; // a FRESH raise this tick → opening Parry window after resolveCombat
+	const hpBefore = av.avatar.hp;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
+	const out = next.avatars[0].avatar;
+	expect(out.hp).toBe(hpBefore); // damage fully negated
+	// The attacker's Poise is dumped → broken → Staggered (the punish opening).
+	expect(next.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0);
+	expect(next.effects?.some((e) => e.kind === 'parry')).toBe(true);
+});
+
+test('Guard only protects the frontal arc — a rear strike ignores it', () => {
+	const m = strikingCommitterAt20(); // attacker to the LEFT
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = 1; // facing AWAY from the committer (rear hit)
+	av.avatar.guardT = 0; // would be a fresh Parry window if it were frontal
+	const hpBefore = av.avatar.hp;
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
+	const out = next.avatars[0].avatar;
+	expect(hpBefore - out.hp).toBe(MONSTER.meleeDamage); // full damage — Guard ignored
+	expect(next.effects?.some((e) => e.kind === 'parry')).toBeFalsy();
+});
+
+test('lag compensation resolves a Parry that was valid on the client timeline (ADR 0017 §11)', () => {
+	// A guardT a hair past the raw Parry window: a Block with no comp, a Parry once the
+	// input's staleness (lagMs) widens the window. Same scenario, two lagMs values.
+	const justPastWindow =
+		COMBAT.guard.parryWindow + COMBAT.guard.lagComp / 2 - 0.016;
+	const run = (lagMs: number) => {
+		const m = strikingCommitterAt20();
+		const av = serverAvatar(7, 20);
+		av.avatar.facing = -1; // frontal
+		av.avatar.guardT = justPastWindow; // +0.016 after resolveCombat → just past window
+		const hpBefore = av.avatar.hp;
+		const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+		const next = stepZone(state, [guardIntent(7, av.avatar, { lagMs })], 16);
+		return { hpBefore, next };
+	};
+	// No lag-comp: the catch drifted into Block → chip damage, no parry flash.
+	const noComp = run(0);
+	expect(noComp.next.avatars[0].avatar.hp).toBeLessThan(noComp.hpBefore);
+	expect(noComp.next.effects?.some((e) => e.kind === 'parry')).toBeFalsy();
+	// With the input's lag reported: the same catch resolves as a Parry — full negate.
+	const comped = run(COMBAT.guard.lagComp * 1000);
+	expect(comped.next.avatars[0].avatar.hp).toBe(comped.hpBefore);
+	expect(comped.next.effects?.some((e) => e.kind === 'parry')).toBe(true);
+});
+
+test('a guarding Avatar replicates the guarding/parrying flags to others (ADR 0017 §10)', () => {
+	const av = serverAvatar(7, 20);
+	av.avatar.facing = -1;
+	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
+	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
+	const snap = snapshotFor(next, 9); // some other session's view
+	const flags = snap.avatars[0].action.flags;
+	expect(flags & ACTION_FLAG.guarding).toBeTruthy();
+	expect(flags & ACTION_FLAG.parrying).toBeTruthy(); // a fresh raise is in the Parry window
+});
+
 test('a Monster targets and chases the nearest Avatar', () => {
 	const m = spawnMonster('chaser', 2, 50, y);
 	m.onGround = true;

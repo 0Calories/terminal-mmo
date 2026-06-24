@@ -19,8 +19,10 @@ import {
 	impactEffect,
 	meleeActive,
 	meleeHitbox,
+	parryEffect,
 	regenPoise,
 	resolveCombat,
+	resolveGuard,
 	SWING_TOTAL,
 } from './combat';
 import {
@@ -104,8 +106,14 @@ export interface AvatarIntent {
 	facing: Facing;
 	onGround: boolean;
 	attack: boolean;
+	guard?: boolean; // raise the Guard this tick (ADR 0017 §5); absent == false
 	interact?: boolean; // request a Portal transition; resolved by the world layer
 	skill?: number;
+	// Input staleness in ms (ADR 0017 §11): how late this input reached the server,
+	// derived from its client timestamp by the impure server layer. Widens the Parry
+	// window (clamped to COMBAT.guard.lagComp) so a Parry timed right on the Player's
+	// delayed screen still resolves. Absent / 0 == no lag (offline, single clock).
+	lagMs?: number;
 }
 
 /**
@@ -161,11 +169,16 @@ function resolveAvatarIntent(
 		src.skillCooldowns ?? {},
 		src.progress.level,
 		src.class ?? 'warrior',
-		intent ? { attack: intent.attack, skill: intent.skill } : { attack: false },
+		intent
+			? { attack: intent.attack, skill: intent.skill, guard: intent.guard }
+			: { attack: false },
 		dt,
 		weaponById(avatar.weapon),
 	);
 	avatar.attackT = r.attackT;
+	// The held-Guard timer (ADR 0017 §5): accumulated by the same shared gate that owns
+	// the swing, so the server and the client's prediction can't disagree on a raise.
+	avatar.guardT = r.guardT;
 	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
 	// A fresh swing clears the per-swing hit list so it can connect again; an
 	// in-flight swing keeps its list so it lands on each target only once (ADR 0017
@@ -326,10 +339,51 @@ export function stepZone(
 			for (let i = 0; i < avatars.length; i++) {
 				const a = avatars[i].avatar;
 				if (a.hurtT > 0 || !aabbOverlap(hb, entityBox(a))) continue;
-				const { poise, broke } = applyPoiseDamage(a, COMBAT.poiseDamage);
+				// Resolve the hit against the Avatar's Guard FIRST (ADR 0017 §5): a frontal
+				// raise Parries it (in the opening window) or Blocks it (held past), a rear
+				// hit ignores Guard. Lag-comp widens the Parry window by this input's
+				// staleness (clamped in resolveGuard) so a Parry timed right on the Player's
+				// delayed screen still resolves. The i-frame (set on every branch) gates the
+				// multi-tick active window to one resolution per swing.
+				const lagSlack = (byId.get(avatars[i].sessionId)?.lagMs ?? 0) / 1000;
+				const g = resolveGuard(a, m.x, MONSTER.meleeDamage, lagSlack);
+				// Direction away from the Monster (0 when they share a column), reused by the
+				// hurt-blood bias and the parry-clash flash.
+				const away: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
+				if (g.result === 'parry') {
+					// Parry: negate the hit and dump big Poise onto the ATTACKER — a clean catch
+					// breaks its pool and Staggers it, the Player's punish opening (ADR 0017 §5).
+					const ap = applyPoiseDamage(m, g.attackerPoiseDump);
+					m = { ...m, poise: ap.poise, poiseT: COMBAT.poise.regenDelay };
+					if (ap.broke) {
+						m = applyImpulse(
+							m,
+							COMBAT.knockback * -m.facing,
+							-COMBAT.knockbackUp,
+						);
+						m = { ...m, stunT: COMBAT.hitstun };
+					}
+					// The parry-clash flash carries no `source`, so it reaches the parrier too
+					// (clash flash + camera juice + sound). Keep the raised Guard; i-frame the
+					// Avatar so the same active window can't re-trigger.
+					effects.push(parryEffect(a, (away || 1) as Facing));
+					avatars[i] = {
+						...avatars[i],
+						avatar: { ...a, hurtT: COMBAT.iframes },
+					};
+					continue;
+				}
+				// Block (chip + Poise drain → possible guard-break) or an unguarded/rear hit
+				// (full payload). resolveGuard already reduced the HP and drained Poise for a
+				// Block; for an unguarded hit, apply the full Poise damage here. A guard-break
+				// and an unguarded Poise break both Stagger the Avatar through the same path.
+				const unguarded =
+					g.result === 'none' ? applyPoiseDamage(a, COMBAT.poiseDamage) : null;
+				const broke = unguarded ? unguarded.broke : g.guardBroke;
+				const poise = unguarded ? unguarded.poise : g.defenderPoise;
 				let na: Entity = {
 					...a,
-					hp: a.hp - MONSTER.meleeDamage,
+					hp: a.hp - g.hpDamage,
 					hurtT: COMBAT.iframes,
 					poise,
 					poiseT: COMBAT.poise.regenDelay,
@@ -338,7 +392,8 @@ export function stepZone(
 					// Stagger the Player: throw the body away from the Monster (Mass-scaled)
 					// with a small upward pop and lock control for Hitstun. The impact Effect
 					// carries NO `source`, so — like a Monster break — it reaches everyone in
-					// range, including the victim's client (hitstop + camera-kick).
+					// range, including the victim's client (hitstop + camera-kick). A guard-break
+					// Staggers through the same path, so turtling to a break is punished.
 					na = applyImpulse(
 						na,
 						COMBAT.knockback * m.facing,
@@ -346,12 +401,12 @@ export function stepZone(
 					);
 					na = { ...na, stunT: COMBAT.hitstun };
 					effects.push(impactEffect(a, m.facing, MONSTER.meleeDamage));
-				} else {
+				} else if (g.result !== 'block') {
 					// Hurt blood at the Avatar, biased away from the Monster (0 when they share
 					// a column). Server-sourced — no `source` — so the snapshot delivers it to
-					// the victim too, in sync with the hurt-flash (ADR 0013, #132).
-					const dir: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
-					effects.push(hurtBloodEffect(a, dir, MONSTER.meleeDamage));
+					// the victim too, in sync with the hurt-flash (ADR 0013, #132). A clean Block
+					// emits no blood — the brace soaked it, only the chip + Poise drain show.
+					effects.push(hurtBloodEffect(a, away, MONSTER.meleeDamage));
 				}
 				avatars[i] = { ...avatars[i], avatar: na };
 			}
@@ -647,7 +702,7 @@ export function addAvatar(
 		avatar: { ...spawnAvatar(SPAWN.x, SPAWN.y), id: sessionId, weapon },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
-		log: ['Welcome. Hunt the chasers (j to attack).'],
+		log: ['Welcome. Hunt the chasers (j attack, k guard/parry).'],
 		nextId: 1,
 		rngState: sessionId,
 		class: 'warrior',
