@@ -153,6 +153,32 @@ export const IMPACT: ParticleType = {
 	z: 0,
 };
 
+// The `parry` profile (the parry-clash flash, ADR 0017 §5/§13d): an icy ring of sparks
+// that bursts out fast and winks out — like IMPACT's percussive flash but recoloured to
+// the cool Guard/steel palette so a CLANG reads distinctly from a (warm) Poise-break
+// CLACK. The deflection threw the blow back, so it's bright and brief, no lingering wet.
+export const PARRY: ParticleType = {
+	gravity: 26,
+	restitution: 0.2,
+	collide: false,
+	restMs: 0,
+	fadeMs: 200,
+	maxLifeMs: 320,
+	launchSpeed: 28, // bursts out hardest — the deflection
+	launchSpread: 18,
+	countScale: 0.8,
+	glyphs: {
+		airborne: ['✶', '✦', '✧', '•', '＊'],
+		rest: ['·'],
+	},
+	colors: [
+		{ t: 0, r: 245, g: 250, b: 255 }, // hot white clash
+		{ t: 0.5, r: 150, g: 200, b: 255 }, // cool steel spark
+		{ t: 1, r: 80, g: 120, b: 190 }, // fading cold ember
+	],
+	z: 0,
+};
+
 // Weapon swing trails (ADR 0017 §14): a faint streak that follows a weapon's active
 // sweep, defined per-weapon by a WeaponTrail key the renderer resolves here. These
 // are spawned directly by the renderer along the swept arc (not off a wire Effect),
@@ -208,6 +234,7 @@ export const SPAWN_MAP: Record<EffectKind, ParticleType[]> = {
 	blood: [BLOOD],
 	gore: [GORE],
 	impact: [IMPACT],
+	parry: [PARRY],
 };
 
 // Fixed, preallocated pool — newest action always renders (evict-oldest), and the

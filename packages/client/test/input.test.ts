@@ -26,25 +26,41 @@ test('keyboard scheme: j attacks, u/i fire skill slots 1/2 (ADR 0017 §12)', () 
 	expect(input.poll(0).skill).toBe(2);
 });
 
-test('keyboard scheme: legacy k/l no longer fire skills (freed for Guard/Dodge)', () => {
+test('keyboard scheme: k raises Guard, l stays reserved for the later Dodge verb (ADR 0017 §5/§12)', () => {
 	const input = new InputState('keyboard');
-	input.press('k', 0);
+	expect(input.poll(0).guard).toBe(false);
+
+	input.press('k', 0); // dedicated Guard key
+	const polled = input.poll(0);
+	expect(polled.guard).toBe(true);
+	expect(polled.skill).toBeUndefined(); // not a skill
+	expect(polled.attack).toBe(false); // not an attack
+	input.release('k');
+	expect(input.poll(0).guard).toBe(false);
+
+	// `l` is still unbound (reserved for the later Dodge verb): no intent.
 	input.press('l', 0);
-	expect(input.poll(0).skill).toBeUndefined();
+	const l = input.poll(0);
+	expect(l.guard).toBe(false);
+	expect(l.skill).toBeUndefined();
 });
 
-test('mouse scheme: left-click attacks, e/r fire skill slots 1/2 (ADR 0017 §12)', () => {
+test('mouse scheme: left-click attacks, right-click guards, e/r fire skill slots (ADR 0017 §5/§12)', () => {
 	const input = new InputState('mouse');
 
 	input.mouseDown(0); // left button
 	expect(input.poll(0).attack).toBe(true);
+	expect(input.poll(0).guard).toBe(false);
 	input.mouseUp(0);
 	expect(input.poll(0).attack).toBe(false);
 
-	// A non-left button (right = Guard, reserved) is not an attack.
+	// Right button (button 2) raises Guard, not attack.
 	input.mouseDown(2);
-	expect(input.poll(0).attack).toBe(false);
+	const g = input.poll(0);
+	expect(g.guard).toBe(true);
+	expect(g.attack).toBe(false);
 	input.mouseUp(2);
+	expect(input.poll(0).guard).toBe(false);
 
 	input.press('e', 0);
 	expect(input.poll(0).skill).toBe(1);
@@ -52,6 +68,20 @@ test('mouse scheme: left-click attacks, e/r fire skill slots 1/2 (ADR 0017 §12)
 
 	input.press('r', 0);
 	expect(input.poll(0).skill).toBe(2);
+});
+
+test('k also raises Guard in the mouse scheme (shared keyboard binding)', () => {
+	const input = new InputState('mouse');
+	input.press('k', 0);
+	expect(input.poll(0).guard).toBe(true);
+});
+
+test('clear() drops a held right-click Guard so it cannot stick across a mode switch', () => {
+	const input = new InputState('mouse');
+	input.mouseDown(2);
+	expect(input.poll(0).guard).toBe(true);
+	input.clear();
+	expect(input.poll(0).guard).toBe(false);
 });
 
 test('both schemes map their bindings to identical intents', () => {
@@ -77,6 +107,7 @@ test('both schemes map their bindings to identical intents', () => {
 		moveX: 1,
 		jump: true,
 		attack: true,
+		guard: false,
 		interact: false,
 		skill: 1,
 	});
