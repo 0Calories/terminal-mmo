@@ -500,8 +500,9 @@ function drawPlayfield(
 	// Drawn just under the Sprites so a ghost never occludes a live body.
 	drawDodgeEchoes(buf, dodgeEchoes, cam, sw, sh);
 
-	// The local Avatar is drawn last, on top of everyone (ADR 0003).
-	drawEntitySprite(buf, p, cam, STYLE);
+	// The local Avatar is drawn last, on top of everyone (ADR 0003), planting onto the
+	// same terrain renderZoneScene drew (ADR 0021).
+	drawEntitySprite(buf, p, cam, STYLE, zone.terrain);
 	// The local Avatar's own swing, realized from the same path as everyone else's —
 	// here predicted from `attackT` (its action-state is left unset) for zero-lag feel.
 	drawSwing(buf, p, cam, sw, sh);

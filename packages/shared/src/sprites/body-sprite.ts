@@ -38,6 +38,12 @@ export interface BodySprite {
 	// The head cell (right-facing art coords) the cosmetic hat centres over and sits
 	// above; mirrored across the body on facing (ADR 0018 §3, the same anchor mechanism).
 	head: { x: number; y: number };
+	// Vertical anchor offset (cells, default 0): added to the body's `sy` so the WHOLE
+	// figure shifts down as a unit and its bottom (feet) row plants on the terrain
+	// surface row instead of floating one cell above it (ADR 0021). Declared per Form so
+	// it applies uniformly across the frame set (idle/walk/jump). `1` for ink-top contact
+	// feet (the buddy); `0` leaves a Form rendering exactly as before.
+	baseline?: number;
 }
 
 // The Form registry (ADR 0020 §4): a flat array of BodySprites selected by the

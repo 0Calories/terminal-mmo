@@ -180,9 +180,11 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 				buf.width,
 				buf.height,
 			);
-			renderZoneScene(buf, playSceneOf(game), cam, style);
-			// The local Avatar is drawn on top of the z-sorted scene (ADR 0003).
-			drawEntitySprite(buf, a, cam, style);
+			const scene = playSceneOf(game);
+			renderZoneScene(buf, scene, cam, style);
+			// The local Avatar is drawn on top of the z-sorted scene (ADR 0003), planting
+			// onto the same terrain renderZoneScene drew (ADR 0021).
+			drawEntitySprite(buf, a, cam, style, scene.terrain);
 			// Status header on row 0 (sky in most Zones), so vitals stay visible
 			// without hiding terrain.
 			const status = playStatusLine(game);

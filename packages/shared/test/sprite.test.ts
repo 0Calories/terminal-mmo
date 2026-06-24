@@ -51,6 +51,13 @@ test('throws when defaultKey is not a single char', () => {
 	expect(() => new Sprite('\nA\n', { defaultKey: 'player' })).toThrow();
 });
 
+test('baseline defaults to 0; an explicit value is kept (ADR 0021)', () => {
+	expect(new Sprite('\nA\n', { defaultKey: 'x' }).baseline).toBe(0);
+	expect(new Sprite('\nA\n', { defaultKey: 'x', baseline: 1 }).baseline).toBe(
+		1,
+	);
+});
+
 // We deliberately do NOT pin the *appearance* of individual sprites (their glyph
 // grids change as art is iterated). These cover the lookup wiring only.
 
