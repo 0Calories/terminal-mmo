@@ -66,13 +66,31 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 	});
 
 	test('an unauthored Pose still falls back to idle (ADR 0020 §5)', () => {
-		// Beyond the required core (+ the authored `jump` and `emote:wave`), every other
-		// Pose resolves to the idle grid until a later slice authors it (combat leans /
-		// hurt / the deferred dance + sit emotes).
+		// Beyond the required core (+ the authored `jump` and the wave/dance/sit emotes),
+		// every other Pose resolves to the idle grid until a later slice authors it (the
+		// combat leans / hurt).
 		const idle = formFrame(FORMS[0], 'idle');
 		for (const pose of ['windup', 'active', 'recovery', 'hurt'] as const)
 			expect(formFrame(FORMS[0], pose)).toBe(idle);
-		expect(formFrame(FORMS[0], 'emote:dance')).toBe(idle);
+	});
+
+	test('the launch Form authors the dance loop and the sit hold (ADR 0020 §8/§9)', () => {
+		const idle = formFrame(FORMS[0], 'idle');
+		// `dance` is a real two-frame loop, each frame the idle footprint, distinct from idle
+		// and from each other so the body visibly cycles.
+		const d0 = formFrame(FORMS[0], 'emote:dance', 0);
+		const d1 = formFrame(FORMS[0], 'emote:dance', 1);
+		expect(d0).not.toBe(idle);
+		expect(d1.rows(1)).not.toEqual(d0.rows(1));
+		expect(formFrame(FORMS[0], 'emote:dance', 2).rows(1)).toEqual(d0.rows(1)); // wraps
+		expect(d0.w).toBe(idle.w);
+		expect(d0.h).toBe(idle.h);
+		// `sit` is a single sustained Pose: any frameIndex resolves to the one grid.
+		const s0 = formFrame(FORMS[0], 'emote:sit', 0);
+		expect(s0).not.toBe(idle);
+		expect(formFrame(FORMS[0], 'emote:sit', 1)).toBe(s0);
+		expect(s0.w).toBe(idle.w);
+		expect(s0.h).toBe(idle.h);
 	});
 
 	test('the launch Form authors the wave emote as a distinct multi-frame sweep (ADR 0020 §9)', () => {
@@ -209,5 +227,19 @@ describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
 		expect(
 			bodyFrame({ ...REST, emote: 'wave', emoteT: 2 / EMOTE_FPS }).frameIndex,
 		).toBe(2);
+	});
+
+	test('a loop emote advances its frame by elapsed emoteT, a hold freezes on frame 0 (ADR 0020 §9)', () => {
+		// `dance` (loop) sweeps like the oneshot — the frame is a function of the elapsed
+		// emoteT, the deterministic clock every observer shares.
+		expect(bodyFrame({ ...REST, emote: 'dance', emoteT: 0 }).frameIndex).toBe(
+			0,
+		);
+		expect(
+			bodyFrame({ ...REST, emote: 'dance', emoteT: 3 / EMOTE_FPS }).frameIndex,
+		).toBe(3);
+		// `sit` (hold) is pinned to frame 0 no matter how long it has been held.
+		expect(bodyFrame({ ...REST, emote: 'sit', emoteT: 0 }).frameIndex).toBe(0);
+		expect(bodyFrame({ ...REST, emote: 'sit', emoteT: 99 }).frameIndex).toBe(0);
 	});
 });

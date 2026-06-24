@@ -72,8 +72,50 @@ const waveB = new Sprite(
 	{ defaultKey: 'p' },
 );
 
+// The `dance` emote (ADR 0020 §8/§9) — the launch `loop`. Unlike the oneshot wave it has
+// no duration: the two frames cycle until the Avatar moves or fights (§6), sampled by the
+// elapsed-sim-time `emoteT` (EMOTE_FPS) so every observer dances in lockstep. `danceA` is
+// the "up" beat (both arms raised, feet together); `danceB` the "down" beat (arms out,
+// stance wide), so the body bounces side-to-side. Same 9×3 footprint, mirrored on facing.
+const danceA = new Sprite(
+	`
+▗▟██▜█▜▙▖
+·▜█████▛·
+···▀▀····`,
+	{ defaultKey: 'p' },
+);
+
+const danceB = new Sprite(
+	`
+·▐██▜█▜▌·
+▟▜█████▛▙
+·▀·····▀·`,
+	{ defaultKey: 'p' },
+);
+
+// The `sit` emote (ADR 0020 §8/§9) — the launch `hold`. A single sustained Pose (the
+// selector freezes its frame for a `hold`, so it never animates): the body drops to a
+// seated silhouette — head row cleared, torso lowered onto a wide folded-legs base that
+// rests on the terrain line. Held until the Avatar moves or fights (§6). Same 9×3
+// footprint and baseline, mirrored on facing.
+const sit = new Sprite(
+	`
+·▐██▜█▜▌·
+ ▀█████▙▄
+·········`,
+	{ defaultKey: 'p' },
+);
+
 export const buddy: BodySprite = {
-	frames: { idle: player, walkA, walkB, jump, 'emote:wave': [waveA, waveB] },
+	frames: {
+		idle: player,
+		walkA,
+		walkB,
+		jump,
+		'emote:wave': [waveA, waveB],
+		'emote:dance': [danceA, danceB],
+		'emote:sit': sit,
+	},
 	grip: { x: 7, y: 1 },
 	head: { x: 4, y: 0 },
 	// The feet are ink-top half-blocks (`▀`), so the whole figure drops one cell to land its

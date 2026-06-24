@@ -1,3 +1,4 @@
+import { emoteById } from '../emote';
 import type { AttackPhase, Facing, MoveId } from '../types';
 import { buddy } from './forms/buddy';
 import type { Sprite } from './sprite';
@@ -132,11 +133,18 @@ export function bodyFrame(s: BodyState): {
 		const stride = Math.floor(Math.abs(s.distanceX) / STRIDE);
 		return { poseId: stride % 2 === 0 ? 'walkA' : 'walkB', frameIndex: 0 };
 	}
-	if (s.emote)
+	if (s.emote) {
+		// A `hold` emote (e.g. `sit`) freezes on its single sustained Pose; a `oneshot` or
+		// `loop` sweeps its frames by the replicated emote time (ADR 0020 §9) — for a `loop`
+		// that time is the elapsed sim-time since the start, so the frame advance is
+		// deterministic and `formFrame` wraps the index back into range. An unknown id (a
+		// forward-version emote) also resolves to idle's fallback, posing nothing phantom.
+		const hold = emoteById(s.emote)?.lifetime === 'hold';
 		return {
 			poseId: `emote:${s.emote}`,
-			frameIndex: Math.floor(Math.max(0, s.emoteT) * EMOTE_FPS),
+			frameIndex: hold ? 0 : Math.floor(Math.max(0, s.emoteT) * EMOTE_FPS),
 		};
+	}
 	return { poseId: 'idle', frameIndex: 0 };
 }
 
