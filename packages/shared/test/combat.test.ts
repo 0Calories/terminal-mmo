@@ -7,7 +7,6 @@ import {
 	avatarHittable,
 	BOX,
 	bladeEdgeArc,
-	bloodEffect,
 	COMBAT,
 	type CombatEvent,
 	canStartDodge,
@@ -15,7 +14,6 @@ import {
 	DODGE_LOCKOUT,
 	DODGE_TOTAL,
 	deathEvent,
-	deathGoreEffect,
 	dodgeInvulnerable,
 	dodgePhase,
 	dodgeProgress,
@@ -29,15 +27,12 @@ import {
 	guardPhase,
 	guardPoseCell,
 	guardPoseGlyph,
-	hurtBloodEffect,
 	IDLE_ACTION,
-	impactEffect,
 	meleeActive,
 	meleeHitbox,
 	POWER_STRIKE,
 	type Projectile,
 	parryActive,
-	parryEffect,
 	predictHits,
 	regenPoise,
 	resolveCombat,
@@ -96,12 +91,12 @@ function projectile(over: Partial<Projectile> = {}): Projectile {
 	};
 }
 
-describe('bloodEffect', () => {
-	test('bursts at the monster centre, biased along facing, scaled by damage', () => {
+describe('combatEventAt', () => {
+	test('resolves an entity-centred event at the target centre, biased + scaled', () => {
 		const m = monster(10, 4);
-		const e = bloodEffect(m, 1, 8);
-		expect(e).toEqual({
-			kind: 'blood',
+		expect(combatEventAt('hit', m, 1, 8)).toEqual({
+			kind: 'hit',
+			targetId: m.id,
 			x: 10 + BOX.w / 2,
 			y: 4 + BOX.h / 2,
 			intensity: 8,
@@ -109,31 +104,22 @@ describe('bloodEffect', () => {
 		});
 	});
 
-	test('carries the attributing session as source when given', () => {
-		const e = bloodEffect(monster(0, 0), -1, 5, 42);
+	test('a radial dir 0 survives — a hit whose source shares the victim column', () => {
+		expect(combatEventAt('hit', monster(0, 0), 0, 7).dir).toBe(0);
+	});
+
+	test('a `hit` carries the attributing session as source when given', () => {
+		const e = combatEventAt('hit', monster(0, 0), -1, 5, 42);
 		expect(e.dir).toBe(-1);
-		expect(e.source).toBe(42);
-	});
-});
-
-describe('hurtBloodEffect', () => {
-	test('bursts at the Avatar centre, biased away from the source, scaled by damage', () => {
-		const a = monster(10, 4);
-		expect(hurtBloodEffect(a, 1, 6)).toEqual({
-			kind: 'blood',
-			x: 10 + BOX.w / 2,
-			y: 4 + BOX.h / 2,
-			intensity: 6,
-			dir: 1,
-		});
+		expect(e.kind === 'hit' && e.source).toBe(42);
 	});
 
-	test('carries a radial dir 0 when the direction is ambiguous', () => {
-		expect(hurtBloodEffect(monster(0, 0), 0, 7).dir).toBe(0);
-	});
-
-	test('never attaches a source — hurt blood is server-sourced, delivered to the victim too', () => {
-		expect(hurtBloodEffect(monster(0, 0), -1, 6).source).toBeUndefined();
+	test('a `break` is source-less even if a source is passed — it reaches everyone', () => {
+		// Only a predicted `hit` is suppressed back to its attacker (ADR 0013 §3); the
+		// big moments are source-less by construction, so the field never attaches.
+		expect(combatEventAt('break', monster(0, 0), 1, 6)).not.toHaveProperty(
+			'source',
+		);
 	});
 });
 
@@ -171,18 +157,39 @@ describe('entityTint', () => {
 	});
 });
 
-describe('deathGoreEffect', () => {
-	test('bursts radially (dir 0) at the entity centre, high intensity, tinted by the entity', () => {
-		const m = monster(10, 4);
-		const e = deathGoreEffect(m);
-		expect(e).toEqual({
-			kind: 'gore',
-			x: 10 + BOX.w / 2,
-			y: 4 + BOX.h / 2,
-			intensity: COMBAT.deathBurstIntensity,
-			dir: 0,
-			tint: { r: 220, g: 90, b: 90 },
+describe('deathEvent', () => {
+	test('projects to a radial (dir 0) gore at the entity centre, high intensity, entity-tinted', () => {
+		// The death site resolves a `death` CombatEvent (ADR 0019, #139); its projection is
+		// a chunkier, entity-coloured burst spraying in every direction — same centre, radial
+		// dir, high intensity, and the Monster's body tint (chaser = red).
+		const m = monster(10, 4, { type: 'chaser' });
+		expect(effectsOf(deathEvent(m))).toEqual([
+			{
+				kind: 'gore',
+				x: 10 + BOX.w / 2,
+				y: 4 + BOX.h / 2,
+				intensity: COMBAT.deathBurstIntensity,
+				dir: 0,
+				tint: { r: 220, g: 90, b: 90 },
+			},
+		]);
+	});
+
+	test('an Avatar death recolours the gore to its cosmetic hue, not a body colour', () => {
+		const a = monster(10, 4, {
+			type: 'player',
+			cosmetics: { hue: 3, hat: 0, nameplate: 0 },
 		});
+		expect(effectsOf(deathEvent(a))).toEqual([
+			{
+				kind: 'gore',
+				x: 10 + BOX.w / 2,
+				y: 4 + BOX.h / 2,
+				intensity: COMBAT.deathBurstIntensity,
+				dir: 0,
+				tint: { r: 90, g: 170, b: 255 }, // HUES[3] = blue
+			},
+		]);
 	});
 
 	test('reads visibly bigger than a chip hit — intensity above melee damage', () => {
@@ -190,20 +197,7 @@ describe('deathGoreEffect', () => {
 	});
 
 	test('carries no source — death gore is delivered to everyone in range', () => {
-		expect(deathGoreEffect(monster(0, 0)).source).toBeUndefined();
-	});
-
-	test('deathEvent projects through effectsOf to the SAME burst as deathGoreEffect', () => {
-		// The death site resolves a `death` CombatEvent (ADR 0019); its projection must be
-		// byte-identical to the inline deathGoreEffect it replaces — same centre, radial
-		// dir, high intensity, and entity tint — for an Avatar (cosmetic hue) and a Monster.
-		const m = monster(10, 4, { type: 'chaser' });
-		expect(effectsOf(deathEvent(m))).toEqual([deathGoreEffect(m)]);
-		const a = monster(10, 4, {
-			type: 'player',
-			cosmetics: { hue: 3, hat: 0, nameplate: 0 },
-		});
-		expect(effectsOf(deathEvent(a))).toEqual([deathGoreEffect(a)]);
+		expect(deathEvent(monster(0, 0))).not.toHaveProperty('source');
 	});
 });
 
@@ -254,7 +248,7 @@ describe('predictHits', () => {
 
 	test('never attaches a source — predicted events are not reported upward', () => {
 		const events = predictHits(hb, 1, 8, new Set(), [monster(hb.x, hb.y)]);
-		expect(events[0].source).toBeUndefined();
+		expect(events[0]).not.toHaveProperty('source');
 	});
 
 	// The headline fix (ADR 0019): a swing's active window spans many render frames,
@@ -280,7 +274,15 @@ describe('predictHits', () => {
 		const effects: Effect[] = predictHits(hb, 1, 8, new Set(), [
 			target,
 		]).flatMap(effectsOf);
-		expect(effects).toEqual([bloodEffect(target, 1, 8)]);
+		expect(effects).toEqual([
+			{
+				kind: 'blood',
+				x: target.x + BOX.w / 2,
+				y: target.y + BOX.h / 2,
+				intensity: 8,
+				dir: 1,
+			},
+		]);
 	});
 });
 
@@ -597,16 +599,21 @@ describe('actionFlags', () => {
 	});
 });
 
-describe('impactEffect', () => {
+describe('a break projects through effectsOf to a heavier impact', () => {
 	test('bursts at the victim centre, biased along facing, bigger than a chip, no source', () => {
 		const m = monster(10, 4);
-		const e = impactEffect(m, 1, COMBAT.meleeDamage);
-		expect(e.kind).toBe('impact');
-		expect(e.x).toBe(10 + BOX.w / 2);
-		expect(e.y).toBe(4 + BOX.h / 2);
-		expect(e.dir).toBe(1);
-		expect(e.intensity).toBeGreaterThan(COMBAT.meleeDamage); // meatier than chip blood
-		expect(e.source).toBeUndefined(); // delivered to everyone, like the death burst
+		expect(effectsOf(combatEventAt('break', m, 1, COMBAT.meleeDamage))).toEqual(
+			[
+				{
+					kind: 'impact',
+					x: 10 + BOX.w / 2,
+					y: 4 + BOX.h / 2,
+					// meatier than a chip blood of the same damage — the Poise-break bump.
+					intensity: COMBAT.meleeDamage + COMBAT.poise.max,
+					dir: 1,
+				},
+			],
+		);
 	});
 });
 
@@ -1106,14 +1113,18 @@ describe('resolveGuard', () => {
 	});
 });
 
-describe('parryEffect', () => {
-	test('a source-less clash flash at the defender, fixed intensity (damage is negated)', () => {
+describe('a parry projects through effectsOf to a fixed-intensity clash flash', () => {
+	test('a source-less flash at the defender centre, intensity fixed (damage is negated)', () => {
 		const d = monster(20, 4, { type: 'player' });
-		const e = parryEffect(d, 1);
-		expect(e.kind).toBe('parry');
-		expect(e.x).toBe(20 + BOX.w / 2);
-		expect(e.source).toBeUndefined();
-		expect(e.intensity).toBe(COMBAT.poise.max);
+		expect(effectsOf(combatEventAt('parry', d, 1, 0))).toEqual([
+			{
+				kind: 'parry',
+				x: 20 + BOX.w / 2,
+				y: 4 + BOX.h / 2,
+				intensity: COMBAT.poise.max,
+				dir: 1,
+			},
+		]);
 	});
 });
 
@@ -1259,11 +1270,12 @@ describe('effectsOf', () => {
 	});
 
 	test('death projects to gore, parry to a fixed-intensity parry flash', () => {
-		const at = { targetId: 1, x: 3, y: 4, dir: 1 as const, intensity: 9 };
-		expect(effectsOf({ kind: 'death', ...at })).toEqual([
-			{ kind: 'gore', x: 3, y: 4, intensity: 9, dir: 1 },
+		const at = { targetId: 1, x: 3, y: 4, intensity: 9 };
+		// A death is always radial (dir 0); a parry follows the blow.
+		expect(effectsOf({ kind: 'death', dir: 0, ...at })).toEqual([
+			{ kind: 'gore', x: 3, y: 4, intensity: 9, dir: 0 },
 		]);
-		expect(effectsOf({ kind: 'parry', ...at })).toEqual([
+		expect(effectsOf({ kind: 'parry', dir: 1, ...at })).toEqual([
 			{ kind: 'parry', x: 3, y: 4, intensity: COMBAT.poise.max, dir: 1 },
 		]);
 	});
@@ -1307,7 +1319,7 @@ describe('effectsOf', () => {
 			dir: -1,
 			intensity: 7,
 		});
-		expect(e.source).toBeUndefined();
+		expect(e).not.toHaveProperty('source');
 	});
 
 	test('a swat projects to a sourceless impact at the shot, NOT heavier than its damage', () => {
