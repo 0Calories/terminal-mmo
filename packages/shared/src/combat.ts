@@ -570,6 +570,100 @@ export function bladeEdgeArc(progress: number, facing: Facing): ArcCell[] {
 	return cells;
 }
 
+// --- CombatEvent: combat resolves into events; Effects are their projection (ADR 0019) ---
+//
+// A CombatEvent is the resolved, *semantic* fact of a combat interaction — "target T
+// was hit / poise-broke / died / parried, at (x,y), facing →, intensity N." Distinct
+// from an Effect (the presentation descriptor, ADR 0013) and a Particle (the client
+// realization). Shared-internal: it never rides the wire — the server projects it to
+// Effects via `effectsOf` BEFORE building each recipient's snapshot.
+export type CombatEventKind = 'hit' | 'break' | 'death' | 'parry';
+
+export interface CombatEvent {
+	kind: CombatEventKind;
+	targetId: number; // who was struck — the resolution's subject
+	source?: number; // attacker session, for originator-suppression; absent ⇒ "everyone"
+	x: number;
+	y: number;
+	dir: Facing; // horizontal bias of the blow
+	intensity: number; // damage dealt; drives particle count / sound volume
+}
+
+// A CombatEvent at the struck target's centre, biased along the blow (ADR 0019). The
+// shared constructor both the server resolution and the client prediction build their
+// player-melee events with, so the resolved fact — and thus its projected Effect — is
+// computed in exactly one place. `intensity` is the damage dealt (the presentation
+// scaling lives in `effectsOf`, not here). `source` is omitted when the event reaches
+// everyone (breaks/deaths/parries) or when the client predicts its own hit.
+export function combatEventAt(
+	kind: CombatEventKind,
+	target: Entity,
+	dir: Facing,
+	intensity: number,
+	source?: number,
+): CombatEvent {
+	const e: CombatEvent = {
+		kind,
+		targetId: target.id,
+		x: target.x + BOX.w / 2,
+		y: target.y + BOX.h / 2,
+		dir,
+		intensity,
+	};
+	if (source !== undefined) e.source = source;
+	return e;
+}
+
+// The presentation projection of a CombatEvent (ADR 0019): the single, shared, pure
+// home for the semantic→presentational mapping — `hit → blood`, `break → impact`,
+// `death → gore`, `parry → parry` — and for the per-kind look (intensity scaling, the
+// originator-suppression `source`). `hit` carries its `source` through so the server
+// suppresses the chip blood back to the predicting attacker; `break`/`death`/`parry`
+// drop it, so those "big moments" reach everyone in range (ADR 0017 §13c/d). A lethal
+// blow voices `death` (gore), not death+hit — the suppression is in choosing the kind
+// (ADR 0014 §2). Returns an array so a future kind can fan out to several Effects.
+export function effectsOf(e: CombatEvent): Effect[] {
+	switch (e.kind) {
+		case 'hit': {
+			const fx: Effect = {
+				kind: 'blood',
+				x: e.x,
+				y: e.y,
+				intensity: e.intensity,
+				dir: e.dir,
+			};
+			if (e.source !== undefined) fx.source = e.source;
+			return [fx];
+		}
+		case 'break':
+			// Heavier + sharper than a chip of the same damage (ADR 0017 §13d).
+			return [
+				{
+					kind: 'impact',
+					x: e.x,
+					y: e.y,
+					intensity: e.intensity + COMBAT.poise.max,
+					dir: e.dir,
+				},
+			];
+		case 'death':
+			return [
+				{ kind: 'gore', x: e.x, y: e.y, intensity: e.intensity, dir: e.dir },
+			];
+		case 'parry':
+			// Fixed intensity: the clash is about the catch, not the negated blow.
+			return [
+				{
+					kind: 'parry',
+					x: e.x,
+					y: e.y,
+					intensity: COMBAT.poise.max,
+					dir: e.dir,
+				},
+			];
+	}
+}
+
 export function meleeHitbox(p: Entity, reach: number = COMBAT.meleeReach): Box {
 	const w = reach;
 	return {
@@ -651,23 +745,47 @@ export function hurtBloodEffect(
 	};
 }
 
-// The blood Effects the local Avatar's outgoing hit produces this tick, mirroring
-// stepZone's monster-hit emission (same i-frame gate, centre, dir, intensity) so
-// the predicted burst matches the authoritative one the server suppresses back to
-// the attacker (ADR 0013). Pure; the client feeds these straight to its particle
-// system for zero-latency feedback. No rollback on mispredict — a stray splat on
-// a swing the server scores as a miss is acceptable.
-export function predictHitEffects(
-	hitbox: Box,
+// Does this swing's `hitbox` NEWLY strike `target` — overlapping it and not yet in the
+// per-swing `swingHits` registry (ADR 0017 §2)? The single shared swing-hit gate both
+// the server's hit loop and the client's prediction consult, so authority and
+// prediction can no longer diverge on "who did this swing hit." A null hitbox (no live
+// swing this tick) never strikes. Pure; the caller folds the struck id into its
+// registry. This replaces the inert `m.hurtT <= 0` gate the client used to dedup with
+// (a player hit never sets a Monster's hurtT, so that gate never closed — ADR 0019).
+export function swingHitsTarget(
+	hitbox: Box | null,
+	swingHits: ReadonlySet<number>,
+	target: Entity,
+): boolean {
+	return (
+		hitbox !== null &&
+		!swingHits.has(target.id) &&
+		aabbOverlap(hitbox, entityBox(target))
+	);
+}
+
+// The optimistic `hit` CombatEvents the local Avatar's live swing produces this tick
+// (ADR 0019): each Monster its `hitbox` newly strikes — gated by the SAME per-swing
+// `swingHits` registry the server uses (not the inert hurtT check that spammed) —
+// becomes one `hit` event at the Monster's centre. The caller projects them through
+// `effectsOf` for zero-latency blood and folds each `targetId` into its `swingHits`,
+// so a multi-tick active window yields exactly one hit per target per swing. Carries
+// no `source` — predicted events are never reported upward. Pure; mutates nothing. No
+// rollback on mispredict: a stray splat on a swing the server scores as a miss is
+// acceptable. Replaces `predictHitEffects`.
+export function predictHits(
+	hitbox: Box | null,
 	attackerFacing: Facing,
 	damage: number,
+	swingHits: ReadonlySet<number>,
 	monsters: Entity[],
-): Effect[] {
-	const effects: Effect[] = [];
+): CombatEvent[] {
+	if (!hitbox) return [];
+	const events: CombatEvent[] = [];
 	for (const m of monsters)
-		if (m.hurtT <= 0 && aabbOverlap(hitbox, entityBox(m)))
-			effects.push(bloodEffect(m, attackerFacing, damage));
-	return effects;
+		if (swingHitsTarget(hitbox, swingHits, m))
+			events.push(combatEventAt('hit', m, attackerFacing, damage));
+	return events;
 }
 
 // The one shared, pure resolution of an Avatar's combat Intent for a tick: the
