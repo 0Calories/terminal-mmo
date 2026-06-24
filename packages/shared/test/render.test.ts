@@ -483,11 +483,11 @@ test('an observer renders the same walk frame as the owner for a given position 
 });
 
 test('an airborne Avatar does not walk even while moving horizontally (ADR 0020 ladder)', () => {
-	// Off the ground the body sits above walk on the ladder (jump > walk). Jump is
-	// unauthored this slice, so it falls back to idle — proving the render path honours
-	// `airborne` and does NOT pose a walk frame for a horizontally-moving jumper.
-	const idle = formFrame(FORMS[0], 'idle');
-	expectBodyPose({ x: 3 * STRIDE + 3, vx: 3, onGround: false }, idle);
+	// Off the ground the body sits above walk on the ladder (jump > walk), so a
+	// horizontally-moving jumper poses the authored `jump` frame — proving the render
+	// path honours `airborne` and does NOT pose a walk frame in the air.
+	const jump = formFrame(FORMS[0], 'jump');
+	expectBodyPose({ x: 3 * STRIDE + 3, vx: 3, onGround: false }, jump);
 });
 
 test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouched", () => {
