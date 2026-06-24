@@ -330,7 +330,7 @@ _Avoid_: Ability, spell, move
 **Weapon stat block**:
 The data an equipped Weapon **Item** contributes to combat and visuals (ADR 0017
 §14): damage, arc size (melee reach), **Poise** damage, **Knockback**, and the
-**Attack phase** durations (phase-speed), plus a pose glyph and an optional
+**Attack phase** durations (phase-speed), plus its **Weapon sprite** and an optional
 **Trail**. Drives a greatsword's slow-and-heavy feel vs a dagger's fast-and-light
 one through the *same* resolution path — no per-weapon special-casing. The
 weapon's catalog index joins the Avatar's replicated appearance, so others see
@@ -341,8 +341,40 @@ _Avoid_: Weapon type, weapon class (reserve **Class** for the Avatar archetype)
 A short-lived particle streak that follows a **Weapon**'s blade through its
 **active** phase (ADR 0017 §14), defined per-weapon by a key the client resolves
 to a ParticleType — the same shared-owns-the-fact / client-owns-the-pixels seam as
-an Effect. Purely visual; absent on a weapon means no trail.
-_Avoid_: Swoosh, slash effect (reserve "slash-arc" for the hitbox sweep glyph)
+an Effect. Purely visual; absent on a weapon means no trail. One of the three
+layers of a swing alongside the **Weapon sprite** sweep and the **Blade-edge arc**.
+_Avoid_: Swoosh, slash effect (reserve **Blade-edge arc** for the tip-tracing glyphs)
+
+**Weapon sprite**:
+The animated ASCII-art of an equipped **Weapon**, composited onto the **Avatar**
+every frame at its **grip anchor** — present at rest, not only when swinging (ADR
+0018). Unlike a single-frame **Sprite**, it is a named frame set: `idle`, `windup`,
+`active` (an ordered sweep sampled by **Attack phase** progress), `recovery`. The
+frame is a pure function of `(move, phase, progress)`, so the owner's prediction and
+every observer's render agree. Heft comes from phase *durations*, not frame count.
+_Avoid_: Weapon overlay, swing effect (it is part of the Avatar, not an effect)
+
+**Grip anchor**:
+The named "hand" cell a body template declares for hanging a **Weapon sprite** —
+the weapon's own grip cell aligns to it, and it mirrors with facing, the same
+data-driven anchor mechanism the cosmetic hat uses for the head cell (ADR 0018).
+Keeps weapon placement out of imperative draw code.
+_Avoid_: Hand slot, mount point, hardpoint
+
+**Blade-edge arc**:
+The short, fading smear of curve glyphs that traces a **Weapon**'s blade *tip*
+through its **active** phase, so the eye reads a swing's speed and direction (ADR
+0018). Authored as part of the **Weapon sprite** animation, not a hitbox overlay —
+it replaces the retired `///` **hitbox** box-fill, which is no longer drawn.
+_Avoid_: Slash-arc, slash, swing fill (the legacy hitbox-fill, now retired)
+
+**Weapon accent**:
+The single per-**Weapon** colour that drives its blade highlight, **Blade-edge
+arc**, and **Trail**, so a weapon reads as a distinct object even at rest (ADR
+0018). The rarity-ready seam: when loot rolls rarity tiers, the tier colour feeds
+this same channel with no rework. The weapon's structural palette (grip, guard) is
+authored separately on the sprite; the accent is the one dynamic channel.
+_Avoid_: Tint, weapon colour (reserve for the static sprite palette)
 
 **Intent**:
 The per-tick bundle of what an Avatar is trying to do, reported by the client
