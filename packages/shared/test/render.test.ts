@@ -457,21 +457,39 @@ test('an equipped Avatar at rest renders the weapon idle frame at the mirrored g
 		// Body grip cell, its column reflected across the body when facing left.
 		const bodyGripX = sx + (facing === 1 ? grip.x : body.w - 1 - grip.x);
 		const bodyGripY = sy + grip.y;
-		// Weapon grip cell, mirrored alongside the art so grip lands on grip.
+		// Weapon grip cell, mirrored alongside the art so grip lands on grip. The grip
+		// may sit OUTSIDE the art (a negative column anchoring the blade beside the hand),
+		// so it isn't necessarily a drawn cell — placement below is asserted from it.
 		const wgx = facing === 1 ? weapon.grip.x : frame.w - 1 - weapon.grip.x;
-		const wx = bodyGripX - wgx;
-		const wy = bodyGripY - weapon.grip.y;
+		const wx: number = bodyGripX - wgx;
+		const wy: number = bodyGripY - weapon.grip.y;
 
 		// Every lit weapon glyph landed at the grip-anchored, facing-mirrored position.
 		expectSpriteAt(buf, frame, wx, wy, facing, fgFor);
 
-		// The grip cell is a lit BODY cell, but the weapon is drawn on top, so the
-		// composited cell shows the weapon's grip glyph — not the body's underneath.
-		const bodyGlyph =
-			body.rows(facing)[grip.y][facing === 1 ? grip.x : body.w - 1 - grip.x];
-		expect(bodyGlyph).not.toBe(' '); // the overlap is real (body cell is lit)
-		const weaponGlyph = frame.rows(facing)[weapon.grip.y][wgx];
-		expect(buf.at(bodyGripX, bodyGripY)?.ch).toBe(weaponGlyph);
+		// Where a lit weapon cell lands on a lit BODY cell, the weapon is drawn on top,
+		// so the composited cell shows the weapon glyph — not the body's underneath. Found
+		// generically (no assumption about which cell overlaps) so the test survives art
+		// iteration; we also assert such an overlap exists, or the on-top check is vacuous.
+		const wGlyphs = frame.rows(facing);
+		const bGlyphs = body.rows(facing);
+		let overlaps = 0;
+		for (let ry = 0; ry < frame.h; ry++) {
+			for (let rx = 0; rx < frame.w; rx++) {
+				const wch = wGlyphs[ry][rx];
+				if (wch === ' ') continue;
+				const px = wx + rx;
+				const py = wy + ry;
+				// Is the body lit at this same screen cell?
+				const bx = px - sx;
+				const by = py - sy;
+				const bch = bGlyphs[by]?.[bx];
+				if (bch === undefined || bch === ' ') continue;
+				overlaps++;
+				expect(buf.at(px, py)?.ch).toBe(wch);
+			}
+		}
+		expect(overlaps).toBeGreaterThan(0);
 	}
 });
 

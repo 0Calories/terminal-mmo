@@ -8,7 +8,6 @@ import type { WeaponSprite } from '../weapon-sprite';
 //
 // VISUAL ARTEFACT — the art here needs design review / sign-off before merge.
 
-
 const GLYPH = `
 ▐▌
 ▟▙
@@ -19,12 +18,10 @@ ss
 ss
 kk`;
 
-const idle = new Sprite(GLYPH,
-	{
-		defaultKey: 's',
-    colors: COLORS
-	},
-);
+const idle = new Sprite(GLYPH, {
+	defaultKey: 's',
+	colors: COLORS,
+});
 
 export const sword: WeaponSprite = {
 	frames: { idle },
