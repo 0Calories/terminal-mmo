@@ -20,9 +20,9 @@ import {
 	meleeActive,
 	meleeHitbox,
 	regenPoise,
-	resolveCombat,
 	resolveGuard,
 	SWING_TOTAL,
+	stepAvatarCombat,
 	swatEvent,
 	swingHitsTarget,
 	swingPhase,
@@ -155,12 +155,14 @@ export function clientStepAvatar(
 	return e;
 }
 
-// Server-only adapter over the shared `resolveCombat` gate (combat.ts): the
-// melee/skill hitbox an Avatar projects this tick, if any, plus the folded
-// ServerAvatar (attack cooldown / skill cooldowns applied, hurtT decayed, log
-// appended). A reported tick trusts the client kinematics and runs the live
-// combat Intent; a missed report holds position and runs an empty Intent so the
-// same decay still happens (attackT AND skill cooldowns), projecting no hitbox.
+// Server-only adapter over the shared per-Avatar fold `stepAvatarCombat` (combat.ts,
+// ADR 0022 slice 1): trusts the client kinematics, runs the SAME fold the networked
+// client predicts with, then layers the server-owned vitals advance (hurtT decay), the
+// body emote step, and the skill-name log append the prediction has no use for. Returns
+// the melee/skill hitbox the Avatar projects this tick (null if none) for the Monster
+// loop to apply, plus the folded ServerAvatar. A reported tick runs the live combat
+// Intent; a missed report holds position and runs an empty Intent so the same decay
+// still happens (attackT AND skill cooldowns), projecting no hitbox.
 function resolveAvatarIntent(
 	src: ServerAvatar,
 	intent: AvatarIntent | undefined,
@@ -185,18 +187,17 @@ function resolveAvatarIntent(
 		: { ...src.avatar };
 
 	const log = src.log.slice(-5);
-	// The equipped Weapon drives the swing's phase durations, damage, and arc through
-	// the shared gate (ADR 0017 §14) — no special-casing per weapon, just its stat
-	// block. Absent == the default sword.
-	const r = resolveCombat(
+	// The shared per-Avatar combat fold (ADR 0022 slice 1): runs the `resolveCombat`
+	// gate and folds the swing/Dodge/Guard/cooldown delta + the `swingHits` reset onto
+	// the Avatar. The networked client runs the EXACT same function for its own Avatar,
+	// so this fold cannot drift from the prediction. The equipped Weapon drives the
+	// swing's phase durations, damage, and arc through the gate (ADR 0017 §14) — absent
+	// == the default sword. `dodge` is the client's already-gated decision (grounded +
+	// moving checked at the impulse site before the hop ungrounds the body, ADR 0017 §5
+	// / ADR 0001); the server only re-enforces the tick-stable timing here. `guard`
+	// raises the held Guard, resolved authoritatively.
+	const fold = stepAvatarCombat(
 		avatar,
-		src.skillCooldowns ?? {},
-		src.progress.level,
-		src.class ?? 'warrior',
-		// `dodge` is the client's already-gated decision (grounded + moving checked at the
-		// impulse site before the hop ungrounds the body, ADR 0017 §5 / ADR 0001); the
-		// server only re-enforces the tick-stable timing (cooldown etc.) in resolveCombat.
-		// `guard` raises the held Guard, resolved authoritatively here.
 		intent
 			? {
 					attack: intent.attack,
@@ -205,50 +206,69 @@ function resolveAvatarIntent(
 					guard: intent.guard,
 				}
 			: { attack: false },
-		dt,
-		weaponById(avatar.weapon),
+		{
+			cooldowns: src.skillCooldowns ?? {},
+			level: src.progress.level,
+			cls: src.class ?? 'warrior',
+			weapon: weaponById(avatar.weapon),
+			dt,
+		},
 	);
-	avatar.attackT = r.attackT;
-	// The i-frame Dodge timer + its post-recovery cooldown (ADR 0017 §5): both server-
-	// tracked so the damage gates below negate hits during the active window and the
-	// spam-gate bars a re-dodge. The hop impulse is the client's (ADR 0001).
-	avatar.dodgeT = r.dodgeT;
-	avatar.dodgeCdT = r.dodgeCdT;
-	// The held-Guard timer (ADR 0017 §5): accumulated by the same shared gate that owns
-	// the swing, so the server and the client's prediction can't disagree on a raise.
-	avatar.guardT = r.guardT;
-	avatar.hurtT = Math.max(0, avatar.hurtT - dt);
+	const folded = fold.avatar;
+	folded.hurtT = Math.max(0, folded.hurtT - dt);
 	// Body emote (ADR 0020 §9): a fresh `/em` trigger this tick arms the emote (a oneshot
 	// seeds its countdown, a loop/hold its elapsed clock at 0), then the shared step
 	// advances it and cancels it the instant the Avatar acts (moving / combat / stagger,
-	// §6) — evaluated AFTER the swing + guard timers above so the cancel reads this tick's
-	// resolved state. The owner predicts the identical step client-side.
+	// §6) — evaluated AFTER the swing + guard timers fold above so the cancel reads this
+	// tick's resolved state. The owner predicts the identical step client-side.
 	if (intent?.emote) {
 		const def = emoteById(intent.emote);
 		if (def) {
-			avatar.emoteId = def.id;
-			avatar.emoteT = initialEmoteT(def);
+			folded.emoteId = def.id;
+			folded.emoteT = initialEmoteT(def);
 		}
 	}
 	const em = stepEmote(
-		avatar.emoteId,
-		avatar.emoteT ?? 0,
-		emoteInterrupted(avatar),
+		folded.emoteId,
+		folded.emoteT ?? 0,
+		emoteInterrupted(folded),
 		dt,
 	);
-	avatar.emoteId = em.emoteId ?? undefined;
-	avatar.emoteT = em.emoteT;
-	// A fresh swing clears the per-swing hit list so it can connect again; an
-	// in-flight swing keeps its list so it lands on each target only once (ADR 0017
-	// §2 — the rate-limiter that replaced automatic post-hit i-frames).
-	avatar.swingHits = r.swingStarted ? [] : (avatar.swingHits ?? []);
-	if (r.skillFired) log.push(`${r.skillFired.name}!`);
+	folded.emoteId = em.emoteId ?? undefined;
+	folded.emoteT = em.emoteT;
+	if (fold.skillFired) log.push(`${fold.skillFired.name}!`);
 
 	return {
-		sa: { ...src, avatar, log, skillCooldowns: r.cooldowns },
-		hb: r.hitbox,
-		damage: r.damage,
+		sa: { ...src, avatar: folded, log, skillCooldowns: fold.cooldowns },
+		hb: fold.hitbox,
+		damage: fold.damage,
 	};
+}
+
+// The project pass over the Avatar set (ADR 0022 slice 1): fold every Avatar's combat
+// Intent through the shared `stepAvatarCombat`, producing the advanced ServerAvatars
+// plus the parallel `hitboxes`/`damages` the Monster loop consumes to resolve hits this
+// tick. Both the reported and missed-report paths fold (attackT AND skill cooldowns
+// decay every tick — a missed report holds position and projects a null hitbox). This is
+// the per-Avatar pipeline stage later slices (monsters → resolution → deaths) slot beside.
+function stepAvatars(
+	state: ZoneState,
+	byId: Map<number, AvatarIntent>,
+	dt: number,
+): { avatars: ServerAvatar[]; hitboxes: (Box | null)[]; damages: number[] } {
+	const hitboxes: (Box | null)[] = [];
+	const damages: number[] = [];
+	const avatars = state.avatars.map((src) => {
+		const { sa, hb, damage } = resolveAvatarIntent(
+			src,
+			byId.get(src.sessionId),
+			dt,
+		);
+		hitboxes.push(hb);
+		damages.push(damage);
+		return sa;
+	});
+	return { avatars, hitboxes, damages };
 }
 
 // Index of the Avatar nearest a Monster on the x-axis (-1 if the Zone is empty).
@@ -281,19 +301,10 @@ export function stepZone(
 	const t = zone.terrain;
 
 	const byId = new Map(intents.map((i) => [i.sessionId, i]));
-	// Working Avatar set, mutated as the Monster/Projectile loops resolve hits.
-	const hitboxes: (Box | null)[] = [];
-	const damages: number[] = [];
-	const avatars: ServerAvatar[] = state.avatars.map((src) => {
-		const intent = byId.get(src.sessionId);
-		// Both the reported and missed-report paths fold through resolveAvatarIntent
-		// so attackT AND skill cooldowns decay every tick (a missed report holds
-		// position and projects no hitbox).
-		const { sa, hb, damage } = resolveAvatarIntent(src, intent, dt);
-		hitboxes.push(hb);
-		damages.push(damage);
-		return sa;
-	});
+	// Project pass over Avatars (ADR 0022 slice 1): the shared fold + the parallel
+	// hitbox/damage arrays the Monster loop consumes. `avatars` is the working set,
+	// mutated as the Monster/Projectile loops resolve hits.
+	const { avatars, hitboxes, damages } = stepAvatars(state, byId, dt);
 	// Per-swing hit registry (ADR 0017 §2): one mutable Set per Avatar of the Monster
 	// ids its current swing has already hit, seeded from `swingHits` (cleared on a
 	// fresh swing by resolveAvatarIntent) and folded back onto each Avatar at tick

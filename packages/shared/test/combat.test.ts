@@ -39,6 +39,7 @@ import {
 	resolveGuard,
 	SWING_TOTAL,
 	skillHitbox,
+	stepAvatarCombat,
 	superArmorActive,
 	swatEvent,
 	sweepIndex,
@@ -633,6 +634,115 @@ describe('resolveCombat swingStarted', () => {
 		const mid = monster(20, 0, { type: 'player', attackT: fresh.attackT });
 		const cont = resolveCombat(mid, {}, 1, 'warrior', { attack: true }, 0.016);
 		expect(cont.swingStarted).toBe(false);
+	});
+});
+
+// The shared per-Avatar combat fold (ADR 0022 slice 1): the seam both the server's
+// `stepAvatars` and the networked client's prediction run, so the previously-untested
+// client fold path is covered here. Assert the folded Avatar state + the projected
+// hitbox/damage given (avatar, intent, ctx) — the external behaviour, not the internal
+// assignment order.
+describe('stepAvatarCombat', () => {
+	const avatar = (over: Partial<Entity> = {}) =>
+		monster(20, 4, { type: 'player', facing: 1, ...over });
+	const ctx = (over: Partial<Parameters<typeof stepAvatarCombat>[2]> = {}) => ({
+		cooldowns: {},
+		level: 1,
+		cls: 'warrior' as const,
+		weapon: weaponById(undefined),
+		dt: 0.016,
+		...over,
+	});
+
+	test('a fresh swing loads the phase sequence and RESETS swingHits', () => {
+		// Carry stale hit ids from a prior swing; a fresh swing must drop them so the new
+		// swing can connect again (ADR 0017 §2).
+		const a = avatar({ attackT: 0, swingHits: [7, 9] });
+		const r = stepAvatarCombat(a, { attack: true }, ctx());
+		expect(r.swingStarted).toBe(true);
+		expect(r.avatar.attackT).toBe(SWING_TOTAL);
+		expect(swingPhase(r.avatar.attackT)).toBe('windup');
+		expect(r.avatar.swingHits).toEqual([]);
+	});
+
+	test('an in-flight swing KEEPS its swingHits so it lands once per target', () => {
+		// Mid-swing (attackT > 0): holding attack does not restart it, and the registry
+		// of already-struck ids persists.
+		const a = avatar({ attackT: 0.1, swingHits: [7, 9] });
+		const r = stepAvatarCombat(a, { attack: true }, ctx({ dt: 0.02 }));
+		expect(r.swingStarted).toBe(false);
+		expect(r.avatar.swingHits).toEqual([7, 9]);
+	});
+
+	test('the melee hitbox is projected ONLY in the active phase', () => {
+		const { windup, active } = COMBAT.swing;
+		// Mid-active: dt 0 keeps attackT inside the active window.
+		const inActive = SWING_TOTAL - (windup + active / 2);
+		const live = stepAvatarCombat(
+			avatar({ attackT: inActive }),
+			{ attack: false },
+			ctx({ dt: 0 }),
+		);
+		expect(swingPhase(live.avatar.attackT)).toBe('active');
+		expect(live.hitbox).toEqual(meleeHitbox(avatar()));
+		expect(live.damage).toBe(COMBAT.meleeDamage);
+
+		// Mid-recovery: past the active window, no hitbox.
+		const inRecovery = SWING_TOTAL - (windup + active + 0.01);
+		const dead = stepAvatarCombat(
+			avatar({ attackT: inRecovery }),
+			{ attack: false },
+			ctx({ dt: 0 }),
+		);
+		expect(swingPhase(dead.avatar.attackT)).toBe('recovery');
+		expect(dead.hitbox).toBeNull();
+	});
+
+	test('the Dodge i-frame + cooldown timers fold deterministically on a fresh hop', () => {
+		// Grounded + moving Avatar, off cooldown: the gate arms both timers to their full
+		// windows (the hop impulse itself is the caller's; this only folds the timing).
+		const r = stepAvatarCombat(
+			avatar({ onGround: true, dodgeT: 0, dodgeCdT: 0 }),
+			{ dodge: true },
+			ctx(),
+		);
+		expect(r.avatar.dodgeT).toBe(DODGE_TOTAL);
+		expect(r.avatar.dodgeCdT).toBe(DODGE_LOCKOUT);
+	});
+
+	test('the held-Guard timer accumulates while guarding', () => {
+		const a = avatar({ attackT: 0, guardT: 0.1 });
+		const r = stepAvatarCombat(a, { guard: true }, ctx({ dt: 0.02 }));
+		expect(r.avatar.guardT).toBeCloseTo(0.12, 5);
+	});
+
+	test('skill cooldowns fold deterministically: a fired skill arms its cooldown, others decay', () => {
+		const a = avatar({ attackT: 0 });
+		const r = stepAvatarCombat(
+			a,
+			{ attack: true, skill: 1 },
+			ctx({ cooldowns: { [GROUND_POUND.id]: 2.0 }, dt: 0.1 }),
+		);
+		expect(r.skillFired).toBe(POWER_STRIKE);
+		expect(r.cooldowns[POWER_STRIKE.id]).toBe(POWER_STRIKE.cooldown);
+		expect(r.cooldowns[GROUND_POUND.id]).toBeCloseTo(1.9, 5);
+	});
+
+	test('is pure — mutates neither the input Avatar nor the cooldowns map', () => {
+		const a = avatar({ attackT: 0, swingHits: [3], guardT: 0.1 });
+		const cds = { [POWER_STRIKE.id]: 0.5 };
+		const r = stepAvatarCombat(
+			a,
+			{ attack: true, skill: 1 },
+			ctx({ cooldowns: cds }),
+		);
+		// Inputs untouched...
+		expect(a.attackT).toBe(0);
+		expect(a.swingHits).toEqual([3]);
+		expect(cds[POWER_STRIKE.id]).toBe(0.5);
+		// ...and the returned Avatar is a distinct object carrying the fold.
+		expect(r.avatar).not.toBe(a);
+		expect(r.avatar.attackT).toBe(SWING_TOTAL);
 	});
 });
 
