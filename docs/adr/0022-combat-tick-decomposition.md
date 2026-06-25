@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Project-then-resolve: the combat tick decomposes into pure passes

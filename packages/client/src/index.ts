@@ -19,12 +19,12 @@ import {
 	PHYS,
 	predictHits,
 	randomCosmetics,
-	resolveCombat,
 	SPAWN,
 	saleValue,
 	sellItem,
 	spawnAvatar,
 	step,
+	stepAvatarCombat,
 	WEAPONS,
 	weaponById,
 	type Zone,
@@ -453,7 +453,7 @@ function runNetworked(url: string) {
 			// so clientStepAvatar integrates it this frame; gated by the same
 			// full Dodge gate (grounded + held direction + off cooldown), evaluated HERE
 			// before the hop's upward pop ungrounds the body; the gated decision drives the
-			// impulse, the i-frame timer (resolveCombat below), and the report to the server,
+			// impulse, the i-frame timer (stepAvatarCombat below), and the report to the server,
 			// so all three agree on whether the hop fired. Direction is `inp.moveX`.
 			const dodging =
 				(inp.dodge ?? false) && canStartDodge(predicted, inp.moveX);
@@ -489,37 +489,34 @@ function runNetworked(url: string) {
 			// same gate yields the outgoing hitbox + damage for blood prediction (ADR
 			// 0013): a fired Skill overrides the basic swing, matching resolveAvatarIntent.
 			const dtSec = Math.min(dt / 1000, PHYS.maxDt);
-			const r = resolveCombat(
+			// Optimistic combat fold through the EXACT shared per-Avatar function the
+			// server runs (ADR 0022 slice 1): it folds the swing/skill `attackT`, the
+			// i-frame Dodge timers, the held-Guard timer, and the per-swing `swingHits`
+			// reset onto our own Avatar, and returns the outgoing hitbox + damage for the
+			// blood prediction below (ADR 0013). Because both sides call one function, the
+			// local telegraph/Guard/Dodge can no longer diverge from the authoritative
+			// outcome. Reconciliation of the negated/landed result stays server-owned (HP +
+			// the snapshot's parry/blood Effects). A fired Skill overrides the basic swing.
+			const fold = stepAvatarCombat(
 				predicted,
-				localCd,
-				net.latest?.progress.level ?? 1,
-				'warrior',
 				{
 					attack: inp.attack,
 					skill: inp.skill,
 					dodge: dodging,
 					guard: inp.guard,
 				},
-				dtSec,
-				weaponById(predicted.weapon),
+				{
+					cooldowns: localCd,
+					level: net.latest?.progress.level ?? 1,
+					cls: 'warrior',
+					weapon: weaponById(predicted.weapon),
+					dt: dtSec,
+				},
 			);
-			predicted.attackT = r.attackT;
-			// Mirror the server's i-frame Dodge timer + its post-recovery cooldown so the
-			// local pose and both gates stay in lockstep with the prediction (ADR 0017 §5).
-			predicted.dodgeT = r.dodgeT;
-			predicted.dodgeCdT = r.dodgeCdT;
-			// Mirror the server's held-Guard timer so the local guard/parry pose stays in
-			// lockstep with the prediction (ADR 0017 §5); the parry's damage-negation is
-			// server-authoritative and reconciles through HP + the snapshot's parry Effect.
-			predicted.guardT = r.guardT;
-			// A fresh swing clears the predicted per-swing hit registry so the new swing can
-			// connect again — mirroring the server exactly (ADR 0017 §2 / ADR 0019). This is
-			// what dedups predicted blood/sound to one burst per (swing, target); it replaces
-			// the inert `m.hurtT <= 0` gate, which a player hit never closed.
-			predicted.swingHits = r.swingStarted ? [] : (predicted.swingHits ?? []);
-			localCd = r.cooldowns;
-			const hitbox = r.hitbox;
-			const hitDamage = r.damage;
+			predicted = fold.avatar;
+			localCd = fold.cooldowns;
+			const hitbox = fold.hitbox;
+			const hitDamage = fold.damage;
 
 			// Server owns vitals; reconcile HP/i-frames from snapshots. Position is NOT
 			// reconciled here: per ADR 0001 the client is authoritative over its own

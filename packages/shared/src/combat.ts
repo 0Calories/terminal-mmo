@@ -970,3 +970,84 @@ export function resolveCombat(
 		guardT,
 	};
 }
+
+// Avatar-scoped inputs the per-Avatar combat fold reads this tick (ADR 0022 slice 1):
+// the swing/skill/cooldown/Dodge/Guard gate has no view of the Monster set or an
+// authority flag — it is a deep, narrow-interface unit folding one Avatar's own state.
+// `weapon` is the resolved stat block (the caller does the `weaponById` lookup), and
+// `cooldowns` round-trips because skill cooldowns are not stored on the Entity (they
+// live beside it: `ServerAvatar.skillCooldowns` on the server, `localCd` on the client).
+export interface AvatarCombatCtx {
+	cooldowns: Record<string, number>;
+	level: number;
+	cls: PlayerClass;
+	weapon: Weapon;
+	dt: number; // SECONDS, like resolveCombat
+}
+
+// The one shared per-Avatar combat fold (ADR 0022 slice 1): runs the `resolveCombat`
+// gate and folds its delta back onto the Avatar — the swing/skill `attackT`, the Dodge
+// timers, the held-Guard timer, and the per-swing `swingHits` reset on a fresh swing
+// (ADR 0017 §2) — returning the projected `hitbox`/`damage` for the CALLER to apply.
+// Both authority paths run THIS function so they cannot diverge: the server's
+// `stepAvatars` maps it over its Avatar set, and the networked client calls it directly
+// for its own Avatar in prediction (replacing the inline fold that was never tested).
+//
+// It owns the fold ONLY: it never applies hits to Monsters (the server's monster loop
+// and the client's `predictHits` keep that asymmetric, authority-vs-prediction path) and
+// never touches `hurtT`/emote/log, which stay with each caller's vitals advance. Pure:
+// the input `avatar` is not mutated; the returned `avatar` and `cooldowns` are fresh.
+//
+// The return is the slice-1 shape (ADR 0022): `cooldowns`/`skillFired` ride alongside
+// because they have no home on the Entity yet — slice 2 upgrades this to `{ avatar,
+// strikes }` once `Strike` and the cooldown home land.
+export function stepAvatarCombat(
+	avatar: Entity,
+	intent: {
+		attack?: boolean;
+		skill?: number;
+		dodge?: boolean;
+		guard?: boolean;
+	},
+	ctx: AvatarCombatCtx,
+): {
+	avatar: Entity;
+	hitbox: Box | null;
+	damage: number;
+	swingStarted: boolean;
+	cooldowns: Record<string, number>;
+	skillFired?: Skill;
+} {
+	const r = resolveCombat(
+		avatar,
+		ctx.cooldowns,
+		ctx.level,
+		ctx.cls,
+		intent,
+		ctx.dt,
+		ctx.weapon,
+	);
+	const folded: Entity = {
+		...avatar,
+		attackT: r.attackT,
+		// The i-frame Dodge timer + its post-recovery cooldown, and the held-Guard timer
+		// (ADR 0017 §5): folded by the same gate on server and client so a hop or a raise
+		// can't disagree across the two.
+		dodgeT: r.dodgeT,
+		dodgeCdT: r.dodgeCdT,
+		guardT: r.guardT,
+		// A fresh swing clears the per-swing hit list so it can connect again; an in-flight
+		// swing keeps its list so it lands on each target only once (ADR 0017 §2). This is
+		// the verbatim `swingStarted ? [] : prev` reset that used to live in BOTH the server
+		// fold and the client prediction loop — now single-sourced here.
+		swingHits: r.swingStarted ? [] : (avatar.swingHits ?? []),
+	};
+	return {
+		avatar: folded,
+		hitbox: r.hitbox,
+		damage: r.damage,
+		swingStarted: r.swingStarted,
+		cooldowns: r.cooldowns,
+		skillFired: r.skillFired,
+	};
+}
