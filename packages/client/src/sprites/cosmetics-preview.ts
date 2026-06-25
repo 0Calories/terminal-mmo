@@ -5,6 +5,7 @@
 import {
 	type CellBuffer,
 	type Cosmetics,
+	drawNameplates,
 	type Entity,
 	HATS,
 	HUES,
@@ -51,13 +52,13 @@ const STYLE: RenderStyle<string> = {
 	transparent: 'tr',
 	hurt: 'h',
 	nameplate: 'name',
-	nameplateWash: 'wash',
+	nameplateBg: 'namebg',
 	palette: Object.fromEntries(Object.keys(SCENE_PALETTE).map((k) => [k, k])),
 	paletteDefault: '?',
 	cosmetics: {
 		hues: HUES.map((_, i) => `hue${i}`),
 		nameplates: NAMEPLATE_COLORS.map((_, i) => `np${i}`),
-		nameplateWashes: NAMEPLATE_COLORS.map((_, i) => `wash${i}`),
+		nameplateBgs: NAMEPLATE_COLORS.map((_, i) => `npbg${i}`),
 	},
 };
 
@@ -84,12 +85,16 @@ function avatar(cosmetics: Cosmetics): Entity {
 function frame(title: string, cosmetics: Cosmetics): string {
 	const buf = new TextBuffer(16, 11);
 	const terrain = { w: 16, h: 11, cells: new Uint8Array(16 * 11) };
+	const entities = [avatar(cosmetics)];
 	renderZoneScene(
 		buf,
-		{ terrain, portals: [], npcs: [], entities: [avatar(cosmetics)] },
+		{ terrain, portals: [], npcs: [], entities },
 		{ x: 0, y: 0 },
 		STYLE,
 	);
+	// Names are a caller-composited top layer now (ADR 0023): the preview runs the pass
+	// itself, right after the scene, so the creation panel matches the live look.
+	drawNameplates(buf, entities, { x: 0, y: 0 }, terrain, STYLE);
 	return `${title}\n${buf.toString()}`;
 }
 
