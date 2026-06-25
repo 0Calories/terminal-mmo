@@ -154,6 +154,14 @@ export interface Entity {
 	// automatic post-hit i-frames. Cleared when a fresh swing starts; a NEW swing (or
 	// another attacker) can still hit a target that is mid-Stagger. Server-internal.
 	swingHits?: number[];
+	// Skill cooldowns, keyed by skill id → seconds remaining (ADR 0022 slice 2): the
+	// settled home for the per-Avatar skill timers that slice 1 round-tripped through
+	// `stepAvatarCombat`'s return. Storing them on the Entity lets the shared fold stay
+	// pure and collapse its return to `{ avatar, strikes }` — the cooldowns ride the
+	// folded avatar instead. Avatar-only; never replicated (skill cooldowns are owner-
+	// local — `ServerAvatar.skillCooldowns` points at this same object server-side, the
+	// client reads it off its predicted avatar). Absent == no skills on cooldown.
+	skillCooldowns?: Record<string, number>;
 	spawnIndex?: number; // index into its Zone's spawns[], if Field-spawned
 	contributors?: number[]; // Monster-only: session ids that have damaged it, for shared-kill rewards (#37)
 	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
@@ -234,6 +242,42 @@ export interface Box {
 	y: number;
 	w: number;
 	h: number;
+}
+
+// The allegiance key a Strike resolves against (ADR 0022): a Strike only lands on
+// OPPOSING-Faction victims. Promoted from the Projectile-only `ProjectileFaction` to
+// every Strike so two invariants hold BY CONSTRUCTION rather than by scattered checks
+// — PvE (two Avatars share `players`, so no Avatar Strike selects an Avatar) and
+// Reflect-safety (a reflected shot re-factioned to `players` is never tested against
+// Avatars). Distinct from `ProjectileFaction` (singular `player`/`monster`, the
+// in-flight shot's ownership) — this is the plural victim-selection side.
+export type Faction = 'players' | 'monsters';
+
+// How a Strike behaves when it meets a raised Guard, and ONLY that (ADR 0022): a
+// closed tagged union switched on at the guard-interaction step alone — a `melee`
+// Strike Parries to a Stagger + attacker Poise dump, a `projectile` Strike Reflects /
+// swats. Damage / poise / break / death application is tag-agnostic. A future third
+// counterplay is a new tag, not a data-driven descriptor (YAGNI for two kinds).
+export type ReactionProfile = { kind: 'melee' } | { kind: 'projectile' };
+
+// The projected-attack value a project pass hands to combat resolution (ADR 0022):
+// "this hitbox deals this damage/poise, facing →, on behalf of this Faction, with this
+// reaction profile." It is a PROJECTION, never applied at the project site — the
+// uniform resolution rule lands every Strike against overlapping, hittable,
+// opposing-Faction, not-already-hit victims. It replaces slice 1's positional
+// `hitboxes[]` / `damages[]` parallel arrays, carrying attacker identity + facing +
+// poise + faction + reaction so resolution re-derives none of them. The per-swing
+// dedup ledger (`swingHits`) is NOT a field here — it is a multi-contact property of
+// the source entity, read/written as a keyed side-table at the resolution site.
+export interface Strike {
+	attackerId: number;
+	attackerKind: 'avatar' | 'monster' | 'projectile';
+	hitbox: Box; // a swing's active box this tick (OR a projectile's body, later slices)
+	damage: number;
+	poiseDamage: number;
+	facing: Facing;
+	faction: Faction; // selects valid victims: opposing-Faction only
+	reaction: ReactionProfile;
 }
 
 // The side a Projectile belongs to (ADR 0017 §8): `monster` is a hostile shot

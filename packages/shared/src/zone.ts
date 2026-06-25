@@ -21,10 +21,10 @@ import {
 	meleeHitbox,
 	regenPoise,
 	resolveGuard,
+	resolveHitsOnMonsters,
 	SWING_TOTAL,
 	stepAvatarCombat,
 	swatEvent,
-	swingHitsTarget,
 	swingPhase,
 } from './combat';
 import {
@@ -49,10 +49,9 @@ import type {
 	MonsterSnapshot,
 	ServerMessage,
 } from './protocol';
-import type { PlayerClass } from './skills';
+import { type PlayerClass, skillForSlot } from './skills';
 import { isSolid } from './terrain';
 import type {
-	Box,
 	Control,
 	Cosmetics,
 	Effect,
@@ -62,6 +61,7 @@ import type {
 	PendingRespawn,
 	PlayerProgress,
 	Projectile,
+	Strike,
 	Terrain,
 } from './types';
 import { DEFAULT_WEAPON, weaponById } from './weapons';
@@ -156,20 +156,22 @@ export function clientStepAvatar(
 }
 
 // Server-only adapter over the shared per-Avatar fold `stepAvatarCombat` (combat.ts,
-// ADR 0022 slice 1): trusts the client kinematics, runs the SAME fold the networked
-// client predicts with, then layers the server-owned vitals advance (hurtT decay), the
-// body emote step, and the skill-name log append the prediction has no use for. Returns
-// the melee/skill hitbox the Avatar projects this tick (null if none) for the Monster
-// loop to apply, plus the folded ServerAvatar. A reported tick runs the live combat
-// Intent; a missed report holds position and runs an empty Intent so the same decay
-// still happens (attackT AND skill cooldowns), projecting no hitbox.
+// ADR 0022): trusts the client kinematics, runs the SAME fold the networked client
+// predicts with, then layers the server-owned vitals advance (hurtT decay), the body
+// emote step, and the skill-name log append the prediction has no use for. Returns the
+// Strikes the Avatar projects this tick (usually 0 or 1) for `resolveHitsOnMonsters` to
+// apply, plus the folded ServerAvatar. A reported tick runs the live combat Intent; a
+// missed report holds position and runs an empty Intent so the same decay still happens
+// (attackT AND skill cooldowns), projecting no Strike.
 function resolveAvatarIntent(
 	src: ServerAvatar,
 	intent: AvatarIntent | undefined,
 	dt: number,
-): { sa: ServerAvatar; hb: Box | null; damage: number } {
+): { sa: ServerAvatar; strikes: Strike[] } {
 	// Trust the client's reported kinematics; keep the server-owned vitals. With
-	// no report this tick, hold the prior kinematics in place.
+	// no report this tick, hold the prior kinematics in place. Skill cooldowns are
+	// seeded onto the entity (ADR 0022 slice 2 settled them there) from the persisted
+	// `ServerAvatar.skillCooldowns`, so the shared fold reads and advances them.
 	const avatar: Entity = intent
 		? {
 				...src.avatar,
@@ -183,8 +185,9 @@ function resolveAvatarIntent(
 				ivx: intent.ivx ?? src.avatar.ivx,
 				facing: intent.facing,
 				onGround: intent.onGround,
+				skillCooldowns: src.skillCooldowns ?? {},
 			}
-		: { ...src.avatar };
+		: { ...src.avatar, skillCooldowns: src.skillCooldowns ?? {} };
 
 	const log = src.log.slice(-5);
 	// The shared per-Avatar combat fold (ADR 0022 slice 1): runs the `resolveCombat`
@@ -196,6 +199,7 @@ function resolveAvatarIntent(
 	// moving checked at the impulse site before the hop ungrounds the body, ADR 0017 §5
 	// / ADR 0001); the server only re-enforces the tick-stable timing here. `guard`
 	// raises the held Guard, resolved authoritatively.
+	const cls = src.class ?? 'warrior';
 	const fold = stepAvatarCombat(
 		avatar,
 		intent
@@ -207,9 +211,8 @@ function resolveAvatarIntent(
 				}
 			: { attack: false },
 		{
-			cooldowns: src.skillCooldowns ?? {},
 			level: src.progress.level,
-			cls: src.class ?? 'warrior',
+			cls,
 			weapon: weaponById(avatar.weapon),
 			dt,
 		},
@@ -236,39 +239,54 @@ function resolveAvatarIntent(
 	);
 	folded.emoteId = em.emoteId ?? undefined;
 	folded.emoteT = em.emoteT;
-	if (fold.skillFired) log.push(`${fold.skillFired.name}!`);
+	// The skill-name log (ADR 0022 slice 2): `skillFired` no longer rides the fold's
+	// return, so a fire is OBSERVED from the cooldown delta on the entity — the skill for
+	// the pressed slot whose cooldown the gate just armed (rose from its pre-fold value).
+	// This reads the gate's effect, not its logic, so the unlock/cooldown decision stays
+	// single-homed in `resolveCombat`.
+	const slotSkill =
+		intent?.skill !== undefined ? skillForSlot(cls, intent.skill) : undefined;
+	if (
+		slotSkill &&
+		(folded.skillCooldowns?.[slotSkill.id] ?? 0) >
+			(avatar.skillCooldowns?.[slotSkill.id] ?? 0)
+	)
+		log.push(`${slotSkill.name}!`);
 
+	// Skill cooldowns are now on the entity (the home settled in slice 2); the persisted
+	// `ServerAvatar.skillCooldowns` mirrors the same object so the world layer + tests
+	// keep reading them off the ServerAvatar.
 	return {
-		sa: { ...src, avatar: folded, log, skillCooldowns: fold.cooldowns },
-		hb: fold.hitbox,
-		damage: fold.damage,
+		sa: {
+			...src,
+			avatar: folded,
+			log,
+			skillCooldowns: folded.skillCooldowns ?? {},
+		},
+		strikes: fold.strikes,
 	};
 }
 
-// The project pass over the Avatar set (ADR 0022 slice 1): fold every Avatar's combat
-// Intent through the shared `stepAvatarCombat`, producing the advanced ServerAvatars
-// plus the parallel `hitboxes`/`damages` the Monster loop consumes to resolve hits this
-// tick. Both the reported and missed-report paths fold (attackT AND skill cooldowns
-// decay every tick — a missed report holds position and projects a null hitbox). This is
-// the per-Avatar pipeline stage later slices (monsters → resolution → deaths) slot beside.
+// The project pass over the Avatar set (ADR 0022): fold every Avatar's combat Intent
+// through the shared `stepAvatarCombat`, producing the advanced ServerAvatars plus the
+// flat `Strike[]` that `resolveHitsOnMonsters` consumes to resolve hits this tick. Each
+// Avatar projects 0 or 1 Strikes (a live swing/skill box, else none), carrying its
+// `attackerId` so the resolution pass keys both the victim ledger and the Knockback
+// Weapon back to the right Avatar. Both the reported and missed-report paths fold
+// (attackT AND skill cooldowns decay every tick — a missed report holds position and
+// projects no Strike). This is the per-Avatar pipeline stage later slices slot beside.
 function stepAvatars(
 	state: ZoneState,
 	byId: Map<number, AvatarIntent>,
 	dt: number,
-): { avatars: ServerAvatar[]; hitboxes: (Box | null)[]; damages: number[] } {
-	const hitboxes: (Box | null)[] = [];
-	const damages: number[] = [];
+): { avatars: ServerAvatar[]; strikes: Strike[] } {
+	const strikes: Strike[] = [];
 	const avatars = state.avatars.map((src) => {
-		const { sa, hb, damage } = resolveAvatarIntent(
-			src,
-			byId.get(src.sessionId),
-			dt,
-		);
-		hitboxes.push(hb);
-		damages.push(damage);
-		return sa;
+		const res = resolveAvatarIntent(src, byId.get(src.sessionId), dt);
+		strikes.push(...res.strikes);
+		return res.sa;
 	});
-	return { avatars, hitboxes, damages };
+	return { avatars, strikes };
 }
 
 // Index of the Avatar nearest a Monster on the x-axis (-1 if the Zone is empty).
@@ -301,17 +319,18 @@ export function stepZone(
 	const t = zone.terrain;
 
 	const byId = new Map(intents.map((i) => [i.sessionId, i]));
-	// Project pass over Avatars (ADR 0022 slice 1): the shared fold + the parallel
-	// hitbox/damage arrays the Monster loop consumes. `avatars` is the working set,
-	// mutated as the Monster/Projectile loops resolve hits.
-	const { avatars, hitboxes, damages } = stepAvatars(state, byId, dt);
-	// Per-swing hit registry (ADR 0017 §2): one mutable Set per Avatar of the Monster
-	// ids its current swing has already hit, seeded from `swingHits` (cleared on a
-	// fresh swing by resolveAvatarIntent) and folded back onto each Avatar at tick
-	// end. This — not invulnerability — rate-limits a multi-tick active window to one
-	// hit per target, so a Staggered Monster stays hittable by the NEXT swing.
-	const swingHits: Set<number>[] = avatars.map(
-		(a) => new Set(a.avatar.swingHits ?? []),
+	// Project pass over Avatars (ADR 0022): the shared fold + the flat `Strike[]` that
+	// `resolveHitsOnMonsters` consumes. `avatars` is the working set, mutated as the
+	// Monster/Projectile loops resolve hits.
+	const { avatars, strikes } = stepAvatars(state, byId, dt);
+	// Per-swing hit registry as a keyed side-table (ADR 0017 §2 / ADR 0022): `attackerId
+	// → Monster ids its current swing has already hit`, seeded from each Avatar's
+	// `swingHits` (cleared on a fresh swing by the fold) and read/written by
+	// `resolveHitsOnMonsters`, then folded back onto each Avatar at tick end. This — not
+	// invulnerability — rate-limits a multi-tick active window to one hit per target, so a
+	// Staggered Monster stays hittable by the NEXT swing.
+	const swingHits = new Map<number, Set<number>>(
+		avatars.map((a) => [a.avatar.id, new Set(a.avatar.swingHits ?? [])]),
 	);
 
 	const effects: Effect[] = [];
@@ -320,7 +339,7 @@ export function stepZone(
 	let nextMonsterId = zone.nextMonsterId;
 	const respawns: PendingRespawn[] = [];
 
-	const monsters: Entity[] = [];
+	const advanced: Entity[] = [];
 	for (const m0 of zone.monsters) {
 		let m: Entity = { ...m0 };
 		m.hurtT = Math.max(0, m.hurtT - dt);
@@ -513,94 +532,56 @@ export function stepZone(
 			}
 		}
 
-		// A landed hit applies the universal hit-reaction payload (ADR 0017 §2): always
-		// HP damage + Poise damage, and — only on a Poise BREAK — Stagger (Hitstun) +
-		// Knockback (a Mass-scaled impulse). The gate is the per-swing hit registry, NOT
-		// invulnerability: a swing connects with each Monster once, but a NEW swing can
-		// re-hit a Staggered target. First Avatar whose hitbox lands deals the hit and is
-		// recorded as a contributor; credit accumulates across ticks so every Player who
-		// helped shares in the kill (#37, stories 26/27).
-		for (let i = 0; i < avatars.length; i++) {
-			const hb = hitboxes[i];
-			if (swingHitsTarget(hb, swingHits[i], m)) {
-				const sid = avatars[i].sessionId;
-				swingHits[i].add(m.id);
-				const facing = avatars[i].avatar.facing;
-				// The attacker's Weapon drives the hit-reaction too (ADR 0017 §14): its
-				// poise damage decides whether this connect breaks, and its Knockback the
-				// throw on a break — so a greatsword staggers and launches where a dagger
-				// only chips, from the stat block alone.
-				const wpn = weaponById(avatars[i].avatar.weapon);
-				const contributors = m.contributors?.includes(sid)
-					? m.contributors
-					: [...(m.contributors ?? []), sid];
-				const { poise, broke } = applyPoiseDamage(m, wpn.poiseDamage);
-				// Reset the regen-delay so a sustained flurry keeps the pool from healing
-				// between swings (ADR 0017 §3).
-				m = {
-					...m,
-					hp: m.hp - damages[i],
-					poise,
-					poiseT: COMBAT.poise.regenDelay,
-					contributors,
-				};
-				if (broke) {
-					// Poise break → Stagger: lock control for Hitstun and throw the body with
-					// a Knockback impulse (applyImpulse scales by 1/Mass — a light Slime
-					// rockets, a heavy body barely nudges), plus a small upward pop. The
-					// impact Effect is the break punctuation the client keys hitstop +
-					// camera-kick off. `source` attributes it for originator-suppression.
-					m = applyImpulse(m, wpn.knockback * facing, -wpn.knockbackUp);
-					m = { ...m, stunT: COMBAT.hitstun };
-					// The break resolves to a `break` CombatEvent, projected to its impact
-					// Effect by the shared `effectsOf` (ADR 0019). No `source`: like the death
-					// gore burst, the break is a "big moment" delivered to EVERYONE in range —
-					// including the attacker, who needs it to fire the camera-kick + hitstop.
-					// The client predicts only chip blood (`predictHits`), so there is no
-					// double-render of the impact spark.
-					effects.push(
-						...effectsOf(combatEventAt('break', m, facing, damages[i])),
-					);
-				} else {
-					// Chip: HP + Poise damage, no Stagger — the Slime barely flinches. The hit
-					// resolves to a `hit` CombatEvent → one blood burst at the site via the
-					// shared `effectsOf` (ADR 0019), biased along the attacker's facing and
-					// scaled by the damage dealt; `source` suppresses it back to the attacker,
-					// who already predicted it through the same projection.
-					effects.push(
-						...effectsOf(combatEventAt('hit', m, facing, damages[i], sid)),
-					);
-				}
-				break;
-			}
-		}
-
 		// Passive contact damage is GONE (ADR 0017 §9): overlapping a Monster does
 		// nothing. All Monster melee now flows through the telegraphed active-phase
 		// strike above, so every point of incoming damage was dodgeable/punishable.
 
+		advanced.push(m);
+	}
+
+	// Resolve Avatar swings → Monsters as the uniform guardless pass (ADR 0022): every
+	// player-faction Strike lands on the Monsters it newly strikes, applying the
+	// universal hit-reaction (HP + Poise, Stagger + Knockback on a break) off the
+	// per-swing `swingHits` side-table — the Avatar-swing direction lifted out of the
+	// monster loop and off slice 1's positional hitbox/damage handoff. Monster strikes
+	// against Avatars (the Guard hub) and projectile contacts stay on their own paths
+	// (slices 3/4). Runs AFTER monster AI so a swing this tick sees post-move Monsters,
+	// exactly as the old per-monster interleaving did (the hit always followed the AI).
+	const hitsOnMonsters = resolveHitsOnMonsters(
+		advanced,
+		strikes,
+		avatars.map((a) => a.avatar),
+		swingHits,
+	);
+	effects.push(...hitsOnMonsters.effects);
+
+	// Death + consequences, still zone-local (the `resolveDeaths` split is a later
+	// slice): a Monster driven to 0 HP sprays tinted gore, pays out shared XP +
+	// instanced loot to each accumulated contributor (#37), and schedules its respawn.
+	const monsters: Entity[] = [];
+	for (const m of hitsOnMonsters.monsters) {
 		if (m.hp > 0) {
 			monsters.push(m);
-		} else {
-			// The kill resolves to a `death` CombatEvent → a radial, high-intensity gore
-			// burst tinted to the Monster's body colour, via the shared `effectsOf` (ADR
-			// 0013 #139 / ADR 0019). No `source`, so every Player in range — including the
-			// killer — sees it.
-			effects.push(...effectsOf(deathEvent(m)));
-			// Every contributor earns full XP (shared, not split) and rolls its own
-			// private, per-Player-seeded loot — instanced, so there is no shared pile
-			// and no kill-stealing (#37). Each grant updates only that Avatar's state;
-			// snapshotFor delivers it to that Player alone.
-			for (const sid of m.contributors ?? []) {
-				const idx = avatars.findIndex((a) => a.sessionId === sid);
-				if (idx >= 0) avatars[idx] = grantKill(avatars[idx]);
-			}
-			if (m.spawnIndex !== undefined)
-				respawns.push({
-					spawnIndex: m.spawnIndex,
-					remaining: RESPAWN.delaySec,
-				});
+			continue;
 		}
+		// The kill resolves to a `death` CombatEvent → a radial, high-intensity gore
+		// burst tinted to the Monster's body colour, via the shared `effectsOf` (ADR
+		// 0013 #139 / ADR 0019). No `source`, so every Player in range — including the
+		// killer — sees it.
+		effects.push(...effectsOf(deathEvent(m)));
+		// Every contributor earns full XP (shared, not split) and rolls its own
+		// private, per-Player-seeded loot — instanced, so there is no shared pile
+		// and no kill-stealing (#37). Each grant updates only that Avatar's state;
+		// snapshotFor delivers it to that Player alone.
+		for (const sid of m.contributors ?? []) {
+			const idx = avatars.findIndex((a) => a.sessionId === sid);
+			if (idx >= 0) avatars[idx] = grantKill(avatars[idx]);
+		}
+		if (m.spawnIndex !== undefined)
+			respawns.push({
+				spawnIndex: m.spawnIndex,
+				remaining: RESPAWN.delaySec,
+			});
 	}
 
 	// After the death loop, so timers added this tick wait a full tick.
@@ -673,12 +654,13 @@ export function stepZone(
 
 		// Melee swat (ADR 0017 §8): a Player's live active melee/skill hitbox DESTROYS a
 		// hostile shot on contact — no reflect, the shot is simply gone. Checked before
-		// the body hit so a well-timed swing is a valid counter. The impact burst (no
-		// source) gives the clink + camera juice to everyone in range.
+		// the body hit so a well-timed swing is a valid counter. The live hitboxes are the
+		// player-faction Strikes projected this tick (ADR 0022); any one overlapping the
+		// shot swats it. The impact burst (no source) gives the clink + camera juice to
+		// everyone in range.
 		let consumed = false;
-		for (let i = 0; i < avatars.length; i++) {
-			const hb = hitboxes[i];
-			if (hb && aabbOverlap(hb, projectileBox(pr))) {
+		for (const s of strikes) {
+			if (aabbOverlap(s.hitbox, projectileBox(pr))) {
 				// The swat resolves to a `swat` CombatEvent at the shot → its impact via the
 				// shared `effectsOf` (ADR 0019): a light clink (the shot's own damage, no Poise
 				// bump — distinct from a break), source-less so the clink + camera juice reach
@@ -791,13 +773,17 @@ export function stepZone(
 		}
 	}
 
-	// Persist each Avatar's per-swing hit registry for the next tick (ADR 0017 §2):
-	// an in-flight swing keeps the ids it has already hit so it can't double-hit them,
-	// and resolveAvatarIntent clears the list when the next swing starts.
+	// Persist each Avatar's per-swing hit registry for the next tick (ADR 0017 §2): an
+	// in-flight swing keeps the ids it has already hit (read back from the keyed
+	// `swingHits` side-table `resolveHitsOnMonsters` wrote) so it can't double-hit them,
+	// and the fold clears the list when the next swing starts.
 	for (let i = 0; i < avatars.length; i++)
 		avatars[i] = {
 			...avatars[i],
-			avatar: { ...avatars[i].avatar, swingHits: [...swingHits[i]] },
+			avatar: {
+				...avatars[i].avatar,
+				swingHits: [...(swingHits.get(avatars[i].avatar.id) ?? [])],
+			},
 		};
 
 	const newZone: Zone = {
