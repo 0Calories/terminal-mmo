@@ -58,20 +58,20 @@ export interface RenderStyle<C> {
 	portal: C;
 	transparent: C;
 	hurt: C;
-	// `nameplate` is the handle text colour (full opacity); `nameplateWash` is the same
-	// dim grey at a low alpha — the translucent pill behind the default handle (#103,
-	// ADR 0016). Per-cosmetic pill washes live in `cosmetics.nameplateWashes`.
+	// `nameplate` is the Handle text colour (full opacity); `nameplateBg` is the same
+	// hue ~30%-darkened and opaque — the per-glyph backing behind the default Handle
+	// (ADR 0023). Per-cosmetic backings live in `cosmetics.nameplateBgs`.
 	nameplate: C;
-	nameplateWash: C;
+	nameplateBg: C;
 	palette: Readonly<Record<string, C>>;
 	paletteDefault: C;
 	// Cosmetic catalogs resolved into the colour type (#35), indexed by an Avatar's
 	// `Cosmetics` choices: `hues[hue]` recolours the body, `nameplates[nameplate]`
-	// colours the handle. Hat art is glyph data (HATS), so it needs no colour here.
+	// colours the Handle ink. Hat art is glyph data (HATS), so it needs no colour here.
 	cosmetics: {
 		hues: readonly C[];
 		nameplates: readonly C[];
-		nameplateWashes: readonly C[];
+		nameplateBgs: readonly C[];
 	};
 }
 
@@ -171,6 +171,15 @@ function blitSprite<C>(
 			else buf.setCellWithAlphaBlending(px, py, ch, fg, style.transparent);
 		}
 	}
+}
+
+// The screen baseline an Entity's sprite plants by (ADR 0021): a per-Form property
+// for an Avatar BodySprite, else the legacy single-frame Sprite's own `baseline`.
+// Shared by the sprite blit (which shifts the body DOWN by it) and the nameplate pass
+// (which anchors one row BELOW the planted feet), so the two never disagree (ADR 0023).
+function baselineFor(e: Entity): number {
+	const body = e.type === 'player' ? formById(e.cosmetics?.form) : null;
+	return body ? (body.baseline ?? 0) : spriteFor(e.type).baseline;
 }
 
 // The hat Sprite an Avatar wears this frame, or null (bareheaded, a Monster, or a
@@ -409,104 +418,54 @@ export function drawNpcSprite<C>(
 	blitSprite(buf, sprite, sx, sy, 1, false, style, undefined, ghost);
 }
 
-// A Player Avatar's handle, drawn as a 2-row pill chip directly BELOW the Sprite's
-// feet (#103, ADR 0016). The pill is:
+// Player Handles, drawn as a TOP layer — a single row of bare Handle text on a
+// tight per-glyph backing, just BELOW each entity's planted feet (ADR 0023). This
+// supersedes ADR 0016's 2-row translucent pill: no bevelled corners, no side padding,
+// no bottom lip, no per-cell terrain-sampled wash.
 //
-//     ▟ neo ▙   top row: bevelled top corners (▟▙), a pad column each side, and the
-//     ▝▀▀▀▀▀▘   handle on top; bottom row: a thin upper-half lip (▀) with rounded ends.
+// Each letter cell is OPAQUE and content-agnostic: the bright cosmetic `nameplate`
+// ink on a ~30%-darkened same-hue `nameplateBg` backing. The backing is UNCONDITIONAL
+// — it never samples what's behind — because as a top layer a name can land over
+// bright terrain, a bright co-present sprite, or open sky, and only a content-agnostic
+// backing stays legible over all three. (The backing is prebuilt in `buildSceneStyle`
+// because @mmo/shared is generic over the colour type `C` and can't darken at draw
+// time.) The label anchors one row below the planted feet — `e.y + BOX.h + baseline`,
+// reading the SAME baseline the sprite plants by — so it tracks the lowered sprite and
+// is unaffected by hat height. Only entities carrying a `name` (co-present Players) get
+// one; the local Avatar is deliberately not passed (no self-nameplate).
 //
-// Over terrain the pill body is a faint translucent WASH of the Avatar's cosmetic
-// nameplate colour — a tint of the terrain beneath each cell — with the handle drawn on
-// top at full opacity. Off terrain the pill is omitted entirely and ONLY the handle
-// shows, floating on whatever is behind (so on the Avatar-creation panel, which has no
-// terrain, the chip reduces to just the coloured name).
-//
-// The wash must be laid in two passes per cell: terrain is a foreground `█` block, so a
-// cell's background is the dark `terrainBg`, not the bright colour you see. We first
-// `setCell` the cell to the solid `terrainFg` base, then alpha-blend the wash over it —
-// otherwise the blend would composite over `terrainBg` and stamp a dark box (the root
-// failure documented in ADR 0016). Only entities carrying a `name` (co-present Players)
-// get a chip; hat height doesn't affect its position now that it sits below the feet.
-function drawNameplate<C>(
+// Z-order is the CALLER's: `renderZoneScene` no longer draws names, so each caller runs
+// this pass at the layer it wants (the live client after the Avatar + combat FX and
+// just before Speech bubbles; the forge preview right after `renderZoneScene`). The
+// `terrain` argument is part of the shared pass's signature for symmetry with the other
+// scene passes, even though the unconditional backing does not consult it.
+export function drawNameplates<C>(
 	buf: CellBuffer<C>,
-	e: Entity,
+	entities: readonly Entity[],
 	cam: { x: number; y: number },
 	terrain: Terrain,
 	style: RenderStyle<C>,
 ): void {
-	if (!e.name) return;
-	const idx = e.cosmetics?.nameplate;
-	const ink =
-		(idx !== undefined ? style.cosmetics.nameplates[idx] : undefined) ??
-		style.nameplate;
-	const wash =
-		(idx !== undefined ? style.cosmetics.nameplateWashes[idx] : undefined) ??
-		style.nameplateWash;
-	// World cell under a screen cell, matching the terrain layer's whole-cell camera.
-	const camX = Math.round(cam.x);
-	const camY = Math.round(cam.y);
-	const cx = e.x + BOX.w / 2 - cam.x;
-	const boxW = e.name.length + 4; // ▟ · pad · handle · pad · ▙
-	const left = Math.round(cx - boxW / 2);
-	const lastCol = boxW - 1;
-	// Top row sits on the row one past the Sprite's last row (directly below the feet);
-	// BOX.h - sprite.h + sprite.h == BOX.h, so the chip top is e.y + BOX.h.
-	const boxTop = Math.round(e.y + BOX.h - cam.y);
-
-	for (let ry = 0; ry < 2; ry++) {
-		const py = boxTop + ry;
+	void terrain;
+	for (const e of entities) {
+		if (!e.name) continue;
+		const idx = e.cosmetics?.nameplate;
+		const ink =
+			(idx !== undefined ? style.cosmetics.nameplates[idx] : undefined) ??
+			style.nameplate;
+		const bg =
+			(idx !== undefined ? style.cosmetics.nameplateBgs[idx] : undefined) ??
+			style.nameplateBg;
+		// Centred over the collision box, one row below the planted feet: the sprite's
+		// bottom row lands on `e.y + BOX.h - 1 + baseline`, so the name sits one past it.
+		const cx = e.x + BOX.w / 2 - cam.x;
+		const left = Math.round(cx - e.name.length / 2);
+		const py = Math.round(e.y + BOX.h + baselineFor(e) - cam.y);
 		if (py < 0 || py >= buf.height) continue;
-		for (let rx = 0; rx < boxW; rx++) {
-			const px = left + rx;
+		for (let i = 0; i < e.name.length; i++) {
+			const px = left + i;
 			if (px < 0 || px >= buf.width) continue;
-			const solid = isSolid(terrain, px + camX, py + camY);
-			const nameIdx = rx - 2; // handle occupies columns 2 .. name.length + 1
-			const isName = ry === 0 && nameIdx >= 0 && nameIdx < e.name.length;
-
-			if (isName) {
-				// Handle glyph at full opacity. Over terrain it sits on the wash (two
-				// passes: flatten to the terrain base, then blend the letter over a washed
-				// backing); off terrain only the letter shows, over whatever is behind.
-				if (solid) {
-					buf.setCell(px, py, ' ', style.terrainFg, style.terrainFg);
-					buf.setCellWithAlphaBlending(px, py, e.name[nameIdx], ink, wash);
-				} else {
-					buf.setCellWithAlphaBlending(
-						px,
-						py,
-						e.name[nameIdx],
-						ink,
-						style.transparent,
-					);
-				}
-				continue;
-			}
-
-			// Pill body (bevel corners, side pad, bottom lip): a faint wash of the
-			// cosmetic colour, drawn ONLY over terrain. Off terrain it vanishes so the
-			// handle floats free.
-			if (!solid) continue;
-			const glyph =
-				ry === 0
-					? rx === 0
-						? '▟'
-						: rx === lastCol
-							? '▙'
-							: ' '
-					: rx === 0
-						? '▝'
-						: rx === lastCol
-							? '▘'
-							: '▀';
-			// Flatten the cell to the terrain colour so the wash blends over the bright
-			// terrain block, not the dark terrainBg behind it (ADR 0016).
-			buf.setCell(px, py, ' ', style.terrainFg, style.terrainFg);
-			if (glyph === ' ')
-				// Solid pad cell: wash the whole cell.
-				buf.setCellWithAlphaBlending(px, py, ' ', wash, wash);
-			// Bevel/lip glyph: wash its filled quadrants; the empty quadrant keeps the
-			// flattened terrain base (transparent bg), reading as a rounded cut.
-			else buf.setCellWithAlphaBlending(px, py, glyph, wash, style.transparent);
+			buf.setCell(px, py, e.name[i], ink, bg);
 		}
 	}
 }
@@ -585,10 +544,9 @@ export function renderZoneScene<C>(
 
 	// Co-present Avatars and Monsters share one z-ordered set (by y-position) so
 	// they occlude each other naturally (ADR 0003). Sorted here so every caller
-	// gets correct depth without duplicating the rule.
+	// gets correct depth without duplicating the rule. Sprites only — nameplates are
+	// a caller-composited top layer now (`drawNameplates`, ADR 0023), so this pass no
+	// longer draws them.
 	const sprites = [...scene.entities].sort((a, b) => a.y - b.y);
-	for (const e of sprites) {
-		drawEntitySprite(buf, e, cam, style, terrain);
-		drawNameplate(buf, e, cam, terrain, style);
-	}
+	for (const e of sprites) drawEntitySprite(buf, e, cam, style, terrain);
 }
