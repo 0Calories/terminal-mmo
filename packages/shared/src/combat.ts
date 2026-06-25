@@ -1,4 +1,5 @@
 import { BOX, COMBAT } from './constants';
+import { applyImpulse } from './physics';
 import { HUES, type RGBAQuad, SCENE_PALETTE } from './sceneStyle';
 import {
 	type PlayerClass,
@@ -17,6 +18,7 @@ import type {
 	Facing,
 	MoveId,
 	Projectile,
+	Strike,
 	SwingPhases,
 	Tint,
 } from './types';
@@ -971,14 +973,94 @@ export function resolveCombat(
 	};
 }
 
-// Avatar-scoped inputs the per-Avatar combat fold reads this tick (ADR 0022 slice 1):
-// the swing/skill/cooldown/Dodge/Guard gate has no view of the Monster set or an
-// authority flag — it is a deep, narrow-interface unit folding one Avatar's own state.
-// `weapon` is the resolved stat block (the caller does the `weaponById` lookup), and
-// `cooldowns` round-trips because skill cooldowns are not stored on the Entity (they
-// live beside it: `ServerAvatar.skillCooldowns` on the server, `localCd` on the client).
+// The guardless victim-resolution pass (ADR 0022 slice 2): apply player-faction
+// Strikes to the Monsters they newly strike, by the ONE uniform rule — overlapping +
+// hittable + opposing-Faction + not-already-hit. This is the Avatar-swing → Monster
+// direction lifted out of `stepZone`'s monster loop and off the positional
+// `hitboxes[]`/`damages[]` handoff slice 1 left. Guardless by design: Monsters have no
+// Guard hub (that is `resolveHitsOnAvatars`, slice 3), so this is poise / break / death
+// only. Monster strikes against Avatars and projectile contacts stay on their current
+// code path until slices 3/4.
+//
+// `swingHits` is the per-swing dedup ledger as a keyed side-table (`attackerId → hit
+// victim ids`), READ AND WRITTEN here at the resolution site rather than carried on the
+// Strike (ADR 0022): a melee hitbox is live for multiple ticks and must hit each victim
+// once per swing, a property of the multi-contact attack instance, not of the Strike.
+// `attackers` resolves a Strike's source Entity by `attackerId` for the break-Knockback
+// Weapon (the Strike carries damage/poise/facing but not the stat block). The first
+// Strike to land on a given Monster deals the hit (strike order is today's
+// nearest-attacker-wins / lowest-array-index), recording the victim so the swing can't
+// double-hit it. Returns fresh Monsters (inputs unmutated) + the blood/impact Effects;
+// only the `swingHits` Map is mutated.
+export function resolveHitsOnMonsters(
+	monsters: Entity[],
+	strikes: Strike[],
+	attackers: Entity[],
+	swingHits: Map<number, Set<number>>,
+): { monsters: Entity[]; effects: Effect[] } {
+	const effects: Effect[] = [];
+	const attackerById = new Map(attackers.map((a) => [a.id, a]));
+	const resolved = monsters.map((m0) => {
+		let m = m0;
+		for (const s of strikes) {
+			// Opposing-Faction only (ADR 0022): a `players` Strike resolves against Monsters;
+			// a `monsters` Strike never selects a Monster victim, so PvE holds by construction.
+			if (s.faction !== 'players') continue;
+			const hits = swingHits.get(s.attackerId) ?? new Set<number>();
+			if (!swingHitsTarget(s.hitbox, hits, m)) continue;
+			hits.add(m.id);
+			swingHits.set(s.attackerId, hits);
+			// The attacker's Weapon drives the hit-reaction (ADR 0017 §14): its poise damage
+			// is already on the Strike; its Knockback is read here for the break throw.
+			const wpn = weaponById(attackerById.get(s.attackerId)?.weapon);
+			const contributors = m.contributors?.includes(s.attackerId)
+				? m.contributors
+				: [...(m.contributors ?? []), s.attackerId];
+			const { poise, broke } = applyPoiseDamage(m, s.poiseDamage);
+			// Reset the regen-delay so a sustained flurry keeps the pool from healing between
+			// swings (ADR 0017 §3).
+			m = {
+				...m,
+				hp: m.hp - s.damage,
+				poise,
+				poiseT: COMBAT.poise.regenDelay,
+				contributors,
+			};
+			if (broke) {
+				// Poise break → Stagger: Knockback impulse (Mass-scaled) + upward pop + Hitstun.
+				// The break is a source-less "big moment" — its impact reaches everyone in range
+				// including the attacker, who needs it for the camera-kick (ADR 0017 §13d).
+				m = applyImpulse(m, wpn.knockback * s.facing, -wpn.knockbackUp);
+				m = { ...m, stunT: COMBAT.hitstun };
+				effects.push(
+					...effectsOf(combatEventAt('break', m, s.facing, s.damage)),
+				);
+			} else {
+				// Chip: HP + Poise damage, no Stagger. `source` suppresses the blood back to the
+				// attacker, who already predicted it through the same projection (ADR 0013 §3).
+				effects.push(
+					...effectsOf(
+						combatEventAt('hit', m, s.facing, s.damage, s.attackerId),
+					),
+				);
+			}
+			// First Strike to land deals the hit; a second attacker re-hits only via a NEW
+			// swing (its own ledger), exactly as the old monster-loop `break` did.
+			break;
+		}
+		return m;
+	});
+	return { monsters: resolved, effects };
+}
+
+// Avatar-scoped inputs the per-Avatar combat fold reads this tick (ADR 0022): the
+// swing/skill/cooldown/Dodge/Guard gate has no view of the Monster set or an authority
+// flag — it is a deep, narrow-interface unit folding one Avatar's own state. `weapon`
+// is the resolved stat block (the caller does the `weaponById` lookup). Skill cooldowns
+// are NO LONGER passed here: slice 2 settled their home onto the Entity
+// (`avatar.skillCooldowns`), so the fold reads and folds them with the rest of the
+// Avatar's state and its return can collapse to `{ avatar, strikes }`.
 export interface AvatarCombatCtx {
-	cooldowns: Record<string, number>;
 	level: number;
 	cls: PlayerClass;
 	weapon: Weapon;
@@ -993,14 +1075,18 @@ export interface AvatarCombatCtx {
 // `stepAvatars` maps it over its Avatar set, and the networked client calls it directly
 // for its own Avatar in prediction (replacing the inline fold that was never tested).
 //
-// It owns the fold ONLY: it never applies hits to Monsters (the server's monster loop
-// and the client's `predictHits` keep that asymmetric, authority-vs-prediction path) and
-// never touches `hurtT`/emote/log, which stay with each caller's vitals advance. Pure:
-// the input `avatar` is not mutated; the returned `avatar` and `cooldowns` are fresh.
+// It owns the fold ONLY: it never applies hits to Monsters (`resolveHitsOnMonsters` on
+// the server and the client's `predictHits` keep that asymmetric, authority-vs-
+// prediction path) and never touches `hurtT`/emote/log, which stay with each caller's
+// vitals advance. Pure: the input `avatar` is not mutated; the returned `avatar` (with
+// its fresh `skillCooldowns`) and `strikes` are fresh.
 //
-// The return is the slice-1 shape (ADR 0022): `cooldowns`/`skillFired` ride alongside
-// because they have no home on the Entity yet — slice 2 upgrades this to `{ avatar,
-// strikes }` once `Strike` and the cooldown home land.
+// The return is `{ avatar, strikes }` (ADR 0022): a swinging Avatar PROJECTS a `Strike`
+// (usually 0 or 1) for `resolveHitsOnMonsters` to apply, instead of the slice-1 bare
+// `hitbox`/`damage` pair. Skill cooldowns rode the slice-1 return because they had no
+// home on the Entity; slice 2 settled them onto `avatar.skillCooldowns`, so they fold
+// back through the returned avatar and the gate's `skillFired` is no longer surfaced —
+// the caller derives a skill-fire from the cooldown delta where it builds the log.
 export function stepAvatarCombat(
 	avatar: Entity,
 	intent: {
@@ -1012,15 +1098,11 @@ export function stepAvatarCombat(
 	ctx: AvatarCombatCtx,
 ): {
 	avatar: Entity;
-	hitbox: Box | null;
-	damage: number;
-	swingStarted: boolean;
-	cooldowns: Record<string, number>;
-	skillFired?: Skill;
+	strikes: Strike[];
 } {
 	const r = resolveCombat(
 		avatar,
-		ctx.cooldowns,
+		avatar.skillCooldowns ?? {},
 		ctx.level,
 		ctx.cls,
 		intent,
@@ -1036,18 +1118,35 @@ export function stepAvatarCombat(
 		dodgeT: r.dodgeT,
 		dodgeCdT: r.dodgeCdT,
 		guardT: r.guardT,
+		// Skill cooldowns now live on the Entity (ADR 0022 slice 2): the gate's decayed +
+		// freshly-armed timers fold back here, so the cooldown state rides the avatar rather
+		// than a return field. `resolveCombat` returned a fresh clone, so this is not shared.
+		skillCooldowns: r.cooldowns,
 		// A fresh swing clears the per-swing hit list so it can connect again; an in-flight
 		// swing keeps its list so it lands on each target only once (ADR 0017 §2). This is
 		// the verbatim `swingStarted ? [] : prev` reset that used to live in BOTH the server
 		// fold and the client prediction loop — now single-sourced here.
 		swingHits: r.swingStarted ? [] : (avatar.swingHits ?? []),
 	};
-	return {
-		avatar: folded,
-		hitbox: r.hitbox,
-		damage: r.damage,
-		swingStarted: r.swingStarted,
-		cooldowns: r.cooldowns,
-		skillFired: r.skillFired,
-	};
+	// Project the swing/skill into a Strike (ADR 0022): a live hitbox this tick becomes one
+	// player-faction melee Strike; no live box → no Strike. `faction: 'players'` is carried
+	// from the start so PvE holds by construction even though only players→monsters resolves
+	// this slice. The per-swing dedup ledger is NOT on the Strike — it lives at the
+	// resolution site. A fired Skill already overrode `r.hitbox`/`r.damage` inside the gate.
+	const strikes: Strike[] =
+		r.hitbox !== null
+			? [
+					{
+						attackerId: folded.id,
+						attackerKind: 'avatar',
+						hitbox: r.hitbox,
+						damage: r.damage,
+						poiseDamage: ctx.weapon.poiseDamage,
+						facing: folded.facing,
+						faction: 'players',
+						reaction: { kind: 'melee' },
+					},
+				]
+			: [];
+	return { avatar: folded, strikes };
 }

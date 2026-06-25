@@ -21,6 +21,7 @@ import {
 	type Effect,
 	type Entity,
 	effectsOf,
+	entityBox,
 	entityTint,
 	facingToward,
 	GROUND_POUND,
@@ -37,6 +38,8 @@ import {
 	regenPoise,
 	resolveCombat,
 	resolveGuard,
+	resolveHitsOnMonsters,
+	type Strike,
 	SWING_TOTAL,
 	skillHitbox,
 	stepAvatarCombat,
@@ -228,6 +231,98 @@ describe('swingHitsTarget', () => {
 		const far = monster(hb.x + 100, hb.y, { id: 7 });
 		expect(swingHitsTarget(hb, new Set(), far)).toBe(false);
 		expect(swingHitsTarget(null, new Set(), monster(hb.x, hb.y))).toBe(false);
+	});
+});
+
+describe('resolveHitsOnMonsters', () => {
+	// A player-faction melee Strike whose active box is `hitbox`.
+	const strikeAt = (
+		hitbox: ReturnType<typeof entityBox>,
+		over: Partial<Strike> = {},
+	): Strike => ({
+		attackerId: 7,
+		attackerKind: 'avatar',
+		hitbox,
+		damage: 8,
+		poiseDamage: 6,
+		facing: 1,
+		faction: 'players',
+		reaction: { kind: 'melee' },
+		...over,
+	});
+	// The attacker entity, looked up by `attackerId` for the break-knockback weapon.
+	const attacker = (over: Partial<Entity> = {}): Entity =>
+		monster(0, 0, { id: 7, ...over });
+	const ledger = () => new Map<number, Set<number>>([[7, new Set()]]);
+
+	test('a player Strike damages an overlapping monster and records the victim', () => {
+		const m = monster(10, 0, { id: 1, hp: 20 });
+		const swingHits = ledger();
+		const { monsters, effects } = resolveHitsOnMonsters(
+			[m],
+			[strikeAt(entityBox(m))],
+			[attacker()],
+			swingHits,
+		);
+		expect(monsters[0].hp).toBe(12); // 20 - 8 damage
+		expect(swingHits.get(7)?.has(1)).toBe(true); // recorded in the keyed side-table
+		expect(effects.length).toBeGreaterThan(0); // a blood Effect at the hit
+	});
+
+	test('a non-overlapping monster is a no-op', () => {
+		const m = monster(500, 0, { id: 1, hp: 20 });
+		const swingHits = ledger();
+		const { monsters, effects } = resolveHitsOnMonsters(
+			[m],
+			[strikeAt({ x: 0, y: 0, w: BOX.w, h: BOX.h })],
+			[attacker()],
+			swingHits,
+		);
+		expect(monsters[0].hp).toBe(20);
+		expect(swingHits.get(7)?.size).toBe(0);
+		expect(effects).toEqual([]);
+	});
+
+	test('an already-hit monster (in the swing ledger) is a no-op — one hit per swing', () => {
+		const m = monster(10, 0, { id: 1, hp: 20 });
+		const swingHits = new Map<number, Set<number>>([[7, new Set([1])]]);
+		const { monsters, effects } = resolveHitsOnMonsters(
+			[m],
+			[strikeAt(entityBox(m))],
+			[attacker()],
+			swingHits,
+		);
+		expect(monsters[0].hp).toBe(20);
+		expect(effects).toEqual([]);
+	});
+
+	test('a same-faction (monsters) Strike never selects a Monster victim — PvE by faction', () => {
+		const m = monster(10, 0, { id: 1, hp: 20 });
+		const swingHits = ledger();
+		const { monsters, effects } = resolveHitsOnMonsters(
+			[m],
+			[strikeAt(entityBox(m), { faction: 'monsters' })],
+			[attacker()],
+			swingHits,
+		);
+		expect(monsters[0].hp).toBe(20);
+		expect(swingHits.get(7)?.size).toBe(0);
+		expect(effects).toEqual([]);
+	});
+
+	test('a Poise break Staggers + knocks back the monster and emits an impact', () => {
+		// Drain the pool to the brink so this hit breaks it (poiseDamage 6 > 5 remaining).
+		const m = monster(10, 0, { id: 1, hp: 20, poise: 5 });
+		const swingHits = ledger();
+		const { monsters, effects } = resolveHitsOnMonsters(
+			[m],
+			[strikeAt(entityBox(m))],
+			[attacker()],
+			swingHits,
+		);
+		expect(monsters[0].hp).toBe(12);
+		expect(monsters[0].stunT).toBeGreaterThan(0); // Hitstun from the break
+		expect(effects.some((e) => e.kind === 'impact')).toBe(true);
 	});
 });
 
@@ -637,16 +732,14 @@ describe('resolveCombat swingStarted', () => {
 	});
 });
 
-// The shared per-Avatar combat fold (ADR 0022 slice 1): the seam both the server's
-// `stepAvatars` and the networked client's prediction run, so the previously-untested
-// client fold path is covered here. Assert the folded Avatar state + the projected
-// hitbox/damage given (avatar, intent, ctx) — the external behaviour, not the internal
-// assignment order.
+// The shared per-Avatar combat fold (ADR 0022): the seam both the server's `stepAvatars`
+// and the networked client's prediction run, so the previously-untested client fold path
+// is covered here. Assert the folded Avatar state + the projected `strikes` given
+// (avatar, intent, ctx) — the external behaviour, not the internal assignment order.
 describe('stepAvatarCombat', () => {
 	const avatar = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, ...over });
 	const ctx = (over: Partial<Parameters<typeof stepAvatarCombat>[2]> = {}) => ({
-		cooldowns: {},
 		level: 1,
 		cls: 'warrior' as const,
 		weapon: weaponById(undefined),
@@ -659,7 +752,6 @@ describe('stepAvatarCombat', () => {
 		// swing can connect again (ADR 0017 §2).
 		const a = avatar({ attackT: 0, swingHits: [7, 9] });
 		const r = stepAvatarCombat(a, { attack: true }, ctx());
-		expect(r.swingStarted).toBe(true);
 		expect(r.avatar.attackT).toBe(SWING_TOTAL);
 		expect(swingPhase(r.avatar.attackT)).toBe('windup');
 		expect(r.avatar.swingHits).toEqual([]);
@@ -670,24 +762,31 @@ describe('stepAvatarCombat', () => {
 		// of already-struck ids persists.
 		const a = avatar({ attackT: 0.1, swingHits: [7, 9] });
 		const r = stepAvatarCombat(a, { attack: true }, ctx({ dt: 0.02 }));
-		expect(r.swingStarted).toBe(false);
 		expect(r.avatar.swingHits).toEqual([7, 9]);
 	});
 
-	test('the melee hitbox is projected ONLY in the active phase', () => {
+	test('a live active swing projects ONE player-faction melee Strike; recovery projects none', () => {
 		const { windup, active } = COMBAT.swing;
 		// Mid-active: dt 0 keeps attackT inside the active window.
 		const inActive = SWING_TOTAL - (windup + active / 2);
 		const live = stepAvatarCombat(
-			avatar({ attackT: inActive }),
+			avatar({ id: 42, attackT: inActive }),
 			{ attack: false },
 			ctx({ dt: 0 }),
 		);
 		expect(swingPhase(live.avatar.attackT)).toBe('active');
-		expect(live.hitbox).toEqual(meleeHitbox(avatar()));
-		expect(live.damage).toBe(COMBAT.meleeDamage);
+		expect(live.strikes).toHaveLength(1);
+		const s = live.strikes[0];
+		expect(s.hitbox).toEqual(meleeHitbox(avatar()));
+		expect(s.damage).toBe(COMBAT.meleeDamage);
+		expect(s.attackerId).toBe(42);
+		expect(s.attackerKind).toBe('avatar');
+		expect(s.faction).toBe('players');
+		expect(s.reaction).toEqual({ kind: 'melee' });
+		expect(s.facing).toBe(1);
+		expect(s.poiseDamage).toBe(weaponById(undefined).poiseDamage);
 
-		// Mid-recovery: past the active window, no hitbox.
+		// Mid-recovery: past the active window, no live box → no Strike.
 		const inRecovery = SWING_TOTAL - (windup + active + 0.01);
 		const dead = stepAvatarCombat(
 			avatar({ attackT: inRecovery }),
@@ -695,7 +794,7 @@ describe('stepAvatarCombat', () => {
 			ctx({ dt: 0 }),
 		);
 		expect(swingPhase(dead.avatar.attackT)).toBe('recovery');
-		expect(dead.hitbox).toBeNull();
+		expect(dead.strikes).toEqual([]);
 	});
 
 	test('the Dodge i-frame + cooldown timers fold deterministically on a fresh hop', () => {
@@ -716,26 +815,29 @@ describe('stepAvatarCombat', () => {
 		expect(r.avatar.guardT).toBeCloseTo(0.12, 5);
 	});
 
-	test('skill cooldowns fold deterministically: a fired skill arms its cooldown, others decay', () => {
-		const a = avatar({ attackT: 0 });
-		const r = stepAvatarCombat(
-			a,
-			{ attack: true, skill: 1 },
-			ctx({ cooldowns: { [GROUND_POUND.id]: 2.0 }, dt: 0.1 }),
+	test('skill cooldowns fold onto the Avatar: a fired skill arms its cooldown, others decay', () => {
+		// Cooldowns now live on the Entity (ADR 0022 slice 2): seed them there, read them
+		// back off the folded avatar.
+		const a = avatar({
+			attackT: 0,
+			skillCooldowns: { [GROUND_POUND.id]: 2.0 },
+		});
+		const r = stepAvatarCombat(a, { attack: true, skill: 1 }, ctx({ dt: 0.1 }));
+		expect(r.avatar.skillCooldowns?.[POWER_STRIKE.id]).toBe(
+			POWER_STRIKE.cooldown,
 		);
-		expect(r.skillFired).toBe(POWER_STRIKE);
-		expect(r.cooldowns[POWER_STRIKE.id]).toBe(POWER_STRIKE.cooldown);
-		expect(r.cooldowns[GROUND_POUND.id]).toBeCloseTo(1.9, 5);
+		expect(r.avatar.skillCooldowns?.[GROUND_POUND.id]).toBeCloseTo(1.9, 5);
 	});
 
-	test('is pure — mutates neither the input Avatar nor the cooldowns map', () => {
-		const a = avatar({ attackT: 0, swingHits: [3], guardT: 0.1 });
+	test('is pure — mutates neither the input Avatar nor its cooldowns map', () => {
 		const cds = { [POWER_STRIKE.id]: 0.5 };
-		const r = stepAvatarCombat(
-			a,
-			{ attack: true, skill: 1 },
-			ctx({ cooldowns: cds }),
-		);
+		const a = avatar({
+			attackT: 0,
+			swingHits: [3],
+			guardT: 0.1,
+			skillCooldowns: cds,
+		});
+		const r = stepAvatarCombat(a, { attack: true, skill: 1 }, ctx());
 		// Inputs untouched...
 		expect(a.attackT).toBe(0);
 		expect(a.swingHits).toEqual([3]);
@@ -743,6 +845,7 @@ describe('stepAvatarCombat', () => {
 		// ...and the returned Avatar is a distinct object carrying the fold.
 		expect(r.avatar).not.toBe(a);
 		expect(r.avatar.attackT).toBe(SWING_TOTAL);
+		expect(r.avatar.skillCooldowns).not.toBe(cds);
 	});
 });
 
