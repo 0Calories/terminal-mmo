@@ -19,7 +19,9 @@ import {
 	entityTint,
 	GROUND_TOP,
 	MONSTER,
+	RESPAWN,
 	removeAvatar,
+	resolveDeaths,
 	rollItem,
 	SPAWN,
 	SWING_TOTAL,
@@ -1246,4 +1248,75 @@ test('snapshotFor derives an Avatar action from its weapon phase durations', () 
 	const snap = snapshotFor(state, 7);
 	expect(snap.avatars[0].action.move).toBe('basic');
 	expect(snap.avatars[0].action.phase).toBe('active');
+});
+
+// --- resolveDeaths: the death-consequences pass (ADR 0022 slice 5) -----------
+// resolveDeaths is the distinct pass that consumes the death set and applies
+// world-state consequences — separated from the death *decision* (lethal damage,
+// applied during combat resolution, is what makes a contact a death). It preserves
+// the monster-local / avatar-escalates asymmetry: monsters pay out fully zone-local
+// (XP/loot/respawn/removal), avatars emit only the transient died-this-tick set.
+
+test('resolveDeaths grants each dead Monster contributor shared XP and its own loot', () => {
+	const killer = serverAvatar(7, 20);
+	const helper = serverAvatar(8, 300);
+	helper.rngState = 999; // a distinct loot seed, to prove instancing
+	const m = spawnMonster('chaser', 2, 20, y);
+	m.hp = 0; // already decided dead by combat resolution
+	m.contributors = [7, 8];
+	const out = resolveDeaths([killer, helper], [m]);
+	// Shared, not split: each contributor earns the FULL kill XP.
+	expect(out.avatars[0].progress.xp).toBe(XP_PER_KILL);
+	expect(out.avatars[1].progress.xp).toBe(XP_PER_KILL);
+	// Each rolls its OWN private, per-Player-seeded loot (instanced).
+	expect(out.avatars[0].inventory.length).toBe(1);
+	expect(out.avatars[1].inventory.length).toBe(1);
+	const expected = rollItem(999, out.avatars[1].progress.level);
+	expect(out.avatars[1].inventory[0]).toEqual({ ...expected.item, id: 1 });
+});
+
+test('resolveDeaths emits the died-this-tick set and respawns dead Avatars in place', () => {
+	const dead = serverAvatar(7, 200);
+	dead.avatar.hp = 0; // combat resolution already brought it to 0
+	const alive = serverAvatar(8, 50);
+	const out = resolveDeaths([dead, alive], []);
+	// Only the dead session is reported; the survivor is untouched.
+	expect(out.deaths).toEqual([7]);
+	expect(out.avatars[1].avatar.hp).toBe(alive.avatar.maxHp);
+	expect(out.avatars[1].avatar.x).toBe(50);
+	// The dead Avatar respawns at the safe point, full HP, brief i-frames.
+	const a = out.avatars[0].avatar;
+	expect(a.hp).toBe(a.maxHp);
+	expect(a.x).toBe(SPAWN.x);
+	expect(a.y).toBe(SPAWN.y);
+	expect(a.hurtT).toBeGreaterThan(0);
+});
+
+test('resolveDeaths emits a radial gore Effect at the death position, before respawn', () => {
+	const dead = serverAvatar(7, 200);
+	dead.avatar.hp = 0;
+	const out = resolveDeaths([dead], []);
+	const death = out.effects.find(
+		(fx) => fx.dir === 0 && fx.intensity === COMBAT.deathBurstIntensity,
+	);
+	expect(death?.kind).toBe('gore');
+	// at the death spot (x 200), NOT the respawn point (SPAWN.x)
+	expect(death?.x).toBeGreaterThanOrEqual(200);
+	expect(out.avatars[0].avatar.x).toBe(SPAWN.x); // respawn still happened
+});
+
+test('resolveDeaths schedules a respawn for a dead Monster that has a spawn point', () => {
+	const m = spawnMonster('chaser', 2, 20, y, 3); // spawnIndex 3
+	m.hp = 0;
+	const out = resolveDeaths([], [m]);
+	expect(out.respawns).toEqual([
+		{ spawnIndex: 3, remaining: RESPAWN.delaySec },
+	]);
+});
+
+test('resolveDeaths schedules no respawn for a Monster with no spawn point', () => {
+	const m = spawnMonster('chaser', 2, 20, y); // no spawnIndex (an ad-hoc spawn)
+	m.hp = 0;
+	const out = resolveDeaths([], [m]);
+	expect(out.respawns).toEqual([]);
 });
