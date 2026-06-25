@@ -14,6 +14,7 @@ import {
 	BOX,
 	buildSceneStyle,
 	drawEntitySprite,
+	drawNameplates,
 	entityBox,
 	guardPhase,
 	guardPoseCell,
@@ -521,6 +522,12 @@ function drawPlayfield(
 		sh,
 		(pt) => pt.stage === 'airborne',
 	);
+
+	// Co-present Players' Handles, composited as a TOP layer (ADR 0023): after the local
+	// Avatar and all combat FX so a name is never occluded, but BEFORE the Speech bubbles
+	// below — names sit under the feet, bubbles above the head, so they never collide. The
+	// local Avatar is omitted (no self-nameplate; the camera is centred on you).
+	drawNameplates(buf, others, cam, zone.terrain, STYLE);
 
 	// Final pass after all Sprites + nameplates: over-head Speech bubbles for every
 	// chatter on screen, the local Avatar included (one uniform rule, ADR 0007). An

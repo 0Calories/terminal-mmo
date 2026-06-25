@@ -1,6 +1,7 @@
 import { watch } from 'node:fs';
 import {
 	buildSceneStyle,
+	drawNameplates,
 	renderZoneScene,
 	type Zone,
 	type ZoneScene,
@@ -105,6 +106,9 @@ export async function runPreview(args: string[], deps: CliDeps): Promise<void> {
 			cam.x = next.x;
 			cam.y = next.y;
 			renderZoneScene(buf, scene, cam, style);
+			// Names are a caller-composited top layer now (ADR 0023): the preview runs the
+			// pass right after the scene so authored named entities still render, on top.
+			drawNameplates(buf, scene.entities, cam, scene.terrain, style);
 			// Status header on row 0 (sky in most Zones), so live dimensions and
 			// reload/parse state are visible without hiding terrain.
 			for (let x = 0; x < buf.width; x++)
