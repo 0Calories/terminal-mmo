@@ -4,6 +4,7 @@ import { BOX } from '../src/constants';
 import {
 	type CellBuffer,
 	drawEntitySprite,
+	drawNameplates,
 	type RenderStyle,
 	renderZoneScene,
 } from '../src/render';
@@ -103,7 +104,7 @@ const STYLE: RenderStyle<string> = {
 	transparent: 'TR',
 	hurt: 'HURT',
 	nameplate: 'NAME',
-	nameplateWash: 'WASH',
+	nameplateBg: 'NAMEBG',
 	palette: {
 		p: 'cP',
 		m: 'cM',
@@ -122,7 +123,7 @@ const STYLE: RenderStyle<string> = {
 		// Distinct sentinels per index so a test can assert which catalog slot was used.
 		hues: ['hue0', 'hue1', 'hue2', 'hue3', 'hue4', 'hue5', 'hue6', 'hue7'],
 		nameplates: ['np0', 'np1', 'np2', 'np3', 'np4', 'np5', 'np6', 'np7'],
-		nameplateWashes: ['w0', 'w1', 'w2', 'w3', 'w4', 'w5', 'w6', 'w7'],
+		nameplateBgs: ['bg0', 'bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'bg7'],
 	},
 };
 
@@ -384,46 +385,138 @@ test('entities are z-ordered by y: a lower entity is drawn over a higher one', (
 	}
 });
 
-// A terrain whose only solid rows are the two the chip occupies, so the whole pill
-// samples solid ground (its body is drawn) and the shape can be asserted glyph by glyph.
-const terrainUnderChip = (e: Entity) => {
-	const boxTop = Math.round(e.y + BOX.h);
-	return parseTerrain(
-		Array.from({ length: 16 }, (_, r) =>
-			(r === boxTop || r === boxTop + 1 ? '#' : '.').repeat(20),
-		),
-	);
-};
+// --- Nameplates: bare Handle on a tinted backing, a caller-composited top layer
+// (#217, ADR 0023) -----------------------------------------------------------------
 
-test('a named entity gets a 2-row pill nameplate below its sprite', () => {
+// The screen row a Handle anchors on: one past the sprite's planted bottom row, so
+// `e.y + BOX.h + baseline` (the buddy Form plants its feet one cell down, baseline 1).
+const handleRow = (e: Entity) =>
+	Math.round(e.y + BOX.h + (FORMS[0].baseline ?? 0));
+// The left column the centred Handle starts at: bare text centred over the box centre.
+const handleLeft = (e: Entity) =>
+	Math.round(e.x + BOX.w / 2 - (e.name?.length ?? 0) / 2);
+
+test('drawNameplates draws the Handle one row below the planted feet', () => {
+	const buf = new FakeBuffer(20, 16);
+	// The buddy Form carries baseline 1, so its feet plant one cell lower; the Handle
+	// must follow, sitting on the row just past them — the bug the redesign fixes.
+	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'neo' });
+
+	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
+
+	const row = handleRow(e);
+	const left = handleLeft(e);
+	expect(row).toBe(Math.round(e.y + BOX.h + 1)); // baseline included
+	expect(buf.at(left, row)?.ch).toBe('n');
+	expect(buf.at(left + 1, row)?.ch).toBe('e');
+	expect(buf.at(left + 2, row)?.ch).toBe('o');
+	// One row only: nothing on the row below (no pill lip anymore).
+	expect(buf.at(left, row + 1)).toBeUndefined();
+	// No bevel/pad cells flanking the bare text.
+	expect(buf.at(left - 1, row)).toBeUndefined();
+	expect(buf.at(left + 3, row)).toBeUndefined();
+});
+
+test('the Handle position is independent of hat height', () => {
+	const render = (hat: number) => {
+		const buf = new FakeBuffer(20, 16);
+		const e = makeEntity({
+			type: 'player',
+			x: 8,
+			y: 7,
+			name: 'a',
+			cosmetics: { hue: 0, hat, nameplate: 0, form: 0 },
+		});
+		drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
+		return buf;
+	};
+	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'a' });
+	const row = handleRow(e);
+	const left = handleLeft(e);
+	// No hat vs the tallest hat (Wizard, 3 rows): the Handle lands on the same row and
+	// column either way, since it anchors below the feet (ADR 0023).
+	expect(render(0).at(left, row)?.ch).toBe('a');
+	expect(render(3).at(left, row)?.ch).toBe('a');
+});
+
+test('each Handle letter is the cosmetic ink on a darkened same-hue backing', () => {
+	const buf = new FakeBuffer(20, 16);
+	const e = makeEntity({
+		type: 'player',
+		x: 8,
+		y: 7,
+		name: 'neo',
+		// nameplate index 4 → ink np4, backing bg4.
+		cosmetics: { hue: 0, hat: 3, nameplate: 4, form: 0 },
+	});
+
+	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
+
+	const row = handleRow(e);
+	const left = handleLeft(e);
+	// Opaque (not blended): bright ink foreground, darkened tint background.
+	expect(buf.at(left, row)).toEqual({ ch: 'n', fg: 'np4', bg: 'bg4' });
+	expect(buf.at(left + 1, row)).toEqual({ ch: 'e', fg: 'np4', bg: 'bg4' });
+	expect(buf.at(left + 2, row)).toEqual({ ch: 'o', fg: 'np4', bg: 'bg4' });
+});
+
+test('a Handle with no cosmetics uses the default ink and backing', () => {
+	const buf = new FakeBuffer(20, 16);
+	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'x' });
+
+	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
+
+	expect(buf.at(handleLeft(e), handleRow(e))).toEqual({
+		ch: 'x',
+		fg: 'NAME',
+		bg: 'NAMEBG',
+	});
+});
+
+test('the Handle backing is unconditional — same over terrain, sprite, or sky', () => {
+	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'n' });
+	const row = handleRow(e);
+	const left = handleLeft(e);
+	// Solid ground directly under the Handle row, plain sky, and a non-solid cell all
+	// produce the identical opaque cell — the backing never samples what's behind.
+	const overSky = new FakeBuffer(20, 16);
+	drawNameplates(overSky, [e], { x: 0, y: 0 }, flat20(), STYLE);
+	const overGround = new FakeBuffer(20, 16);
+	const ground = parseTerrain(
+		Array.from({ length: 16 }, (_, r) => (r === row ? '#' : '.').repeat(20)),
+	);
+	drawNameplates(overGround, [e], { x: 0, y: 0 }, ground, STYLE);
+	const expected = { ch: 'n', fg: 'NAME', bg: 'NAMEBG' };
+	expect(overSky.at(left, row)).toEqual(expected);
+	expect(overGround.at(left, row)).toEqual(expected);
+});
+
+test('an entity with no Handle draws nothing', () => {
+	const buf = new FakeBuffer(20, 16);
+	const e = makeEntity({ type: 'player', x: 8, y: 7 }); // no `name`
+
+	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
+
+	expect(buf.cells.size).toBe(0);
+});
+
+test('renderZoneScene alone draws no nameplate cells (names are a caller layer)', () => {
 	const buf = new FakeBuffer(20, 16);
 	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'neo' });
 
 	renderZoneScene(
 		buf,
-		{ terrain: terrainUnderChip(e), portals: [], npcs: [], entities: [e] },
+		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
 		{ x: 0, y: 0 },
 		STYLE,
 	);
 
-	// The chip top sits on the row directly below the feet (one past the Sprite's last
-	// row), centred over the box; its width is the handle + a pad column + a corner each
-	// side.
-	const boxTop = Math.round(e.y + BOX.h);
-	const cx = e.x + BOX.w / 2;
-	const left = Math.round(cx - ('neo'.length + 4) / 2);
-	// Top row: ▟ · pad · n e o · pad · ▙
-	expect(buf.at(left, boxTop)?.ch).toBe('▟');
-	expect(buf.at(left + 1, boxTop)?.ch).toBe(' ');
-	expect(buf.at(left + 2, boxTop)?.ch).toBe('n');
-	expect(buf.at(left + 3, boxTop)?.ch).toBe('e');
-	expect(buf.at(left + 4, boxTop)?.ch).toBe('o');
-	expect(buf.at(left + 5, boxTop)?.ch).toBe(' ');
-	expect(buf.at(left + 6, boxTop)?.ch).toBe('▙');
-	// Bottom row: a thin lip with rounded ends — ▝ ▀▀▀▀▀ ▘
-	expect(buf.at(left, boxTop + 1)?.ch).toBe('▝');
-	expect(buf.at(left + 1, boxTop + 1)?.ch).toBe('▀');
-	expect(buf.at(left + 6, boxTop + 1)?.ch).toBe('▘');
+	// The Handle row carries no letters until a caller runs drawNameplates.
+	const row = handleRow(e);
+	const left = handleLeft(e);
+	expect(buf.at(left, row)?.ch).not.toBe('n');
+	expect(buf.at(left + 1, row)?.ch).not.toBe('e');
+	expect(buf.at(left + 2, row)?.ch).not.toBe('o');
 });
 
 // --- Cosmetics (#35) -------------------------------------------------------
@@ -781,112 +874,6 @@ test('a weaponless Avatar draws no weapon layer', () => {
 	// The sword's blade tip sits a row above the body top when equipped; with no weapon
 	// that cell stays empty, proving the layer is gated on an equipped weapon.
 	expect(buf.at(sx + grip.x, sy - 1)).toBeUndefined();
-});
-
-test('over terrain the pill is a cosmetic-colour wash and the handle sits on it (ADR 0016)', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		name: 'neo',
-		// hat present to prove it no longer affects the (now below-feet) chip position
-		cosmetics: { hue: 0, hat: 3, nameplate: 4, form: 0 },
-	});
-
-	renderZoneScene(
-		buf,
-		{ terrain: terrainUnderChip(e), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const boxTop = Math.round(e.y + BOX.h);
-	const cx = e.x + BOX.w / 2;
-	const left = Math.round(cx - ('neo'.length + 4) / 2);
-	// Top-left corner: the bevel glyph is the wash (w4) blended in; its empty quadrant
-	// (transparent bg) keeps the terrain base flattened underneath.
-	expect(buf.at(left, boxTop)).toEqual({
-		ch: '▟',
-		fg: 'w4',
-		bg: 'TR',
-		blended: true,
-	});
-	// Pad cell: the whole cell is the cosmetic wash (w4), blended over the terrain base.
-	expect(buf.at(left + 1, boxTop)).toEqual({
-		ch: ' ',
-		fg: 'w4',
-		bg: 'w4',
-		blended: true,
-	});
-	// Handle char is the chosen cosmetic colour (np4) at full opacity, on the wash backing.
-	expect(buf.at(left + 2, boxTop)).toEqual({
-		ch: 'n',
-		fg: 'np4',
-		bg: 'w4',
-		blended: true,
-	});
-});
-
-test('off terrain the pill is omitted and only the handle shows (ADR 0016)', () => {
-	const buf = new FakeBuffer(20, 16);
-	// flat20 is all-empty, so no chip cell is over solid ground.
-	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'neo' });
-
-	renderZoneScene(
-		buf,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const boxTop = Math.round(e.y + BOX.h);
-	const cx = e.x + BOX.w / 2;
-	const left = Math.round(cx - ('neo'.length + 4) / 2);
-	// The pill body (corner, lip) is not drawn at all off terrain. The buddy's planted
-	// baseline now lands its feet ON the chip's top row (ADR 0021), so a foot may float
-	// transparently over a top-row pad cell — assert pill-omission on the bottom lip row,
-	// which is below the feet and pure pill territory.
-	const lastCol = 'neo'.length + 4 - 1;
-	expect(buf.at(left, boxTop + 1)).toBeUndefined();
-	expect(buf.at(left + 1, boxTop + 1)).toBeUndefined();
-	expect(buf.at(left + lastCol, boxTop + 1)).toBeUndefined();
-	// Only the handle glyph shows, floating on whatever is behind (transparent bg, the
-	// default dim-grey ink since this entity has no cosmetics).
-	expect(buf.at(left + 2, boxTop)).toEqual({
-		ch: 'n',
-		fg: 'NAME',
-		bg: 'TR',
-		blended: true,
-	});
-});
-
-test('the nameplate position is independent of hat height', () => {
-	const render = (hat: number) => {
-		const buf = new FakeBuffer(20, 16);
-		const e = makeEntity({
-			type: 'player',
-			x: 8,
-			y: 7,
-			name: 'a',
-			cosmetics: { hue: 0, hat, nameplate: 0, form: 0 },
-		});
-		renderZoneScene(
-			buf,
-			{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-			{ x: 0, y: 0 },
-			STYLE,
-		);
-		return buf;
-	};
-	const boxTop = Math.round(7 + BOX.h);
-	// Handle 'a' sits at column 2 of the chip (after the corner + pad); it's drawn on
-	// the top row regardless of terrain, so it pins the chip's row directly.
-	const left = Math.round(8 + BOX.w / 2 - ('a'.length + 4) / 2);
-	// No hat vs the tallest hat (Wizard, 3 rows): the handle lands on the same row
-	// either way, since the chip anchors below the feet now (#103).
-	expect(render(0).at(left + 2, boxTop)?.ch).toBe('a');
-	expect(render(3).at(left + 2, boxTop)?.ch).toBe('a');
 });
 
 // --- Sprite ground contact: planted feet (#210, ADR 0021) ------------------
