@@ -1,9 +1,10 @@
 # Terminal Side-Scroller MMO
 
 A persistent **PvE side-scrolling MMORPG** played entirely inside a terminal (TUI).
-One big shared, persistent World (no instancing). Players control customizable
-avatars, hunt monsters on platforming maps for XP / levels / loot, and gather in
-social town hubs. Real-time combat is a first-class pillar. PvP and faction-war are
+One shared, persistent World whose social hubs (**Towns**) and ambient combat zones
+(**Fields**) are common to all Players; progression happens in **instanced Dungeons**
+entered solo or with a friend. Players control customizable avatars, fight Monsters for
+XP / levels / loot, and gather in social town hubs. Real-time combat is a first-class pillar. PvP and faction-war are
 out of the core (parked). The audience is developers and CLI-native users.
 Mental-model reference point: "MapleStory in a terminal." Built as a pet project to
 experiment, have fun, and show off — so the guiding value is coolness-per-unit-effort
@@ -107,8 +108,34 @@ trade, and regroup. The "hub."
 _Avoid_: City, hub, lobby
 
 **Field**:
-A combat Zone populated by Monsters, where the hunting/progression loop happens.
+A shared, persistent combat Zone populated by Monsters — the **open-world exploration
+space** and the *progression spine*. Fields radiate outward from a Town with **difficulty
+gated by distance**: the further from the hub, the stronger the Monsters, so a Player's
+level naturally gates how deep they can venture. This is where a Player *spends* power
+(venturing further is the reward), as distinct from the **Dungeon**, where they *gain* it.
+Fields still drop some XP/loot, so fighting out there is never pointless — they are just
+not the *efficient* path. Funnelled, not channelled, for the demo (one shared set of
+Fields, no parallel Channels).
 _Avoid_: Hunting map, dungeon, level
+
+**Dungeon**:
+An **instanced**, repeatable, fixed-difficulty combat Zone entered from a Town — run
+**solo or with a friend**, never shared with strangers — that is the **reliable engine
+of progression**: the efficient, dependable XP/loot faucet a Player runs to level up so
+they can survive deeper **Fields**. Deliberately plain: **no difficulty tiers, no
+procedural generation, no matchmaking or instance-lifecycle machinery, and no Boss**
+(the climax lives at the edge of the field-world). The demo ships **one** handcrafted
+Dungeon. Where the Field is the *space* you spend power, the Dungeon is the *lever* you
+pull to gain it.
+_Avoid_: Instance, raid, level, stage, tier
+
+**Boss**:
+The single authored, telegraphing **Monster** that gates the **deepest Field** at the
+edge of the explorable world — the combat showcase's payoff and the demo's **terminal
+state**: defeating it *is* "you have completed the demo." It lives in the open
+field-world (not the Dungeon), so that venturing deeper pays off climactically in the
+same space the Player has been exploring.
+_Avoid_: Raid boss, elite, miniboss, dungeon boss
 
 **Handle**:
 The ephemeral display label a Player is known by in the social layer — painted on
@@ -343,6 +370,15 @@ The reaction state an entity enters the moment its **Poise** breaks — **Hitstu
 plus **Knockback** — leaving it open to a combo. Triggered by a poise break, never
 by damage alone.
 _Avoid_: Stun, flinch, stunlock
+
+**Stamina** _(stretch goal — not in the frozen demo; see ADR 0024 amendment)_:
+A souls-model **action budget** consumed by **attacking, dodging, and Active skills**,
+regenerating automatically when unspent — run dry and those actions lock until it refills,
+so *when* you act becomes a resource decision. Deliberately distinct from **Poise**: Poise
+is passive *resistance to being staggered*, Stamina is your active *budget to act*; the two
+never overlap, and **Block** stays on the Poise/guard-break system (it costs no Stamina).
+Absent from the codebase today; to be scoped and planned separately before any build.
+_Avoid_: Energy, mana, endurance, poise (that is the stagger resource, not the action budget)
 
 **Hitstun**:
 How long a **Staggered** entity is locked out of action. Control is locked but
