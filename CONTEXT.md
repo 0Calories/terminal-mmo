@@ -294,14 +294,19 @@ A **first-class hit that travels** — not a special-case ranged poke. It carrie
 melee connect while a pebble only chips, and it resolves through the same hit path.
 It travels at a **reactable** speed (not hitscan). Countered by the whole defensive
 kit: **Dodge** through it (i-frames), **Block** it (chip + poise drain), **Parry to
-reflect** it, or **swat** it with a melee active frame. See ADR 0017 §8.
+reflect** it, or **swat** it with a melee active frame. As a travelling attack it
+emits a **Strike** (with a `projectile` **ReactionProfile**) into the *resolve* pass,
+the same handoff a melee swing uses. See ADR 0017 §8, ADR 0022.
 _Avoid_: Bullet, missile, hitscan
 
 **Reflect**:
 The result of **Parrying** a **Projectile**: the shot reverses and becomes *yours*
 (now owned by the parrier), flying back to threaten the shooter — the ranged
-counterpart to a melee Parry's punish opening. Distinct from a **swat**, which
-*destroys* a shot with a melee active frame (no reflect). See ADR 0017 §8.
+counterpart to a melee Parry's punish opening. Re-factions the shot `monsters →
+players` (its **Faction** flips), so the reflected **Strike** is thereafter tested
+only against Monsters — never another Player (Reflect-safety). Distinct from a
+**swat**, which *destroys* a shot with a melee active frame (no reflect). See ADR
+0017 §8, ADR 0022.
 _Avoid_: Deflect, return, bounce
 
 **Combat**:
@@ -316,7 +321,10 @@ and **Knockback**-driven **Juggles**, all regulated by **Poise**. Clients send
 authoritatively (hit, damage, kills, loot). The combat slice of an Intent
 (attack/skill) is gated by a single shared resolver (`resolveCombat`) that both
 the authoritative server step and the client's optimistic telegraph run, so they
-can never gate a swing or skill differently. See ADR 0017.
+can never gate a swing or skill differently. The tick itself is **project-then-
+resolve** (ADR 0022): per-entity passes advance state and emit **Strike**s, and one
+resolve pass lands every Strike by the **Faction**-gated uniform rule. See ADR 0017,
+ADR 0022.
 _Avoid_: Fighting, battle, PvE, tab-target (use "Combat")
 
 **Strike**:

@@ -356,7 +356,6 @@ function runNetworked(url: string) {
 			...spawnAvatar(SPAWN.x, SPAWN.y),
 			weapon: WEAPON,
 		};
-		let localCd: Record<string, number> = {}; // predicted skill cooldowns (off-wire)
 		const SEND_INTERVAL = 1000 / 30; // throttle input reports to ~30 Hz
 		let sendAcc = 0;
 		const chat = new ChatInput(); // Zone-local chat typing mode (#34)
@@ -506,17 +505,19 @@ function runNetworked(url: string) {
 					guard: inp.guard,
 				},
 				{
-					cooldowns: localCd,
 					level: net.latest?.progress.level ?? 1,
 					cls: 'warrior',
 					weapon: weaponById(predicted.weapon),
 					dt: dtSec,
 				},
 			);
+			// The fold now returns `{ avatar, strikes }` (ADR 0022): skill cooldowns ride the
+			// predicted avatar (`predicted.skillCooldowns`), and the outgoing swing/skill box
+			// for the blood prediction below is the projected player Strike (0 or 1 this tick).
 			predicted = fold.avatar;
-			localCd = fold.cooldowns;
-			const hitbox = fold.hitbox;
-			const hitDamage = fold.damage;
+			const strike = fold.strikes[0];
+			const hitbox = strike?.hitbox ?? null;
+			const hitDamage = strike?.damage ?? 0;
 
 			// Server owns vitals; reconcile HP/i-frames from snapshots. Position is NOT
 			// reconciled here: per ADR 0001 the client is authoritative over its own
@@ -570,7 +571,8 @@ function runNetworked(url: string) {
 				predicted,
 				net.sessionId,
 				view,
-				localCd,
+				// Predicted skill cooldowns now live on the avatar (ADR 0022 slice 2).
+				predicted.skillCooldowns ?? {},
 				net.bubbles,
 			);
 			playfield.game = game;
