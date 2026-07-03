@@ -186,7 +186,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		if (onlineSessionByKey.has(key)) {
 			reject(
 				ws,
-				`"${auth.username}" is already online — disconnect the other session first.`,
+				`"${auth.handle}" is already online — disconnect the other session first.`,
 			);
 			return;
 		}
@@ -196,7 +196,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		world = addSession(
 			world,
 			sessionId,
-			auth.username,
+			auth.handle,
 			pending.cosmetics,
 			pending.weapon,
 		);
@@ -208,11 +208,11 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 				sessionId,
 				zoneId,
 				tickRate: TICK_RATE,
-				handle: auth.username,
+				handle: auth.handle,
 			}),
 		);
 		console.log(
-			`session ${sessionId} (${auth.username}) joined ${zoneId} (ch ${channelOf(world, sessionId)})`,
+			`session ${sessionId} (${auth.handle}) joined ${zoneId} (ch ${channelOf(world, sessionId)})`,
 		);
 		return;
 	}

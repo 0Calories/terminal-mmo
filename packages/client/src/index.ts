@@ -299,14 +299,15 @@ function localZone(id: string): Zone {
 }
 
 async function runNetworked(url: string) {
-	// The desired username for a first launch (ADR 0004, #235): MMO_HANDLE wins
+	// The desired Handle for a first launch (ADR 0004, #235): MMO_HANDLE wins
 	// verbatim (the server validates it), otherwise $USER squeezed into the allowed
-	// shape. A returning key ignores this — its registered Handle is durable.
+	// shape — falling back to 'wanderer' when even that leaves it too short. A
+	// returning key ignores this — its registered Handle is durable.
+	const fromUser = (process.env.USER || '')
+		.replace(/[^A-Za-z0-9_-]/g, '-')
+		.slice(0, 16);
 	const handle =
-		process.env.MMO_HANDLE ||
-		(process.env.USER || 'wanderer')
-			.replace(/[^A-Za-z0-9_-]/g, '-')
-			.slice(0, 16);
+		process.env.MMO_HANDLE || (fromUser.length >= 2 ? fromUser : 'wanderer');
 	// The SSH identity that will answer the server's challenge (ADR 0004, #235),
 	// resolved before any UI shows so a keyless launch fails fast with guidance.
 	const found = await discoverSshIdentity();

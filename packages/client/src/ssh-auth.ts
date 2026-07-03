@@ -13,7 +13,6 @@
 // the SSH wire formats is shared with the server's pure verifier (@mmo/shared).
 import { createPrivateKey, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { connect } from 'node:net';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -31,7 +30,6 @@ import {
 // that answers the server's nonce with an agent-format signature blob.
 export interface SshIdentity {
 	publicKey: string; // OpenSSH one-line form
-	source: 'agent' | 'file';
 	signChallenge(nonce: Uint8Array): Promise<Uint8Array>;
 }
 
@@ -45,7 +43,9 @@ const AGENT_TIMEOUT_MS = 3000;
 
 // One request/response round-trip with the agent: connect, send the u32
 // length-framed body, collect the (also length-framed) reply. Null on any
-// failure — no agent, refused socket, timeout, or a short frame.
+// failure — no agent, refused socket, timeout, or a short frame. Bun.connect
+// (not node:net) because its connection failure is a clean promise rejection,
+// where node:net's unix-socket ENOENT escapes as an uncaught error under Bun.
 function agentRoundTrip(
 	sockPath: string,
 	body: Uint8Array,
@@ -53,30 +53,46 @@ function agentRoundTrip(
 	return new Promise((resolve) => {
 		const chunks: Buffer[] = [];
 		let done = false;
+		let sock: Bun.Socket | null = null;
 		const finish = (result: Uint8Array | null) => {
 			if (done) return;
 			done = true;
 			clearTimeout(timer);
-			sock.destroy();
+			sock?.end();
 			resolve(result);
 		};
 		const timer = setTimeout(() => finish(null), AGENT_TIMEOUT_MS);
-		const sock = connect({ path: sockPath });
-		sock.on('error', () => finish(null));
-		sock.on('connect', () => {
-			const frame = new SshBlobWriter();
-			frame.string(body); // u32 length prefix + body
-			sock.write(frame.finish());
-		});
-		sock.on('data', (chunk) => {
-			chunks.push(Buffer.from(chunk));
-			const buf = Buffer.concat(chunks);
-			if (buf.length < 4) return;
-			const len = buf.readUInt32BE(0);
-			if (buf.length < 4 + len) return;
-			finish(new Uint8Array(buf.subarray(4, 4 + len)));
-		});
-		sock.on('close', () => finish(null));
+		Bun.connect({
+			unix: sockPath,
+			socket: {
+				data(_s, chunk) {
+					chunks.push(Buffer.from(chunk));
+					const buf = Buffer.concat(chunks);
+					if (buf.length < 4) return;
+					const len = buf.readUInt32BE(0);
+					if (buf.length < 4 + len) return;
+					finish(new Uint8Array(buf.subarray(4, 4 + len)));
+				},
+				error() {
+					finish(null);
+				},
+				close() {
+					finish(null);
+				},
+			},
+		}).then(
+			(s) => {
+				sock = s;
+				if (done) {
+					s.end(); // lost the race against the timeout
+					return;
+				}
+				const frame = new SshBlobWriter();
+				frame.string(body); // u32 length prefix + body
+				s.write(frame.finish());
+			},
+			() => finish(null),
+		);
 	});
 }
 
@@ -166,7 +182,6 @@ async function agentIdentity(
 	const chosen = match ?? keys[0];
 	return {
 		publicKey: encodePublicKeyLine(chosen.raw, chosen.comment || undefined),
-		source: 'agent',
 		signChallenge: (nonce) =>
 			agentSign(sockPath, chosen.blob, challengePayload(nonce)),
 	};
@@ -249,7 +264,6 @@ function fileIdentity(sshDir: string): SshIdentity | null {
 	});
 	return {
 		publicKey: encodePublicKeyLine(pub.key),
-		source: 'file',
 		signChallenge: async (nonce) =>
 			encodeSignatureBlob(
 				new Uint8Array(sign(null, challengePayload(nonce), keyObject)),

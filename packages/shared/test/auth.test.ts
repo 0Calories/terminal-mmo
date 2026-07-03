@@ -7,14 +7,14 @@ import { expect, test } from 'bun:test';
 import { generateKeyPairSync, type KeyObject, sign } from 'node:crypto';
 import {
 	challengePayload,
-	claimUsername,
+	claimHandle,
 	createAccountRegistry,
 	encodePublicKeyLine,
 	encodeSignatureBlob,
+	handleForKey,
 	parsePublicKeyLine,
 	resolveAuth,
-	usernameForKey,
-	validUsername,
+	validHandle,
 	verifyChallenge,
 } from '../src';
 
@@ -111,18 +111,18 @@ test('verifyChallenge rejects a tampered / garbage signature blob without throwi
 
 test('a first claim binds the username to the key; the key resolves to it after', () => {
 	const id = makeIdentity();
-	const res = claimUsername(createAccountRegistry(), id.line, 'Neo');
+	const res = claimHandle(createAccountRegistry(), id.line, 'Neo');
 	if (!res.ok) throw new Error('claim should succeed');
-	expect(res.username).toBe('Neo');
-	expect(usernameForKey(res.registry, id.line)).toBe('Neo');
+	expect(res.handle).toBe('Neo');
+	expect(handleForKey(res.registry, id.line)).toBe('Neo');
 });
 
 test('a second key cannot claim the same username, case-insensitively', () => {
 	const a = makeIdentity();
 	const b = makeIdentity();
-	const first = claimUsername(createAccountRegistry(), a.line, 'Neo');
+	const first = claimHandle(createAccountRegistry(), a.line, 'Neo');
 	if (!first.ok) throw new Error('first claim should succeed');
-	const second = claimUsername(first.registry, b.line, 'neo');
+	const second = claimHandle(first.registry, b.line, 'neo');
 	expect(second.ok).toBe(false);
 	if (second.ok) throw new Error('unreachable');
 	expect(second.reason).toBe('taken');
@@ -130,29 +130,29 @@ test('a second key cannot claim the same username, case-insensitively', () => {
 
 test('a key that already owns a username keeps it — re-claiming returns the original', () => {
 	const id = makeIdentity();
-	const first = claimUsername(createAccountRegistry(), id.line, 'Neo');
+	const first = claimHandle(createAccountRegistry(), id.line, 'Neo');
 	if (!first.ok) throw new Error('first claim should succeed');
 	// Same key, different desired name: identity is durable, so the registered
 	// username wins and the registry is unchanged.
-	const again = claimUsername(first.registry, id.line, 'Morpheus');
+	const again = claimHandle(first.registry, id.line, 'Morpheus');
 	if (!again.ok) throw new Error('re-claim should resolve, not fail');
-	expect(again.username).toBe('Neo');
-	expect(usernameForKey(again.registry, id.line)).toBe('Neo');
+	expect(again.handle).toBe('Neo');
+	expect(handleForKey(again.registry, id.line)).toBe('Neo');
 });
 
-test('validUsername enforces the allowed shape', () => {
-	expect(validUsername('neo')).toBe(true);
-	expect(validUsername('Neo_42')).toBe(true);
-	expect(validUsername('a-b')).toBe(true);
-	expect(validUsername('x')).toBe(false); // too short
-	expect(validUsername('a'.repeat(17))).toBe(false); // too long
-	expect(validUsername('bad name')).toBe(false); // whitespace
-	expect(validUsername('naïve')).toBe(false); // non-ascii
-	expect(validUsername('')).toBe(false);
+test('validHandle enforces the allowed shape', () => {
+	expect(validHandle('neo')).toBe(true);
+	expect(validHandle('Neo_42')).toBe(true);
+	expect(validHandle('a-b')).toBe(true);
+	expect(validHandle('x')).toBe(false); // too short
+	expect(validHandle('a'.repeat(17))).toBe(false); // too long
+	expect(validHandle('bad name')).toBe(false); // whitespace
+	expect(validHandle('naïve')).toBe(false); // non-ascii
+	expect(validHandle('')).toBe(false);
 });
 
-test('claimUsername rejects an invalid username', () => {
-	const res = claimUsername(
+test('claimHandle rejects an invalid username', () => {
+	const res = claimHandle(
 		createAccountRegistry(),
 		makeIdentity().line,
 		'not ok!!',
@@ -174,8 +174,8 @@ test('resolveAuth: sign → verify → first launch claims the desired username'
 		'Trinity',
 	);
 	if (!res.ok) throw new Error(`expected success, got: ${res.reason}`);
-	expect(res.username).toBe('Trinity');
-	expect(usernameForKey(res.registry, id.line)).toBe('Trinity');
+	expect(res.handle).toBe('Trinity');
+	expect(handleForKey(res.registry, id.line)).toBe('Trinity');
 });
 
 test('resolveAuth: a returning key resolves to the same identity, whatever handle it asks for', () => {
@@ -197,7 +197,7 @@ test('resolveAuth: a returning key resolves to the same identity, whatever handl
 		'SomebodyElse',
 	);
 	if (!back.ok) throw new Error('returning auth should succeed');
-	expect(back.username).toBe('Trinity');
+	expect(back.handle).toBe('Trinity');
 });
 
 test('resolveAuth rejects a bad signature and a taken username with human-readable reasons', () => {

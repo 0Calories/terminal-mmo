@@ -46,8 +46,10 @@ export class NetClient {
 	tickRate = 20;
 	ready = false; // welcome received
 	// The durable Handle this connection authenticated as (#235) — the registered
-	// username for a returning key, which may differ from what we asked for.
-	handle = '';
+	// Handle for a returning key, which may differ from what we asked for.
+	// Initialized to the requested handle so a pre-#235 server (whose welcome
+	// carries none) leaves it meaningful.
+	handle: string;
 	latest: Snapshot | null = null;
 	// Zone-local chat lines received from the server (#34), each "handle: text",
 	// bounded so an idle session can't accumulate them forever.
@@ -71,6 +73,7 @@ export class NetClient {
 		cosmetics: Cosmetics = DEFAULT_COSMETICS,
 		weapon = 0,
 	) {
+		this.handle = handle;
 		this.ws = new WebSocket(url);
 		this.ws.binaryType = 'arraybuffer';
 		this.ws.onopen = () => {
@@ -122,7 +125,7 @@ export class NetClient {
 			this.sessionId = msg.sessionId;
 			this.zoneId = msg.zoneId;
 			this.tickRate = msg.tickRate;
-			// '' only from a pre-#235 server; keep whatever we asked for then.
+			// '' only from a pre-#235 server; the requested handle stays then.
 			if (msg.handle) {
 				this.handle = msg.handle;
 				// Surface the durable identity — a returning key may resolve to a

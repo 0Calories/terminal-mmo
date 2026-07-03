@@ -213,81 +213,82 @@ export function verifyChallenge(
 	}
 }
 
-// --- username claim registry ------------------------------------------------------
+// --- Handle claim registry ---------------------------------------------------------
 
 // The durable account store (revises ADR 0006's ephemeral handle): one public
-// key owns one username, and usernames are unique case-insensitively. Pure data
+// key owns one Handle, and Handles are unique case-insensitively. Pure data
 // + pure transitions; the server holds the live copy in memory and #236 makes it
 // persistent (bun:sqlite) behind these same functions.
 export interface AccountRegistry {
-	// canonical public key -> the username's canonical casing
-	byKey: Record<string, string>;
-	// lowercased username -> the canonical public key that owns it
-	byName: Record<string, string>;
+	// canonical public key -> the Handle's canonical casing
+	handleByKey: Record<string, string>;
+	// lowercased Handle -> the canonical public key that owns it
+	keyByHandle: Record<string, string>;
 }
 
 export function createAccountRegistry(): AccountRegistry {
-	return { byKey: {}, byName: {} };
+	return { handleByKey: {}, keyByHandle: {} };
 }
 
-// 2–16 chars of [A-Za-z0-9_-]: fits the nameplate, unambiguous in `/w <name>`,
+// 2–16 chars of [A-Za-z0-9_-]: fits the nameplate, unambiguous in `/w <handle>`,
 // and never needs escaping in chat attribution.
-export const USERNAME_RE = /^[A-Za-z0-9_-]{2,16}$/;
-export function validUsername(name: string): boolean {
-	return USERNAME_RE.test(name);
+export const HANDLE_RE = /^[A-Za-z0-9_-]{2,16}$/;
+export function validHandle(handle: string): boolean {
+	return HANDLE_RE.test(handle);
 }
 
-export function usernameForKey(
+export function handleForKey(
 	reg: AccountRegistry,
 	publicKeyLine: string,
 ): string | undefined {
 	const pub = parsePublicKeyLine(publicKeyLine);
 	if (!pub) return undefined;
-	return reg.byKey[canonicalPublicKey(pub)];
+	return reg.handleByKey[canonicalPublicKey(pub)];
 }
 
 export type ClaimResult =
-	| { ok: true; registry: AccountRegistry; username: string }
+	| { ok: true; registry: AccountRegistry; handle: string }
 	| { ok: false; reason: 'invalid' | 'taken' };
 
-// First launch claims: bind `username` to the key. A key that already owns a
-// username keeps it (identity is durable — the desired name is ignored), and a
-// name owned by a *different* key is refused, case-insensitively.
-export function claimUsername(
+// First launch claims: bind `handle` to the key. A key that already owns a
+// Handle keeps it (identity is durable — the desired one is ignored), and a
+// Handle owned by a *different* key is refused, case-insensitively.
+export function claimHandle(
 	reg: AccountRegistry,
 	publicKeyLine: string,
-	username: string,
+	handle: string,
 ): ClaimResult {
 	const pub = parsePublicKeyLine(publicKeyLine);
 	if (!pub) return { ok: false, reason: 'invalid' };
 	const key = canonicalPublicKey(pub);
-	const existing = reg.byKey[key];
+	const existing = reg.handleByKey[key];
 	if (existing !== undefined)
-		return { ok: true, registry: reg, username: existing };
-	if (!validUsername(username)) return { ok: false, reason: 'invalid' };
-	const lower = username.toLowerCase();
-	if (reg.byName[lower] !== undefined) return { ok: false, reason: 'taken' };
+		return { ok: true, registry: reg, handle: existing };
+	if (!validHandle(handle)) return { ok: false, reason: 'invalid' };
+	const lower = handle.toLowerCase();
+	if (reg.keyByHandle[lower] !== undefined)
+		return { ok: false, reason: 'taken' };
 	return {
 		ok: true,
 		registry: {
-			byKey: { ...reg.byKey, [key]: username },
-			byName: { ...reg.byName, [lower]: key },
+			handleByKey: { ...reg.handleByKey, [key]: handle },
+			keyByHandle: { ...reg.keyByHandle, [lower]: key },
 		},
-		username,
+		handle,
 	};
 }
 
 // --- resolveAuth: the whole handshake decision, sockets excluded -------------------
 
 export type AuthResult =
-	| { ok: true; registry: AccountRegistry; username: string }
+	| { ok: true; registry: AccountRegistry; handle: string }
 	| { ok: false; reason: string };
 
 /**
  * The server-side auth decision for one connection, as one pure function:
- * verify the challenge signature, then resolve the key to its durable username
- * — an already-registered key gets its registered name (whatever handle it
- * asked for); an unknown key claims `desiredHandle`. `reason` strings are
+ * verify the challenge signature, then resolve the key to its durable Handle
+ * — an already-registered key gets its registered Handle (whatever it asked
+ * for); an unknown key claims `desiredHandle`. `reason` strings are
  * player-facing — the client prints them verbatim on reject.
  */
 export function resolveAuth(
@@ -309,16 +310,16 @@ export function resolveAuth(
 			reason:
 				'SSH signature verification failed — the key that signed does not match the public key offered.',
 		};
-	const claim = claimUsername(reg, publicKeyLine, desiredHandle.trim());
+	const claim = claimHandle(reg, publicKeyLine, desiredHandle.trim());
 	if (claim.ok)
-		return { ok: true, registry: claim.registry, username: claim.username };
+		return { ok: true, registry: claim.registry, handle: claim.handle };
 	if (claim.reason === 'taken')
 		return {
 			ok: false,
-			reason: `The username "${desiredHandle.trim()}" is already claimed by another key — relaunch with MMO_HANDLE=<other-name> to pick a different one.`,
+			reason: `The handle "${desiredHandle.trim()}" is already claimed by another key — relaunch with MMO_HANDLE=<other-name> to pick a different one.`,
 		};
 	return {
 		ok: false,
-		reason: `"${desiredHandle.trim()}" is not a valid username — use 2–16 letters, digits, - or _ (relaunch with MMO_HANDLE=<name>).`,
+		reason: `"${desiredHandle.trim()}" is not a valid handle — use 2–16 letters, digits, - or _ (relaunch with MMO_HANDLE=<name>).`,
 	};
 }
