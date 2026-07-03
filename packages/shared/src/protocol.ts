@@ -82,6 +82,12 @@ class Writer {
 		this.buf.set(bytes, this.pos);
 		this.pos += bytes.length;
 	}
+	bytes(b: Uint8Array) {
+		this.u32(b.length);
+		this.ensure(b.length);
+		this.buf.set(b, this.pos);
+		this.pos += b.length;
+	}
 
 	finish(): Uint8Array {
 		return this.buf.subarray(0, this.pos);
@@ -135,6 +141,14 @@ class Reader {
 		this.pos += len;
 		return textDecoder.decode(bytes);
 	}
+	bytes(): Uint8Array {
+		const len = this.u32();
+		// Copy out of the frame buffer so the value outlives the socket's recycled
+		// receive buffer (a subarray would alias it).
+		const out = this.buf.slice(this.pos, this.pos + len);
+		this.pos += len;
+		return out;
+	}
 	// Unread bytes left in the frame — lets a decoder treat a missing trailing
 	// field as absent (e.g. a legacy `hello` with no protocol version) instead of
 	// reading past the buffer and throwing.
@@ -145,20 +159,31 @@ class Reader {
 
 // --- Client -> server -------------------------------------------------------
 
-// `hello` joins with an ephemeral handle and the client's release Version (ADR
-// 0012: the deployed server rejects a mismatch); `input` reports the client-owned
-// Avatar kinematics (ADR 0001: position is client-authoritative) plus the combat
-// intents for the tick. A `skill` of 0 means none was pressed.
+// `hello` opens the handshake with the desired handle, the client's release
+// Version (ADR 0012: the deployed server rejects a mismatch), and the SSH public
+// key the client will prove control of (ADR 0004, #235). The server answers with
+// a `challenge`; the client signs it and sends `proof`; only a verified proof
+// joins the World (`welcome` then carries the durable Handle). `input` reports
+// the client-owned Avatar kinematics (ADR 0001: position is client-authoritative)
+// plus the combat intents for the tick. A `skill` of 0 means none was pressed.
 export type ClientMessage =
 	| {
 			t: 'hello';
+			// The desired username on first launch; ignored for a key that already owns
+			// one (the registered Handle wins — identity is durable, ADR 0004).
 			handle: string;
 			version: string;
 			cosmetics: Cosmetics;
 			// Equipped Weapon catalog index, declared at connect like cosmetics (ADR 0017
 			// §14): it joins the Avatar's broadcast appearance and keys its stat block.
 			weapon: number;
+			// OpenSSH one-line ssh-ed25519 public key ('' = none offered; the server
+			// refuses with a human-readable reason).
+			publicKey: string;
 	  }
+	// The signed challenge: the ssh-agent-format signature blob over the server's
+	// nonce (domain-separated — see challengePayload). Answers `challenge`.
+	| { t: 'proof'; signature: Uint8Array }
 	| {
 			t: 'input';
 			x: number;
@@ -214,6 +239,7 @@ const CLIENT_TAG = {
 	chat: 3,
 	whisper: 4,
 	emote: 5,
+	proof: 6,
 } as const;
 
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
@@ -225,6 +251,13 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.str(msg.version);
 			writeCosmetics(w, msg.cosmetics);
 			w.u8(msg.weapon);
+			// The offered SSH public key trails the pre-auth fields (#235), so an older
+			// decoder still reads a valid hello.
+			w.str(msg.publicKey);
+			break;
+		case 'proof':
+			w.u8(CLIENT_TAG.proof);
+			w.bytes(msg.signature);
 			break;
 		case 'input':
 			w.u8(CLIENT_TAG.input);
@@ -278,8 +311,13 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			// Weapon (ADR 0017 §14) trails cosmetics; a client predating it defaults to
 			// the Warrior sword (it is rejected by the version gate regardless).
 			const weapon = r.remaining() >= 1 ? r.u8() : DEFAULT_WEAPON;
-			return { t: 'hello', handle, version, cosmetics, weapon };
+			// Public key (#235) trails weapon; absent decodes as '' — no key offered,
+			// which the server refuses with its auth reason (not a frame error).
+			const publicKey = r.remaining() >= 4 ? r.str() : '';
+			return { t: 'hello', handle, version, cosmetics, weapon, publicKey };
 		}
+		case CLIENT_TAG.proof:
+			return { t: 'proof', signature: r.bytes() };
 		case CLIENT_TAG.input: {
 			const x = r.f64();
 			const y = r.f64();
@@ -367,11 +405,22 @@ export interface MonsterSnapshot {
 	action: ActionState;
 }
 
-// `welcome` answers the handshake; `snapshot` is the authoritative Zone state for
-// one tick plus this Player's private progress/inventory/log (respawn shows up as
-// a position reset + a log line, so it needs no dedicated field).
+// `challenge` answers `hello` with the nonce to sign (ADR 0004, #235); a
+// verified `proof` earns `welcome`, which now also carries the durable Handle
+// the key resolved to (the registered username — not necessarily what the
+// client asked for). `snapshot` is the authoritative Zone state for one tick
+// plus this Player's private progress/inventory/log (respawn shows up as a
+// position reset + a log line, so it needs no dedicated field).
 export type ServerMessage =
-	| { t: 'welcome'; sessionId: number; zoneId: string; tickRate: number }
+	| { t: 'challenge'; nonce: Uint8Array }
+	| {
+			t: 'welcome';
+			sessionId: number;
+			zoneId: string;
+			tickRate: number;
+			// The durable claimed username this connection authenticated as (#235).
+			handle: string;
+	  }
 	| {
 			t: 'snapshot';
 			tick: number;
@@ -416,6 +465,7 @@ const SERVER_TAG = {
 	reject: 4,
 	whisper: 5,
 	notice: 6,
+	challenge: 7,
 } as const;
 
 const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
@@ -637,11 +687,18 @@ function readItem(r: Reader): Item {
 export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 	const w = new Writer();
 	switch (msg.t) {
+		case 'challenge':
+			w.u8(SERVER_TAG.challenge);
+			w.bytes(msg.nonce);
+			break;
 		case 'welcome':
 			w.u8(SERVER_TAG.welcome);
 			w.u32(msg.sessionId);
 			w.str(msg.zoneId);
 			w.u16(msg.tickRate);
+			// The durable Handle trails the pre-auth fields (#235), so an older decoder
+			// still reads a valid welcome.
+			w.str(msg.handle);
 			break;
 		case 'snapshot':
 			w.u8(SERVER_TAG.snapshot);
@@ -692,13 +749,17 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 	const r = new Reader(buf);
 	const tag = r.u8();
 	switch (tag) {
-		case SERVER_TAG.welcome:
-			return {
-				t: 'welcome',
-				sessionId: r.u32(),
-				zoneId: r.str(),
-				tickRate: r.u16(),
-			};
+		case SERVER_TAG.challenge:
+			return { t: 'challenge', nonce: r.bytes() };
+		case SERVER_TAG.welcome: {
+			const sessionId = r.u32();
+			const zoneId = r.str();
+			const tickRate = r.u16();
+			// Durable Handle (#235) trails; absent decodes as '' (a pre-auth welcome) —
+			// the caller falls back to the handle it asked for.
+			const handle = r.remaining() >= 4 ? r.str() : '';
+			return { t: 'welcome', sessionId, zoneId, tickRate, handle };
+		}
 		case SERVER_TAG.snapshot: {
 			const tick = r.u32();
 			const zoneId = r.str();

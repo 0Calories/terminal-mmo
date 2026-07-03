@@ -11,15 +11,49 @@ import {
 	IDLE_ACTION,
 } from '../src';
 
-test('hello round-trips the handle + release version + cosmetics + weapon', () => {
+test('hello round-trips the handle + release version + cosmetics + weapon + public key', () => {
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'neo',
 		version: '0.3.0',
 		cosmetics: { hue: 3, hat: 2, nameplate: 5, form: 0 },
 		weapon: 2,
+		publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForWire',
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('a pre-auth hello (no trailing public key) decodes publicKey as empty', () => {
+	// Built by hand at the pre-#235 layout (through the weapon byte): decode must
+	// not throw, and the absent key becomes '' — which the server refuses with its
+	// human-readable auth reason rather than a frame error.
+	const msg: ClientMessage = {
+		t: 'hello',
+		handle: 'legacy',
+		version: '0.3.0',
+		cosmetics: { hue: 1, hat: 0, nameplate: 2, form: 0 },
+		weapon: 1,
+		publicKey: 'trailing-key-to-strip',
+	};
+	const encoded = encodeClientMessage(msg);
+	// Strip the trailing publicKey field (u32 length prefix + bytes).
+	const keyLen = new TextEncoder().encode(msg.publicKey).length;
+	const truncated = encoded.subarray(0, encoded.length - 4 - keyLen);
+	expect(decodeClientMessage(truncated)).toEqual({ ...msg, publicKey: '' });
+});
+
+test('proof (client -> server) round-trips the signature bytes', () => {
+	const signature = new Uint8Array(83).map((_, i) => (i * 7) & 0xff);
+	const msg: ClientMessage = { t: 'proof', signature };
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('challenge (server -> client) round-trips the nonce bytes', () => {
+	const nonce = new Uint8Array(32).map((_, i) => (i * 13) & 0xff);
+	const msg: ServerMessage = { t: 'challenge', nonce };
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
 });
 
@@ -38,6 +72,7 @@ test('a truncated hello (no version field) decodes to empty version + default co
 		version: '',
 		cosmetics: DEFAULT_COSMETICS,
 		weapon: DEFAULT_WEAPON,
+		publicKey: '',
 	});
 });
 
@@ -51,6 +86,7 @@ test('hello clamps an out-of-range cosmetic index to the default on decode', () 
 		version: '0.3.0',
 		cosmetics: { hue: 2, hat: 250, nameplate: 1, form: 0 },
 		weapon: 1,
+		publicKey: '',
 	});
 	expect(decodeClientMessage(encoded)).toEqual({
 		t: 'hello',
@@ -58,6 +94,7 @@ test('hello clamps an out-of-range cosmetic index to the default on decode', () 
 		version: '0.3.0',
 		cosmetics: { hue: 2, hat: 0, nameplate: 1, form: 0 },
 		weapon: 1,
+		publicKey: '',
 	});
 });
 
@@ -179,15 +216,40 @@ test('notice (server -> client) round-trips the sender-only system line', () => 
 	expect(decoded).toEqual(msg);
 });
 
-test('welcome round-trips the assigned session, zone, and tick rate', () => {
+test('welcome round-trips the assigned session, zone, tick rate, and durable handle', () => {
 	const msg: ServerMessage = {
 		t: 'welcome',
 		sessionId: 7,
 		zoneId: 'field-01',
 		tickRate: 20,
+		handle: 'Trinity',
 	};
 	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
+});
+
+test('a pre-auth welcome (no trailing handle) decodes handle as empty', () => {
+	// Strip the trailing durable-handle field (u32 length prefix + bytes): decode
+	// must not throw, and the absent handle becomes '' (caller falls back to its
+	// requested handle).
+	const encoded = encodeServerMessage({
+		t: 'welcome',
+		sessionId: 7,
+		zoneId: 'field-01',
+		tickRate: 20,
+		handle: 'Trinity',
+	});
+	const truncated = encoded.subarray(
+		0,
+		encoded.length - 4 - new TextEncoder().encode('Trinity').length,
+	);
+	expect(decodeServerMessage(truncated)).toEqual({
+		t: 'welcome',
+		sessionId: 7,
+		zoneId: 'field-01',
+		tickRate: 20,
+		handle: '',
+	});
 });
 
 test('chat (server -> client) round-trips the sender session, handle, and text', () => {

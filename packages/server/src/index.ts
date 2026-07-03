@@ -5,12 +5,16 @@
 // Zone each session occupies (#33), but never simulates Avatar physics from input
 // — it trusts the client-reported position (loose bounds clamp only), per ADR 0001.
 
+import { randomBytes } from 'node:crypto';
 import {
 	type AvatarIntent,
 	addSession,
 	CHANNEL,
 	CHAT_MAX_LEN,
+	type Cosmetics,
+	canonicalPublicKey,
 	channelOf,
+	createAccountRegistry,
 	createServerWorld,
 	decodeClientMessage,
 	emoteById,
@@ -18,7 +22,10 @@ import {
 	handleOf,
 	isReleaseVersion,
 	loadZones,
+	NONCE_LEN,
+	parsePublicKeyLine,
 	removeSession,
+	resolveAuth,
 	type ServerWorld,
 	sessionByHandle,
 	sessionsInChannel,
@@ -91,6 +98,27 @@ let world: ServerWorld = createServerWorld({
 let nextSessionId = 1;
 const sockets = new Map<number, ServerWebSocket<WsData>>(); // joined sessions
 const intents = new Map<number, AvatarIntent>(); // latest reported intent
+
+// SSH-key challenge-response auth (ADR 0004, #235). The account registry (public
+// key ↔ durable username) is held in memory for now — #236 moves it behind
+// bun:sqlite so identities survive a restart; the pure `resolveAuth` seam is
+// unchanged by that swap.
+let accounts = createAccountRegistry();
+// Connections that said hello and were issued a nonce, awaiting their `proof`.
+interface PendingAuth {
+	nonce: Uint8Array;
+	publicKey: string;
+	key: string; // canonicalPublicKey(publicKey), the identity/presence index
+	handle: string;
+	cosmetics: Cosmetics;
+	weapon: number;
+}
+const pendingAuth = new Map<number, PendingAuth>();
+// One presence per identity: the canonical public key of each ONLINE session
+// (both directions, so `close` can release the key and a second login of the
+// same key is refused while the first is connected).
+const onlineKeyBySession = new Map<number, string>();
+const onlineSessionByKey = new Map<string, number>();
 // Body emotes triggered since the last tick (ADR 0020 §9), keyed by session. Consumed
 // in `tick` by folding onto that session's intent as a one-shot edge — so the emote arms
 // once instead of re-firing every input tick the way a sticky intent flag would.
@@ -115,7 +143,63 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			);
 			return;
 		}
-		world = addSession(world, sessionId, msg.handle, msg.cosmetics, msg.weapon);
+		// SSH-key auth (ADR 0004, #235): a parseable ed25519 key must be offered up
+		// front, then the connection proves control of it before it joins the World.
+		const pub = parsePublicKeyLine(msg.publicKey);
+		if (!pub) {
+			reject(
+				ws,
+				'An SSH ed25519 key is required to play — add one to ssh-agent or create ~/.ssh/id_ed25519 (ssh-keygen -t ed25519).',
+			);
+			return;
+		}
+		const nonce = new Uint8Array(randomBytes(NONCE_LEN));
+		pendingAuth.set(sessionId, {
+			nonce,
+			publicKey: msg.publicKey,
+			key: canonicalPublicKey(pub),
+			handle: msg.handle,
+			cosmetics: msg.cosmetics,
+			weapon: msg.weapon,
+		});
+		ws.send(encodeServerMessage({ t: 'challenge', nonce }));
+		return;
+	}
+	if (msg.t === 'proof') {
+		const pending = pendingAuth.get(sessionId);
+		if (!pending) return; // proof before hello (or a duplicate); ignore
+		pendingAuth.delete(sessionId);
+		const auth = resolveAuth(
+			accounts,
+			pending.publicKey,
+			pending.nonce,
+			msg.signature,
+			pending.handle,
+		);
+		if (!auth.ok) {
+			reject(ws, auth.reason);
+			return;
+		}
+		// One presence per identity: the same key connecting twice would put one
+		// durable Handle in the World twice, so the newcomer is refused.
+		const key = pending.key;
+		if (onlineSessionByKey.has(key)) {
+			reject(
+				ws,
+				`"${auth.username}" is already online — disconnect the other session first.`,
+			);
+			return;
+		}
+		accounts = auth.registry;
+		onlineKeyBySession.set(sessionId, key);
+		onlineSessionByKey.set(key, sessionId);
+		world = addSession(
+			world,
+			sessionId,
+			auth.username,
+			pending.cosmetics,
+			pending.weapon,
+		);
 		sockets.set(sessionId, ws);
 		const zoneId = zoneOf(world, sessionId) ?? START_ZONE;
 		ws.send(
@@ -124,10 +208,11 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 				sessionId,
 				zoneId,
 				tickRate: TICK_RATE,
+				handle: auth.username,
 			}),
 		);
 		console.log(
-			`session ${sessionId} (${msg.handle}) joined ${zoneId} (ch ${channelOf(world, sessionId)})`,
+			`session ${sessionId} (${auth.username}) joined ${zoneId} (ch ${channelOf(world, sessionId)})`,
 		);
 		return;
 	}
@@ -293,6 +378,13 @@ const server = Bun.serve<WsData>({
 			sockets.delete(sessionId);
 			intents.delete(sessionId);
 			pendingEmotes.delete(sessionId);
+			pendingAuth.delete(sessionId);
+			// Release this identity's presence so the key can log in again (#235).
+			const key = onlineKeyBySession.get(sessionId);
+			if (key !== undefined) {
+				onlineKeyBySession.delete(sessionId);
+				onlineSessionByKey.delete(key);
+			}
 			world = removeSession(world, sessionId);
 			console.log(`session ${sessionId} left`);
 		},

@@ -29,3 +29,24 @@ authenticate players by SSH-key challenge-response rather than passwords or
   a future concern (acceptable for a pet project).
 - Pairs naturally with the parked idea of using SSH as an encrypted transport
   tunnel later (ADR 0002), though v1 transport remains WebSocket.
+
+## Amendment (2026-07-03, D2 #235): implemented — the concrete shape
+
+- **ssh-ed25519 only.** The one key type this ADR names, and the modern default
+  (`ssh-keygen -t ed25519`). Any other key gets a clear refusal with that command
+  as the fix, not a protocol error.
+- **Handshake:** `hello` carries the offered public key → server answers with a
+  32-byte nonce `challenge` → client signs and sends `proof` → a verified proof
+  earns `welcome`, which carries the durable Handle. The signed payload is
+  domain-separated (`terminal-mmo-auth-v1` ‖ nonce) so a signature can never be
+  replayed from/into another raw-bytes protocol using the same key.
+- **The verifier and the claim registry are pure functions in `@mmo/shared`**
+  (`auth.ts`): socket-free, seam-tested. The registry is held in memory by the
+  server; #236 moves it behind bun:sqlite without touching the seam.
+- **Handle revised (vs ADR 0006):** the claimed username IS the Handle — durable
+  and unique (case-insensitive). A returning key resolves to its registered
+  Handle regardless of what the launch asked for, and one identity has one
+  online presence at a time.
+- **Client signing order:** ssh-agent first (works with passphrase-protected
+  keys), then an unencrypted `~/.ssh/id_ed25519` directly. No passphrase prompt
+  — a protected key without an agent is refused with guidance.

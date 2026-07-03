@@ -47,6 +47,7 @@ import {
 	landed,
 	leveledUp,
 } from './sound/triggers';
+import { discoverSshIdentity, NO_KEY_HINT } from './ssh-auth';
 import { CLIENT_VERSION } from './version';
 
 // The sim is dt-based, so this only affects smoothness + CPU, never game speed.
@@ -297,8 +298,23 @@ function localZone(id: string): Zone {
 	return LOCAL_ZONES.get(id) ?? LOCAL_ZONES.get('field-01') ?? loadZones()[0];
 }
 
-function runNetworked(url: string) {
-	const handle = process.env.USER || 'wanderer';
+async function runNetworked(url: string) {
+	// The desired username for a first launch (ADR 0004, #235): MMO_HANDLE wins
+	// verbatim (the server validates it), otherwise $USER squeezed into the allowed
+	// shape. A returning key ignores this — its registered Handle is durable.
+	const handle =
+		process.env.MMO_HANDLE ||
+		(process.env.USER || 'wanderer')
+			.replace(/[^A-Za-z0-9_-]/g, '-')
+			.slice(0, 16);
+	// The SSH identity that will answer the server's challenge (ADR 0004, #235),
+	// resolved before any UI shows so a keyless launch fails fast with guidance.
+	const found = await discoverSshIdentity();
+	if (!found) {
+		quit(NO_KEY_HINT);
+		return;
+	}
+	const identity = found; // narrowed const, so the play() closure sees non-null
 	// Pre-spawn customization (#36, story 7): the Player picks hue / hat / nameplate
 	// and confirms BEFORE we connect, so the chosen look rides the connect handshake
 	// (#35) and everyone sees it the moment they spawn in. Seeded with a randomized
@@ -336,6 +352,7 @@ function runNetworked(url: string) {
 		const net = new NetClient(
 			url,
 			handle,
+			identity,
 			(reason) => {
 				quit(reason);
 			},

@@ -35,7 +35,10 @@ gate the downstream M2 slices build on.
 - **Wire protocol = a hand-rolled binary codec** (`protocol.ts`) over a
   `DataView`, shared by both sides, with a leading message-type tag. Floats are
   encoded as `f64` so `encode → decode` is exact and round-trippable. Message set:
-  - **client → server:** `hello` (ephemeral handle) · `input` (reported Avatar
+  - **client → server:** `hello` (ephemeral handle — *revised by ADR 0004's
+    amendment (#235): the Handle is now a durable, unique username claimed via
+    SSH-key challenge-response, and the handshake gained `challenge`/`proof`
+    messages*) · `input` (reported Avatar
     kinematics `x/y/vx/vy/facing/onGround` + the tick's `attack` / `skill` intents)
   - **server → client:** `welcome` (assigned session id, Zone id, tick rate) ·
     `snapshot` (authoritative Zone state — Avatars, Monsters, Projectiles — plus
