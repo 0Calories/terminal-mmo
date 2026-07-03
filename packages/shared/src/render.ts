@@ -241,10 +241,9 @@ export function drawEntitySprite<C>(
 		emote = e.action.emote;
 		emoteT = e.action.emoteT;
 	} else {
-		const swing = weaponById(e.weapon).swing;
-		phase = swingPhase(e.attackT, swing);
+		phase = swingPhase(e.attackT);
 		move = phase ? 'basic' : 'idle';
-		progress = phase ? swingProgress(e.attackT, swing) : 0;
+		progress = phase ? swingProgress(e.attackT) : 0;
 		staggered = (e.stunT ?? 0) > 0;
 		emote = e.emoteId ?? null;
 		emoteT = e.emoteT ?? 0;

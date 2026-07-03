@@ -14,7 +14,6 @@ import {
 	isSolid,
 	type Terrain,
 	type Tint,
-	type WeaponTrail,
 } from '@mmo/shared';
 
 // A Particle's life runs airborne → (one bounce) → rest → fade → cull. `bounced`
@@ -151,54 +150,6 @@ export const IMPACT: ParticleType = {
 		{ t: 1, r: 200, g: 120, b: 40 }, // fading ember
 	],
 	z: 0,
-};
-
-// Weapon swing trails (ADR 0017 §14): a faint streak that follows a weapon's active
-// sweep, defined per-weapon by a WeaponTrail key the renderer resolves here. These
-// are spawned directly by the renderer along the swept arc (not off a wire Effect),
-// so they're short-lived, non-colliding wisps that wink out fast. A heavy weapon
-// leaves a thick, slow smear; a light one a quick thin glint.
-export const HEAVY_TRAIL: ParticleType = {
-	gravity: 8,
-	restitution: 0,
-	collide: false,
-	restMs: 0,
-	fadeMs: 200,
-	maxLifeMs: 260,
-	launchSpeed: 6,
-	launchSpread: 5,
-	countScale: 1,
-	glyphs: { airborne: ['▓', '▒', '▚', '▞'], rest: ['░'] },
-	colors: [
-		{ t: 0, r: 220, g: 230, b: 255 }, // cold steel flash
-		{ t: 1, r: 90, g: 110, b: 150 },
-	],
-	z: 0,
-};
-
-export const LIGHT_TRAIL: ParticleType = {
-	gravity: 4,
-	restitution: 0,
-	collide: false,
-	restMs: 0,
-	fadeMs: 110,
-	maxLifeMs: 150,
-	launchSpeed: 9,
-	launchSpread: 6,
-	countScale: 1,
-	glyphs: { airborne: ['·', '∙', '‧', '`'], rest: ['·'] },
-	colors: [
-		{ t: 0, r: 245, g: 250, b: 255 }, // quick white glint
-		{ t: 1, r: 150, g: 170, b: 200 },
-	],
-	z: 0,
-};
-
-// The look each weapon-trail key resolves to (the shared layer names the key; the
-// client owns the pixels, mirroring SPAWN_MAP).
-export const WEAPON_TRAILS: Record<WeaponTrail, ParticleType> = {
-	heavy: HEAVY_TRAIL,
-	light: LIGHT_TRAIL,
 };
 
 // The client-side map from a semantic game event to the look(s) it spawns. 1:1

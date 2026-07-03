@@ -51,10 +51,9 @@ import {
 	swingPoseCell,
 	swingPoseGlyph,
 	swingProgress,
-	WEAPONS,
+	type Weapon,
 	weaponById,
 	weaponFrame,
-	weaponSwingTotal,
 } from '../src';
 
 function monster(x: number, y: number, over: Partial<Entity> = {}): Entity {
@@ -246,9 +245,6 @@ describe('resolveHitsOnMonsters', () => {
 		faction: 'players',
 		...over,
 	});
-	// The attacker entity, looked up by `attackerId` for the break-knockback weapon.
-	const attacker = (over: Partial<Entity> = {}): Entity =>
-		monster(0, 0, { id: 7, ...over });
 	const ledger = () => new Map<number, Set<number>>([[7, new Set()]]);
 
 	test('a player Strike damages an overlapping monster and records the victim', () => {
@@ -257,7 +253,6 @@ describe('resolveHitsOnMonsters', () => {
 		const { monsters, effects } = resolveHitsOnMonsters(
 			[m],
 			[strikeAt(entityBox(m))],
-			[attacker()],
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(12); // 20 - 8 damage
@@ -271,7 +266,6 @@ describe('resolveHitsOnMonsters', () => {
 		const { monsters, effects } = resolveHitsOnMonsters(
 			[m],
 			[strikeAt({ x: 0, y: 0, w: BOX.w, h: BOX.h })],
-			[attacker()],
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(20);
@@ -285,7 +279,6 @@ describe('resolveHitsOnMonsters', () => {
 		const { monsters, effects } = resolveHitsOnMonsters(
 			[m],
 			[strikeAt(entityBox(m))],
-			[attacker()],
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(20);
@@ -298,7 +291,6 @@ describe('resolveHitsOnMonsters', () => {
 		const { monsters, effects } = resolveHitsOnMonsters(
 			[m],
 			[strikeAt(entityBox(m), { faction: 'monsters' })],
-			[attacker()],
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(20);
@@ -313,7 +305,6 @@ describe('resolveHitsOnMonsters', () => {
 		const { monsters, effects } = resolveHitsOnMonsters(
 			[m],
 			[strikeAt(entityBox(m))],
-			[attacker()],
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(12);
@@ -779,7 +770,7 @@ describe('stepAvatarCombat', () => {
 		expect(s.attackerKind).toBe('avatar');
 		expect(s.faction).toBe('players');
 		expect(s.facing).toBe(1);
-		expect(s.poiseDamage).toBe(weaponById(undefined).poiseDamage);
+		expect(s.poiseDamage).toBe(COMBAT.poiseDamage);
 
 		// Mid-recovery: past the active window, no live box → no Strike.
 		const inRecovery = SWING_TOTAL - (windup + active + 0.01);
@@ -1028,13 +1019,14 @@ describe('dodge action-state + pose', () => {
 	});
 });
 
-describe('resolveCombat with a weapon stat block', () => {
+describe('resolveCombat with an equipped weapon (ADR 0024 — damage only)', () => {
 	const avatar = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, ...over });
-	const great = weaponById(WEAPONS.findIndex((w) => w.name === 'Greatsword'));
-	const dagger = weaponById(WEAPONS.findIndex((w) => w.name === 'Dagger'));
+	// A hypothetical heavy hitter: whatever its damage, it can never reshape the
+	// swing's timing or arc — those belong to the one shared moveset.
+	const heavy: Weapon = { name: 'Test Cleaver', damage: 16 };
 
-	test('a fresh swing loads the WEAPON phase total, not the default', () => {
+	test('a fresh swing loads the ONE shared phase total, whatever the weapon', () => {
 		const r = resolveCombat(
 			avatar({ attackT: 0 }),
 			{},
@@ -1042,15 +1034,14 @@ describe('resolveCombat with a weapon stat block', () => {
 			'warrior',
 			{ attack: true },
 			0.016,
-			great,
+			heavy,
 		);
-		expect(r.attackT).toBe(weaponSwingTotal(great));
+		expect(r.attackT).toBe(SWING_TOTAL);
 	});
 
-	test('damage and hitbox reach come from the weapon, not the constants', () => {
-		// Position attackT inside the greatsword's own active window.
+	test('damage comes from the weapon; the hitbox stays the shared arc', () => {
 		const inActive =
-			weaponSwingTotal(great) - (great.swing.windup + great.swing.active / 2);
+			SWING_TOTAL - (COMBAT.swing.windup + COMBAT.swing.active / 2);
 		const r = resolveCombat(
 			avatar({ attackT: inActive }),
 			{},
@@ -1058,51 +1049,29 @@ describe('resolveCombat with a weapon stat block', () => {
 			'warrior',
 			{ attack: false },
 			0,
-			great,
+			heavy,
 		);
-		expect(r.damage).toBe(great.damage);
-		expect(r.hitbox).toEqual(meleeHitbox(avatar(), great.reach));
-		expect(r.hitbox?.w).toBe(great.reach);
-	});
-
-	test('two weapons produce measurably different phase timing from data alone', () => {
-		const swing = (w: typeof great) =>
-			resolveCombat(
-				avatar({ attackT: 0 }),
-				{},
-				1,
-				'warrior',
-				{ attack: true },
-				0.016,
-				w,
-			).attackT;
-		expect(swing(great)).toBeGreaterThan(swing(dagger));
+		expect(r.damage).toBe(heavy.damage);
+		expect(r.hitbox).toEqual(meleeHitbox(avatar()));
+		expect(r.hitbox?.w).toBe(COMBAT.meleeReach);
 	});
 });
 
-describe('swingPose — composited weapon visual (pure fn of move, phase, weapon)', () => {
-	const sword = weaponById(0);
-	const great = weaponById(WEAPONS.findIndex((w) => w.name === 'Greatsword'));
-
+describe('swingPose — the unarmed swing telegraph (pure fn of move, phase, facing)', () => {
 	test('returns null for a non-basic (idle / future) move', () => {
-		expect(swingPose('idle', 'windup', sword, 1)).toBeNull();
+		expect(swingPose('idle', 'windup', 1)).toBeNull();
 	});
 
-	test('the accent glyph is the weapon glyph, oriented by facing', () => {
-		expect(swingPose('basic', 'windup', sword, 1)?.glyph).toBe(sword.glyph);
+	test('the tip glyph is the one shared telegraph, oriented by facing', () => {
+		expect(swingPose('basic', 'windup', 1)?.glyph).toBe('╱');
 		// facing -1 mirrors the diagonal (╱ → ╲)
-		expect(swingPose('basic', 'windup', sword, -1)?.glyph).toBe('╲');
-	});
-
-	test('different weapons composite different glyphs from data alone', () => {
-		expect(swingPose('basic', 'active', great, 1)?.glyph).toBe(great.glyph);
-		expect(swingPose('basic', 'active', great, 1)?.glyph).not.toBe(sword.glyph);
+		expect(swingPose('basic', 'windup', -1)?.glyph).toBe('╲');
 	});
 
 	test('the slash-arc sweep is present ONLY during the active phase', () => {
-		expect(swingPose('basic', 'windup', sword, 1)?.arc).toBeNull();
-		expect(swingPose('basic', 'active', sword, 1)?.arc).not.toBeNull();
-		expect(swingPose('basic', 'recovery', sword, 1)?.arc).toBeNull();
+		expect(swingPose('basic', 'windup', 1)?.arc).toBeNull();
+		expect(swingPose('basic', 'active', 1)?.arc).not.toBeNull();
+		expect(swingPose('basic', 'recovery', 1)?.arc).toBeNull();
 	});
 });
 

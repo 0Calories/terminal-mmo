@@ -87,11 +87,11 @@ const renderer = await createCliRenderer({
 const SCHEME = process.env.MMO_SCHEME === 'mouse' ? 'mouse' : 'keyboard';
 const input = new InputState(SCHEME);
 
-// Equipped Weapon (ADR 0017 §14). There is no in-game equip UI yet, so MMO_WEAPON
-// selects the demo weapon by NAME (e.g. MMO_WEAPON=greatsword / dagger) or by catalog
-// index; an unknown value falls back to the default Warrior sword. This is the seam
-// the "equip a heavy greatsword vs a fast dagger and feel the difference" demo uses,
-// and it drives BOTH the local prediction and the broadcast appearance.
+// Equipped Weapon. There is no in-game equip UI yet, so MMO_WEAPON selects the demo
+// weapon by NAME or by catalog index; an unknown value falls back to the default
+// Warrior sword. The catalog is the one sword today (ADR 0024 — weapons differ only
+// in damage + looks), but the seam stays: it drives BOTH the local prediction and
+// the broadcast appearance, and rolled loot weapons will flow through it later.
 function selectWeapon(): number {
 	const raw = (process.env.MMO_WEAPON ?? '').trim();
 	if (!raw) return DEFAULT_WEAPON;
