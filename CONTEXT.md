@@ -171,18 +171,18 @@ _Avoid_: Emoji, reaction, gesture (one word — an emote is a body pose, not a p
 
 **CombatEvent**:
 The resolved, *semantic* fact of a combat interaction — "target T was **hit** /
-**broke** (poise) / **died** / **parried** / **swatted**, at (x,y), facing →, intensity
+**broke** (poise) / **died** / **swatted**, at (x,y), facing →, intensity
 N." It is what Combat resolution produces; an **Effect** is its presentation projection
 (via the shared `effectsOf`), and a **Particle** is the Effect's realization. The
 authority *produces* a CombatEvent by applying damage/poise (the poise result is
 what makes a contact a hit vs a break vs a death); the local Player *predicts* only
 the optimistic `hit` event from its own outgoing swing, for zero-latency feedback.
-`break`/`death`/`parry`/`swat` are authority-only, and so is *incoming* hurt — an
+`break`/`death`/`swat` are authority-only, and so is *incoming* hurt — an
 Avatar-target `hit` is never predicted (ADR 0013 §3). Every combat Effect in a snapshot
 is `effectsOf(CombatEvent)` — no site emits an Effect inline (the migration completed in
 #194). The kinds map `hit → blood`, `break → impact` (heavier), `death → gore` (tinted),
-`parry → parry`, `swat → impact` (a light clink — a melee frame shattering a shot, ADR
-0017 §8 — at the shot's own damage, no poise bump). Distinct from Effect: a CombatEvent's
+`swat → impact` (a light clink — a melee frame shattering a shot, ADR 0017 §8 — at the
+shot's own damage, no poise bump). Distinct from Effect: a CombatEvent's
 `kind` is the game fact (`hit`), an Effect's `kind` is the look (`blood`). Shared-internal,
 never on the wire — it is projected to Effects before the snapshot is built (see ADR 0019).
 Modeled as a discriminated union on `kind`, so each kind carries only the fields it can
@@ -237,16 +237,6 @@ cell granularity). View-only and non-authoritative; keyed off the `impact`
 **Effect**, so it fires for everyone who sees the break, attacker included.
 _Avoid_: screenshake, rumble, camera shake (it's a single decaying pop)
 
-**Lag compensation**:
-The server judging a timing defense (a **Parry**) against the Player's own delayed view,
-not raw server time (ADR 0017 §11). Each input carries a client timestamp; the server
-estimates how late it arrived and widens the Parry window by that slack (capped) so a
-catch timed right on the Player's screen still resolves when the input lands a tick or
-two late. A bounded tolerance, **not** rollback (rejected: too heavy for a persistent
-many-entity World) — windows are authored in ticks, deliberately chunky to absorb the
-30 Hz quantization the comp can't.
-_Avoid_: rollback, netcode rewind, prediction (that's the client side)
-
 **SoundEffect**:
 The client-side *audible* realization of a moment — the audio twin of a Particle.
 Where a Particle answers *what it looks like*, a SoundEffect answers *what it
@@ -283,7 +273,7 @@ A Monster archetype that fights at distance — the reworked shooter. Like the *
 committer** it deals damage *only* through a telegraphed **Attack phase**: it
 maintains distance, and on a commit runs the same **wind-up** → **active** →
 **recovery** swing, **firing exactly one Projectile on the active frame** (never
-auto-firing). The wind-up is the Player's cue to **Dodge**/**Block**/**Parry** the
+auto-firing). The wind-up is the Player's cue to **Dodge**/**Block**/**swat** the
 shot or close in to punish the recovery. See ADR 0017 §8.
 _Avoid_: Archer, turret, auto-shooter, hitscan mob
 
@@ -292,22 +282,19 @@ A **first-class hit that travels** — not a special-case ranged poke. It carrie
 *same* hit-reaction payload a melee swing does (**HP damage** + **poise damage** +
 **Knockback**), so a heavy shot **Staggers** on a **Poise** break exactly like a
 melee connect while a pebble only chips, and it resolves through the same hit path.
-It travels at a **reactable** speed (not hitscan). Countered by the whole defensive
-kit: **Dodge** through it (i-frames), **Block** it (chip + poise drain), **Parry to
-reflect** it, or **swat** it with a melee active frame. As a travelling attack it
-emits a **Strike** (with a `projectile` **ReactionProfile**) into the *resolve* pass,
-the same handoff a melee swing uses. See ADR 0017 §8, ADR 0022.
+It travels at a **reactable** speed (not hitscan). Every shot is hostile and countered
+by the defensive kit: **Dodge** through it (i-frames), **Block** it (chip + poise
+drain), or **swat** it with a melee active frame (**Parry**/**Reflect** removed, ADR
+0024). As a travelling attack it emits a **Strike** into the *resolve* pass, the same
+handoff a melee swing uses. See ADR 0017 §8, ADR 0022, ADR 0024.
 _Avoid_: Bullet, missile, hitscan
 
-**Reflect**:
-The result of **Parrying** a **Projectile**: the shot reverses and becomes *yours*
-(now owned by the parrier), flying back to threaten the shooter — the ranged
-counterpart to a melee Parry's punish opening. Re-factions the shot `monsters →
-players` (its **Faction** flips), so the reflected **Strike** is thereafter tested
-only against Monsters — never another Player (Reflect-safety). Distinct from a
-**swat**, which *destroys* a shot with a melee active frame (no reflect). See ADR
-0017 §8, ADR 0022.
-_Avoid_: Deflect, return, bounce
+**swat**:
+Destroying a hostile **Projectile** with a melee active frame — a Player's live swing
+or skill hitbox overlapping the shot shatters it (a light clink, no **Poise** break).
+The shot is simply gone; nothing is reflected back. The kept ranged counter alongside
+**Dodge** and **Block** (**Parry**/**Reflect** removed, ADR 0024). See ADR 0017 §8.
+_Avoid_: Deflect, parry, reflect, bounce
 
 **Combat**:
 Real-time PvE (Player vs Monster) fighting — a first-class pillar, not flavor.
@@ -315,8 +302,8 @@ Built on **commitment**: an attack is not instant but occupies time in **phases*
 so *when* you commit is itself a skill. **Positional / directional hitbox** model;
 melee aim is **contextual and forgiving** (a wide frontal arc, plus a vertical
 **Launcher**/**Spike**), ranged is **precise** (directional projectiles; mouse-aimed
-for ranged Classes later). Skill expression lives in timing (**Parry**, **Dodge**)
-and **Knockback**-driven **Juggles**, all regulated by **Poise**. Clients send
+for ranged Classes later). Skill expression lives in timing (**Dodge**, reading
+telegraphs) and **Knockback**-driven **Juggles**, all regulated by **Poise**. Clients send
 *intents* and predict their own actions; the server resolves every outcome
 authoritatively (hit, damage, kills, loot). The combat slice of an Intent
 (attack/skill) is gated by a single shared resolver (`resolveCombat`) that both
@@ -330,7 +317,7 @@ _Avoid_: Fighting, battle, PvE, tab-target (use "Combat")
 **Strike**:
 A **projected attack** handed from a per-entity *project* pass to the *resolve* pass
 of the combat tick (ADR 0022) — _"this hitbox deals this HP + **Poise** damage, facing
-→, on behalf of this **Faction**, with this **ReactionProfile**."_ It is a projection,
+→, on behalf of this **Faction**."_ It is a projection,
 never applied where it is made: an Avatar swing, a **Melee committer**'s strike, and a
 travelling **Projectile** all emit Strikes, and `resolveCombat` resolves every one by a
 single rule — against overlapping, **hittable**, opposing-**Faction**, not-already-hit
@@ -341,23 +328,11 @@ _Avoid_: Hit (reserve for the resolved contact), Attack, Hitbox (a Strike is mor
 
 **Faction**:
 The allegiance key — `players` | `monsters` — that decides which entities a **Strike**
-may resolve against: opposing-Faction only. It makes two rules hold *by construction*
-rather than by scattered checks: **PvE** (two **Avatar**s share a Faction, so no Avatar
-ever damages an Avatar — PvP stays parked) and **Reflect-safety** (a **Reflect**
-re-factions a shot `monsters → players`, so the reflected shot is never tested against
-Avatars and can neither harm nor collide with another Player). See ADR 0022.
+may resolve against: opposing-Faction only. It makes **PvE** hold *by construction*
+rather than by scattered checks: two **Avatar**s share a Faction, so no Avatar ever
+damages an Avatar — PvP stays parked. See ADR 0022.
 _Avoid_: Team, side, alliance, allegiance (in the PvP/guild sense — Faction is the
 PvE damage filter, not a social group)
-
-**ReactionProfile**:
-The closed tagged union on a **Strike** — `{ melee }` | `{ projectile }` — describing
-how it behaves when it meets a raised **Guard**, and *only* that: a melee Strike
-**Parries** to a **Stagger** (+ attacker **Poise** dump), a projectile Strike
-**Reflects** or is **swatted**. Damage, Poise, **Guard-break**, and death apply
-identically regardless of profile, so the resolution path is not forked — only the
-guard interaction branches. A third attack kind is a new tag, not a new field. See
-ADR 0022.
-_Avoid_: Hit type, damage type, element
 
 **Attack phase**:
 The three stages every attack — Player or Monster — passes through: **wind-up**
@@ -436,27 +411,20 @@ self-terminates back to neutral — never infinite.
 _Avoid_: Air combo, loop, infinite
 
 **Guard**:
-The unified, frontal-arc defensive stance. The opening window of a guard-raise is a
-**Parry**; held past that window it is a **Block**. Hits from behind ignore it.
+The unified, frontal-arc defensive stance. Any raised Guard is a **Block** (Parry
+removed, ADR 0024). Hits from behind ignore it.
 _Avoid_: Defend, stance, shield
 
 **Block**:
 Holding **Guard** to absorb a frontal hit for chip damage, draining **Poise** toward
-a guard-break. The safe, low-skill defense, available from level 1.
+a guard-break. The safe defense; the only Guard behaviour (Parry removed, ADR 0024).
 _Avoid_: Shield, brace
 
 **Guard-break**:
 The **Stagger** a **Block** suffers when sustained chip drains its **Poise** pool to a
 break — turtling punished by the same accumulating-Poise system as any other break, not
-a separate guard meter. Distinct from a **Parry**, which spends no Poise.
+a separate guard meter.
 _Avoid_: Shield-break, stun
-
-**Parry**:
-A hit caught in the opening window of a **Guard** — it negates the hit, dumps
-**Poise** damage onto the attacker (opening a punish), and **reflects** a
-projectile back at its source. The high-skill defense, an earned unlock.
-Deflecting a projectile is a Parry.
-_Avoid_: Deflect, riposte, counter, block (that is the held version)
 
 **Dodge**:
 A short horizontal hop granting brief invulnerability (i-frames) with committal
@@ -473,7 +441,7 @@ _Avoid_: Trail, smear, blur (reserve "echo" for this)
 
 **Moveset ability**:
 A passive, no-cooldown extension of what the attack button does — string
-extensions, the **Launcher**, aerials, the **Spike**, cancels, the **Parry** —
+extensions, the **Launcher**, aerials, the **Spike**, cancels —
 unlocked by level (and later **Class**). Distinct from an **Active skill**; it is
 *how your character moves*, not a thing you fire.
 _Avoid_: Skill (reserve for active), passive, combo move

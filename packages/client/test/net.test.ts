@@ -73,8 +73,6 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 				poiseDamage: 6,
 				knockback: 30,
 				knockbackUp: 10,
-				faction: 'monster',
-				ownerId: 9,
 			},
 		],
 		effects: [],
@@ -155,7 +153,7 @@ test('snapshotToGame threads the replicated weapon onto co-present + own Avatars
 test('snapshotToGame threads a co-present Avatar Guard stance onto its entity action (ADR 0017 §5/§10)', () => {
 	const field = loadField();
 	const s = withOther();
-	// The rival is mid-block: guarding, not in the parry window.
+	// The rival is mid-block: guarding.
 	s.avatars[1].action = {
 		move: 'idle',
 		phase: 'recovery',
@@ -169,7 +167,6 @@ test('snapshotToGame threads a co-present Avatar Guard stance onto its entity ac
 	// The replicated `flags` ride onto the rebuilt entity's action — the exact seam the
 	// playfield's drawGuard reads to render another Player's brace.
 	expect(other?.action?.flags).toBe(ACTION_FLAG.guarding);
-	expect((other?.action?.flags ?? 0) & ACTION_FLAG.parrying).toBeFalsy();
 });
 
 test('snapshotToGame renders snapshot monsters/projectiles with the predicted own Avatar', () => {

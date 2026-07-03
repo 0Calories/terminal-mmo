@@ -119,8 +119,6 @@ test('discrete and private fields come from the newer bracket, not lerped', () =
 				poiseDamage: 6,
 				knockback: 30,
 				knockbackUp: 10,
-				faction: 'monster',
-				ownerId: 3,
 			},
 		],
 		progress: { level: 4, xp: 30, gold: 11 },

@@ -25,15 +25,14 @@ import {
 	entityTint,
 	facingToward,
 	GROUND_POUND,
-	guardPhase,
 	guardPoseCell,
 	guardPoseGlyph,
+	guardRaised,
 	IDLE_ACTION,
 	meleeActive,
 	meleeHitbox,
 	POWER_STRIKE,
 	type Projectile,
-	parryActive,
 	predictHits,
 	regenPoise,
 	resolveCombat,
@@ -89,8 +88,6 @@ function projectile(over: Partial<Projectile> = {}): Projectile {
 		poiseDamage: 6,
 		knockback: 30,
 		knockbackUp: 10,
-		faction: 'monster',
-		ownerId: 99,
 		...over,
 	};
 }
@@ -247,7 +244,6 @@ describe('resolveHitsOnMonsters', () => {
 		poiseDamage: 6,
 		facing: 1,
 		faction: 'players',
-		reaction: { kind: 'melee' },
 		...over,
 	});
 	// The attacker entity, looked up by `attackerId` for the break-knockback weapon.
@@ -782,7 +778,6 @@ describe('stepAvatarCombat', () => {
 		expect(s.attackerId).toBe(42);
 		expect(s.attackerKind).toBe('avatar');
 		expect(s.faction).toBe('players');
-		expect(s.reaction).toEqual({ kind: 'melee' });
 		expect(s.facing).toBe(1);
 		expect(s.poiseDamage).toBe(weaponById(undefined).poiseDamage);
 
@@ -1200,37 +1195,15 @@ describe('bladeEdgeArc — blade-edge arc smear (ADR 0018 §5)', () => {
 	});
 });
 
-// --- Guard: Block + Parry (ADR 0017 §5) -------------------------------------
+// --- Guard: Block (ADR 0017 §5, ADR 0024) -----------------------------------
 
-describe('guardPhase', () => {
-	const { parryWindow } = COMBAT.guard;
-	test('not guarding (guardT 0) reads null', () => {
-		expect(guardPhase(0)).toBeNull();
+describe('guardRaised', () => {
+	test('not guarding (guardT 0) is false', () => {
+		expect(guardRaised(0)).toBe(false);
 	});
-	test('the opening window of a raise is the Parry', () => {
-		expect(guardPhase(0.001)).toBe('parry');
-		expect(guardPhase(parryWindow)).toBe('parry');
-	});
-	test('held past the opening window is a Block', () => {
-		expect(guardPhase(parryWindow + 0.001)).toBe('block');
-		expect(guardPhase(5)).toBe('block'); // still blocking after holding indefinitely
-	});
-});
-
-describe('parryActive (lag compensation, ADR 0017 §11)', () => {
-	const { parryWindow, lagComp } = COMBAT.guard;
-	test('within the raw window with no lag is a Parry; past it is not', () => {
-		expect(parryActive(parryWindow)).toBe(true);
-		expect(parryActive(parryWindow + 0.001)).toBe(false);
-	});
-	test('lag slack widens the Parry window so a slightly-late catch still parries', () => {
-		const late = parryWindow + lagComp / 2; // would read as Block with no comp
-		expect(parryActive(late, 0)).toBe(false);
-		expect(parryActive(late, lagComp)).toBe(true);
-	});
-	test('the slack is clamped to lagComp — an absurd timestamp cannot widen it forever', () => {
-		const tooLate = parryWindow + lagComp + 0.05;
-		expect(parryActive(tooLate, 999)).toBe(false);
+	test('any positive guardT is a raised Block', () => {
+		expect(guardRaised(0.001)).toBe(true);
+		expect(guardRaised(5)).toBe(true); // still blocking after holding indefinitely
 	});
 });
 
@@ -1251,7 +1224,7 @@ describe('facingToward (frontal arc, ADR 0017 §5)', () => {
 });
 
 describe('resolveGuard', () => {
-	const { parryWindow, blockChip, blockPoise, parryPoiseDamage } = COMBAT.guard;
+	const { blockChip, blockPoise } = COMBAT.guard;
 	// A defender facing right (+1) with an attacker to the right (frontal).
 	const defender = (over: Partial<Entity> = {}) =>
 		monster(20, 4, {
@@ -1262,88 +1235,42 @@ describe('resolveGuard', () => {
 		});
 	const attackerX = 26;
 
-	test('no Guard raised → full damage, no attacker dump', () => {
+	test('no Guard raised → full damage', () => {
 		const g = resolveGuard(defender({ guardT: 0 }), attackerX, 8);
 		expect(g.result).toBe('none');
 		expect(g.hpDamage).toBe(8);
-		expect(g.attackerPoiseDump).toBe(0);
 	});
 
 	test('a rear hit ignores Guard even mid-block (frontal-arc gating)', () => {
 		// Guard up and blocking, but the attacker is BEHIND (to the left of a right-facer).
-		const g = resolveGuard(defender({ guardT: parryWindow + 0.1 }), 10, 8);
+		const g = resolveGuard(defender({ guardT: 0.5 }), 10, 8);
 		expect(g.result).toBe('none');
 		expect(g.hpDamage).toBe(8);
 	});
 
-	test('Block: frontal hit chips HP and drains Poise', () => {
-		const g = resolveGuard(
-			defender({ guardT: parryWindow + 0.1 }),
-			attackerX,
-			8,
-		);
+	test('Block: any raised frontal Guard chips HP and drains Poise', () => {
+		const g = resolveGuard(defender({ guardT: 0.01 }), attackerX, 8);
 		expect(g.result).toBe('block');
 		expect(g.hpDamage).toBe(Math.ceil(8 * blockChip));
 		expect(g.defenderPoise).toBe(COMBAT.poise.max - blockPoise);
 		expect(g.guardBroke).toBe(false);
-		expect(g.attackerPoiseDump).toBe(0);
 	});
 
 	test('Block to a Poise break is a guard-break Stagger', () => {
 		// A nearly-empty pool: one block drains it past 0 → break.
 		const g = resolveGuard(
-			defender({ guardT: parryWindow + 0.1, poise: blockPoise - 1 }),
+			defender({ guardT: 0.5, poise: blockPoise - 1 }),
 			attackerX,
 			8,
 		);
 		expect(g.result).toBe('block');
 		expect(g.guardBroke).toBe(true);
 	});
-
-	test('Parry: a frontal hit in the opening window negates damage + dumps Poise on the attacker', () => {
-		const g = resolveGuard(defender({ guardT: parryWindow }), attackerX, 8);
-		expect(g.result).toBe('parry');
-		expect(g.hpDamage).toBe(0);
-		expect(g.attackerPoiseDump).toBe(parryPoiseDamage);
-		expect(g.guardBroke).toBe(false);
-	});
-
-	test('lag-comp resolves a Parry that was valid on the client timeline (ADR 0017 §11)', () => {
-		// A catch a hair past the raw window — a Block with no comp, a Parry once the
-		// input's staleness (its client timestamp) extends the window.
-		const late = parryWindow + COMBAT.guard.lagComp / 2;
-		expect(resolveGuard(defender({ guardT: late }), attackerX, 8).result).toBe(
-			'block',
-		);
-		expect(
-			resolveGuard(
-				defender({ guardT: late }),
-				attackerX,
-				8,
-				COMBAT.guard.lagComp,
-			).result,
-		).toBe('parry');
-	});
-});
-
-describe('a parry projects through effectsOf to a fixed-intensity clash flash', () => {
-	test('a source-less flash at the defender centre, intensity fixed (damage is negated)', () => {
-		const d = monster(20, 4, { type: 'player' });
-		expect(effectsOf(combatEventAt('parry', d, 1, 0))).toEqual([
-			{
-				kind: 'parry',
-				x: 20 + BOX.w / 2,
-				y: 4 + BOX.h / 2,
-				intensity: COMBAT.poise.max,
-				dir: 1,
-			},
-		]);
-	});
 });
 
 describe('guard pose realization', () => {
-	test('the Parry window flashes a brighter sigil than a Block brace', () => {
-		expect(guardPoseGlyph('parry')).not.toBe(guardPoseGlyph('block'));
+	test('guardPoseGlyph is the solid Block brace', () => {
+		expect(guardPoseGlyph()).toBe('┃');
 	});
 	test('guardPoseCell sits just past the leading edge, mirrored by facing', () => {
 		expect(guardPoseCell(monster(20, 4, { facing: 1 })).x).toBe(20 + BOX.w);
@@ -1352,20 +1279,13 @@ describe('guard pose realization', () => {
 });
 
 describe('actionFlags surfaces the Guard stance (ADR 0017 §5/§10)', () => {
-	test('a raised Guard sets the guarding bit; its opening also sets parrying', () => {
-		const parrying = actionFlags(monster(0, 0, { guardT: 0.01 }));
-		expect(parrying & ACTION_FLAG.guarding).toBeTruthy();
-		expect(parrying & ACTION_FLAG.parrying).toBeTruthy();
-		const blocking = actionFlags(
-			monster(0, 0, { guardT: COMBAT.guard.parryWindow + 0.1 }),
-		);
-		expect(blocking & ACTION_FLAG.guarding).toBeTruthy();
-		expect(blocking & ACTION_FLAG.parrying).toBeFalsy();
+	test('a raised Guard sets the guarding bit', () => {
+		const guarding = actionFlags(monster(0, 0, { guardT: 0.01 }));
+		expect(guarding & ACTION_FLAG.guarding).toBeTruthy();
 	});
-	test('not guarding sets neither bit', () => {
+	test('not guarding sets no guard bit', () => {
 		const f = actionFlags(monster(0, 0, { guardT: 0 }));
 		expect(f & ACTION_FLAG.guarding).toBeFalsy();
-		expect(f & ACTION_FLAG.parrying).toBeFalsy();
 	});
 });
 
@@ -1482,14 +1402,11 @@ describe('effectsOf', () => {
 		]);
 	});
 
-	test('death projects to gore, parry to a fixed-intensity parry flash', () => {
+	test('death projects to a radial gore burst', () => {
 		const at = { targetId: 1, x: 3, y: 4, intensity: 9 };
-		// A death is always radial (dir 0); a parry follows the blow.
+		// A death is always radial (dir 0).
 		expect(effectsOf({ kind: 'death', dir: 0, ...at })).toEqual([
 			{ kind: 'gore', x: 3, y: 4, intensity: 9, dir: 0 },
-		]);
-		expect(effectsOf({ kind: 'parry', dir: 1, ...at })).toEqual([
-			{ kind: 'parry', x: 3, y: 4, intensity: COMBAT.poise.max, dir: 1 },
 		]);
 	});
 

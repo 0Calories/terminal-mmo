@@ -122,11 +122,6 @@ export interface AvatarIntent {
 	// state. A one-shot edge — present only on the tick the trigger arrives, not every
 	// input — so it doesn't re-fire while held. An unknown id is dropped.
 	emote?: string;
-	// Input staleness in ms (ADR 0017 §11): how late this input reached the server,
-	// derived from its client timestamp by the impure server layer. Widens the Parry
-	// window (clamped to COMBAT.guard.lagComp) so a Parry timed right on the Player's
-	// delayed screen still resolves. Absent / 0 == no lag (offline, single clock).
-	lagMs?: number;
 }
 
 /**
@@ -448,41 +443,13 @@ export function stepZone(
 				// Dodging through the active frames is the demo.
 				if (!avatarHittable(a) || !aabbOverlap(hb, entityBox(a))) continue;
 				// Resolve the hit against the Avatar's Guard FIRST (ADR 0017 §5): a frontal
-				// raise Parries it (in the opening window) or Blocks it (held past), a rear
-				// hit ignores Guard. Lag-comp widens the Parry window by this input's
-				// staleness (clamped in resolveGuard) so a Parry timed right on the Player's
-				// delayed screen still resolves. The i-frame (set on every branch) gates the
-				// multi-tick active window to one resolution per swing.
-				const lagSlack = (byId.get(avatars[i].sessionId)?.lagMs ?? 0) / 1000;
-				const g = resolveGuard(a, m.x, MONSTER.meleeDamage, lagSlack);
+				// raise Blocks it (chip + Poise drain), a rear hit ignores Guard. The i-frame
+				// (set on every branch) gates the multi-tick active window to one resolution
+				// per swing.
+				const g = resolveGuard(a, m.x, MONSTER.meleeDamage);
 				// Direction away from the Monster (0 when they share a column), reused by the
-				// hurt-blood bias and the parry-clash flash.
+				// hurt-blood bias.
 				const away: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
-				if (g.result === 'parry') {
-					// Parry: negate the hit and dump big Poise onto the ATTACKER — a clean catch
-					// breaks its pool and Staggers it, the Player's punish opening (ADR 0017 §5).
-					const ap = applyPoiseDamage(m, g.attackerPoiseDump);
-					m = { ...m, poise: ap.poise, poiseT: COMBAT.poise.regenDelay };
-					if (ap.broke) {
-						m = applyImpulse(
-							m,
-							COMBAT.knockback * -m.facing,
-							-COMBAT.knockbackUp,
-						);
-						m = { ...m, stunT: COMBAT.hitstun };
-					}
-					// The parry resolves to a `parry` CombatEvent → the clash flash via the shared
-					// `effectsOf` (ADR 0019). No `source`, so it reaches the parrier too (clash
-					// flash + camera juice + sound); intensity is irrelevant (the blow was
-					// negated — `effectsOf` fixes the flash intensity). Keep the raised Guard;
-					// i-frame the Avatar so the same active window can't re-trigger.
-					effects.push(...effectsOf(combatEventAt('parry', a, away || 1, 0)));
-					avatars[i] = {
-						...avatars[i],
-						avatar: { ...a, hurtT: COMBAT.iframes },
-					};
-					continue;
-				}
 				// Block (chip + Poise drain → possible guard-break) or an unguarded/rear hit
 				// (full payload). resolveGuard already reduced the HP and drained Poise for a
 				// Block; for an unguarded hit, apply the full Poise damage here. A guard-break
@@ -597,67 +564,23 @@ export function stepZone(
 		);
 	}
 
-	// Projectiles are first-class hits with a full counterplay set (ADR 0017 §8). Each
-	// surviving shot resolves through the SAME hit path melee does — i-frame gate,
-	// Guard, Poise break — so a heavy shot Staggers exactly like a swing. A `monster`
-	// shot threatens Avatars (Dodge / Block / Parry-reflect / melee-swat); a `player`
-	// shot — one a Parry reflected — threatens Monsters.
+	// Projectiles are first-class hostile hits with a full counterplay set (ADR 0017 §8,
+	// ADR 0024). Each surviving shot resolves through the SAME hit path melee does —
+	// i-frame gate, Guard, Poise break — so a heavy shot Staggers exactly like a swing.
+	// Every shot threatens Avatars and is countered by Dodge, Block, or a melee swat.
 	const projectiles: Projectile[] = [];
 	for (const pr0 of zone.projectiles) {
 		const pr = stepProjectile(t, pr0, dt);
 		if (!pr) continue;
 		// Travel direction, reused as the Knockback push + Effect bias (0 for a
-		// stationary shot, e.g. a test fixture or a reflected zero-velocity pebble).
+		// stationary shot, e.g. a test fixture).
 		const travel: -1 | 0 | 1 = pr.vx > 0 ? 1 : pr.vx < 0 ? -1 : 0;
 
-		// A reflected (player-owned) shot threatens Monsters: it applies the full
-		// hit-reaction payload through the same Poise-break path a Player's swing does,
-		// crediting the parrier so a reflect kill earns XP/loot. Bounded to one Monster.
-		if (pr.faction === 'player') {
-			let consumed = false;
-			for (let mi = 0; mi < monsters.length; mi++) {
-				const tm = monsters[mi];
-				if (!aabbOverlap(projectileBox(pr), entityBox(tm))) continue;
-				const { poise, broke } = applyPoiseDamage(tm, pr.poiseDamage);
-				const contributors = tm.contributors?.includes(pr.ownerId)
-					? tm.contributors
-					: [...(tm.contributors ?? []), pr.ownerId];
-				let nm: Entity = {
-					...tm,
-					hp: tm.hp - pr.damage,
-					poise,
-					poiseT: COMBAT.poise.regenDelay,
-					contributors,
-				};
-				if (broke) {
-					nm = applyImpulse(nm, pr.knockback * travel, -pr.knockbackUp);
-					nm = { ...nm, stunT: COMBAT.hitstun };
-					// A reflected shot's break → a `break` CombatEvent → impact via `effectsOf`
-					// (ADR 0019); source-less like every break.
-					effects.push(
-						...effectsOf(combatEventAt('break', tm, travel || 1, pr.damage)),
-					);
-				} else {
-					// A reflected shot's chip → a `hit` CombatEvent → blood via `effectsOf`. No
-					// `source`: a projectile hit is server-authoritative, never predicted.
-					effects.push(
-						...effectsOf(combatEventAt('hit', tm, travel || 1, pr.damage)),
-					);
-				}
-				monsters[mi] = nm;
-				consumed = true;
-				break;
-			}
-			if (!consumed) projectiles.push(pr);
-			continue;
-		}
-
 		// Melee swat (ADR 0017 §8): a Player's live active melee/skill hitbox DESTROYS a
-		// hostile shot on contact — no reflect, the shot is simply gone. Checked before
-		// the body hit so a well-timed swing is a valid counter. The live hitboxes are the
-		// player-faction Strikes projected this tick (ADR 0022); any one overlapping the
-		// shot swats it. The impact burst (no source) gives the clink + camera juice to
-		// everyone in range.
+		// hostile shot on contact — the shot is simply gone. Checked before the body hit so
+		// a well-timed swing is a valid counter. The live hitboxes are the player-faction
+		// Strikes projected this tick (ADR 0022); any one overlapping the shot swats it. The
+		// impact burst (no source) gives the clink + camera juice to everyone in range.
 		let consumed = false;
 		for (const s of strikes) {
 			if (aabbOverlap(s.hitbox, projectileBox(pr))) {
@@ -674,40 +597,16 @@ export function stepZone(
 
 		// Otherwise the shot resolves against an Avatar's body. The i-frame gate
 		// (automatic hurtT OR an active Dodge) negates it WITHOUT consuming it, so a
-		// Dodge slips it and it flies on (ADR 0017 §5). A frontal Guard then Parries it
-		// (reflect) or Blocks it (chip + Poise drain); an unguarded/rear hit takes the
-		// full payload, Staggering on a Poise break exactly like a melee connect.
+		// Dodge slips it and it flies on (ADR 0017 §5). A frontal Guard then Blocks it
+		// (chip + Poise drain); an unguarded/rear hit takes the full payload, Staggering on
+		// a Poise break exactly like a melee connect.
 		for (let i = 0; i < avatars.length; i++) {
 			const a = avatars[i].avatar;
 			if (!avatarHittable(a) || !aabbOverlap(projectileBox(pr), entityBox(a)))
 				continue;
-			const lagSlack = (byId.get(avatars[i].sessionId)?.lagMs ?? 0) / 1000;
 			// The shot's source is back along its travel; resolveGuard's frontal-arc
 			// check needs a point on that side (a stationary shot is treated as frontal).
-			const g = resolveGuard(a, a.x - travel, pr.damage, lagSlack);
-			if (g.result === 'parry') {
-				// Parry → REFLECT (ADR 0017 §8): the shot reverses, becomes the parrier's
-				// (faction `player`, ownerId the parrier) and flies back to threaten the
-				// shooter. Negated for the Avatar, who keeps the raised Guard and i-frames so
-				// the same shot can't immediately re-resolve. The reflect IS the punish, so —
-				// unlike a melee Parry — no attacker Poise dump here (the shooter is at range).
-				projectiles.push({
-					...pr,
-					vx: -pr.vx,
-					vy: -pr.vy,
-					faction: 'player',
-					ownerId: avatars[i].sessionId,
-				});
-				// The reflect's clash → a `parry` CombatEvent → flash via `effectsOf` (ADR
-				// 0019); source-less, fixed intensity (the shot was negated).
-				effects.push(...effectsOf(combatEventAt('parry', a, travel || 1, 0)));
-				avatars[i] = {
-					...avatars[i],
-					avatar: { ...a, hurtT: COMBAT.iframes },
-				};
-				consumed = true;
-				break;
-			}
+			const g = resolveGuard(a, a.x - travel, pr.damage);
 			// Block (chip + Poise drain → possible guard-break) or unguarded/rear (full
 			// payload). resolveGuard already reduced the HP + drained Poise for a Block; an
 			// unguarded hit applies the shot's full Poise damage here. Either break Staggers
@@ -919,7 +818,7 @@ export function addAvatar(
 		avatar: { ...spawnAvatar(SPAWN.x, SPAWN.y), id: sessionId, weapon },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
-		log: ['Welcome. Hunt the chasers (j attack, k guard/parry).'],
+		log: ['Welcome. Hunt the chasers (j attack, k guard).'],
 		nextId: 1,
 		rngState: sessionId,
 		class: 'warrior',

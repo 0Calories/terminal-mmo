@@ -3,9 +3,9 @@ import { parseTerrain } from '../src/terrain';
 import type { Projectile, Terrain } from '../src/types';
 
 /**
- * A test Projectile carrying the default SHOOTER pebble payload + `monster`
- * faction, overridable per field (ADR 0017 §8). Keeps the many projectile fixtures
- * from re-listing the full hit-reaction payload.
+ * A test Projectile carrying the default SHOOTER pebble payload, overridable per
+ * field (ADR 0017 §8). Keeps the many projectile fixtures from re-listing the full
+ * hit-reaction payload.
  */
 export function makeProjectile(over: Partial<Projectile> = {}): Projectile {
 	return {
@@ -19,8 +19,6 @@ export function makeProjectile(over: Partial<Projectile> = {}): Projectile {
 		poiseDamage: SHOOTER.projPoise,
 		knockback: SHOOTER.projKnockback,
 		knockbackUp: SHOOTER.projKnockbackUp,
-		faction: 'monster',
-		ownerId: 2,
 		...over,
 	};
 }

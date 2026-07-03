@@ -175,28 +175,23 @@ export function avatarHittable(a: Entity): boolean {
 
 // The action-state `flags` bitfield (ADR 0017 §10): a compact set of reaction /
 // defense bits replicated for every entity so a client can render the state (a
-// staggered sprite, a guard/parry stance, a dodge after-image). `staggered` is Hitstun
-// in flight; `guarding` is a raised Guard and `parrying` its opening window (ADR 0017
-// §5) — set together so a parrier reads as both guarding and flashing; `dodging` is the
-// i-frame hop (ADR 0017 §5). Round-trips as the action's u8; an airborne bit joins as
-// later slices land.
+// staggered sprite, a guard stance, a dodge after-image). `staggered` is Hitstun in
+// flight; `guarding` is a raised Guard (ADR 0017 §5); `dodging` is the i-frame hop
+// (ADR 0017 §5). Round-trips as the action's u8; an airborne bit joins as later slices
+// land.
 export const ACTION_FLAG = {
 	staggered: 1,
 	guarding: 2,
-	parrying: 4,
-	dodging: 8,
+	dodging: 4,
 } as const;
 
 // The reaction/defense flags an entity broadcasts this tick: `staggered` (Hitstun in
-// flight), the Guard stance derived from `guardT` (`guarding` whenever raised, `parrying`
-// during its opening window), and `dodging` (an i-frame hop in flight) — so Stagger,
-// Guard/Parry, AND Dodge are visible to everyone (ADR 0017 §3/§5/§10), for Avatars and
-// Monsters alike. The bits OR together.
+// flight), `guarding` (a raised Guard, derived from `guardT`), and `dodging` (an
+// i-frame hop in flight) — so Stagger, Guard, AND Dodge are visible to everyone (ADR
+// 0017 §3/§5/§10), for Avatars and Monsters alike. The bits OR together.
 export function actionFlags(e: Entity): number {
 	let flags = (e.stunT ?? 0) > 0 ? ACTION_FLAG.staggered : 0;
-	const guard = guardPhase(e.guardT ?? 0);
-	if (guard) flags |= ACTION_FLAG.guarding;
-	if (guard === 'parry') flags |= ACTION_FLAG.parrying;
+	if (guardRaised(e.guardT ?? 0)) flags |= ACTION_FLAG.guarding;
 	if ((e.dodgeT ?? 0) > 0) flags |= ACTION_FLAG.dodging;
 	return flags;
 }
@@ -295,44 +290,20 @@ export function actionStateOf(
 	};
 }
 
-// --- Guard: Block + Parry (ADR 0017 §5) -------------------------------------
+// --- Guard: Block (ADR 0017 §5, ADR 0024) -----------------------------------
 //
-// Guard is ONE held input with a skill gradient, modeled — like the swing — by a
-// single scalar, `guardT` on the Entity: seconds the Guard has been held this raise,
-// counting UP from 0. Its magnitude IS the gradient: the opening window parries, held
-// past it blocks. No tap-vs-hold measurement — the window is relative to press-time,
-// which the gate already knows. Pure helpers; the owner predicts `guardT`, the server
-// owns it authoritatively, and observers read the derived `flags` off the wire.
+// Guard is ONE held input, modeled — like the swing — by a single scalar, `guardT` on
+// the Entity: seconds the Guard has been held this raise, counting UP from 0. With
+// Parry removed (ADR 0024) the held duration no longer gates anything: any raised Guard
+// is a Block, a frontal brace that chips HP and drains Poise toward a guard-break. Pure
+// helpers; the owner predicts `guardT`, the server owns it authoritatively, and
+// observers read the derived `flags` off the wire.
 
-export type GuardPhase = 'parry' | 'block';
-
-// The phase of a raised Guard for a given `guardT` (time held), or null when not
-// guarding. The opening (0, parryWindow] is the Parry window; past it is a Block held
-// for as long as the input is. The single source of truth for "is this a parry or a
-// block", used for both rendering and the no-lag hit resolution.
-export function guardPhase(
-	guardT: number,
-	cfg: typeof COMBAT.guard = COMBAT.guard,
-): GuardPhase | null {
-	if (guardT <= 0) return null;
-	return guardT <= cfg.parryWindow ? 'parry' : 'block';
-}
-
-// Whether a guarding entity PARRIES a hit landing this tick (ADR 0017 §5/§11). The raw
-// window is the opening of the raise; the server widens it by a lag-comp slack (seconds,
-// derived from the input's client timestamp and clamped to `cfg.lagComp`) so a Parry the
-// Player timed correctly on their delayed screen still resolves when the input lands a
-// tick or two late and the server's `guardT` has already drifted into Block. Offline /
-// zero-lag passes slack 0 → exactly the raw opening window. A tolerance, not a rewind.
-export function parryActive(
-	guardT: number,
-	lagSlack = 0,
-	cfg: typeof COMBAT.guard = COMBAT.guard,
-): boolean {
-	if (guardT <= 0) return false;
-	return (
-		guardT <= cfg.parryWindow + Math.min(Math.max(0, lagSlack), cfg.lagComp)
-	);
+// Whether a Guard is raised for a given `guardT` (time held): any positive value is a
+// held Block. The single source of truth for "is this entity guarding", used for both
+// rendering and hit resolution.
+export function guardRaised(guardT: number): boolean {
+	return guardT > 0;
 }
 
 // Whether `defender` faces TOWARD an attacker at `attackerX` — the frontal arc a Guard
@@ -344,27 +315,23 @@ export function facingToward(defender: Entity, attackerX: number): boolean {
 	return side === 0 || side === defender.facing;
 }
 
-// The outcome of resolving a frontal melee hit against a (possibly) guarding defender
-// (ADR 0017 §5). PURE — it reads the defender's guard state + Poise and the incoming HP
+// The outcome of resolving a frontal hit against a (possibly) guarding defender (ADR
+// 0017 §5). PURE — it reads the defender's guard state + Poise and the incoming HP
 // damage and returns what to apply, so `stepZone` (server) and any prediction share one
 // gate and can't disagree:
 //   - 'none'  : no Guard (or a rear hit) — full damage, the caller's normal path.
-//   - 'parry' : caught in the opening window — negate the hit (0 HP) and dump
-//               `attackerPoiseDump` Poise onto the ATTACKER (usually a break → punish).
-//   - 'block' : held past the window — chip `hpDamage`, drain the defender's Poise, and
-//               on a pool break flag a guard-break Stagger of the defender.
+//   - 'block' : a raised frontal Guard — chip `hpDamage`, drain the defender's Poise,
+//               and on a pool break flag a guard-break Stagger of the defender.
 export interface GuardOutcome {
-	result: 'none' | 'parry' | 'block';
-	hpDamage: number; // HP the defender takes (0 parry / chip block / full none)
+	result: 'none' | 'block';
+	hpDamage: number; // HP the defender takes (chip block / full none)
 	defenderPoise: number; // the defender's new Poise pool
 	guardBroke: boolean; // a Block emptied the pool → guard-break Stagger of the defender
-	attackerPoiseDump: number; // Poise to deal to the ATTACKER (parry only, else 0)
 }
 export function resolveGuard(
 	defender: Entity,
 	attackerX: number,
 	hpDamage: number,
-	lagSlack = 0,
 	cfg: typeof COMBAT.guard = COMBAT.guard,
 ): GuardOutcome {
 	const guardT = defender.guardT ?? 0;
@@ -374,21 +341,9 @@ export function resolveGuard(
 		hpDamage,
 		defenderPoise: pool,
 		guardBroke: false,
-		attackerPoiseDump: 0,
 	};
 	// Not guarding, or struck from behind → Guard does nothing.
-	if (!guardPhase(guardT, cfg) || !facingToward(defender, attackerX))
-		return none;
-	// Parry: the opening window (lag-comp-extended) negates the hit and dumps Poise on
-	// the attacker. Checked before Block so a window the lag slack rescues parries.
-	if (parryActive(guardT, lagSlack, cfg))
-		return {
-			result: 'parry',
-			hpDamage: 0,
-			defenderPoise: pool,
-			guardBroke: false,
-			attackerPoiseDump: cfg.parryPoiseDamage,
-		};
+	if (!guardRaised(guardT) || !facingToward(defender, attackerX)) return none;
 	// Block: chip the HP and drain Poise toward a guard-break. Reuse applyPoiseDamage so
 	// the guard-break uses the same accumulating-pool break the rest of combat does — a
 	// blocked flurry empties the pool and Staggers the turtling defender.
@@ -398,7 +353,6 @@ export function resolveGuard(
 		hpDamage: Math.ceil(hpDamage * cfg.blockChip),
 		defenderPoise: poise,
 		guardBroke: broke,
-		attackerPoiseDump: 0,
 	};
 }
 
@@ -409,11 +363,10 @@ export function guardPoseCell(e: Entity): { x: number; y: number } {
 	return { x: e.facing === 1 ? e.x + BOX.w : e.x - 1, y: e.y + 1 };
 }
 
-// The guard-stance glyph for a phase: a solid brace when Blocking, a brighter sigil in
-// the Parry window so the opening reads at a glance. Symmetric (facing is handled by the
-// cell position), a pure function of phase — the seam the renderer blits with its colour.
-export function guardPoseGlyph(phase: GuardPhase): string {
-	return phase === 'parry' ? '◇' : '┃';
+// The guard-stance glyph: a solid brace held up in front while Blocking. Symmetric
+// (facing is handled by the cell position) — the seam the renderer blits with its colour.
+export function guardPoseGlyph(): string {
+	return '┃';
 }
 
 // --- Slash-arc + per-phase pose realization data (ADR 0017 §13a/b) ----------
@@ -555,15 +508,15 @@ export function bladeEdgeArc(progress: number, facing: Facing): ArcCell[] {
 // --- CombatEvent: combat resolves into events; Effects are their projection (ADR 0019) ---
 //
 // A CombatEvent is the resolved, *semantic* fact of a combat interaction — "target T
-// was hit / poise-broke / died / parried, at (x,y), facing →, intensity N." Distinct
+// was hit / poise-broke / died / swatted, at (x,y), facing →, intensity N." Distinct
 // from an Effect (the presentation descriptor, ADR 0013) and a Particle (the client
 // realization). Shared-internal: it never rides the wire — the server projects it to
 // Effects via `effectsOf` BEFORE building each recipient's snapshot.
-export type CombatEventKind = 'hit' | 'break' | 'death' | 'parry' | 'swat';
+export type CombatEventKind = 'hit' | 'break' | 'death' | 'swat';
 
 // The fields every CombatEvent shares, whatever its kind. `targetId` is the struck
-// subject (an Entity for hit/break/death/parry, a Projectile for swat); `intensity` is
-// the damage dealt and drives particle count / sound volume (the presentation scaling
+// subject (an Entity for hit/break/death, a Projectile for swat); `intensity` is the
+// damage dealt and drives particle count / sound volume (the presentation scaling
 // itself lives in `effectsOf`, not here). The kind-specific fields hang off the union
 // members below.
 interface CombatEventBase {
@@ -578,7 +531,7 @@ interface CombatEventBase {
 // `swat`) are unrepresentable rather than merely unused:
 //   - `source` rides a predicted `hit` alone — it keys originator-suppression so the
 //     server drops the chip blood back to the predicting attacker (ADR 0013 §3). The
-//     "big moments" (break/death/parry/swat) are source-less and reach everyone.
+//     "big moments" (break/death/swat) are source-less and reach everyone.
 //   - `tint` rides a `death` alone — the dead entity's body colour, so `effectsOf`
 //     recolours the gore burst to what died (#139).
 //   - `dir` is typed to the biases each kind can actually resolve to: a `death` is
@@ -588,7 +541,6 @@ interface CombatEventBase {
 export type CombatEvent =
 	| (CombatEventBase & { kind: 'hit'; dir: -1 | 0 | 1; source?: number })
 	| (CombatEventBase & { kind: 'break'; dir: -1 | 0 | 1 })
-	| (CombatEventBase & { kind: 'parry'; dir: -1 | 0 | 1 })
 	| (CombatEventBase & { kind: 'swat'; dir: Facing })
 	| (CombatEventBase & { kind: 'death'; dir: 0; tint?: Tint });
 
@@ -599,9 +551,9 @@ export type CombatEvent =
 // `swat` have their own constructors (`deathEvent` carries a tint, `swatEvent` resolves
 // against a Projectile). `intensity` is the damage dealt (the presentation scaling lives
 // in `effectsOf`, not here). `source` is honoured for a `hit` alone — it is dropped on a
-// break/parry, which reach everyone in range (ADR 0013 §3).
+// break, which reaches everyone in range (ADR 0013 §3).
 export function combatEventAt(
-	kind: 'hit' | 'break' | 'parry',
+	kind: 'hit' | 'break',
 	target: Entity,
 	dir: -1 | 0 | 1,
 	intensity: number,
@@ -654,9 +606,9 @@ export function swatEvent(pr: Projectile, dir: Facing): CombatEvent {
 
 // The presentation projection of a CombatEvent (ADR 0019): the single, shared, pure
 // home for the semantic→presentational mapping — `hit → blood`, `break → impact`,
-// `death → gore`, `parry → parry` — and for the per-kind look (intensity scaling, the
+// `death → gore`, `swat → impact` — and for the per-kind look (intensity scaling, the
 // originator-suppression `source`). `hit` carries its `source` through so the server
-// suppresses the chip blood back to the predicting attacker; `break`/`death`/`parry`
+// suppresses the chip blood back to the predicting attacker; `break`/`death`/`swat`
 // drop it, so those "big moments" reach everyone in range (ADR 0017 §13c/d). A lethal
 // blow voices `death` (gore), not death+hit — the suppression is in choosing the kind
 // (ADR 0014 §2). Returns an array so a future kind can fan out to several Effects.
@@ -697,17 +649,6 @@ export function effectsOf(e: CombatEvent): Effect[] {
 			if (e.tint !== undefined) fx.tint = e.tint;
 			return [fx];
 		}
-		case 'parry':
-			// Fixed intensity: the clash is about the catch, not the negated blow.
-			return [
-				{
-					kind: 'parry',
-					x: e.x,
-					y: e.y,
-					intensity: COMBAT.poise.max,
-					dir: e.dir,
-				},
-			];
 		case 'swat':
 			// A Player's melee frame shattering a hostile shot (ADR 0017 §8, ADR 0019): a
 			// light clink, NOT a Poise break — so its impact reads at the shot's own damage
@@ -890,7 +831,7 @@ export function resolveCombat(
 	swingStarted: boolean;
 	// Seconds the Guard has been held this raise (ADR 0017 §5): accumulates while the
 	// guard intent is held and the entity is free to guard, resets to 0 otherwise. The
-	// caller folds it onto `guardT`; rendering + hit resolution derive parry/block from it.
+	// caller folds it onto `guardT`; rendering + hit resolution derive the Block from it.
 	guardT: number;
 } {
 	const attackT = Math.max(0, avatar.attackT - dt);
@@ -932,16 +873,13 @@ export function resolveCombat(
 		(intent.attack ?? false) && attackT <= 0 && dodgeT <= 0 && !guarding;
 	const nextAttackT = starting ? swingTotal(weapon.swing) : attackT;
 	// Accumulate the held-guard timer only when free to guard (not mid-swing, not
-	// mid-Dodge, not Staggered); any other tick resets it to 0 (a fresh raise reopens the
-	// Parry window). Clamped just past the Parry+lag window so an indefinite Block doesn't
-	// grow `guardT` unbounded while still reading as a Block.
+	// mid-Dodge, not Staggered); any other tick resets it to 0 (a release drops the
+	// brace). Any positive value reads as a raised Block; clamped so an indefinite hold
+	// doesn't grow `guardT` unbounded.
 	const canGuard =
 		guarding && nextAttackT <= 0 && dodgeT <= 0 && (avatar.stunT ?? 0) <= 0;
 	const guardT = canGuard
-		? Math.min(
-				(avatar.guardT ?? 0) + dt,
-				COMBAT.guard.parryWindow + COMBAT.guard.lagComp + dt,
-			)
+		? Math.min((avatar.guardT ?? 0) + dt, COMBAT.guard.heldClamp)
 		: 0;
 	let hitbox: Box | null = meleeActive(nextAttackT, weapon.swing)
 		? meleeHitbox(avatar, weapon.reach)
@@ -1144,7 +1082,6 @@ export function stepAvatarCombat(
 						poiseDamage: ctx.weapon.poiseDamage,
 						facing: folded.facing,
 						faction: 'players',
-						reaction: { kind: 'melee' },
 					},
 				]
 			: [];

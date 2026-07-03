@@ -169,7 +169,7 @@ export type ClientMessage =
 			onGround: boolean;
 			attack: boolean;
 			// Raise the Guard this tick (ADR 0017 §5). The server folds it into the held
-			// `guardT` and resolves Block / Parry authoritatively.
+			// `guardT` and resolves the Block authoritatively.
 			guard: boolean;
 			interact: boolean;
 			// Dodge intent for the tick (ADR 0017 §5): the server loads the i-frame hop
@@ -177,11 +177,6 @@ export type ClientMessage =
 			// client-authoritative (ADR 0001) and never re-simulated server-side.
 			dodge: boolean;
 			skill?: number;
-			// Client monotonic timestamp (ms) of when this input was produced (ADR 0017
-			// §11): the timestamped-input channel light lag compensation judges a Parry
-			// against — the Player's own timeline, so a correctly-timed Parry that arrives
-			// a tick late still resolves within tolerance.
-			clientTime: number;
 	  }
 	// A Zone-local chat line; the server attributes it to the sender's handle and
 	// relays it to the sender's Channel (#34).
@@ -242,12 +237,11 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.bool(msg.attack);
 			w.bool(msg.interact);
 			w.u8(msg.skill ?? 0);
-			// Trailing intents after the legacy fields (ADR 0017 §5/§11), so an older
-			// decoder that stops after `skill` still reads a valid input: Dodge, then
-			// Guard + the input timestamp. Decode reads them back in this same order.
+			// Trailing intents after the legacy fields (ADR 0017 §5), so an older decoder
+			// that stops after `skill` still reads a valid input: Dodge, then Guard. Decode
+			// reads them back in this same order.
 			w.bool(msg.dodge);
 			w.bool(msg.guard);
-			w.f64(msg.clientTime);
 			break;
 		case 'chat':
 			w.u8(CLIENT_TAG.chat);
@@ -296,12 +290,11 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			const attack = r.bool();
 			const interact = r.bool();
 			const skill = r.u8();
-			// Trailing intents (ADR 0017 §5/§11), read back in the encode order; a client
-			// predating any of them omits the bytes, so guard each read and default: no
-			// Dodge / no Guard / 0 lag-comp.
+			// Trailing intents (ADR 0017 §5), read back in the encode order; a client
+			// predating them omits the bytes, so guard each read and default: no Dodge /
+			// no Guard.
 			const dodge = r.remaining() >= 1 ? r.bool() : false;
 			const guard = r.remaining() >= 1 ? r.bool() : false;
-			const clientTime = r.remaining() >= 8 ? r.f64() : 0;
 			const msg: ClientMessage = {
 				t: 'input',
 				x,
@@ -314,7 +307,6 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 				guard,
 				interact,
 				dodge,
-				clientTime,
 			};
 			if (skill !== 0) msg.skill = skill;
 			return msg;
@@ -430,12 +422,7 @@ const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
 // Append-only: indices are the wire encoding, so a new kind goes on the END (a
 // reorder would remap existing Effects). A forward-version kind clamps to `blood`
 // on decode (see readEffect) so a newer server can't crash an older client.
-const EFFECT_KINDS: readonly EffectKind[] = [
-	'blood',
-	'gore',
-	'impact',
-	'parry',
-];
+const EFFECT_KINDS: readonly EffectKind[] = ['blood', 'gore', 'impact'];
 // Append-only (like EFFECT_KINDS): the index is the wire encoding, so a new move
 // goes on the END and a forward-version index clamps to `idle` on decode.
 const MOVE_IDS: readonly MoveId[] = ['idle', 'basic', 'dodge'];
@@ -558,11 +545,8 @@ function writeProjectile(w: Writer, p: Projectile) {
 	w.f64(p.vy);
 	w.f64(p.life);
 	w.f64(p.damage);
-	w.u32(p.ownerId);
-	// The first-class hit payload + faction (ADR 0017 §8), appended after the original
-	// fields so the struct stays back-compat: a faction byte (0 monster, 1 player) then
-	// the Poise + Knockback payload that makes a heavy shot Stagger like a melee hit.
-	w.u8(p.faction === 'player' ? 1 : 0);
+	// The first-class hit payload (ADR 0017 §8): the Poise + Knockback that makes a heavy
+	// shot Stagger like a melee hit, appended after the original fields.
 	w.f64(p.poiseDamage);
 	w.f64(p.knockback);
 	w.f64(p.knockbackUp);
@@ -577,23 +561,19 @@ function readProjectile(r: Reader): Projectile {
 		vy: r.f64(),
 		life: r.f64(),
 		damage: r.f64(),
-		ownerId: r.u32(),
 	};
 	// A pre-§8 shot carried none of the payload fields; fall back to the SHOOTER pebble
-	// values + the `monster` faction so an older snapshot decodes as the legacy hostile
-	// shot rather than crashing on a short read.
+	// values so an older snapshot decodes as the legacy hostile shot rather than crashing
+	// on a short read.
 	if (r.remaining() < 1)
 		return {
 			...base,
 			poiseDamage: SHOOTER.projPoise,
 			knockback: SHOOTER.projKnockback,
 			knockbackUp: SHOOTER.projKnockbackUp,
-			faction: 'monster',
 		};
-	const faction: Projectile['faction'] = r.u8() === 1 ? 'player' : 'monster';
 	return {
 		...base,
-		faction,
 		poiseDamage: r.f64(),
 		knockback: r.f64(),
 		knockbackUp: r.f64(),
