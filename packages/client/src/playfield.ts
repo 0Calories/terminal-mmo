@@ -3,7 +3,6 @@ import type {
 	Effect,
 	Entity,
 	GameState,
-	GuardPhase,
 	Terrain,
 	Tint,
 } from '@mmo/shared';
@@ -16,9 +15,9 @@ import {
 	drawEntitySprite,
 	drawNameplates,
 	entityBox,
-	guardPhase,
 	guardPoseCell,
 	guardPoseGlyph,
+	guardRaised,
 	isSolid,
 	type RenderStyle,
 	renderZoneScene,
@@ -318,23 +317,20 @@ function drawSwing(
 		);
 }
 
-// The Guard phase an entity is bracing in this frame, or null. Co-present entities
-// carry it in the replicated action `flags` (ADR 0017 §10: `guarding` + `parrying`
-// bits); the local Avatar has no action set, so its Guard is derived from the predicted
-// `guardT` — both reduce to the same GuardPhase, one render path for every brace.
-function guardRenderState(e: Entity): GuardPhase | null {
-	if (e.action) {
-		if (!(e.action.flags & ACTION_FLAG.guarding)) return null;
-		return e.action.flags & ACTION_FLAG.parrying ? 'parry' : 'block';
-	}
-	return guardPhase(e.guardT ?? 0);
+// Whether an entity is bracing a raised Guard this frame. Co-present entities carry it
+// in the replicated action `flags` (ADR 0017 §10: the `guarding` bit); the local Avatar
+// has no action set, so its Guard is derived from the predicted `guardT` — both reduce
+// to the same boolean, one render path for every brace.
+function isGuarding(e: Entity): boolean {
+	if (e.action) return (e.action.flags & ACTION_FLAG.guarding) !== 0;
+	return guardRaised(e.guardT ?? 0);
 }
 
 // Realize an entity's raised Guard as a frontal brace glyph (ADR 0017 §5/§13a): a solid
-// bar while Blocking, a brighter sigil through the Parry window, held just past the
-// leading edge. Drawn for the local Avatar (predicted from `guardT`) and every co-present
-// one (replicated via `flags`) through one path, so a brace looks the same to its owner
-// and to everyone watching — a read for an attacker deciding whether to commit.
+// bar held just past the leading edge while Blocking. Drawn for the local Avatar
+// (predicted from `guardT`) and every co-present one (replicated via `flags`) through one
+// path, so a brace looks the same to its owner and to everyone watching — a read for an
+// attacker deciding whether to commit.
 function drawGuard(
 	buf: OptimizedBuffer,
 	e: Entity,
@@ -342,8 +338,7 @@ function drawGuard(
 	sw: number,
 	sh: number,
 ) {
-	const phase = guardRenderState(e);
-	if (!phase) return;
+	if (!isGuarding(e)) return;
 	const cell = guardPoseCell(e);
 	const ax = Math.round(cell.x - cam.x);
 	const ay = Math.round(cell.y - cam.y);
@@ -351,8 +346,8 @@ function drawGuard(
 		buf.setCellWithAlphaBlending(
 			ax,
 			ay,
-			guardPoseGlyph(phase),
-			phase === 'parry' ? C.parry : C.guard,
+			guardPoseGlyph(),
+			C.guard,
 			C.transparent,
 		);
 }
@@ -469,8 +464,8 @@ function drawPlayfield(
 	// visible. The local Avatar's swing is drawn after its Sprite, below.
 	for (const e of others) {
 		drawSwing(buf, e, cam, sw, sh);
-		// A co-present Player's raised Guard (ADR 0017 §5), so a brace / parry is visible
-		// to everyone — another Player turtling or timing a parry reads at a glance.
+		// A co-present Player's raised Guard (ADR 0017 §5), so a brace is visible to
+		// everyone — another Player turtling reads at a glance.
 		drawGuard(buf, e, cam, sw, sh);
 	}
 
@@ -541,10 +536,8 @@ function drawPlayfield(
 		const py = Math.round(pr.y - cam.y);
 		if (px < 0 || px >= sw || py < 0 || py >= sh) continue;
 		const ch = pr.vx < 0 ? '◄' : pr.vx > 0 ? '►' : '●';
-		// A reflected shot reads as the Player's (ADR 0017 §8) — bright Parry-white vs the
-		// hostile warm-orange pebble.
-		const col = pr.faction === 'player' ? C.projectileReflected : C.projectile;
-		buf.setCellWithAlphaBlending(px, py, ch, col, C.transparent);
+		// Every shot is hostile (Reflect removed, ADR 0024) — the warm-orange pebble.
+		buf.setCellWithAlphaBlending(px, py, ch, C.projectile, C.transparent);
 	}
 }
 
@@ -646,15 +639,12 @@ export class PlayfieldRenderable extends Renderable {
 			: snapshotEffects;
 		this.predicted = [];
 
-		// Impact juice on a Poise break (ADR 0017 §13c): the `impact` Effect — emitted
-		// only on a break — fires a camera-kick (a ≤2-cell pop toward the hit, decaying
+		// Impact juice on a Poise break (ADR 0017 §13c): the `impact` Effect — emitted on
+		// a break or a swat — fires a camera-kick (a ≤2-cell pop toward the hit, decaying
 		// to zero in <150ms) and a brief hitstop. Light chip hits emit `blood` and get
 		// none of this, exactly as the ADR wants ("big moments only").
-		// A successful Parry (ADR 0017 §5) is a "big moment" too: the `parry` clash gets
-		// the same camera-kick + hitstop, so a clean catch feels as meaty as a break and
-		// is felt by the parrier (the source-less Effect reaches them).
 		for (const fx of fresh)
-			if (fx.kind === 'impact' || fx.kind === 'parry') {
+			if (fx.kind === 'impact') {
 				this.kick = applyKick(this.kick, fx.dir * CAMERA_KICK.maxCells, -1);
 				this.hitstop = triggerHitstop(this.hitstop);
 			}

@@ -76,30 +76,19 @@ export const COMBAT = {
 	// let it recover — the "sustained pressure breaks you" rhythm the ADR requires. An
 	// always-on regen instead refilled the pool between swings and the break never came.
 	poise: { max: 16, regen: 12, regenDelay: 0.6 } as const,
-	// Guard (ADR 0017 §5): one held input with a skill gradient. The opening window
-	// of any guard-raise is the Parry; held past it is a Block. Windows are authored
-	// in SECONDS but kept deliberately chunky in ticks (30 Hz) to survive input
-	// quantization, jitter, and the non-Kitty held-key fallback (ADR 0017 §11).
+	// Guard (ADR 0017 §5, ADR 0024): one held input. Any raised Guard is a Block — a
+	// frontal brace that chips HP and drains Poise toward a guard-break (Parry removed).
 	guard: {
-		// The opening window of a raise that PARRIES (~0.16s ≈ 5 ticks at 30 Hz). A
-		// hostile active frame landing inside it is negated and dumps Poise onto the
-		// attacker; held past the window the raise is a Block.
-		parryWindow: 0.16,
 		// A Block reduces a frontal hit to this fraction of its HP damage (chip)…
 		blockChip: 0.25,
 		// …and drains this much Poise per blocked hit toward a guard-break. Tuned so a
 		// committer's hit breaks a turtling Player's pool (max 16) after a few blocks —
 		// turtling is punished by the Poise system, no separate guard meter (ADR 0017 §5).
 		blockPoise: 6,
-		// Poise dumped on the ATTACKER on a Parry — larger than a foundational Monster's
-		// pool (max 16) so a clean Parry breaks it in one catch, opening the punish.
-		parryPoiseDamage: 24,
-		// Light lag compensation (ADR 0017 §11): max SECONDS of slack added to the
-		// server's Parry window so a Parry the Player timed correctly on their delayed
-		// screen still resolves when the timestamped input arrives a tick or two late.
-		// A tolerance, not a rewind (rollback is rejected); the input's client timestamp
-		// bounds the slack actually applied per hit.
-		lagComp: 0.1,
+		// The held-Guard timer (`guardT`) counts up while held; its magnitude no longer
+		// gates anything (any positive value is a Block), so it is clamped here purely to
+		// keep an indefinite hold from growing the scalar unbounded.
+		heldClamp: 1,
 	} as const,
 	// Intensity of a death blood burst (ADR 0013). High enough to saturate the
 	// client speck count so a kill reads visibly bigger and wider than a chip hit;
@@ -135,7 +124,7 @@ export const SHOOTER = {
 	// Seconds between telegraphed shots (ADR 0017 §8): the reworked shooter is a RANGED
 	// POKER — it COMMITS the shared wind-up→active→recovery swing and fires ONE shot on
 	// the active frame, never auto-firing. This paces the next commit so a reading Player
-	// has time to react to the telegraph, dodge/block/parry the shot, or close in to punish
+	// has time to react to the telegraph, dodge/block/swat the shot, or close in to punish
 	// the recovery. Generous vs the swing total (~0.38s) so the cadence stays readable.
 	fireCooldown: 1.4,
 	// Travel speed (cells/s): deliberately reactable, NOT hitscan (ADR 0017 §8) — slow

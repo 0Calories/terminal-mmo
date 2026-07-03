@@ -46,10 +46,9 @@ test('spawnProjectile launches ahead of the shooter in its facing direction', ()
 	expect(right.x).toBeGreaterThan(shooter.x);
 	expect(left.vx).toBeLessThan(0);
 	expect(left.x).toBeLessThan(shooter.x);
-	expect(right.ownerId).toBe(shooter.id);
 });
 
-test('a spawned shot carries the full hit-reaction payload as a hostile monster shot', () => {
+test('a spawned shot carries the full hit-reaction payload as a hostile shot', () => {
 	const shooter: Entity = {
 		id: 2,
 		type: 'shooter',
@@ -70,6 +69,4 @@ test('a spawned shot carries the full hit-reaction payload as a hostile monster 
 	expect(p.poiseDamage).toBeGreaterThan(0);
 	expect(p.knockback).toBeGreaterThan(0);
 	expect(p.knockbackUp).toBeGreaterThan(0);
-	// A fresh shot threatens Avatars until a Parry reflects it.
-	expect(p.faction).toBe('monster');
 });
