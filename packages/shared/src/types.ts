@@ -33,16 +33,6 @@ export type EntityType = 'player' | 'chaser' | 'shooter';
 // an idle action-state.
 export type AttackPhase = 'windup' | 'active' | 'recovery';
 
-// The three phase durations (seconds) of a swing's wind-up → active → recovery
-// machine (ADR 0017 §1). Authored once as COMBAT.swing for the default attack and
-// per-weapon in the Weapon stat block (ADR 0017 §14), so a greatsword's slow phases
-// and a dagger's fast ones are pure data fed through the same phase functions.
-export interface SwingPhases {
-	windup: number;
-	active: number;
-	recovery: number;
-}
-
 // The move an entity is performing. `idle` = nothing; `basic` = the basic melee
 // swing; `dodge` = the i-frame hop (ADR 0017 §5), whose `active`/`recovery` phases
 // reuse the AttackPhase values. Skills and Monster moves join this set as later
@@ -166,10 +156,10 @@ export interface Entity {
 	contributors?: number[]; // Monster-only: session ids that have damaged it, for shared-kill rewards (#37)
 	name?: string; // display handle for a Player Avatar's nameplate (absent for Monsters)
 	cosmetics?: Cosmetics; // Avatar customization (#35); render-only, absent for Monsters
-	// Equipped Weapon catalog index (ADR 0017 §14): part of an Avatar's replicated
-	// appearance, and the key to its stat block — it drives the swing's damage / arc /
-	// poise / Knockback / phase durations AND its composited visual + trail. Absent ==
-	// the default Warrior sword (DEFAULT_WEAPON), so an unarmed entity plays exactly as
+	// Equipped Weapon catalog index: part of an Avatar's replicated appearance, and
+	// the key to its stat block — the swing's damage plus the composited weapon visual
+	// (sprite + accent, ADR 0024; every weapon shares the one moveset). Absent == the
+	// default Warrior sword (DEFAULT_WEAPON), so an unarmed entity plays exactly as
 	// before. Monsters leave it unset (their offense rework is a later slice).
 	weapon?: number;
 	bubble?: string; // latest Chat line shown as an over-head Speech bubble (#59); render-only

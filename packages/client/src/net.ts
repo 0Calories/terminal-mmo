@@ -195,9 +195,8 @@ function avatarEntity(a: AvatarSnapshot): Entity {
 		type: 'player',
 		name: a.handle,
 		cosmetics: a.cosmetics,
-		// The replicated Weapon index (ADR 0017 §14): the renderer composites this
-		// Avatar's weapon onto its pose + slash-arc and reads its swing arc from the
-		// weapon's reach — this is what makes another Player's weapon visible.
+		// The replicated Weapon index: the renderer composites this Avatar's weapon
+		// sprite at the grip — this is what makes another Player's weapon visible.
 		weapon: a.weapon,
 		x: a.x,
 		y: a.y,

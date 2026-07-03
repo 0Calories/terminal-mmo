@@ -4,7 +4,6 @@ import type {
 	Entity,
 	GameState,
 	Terrain,
-	Tint,
 } from '@mmo/shared';
 import {
 	ACTION_FLAG,
@@ -21,7 +20,6 @@ import {
 	isSolid,
 	type RenderStyle,
 	renderZoneScene,
-	SCENE_PALETTE,
 	skillForSlot,
 	skillHitbox,
 	spriteFor,
@@ -30,7 +28,6 @@ import {
 	swingPose,
 	swingPoseCell,
 	swingProgress,
-	weaponById,
 } from '@mmo/shared';
 import {
 	type OptimizedBuffer,
@@ -72,7 +69,6 @@ import {
 	particleDrawRow,
 	particleGlyph,
 	stepParticles,
-	WEAPON_TRAILS,
 } from './particles';
 import type { SoundKind } from './sound/registry';
 import { effectSoundCues } from './sound/world';
@@ -275,11 +271,10 @@ function swingRenderState(
 ): { phase: AttackPhase; progress: number } | null {
 	if (e.action && e.action.move !== 'idle')
 		return { phase: e.action.phase, progress: e.action.progress };
-	// The local Avatar's swing is predicted from attackT and read against its WEAPON's
-	// phase durations (ADR 0017 §14), so a slow greatsword's phases read as slow.
-	const swing = weaponById(e.weapon).swing;
-	const phase = swingPhase(e.attackT, swing);
-	return phase ? { phase, progress: swingProgress(e.attackT, swing) } : null;
+	// The local Avatar's swing is predicted from attackT against the ONE shared phase
+	// machine (ADR 0024 — no per-weapon durations).
+	const phase = swingPhase(e.attackT);
+	return phase ? { phase, progress: swingProgress(e.attackT) } : null;
 }
 
 // Realize an entity's basic swing (ADR 0018 §5). A weaponed Avatar's swing is the
@@ -300,7 +295,7 @@ function drawSwing(
 	const st = swingRenderState(e);
 	if (!st) return;
 	const move = e.action && e.action.move !== 'idle' ? e.action.move : 'basic';
-	const pose = swingPose(move, st.phase, weaponById(e.weapon), e.facing);
+	const pose = swingPose(move, st.phase, e.facing);
 	if (!pose) return;
 	// A single tip glyph, cocked-back → level → trailing across the phases — the
 	// unarmed telegraph, with no fill flooding the hitbox cells.
@@ -350,43 +345,6 @@ function drawGuard(
 			C.guard,
 			C.transparent,
 		);
-}
-
-// Spawn a weapon's active-sweep trail (ADR 0017 §14): for every Avatar mid-swing in
-// its active phase whose equipped Weapon defines a trail, drop a wisp at the swept
-// arc tip, biased along facing. Driven straight off the render frame (not a wire
-// Effect), so the streak follows the live blade; the short-lived, non-colliding
-// profiles wink out fast. Both the local Avatar and co-present ones go through one
-// path, so everyone sees everyone's trail.
-function emitWeaponTrails(
-	particles: ParticleSystem,
-	game: GameState,
-	rng: () => number,
-) {
-	const swingers = [game.player.avatar, ...(game.others ?? [])];
-	for (const e of swingers) {
-		if (e.type !== 'player') continue;
-		const weapon = weaponById(e.weapon);
-		const trail = weapon.trail;
-		if (!trail) continue;
-		const st = swingRenderState(e);
-		if (st?.phase !== 'active') continue;
-		const cell = swingPoseCell(e, 'active');
-		// Tint the motion Trail by the weapon's accent (ADR 0018 §6) so the streak reads
-		// in the same colour as the blade and edge-arc — one cooperating weapon look.
-		const tint = weapon.sprite ? accentTint(weapon.sprite.accent) : undefined;
-		particles.spawn(WEAPON_TRAILS[trail], cell.x, cell.y, e.facing, rng, tint);
-	}
-}
-
-// The Tint (RGB) a weapon's accent palette key resolves to (ADR 0018 §6), for tinting its
-// motion Trail particles. Resolved from the shared art palette so the Trail matches the
-// blade/arc the shared renderer paints; an unknown key falls back to the bright default.
-function accentTint(accent: string): Tint {
-	const q =
-		SCENE_PALETTE[accent as keyof typeof SCENE_PALETTE] ??
-		([232, 232, 238, 255] as const);
-	return { r: q[0], g: q[1], b: q[2] };
 }
 
 function drawPlayfield(
@@ -700,11 +658,6 @@ export class PlayfieldRenderable extends Renderable {
 		}
 		this.dodgeTrack = nextTrack;
 		this.dodgeEchoes = stepDodgeEchoes(this.dodgeEchoes, dt);
-
-		// Weapon swing trails (ADR 0017 §14): spawned per render frame off any live
-		// active-phase swing, so the streak follows the blade. Stepped next frame with
-		// the rest of the pool.
-		emitWeaponTrails(this.particles, this.game, Math.random);
 
 		// Voice the same fresh Effects as world SoundEffects (ADR 0014), spatialized
 		// against the live camera: pan by horizontal offset, volume by distance, y

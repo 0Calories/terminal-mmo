@@ -340,9 +340,9 @@ export interface AvatarSnapshot {
 	hp: number;
 	maxHp: number;
 	hurtT: number;
-	// Equipped Weapon catalog index (ADR 0017 §14): part of replicated appearance, so
-	// every other client renders this Avatar's weapon (composited sprite + trail) and
-	// reads its swing against the weapon's phase durations.
+	// Equipped Weapon catalog index: part of replicated appearance, so every other
+	// client renders this Avatar's weapon (composited sprite + accent, ADR 0024 —
+	// the swing timing itself is the one shared phase machine).
 	weapon: number;
 	// What this Avatar is doing this tick (ADR 0017 §10): the replicated action-state
 	// that lets every other client render its swing (pose + slash-arc).
