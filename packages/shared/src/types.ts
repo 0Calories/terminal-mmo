@@ -13,9 +13,8 @@ export interface Control {
 
 export interface Input extends Control {
 	attack: boolean;
-	// Raise the Guard this tick (ADR 0017 §5): held, not a tap. The opening of a
-	// fresh raise is the Parry window, held past it is a Block — measured from
-	// press-time by the swing/guard gate, never a tap-vs-hold input measurement.
+	// Raise the Guard this tick (ADR 0017 §5): held, not a tap. Any raised Guard is a
+	// Block, a frontal brace chipping HP + draining Poise (Parry removed, ADR 0024).
 	guard?: boolean;
 	interact?: boolean;
 	// Dodge intent (ADR 0017 §5): a dedicated key, not a double-tap. When the Avatar
@@ -56,8 +55,8 @@ export type MoveId = 'idle' | 'basic' | 'dodge';
 // from the entity's swing timer by `actionStateOf`, never hand-authored. `phase` +
 // `progress` drive the client's per-phase sprite pose and the slash-arc (live only
 // while `active`); `flags` is a bitfield surfacing reaction/defense state — the
-// `staggered`, `guarding`, and `parrying` bits (ACTION_FLAG.*) are set here so a
-// co-present Player's Stagger and Guard/Parry stance are visible to everyone (ADR 0017
+// `staggered`, `guarding`, and `dodging` bits (ACTION_FLAG.*) are set here so a
+// co-present Player's Stagger and Guard stance are visible to everyone (ADR 0017
 // §5/§10); an airborne bit is reserved for later. `phase`/`progress` are meaningless
 // when `move` is idle — a guard is a stance, not a move, riding `flags` over an idle action.
 export interface ActionState {
@@ -144,10 +143,11 @@ export interface Entity {
 	// other client renders it), so it stays OFF the wire.
 	dodgeCdT?: number;
 	// Guard (ADR 0017 §5): seconds the Guard has been HELD this raise, counting up
-	// while the guard intent is held and reset to 0 on release / swing / Stagger. Its
-	// magnitude is the whole gradient: in (0, guard.parryWindow] the raise is a Parry,
-	// past it a Block. Absent == 0 (not guarding). Server-tracked AND predicted by the
-	// owner; replicated to others through the action-state `flags`, never as a raw number.
+	// while the guard intent is held and reset to 0 on release / swing / Stagger. Any
+	// positive value is a raised Block (a frontal brace chipping HP + draining Poise);
+	// the held duration itself no longer gates behaviour. Absent == 0 (not guarding).
+	// Server-tracked AND predicted by the owner; replicated to others through the
+	// action-state `flags`, never as a raw number.
 	guardT?: number;
 	// Ids an in-flight basic swing has already hit (ADR 0017 §2): a swing connects
 	// with a given target at most once, the rate-limiter that replaced the removed
@@ -190,11 +190,9 @@ export interface Entity {
 // The semantic game event a burst represents. `blood` is the chip-hit MVP kind;
 // `gore` is the meatier, entity-tinted death burst (#139); `impact` is the heavy
 // Poise-break burst (ADR 0017 §13d) — bigger and sharper than a chip, the visual
-// twin of the Stagger that pairs with client hitstop + camera-kick. `parry` is the
-// parry-clash flash (ADR 0017 §5) — a bright, source-less burst the defender and
-// everyone in range sees when a Guard catches a hit in its opening window. Future
+// twin of the Stagger that pairs with client hitstop + camera-kick. Future
 // kinds (guard-break, launch) are added here as the system grows.
-export type EffectKind = 'blood' | 'gore' | 'impact' | 'parry';
+export type EffectKind = 'blood' | 'gore' | 'impact';
 
 // An RGB colour carried on an Effect to tint its particles (#139), e.g. a death
 // burst recoloured to the dead entity's body. Each channel is 0..255.
@@ -245,30 +243,20 @@ export interface Box {
 }
 
 // The allegiance key a Strike resolves against (ADR 0022): a Strike only lands on
-// OPPOSING-Faction victims. Promoted from the Projectile-only `ProjectileFaction` to
-// every Strike so two invariants hold BY CONSTRUCTION rather than by scattered checks
-// — PvE (two Avatars share `players`, so no Avatar Strike selects an Avatar) and
-// Reflect-safety (a reflected shot re-factioned to `players` is never tested against
-// Avatars). Distinct from `ProjectileFaction` (singular `player`/`monster`, the
-// in-flight shot's ownership) — this is the plural victim-selection side.
+// OPPOSING-Faction victims. So the PvE invariant holds BY CONSTRUCTION rather than by
+// scattered checks — two Avatars share `players`, so no Avatar Strike selects an
+// Avatar. Every Strike carries one; the resolution rule reads it, never re-derives it.
 export type Faction = 'players' | 'monsters';
 
-// How a Strike behaves when it meets a raised Guard, and ONLY that (ADR 0022): a
-// closed tagged union switched on at the guard-interaction step alone — a `melee`
-// Strike Parries to a Stagger + attacker Poise dump, a `projectile` Strike Reflects /
-// swats. Damage / poise / break / death application is tag-agnostic. A future third
-// counterplay is a new tag, not a data-driven descriptor (YAGNI for two kinds).
-export type ReactionProfile = { kind: 'melee' } | { kind: 'projectile' };
-
 // The projected-attack value a project pass hands to combat resolution (ADR 0022):
-// "this hitbox deals this damage/poise, facing →, on behalf of this Faction, with this
-// reaction profile." It is a PROJECTION, never applied at the project site — the
-// uniform resolution rule lands every Strike against overlapping, hittable,
-// opposing-Faction, not-already-hit victims. It replaces slice 1's positional
-// `hitboxes[]` / `damages[]` parallel arrays, carrying attacker identity + facing +
-// poise + faction + reaction so resolution re-derives none of them. The per-swing
-// dedup ledger (`swingHits`) is NOT a field here — it is a multi-contact property of
-// the source entity, read/written as a keyed side-table at the resolution site.
+// "this hitbox deals this damage/poise, facing →, on behalf of this Faction." It is a
+// PROJECTION, never applied at the project site — the uniform resolution rule lands
+// every Strike against overlapping, hittable, opposing-Faction, not-already-hit
+// victims. It replaces slice 1's positional `hitboxes[]` / `damages[]` parallel
+// arrays, carrying attacker identity + facing + poise + faction so resolution
+// re-derives none of them. The per-swing dedup ledger (`swingHits`) is NOT a field
+// here — it is a multi-contact property of the source entity, read/written as a keyed
+// side-table at the resolution site.
 export interface Strike {
 	attackerId: number;
 	attackerKind: 'avatar' | 'monster' | 'projectile';
@@ -277,22 +265,15 @@ export interface Strike {
 	poiseDamage: number;
 	facing: Facing;
 	faction: Faction; // selects valid victims: opposing-Faction only
-	reaction: ReactionProfile;
 }
-
-// The side a Projectile belongs to (ADR 0017 §8): `monster` is a hostile shot
-// (resolves against Avatars — Dodge/Block/Parry/swat), `player` is one a Parry
-// REFLECTED back (now owned by the parrier, resolves against Monsters). A reflect
-// flips the faction (and ownership), so the same travelling hit can change whom it
-// threatens. Absent on a decoded legacy shot defaults to `monster`.
-export type ProjectileFaction = 'monster' | 'player';
 
 // A first-class hit that travels (ADR 0017 §8): a Projectile carries the SAME
 // hit-reaction payload a melee swing does — HP `damage`, `poiseDamage` toward a
 // Poise break, and the `knockback` (+ `knockbackUp` pop) thrown on that break — so a
 // heavy shot can Stagger exactly like a melee connect (scaled by Mass), while a
-// pebble only chips. It travels at a reactable speed (not hitscan) and is countered
-// by the whole defensive kit. `faction` decides whom it threatens (see above).
+// pebble only chips. It travels at a reactable speed (not hitscan) and is a hostile
+// shot countered by Dodge, Block, or a melee swat. Every Projectile threatens
+// Avatars — with Reflect removed (ADR 0024) there is no player-owned shot.
 export interface Projectile {
 	id: number;
 	x: number;
@@ -307,8 +288,6 @@ export interface Projectile {
 	poiseDamage: number;
 	knockback: number;
 	knockbackUp: number;
-	faction: ProjectileFaction;
-	ownerId: number;
 }
 
 export interface Npc extends Box {

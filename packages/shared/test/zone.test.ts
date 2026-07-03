@@ -386,7 +386,7 @@ test('a Dodge in its recovery window does NOT grant i-frames — the hit connect
 
 test('a Dodge slips a projectile during its active window but not its recovery', () => {
 	// The same i-frame gate covers ranged hits: an active Dodge passes through a shot.
-	const shot = makeProjectile({ x: 20, y, life: 1, ownerId: 999 });
+	const shot = makeProjectile({ x: 20, y, life: 1 });
 	const zone: Zone = { ...zoneWith([]), projectiles: [shot] };
 	const av = serverAvatar(7, 20);
 	av.avatar.dodgeT = COMBAT.dodge.recovery + COMBAT.dodge.active * 0.5; // active
@@ -416,7 +416,7 @@ test('a dodge intent loads the i-frame timer through stepZone (active on the fir
 	expect(me?.action.move).toBe('dodge');
 });
 
-// --- Guard: Block + Parry vs a committer's strike (ADR 0017 §5, #166) --------
+// --- Guard: Block vs a committer's strike (ADR 0017 §5, #166) ----------------
 //
 // strikingCommitterAt20() is a chaser parked mid-active at x=16 (to the LEFT of an
 // Avatar at x=20), striking THIS tick. A frontal Guard needs the Avatar to face the
@@ -434,7 +434,7 @@ test('Block: a frontal committer strike is chipped, not full, and drains Poise',
 	const m = strikingCommitterAt20();
 	const av = serverAvatar(7, 20);
 	av.avatar.facing = -1; // face the committer on the left (frontal)
-	av.avatar.guardT = COMBAT.guard.parryWindow + 0.05; // already past the Parry window → Block
+	av.avatar.guardT = 0.5; // a raised Guard → Block
 	const poiseBefore = av.avatar.poise ?? COMBAT.poise.max;
 	const hpBefore = av.avatar.hp;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
@@ -470,7 +470,7 @@ test('Block to a Poise break is a guard-break Stagger', () => {
 	const m = strikingCommitterAt20();
 	const av = serverAvatar(7, 20);
 	av.avatar.facing = -1;
-	av.avatar.guardT = COMBAT.guard.parryWindow + 0.05; // Block
+	av.avatar.guardT = 0.5; // a raised Guard → Block
 	av.avatar.poise = COMBAT.guard.blockPoise - 1; // one block empties the pool
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
@@ -480,60 +480,19 @@ test('Block to a Poise break is a guard-break Stagger', () => {
 	expect(next.effects?.some((e) => e.kind === 'impact')).toBe(true);
 });
 
-test('Parry: a frontal strike in the opening window negates damage and staggers the attacker', () => {
-	const m = strikingCommitterAt20();
-	const av = serverAvatar(7, 20);
-	av.avatar.facing = -1; // frontal
-	av.avatar.guardT = 0; // a FRESH raise this tick → opening Parry window after resolveCombat
-	const hpBefore = av.avatar.hp;
-	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
-	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
-	const out = next.avatars[0].avatar;
-	expect(out.hp).toBe(hpBefore); // damage fully negated
-	// The attacker's Poise is dumped → broken → Staggered (the punish opening).
-	expect(next.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0);
-	expect(next.effects?.some((e) => e.kind === 'parry')).toBe(true);
-});
-
 test('Guard only protects the frontal arc — a rear strike ignores it', () => {
 	const m = strikingCommitterAt20(); // attacker to the LEFT
 	const av = serverAvatar(7, 20);
 	av.avatar.facing = 1; // facing AWAY from the committer (rear hit)
-	av.avatar.guardT = 0; // would be a fresh Parry window if it were frontal
+	av.avatar.guardT = 0.5; // a raised Guard — but the hit lands from behind
 	const hpBefore = av.avatar.hp;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
 	const out = next.avatars[0].avatar;
 	expect(hpBefore - out.hp).toBe(MONSTER.meleeDamage); // full damage — Guard ignored
-	expect(next.effects?.some((e) => e.kind === 'parry')).toBeFalsy();
 });
 
-test('lag compensation resolves a Parry that was valid on the client timeline (ADR 0017 §11)', () => {
-	// A guardT a hair past the raw Parry window: a Block with no comp, a Parry once the
-	// input's staleness (lagMs) widens the window. Same scenario, two lagMs values.
-	const justPastWindow =
-		COMBAT.guard.parryWindow + COMBAT.guard.lagComp / 2 - 0.016;
-	const run = (lagMs: number) => {
-		const m = strikingCommitterAt20();
-		const av = serverAvatar(7, 20);
-		av.avatar.facing = -1; // frontal
-		av.avatar.guardT = justPastWindow; // +0.016 after resolveCombat → just past window
-		const hpBefore = av.avatar.hp;
-		const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
-		const next = stepZone(state, [guardIntent(7, av.avatar, { lagMs })], 16);
-		return { hpBefore, next };
-	};
-	// No lag-comp: the catch drifted into Block → chip damage, no parry flash.
-	const noComp = run(0);
-	expect(noComp.next.avatars[0].avatar.hp).toBeLessThan(noComp.hpBefore);
-	expect(noComp.next.effects?.some((e) => e.kind === 'parry')).toBeFalsy();
-	// With the input's lag reported: the same catch resolves as a Parry — full negate.
-	const comped = run(COMBAT.guard.lagComp * 1000);
-	expect(comped.next.avatars[0].avatar.hp).toBe(comped.hpBefore);
-	expect(comped.next.effects?.some((e) => e.kind === 'parry')).toBe(true);
-});
-
-test('a guarding Avatar replicates the guarding/parrying flags to others (ADR 0017 §10)', () => {
+test('a guarding Avatar replicates the guarding flag to others (ADR 0017 §10)', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.facing = -1;
 	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
@@ -541,7 +500,6 @@ test('a guarding Avatar replicates the guarding/parrying flags to others (ADR 00
 	const snap = snapshotFor(next, 9); // some other session's view
 	const flags = snap.avatars[0].action.flags;
 	expect(flags & ACTION_FLAG.guarding).toBeTruthy();
-	expect(flags & ACTION_FLAG.parrying).toBeTruthy(); // a fresh raise is in the Parry window
 });
 
 test('a Monster targets and chases the nearest Avatar', () => {
@@ -746,7 +704,6 @@ test('projectile damage emits one blood Effect at the Avatar, dir = projectile t
 		vx: -36, // travelling left: away from a shooter on the right
 		damage: 7,
 		life: 1,
-		ownerId: 999,
 	});
 	const zone: Zone = { ...zoneWith([]), projectiles: [pr] };
 	const state: ZoneState = { zone, avatars: [av], tick: 0 };
@@ -769,7 +726,6 @@ test('an i-framed Avatar struck by a projectile bleeds no blood', () => {
 		vx: -36,
 		damage: 7,
 		life: 1,
-		ownerId: 999,
 	});
 	const zone: Zone = { ...zoneWith([]), projectiles: [pr] };
 	const state: ZoneState = { zone, avatars: [av], tick: 0 };
@@ -816,7 +772,6 @@ test('an unguarded heavy projectile Staggers the Avatar on a Poise break, like a
 		poiseDamage: 20, // > the Avatar's pool (16) → break
 		knockback: 40,
 		life: 1,
-		ownerId: 999,
 	});
 	const state: ZoneState = {
 		zone: { ...zoneWith([]), projectiles: [pr] },
@@ -832,14 +787,13 @@ test('an unguarded heavy projectile Staggers the Avatar on a Poise break, like a
 test('Block: a frontal Guard chips a projectile, drains Poise, and consumes the shot', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.facing = 1; // face the shot coming from the right (frontal)
-	av.avatar.guardT = COMBAT.guard.parryWindow + 0.05; // past the Parry window → Block
+	av.avatar.guardT = 0.5; // a raised Guard → Block
 	const pr = makeProjectile({
 		x: 22,
 		y: av.avatar.y + 2,
 		vx: -36, // travelling left, from the right
 		damage: 8,
 		life: 1,
-		ownerId: 999,
 	});
 	const state: ZoneState = {
 		zone: { ...zoneWith([]), projectiles: [pr] },
@@ -853,77 +807,7 @@ test('Block: a frontal Guard chips a projectile, drains Poise, and consumes the 
 	expect(next.zone.projectiles.length).toBe(0); // the brace stopped the shot
 });
 
-test('Parry: a frontal Guard in the opening window REFLECTS the shot — owned by the parrier, flying back', () => {
-	const av = serverAvatar(7, 20);
-	av.avatar.facing = 1; // frontal to a shot coming from the right
-	av.avatar.guardT = 0.05; // inside the Parry window
-	const pr = makeProjectile({
-		x: 22,
-		y: av.avatar.y + 2,
-		vx: -36, // incoming, travelling left
-		damage: 7,
-		life: 1,
-		ownerId: 999,
-	});
-	const state: ZoneState = {
-		zone: { ...zoneWith([]), projectiles: [pr] },
-		avatars: [av],
-		tick: 0,
-	};
-	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
-	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp); // negated, no damage
-	expect(next.zone.projectiles.length).toBe(1); // NOT consumed — it flies back
-	const reflected = next.zone.projectiles[0];
-	expect(reflected.faction).toBe('player'); // now the parrier's
-	expect(reflected.ownerId).toBe(7);
-	expect(reflected.vx).toBeGreaterThan(0); // reversed, heading back toward the shooter
-});
-
-test('a reflected (player-owned) projectile damages a Monster and credits the parrier', () => {
-	const m = spawnMonster('shooter', 2, 30, y);
-	m.hp = 100; // survive so we can read the hit
-	const reflected = makeProjectile({
-		x: m.x + 1, // overlapping the Monster
-		y: m.y + 2,
-		vx: 36, // flying into it
-		damage: 7,
-		faction: 'player',
-		ownerId: 7, // the parrier's session
-	});
-	const av = serverAvatar(7, 20);
-	const state: ZoneState = {
-		zone: { ...zoneWith([m]), projectiles: [reflected] },
-		avatars: [av],
-		tick: 0,
-	};
-	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
-	expect(next.zone.monsters[0].hp).toBe(100 - 7); // the shooter took its own shot back
-	expect(next.zone.monsters[0].contributors).toContain(7); // parrier credited for the kill
-	expect(next.zone.projectiles.length).toBe(0); // the reflected shot was consumed
-});
-
-test('a reflected shot does not threaten Avatars (only Monsters)', () => {
-	// Ownership matters: a player-faction shot overlapping an Avatar passes harmlessly.
-	const av = serverAvatar(7, 20);
-	const friendly = makeProjectile({
-		x: 22,
-		y: av.avatar.y + 2,
-		vx: 36,
-		damage: 7,
-		faction: 'player',
-		ownerId: 7,
-		life: 1,
-	});
-	const state: ZoneState = {
-		zone: { ...zoneWith([]), projectiles: [friendly] },
-		avatars: [av],
-		tick: 0,
-	};
-	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
-	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp); // unharmed by its own shot
-});
-
-test('Swat: a live active melee frame DESTROYS a hostile shot with no reflect', () => {
+test('Swat: a live active melee frame DESTROYS a hostile shot', () => {
 	const av = primeSwing(serverAvatar(7, 20)); // swing live in its active phase this tick
 	av.avatar.facing = 1; // hitbox projects to the right (x 25..31)
 	const pr = makeProjectile({
@@ -932,7 +816,6 @@ test('Swat: a live active melee frame DESTROYS a hostile shot with no reflect', 
 		vx: -36, // a hostile shot incoming from the right
 		damage: 7,
 		life: 1,
-		ownerId: 999,
 	});
 	const state: ZoneState = {
 		zone: { ...zoneWith([]), projectiles: [pr] },
@@ -942,8 +825,6 @@ test('Swat: a live active melee frame DESTROYS a hostile shot with no reflect', 
 	const next = stepZone(state, [{ ...holdAt(7, av.avatar), attack: true }], 16);
 	expect(next.zone.projectiles.length).toBe(0); // swatted out of the air
 	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp); // took no damage
-	// No reflect: nothing player-faction was created.
-	expect(next.zone.projectiles.some((p) => p.faction === 'player')).toBe(false);
 	// The swat emits a `swat` CombatEvent → a LIGHT impact clink (ADR 0019): at the
 	// shot, intensity = the shot's own damage with NO poise.max bump (unlike a break),
 	// and source-less so everyone in range gets the clink + camera juice.

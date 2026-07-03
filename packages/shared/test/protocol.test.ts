@@ -75,7 +75,6 @@ test('input round-trips reported kinematics + combat intents', () => {
 		interact: false,
 		dodge: true,
 		skill: 1,
-		clientTime: 1234.5,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
@@ -94,7 +93,6 @@ test('input round-trips with no skill intent', () => {
 		guard: false,
 		interact: false,
 		dodge: false,
-		clientTime: 0,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
@@ -113,13 +111,12 @@ test('input round-trips the interact (portal) intent', () => {
 		guard: false,
 		interact: true,
 		dodge: false,
-		clientTime: 99,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
 });
 
-test('input round-trips the dodge + Guard intents + client timestamp (ADR 0017 §5/§11)', () => {
+test('input round-trips the dodge + Guard intents (ADR 0017 §5)', () => {
 	const msg: ClientMessage = {
 		t: 'input',
 		x: 5,
@@ -132,7 +129,6 @@ test('input round-trips the dodge + Guard intents + client timestamp (ADR 0017 �
 		guard: true,
 		interact: false,
 		dodge: true,
-		clientTime: 4567.25,
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
@@ -266,8 +262,6 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 				poiseDamage: 6,
 				knockback: 30,
 				knockbackUp: 10,
-				faction: 'player',
-				ownerId: 3,
 			},
 		],
 		effects: [{ kind: 'blood', x: 52.5, y: 34.5, intensity: 8, dir: 1 }],

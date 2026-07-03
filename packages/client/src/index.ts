@@ -495,7 +495,7 @@ function runNetworked(url: string) {
 			// blood prediction below (ADR 0013). Because both sides call one function, the
 			// local telegraph/Guard/Dodge can no longer diverge from the authoritative
 			// outcome. Reconciliation of the negated/landed result stays server-owned (HP +
-			// the snapshot's parry/blood Effects). A fired Skill overrides the basic swing.
+			// the snapshot's blood Effects). A fired Skill overrides the basic swing.
 			const fold = stepAvatarCombat(
 				predicted,
 				{
@@ -551,9 +551,6 @@ function runNetworked(url: string) {
 					// fired client-side (grounded + moving), not on every key-press (ADR 0017 §5).
 					dodge: dodging,
 					skill: inp.skill,
-					// Timestamp the input so the server can lag-compensate the Parry against
-					// the Player's own timeline (ADR 0017 §11).
-					clientTime: performance.now(),
 				});
 			}
 
