@@ -9,7 +9,9 @@
 // Adding a Zone is two lines here plus the `.zone` file — deliberately explicit so
 // the shipped World is a fixed, reviewable list, not a directory scan.
 import catalogsJson from '../../../zones/catalogs.json';
-import fieldText from '../../../zones/field-01.zone' with { type: 'text' };
+import field01Text from '../../../zones/field-01.zone' with { type: 'text' };
+import field02Text from '../../../zones/field-02.zone' with { type: 'text' };
+import field03Text from '../../../zones/field-03.zone' with { type: 'text' };
 import townText from '../../../zones/town-01.zone' with { type: 'text' };
 import type { Zone } from './world';
 import { type Catalogs, parseZone } from './zoneFormat';
@@ -24,6 +26,8 @@ export function loadZones(): Zone[] {
 	// the id is supplied here rather than read from the header.
 	return [
 		parseZone(townText, CATALOGS, 'town-01'),
-		parseZone(fieldText, CATALOGS, 'field-01'),
+		parseZone(field01Text, CATALOGS, 'field-01'),
+		parseZone(field02Text, CATALOGS, 'field-02'),
+		parseZone(field03Text, CATALOGS, 'field-03'),
 	];
 }

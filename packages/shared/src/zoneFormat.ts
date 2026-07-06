@@ -16,8 +16,10 @@ export interface MonsterCatalogEntry {
 /** A by-reference NPC: an npc glyph resolves to one of these. */
 export interface NpcCatalogEntry {
 	id: string;
-	kind: 'vendor';
+	kind: 'vendor' | 'signpost';
 	name: string;
+	// Directional dialogue authored for a signpost (PRD story 9); unused by a vendor.
+	lines?: string[];
 }
 
 export interface Catalogs {
@@ -146,6 +148,7 @@ export function parseZone(text: string, catalogs: Catalogs, id: string): Zone {
 					id: nextNpcId++,
 					kind: entry.kind,
 					name: entry.name,
+					...(entry.lines !== undefined ? { lines: entry.lines } : {}),
 					x,
 					y,
 					w: NPC_BOX.w,
