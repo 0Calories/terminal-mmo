@@ -80,7 +80,7 @@ test('step is deterministic for identical seed + inputs', () => {
 });
 
 // player at x, one chaser directly in front on flat ground, in one Field Zone
-function adjacentGame(monsterHp?: number): GameState {
+function adjacentGame(monsterHp?: number, id = 'field-01'): GameState {
 	const y = GROUND_TOP - BOX.h;
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	if (monsterHp !== undefined) {
@@ -88,7 +88,7 @@ function adjacentGame(monsterHp?: number): GameState {
 		m.maxHp = monsterHp;
 	}
 	const zone: Zone = {
-		id: 'field-01',
+		id,
 		type: 'field',
 		terrain: flatTerrain(),
 		monsters: [m],
@@ -136,16 +136,20 @@ test('a step with no combat surfaces no Effects', () => {
 	expect(g.effects ?? []).toEqual([]);
 });
 
-test('killing a monster grants XP and an instanced loot drop', () => {
+test('killing a monster grants XP and, standing on the kill, collects its instanced loot Drop', () => {
+	// In the Dungeon every kill drops (ADR 0024 §2); the Avatar is on the kill site, so its
+	// private Drop is picked up on touch the same tick — into its own bag (#238).
 	const g = step(
-		primeSwing(adjacentGame(4)),
+		primeSwing(adjacentGame(4, 'dungeon-01')),
 		{ moveX: 0, jump: false, attack: true },
 		16,
 	);
-	expect(activeZone(g.world, g.player.zoneId).monsters.length).toBe(0);
+	const zone = activeZone(g.world, g.player.zoneId);
+	expect(zone.monsters.length).toBe(0);
 	expect(g.player.inventory.length).toBe(1);
 	expect(g.player.progress.xp).toBe(XP_PER_KILL);
 	expect(g.player.inventory[0].id).toBe(1); // assigned from the Player's nextId
+	expect(zone.drops ?? []).toEqual([]); // collected, nothing left resting
 });
 
 // one chaser sharing the Avatar's x on flat ground, facing right — the

@@ -316,5 +316,22 @@ export interface PlayerProgress {
 	gold: number;
 }
 
+// An in-world loot Drop (#238, ADR 0024 §2): a killed Monster leaves its rolled Item
+// resting at the kill site rather than teleporting it into the bag — it is COLLECTED ON
+// TOUCH when its owner walks over it. Loot is instanced (CONTEXT.md, Instanced loot), so
+// a Drop is PRIVATE: only `owner` ever sees or picks it up, and `snapshotFor` streams a
+// recipient only its own Drops. `x`/`y`/`w`/`h` (from Box) are the pickup box, centred on
+// the death spot and a touch wider than a body so a Drop underfoot is easy to grab.
+// `ttl` is the seconds it rests before fading (grab it before it vanishes); the server
+// ages it down and stops streaming a faded Drop. The whole Drop round-trips losslessly on
+// the wire (like every other message), though the client needs only the pickup box + item
+// to render its static, rarity-coloured glyph.
+export interface Drop extends Box {
+	id: number;
+	owner: number;
+	item: Item;
+	ttl: number;
+}
+
 // Runtime state is split along the authority boundary (ADR 0001): the shared
 // World lives in world.ts, the per-client Player in player.ts.

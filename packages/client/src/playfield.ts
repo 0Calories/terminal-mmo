@@ -18,6 +18,7 @@ import {
 	guardPoseGlyph,
 	guardRaised,
 	isSolid,
+	itemLabel,
 	type RenderStyle,
 	renderZoneScene,
 	skillForSlot,
@@ -72,7 +73,7 @@ import {
 } from './particles';
 import type { SoundKind } from './sound/registry';
 import { effectSoundCues } from './sound/world';
-import { COLORS as C } from './theme';
+import { COLORS as C, RARITY_RGBA } from './theme';
 
 // The minimal audio sink the playfield needs: just `play`. Kept as an interface so
 // the render path depends on the SoundSystem's surface, not its construction, and
@@ -415,6 +416,28 @@ function drawPlayfield(
 			Math.round(onNpc.x + Math.floor((onNpc.w - sprite.w) / 2)) - camX;
 		const sy = Math.round(onNpc.y + onNpc.h - sprite.h) - camY;
 		drawText(buf, sx, sy - 1, `↵ e  talk to ${onNpc.name}`, C.vendor, sw, sh);
+	}
+
+	// In-world loot Drops (#238): each rests in the Zone as a rarity-coloured `◆` with a
+	// floating rarity+name label above it, so rarity READS by colour both where the loot
+	// lies and at the moment you walk onto it to collect (server auto-picks-up on touch).
+	// The server streams only this Player's own Drops, so everything here is already ours.
+	for (const d of zone.drops ?? []) {
+		const col = RARITY_RGBA[d.item.rarity];
+		const gx = Math.round(d.x + d.w / 2) - camX;
+		const gy = Math.round(d.y + d.h - 1) - camY;
+		if (gx >= 0 && gx < sw && gy >= 0 && gy < sh)
+			buf.setCellWithAlphaBlending(gx, gy, '◆', col, C.transparent);
+		const label = itemLabel(d.item);
+		drawText(
+			buf,
+			gx - Math.floor(label.length / 2),
+			gy - 1,
+			label,
+			col,
+			sw,
+			sh,
+		);
 	}
 
 	// Co-present Avatars' swings, drawn from their replicated action-state (ADR 0017

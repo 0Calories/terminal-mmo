@@ -84,6 +84,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 			},
 		],
 		effects: [],
+		drops: [],
 		progress: { level: 4, xp: 30, gold: 11 },
 		inventory: [],
 		log: ['Looted rare Iron Sword.'],

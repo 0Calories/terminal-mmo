@@ -212,6 +212,16 @@ export const TOWN_SPAWN = { x: 12, y: GROUND_TOP - BOX.h } as const;
 
 export const RESPAWN = { delaySec: 5 } as const;
 
+// In-world loot Drops (#238, ADR 0024 §2). A killed Monster leaves a private, instanced
+// Drop that rests at the kill site until its owner walks over it — collected on touch,
+// not teleported to the bag. `pickup` is the Drop's box, centred on the death spot and
+// wider than a body (BOX.w) so a Drop landing underfoot is forgiving to grab; `ttlSec` is
+// how long it rests before fading if the owner never comes back for it.
+export const LOOT = {
+	pickup: { w: BOX.w + 4, h: BOX.h },
+	ttlSec: 30,
+} as const;
+
 // The Dungeon faucet's per-kill XP grant (ADR 0024 §2). Sized against the reworked
 // EXP curve so cap 5 (400 XP total) lands in ~20 kills — a reliable, unfrustrating
 // climb of a couple of Dungeon runs, not a long grind.

@@ -1,5 +1,6 @@
 // Screen/chrome colours — distinct from sprites/palette.ts, the recolourable
 // *art* palette keyed by single-char codes.
+import { RARITY_COLOR, type Rarity } from '@mmo/shared';
 import { RGBA } from '@opentui/core';
 
 export const COLORS = {
@@ -38,3 +39,16 @@ export const COLORS = {
 	bubbleBg: RGBA.fromInts(20, 24, 34, 128),
 	bubbleShade: RGBA.fromInts(20, 24, 34, 255),
 };
+
+// Rarity → screen colour for the in-world Drop glyph + its floating pickup label (#238),
+// resolved once from the shared RARITY_COLOR so the terminal reads the exact tier the sim
+// rolled — the core visual language of loot (CONTEXT.md, Item), single-sourced so client
+// and sim can never drift.
+export const RARITY_RGBA: Record<Rarity, RGBA> = Object.fromEntries(
+	(
+		Object.entries(RARITY_COLOR) as [
+			Rarity,
+			{ r: number; g: number; b: number },
+		][]
+	).map(([rarity, c]) => [rarity, RGBA.fromInts(c.r, c.g, c.b, 255)]),
+) as Record<Rarity, RGBA>;
