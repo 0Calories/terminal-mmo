@@ -174,11 +174,6 @@ export const TOWN_SPAWN = { x: 12, y: GROUND_TOP - BOX.h } as const;
 
 export const RESPAWN = { delaySec: 5 } as const;
 
-// Automatic channeling (ADR 0001): the server fills one Channel of a Zone up to
-// this soft population cap, then opens a fresh parallel Channel for further
-// entrants. The Player never picks a Channel. Drain/consolidation is post-MVP.
-export const CHANNEL = { softCap: 50 } as const;
-
 // The Dungeon faucet's per-kill XP grant (ADR 0024 §2). Sized against the reworked
 // EXP curve so cap 5 (400 XP total) lands in ~20 kills — a reliable, unfrustrating
 // climb of a couple of Dungeon runs, not a long grind.

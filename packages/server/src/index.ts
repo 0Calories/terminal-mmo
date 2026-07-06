@@ -9,11 +9,9 @@ import { randomBytes } from 'node:crypto';
 import {
 	type AvatarIntent,
 	addSession,
-	CHANNEL,
 	CHAT_MAX_LEN,
 	type Cosmetics,
 	canonicalPublicKey,
-	channelOf,
 	createAccountRegistry,
 	createServerWorld,
 	decodeClientMessage,
@@ -28,7 +26,7 @@ import {
 	resolveAuth,
 	type ServerWorld,
 	sessionByHandle,
-	sessionsInChannel,
+	sessionsInZone,
 	stepServerWorld,
 	worldSnapshotFor,
 	zoneOf,
@@ -92,7 +90,6 @@ let world: ServerWorld = createServerWorld({
 	zones: loadZones(), // authored `.zone` content off disk (ADR 0008)
 	start: START_ZONE,
 	town: TOWN_ZONE,
-	cap: CHANNEL.softCap,
 });
 
 let nextSessionId = 1;
@@ -211,15 +208,13 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 				handle: auth.handle,
 			}),
 		);
-		console.log(
-			`session ${sessionId} (${auth.handle}) joined ${zoneId} (ch ${channelOf(world, sessionId)})`,
-		);
+		console.log(`session ${sessionId} (${auth.handle}) joined ${zoneId}`);
 		return;
 	}
 	if (msg.t === 'chat') {
-		// Relay a Zone-local line to every session in the sender's Channel (#34),
+		// Relay a Zone-local line to every session in the sender's Zone (#34),
 		// attributed to the sender's handshake handle. The sender is in its own
-		// Channel, so it sees its own message echoed back.
+		// Zone, so it sees its own message echoed back.
 		const text = msg.text.trim().slice(0, CHAT_MAX_LEN);
 		if (!text) return; // drop empty / whitespace-only lines
 		const me = zoneStateOf(world, sessionId)?.avatars.find(
@@ -233,13 +228,13 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			handle: me.handle,
 			text,
 		});
-		for (const sid of sessionsInChannel(world, sessionId))
+		for (const sid of sessionsInZone(world, sessionId))
 			sockets.get(sid)?.send(frame);
 		return;
 	}
 	if (msg.t === 'whisper') {
 		// A private, directed message routed world-wide to one online handle (#40) —
-		// unlike chat, it crosses Zones and Channels. Both sender and recipient see it.
+		// unlike chat, it crosses Zones. Both sender and recipient see it.
 		const text = msg.text.trim().slice(0, CHAT_MAX_LEN);
 		if (!text) return; // drop empty / whitespace-only whispers
 		const from = handleOf(world, sessionId);
@@ -282,7 +277,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		return;
 	}
 	// input: trust the reported position with only a loose bounds clamp (against the
-	// session's current Zone/Channel) — the server never re-simulates Avatar physics.
+	// session's current Zone) — the server never re-simulates Avatar physics.
 	const zs = zoneStateOf(world, sessionId);
 	if (zs === undefined) return; // input before hello; ignore
 	const terrain = zs.zone.terrain;

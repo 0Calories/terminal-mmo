@@ -204,13 +204,13 @@ export type ClientMessage =
 			skill?: number;
 	  }
 	// A Zone-local chat line; the server attributes it to the sender's handle and
-	// relays it to the sender's Channel (#34).
+	// relays it to the sender's Zone (#34).
 	| { t: 'chat'; text: string }
 	// A private, directed message to one online Player by handle (#40). Not
 	// Zone-local: the server routes it world-wide to the matching session only.
 	| { t: 'whisper'; to: string; text: string }
 	// A triggered emote from the fixed set (#38). Zone-local like chat: the server
-	// relays it to the sender's Channel, where it renders as a transient over-head
+	// relays it to the sender's Zone, where it renders as a transient over-head
 	// glyph. `emote` is an EMOTES id; the server drops an unknown one.
 	| { t: 'emote'; emote: string };
 
@@ -436,8 +436,8 @@ export type ServerMessage =
 			inventory: Item[];
 			log: string[];
 	  }
-	// A Zone-local chat line relayed to every session in the sender's Channel,
-	// attributed to the sender's ephemeral handle (#34). Event-driven, not per-tick.
+	// A Zone-local chat line relayed to every session in the sender's Zone,
+	// attributed to the sender's Handle (#34). Event-driven, not per-tick.
 	// `sessionId` keys the over-head Speech bubble to the sender's sprite (#59,
 	// ADR 0007) — the handle is a display label, not an identity.
 	| { t: 'chat'; sessionId: number; handle: string; text: string }
