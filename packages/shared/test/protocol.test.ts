@@ -468,6 +468,48 @@ test('snapshot round-trips a Monster carrying the staggered action-flag (ADR 001
 		);
 });
 
+test('snapshot round-trips the brute entity type across the wire (CONTRIBUTING §wire, #237)', () => {
+	// The brute joins the END of ENTITY_TYPES (append-only, CONTRIBUTING §2); prove its
+	// type index encodes and decodes so a mid-swing brute replicates without mis-decoding.
+	const msg: ServerMessage = {
+		t: 'snapshot',
+		tick: 42,
+		zoneId: 'field-01',
+		avatars: [],
+		monsters: [
+			{
+				id: 4,
+				type: 'brute',
+				x: 40,
+				y: 32,
+				vx: 0,
+				vy: 0,
+				facing: 1,
+				onGround: true,
+				hp: 60,
+				maxHp: 60,
+				hurtT: 0,
+				action: {
+					move: 'basic',
+					phase: 'windup',
+					progress: 0.5,
+					flags: 0,
+					emote: null,
+					emoteT: 0,
+				},
+			},
+		],
+		projectiles: [],
+		effects: [],
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		log: [],
+	};
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	expect(decoded).toEqual(msg);
+	if (decoded.t === 'snapshot') expect(decoded.monsters[0].type).toBe('brute');
+});
+
 test('snapshot round-trips a tinted gore death Effect (#139)', () => {
 	const msg: ServerMessage = {
 		t: 'snapshot',

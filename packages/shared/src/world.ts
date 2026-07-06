@@ -1,4 +1,4 @@
-import { DEFAULT_MASS, MONSTER, SHOOTER } from './constants';
+import { BRUTE, DEFAULT_MASS, MONSTER, SHOOTER } from './constants';
 import type {
 	Box,
 	Entity,
@@ -45,6 +45,37 @@ export function activeZone(world: World, zoneId: ZoneId): Zone {
 	return world.zones[zoneId];
 }
 
+// The per-archetype spawn stats (HP / speed / Mass / Poise ceiling), in one lookup so
+// each Monster type is defined in a single place rather than scattered across parallel
+// ternaries. `poiseMax` absent inherits the shared COMBAT.poise.max; only the heavy
+// brute overrides it (its "high-poise" identity) and its Mass (Knockback resistance).
+interface SpawnStats {
+	hp: number;
+	speed: number;
+	mass: number;
+	poiseMax?: number;
+}
+
+function spawnStats(type: EntityType): SpawnStats {
+	switch (type) {
+		case 'shooter':
+			return { hp: SHOOTER.hp, speed: SHOOTER.speed, mass: DEFAULT_MASS };
+		case 'brute':
+			return {
+				hp: BRUTE.hp,
+				speed: BRUTE.speed,
+				mass: BRUTE.mass,
+				poiseMax: BRUTE.poiseMax,
+			};
+		default: // chaser
+			return {
+				hp: MONSTER.chaserHp,
+				speed: MONSTER.chaserSpeed,
+				mass: DEFAULT_MASS,
+			};
+	}
+}
+
 export function spawnMonster(
 	type: EntityType,
 	id: number,
@@ -52,8 +83,7 @@ export function spawnMonster(
 	y: number,
 	spawnIndex?: number,
 ): Entity {
-	const hp = type === 'shooter' ? SHOOTER.hp : MONSTER.chaserHp;
-	const speed = type === 'shooter' ? SHOOTER.speed : MONSTER.chaserSpeed;
+	const { hp, speed, mass, poiseMax } = spawnStats(type);
 	return {
 		id,
 		type,
@@ -68,7 +98,9 @@ export function spawnMonster(
 		maxHp: hp,
 		hurtT: 0,
 		attackT: 0,
-		mass: DEFAULT_MASS,
+		mass,
+		// Absent for every Monster but the brute — the rest inherit COMBAT.poise.max.
+		...(poiseMax !== undefined ? { poiseMax } : {}),
 		spawnIndex,
 	};
 }

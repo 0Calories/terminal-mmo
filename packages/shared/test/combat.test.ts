@@ -6,6 +6,7 @@ import {
 	applyPoiseDamage,
 	avatarHittable,
 	BOX,
+	BRUTE,
 	bladeEdgeArc,
 	COMBAT,
 	type CombatEvent,
@@ -29,8 +30,10 @@ import {
 	guardPoseGlyph,
 	guardRaised,
 	IDLE_ACTION,
+	MONSTER,
 	meleeActive,
 	meleeHitbox,
+	meleeProfileOf,
 	POWER_STRIKE,
 	PROGRESSION,
 	type Projectile,
@@ -141,6 +144,14 @@ describe('entityTint', () => {
 		});
 	});
 
+	test('the heavy brute takes its steel-grey body colour', () => {
+		expect(entityTint(monster(0, 0, { type: 'brute' }))).toEqual({
+			r: 186,
+			g: 196,
+			b: 210,
+		});
+	});
+
 	test('an Avatar takes its cosmetic hue, not the default body colour', () => {
 		const a = monster(0, 0, {
 			type: 'player',
@@ -155,6 +166,34 @@ describe('entityTint', () => {
 			cosmetics: { hue: 999, hat: 0, nameplate: 0, form: 0 },
 		});
 		expect(entityTint(a)).toEqual({ r: 255, g: 150, b: 40 }); // HUES[0]
+	});
+});
+
+describe('meleeProfileOf', () => {
+	test('the chaser is a melee committer with the light chaser profile', () => {
+		const p = meleeProfileOf('chaser');
+		expect(p).not.toBeNull();
+		expect(p?.damage).toBe(MONSTER.meleeDamage);
+		expect(p?.range).toBe(MONSTER.meleeRange);
+		expect(p?.commitCd).toBe(0); // the chaser re-commits the moment it recovers
+	});
+
+	test('the brute is a melee committer whose profile is heavier and slower than the chaser', () => {
+		const c = meleeProfileOf('chaser');
+		const b = meleeProfileOf('brute');
+		expect(b).not.toBeNull();
+		expect(b?.damage).toBe(BRUTE.meleeDamage);
+		expect(b?.poise).toBe(BRUTE.meleePoise);
+		expect(b?.range).toBe(BRUTE.meleeRange);
+		// Distinct from the chaser: it hits harder and pauses between swings.
+		expect(b?.damage).toBeGreaterThan(c?.damage ?? 0);
+		expect(b?.poise).toBeGreaterThan(c?.poise ?? 0);
+		expect(b?.commitCd).toBeGreaterThan(0);
+	});
+
+	test('the ranged-poker shooter and the player are not melee committers', () => {
+		expect(meleeProfileOf('shooter')).toBeNull();
+		expect(meleeProfileOf('player')).toBeNull();
 	});
 });
 
@@ -630,6 +669,24 @@ describe('applyPoiseDamage', () => {
 		expect(r.poise).toBe(COMBAT.poise.max - COMBAT.poiseDamage);
 		expect(r.broke).toBe(false);
 	});
+
+	test('a high-poise entity refills to its OWN poiseMax on a break, not the default', () => {
+		// The brute's big pool (poiseMax > default) makes it the poise-tank: a hit that
+		// would break a default entity only chips it, and a break refills to ITS ceiling.
+		const brute = monster(0, 0, { type: 'brute', poiseMax: BRUTE.poiseMax });
+		expect(BRUTE.poiseMax).toBeGreaterThan(COMBAT.poise.max);
+		// An absent pool starts full at the entity's own max.
+		const chip = applyPoiseDamage(brute, COMBAT.poiseDamage);
+		expect(chip.broke).toBe(false);
+		expect(chip.poise).toBe(BRUTE.poiseMax - COMBAT.poiseDamage);
+		// A hit that empties the pool breaks and refills to the entity's own ceiling.
+		const broken = applyPoiseDamage(
+			monster(0, 0, { type: 'brute', poiseMax: BRUTE.poiseMax, poise: 1 }),
+			COMBAT.poiseDamage,
+		);
+		expect(broken.broke).toBe(true);
+		expect(broken.poise).toBe(BRUTE.poiseMax);
+	});
 });
 
 describe('superArmorActive', () => {
@@ -662,6 +719,18 @@ describe('regenPoise', () => {
 		expect(regenPoise(monster(0, 0, { poise: COMBAT.poise.max }), 10)).toBe(
 			COMBAT.poise.max,
 		);
+	});
+
+	test('a high-poise entity regenerates and clamps to its OWN max, above the default', () => {
+		const brute = { type: 'brute' as const, poiseMax: BRUTE.poiseMax };
+		// It refills past the default cap toward its own larger ceiling…
+		expect(
+			regenPoise(monster(0, 0, { ...brute, poise: BRUTE.poiseMax - 1 }), 10),
+		).toBe(BRUTE.poiseMax);
+		// …and a pool above the default does not get clamped down to it.
+		expect(
+			regenPoise(monster(0, 0, { ...brute, poise: COMBAT.poise.max + 4 }), 0),
+		).toBe(COMBAT.poise.max + 4);
 	});
 });
 

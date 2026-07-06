@@ -279,6 +279,18 @@ it cannot re-commit or cancel). The reworked chaser is the first one. Monsters h
 incoming damage was dodgeable/punishable. See ADR 0017 §9.
 _Avoid_: Melee mob, contact damage, walk-into-you damage
 
+**Brute**:
+The heavy **Melee committer** authored for the deep Field (Field 3) — a slow,
+high-**Poise**, hard-hitting bruiser (ADR 0024 §8). Deals damage **only** through the
+same telegraphed **wind-up** → **active** → **recovery** swing as the chaser (no passive
+contact damage), but its whole profile is the chaser's opposite: it lumbers at half the
+chaser's speed, carries a much larger Poise pool and heavy **Mass** (so it shrugs off a
+flurry and barely flinches from **Knockback**), hits far harder, and attacks
+*deliberately* — a long cool-down between commits leaves a wide, punishable opening
+between heavy blows. Read it and punish the recovery; don't trade with it.
+_Avoid_: Tank, ogre (that is only its Sprite/name), heavy mob, boss (the Boss is its
+own single authored Monster)
+
 **Ranged poker**:
 A Monster archetype that fights at distance — the reworked shooter. Like the **melee
 committer** it deals damage *only* through a telegraphed **Attack phase**: it

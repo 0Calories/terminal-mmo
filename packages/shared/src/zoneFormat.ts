@@ -9,7 +9,7 @@ import { type Portal, spawnMonster, type Zone, type ZoneType } from './world';
 /** A by-reference Monster: a spawn glyph resolves to one of these. */
 export interface MonsterCatalogEntry {
 	id: string;
-	behavior: 'chaser' | 'shooter';
+	behavior: 'chaser' | 'shooter' | 'brute';
 	name: string;
 }
 

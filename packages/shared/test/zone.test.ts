@@ -9,7 +9,9 @@ import type {
 import {
 	ACTION_FLAG,
 	addAvatar,
+	applyPoiseDamage,
 	BOX,
+	BRUTE,
 	CAPABILITY_UNLOCK,
 	COMBAT,
 	clientStepAvatar,
@@ -353,6 +355,103 @@ test('a committer in its active phase can Stagger a poise-broken Avatar (full hi
 	expect(staggered).toBe(true);
 	expect(state.avatars[0].avatar.ivx ?? 0).not.toBe(0); // knocked back
 	expect(state.effects?.some((e) => e.kind === 'impact')).toBe(true);
+});
+
+// --- The heavy brute — a distinct melee committer (ADR 0024 §8, #237) --------
+
+test('the heavy brute commits a telegraphed swing and damages ONLY in its active phase, for its heavy hit', () => {
+	// Same commit → wind-up → active → recovery shape as the chaser, but the connect
+	// deals the brute's much heavier HP damage — the "hard-hitting" half of its profile.
+	const m = spawnMonster('brute', 2, 20 + BRUTE.meleeRange, y);
+	m.onGround = true;
+	const av = serverAvatar(7, 20);
+	av.avatar.hp = 999; // survive the heavy blow so we read one clean connect
+	const before = av.avatar.hp;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+
+	// First tick: it commits — a 'basic' swing in wind-up telegraphs, no damage yet.
+	state = stepZone(state, [holdAt(7, av.avatar)], 16);
+	const snap = snapshotFor(state, 7);
+	expect(snap.monsters[0].action.move).toBe('basic');
+	expect(snap.monsters[0].action.phase).toBe('windup');
+	expect(state.avatars[0].avatar.hp).toBe(before);
+
+	// The hit lands exactly once, in the active window, for BRUTE.meleeDamage.
+	let damagedPhase: string | undefined;
+	for (let i = 0; i < 30 && damagedPhase === undefined; i++) {
+		const hpBefore = state.avatars[0].avatar.hp;
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+		if (state.avatars[0].avatar.hp < hpBefore)
+			damagedPhase = swingPhase(state.zone.monsters[0].attackT) ?? 'idle';
+	}
+	expect(damagedPhase).toBe('active');
+	expect(before - state.avatars[0].avatar.hp).toBe(BRUTE.meleeDamage);
+	expect(BRUTE.meleeDamage).toBeGreaterThan(MONSTER.meleeDamage); // heavier than the chaser
+});
+
+test('overlapping a brute deals NO contact damage (it is a committer, never a contact mob)', () => {
+	// Stacked on the Avatar but parked in a fake recovery so it never reaches its commit
+	// branch: pure overlap, many ticks, zero damage — the "no passive contact" invariant.
+	const m = spawnMonster('brute', 2, 20, y);
+	m.onGround = true;
+	m.attackT = SWING_TOTAL; // committed/recovering — never commits a fresh swing
+	const av = serverAvatar(7, 20);
+	const before = av.avatar.hp;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	state = holdSteps(state, 3); // only the wind-up elapses — no active strike yet
+	expect(state.avatars[0].avatar.hp).toBe(before);
+	expect(state.avatars[0].avatar.hurtT).toBe(0);
+});
+
+test('the brute is a poise-tank: it spawns with a much larger Poise pool than the default', () => {
+	// The "high-poise" identity — the Player must chip far more before any of their hits
+	// can Stagger it, so it shrugs off a flurry a chaser would break under.
+	const m = spawnMonster('brute', 2, 30, y);
+	expect(m.poiseMax).toBe(BRUTE.poiseMax);
+	expect(BRUTE.poiseMax).toBeGreaterThan(COMBAT.poise.max);
+	// A single default-strength poise hit does NOT break the brute (a chaser breaks in 2).
+	const r = applyPoiseDamage(m, COMBAT.poiseDamage);
+	expect(r.broke).toBe(false);
+	expect(Math.ceil(BRUTE.poiseMax / COMBAT.poiseDamage)).toBeGreaterThan(
+		Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage),
+	);
+});
+
+test('the brute attacks deliberately: a commit cool-down keeps it from re-swinging the instant it recovers', () => {
+	// Unlike the chaser (commitCd 0, re-commits immediately), the brute must wait out its
+	// cool-down after a swing — a long, punishable opening between heavy blows.
+	const m = spawnMonster('brute', 2, 20 + BRUTE.meleeRange, y);
+	m.onGround = true;
+	const av = serverAvatar(7, 20);
+	// Immune, so its stagger can't move the Avatar out of range — observe cadence only.
+	av.avatar.hurtT = 100;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+
+	// Run through the first full swing until it recovers back to idle (attackT 0).
+	let sawSwing = false;
+	for (let i = 0; i < 60; i++) {
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+		const at = state.zone.monsters[0].attackT;
+		if (at > 0) sawSwing = true;
+		if (sawSwing && at === 0) break;
+	}
+	expect(sawSwing).toBe(true);
+	// It is still on cool-down, so the very next tick does NOT start a new swing.
+	expect(state.zone.monsters[0].attackCdT ?? 0).toBeGreaterThan(0);
+	state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+	expect(state.zone.monsters[0].attackT).toBe(0); // no immediate re-commit
+
+	// …but the cadence is a pause, not a wedge: once the cool-down drains, the brute
+	// DOES commit a second swing — so it keeps attacking, just deliberately.
+	let reCommitted = false;
+	for (let i = 0; i < 200; i++) {
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+		if (state.zone.monsters[0].attackT > 0) {
+			reCommitted = true;
+			break;
+		}
+	}
+	expect(reCommitted).toBe(true);
 });
 
 // --- Dodge i-frames (ADR 0017 §5, #165) -------------------------------------

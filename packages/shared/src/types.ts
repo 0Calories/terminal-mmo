@@ -24,7 +24,7 @@ export interface Input extends Control {
 	skill?: number;
 }
 
-export type EntityType = 'player' | 'chaser' | 'shooter';
+export type EntityType = 'player' | 'chaser' | 'shooter' | 'brute';
 
 // The three phases every attack runs through (ADR 0017 §1): `windup` commits the
 // attacker (telegraphed, no hitbox yet), `active` is the only window the hitbox is
@@ -88,11 +88,14 @@ export interface Entity {
 	maxHp: number;
 	hurtT: number; // remaining invulnerability, seconds
 	attackT: number; // remaining attack cooldown, seconds
-	// Ranged-poker fire cadence (ADR 0017 §8): seconds remaining before a shooter may
-	// COMMIT its next telegraphed shot, set on firing and counted down each tick so the
-	// poker paces its shots rather than auto-firing. Distinct from `attackT` (the swing
-	// telegraph itself). Absent == 0 (ready). Server-internal; never on the wire.
-	fireCdT?: number;
+	// Attack-commit cadence (ADR 0017 §8/§9): seconds remaining before a Monster may
+	// COMMIT its next telegraphed attack, set when it commits and counted down each tick
+	// so it paces its attacks rather than acting every frame it is in range — the shooter
+	// uses it to space its shots, the heavy brute to leave a long opening between swings
+	// (the chaser leaves it 0, re-committing the moment it recovers). Distinct from
+	// `attackT` (the swing telegraph itself). Absent == 0 (ready). Server-internal; never
+	// on the wire.
+	attackCdT?: number;
 	// Momentum body (ADR 0017). Every entity — Avatar or Monster — integrates on
 	// one body so a later slice can throw it with a Knockback impulse and reuse the
 	// same gravity + drag + Terrain collision.
@@ -108,6 +111,11 @@ export interface Entity {
 	// and a hit that drives it to 0 BREAKS (refilling it) and triggers Stagger. Absent
 	// == full (DEFAULT poise.max). Server-tracked; never on the wire.
 	poise?: number;
+	// The ceiling this entity's Poise pool regenerates to and refills to on a break
+	// (ADR 0017 §3). The per-archetype "how hard to stagger" lever: absent == the
+	// shared COMBAT.poise.max, a heavy brute carries a much larger pool so the Player
+	// must chip far more before any hit interrupts it. Server-tracked; never on the wire.
+	poiseMax?: number;
 	// Seconds remaining before Poise regen resumes (ADR 0017 §3): set to
 	// COMBAT.poise.regenDelay on every poise hit and counted down each tick, so the
 	// pool only regenerates "under no pressure" — under a flurry it purely accumulates

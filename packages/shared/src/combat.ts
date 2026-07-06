@@ -1,4 +1,4 @@
-import { BOX, COMBAT } from './constants';
+import { BOX, BRUTE, COMBAT, MONSTER } from './constants';
 import { applyImpulse } from './physics';
 import { capabilityUnlocked } from './progression';
 import { HUES, type RGBAQuad, SCENE_PALETTE } from './sceneStyle';
@@ -16,6 +16,7 @@ import type {
 	Box,
 	Effect,
 	Entity,
+	EntityType,
 	Facing,
 	MoveId,
 	Projectile,
@@ -83,6 +84,47 @@ export function swingProgress(attackT: number): number {
 // The melee hitbox is live ONLY during the active phase (ADR 0017 §1).
 export function meleeActive(attackT: number): boolean {
 	return swingPhase(attackT) === 'active';
+}
+
+// --- Melee-committer archetypes (ADR 0017 §9) -------------------------------
+//
+// The chaser and the brute are both **melee committers**: they approach, then COMMIT
+// the shared telegraphed swing (wind-up→active→recovery) and deal damage ONLY in its
+// active window — no passive contact damage. They differ purely in these tuned
+// numbers, so one code path in `stepZone` drives both off the profile.
+
+export interface MeleeProfile {
+	damage: number; // HP an active-phase connect deals
+	poise: number; // Poise damage the connect chips off the victim
+	range: number; // commit when the target is within this |dx|
+	aggro: number; // approach the target while within this |dx|
+	deadzone: number; // hold ground inside this |dx| so facing doesn't flip-flop
+	commitCd: number; // seconds to wait after a commit before committing the next
+}
+
+// The melee-committer profile for an entity type, or null for a non-committer (the
+// ranged-poker shooter and the player). Pure — one source of truth for "how this
+// archetype approaches and commits its melee".
+export function meleeProfileOf(type: EntityType): MeleeProfile | null {
+	if (type === 'chaser')
+		return {
+			damage: MONSTER.meleeDamage,
+			poise: COMBAT.poiseDamage,
+			range: MONSTER.meleeRange,
+			aggro: MONSTER.chaserAggro,
+			deadzone: MONSTER.chaserDeadzone,
+			commitCd: 0, // the chaser re-commits as soon as its swing recovers
+		};
+	if (type === 'brute')
+		return {
+			damage: BRUTE.meleeDamage,
+			poise: BRUTE.meleePoise,
+			range: BRUTE.meleeRange,
+			aggro: BRUTE.aggro,
+			deadzone: BRUTE.deadzone,
+			commitCd: BRUTE.commitCooldown, // the brute pauses between heavy swings
+		};
+	return null;
 }
 
 // --- Dodge phase machine (ADR 0017 §5) --------------------------------------
@@ -215,7 +257,7 @@ export function applyPoiseDamage(
 	e: Entity,
 	poiseDamage: number,
 ): { poise: number; broke: boolean } {
-	const max = COMBAT.poise.max;
+	const max = e.poiseMax ?? COMBAT.poise.max;
 	const cur = e.poise ?? max;
 	if (superArmorActive(e))
 		return { poise: Math.max(0, cur - poiseDamage), broke: false };
@@ -228,10 +270,8 @@ export function applyPoiseDamage(
 // regen is the MVP of "regenerates under no pressure" — a hit depletes far faster
 // than this refills, preserving the chip-then-break rhythm. Pure.
 export function regenPoise(e: Entity, dt: number): number {
-	return Math.min(
-		COMBAT.poise.max,
-		(e.poise ?? COMBAT.poise.max) + COMBAT.poise.regen * dt,
-	);
+	const max = e.poiseMax ?? COMBAT.poise.max;
+	return Math.min(max, (e.poise ?? max) + COMBAT.poise.regen * dt);
 }
 
 // The action-state to broadcast for an entity, derived from its swing timer

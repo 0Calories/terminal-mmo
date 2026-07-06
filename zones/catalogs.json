@@ -9,6 +9,11 @@
 			"id": "shooter",
 			"behavior": "shooter",
 			"name": "Sporeling"
+		},
+		{
+			"id": "brute",
+			"behavior": "brute",
+			"name": "Ogre"
 		}
 	],
 	"npcs": [

@@ -1,4 +1,5 @@
 import type { EntityType, Npc } from '../types';
+import { brute } from './brute';
 import { chaser } from './chaser';
 import { merchant } from './merchant';
 import { player } from './player';
@@ -10,6 +11,7 @@ const REGISTRY: Record<EntityType, Sprite> = {
 	player,
 	chaser,
 	shooter,
+	brute,
 };
 
 export function spriteFor(type: EntityType): Sprite {
