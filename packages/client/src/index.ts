@@ -2,6 +2,7 @@ import {
 	aabbOverlap,
 	activeZone,
 	applyImpulse,
+	buyItem,
 	COMBAT,
 	type Cosmetics,
 	canStartDodge,
@@ -21,6 +22,7 @@ import {
 	predictHits,
 	randomCosmetics,
 	SPAWN,
+	STARTER_GOODS,
 	saleValue,
 	sellItem,
 	spawnAvatar,
@@ -35,6 +37,7 @@ import { AudioOptions } from './audio-options-view';
 import { CharacterCreator } from './character-creator';
 import { ChatInput, parseChatCommand } from './chat';
 import { ConfigStore } from './config';
+import { Controls } from './controls';
 import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
@@ -146,6 +149,12 @@ function quit(message?: string) {
 	process.exit(message ? 1 : 0);
 }
 
+// `?` (shift+/) opens the controls overlay (#242). Terminals differ on whether they
+// name the key `?` or report it only as the sequence, so both are accepted.
+function isHelpKey(k: { name: string; sequence?: string }): boolean {
+	return k.name === '?' || k.sequence === '?';
+}
+
 // A running FPS estimate shared by both loops.
 function fpsMeter() {
 	let fps = 0;
@@ -181,6 +190,9 @@ function runOffline() {
 	// Audio options modal (ADR 0014/0015): a global, Shop-class overlay opened with `o`.
 	const options = new AudioOptions(renderer, sound);
 	options.attach(renderer.root);
+	// Controls cheat-sheet (#242): a global, read-only overlay toggled with `?`.
+	const controls = new Controls(renderer);
+	controls.attach(renderer.root);
 
 	function vendorUnder(g: GameState) {
 		const zone = activeZone(g.world, g.player.zoneId);
@@ -209,12 +221,43 @@ function runOffline() {
 		shop.move(0, inventory.length); // clamp selection into the new bounds
 	}
 
+	function buySelected() {
+		const good = STARTER_GOODS[shop.selected];
+		if (!good) return;
+		const { nextId } = game.player;
+		const { progress, inventory, bought } = buyItem(
+			game.player.progress,
+			game.player.inventory,
+			good,
+			nextId,
+		);
+		const line = bought
+			? `Bought ${good.base} (−${good.price}g).`
+			: `Not enough Gold for ${good.base} (${good.price}g).`;
+		const log = [...game.player.log.slice(-5), line];
+		game = {
+			...game,
+			player: {
+				...game.player,
+				progress,
+				inventory,
+				// A minted Item consumed the id; a refused buy leaves the source untouched.
+				nextId: bought ? nextId + 1 : nextId,
+				log,
+			},
+		};
+	}
+
 	function handleShopKey(name: string) {
 		// UI blip on menu navigation / confirm (ADR 0014): a centered, full-volume
 		// interface click. Close (e/esc) is silent — it marks moving *through* a menu.
 		if (isMenuBlipKey(name)) sound.play('ui');
-		const count = game.player.inventory.length;
+		const count = shop.count(game.player);
 		switch (name) {
+			case 'left':
+			case 'right':
+				shop.switchTab();
+				break;
 			case 'up':
 				shop.move(-1, count);
 				break;
@@ -222,7 +265,8 @@ function runOffline() {
 				shop.move(1, count);
 				break;
 			case 'return':
-				sellSelected();
+				if (shop.mode === 'buy') buySelected();
+				else sellSelected();
 				break;
 			case 'e':
 			case 'escape':
@@ -242,12 +286,22 @@ function runOffline() {
 			options.key(k.name);
 			return;
 		}
+		// The controls overlay owns the keyboard while open: `?`/esc close it, every
+		// other key is swallowed so it never reaches the sim.
+		if (controls.open) {
+			if (isHelpKey(k) || k.name === 'escape') controls.hide();
+			return;
+		}
 		if (k.name === 'm') {
 			sound.toggleMute();
 			return;
 		}
 		if (shop.open) {
 			handleShopKey(k.name);
+			return;
+		}
+		if (isHelpKey(k)) {
+			controls.show(game.player.progress.level, SCHEME);
 			return;
 		}
 		if (k.name === 'o') {
@@ -270,7 +324,7 @@ function runOffline() {
 		const prevAvatar = game.player.avatar;
 		game = step(
 			game,
-			shop.open ? IDLE_INPUT : input.poll(performance.now()),
+			shop.open || controls.open ? IDLE_INPUT : input.poll(performance.now()),
 			dt,
 		);
 		// Self SoundEffects (client-local, centered, full volume): the jump blip on
@@ -381,6 +435,10 @@ async function runNetworked(url: string) {
 		// Audio options modal (ADR 0014/0015): a global overlay opened with `o` during play.
 		const options = new AudioOptions(renderer, sound);
 		options.attach(renderer.root);
+		// Controls cheat-sheet (#242): a read-only overlay toggled with `?`, gating verbs
+		// against the live server-authoritative level.
+		const controls = new Controls(renderer);
+		controls.attach(renderer.root);
 
 		renderer.keyInput.on('keypress', (k) => {
 			// While typing, chat OWNS the keyboard: every key edits the line (or sends /
@@ -418,10 +476,20 @@ async function runNetworked(url: string) {
 				options.key(k.name);
 				return;
 			}
+			// The controls overlay owns the keyboard while open: `?`/esc close, every
+			// other key is swallowed so it can't drive the Avatar.
+			if (controls.open) {
+				if (isHelpKey(k) || k.name === 'escape') controls.hide();
+				return;
+			}
 			// `m` toggles master mute instantly (ADR 0014). Placed after the chat block
 			// so it edits the line while typing and only mutes during play.
 			if (k.name === 'm') {
 				sound.toggleMute();
+				return;
+			}
+			if (isHelpKey(k)) {
+				controls.show(net.latest?.progress.level ?? 1, SCHEME);
 				return;
 			}
 			if (k.name === 'o') {
@@ -447,7 +515,8 @@ async function runNetworked(url: string) {
 		let prevLevel: number | null = null;
 		renderer.setFrameCallback(async (dt) => {
 			// Freeze movement / combat while the chat line has the keyboard.
-			const inp = chat.open ? IDLE_INPUT : input.poll(performance.now());
+			const inp =
+				chat.open || controls.open ? IDLE_INPUT : input.poll(performance.now());
 
 			// Follow a server-driven Zone change (portal travel / death respawn): swap the
 			// local Zone and snap the predicted Avatar to the server's arrival position so

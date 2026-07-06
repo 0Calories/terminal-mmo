@@ -1,7 +1,8 @@
 // View + selection state only; the transaction and Gold/inventory mutation live
-// in index.ts, which owns game state.
+// in index.ts, which owns game state. The Merchant has two tabs — Sell (your loot)
+// and Buy (the Town's starter goods) — switched with ←/→ (#242).
 import type { GameState } from '@mmo/shared';
-import { saleValue } from '@mmo/shared';
+import { STARTER_GOODS, saleValue } from '@mmo/shared';
 import {
 	BoxRenderable,
 	type Renderable,
@@ -11,12 +12,18 @@ import {
 import { COLORS } from './theme';
 
 const RARITY_PAD = 9; // width of 'legendary', the widest rarity word
+const SLOT_PAD = 9; // width of 'accessory', the widest Slot word
+
+export type ShopMode = 'sell' | 'buy';
 
 export class Shop {
 	private readonly container: BoxRenderable;
+	private readonly panel: BoxRenderable;
+	private readonly tabs: TextRenderable;
 	private readonly gold: TextRenderable;
 	private readonly list: TextRenderable;
 	selected = 0;
+	mode: ShopMode = 'sell';
 
 	constructor(ctx: RenderContext) {
 		// zIndex 20 puts it above the HUD (z10).
@@ -32,16 +39,21 @@ export class Shop {
 			visible: false,
 		});
 
-		const panel = new BoxRenderable(ctx, {
+		this.panel = new BoxRenderable(ctx, {
 			flexDirection: 'column',
 			width: 46,
 			padding: 1,
 			border: true,
 			borderStyle: 'single',
 			borderColor: COLORS.vendor,
-			title: ' Merchant — sell loot ',
+			title: ' Merchant ',
 			titleColor: COLORS.vendor,
 			backgroundColor: COLORS.hudBg,
+		});
+		this.tabs = new TextRenderable(ctx, {
+			content: '',
+			fg: COLORS.vendor,
+			bg: COLORS.hudBg,
 		});
 		this.gold = new TextRenderable(ctx, {
 			content: '',
@@ -54,14 +66,15 @@ export class Shop {
 			bg: COLORS.hudBg,
 		});
 		const footer = new TextRenderable(ctx, {
-			content: '↑/↓ select   ↵ sell   e/esc close',
+			content: '←/→ tab   ↑/↓ select   ↵ trade   e/esc close',
 			fg: COLORS.dim,
 			bg: COLORS.hudBg,
 		});
-		panel.add(this.gold);
-		panel.add(this.list);
-		panel.add(footer);
-		this.container.add(panel);
+		this.panel.add(this.tabs);
+		this.panel.add(this.gold);
+		this.panel.add(this.list);
+		this.panel.add(footer);
+		this.container.add(this.panel);
 	}
 
 	attach(parent: Renderable): void {
@@ -72,13 +85,25 @@ export class Shop {
 		return this.container.visible;
 	}
 
+	// The number of rows the active tab offers, so the caller can clamp selection.
+	count(player: GameState['player']): number {
+		return this.mode === 'buy' ? STARTER_GOODS.length : player.inventory.length;
+	}
+
 	show(): void {
 		this.selected = 0;
+		this.mode = 'sell';
 		this.container.visible = true;
 	}
 
 	hide(): void {
 		this.container.visible = false;
+	}
+
+	// Flip between the Sell and Buy tabs, resetting the cursor to the top of the new list.
+	switchTab(): void {
+		this.mode = this.mode === 'sell' ? 'buy' : 'sell';
+		this.selected = 0;
 	}
 
 	move(delta: number, count: number): void {
@@ -90,19 +115,36 @@ export class Shop {
 	}
 
 	update(player: GameState['player']): void {
-		const inv = player.inventory;
-		if (this.selected > inv.length - 1)
-			this.selected = Math.max(0, inv.length - 1);
+		const count = this.count(player);
+		if (this.selected > count - 1) this.selected = Math.max(0, count - 1);
+		this.tabs.content =
+			this.mode === 'sell' ? '[ Sell ]  Buy' : '  Sell  [ Buy ]';
 		this.gold.content = `Gold ${player.progress.gold}`;
-		if (inv.length === 0) {
-			this.list.content = '\n(your bags are empty)\n';
-			return;
-		}
+		this.panel.title =
+			this.mode === 'sell'
+				? ' Merchant — sell loot '
+				: ' Merchant — buy goods ';
+		this.list.content =
+			this.mode === 'sell' ? this.sellRows(player) : this.buyRows();
+	}
+
+	private sellRows(player: GameState['player']): string {
+		const inv = player.inventory;
+		if (inv.length === 0) return '\n(your bags are empty)\n';
 		const rows = inv.map((it, i) => {
 			const caret = i === this.selected ? '▸' : ' ';
 			const rarity = it.rarity.padEnd(RARITY_PAD);
 			return `${caret} ${rarity} ${it.base}  +${saleValue(it)}g`;
 		});
-		this.list.content = `\n${rows.join('\n')}\n`;
+		return `\n${rows.join('\n')}\n`;
+	}
+
+	private buyRows(): string {
+		const rows = STARTER_GOODS.map((g, i) => {
+			const caret = i === this.selected ? '▸' : ' ';
+			const slot = g.slot.padEnd(SLOT_PAD);
+			return `${caret} ${slot} ${g.base}  −${g.price}g`;
+		});
+		return `\n${rows.join('\n')}\n`;
 	}
 }

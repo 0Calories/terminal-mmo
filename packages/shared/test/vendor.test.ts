@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Item, PlayerProgress } from '../src/types';
-import { saleValue, sellItem } from '../src/vendor';
+import { buyItem, STARTER_GOODS, saleValue, sellItem } from '../src/vendor';
 import { loadZones } from '../src/zoneContent';
 
 const item = (over: Partial<Item> = {}): Item => ({
@@ -38,6 +38,55 @@ describe('sellItem', () => {
 		const res = sellItem(progress(100), [ring], 999); // 999 not in inventory
 		expect(res.inventory).toEqual([ring]);
 		expect(res.progress.gold).toBe(100);
+	});
+});
+
+describe('buyItem', () => {
+	const good = STARTER_GOODS[0]; // Rusty Sword, price 15
+
+	test('deducts the price and appends the bought Item with the given id', () => {
+		const res = buyItem(progress(100), [], good, 42);
+		expect(res.bought).toBe(true);
+		expect(res.progress.gold).toBe(100 - good.price);
+		expect(res.progress.level).toBe(3); // other progress untouched
+		expect(res.inventory).toHaveLength(1);
+		expect(res.inventory[0]).toEqual({
+			id: 42,
+			base: good.base,
+			slot: good.slot,
+			rarity: 'common',
+			affixes: [],
+		});
+	});
+
+	test('cannot buy without enough Gold — Gold and inventory unchanged', () => {
+		const ring = item({ id: 8 });
+		const res = buyItem(progress(good.price - 1), [ring], good, 42);
+		expect(res.bought).toBe(false);
+		expect(res.progress.gold).toBe(good.price - 1);
+		expect(res.inventory).toEqual([ring]); // no Item minted
+	});
+
+	test('buying exactly to zero Gold succeeds', () => {
+		const res = buyItem(progress(good.price), [], good, 1);
+		expect(res.bought).toBe(true);
+		expect(res.progress.gold).toBe(0);
+	});
+
+	test('buy then sell round-trips at a loss — the shop is not free Gold', () => {
+		const bought = buyItem(progress(50), [], good, 1);
+		const sold = sellItem(bought.progress, bought.inventory, 1);
+		expect(sold.inventory).toEqual([]); // the Item is gone again
+		expect(sold.progress.gold).toBeLessThan(50); // price > sale value
+	});
+
+	test('every starter good is a common, affix-free base priced above its sale value', () => {
+		for (const g of STARTER_GOODS) {
+			const minted = buyItem(progress(g.price), [], g, 1).inventory[0];
+			expect(minted.rarity).toBe('common');
+			expect(minted.affixes).toEqual([]);
+			expect(g.price).toBeGreaterThan(saleValue(minted));
+		}
 	});
 });
 
