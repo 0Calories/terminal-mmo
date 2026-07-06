@@ -554,6 +554,37 @@ test("an Avatar renders its Form's idle Pose as its body, through the bodyFrame 
 	}
 });
 
+test('each Avatar Form renders its own idle body through the shared render path (ADR 0020)', () => {
+	// Every registered Form (buddy + the two demo Forms) renders as its own `idle` grid at
+	// the shared body anchor — proving a selected `cosmetics.form` composites correctly
+	// through drawEntitySprite for observers, on either facing.
+	for (let form = 0; form < FORMS.length; form++) {
+		for (const facing of [1, -1] as Facing[]) {
+			const buf = new FakeBuffer(20, 16);
+			buf.clear('BG');
+			const e = makeEntity({
+				type: 'player',
+				x: 8,
+				y: 7,
+				facing,
+				cosmetics: { hue: 0, hat: 0, nameplate: 0, form },
+			});
+			renderZoneScene(
+				buf,
+				{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+				{ x: 0, y: 0 },
+				STYLE,
+			);
+			const { sprite, ax, ay } = avatarTopLeft(e);
+			expect(sprite).toBe(formFrame(FORMS[form], 'idle'));
+			// The body is `p`-keyed, so the (present) hue cosmetic recolours it to hue 0.
+			expectSpriteAt(buf, sprite, ax, ay, facing, (key) =>
+				key === 'p' ? 'hue0' : fgFor(key),
+			);
+		}
+	}
+});
+
 // Render one Avatar's body and assert the expected Pose grid landed at the body anchor.
 // Pins the render WIRING (which replicated signals reach the selector), not appearance:
 // the expected grid is pulled from the same Form the renderer uses, so it survives art

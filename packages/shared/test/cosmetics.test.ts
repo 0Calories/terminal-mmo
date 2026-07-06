@@ -27,6 +27,16 @@ test('catalog counts agree with the underlying catalogs', () => {
 	expect(FORM_COUNT).toBe(FORMS.length);
 });
 
+test('the demo ships the extra Form + hat at ADR 0024 §8 cap (2 Forms, 5 hats)', () => {
+	// buddy + 1 new Form = 2 Forms total; the 4 original hats + the bareheaded default +
+	// 1 new hat = 6 catalog slots (5 hats). The cap is a TOTAL, not an additive amount
+	// (ADR 0024 §"What the demo is", line 120), so these are exact, not lower bounds.
+	expect(FORM_COUNT).toBe(2);
+	expect(HAT_COUNT).toBe(6);
+	// Every hat past the bareheaded default carries real overlay art.
+	for (let i = 1; i < HATS.length; i++) expect(HATS[i].sprite).not.toBeNull();
+});
+
 test('clampCosmetics passes valid indices through unchanged', () => {
 	const c: Cosmetics = { hue: 1, hat: 2, nameplate: 3, form: 0 };
 	expect(clampCosmetics(c)).toEqual(c);
@@ -72,6 +82,12 @@ test('randomCosmetics is deterministic for a seed and always in range', () => {
 
 test('randomCosmetics spreads across the catalogs (not a constant)', () => {
 	const hats = new Set<number>();
-	for (let seed = 1; seed <= 50; seed++) hats.add(randomCosmetics(seed).hat);
+	const forms = new Set<number>();
+	for (let seed = 1; seed <= 50; seed++) {
+		hats.add(randomCosmetics(seed).hat);
+		forms.add(randomCosmetics(seed).form);
+	}
 	expect(hats.size).toBeGreaterThan(1);
+	// Now that more than one Form ships, a connecting Avatar draws a varied Form too.
+	expect(forms.size).toBeGreaterThan(1);
 });

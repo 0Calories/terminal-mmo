@@ -15,8 +15,9 @@ test('hello round-trips the handle + release version + cosmetics + weapon + publ
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'neo',
+		// A non-zero `form` proves the chosen Avatar Form now rides the handshake (ADR 0020).
+		cosmetics: { hue: 3, hat: 2, nameplate: 5, form: 1 },
 		version: '0.3.0',
-		cosmetics: { hue: 3, hat: 2, nameplate: 5, form: 0 },
 		weapon: 2,
 		publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForWire',
 	};
@@ -84,7 +85,9 @@ test('hello clamps an out-of-range cosmetic index to the default on decode', () 
 		t: 'hello',
 		handle: 'forward',
 		version: '0.3.0',
-		cosmetics: { hue: 2, hat: 250, nameplate: 1, form: 0 },
+		// Both the hat and the (now-on-the-wire) form ids are past their catalogs; each
+		// must fall back to 0 on decode so the renderer is never handed a stray index.
+		cosmetics: { hue: 2, hat: 250, nameplate: 1, form: 250 },
 		weapon: 1,
 		publicKey: '',
 	});
@@ -272,7 +275,9 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 			{
 				sessionId: 7,
 				handle: 'neo',
-				cosmetics: { hue: 1, hat: 4, nameplate: 3, form: 0 },
+				// A non-zero `form` proves every observer sees which Avatar Form this
+				// Player chose — the Form now replicates in the snapshot (ADR 0020).
+				cosmetics: { hue: 1, hat: 4, nameplate: 3, form: 1 },
 				x: 12.5,
 				y: 31.25,
 				vx: -22,
