@@ -25,10 +25,25 @@ import {
 } from './zone';
 
 export interface ServerWorld {
-	// The one shared simulation per Zone, keyed by Zone id. Every Zone exists from
-	// the start and there is exactly one instance of each (funnel, ADR 0024).
+	// The one shared simulation per shared Zone (Town + Fields), keyed by Zone id.
+	// Every such Zone exists from the start and there is exactly one instance of each
+	// (funnel, ADR 0024). A `dungeon`-type Zone is deliberately absent here — it is the
+	// instanced kind, so it has no shared simulation, only the private `instances` below.
 	zones: Record<ZoneId, ZoneState>;
-	location: Record<number, ZoneId>; // sessionId -> its current Zone
+	// Live private Dungeon instances (#240), keyed by an instance id
+	// (`<zoneId>#<partyLeader>`). Created on entry from Town — one per player, or one per
+	// party — and torn down the moment the last occupant leaves (a Portal out or a
+	// forgiving death), so strangers never share a Dungeon run.
+	instances: Record<string, ZoneState>;
+	location: Record<number, ZoneId>; // sessionId -> its current (logical) Zone id
+	// sessionId -> the instance id it occupies, for a session inside a Dungeon. Absent
+	// for a session in a shared Zone. Two sessions with the same logical `location`
+	// (`dungeon-01`) but different `instanceOf` are in separate private runs.
+	instanceOf: Record<number, string>;
+	// sessionId -> the party leader whose Dungeon run it shares (default: itself). The one
+	// grouping seam that lets a friend co-locate: two sessions mapped to the same leader
+	// key one shared instance; everyone else is their own leader, so strangers never meet.
+	party: Record<number, number>;
 	templates: Record<ZoneId, Zone>; // pristine Zone content
 	startZone: ZoneId; // where a joining session spawns
 	townZone: ZoneId; // where a forgiving death respawns
@@ -43,15 +58,56 @@ export function createServerWorld(opts: {
 	const zones: Record<ZoneId, ZoneState> = {};
 	for (const z of opts.zones) {
 		templates[z.id] = z;
-		zones[z.id] = createZoneState(z);
+		// A Dungeon has no shared simulation — its ZoneStates are spun up privately per
+		// entry (#240). Every other Zone runs its one shared instance from the start.
+		if (z.type !== 'dungeon') zones[z.id] = createZoneState(z);
 	}
 	return {
 		zones,
+		instances: {},
 		location: {},
+		instanceOf: {},
+		party: {},
 		templates,
 		startZone: opts.start,
 		townZone: opts.town,
 	};
+}
+
+// The party leader whose Dungeon run a session shares — itself unless it has joined
+// another's party. Deterministic; the key half of an instance id.
+function partyLeaderOf(world: ServerWorld, sessionId: number): number {
+	return world.party[sessionId] ?? sessionId;
+}
+
+// The instance id for a party's private run of a Dungeon Zone. Same party + same Zone ⇒
+// same key (they co-locate); a different party keys a different instance (strangers never
+// share).
+function instanceKey(zone: ZoneId, leader: number): string {
+	return `${zone}#${leader}`;
+}
+
+// Apply a per-simulation step to every ZoneState in a record, returning a fresh record —
+// so the shared-Zone pass and the private-instance pass are literally the same code and
+// can never drift apart.
+function mapSims(
+	sims: Record<string, ZoneState>,
+	step: (zs: ZoneState) => ZoneState,
+): Record<string, ZoneState> {
+	const out: Record<string, ZoneState> = {};
+	for (const [key, zs] of Object.entries(sims)) out[key] = step(zs);
+	return out;
+}
+
+// Put `member` in `leader`'s party so the two share one private Dungeon instance on entry
+// (#240) — the minimal "with a friend" seam. Idempotent; a member is otherwise its own
+// leader (solo). Pure.
+export function joinParty(
+	world: ServerWorld,
+	member: number,
+	leader: number,
+): ServerWorld {
+	return { ...world, party: { ...world.party, [member]: leader } };
 }
 
 export function zoneOf(
@@ -61,11 +117,14 @@ export function zoneOf(
 	return world.location[sessionId];
 }
 
-// The one shared ZoneState a session currently occupies.
+// The ZoneState a session currently occupies — its private Dungeon instance if it is in
+// one, otherwise the shared instance of its Zone.
 export function zoneStateOf(
 	world: ServerWorld,
 	sessionId: number,
 ): ZoneState | undefined {
+	const inst = world.instanceOf[sessionId];
+	if (inst !== undefined) return world.instances[inst];
 	const zone = world.location[sessionId];
 	return zone === undefined ? undefined : world.zones[zone];
 }
@@ -87,11 +146,22 @@ export function sessionsInZone(
 	world: ServerWorld,
 	sessionId: number,
 ): number[] {
+	// Inside a Dungeon, the "Zone" is the private instance, not the logical id: two
+	// separate runs of `dungeon-01` must never hear each other, so group by instance id.
+	const inst = world.instanceOf[sessionId];
+	if (inst !== undefined) {
+		const out: number[] = [];
+		for (const [sid, key] of Object.entries(world.instanceOf))
+			if (key === inst) out.push(Number(sid));
+		return out;
+	}
 	const here = world.location[sessionId];
 	if (here === undefined) return [];
 	const out: number[] = [];
+	// A shared Zone: everyone at this logical id who is NOT off in a private instance.
 	for (const [sid, zone] of Object.entries(world.location))
-		if (zone === here) out.push(Number(sid));
+		if (zone === here && world.instanceOf[Number(sid)] === undefined)
+			out.push(Number(sid));
 	return out;
 }
 
@@ -105,7 +175,11 @@ export function sessionByHandle(
 ): number | undefined {
 	const want = handle.toLowerCase();
 	let found: number | undefined;
-	for (const zs of Object.values(world.zones))
+	// Both the shared Zones and every live private Dungeon instance hold placed sessions.
+	for (const zs of [
+		...Object.values(world.zones),
+		...Object.values(world.instances),
+	])
 		for (const a of zs.avatars)
 			if (a.handle.toLowerCase() === want)
 				if (found === undefined || a.sessionId < found) found = a.sessionId;
@@ -176,7 +250,8 @@ export function addSession(
 	};
 }
 
-// Drop a disconnected session from its Zone and the membership map.
+// Drop a disconnected session from its Zone and the membership maps. A session leaving a
+// private Dungeon instance tears that instance down if it was the last occupant (#240).
 export function removeSession(
 	world: ServerWorld,
 	sessionId: number,
@@ -185,6 +260,20 @@ export function removeSession(
 	if (zone === undefined) return world;
 	const location = { ...world.location };
 	delete location[sessionId];
+	const party = { ...world.party };
+	delete party[sessionId];
+
+	const inst = world.instanceOf[sessionId];
+	if (inst !== undefined) {
+		const instanceOf = { ...world.instanceOf };
+		delete instanceOf[sessionId];
+		const instances = { ...world.instances };
+		const emptied = removeAvatar(instances[inst], sessionId);
+		// Torn down on exit: the last one out closes the run; otherwise a party-mate stays.
+		if (emptied.avatars.length === 0) delete instances[inst];
+		else instances[inst] = emptied;
+		return { ...world, instances, location, instanceOf, party };
+	}
 	return {
 		...world,
 		zones: {
@@ -192,6 +281,7 @@ export function removeSession(
 			[zone]: removeAvatar(world.zones[zone], sessionId),
 		},
 		location,
+		party,
 	};
 }
 
@@ -202,8 +292,12 @@ export function worldSnapshotFor(
 	world: ServerWorld,
 	sessionId: number,
 ): Extract<ServerMessage, { t: 'snapshot' }> {
-	const zone = world.location[sessionId];
-	return snapshotFor(world.zones[zone], sessionId);
+	// zoneStateOf resolves to the private Dungeon instance when the session is in one, so
+	// the stream is the run it actually occupies — never a stranger's parallel instance.
+	const zs = zoneStateOf(world, sessionId);
+	if (zs === undefined)
+		throw new Error(`session ${sessionId} is not placed in any Zone`);
+	return snapshotFor(zs, sessionId);
 }
 
 function boxAt(x: number, y: number): Box {
@@ -228,11 +322,12 @@ interface Move {
 }
 
 /**
- * Advance every Zone one tick under server authority, then apply cross-Zone
- * relocations: a session pressing interact on a Portal transfers to the Portal's
- * target, and a forgiving death relocates the respawn to Town. Each destination is
- * the one shared instance of that Zone (funnel, ADR 0024). Deterministic given the
- * prior world, the per-session intents, and dt.
+ * Advance every live simulation one tick under server authority, then apply cross-Zone
+ * relocations: a session pressing interact on a Portal transfers to the Portal's target,
+ * and a forgiving death relocates the respawn to Town. A shared destination (Town/Field)
+ * is the one funnelled instance of that Zone (ADR 0024); a Dungeon destination spins up —
+ * or joins — a PRIVATE per-party instance, torn down when its last occupant leaves (#240).
+ * Deterministic given the prior world, the per-session intents, and dt.
  */
 export function stepServerWorld(
 	world: ServerWorld,
@@ -241,8 +336,9 @@ export function stepServerWorld(
 ): ServerWorld {
 	const byId = new Map(intents.map((i) => [i.sessionId, i]));
 
-	// Portal detection runs on the reported (pre-step) position: overlapping a
-	// Portal while pressing interact leaves now.
+	// Portal detection runs on the reported (pre-step) position: overlapping a Portal
+	// while pressing interact leaves now. The portals are read off the logical Zone
+	// template, so a Dungeon instance uses its Zone's own return Portal.
 	const portalDest = new Map<
 		number,
 		{ dest: ZoneId; arrival: Move['arrival'] }
@@ -261,66 +357,87 @@ export function stepServerWorld(
 			});
 	}
 
-	const zones: Record<ZoneId, ZoneState> = {};
 	const location = { ...world.location };
+	const instanceOf = { ...world.instanceOf };
 	const moves: Move[] = [];
 
-	// Step each Zone with the sessions staying in it. Portal-takers are pulled out
-	// first so their transition tick runs neither movement nor combat.
-	for (const [zone, zs] of Object.entries(world.zones)) {
+	// Step one simulation (a shared Zone OR a private instance) with the sessions staying
+	// in it. Portal-takers are pulled out first so their transition tick runs neither
+	// movement nor combat, and queued as `moves`.
+	const stepSim = (zs: ZoneState): ZoneState => {
 		const staying: ServerAvatar[] = [];
+		const stayingIds = new Set<number>();
 		for (const a of zs.avatars) {
 			const leave = portalDest.get(a.sessionId);
-			if (!leave) {
-				staying.push(a);
+			if (leave) {
+				moves.push({
+					sa: a,
+					dest: leave.dest,
+					arrival: leave.arrival,
+					log: `Entered the ${world.templates[leave.dest].type}.`,
+				});
 				continue;
 			}
-			const destType = world.templates[leave.dest].type;
-			moves.push({
-				sa: a,
-				dest: leave.dest,
-				arrival: leave.arrival,
-				log: `Entered the ${destType}.`,
-			});
+			staying.push(a);
+			stayingIds.add(a.sessionId);
 		}
-		const zoneIntents = intents.filter(
-			(i) =>
-				world.location[i.sessionId] === zone && !portalDest.has(i.sessionId),
-		);
-		zones[zone] = stepZone({ ...zs, avatars: staying }, zoneIntents, dtMs);
-	}
+		const zoneIntents = intents.filter((i) => stayingIds.has(i.sessionId));
+		return stepZone({ ...zs, avatars: staying }, zoneIntents, dtMs);
+	};
 
-	// A forgiving death: stepZone respawned the Avatar in place; relocate it to Town.
-	for (const [zone, zs] of Object.entries(zones)) {
+	// Step the shared Zones and the private instances through the identical per-sim pass.
+	let zones = mapSims(world.zones, stepSim);
+	let instances = mapSims(world.instances, stepSim);
+
+	// A forgiving death: stepZone respawned the Avatar in place; relocate it to Town
+	// (which also exits any Dungeon instance it died in).
+	const reapDeaths = (zs: ZoneState): ZoneState => {
 		const dying = new Set(zs.deaths ?? []);
-		if (dying.size === 0) continue;
-		zones[zone] = {
-			...zs,
-			avatars: zs.avatars.filter((a) => !dying.has(a.sessionId)),
-		};
+		if (dying.size === 0) return zs;
 		for (const a of zs.avatars)
 			if (dying.has(a.sessionId))
 				moves.push({ sa: a, dest: world.townZone, arrival: TOWN_SPAWN });
-	}
+		return {
+			...zs,
+			avatars: zs.avatars.filter((a) => !dying.has(a.sessionId)),
+		};
+	};
+	zones = mapSims(zones, reapDeaths);
+	instances = mapSims(instances, reapDeaths);
 
 	// Apply relocations in a deterministic order so simultaneous arrivals land
-	// consistently. Each destination is the single shared instance of that Zone.
+	// consistently.
 	moves.sort((a, b) => a.sa.sessionId - b.sa.sessionId);
 	for (const m of moves) {
 		const moved = reposition(m.sa, m.arrival.x, m.arrival.y);
 		const logged = m.log
 			? { ...moved, log: [...moved.log.slice(-5), m.log] }
 			: moved;
+		const destType = world.templates[m.dest].type;
 		// Reaching a safe Town updates the durable `lastTown` (#236) — a significant
 		// event, so login returns the Avatar to the last Town it actually stood in.
 		const withLog =
-			world.templates[m.dest].type === 'town'
-				? { ...logged, lastTown: m.dest }
-				: logged;
-		const dest = zones[m.dest];
-		zones[m.dest] = { ...dest, avatars: [...dest.avatars, withLog] };
+			destType === 'town' ? { ...logged, lastTown: m.dest } : logged;
 		location[m.sa.sessionId] = m.dest;
+		if (destType === 'dungeon') {
+			// Enter the party's PRIVATE run: reuse an existing instance keyed by the same
+			// party (a friend already inside), else spin a fresh one up. Strangers key
+			// different instances, so they never share (#240).
+			const key = instanceKey(m.dest, partyLeaderOf(world, m.sa.sessionId));
+			const inst = instances[key] ?? createZoneState(world.templates[m.dest]);
+			instances[key] = { ...inst, avatars: [...inst.avatars, withLog] };
+			instanceOf[m.sa.sessionId] = key;
+		} else {
+			const dest = zones[m.dest];
+			zones[m.dest] = { ...dest, avatars: [...dest.avatars, withLog] };
+			delete instanceOf[m.sa.sessionId];
+		}
 	}
 
-	return { ...world, zones, location };
+	// Tear down any instance left empty this tick — its last occupant portalled out or
+	// died (#240). A live instance always holds ≥1 Avatar (the entrant that spun it up).
+	for (const key of Object.keys(instances))
+		if (instances[key].avatars.length === 0) delete instances[key];
+
+	return { ...world, zones, instances, location, instanceOf };
 }

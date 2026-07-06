@@ -119,8 +119,8 @@ function cmdNew(args: string[], deps: CliDeps): number {
 	const id = args.find((a) => !a.startsWith('-'));
 	const ti = args.indexOf('--type');
 	const type = ti >= 0 ? args[ti + 1] : undefined;
-	if (!id || (type !== 'field' && type !== 'town')) {
-		deps.log('new: usage — zone new <id> --type field|town');
+	if (!id || (type !== 'field' && type !== 'town' && type !== 'dungeon')) {
+		deps.log('new: usage — zone new <id> --type field|town|dungeon');
 		return 1;
 	}
 	if (zoneExists(deps.root, id)) {

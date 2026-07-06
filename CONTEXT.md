@@ -81,7 +81,9 @@ time and moves between Zones via connections (portals/edges). The unit of "place
 AND the unit of server simulation (each Zone runs its own tick; Zones are
 independent, enabling later distribution across processes). It is also the unit of
 *interest*: a Player only receives real-time updates about entities in their own
-Zone. Two kinds: Town and Field.
+Zone. Three kinds (`ZoneType`): **Town** and **Field** each run one shared
+simulation (the funnel); the **Dungeon** is the *instanced* kind — it has no shared
+simulation, only a private **Instance** spun up per entry.
 _Avoid_: Map, level, room, screen
 
 **Zone id**:
@@ -121,8 +123,34 @@ they can survive deeper **Fields**. Deliberately plain: **no difficulty tiers, n
 procedural generation, no matchmaking or instance-lifecycle machinery, and no Boss**
 (the climax lives at the edge of the field-world). The demo ships **one** handcrafted
 Dungeon. Where the Field is the *space* you spend power, the Dungeon is the *lever* you
-pull to gain it.
-_Avoid_: Instance, raid, level, stage, tier
+pull to gain it. It is a **Zone kind** (a place you author, `type: "dungeon"`),
+distinct from an **Instance** (the live private simulation of it) — the Dungeon is
+authored once; each entry spins up its own Instance.
+_Avoid_: Instance (that's the runtime simulation of a Dungeon, not the Dungeon
+itself), raid, level, stage, tier
+
+**Instance**:
+The private, live **ZoneState** the server spins up when a Player (or **Party**)
+enters the **Dungeon** from **Town** (#240) — the *only* instancing left in the
+funnelled World (ADR 0024). Keyed by the entering Party (`<zoneId>#<leader>`): a Party
+shares one Instance, so a friend co-locates, while every stranger keys their own — two
+unrelated Players entering the same Dungeon get *separate* Instances and never see each
+other. Created on entry, **torn down the moment its last occupant leaves** (a Portal out
+or a forgiving death), so a re-entered Dungeon is always a fresh run. Shared **Town** and
+**Field** Zones have no Instances — each is one funnelled simulation. Lives in
+`ServerWorld.instances`, addressed by `instanceOf[sessionId]`; contrast the shared
+`ServerWorld.zones`.
+_Avoid_: Channel (the removed parallel-World split), instance in the Dungeon-the-place
+sense, session, shard
+
+**Party**:
+A small group of Players who run a **Dungeon** together — the minimal "with a friend"
+seam (#240). Each session has a party leader (itself when solo); joining another's Party
+means sharing that leader's key, so the group co-locates in one **Instance**. Kept
+deliberately thin for the demo: it exists to route co-op Dungeon entry (never to share a
+**Field**/**Town**, which are already common to all), not as a full social system with
+invites, chat scoping, or shared loot.
+_Avoid_: Group, raid, guild, team, Faction (that is the PvE damage filter)
 
 **Boss**:
 The single authored, telegraphing **Monster** that gates the **deepest Field** at the

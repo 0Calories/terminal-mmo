@@ -9,6 +9,9 @@
 // Adding a Zone is two lines here plus the `.zone` file — deliberately explicit so
 // the shipped World is a fixed, reviewable list, not a directory scan.
 import catalogsJson from '../../../zones/catalogs.json';
+import dungeon01Text from '../../../zones/dungeon-01.zone' with {
+	type: 'text',
+};
 import field01Text from '../../../zones/field-01.zone' with { type: 'text' };
 import field02Text from '../../../zones/field-02.zone' with { type: 'text' };
 import field03Text from '../../../zones/field-03.zone' with { type: 'text' };
@@ -29,5 +32,8 @@ export function loadZones(): Zone[] {
 		parseZone(field01Text, CATALOGS, 'field-01'),
 		parseZone(field02Text, CATALOGS, 'field-02'),
 		parseZone(field03Text, CATALOGS, 'field-03'),
+		// The instanced Dungeon (#240): entered from Town, ticked as a private per-party
+		// instance, never as a shared Zone (createServerWorld skips a shared instance for it).
+		parseZone(dungeon01Text, CATALOGS, 'dungeon-01'),
 	];
 }
