@@ -5,6 +5,7 @@ import {
 	COMBAT,
 	type Cosmetics,
 	canStartDodge,
+	capabilityUnlocked,
 	clientStepAvatar,
 	createGame,
 	DEFAULT_WEAPON,
@@ -473,7 +474,9 @@ async function runNetworked(url: string) {
 			// impulse, the i-frame timer (stepAvatarCombat below), and the report to the server,
 			// so all three agree on whether the hop fired. Direction is `inp.moveX`.
 			const dodging =
-				(inp.dodge ?? false) && canStartDodge(predicted, inp.moveX);
+				(inp.dodge ?? false) &&
+				canStartDodge(predicted, inp.moveX) &&
+				capabilityUnlocked('dodge', net.latest?.progress.level ?? 1);
 			if (dodging) {
 				predicted = applyImpulse(
 					predicted,

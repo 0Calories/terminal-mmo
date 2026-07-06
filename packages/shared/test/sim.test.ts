@@ -3,6 +3,7 @@ import type { GameState, Input, PlayerState, Projectile, Zone } from '../src';
 import {
 	activeZone,
 	BOX,
+	CAPABILITY_UNLOCK,
 	COMBAT,
 	createGame,
 	createGameFromZones,
@@ -440,6 +441,7 @@ test("only the active Zone ticks; the Avatar's persistent state lives above it",
 test('a Dodge hops in the held direction via a momentum-body impulse', () => {
 	let g = createGame();
 	g.player.avatar.onGround = true; // grounded — the hop is a grounded move
+	g.player.progress.level = CAPABILITY_UNLOCK.dodge; // Dodge unlocks at L4 (ADR 0024 §5)
 	const x0 = g.player.avatar.x;
 	g = step(g, { moveX: 1, jump: false, attack: false, dodge: true }, 16);
 	expect(g.player.avatar.dodgeT ?? 0).toBeGreaterThan(0); // the Dodge started
@@ -450,6 +452,7 @@ test('a Dodge hops in the held direction via a momentum-body impulse', () => {
 test('the hop follows the held direction (left)', () => {
 	let g = createGame();
 	g.player.avatar.onGround = true;
+	g.player.progress.level = CAPABILITY_UNLOCK.dodge;
 	g = step(g, { moveX: -1, jump: false, attack: false, dodge: true }, 16);
 	expect(g.player.avatar.ivx ?? 0).toBeLessThan(0); // hops LEFT with the held dir
 });
@@ -457,6 +460,7 @@ test('the hop follows the held direction (left)', () => {
 test('a standstill dodge does nothing — a direction must be held', () => {
 	let g = createGame();
 	g.player.avatar.onGround = true;
+	g.player.progress.level = CAPABILITY_UNLOCK.dodge;
 	g = step(g, { moveX: 0, jump: false, attack: false, dodge: true }, 16);
 	expect(g.player.avatar.dodgeT ?? 0).toBe(0); // no hop started
 	expect(g.player.avatar.ivx ?? 0).toBe(0); // no impulse
@@ -465,6 +469,7 @@ test('a standstill dodge does nothing — a direction must be held', () => {
 test('a Dodge cannot be re-triggered mid-hop (committal)', () => {
 	let g = createGame();
 	g.player.avatar.onGround = true;
+	g.player.progress.level = CAPABILITY_UNLOCK.dodge;
 	g = step(g, { moveX: 1, jump: false, attack: false, dodge: true }, 16);
 	const ivxAfterStart = g.player.avatar.ivx ?? 0;
 	// Holding dodge again next tick must not re-impulse — ivx only DECAYS, never jumps

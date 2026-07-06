@@ -1,5 +1,6 @@
 import { BOX, COMBAT } from './constants';
 import { applyImpulse } from './physics';
+import { capabilityUnlocked } from './progression';
 import { HUES, type RGBAQuad, SCENE_PALETTE } from './sceneStyle';
 import {
 	type PlayerClass,
@@ -824,7 +825,14 @@ export function resolveCombat(
 	// timer just decays. The hop IMPULSE is applied by the caller (it owns the
 	// client-authoritative momentum body, ADR 0001) — here we only track its timing
 	// for the i-frame window + replication.
-	const dodgeStarted = (intent.dodge ?? false) && dodgeReady(avatar);
+	// Dodge is the L4 rung of the capability ladder (ADR 0024 §5): the i-frame timer
+	// only loads once the verb is unlocked, so a below-L4 Avatar can never gain i-frames
+	// even if a stale/forged intent asks for a hop. The client mirror-gates the impulse
+	// at the call site on the same level, so prediction and authority agree.
+	const dodgeStarted =
+		(intent.dodge ?? false) &&
+		dodgeReady(avatar) &&
+		capabilityUnlocked('dodge', level);
 	const dodgeT = dodgeStarted
 		? DODGE_TOTAL
 		: Math.max(0, (avatar.dodgeT ?? 0) - dt);
@@ -847,7 +855,10 @@ export function resolveCombat(
 	// can't start while a Dodge is in flight (including the tick it begins) or while the
 	// Guard is held, and the Guard can't rise mid-swing, mid-Dodge, or while Staggered —
 	// so a hop, a raised brace, and an attack never coexist on one entity.
-	const guarding = intent.guard === true;
+	// Block is the L2 rung of the capability ladder (ADR 0024 §5): the Guard only rises
+	// once the verb is unlocked, so a level-1 Avatar cannot brace. Gating here (the one
+	// shared resolver) covers both hit resolution and the client's guard-stance render.
+	const guarding = intent.guard === true && capabilityUnlocked('block', level);
 	const starting =
 		(intent.attack ?? false) && attackT <= 0 && dodgeT <= 0 && !guarding;
 	const nextAttackT = starting ? SWING_TOTAL : attackT;
