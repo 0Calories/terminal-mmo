@@ -142,6 +142,19 @@ unambiguous — but entities are still *addressed* by session id at runtime: the
 Handle names the account, not the connection.
 _Avoid_: Username, nick, name, label
 
+**Save**:
+The durable per-account snapshot persisted across sessions (#236, bun:sqlite),
+keyed by the **Handle**'s public key (ADR 0004). It holds *only* progression and
+identity state: the Avatar's level / XP / **Gold**, its inventory + equipped
+**Item**, its **Cosmetics** (**Form** / hue / hat / nameplate), the last safe
+**Town**, and a **boss-defeated flag** (the demo's terminal state — see **Boss**;
+plumbing today, the trigger lands with the Boss epic). Deliberately excludes
+**Monster**s, transient **Zone** state, and exact position — login restores a Save
+and returns the Avatar to its last Town, never its logged-off spot. Written on
+significant events + a periodic flush, never per-tick, behind a pure store seam so
+the simulation stays IO-free.
+_Avoid_: Snapshot (that's the per-tick wire frame), checkpoint, profile, savegame
+
 **Chat**:
 Real-time text communication between Players. The first form is **Zone chat**: a
 message is relayed to every session in the sender's Zone and shown
