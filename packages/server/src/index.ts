@@ -12,19 +12,22 @@ import {
 	CHAT_MAX_LEN,
 	type Cosmetics,
 	canonicalPublicKey,
-	createAccountRegistry,
 	createServerWorld,
 	decodeClientMessage,
 	emoteById,
+	emptySave,
 	encodeServerMessage,
 	handleOf,
 	isReleaseVersion,
 	loadZones,
 	NONCE_LEN,
 	parsePublicKeyLine,
+	registryFromSaves,
 	removeSession,
 	resolveAuth,
+	restoredFromSave,
 	type ServerWorld,
+	saveFromAvatar,
 	sessionByHandle,
 	sessionsInZone,
 	stepServerWorld,
@@ -33,6 +36,7 @@ import {
 	zoneStateOf,
 } from '@mmo/shared';
 import type { ServerWebSocket } from 'bun';
+import { openPlayerStore } from './store';
 
 // Railway injects PORT; MMO_PORT stays as a local-dev override (ADR 0009).
 const PORT = Number(process.env.PORT) || Number(process.env.MMO_PORT) || 8080;
@@ -96,11 +100,16 @@ let nextSessionId = 1;
 const sockets = new Map<number, ServerWebSocket<WsData>>(); // joined sessions
 const intents = new Map<number, AvatarIntent>(); // latest reported intent
 
-// SSH-key challenge-response auth (ADR 0004, #235). The account registry (public
-// key ↔ durable username) is held in memory for now — #236 moves it behind
-// bun:sqlite so identities survive a restart; the pure `resolveAuth` seam is
-// unchanged by that swap.
-let accounts = createAccountRegistry();
+// Durable persistence (#236, ADR 0004 identity keys it): player state — level/XP/Gold,
+// inventory + equipped Weapon, cosmetics, last Town, boss-defeated flag — lives in
+// bun:sqlite behind the pure `PlayerStore` seam. The account registry (public key ↔
+// durable Handle) is rebuilt from those saved rows on startup, so identities survive a
+// restart; the pure `resolveAuth` seam is unchanged by that swap.
+const store = openPlayerStore(process.env.MMO_DB_PATH ?? 'mmo-state.sqlite');
+let accounts = registryFromSaves(store.all());
+// How often to flush every online Avatar's durable state (never per-tick, ADR 0009 —
+// significant events + this periodic sweep). Overridable for tests / tuning.
+const FLUSH_MS = Number(process.env.MMO_FLUSH_MS) || 30_000;
 // Connections that said hello and were issued a nonce, awaiting their `proof`.
 interface PendingAuth {
 	nonce: Uint8Array;
@@ -190,12 +199,29 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		accounts = auth.registry;
 		onlineKeyBySession.set(sessionId, key);
 		onlineSessionByKey.set(key, sessionId);
+		// Load the durable save keyed by this account (#236). A first-ever login has none:
+		// mint an empty save and persist it immediately so the Handle claim survives a
+		// restart. A returning login is restored to its last Town with its saved level/XP/
+		// Gold, inventory, equipped Weapon, cosmetics, and boss-defeated flag; the handshake
+		// cosmetics/weapon are the fresh-account choice, overridden by the save when present.
+		let saved = store.load(key);
+		if (!saved) {
+			// A fresh account keeps its connect-time cosmetics/Weapon choice (the handshake
+			// picker), persisted from the start so it survives a restart.
+			saved = {
+				...emptySave(auth.handle, TOWN_ZONE),
+				cosmetics: pending.cosmetics,
+				equippedWeapon: pending.weapon,
+			};
+			store.save(key, saved);
+		}
 		world = addSession(
 			world,
 			sessionId,
 			auth.handle,
 			pending.cosmetics,
 			pending.weapon,
+			restoredFromSave(saved),
 		);
 		sockets.set(sessionId, ws);
 		const zoneId = zoneOf(world, sessionId) ?? START_ZONE;
@@ -297,6 +323,25 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 	});
 }
 
+// Persist one online Avatar's durable state (#236): lift its ServerAvatar to a PlayerSave
+// and upsert it keyed by the account's canonical public key. Called on significant events
+// (logout) and the periodic flush — never per-tick. A session with no account key (never
+// happens post-auth) or no placed Avatar is skipped.
+function flushSession(sessionId: number) {
+	const key = onlineKeyBySession.get(sessionId);
+	if (key === undefined) return;
+	const sa = zoneStateOf(world, sessionId)?.avatars.find(
+		(a) => a.sessionId === sessionId,
+	);
+	if (sa === undefined) return;
+	store.save(key, saveFromAvatar(sa, TOWN_ZONE));
+}
+
+// Periodic durable flush of every online Avatar (ADR 0009 cadence — not per-tick).
+function flushAll() {
+	for (const sessionId of sockets.keys()) flushSession(sessionId);
+}
+
 function tick() {
 	// Fold any queued body emote onto its session's intent for this tick (ADR 0020 §9),
 	// consuming it so it fires exactly once. A queued emote with no input this cycle waits
@@ -307,7 +352,24 @@ function tick() {
 		pendingEmotes.delete(i.sessionId);
 		return { ...i, emote: em };
 	});
+	// Snapshot each session's Zone before the step so we can detect a transition INTO a
+	// Town this tick — reaching safety is a significant event (#236), a natural save point,
+	// so we flush just those sessions. This fires only on a Zone change, never per-tick.
+	const zoneBefore = new Map<number, string>();
+	for (const sessionId of sockets.keys()) {
+		const z = zoneOf(world, sessionId);
+		if (z !== undefined) zoneBefore.set(sessionId, z);
+	}
 	world = stepServerWorld(world, tickIntents, MS_PER_TICK);
+	for (const sessionId of sockets.keys()) {
+		const now = zoneOf(world, sessionId);
+		if (
+			now !== undefined &&
+			now !== zoneBefore.get(sessionId) &&
+			world.templates[now].type === 'town'
+		)
+			flushSession(sessionId);
+	}
 	for (const [sessionId, ws] of sockets)
 		ws.send(encodeServerMessage(worldSnapshotFor(world, sessionId)));
 }
@@ -370,6 +432,9 @@ const server = Bun.serve<WsData>({
 				if (n <= 0) perIp.delete(ip);
 				else perIp.set(ip, n);
 			}
+			// Logout is a significant event (#236): flush this Avatar's durable state
+			// before it leaves the World, so nothing since the last periodic flush is lost.
+			flushSession(sessionId);
 			sockets.delete(sessionId);
 			intents.delete(sessionId);
 			pendingEmotes.delete(sessionId);
@@ -387,6 +452,7 @@ const server = Bun.serve<WsData>({
 });
 
 setInterval(tick, MS_PER_TICK);
+setInterval(flushAll, FLUSH_MS);
 
 console.log(
 	`@mmo/server (${SERVER_VERSION}) ticking the world at ${TICK_RATE} Hz on ws://localhost:${server.port}`,

@@ -40,6 +40,7 @@ import {
 import { DEFAULT_COSMETICS } from './cosmetics';
 import { emoteById, emoteInterrupted, initialEmoteT, stepEmote } from './emote';
 import { rollItem } from './loot';
+import type { RestoredAvatar } from './persistence';
 import { applyImpulse, stepEntity } from './physics';
 import { spawnAvatar } from './player';
 import { applyXp, maxHpForLevel } from './progression';
@@ -65,7 +66,7 @@ import type {
 	Terrain,
 } from './types';
 import { DEFAULT_WEAPON, weaponById } from './weapons';
-import { spawnMonster, type Zone } from './world';
+import { spawnMonster, type Zone, type ZoneId } from './world';
 
 // Server-authoritative per-Avatar state. Position/facing are client-reported
 // each tick (ADR 0001); HP / progress / inventory / loot rng are server-owned.
@@ -81,6 +82,14 @@ export interface ServerAvatar {
 	rngState: number;
 	class?: PlayerClass; // absent == 'warrior'
 	skillCooldowns?: Record<string, number>;
+	// The last safe Town this Avatar stood in (#236): tracked as it enters a Town Zone and
+	// persisted, so login returns it here rather than to its logged-off position. Absent
+	// until first placed. Never on the wire — a server-owned, durable bookkeeping field.
+	lastTown?: ZoneId;
+	// Boss-defeated flag (#236, plumbing only): the durable "you have completed the demo"
+	// bit, persisted per account. Absent == false; the Boss epic wires the trigger that
+	// sets it. Server-owned; never replicated.
+	bossDefeated?: boolean;
 }
 
 export interface ZoneState {
@@ -797,30 +806,57 @@ export function createZoneState(zone: Zone): ZoneState {
 }
 
 // Add a freshly-spawned Avatar for a connecting session. The entity id mirrors
-// the session id (Avatars are identified by session on the wire).
+// the session id (Avatars are identified by session on the wire). An optional
+// `restore` seeds durable state loaded from persistence (#236): the returning
+// Avatar keeps its level/XP/Gold, inventory, equipped Weapon, cosmetics, and
+// boss-defeated flag, but always respawns at the safe spawn point (position is
+// never persisted). A fresh account passes no `restore` and starts at level 1.
 export function addAvatar(
 	state: ZoneState,
 	sessionId: number,
 	handle: string,
 	cosmetics: Cosmetics = DEFAULT_COSMETICS,
 	weapon: number = DEFAULT_WEAPON,
+	restore?: RestoredAvatar,
 ): ZoneState {
+	const cos = restore?.cosmetics ?? cosmetics;
+	const wpn = restore?.equippedWeapon ?? weapon;
+	// The chosen Weapon rides the connect handshake (ADR 0017 §14) and lives on the
+	// Avatar entity, where it drives both combat resolution and the broadcast look. A
+	// restored Avatar spawns at full HP for its saved level (HP is never persisted).
+	const avatar: Entity = {
+		...spawnAvatar(SPAWN.x, SPAWN.y),
+		id: sessionId,
+		weapon: wpn,
+	};
+	if (restore) {
+		const mhp = maxHpForLevel(restore.progress.level);
+		avatar.maxHp = mhp;
+		avatar.hp = mhp;
+	}
 	const sa: ServerAvatar = {
 		sessionId,
 		handle,
-		cosmetics,
-		// The chosen Weapon rides the connect handshake (ADR 0017 §14) and lives on the
-		// Avatar entity, where it drives both combat resolution and the broadcast look.
-		avatar: { ...spawnAvatar(SPAWN.x, SPAWN.y), id: sessionId, weapon },
-		progress: { level: 1, xp: 0, gold: 0 },
-		inventory: [],
+		cosmetics: cos,
+		avatar,
+		progress: restore?.progress ?? { level: 1, xp: 0, gold: 0 },
+		inventory: restore?.inventory ?? [],
 		log: ['Welcome. Hunt the chasers (j attack, k guard).'],
-		nextId: 1,
+		nextId: nextItemId(restore?.inventory),
 		rngState: sessionId,
 		class: 'warrior',
 		skillCooldowns: {},
+		lastTown: restore?.lastTown,
+		bossDefeated: restore?.bossDefeated,
 	};
 	return { ...state, avatars: [...state.avatars, sa] };
+}
+
+// The next free looted-Item id for a restored inventory: one past the highest id it
+// already holds, so a returning Player's fresh loot never collides with a saved Item.
+function nextItemId(inventory: Item[] | undefined): number {
+	if (!inventory || inventory.length === 0) return 1;
+	return inventory.reduce((n, it) => Math.max(n, it.id), 0) + 1;
 }
 
 // Remove a session's Avatar on socket close.

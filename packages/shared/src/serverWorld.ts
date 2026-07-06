@@ -9,6 +9,7 @@
 
 import { aabbOverlap } from './combat';
 import { BOX, TOWN_SPAWN } from './constants';
+import type { RestoredAvatar } from './persistence';
 import type { ServerMessage } from './protocol';
 import type { Box, Cosmetics } from './types';
 import type { Zone, ZoneId } from './world';
@@ -123,28 +124,54 @@ export function handleOf(
 	)?.handle;
 }
 
-// Spawn a joining session's Avatar in the shared start Zone and record its
-// membership.
+// Spawn a joining session's Avatar and record its membership. A fresh account spawns in
+// the shared start Zone; a returning account (with `restore` from persistence, #236) is
+// dropped into its last safe Town — never its logged-off position, which is never
+// persisted — and its durable level/XP/Gold, inventory, equipped Weapon, cosmetics, and
+// boss-defeated flag are seeded onto the Avatar. A restored `lastTown` that no longer
+// exists (a removed/renamed Zone) falls back to the start Zone.
 export function addSession(
 	world: ServerWorld,
 	sessionId: number,
 	handle: string,
 	cosmetics?: Cosmetics,
 	weapon?: number,
+	restore?: RestoredAvatar,
 ): ServerWorld {
-	const zone = world.startZone;
+	const wanted = restore?.lastTown;
+	const zone =
+		wanted !== undefined && world.zones[wanted] !== undefined
+			? wanted
+			: world.startZone;
+	// The Town to anchor `lastTown` to at spawn: the spawn Zone itself when it is a Town, so
+	// a first flush before any Zone change persists the Town the Avatar actually stands in
+	// (not a fallback constant). A restore already carries its own `lastTown`.
+	const spawnTown =
+		world.templates[zone].type === 'town' ? zone : restore?.lastTown;
+	const seeded = restore
+		? { ...restore, lastTown: spawnTown ?? zone }
+		: undefined;
+	const placed = addAvatar(
+		world.zones[zone],
+		sessionId,
+		handle,
+		cosmetics,
+		weapon,
+		seeded,
+	);
+	// A fresh account (no restore) spawning into a Town records that Town too.
+	const zoneState =
+		seeded || spawnTown === undefined
+			? placed
+			: {
+					...placed,
+					avatars: placed.avatars.map((a) =>
+						a.sessionId === sessionId ? { ...a, lastTown: spawnTown } : a,
+					),
+				};
 	return {
 		...world,
-		zones: {
-			...world.zones,
-			[zone]: addAvatar(
-				world.zones[zone],
-				sessionId,
-				handle,
-				cosmetics,
-				weapon,
-			),
-		},
+		zones: { ...world.zones, [zone]: zoneState },
 		location: { ...world.location, [sessionId]: zone },
 	};
 }
@@ -281,9 +308,15 @@ export function stepServerWorld(
 	moves.sort((a, b) => a.sa.sessionId - b.sa.sessionId);
 	for (const m of moves) {
 		const moved = reposition(m.sa, m.arrival.x, m.arrival.y);
-		const withLog = m.log
+		const logged = m.log
 			? { ...moved, log: [...moved.log.slice(-5), m.log] }
 			: moved;
+		// Reaching a safe Town updates the durable `lastTown` (#236) — a significant
+		// event, so login returns the Avatar to the last Town it actually stood in.
+		const withLog =
+			world.templates[m.dest].type === 'town'
+				? { ...logged, lastTown: m.dest }
+				: logged;
 		const dest = zones[m.dest];
 		zones[m.dest] = { ...dest, avatars: [...dest.avatars, withLog] };
 		location[m.sa.sessionId] = m.dest;

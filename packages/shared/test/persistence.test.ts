@@ -1,0 +1,96 @@
+// Pure persistence-transform tests (#236): the storage-free half of the seam —
+// emptySave, saveFromAvatar/restoredFromSave, and registryFromSaves. The sqlite
+// round-trip lives in @mmo/server's store.test.ts; this pins the pure edges.
+
+import { expect, test } from 'bun:test';
+import {
+	addSession,
+	createServerWorld,
+	DEFAULT_COSMETICS,
+	DEFAULT_WEAPON,
+	emptySave,
+	type Item,
+	loadZones,
+	type PlayerSave,
+	registryFromSaves,
+	restoredFromSave,
+	saveFromAvatar,
+	zoneStateOf,
+} from '../src';
+
+function freshAvatar() {
+	const w = addSession(
+		createServerWorld({
+			zones: loadZones(),
+			start: 'town-01',
+			town: 'town-01',
+		}),
+		1,
+		'Cypher',
+	);
+	const sa = zoneStateOf(w, 1)?.avatars.find((a) => a.sessionId === 1);
+	if (!sa) throw new Error('no avatar');
+	return sa;
+}
+
+test('emptySave is a level-1 blank slate returning to the given Town', () => {
+	const s = emptySave('Neo', 'town-01');
+	expect(s).toEqual({
+		handle: 'Neo',
+		progress: { level: 1, xp: 0, gold: 0 },
+		inventory: [],
+		equippedWeapon: DEFAULT_WEAPON,
+		cosmetics: DEFAULT_COSMETICS,
+		lastTown: 'town-01',
+		bossDefeated: false,
+	});
+});
+
+test('a fresh Avatar seeds lastTown to its spawn Town, not the flush fallback', () => {
+	// Pass a deliberately-wrong fallback: the save must still carry the spawn Town, proving
+	// a fresh account records the Town it stood in rather than defaulting on first flush.
+	const save = saveFromAvatar(freshAvatar(), 'some-other-town');
+	expect(save.lastTown).toBe('town-01');
+	expect(save.bossDefeated).toBe(false);
+	expect(save.equippedWeapon).toBe(DEFAULT_WEAPON);
+});
+
+test('restoredFromSave clamps out-of-range cosmetics at the trust boundary', () => {
+	const save: PlayerSave = {
+		...emptySave('Neo', 'town-01'),
+		cosmetics: { hue: 999, hat: -1, nameplate: 4.5, form: 0 },
+	};
+	const restored = restoredFromSave(save);
+	expect(restored.cosmetics).toEqual(DEFAULT_COSMETICS); // every bad field → default
+});
+
+test('a restored inventory keeps saved Items and mints fresh ids past the highest', () => {
+	const items: Item[] = [
+		{ id: 4, base: 'Iron Sword', slot: 'weapon', rarity: 'rare', affixes: [] },
+		{ id: 9, base: 'Oak Shield', slot: 'armor', rarity: 'common', affixes: [] },
+	];
+	const save: PlayerSave = { ...emptySave('Neo', 'town-01'), inventory: items };
+	const w = addSession(
+		createServerWorld({
+			zones: loadZones(),
+			start: 'town-01',
+			town: 'town-01',
+		}),
+		1,
+		'Neo',
+		undefined,
+		undefined,
+		restoredFromSave(save),
+	);
+	const sa = zoneStateOf(w, 1)?.avatars.find((a) => a.sessionId === 1);
+	expect(sa?.inventory).toEqual(items);
+	expect(sa?.nextId).toBe(10); // one past the highest saved id, so fresh loot never collides
+});
+
+test('registryFromSaves is case-insensitive on the reverse Handle index', () => {
+	const reg = registryFromSaves([
+		['key-a', { ...emptySave('NeoOne', 'town-01') }],
+	]);
+	expect(reg.handleByKey['key-a']).toBe('NeoOne');
+	expect(reg.keyByHandle.neoone).toBe('key-a');
+});

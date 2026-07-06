@@ -3,4 +3,9 @@ dist/
 *.log
 .DS_Store
 
+# Local persistence DB (#236, bun:sqlite) — a runtime artifact, never committed.
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
 progress.txt
