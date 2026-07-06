@@ -66,10 +66,13 @@ _Avoid_: Walk animation, gait timer (it is distance-driven, not timed)
 
 **World**:
 The single, persistent, shared space that all Players inhabit. There is one
-*logical* World. Under load, an individual Zone may transparently split into
-multiple Channels — that is the only form of instancing, and it is server-managed.
-The World is partitioned into Zones.
-_Avoid_: Server, realm, map (reserve "map" for nothing — it's too overloaded)
+*logical* World, **funnelled, not channelled** (ADR 0024): each Zone runs exactly
+one shared instance, so whoever is online is guaranteed to share one set of
+Towns/Fields — the soft-cap Channel split of ADR 0001 is removed. The only
+instancing left is the Dungeon (entered solo or with a friend). The World is
+partitioned into Zones.
+_Avoid_: Server, realm, map (reserve "map" for nothing — it's too overloaded),
+Channel (the parallel-instance split, removed for the demo)
 
 **Zone**:
 A discrete, bounded area of the World — a side-scrolling locale that may span
@@ -78,7 +81,7 @@ time and moves between Zones via connections (portals/edges). The unit of "place
 AND the unit of server simulation (each Zone runs its own tick; Zones are
 independent, enabling later distribution across processes). It is also the unit of
 *interest*: a Player only receives real-time updates about entities in their own
-Zone (and Channel). Two kinds: Town and Field.
+Zone. Two kinds: Town and Field.
 _Avoid_: Map, level, room, screen
 
 **Zone id**:
@@ -93,14 +96,6 @@ A Zone's human-facing display label ("Verdant Field"), distinct from its id — 
 label, not an identity (cf. Handle). Optional, decorative, editable in the Zone
 editor. Never used to address or resolve a Zone.
 _Avoid_: Title, id
-
-**Channel**:
-A parallel instance of a single Zone, created automatically by the server when
-that Zone reaches its soft population cap. Players in different Channels of the
-same Zone cannot see each other. Channeling is server-managed (routed on Zone
-entry, not chosen by the Player) and consolidated automatically as population
-drops. Matters most for Towns, where population converges.
-_Avoid_: Instance, shard, room, server
 
 **Town**:
 A safe social Zone with no monsters — where Players gather, show off avatars,
@@ -149,7 +144,7 @@ _Avoid_: Username, nick, name, label
 
 **Chat**:
 Real-time text communication between Players. The first form is **Zone chat**: a
-message is relayed to every session in the sender's Zone *and* Channel and shown
+message is relayed to every session in the sender's Zone and shown
 in each recipient's chat log, attributed to the sender's Handle. (Whisper comes
 later; **Emote** is a separate, body-animation mechanism.)
 _Avoid_: Say, talk, message
