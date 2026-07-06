@@ -289,6 +289,9 @@ export function snapshotToGame(
 ): GameState {
 	const monsters = snapshot ? snapshot.monsters.map(monsterEntity) : [];
 	const projectiles = snapshot ? snapshot.projectiles : [];
+	// This session's own in-world Drops (#238): loot is instanced, so the server already
+	// streamed us only our own — render them straight into the Zone.
+	const drops = snapshot ? snapshot.drops : [];
 	const others = snapshot
 		? snapshot.avatars
 				.filter((a) => a.sessionId !== ownSessionId)
@@ -314,7 +317,7 @@ export function snapshotToGame(
 	const inventory: Item[] = snapshot?.inventory ?? [];
 	const log = snapshot?.log ?? ['Connecting…'];
 
-	const zone: Zone = { ...field, monsters, projectiles };
+	const zone: Zone = { ...field, monsters, projectiles, drops };
 	const player: PlayerState = {
 		avatar,
 		progress,

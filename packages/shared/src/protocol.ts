@@ -10,6 +10,7 @@ import type {
 	ActionState,
 	AttackPhase,
 	Cosmetics,
+	Drop,
 	Effect,
 	EffectKind,
 	EntityType,
@@ -432,6 +433,10 @@ export type ServerMessage =
 			// originator-suppressed for this recipient (ADR 0013). The client realizes
 			// them into Particles. Decoded Effects carry no `source` (wire-stripped).
 			effects: Effect[];
+			// This recipient's OWN in-world loot Drops (#238): loot is instanced/private, so
+			// the server streams a session only the Drops it owns — never another Player's.
+			// The client renders them as static, rarity-coloured glyphs resting in the Zone.
+			drops: Drop[];
 			progress: PlayerProgress;
 			inventory: Item[];
 			log: string[];
@@ -689,6 +694,33 @@ function readItem(r: Reader): Item {
 	return { id, base, slot, rarity, affixes };
 }
 
+// An in-world loot Drop (#238): its pickup box + ttl + the Item it holds. `owner` is
+// always the recipient (the server only streams a session its own Drops), carried anyway
+// so a decoded Drop round-trips losslessly.
+function writeDrop(w: Writer, d: Drop) {
+	w.u32(d.id);
+	w.u32(d.owner);
+	w.f64(d.x);
+	w.f64(d.y);
+	w.f64(d.w);
+	w.f64(d.h);
+	w.f64(d.ttl);
+	writeItem(w, d.item);
+}
+
+function readDrop(r: Reader): Drop {
+	return {
+		id: r.u32(),
+		owner: r.u32(),
+		x: r.f64(),
+		y: r.f64(),
+		w: r.f64(),
+		h: r.f64(),
+		ttl: r.f64(),
+		item: readItem(r),
+	};
+}
+
 export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 	const w = new Writer();
 	switch (msg.t) {
@@ -717,6 +749,8 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			for (const p of msg.projectiles) writeProjectile(w, p);
 			w.u32(msg.effects.length);
 			for (const e of msg.effects) writeEffect(w, e);
+			w.u32(msg.drops.length);
+			for (const d of msg.drops) writeDrop(w, d);
 			w.u32(msg.progress.level);
 			w.u32(msg.progress.xp);
 			w.u32(msg.progress.gold);
@@ -776,6 +810,8 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			for (let i = r.u32(); i > 0; i--) projectiles.push(readProjectile(r));
 			const effects: Effect[] = [];
 			for (let i = r.u32(); i > 0; i--) effects.push(readEffect(r));
+			const drops: Drop[] = [];
+			for (let i = r.u32(); i > 0; i--) drops.push(readDrop(r));
 			const progress: PlayerProgress = {
 				level: r.u32(),
 				xp: r.u32(),
@@ -793,6 +829,7 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 				monsters,
 				projectiles,
 				effects,
+				drops,
 				progress,
 				inventory,
 				log,

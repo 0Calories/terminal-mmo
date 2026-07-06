@@ -1,6 +1,7 @@
 import { BRUTE, DEFAULT_MASS, MONSTER, SHOOTER } from './constants';
 import type {
 	Box,
+	Drop,
 	Entity,
 	EntityType,
 	Npc,
@@ -34,6 +35,13 @@ export interface Zone {
 	nextMonsterId: number;
 	portals: Portal[];
 	npcs?: Npc[];
+	// In-world, instanced loot Drops resting in this Zone (#238): private per owner, so a
+	// Drop is only ever streamed to and collected by its owner. Optional (absent == none)
+	// so authored/static Zones and test fixtures need not declare an empty list; `stepZone`
+	// reads it through `?? []` and threads the surviving Drops back on.
+	drops?: Drop[];
+	// Id source for this Zone's Drops (absent == start at 1), advanced as kills spawn them.
+	nextDropId?: number;
 }
 
 export interface World {

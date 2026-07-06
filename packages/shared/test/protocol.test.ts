@@ -327,6 +327,25 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 			},
 		],
 		effects: [{ kind: 'blood', x: 52.5, y: 34.5, intensity: 8, dir: 1 }],
+		// An in-world, owner-private loot Drop (#238) resting in the Zone.
+		drops: [
+			{
+				id: 4,
+				owner: 7,
+				x: 48.5,
+				y: 29,
+				w: 9,
+				h: 5,
+				ttl: 27.5,
+				item: {
+					id: 2,
+					base: 'Leather Vest',
+					slot: 'armor',
+					rarity: 'epic',
+					affixes: [{ stat: 'hp', value: 6 }],
+				},
+			},
+		],
 		progress: { level: 3, xp: 17, gold: 42 },
 		inventory: [
 			{
@@ -384,6 +403,7 @@ test('snapshot round-trips the per-entity action-state across every phase (ADR 0
 		projectiles: [],
 		effects: [],
 		progress: { level: 1, xp: 0, gold: 0 },
+		drops: [],
 		inventory: [],
 		log: [],
 	};
@@ -404,6 +424,7 @@ test('snapshot round-trips a multi-Effect list across every dir (ADR 0013)', () 
 			{ kind: 'blood', x: 9, y: 9, intensity: 12, dir: 0 }, // radial (death)
 		],
 		progress: { level: 1, xp: 0, gold: 0 },
+		drops: [],
 		inventory: [],
 		log: [],
 	};
@@ -424,6 +445,7 @@ test('snapshot round-trips the impact Poise-break Effect kind (ADR 0017)', () =>
 			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 }, // the existing kinds still round-trip
 		],
 		progress: { level: 1, xp: 0, gold: 0 },
+		drops: [],
 		inventory: [],
 		log: [],
 	};
@@ -457,6 +479,7 @@ test('snapshot round-trips a Monster carrying the staggered action-flag (ADR 001
 		projectiles: [],
 		effects: [],
 		progress: { level: 1, xp: 0, gold: 0 },
+		drops: [],
 		inventory: [],
 		log: [],
 	};
@@ -502,6 +525,7 @@ test('snapshot round-trips the brute entity type across the wire (CONTRIBUTING Â
 		projectiles: [],
 		effects: [],
 		progress: { level: 1, xp: 0, gold: 0 },
+		drops: [],
 		inventory: [],
 		log: [],
 	};
@@ -530,6 +554,7 @@ test('snapshot round-trips a tinted gore death Effect (#139)', () => {
 			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 }, // untinted blood still round-trips
 		],
 		progress: { level: 1, xp: 0, gold: 0 },
+		drops: [],
 		inventory: [],
 		log: [],
 	};
@@ -546,6 +571,7 @@ test('snapshot round-trips an empty Effects list', () => {
 		projectiles: [],
 		effects: [],
 		progress: { level: 1, xp: 0, gold: 0 },
+		drops: [],
 		inventory: [],
 		log: [],
 	};
@@ -571,6 +597,7 @@ test('snapshot round-trips when the zone is empty', () => {
 		projectiles: [],
 		effects: [],
 		progress: { level: 1, xp: 0, gold: 0 },
+		drops: [],
 		inventory: [],
 		log: [],
 	};

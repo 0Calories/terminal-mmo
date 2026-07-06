@@ -31,6 +31,7 @@ import {
 import {
 	BOX,
 	COMBAT,
+	LOOT,
 	PHYS,
 	RESPAWN,
 	SHOOTER,
@@ -39,7 +40,7 @@ import {
 } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
 import { emoteById, emoteInterrupted, initialEmoteT, stepEmote } from './emote';
-import { rollItem } from './loot';
+import { itemLabel, lootTableFor, rollDrop } from './loot';
 import type { RestoredAvatar } from './persistence';
 import { applyImpulse, stepEntity } from './physics';
 import { spawnAvatar } from './player';
@@ -55,6 +56,7 @@ import { isSolid } from './terrain';
 import type {
 	Control,
 	Cosmetics,
+	Drop,
 	Effect,
 	Entity,
 	Facing,
@@ -343,6 +345,12 @@ export function stepZone(
 	let nextProjectileId = zone.nextProjectileId;
 	let nextMonsterId = zone.nextMonsterId;
 	const respawns: PendingRespawn[] = [];
+	// The Zone's resting Drops carried forward from the prior tick (#238): kills append to
+	// this list, the collection pass at tick end grabs the ones underfoot and fades the
+	// expired, and the survivors thread back onto the Zone. `nextDropId` sources fresh ids.
+	const drops: Drop[] = [...(zone.drops ?? [])];
+	let nextDropId = zone.nextDropId ?? 1;
+	const lootTable = lootTableFor(zone.id);
 
 	const advanced: Entity[] = [];
 	for (const m0 of zone.monsters) {
@@ -546,13 +554,24 @@ export function stepZone(
 		// 0013 #139 / ADR 0019). No `source`, so every Player in range — including the
 		// killer — sees it.
 		effects.push(...effectsOf(deathEvent(m)));
-		// Every contributor earns full XP (shared, not split) and rolls its own
-		// private, per-Player-seeded loot — instanced, so there is no shared pile
-		// and no kill-stealing (#37). Each grant updates only that Avatar's state;
-		// snapshotFor delivers it to that Player alone.
+		// Every contributor earns full XP (shared, not split) and rolls its own private,
+		// per-Player-seeded loot — instanced, so there is no shared pile and no kill-
+		// stealing (#37). XP lands immediately; the loot roll, gated by the Zone's drop
+		// chance, leaves an in-world Drop at the kill site OWNED by that contributor for
+		// them to walk over (collected below). Each grant updates only that Avatar's state.
 		for (const sid of m.contributors ?? []) {
 			const idx = avatars.findIndex((a) => a.sessionId === sid);
-			if (idx >= 0) avatars[idx] = grantKill(avatars[idx]);
+			if (idx < 0) continue;
+			let sa = grantXp(avatars[idx]);
+			const roll = rollDrop(sa.rngState, sa.progress.level, lootTable);
+			sa = { ...sa, rngState: roll.state };
+			if (roll.item) {
+				drops.push(
+					spawnDrop(nextDropId++, sid, m, { ...roll.item, id: sa.nextId }),
+				);
+				sa = { ...sa, nextId: sa.nextId + 1 };
+			}
+			avatars[idx] = sa;
 		}
 		if (m.spawnIndex !== undefined)
 			respawns.push({
@@ -655,6 +674,30 @@ export function stepZone(
 	}
 	projectiles.push(...fired);
 
+	// Collect + age the in-world Drops (#238). A Drop is PRIVATE to its owner: it is
+	// picked up the moment the owner's body box overlaps it — appended to that Avatar's
+	// inventory with a pickup log line — and it fades once its ttl drains. Rarity reads by
+	// colour on the in-world Drop glyph/label the client paints (this log line is the plain
+	// textual record). Runs on the post-combat Avatar positions, before the death
+	// relocation below so a live Avatar grabs loot where it stands, not at the safe point
+	// it might respawn to.
+	const survivingDrops: Drop[] = [];
+	for (const d of drops) {
+		const ttl = d.ttl - dt;
+		if (ttl <= 0) continue; // faded — grab it before it vanishes
+		const idx = avatars.findIndex((a) => a.sessionId === d.owner);
+		if (idx >= 0 && aabbOverlap(entityBox(avatars[idx].avatar), d)) {
+			const sa = avatars[idx];
+			avatars[idx] = {
+				...sa,
+				inventory: [...sa.inventory, d.item],
+				log: [...sa.log, `Looted ${itemLabel(d.item)}.`],
+			};
+			continue; // collected — dropped from the surviving list
+		}
+		survivingDrops.push({ ...d, ttl });
+	}
+
 	// Forgiving death: respawn at the safe point, full HP, brief i-frames. The
 	// session ids are reported so the world layer can relocate the respawn to Town.
 	const deaths: number[] = [];
@@ -702,12 +745,16 @@ export function stepZone(
 		nextProjectileId,
 		respawns,
 		nextMonsterId,
+		drops: survivingDrops,
+		nextDropId,
 	};
 	return { zone: newZone, avatars, tick: state.tick + 1, deaths, effects };
 }
 
-// Award XP (+ any level-up HP bump) and an instanced loot roll to one Avatar.
-function grantKill(sa: ServerAvatar): ServerAvatar {
+// Award shared kill XP (+ any level-up HP bump) to one contributor. The loot roll is a
+// separate step now (#238): a kill leaves an in-world Drop, not a bag insert, so XP and
+// loot no longer travel together.
+function grantXp(sa: ServerAvatar): ServerAvatar {
 	// Logs are already trimmed to the last 5 by resolveAvatarIntent; accumulate
 	// this tick's messages without re-trimming so the order matches single-player.
 	const ap = applyXp(sa.progress, XP_PER_KILL);
@@ -718,17 +765,22 @@ function grantKill(sa: ServerAvatar): ServerAvatar {
 		avatar = { ...avatar, maxHp: mhp, hp: mhp };
 		log.push(`Level up! Now level ${ap.progress.level}.`);
 	}
-	const roll = rollItem(sa.rngState, ap.progress.level);
-	const item = { ...roll.item, id: sa.nextId };
-	log.push(`Looted ${item.rarity} ${item.base}.`);
+	return { ...sa, avatar, progress: ap.progress, log };
+}
+
+// Build the in-world Drop for a rolled Item: its pickup box is centred on the dead
+// Monster's footprint (so it lands where the kill happened) and made a touch wider than a
+// body (LOOT.pickup) so an Avatar standing on the kill grabs it without pixel-hunting.
+function spawnDrop(id: number, owner: number, m: Entity, item: Item): Drop {
 	return {
-		...sa,
-		avatar,
-		progress: ap.progress,
-		inventory: [...sa.inventory, item],
-		nextId: sa.nextId + 1,
-		rngState: roll.state,
-		log,
+		id,
+		owner,
+		item,
+		x: m.x + BOX.w / 2 - LOOT.pickup.w / 2,
+		y: m.y + BOX.h - LOOT.pickup.h,
+		w: LOOT.pickup.w,
+		h: LOOT.pickup.h,
+		ttl: LOOT.ttlSec,
 	};
 }
 
@@ -790,6 +842,12 @@ export function snapshotFor(
 	const effects: Effect[] = (state.effects ?? [])
 		.filter((e) => e.source !== sessionId)
 		.map(({ source: _source, ...e }) => e);
+	// Instanced loot is private (CONTEXT.md, Instanced loot): stream this recipient only
+	// the Drops it owns, never another Player's — so no one sees or can chase a rival's
+	// pickup. Absent Drops (an untouched Zone) resolve to an empty list.
+	const drops: Drop[] = (state.zone.drops ?? []).filter(
+		(d) => d.owner === sessionId,
+	);
 	return {
 		t: 'snapshot',
 		tick: state.tick,
@@ -798,6 +856,7 @@ export function snapshotFor(
 		monsters,
 		projectiles: state.zone.projectiles,
 		effects,
+		drops,
 		progress: me?.progress ?? { level: 1, xp: 0, gold: 0 },
 		inventory: me?.inventory ?? [],
 		log: me?.log ?? [],

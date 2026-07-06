@@ -548,6 +548,27 @@ vendors. MVP slots: Weapon, Armor, Accessory. (Non-gear items like consumables
 may come later.)
 _Avoid_: Equip, gear, drop, loot (use "Item")
 
+**Drop**:
+An **Item** left resting in the world where a **Monster** died, rather than teleported
+straight into the bag (#238, ADR 0024 §2). It is **collected on touch** — walk your
+**Avatar** over it and it enters your inventory — and it **fades** after a while if left
+uncollected (grab it before it vanishes). A Drop is **private**: because loot is
+**instanced**, only its owner ever sees or can pick it up, so the server streams each
+Player only its own Drops. Rendered in the world as a **rarity-coloured** glyph with a
+floating rarity+name label, so a tier reads at a glance both where it lies and as you grab
+it. Shared XP still lands immediately on the kill; only the Item becomes a Drop.
+_Avoid_: Loot pile, drop table (that is the Loot table), pickup item (it is an Item)
+
+**Loot table**:
+The per-**Field**/**Dungeon** drop rules (#238, ADR 0024 §2/§3), keyed by **Zone id**:
+which **base** types that Zone can drop, the **drop chance** that gates whether a kill
+drops at all (the "when" lever — the **Dungeon** is the reliable faucet at 100%, **Fields**
+drop only occasionally so hunting out there is a bonus, not the efficient path), and an
+optional rarity re-weighting (deeper Zones tilt toward higher tiers). Pure data over the
+shared, seeded roll logic (bases / rarity weights / affixes / `rollItem`); an unauthored
+Zone falls back to the default full-pool table.
+_Avoid_: Drop table (ambiguous), spawn table, loot list
+
 **Gold**:
 The single currency. Drops from Monsters; earned by selling Items to NPC vendors.
 Spent on Trade, the Auction House, and NPC purchases.
@@ -566,9 +587,11 @@ _Avoid_: Market, AH, marketplace, exchange
 
 **Instanced loot**:
 When multiple Players damage a Monster, every contributor earns XP and rolls their
-*own* private Item drops — there is no shared loot pile. Eliminates kill-stealing
-and makes other hunters in a Field feel like help, not competition. (Player death
-is forgiving: respawn in Town, no XP or Item loss at MVP.)
+*own* private Item **Drop**s — there is no shared loot pile. Each contributor's Drop is
+seeded off its own RNG (so loot never crosses between Players) and rests in the world for
+that Player alone to collect on touch. Eliminates kill-stealing and makes other hunters in
+a Field feel like help, not competition. (Player death is forgiving: respawn in Town, no
+XP or Item loss at MVP.)
 _Avoid_: Loot share, drop table (per-player), kill credit
 
 **Terrain**:

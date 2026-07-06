@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test';
 import type {
 	AvatarIntent,
+	Drop,
 	Entity,
+	Item,
 	ServerAvatar,
 	Zone,
 	ZoneState,
@@ -22,9 +24,10 @@ import {
 	dodgePhase,
 	entityTint,
 	GROUND_TOP,
+	lootTableFor,
 	MONSTER,
 	removeAvatar,
-	rollItem,
+	rollDrop,
 	SPAWN,
 	SWING_TOTAL,
 	snapshotFor,
@@ -60,9 +63,9 @@ function serverAvatar(
 	};
 }
 
-function zoneWith(monsters: Entity[]): Zone {
+function zoneWith(monsters: Entity[], id = 'field-01'): Zone {
 	return {
-		id: 'field-01',
+		id,
 		type: 'field',
 		terrain: flatTerrain(),
 		monsters,
@@ -206,11 +209,18 @@ test('a tick with no combat emits no Effects', () => {
 	expect(next.effects ?? []).toEqual([]);
 });
 
-test('the Avatar landing the killing blow earns the XP and the loot roll', () => {
+test('the Avatar landing the killing blow earns the XP and, standing on the kill, collects its instanced loot', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4; // one swing kills
 	const av = primeSwing(serverAvatar(7, 20));
-	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	// The Dungeon is the reliable faucet — every kill drops (ADR 0024 §2) — so the roll is
+	// deterministic. The killer stands on the kill site, so it grabs its own private Drop
+	// the same tick (drop → collect-on-touch, both inside one stepZone).
+	const state: ZoneState = {
+		zone: zoneWith([m], 'dungeon-01'),
+		avatars: [av],
+		tick: 0,
+	};
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
 	expect(next.zone.monsters.length).toBe(0);
@@ -218,6 +228,41 @@ test('the Avatar landing the killing blow earns the XP and the loot roll', () =>
 	expect(me.progress.xp).toBe(XP_PER_KILL);
 	expect(me.inventory.length).toBe(1);
 	expect(me.inventory[0].id).toBe(1); // from the killer's own nextId
+	expect(next.zone.drops ?? []).toEqual([]); // collected, nothing left resting
+});
+
+test('a far contributor leaves its instanced Drop resting, then collects it on touch', () => {
+	// Two contributors share a kill; the killer stands on it (auto-grabs), the helper is far
+	// away, so the helper's PRIVATE Drop rests in the Zone until it walks over — the
+	// reworked collect-on-touch mechanic (#238).
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 4;
+	m.contributors = [7, 8];
+	const killer = primeSwing(serverAvatar(7, 20));
+	const helper = serverAvatar(8, 300); // damaged it earlier, now across the Zone
+	let state: ZoneState = {
+		zone: zoneWith([m], 'dungeon-01'),
+		avatars: [killer, helper],
+		tick: 0,
+	};
+	state = stepZone(
+		state,
+		[{ ...holdAt(7, killer.avatar), attack: true }, holdAt(8, helper.avatar)],
+		16,
+	);
+	expect(state.avatars[1].inventory.length).toBe(0); // not collected yet
+	const resting = (state.zone.drops ?? []).filter((d) => d.owner === 8);
+	expect(resting.length).toBe(1); // the helper's private Drop waits for it
+	// Walk the helper onto its Drop; the overlap collects it into the helper's own bag.
+	const d = resting[0];
+	const onDrop: AvatarIntent = {
+		...holdAt(8, state.avatars[1].avatar),
+		x: d.x,
+		y: d.y,
+	};
+	state = stepZone(state, [holdAt(7, state.avatars[0].avatar), onDrop], 16);
+	expect(state.avatars[1].inventory.length).toBe(1); // grabbed on touch
+	expect((state.zone.drops ?? []).some((x) => x.owner === 8)).toBe(false);
 });
 
 test('a Monster dying emits a radial, high-intensity gore Effect at the Monster, tinted by its body', () => {
@@ -626,7 +671,7 @@ test('only the Avatar landing the kill is credited when two are present', () => 
 	const attacker = primeSwing(serverAvatar(7, 20)); // adjacent, swings
 	const bystander = serverAvatar(8, 200); // far away, idle
 	const state: ZoneState = {
-		zone: zoneWith([m]),
+		zone: zoneWith([m], 'dungeon-01'),
 		avatars: [attacker, bystander],
 		tick: 0,
 	};
@@ -639,9 +684,10 @@ test('only the Avatar landing the kill is credited when two are present', () => 
 		16,
 	);
 	expect(next.avatars[0].progress.xp).toBe(XP_PER_KILL);
-	expect(next.avatars[0].inventory.length).toBe(1);
+	expect(next.avatars[0].inventory.length).toBe(1); // killer grabs its Drop on the kill
 	expect(next.avatars[1].progress.xp).toBe(0);
 	expect(next.avatars[1].inventory.length).toBe(0);
+	expect(next.zone.drops ?? []).toEqual([]); // no Drop for the uninvolved bystander
 });
 
 test('a landing hit records the attacker as a contributor on the Monster', () => {
@@ -661,7 +707,7 @@ test('on death every recorded contributor earns shared XP and its own loot roll'
 	const helper = serverAvatar(8, 300); // damaged it earlier, now far away
 	helper.rngState = 999; // a distinct loot seed, to prove instancing
 	const state: ZoneState = {
-		zone: zoneWith([m]),
+		zone: zoneWith([m], 'dungeon-01'),
 		avatars: [killer, helper],
 		tick: 0,
 	};
@@ -671,14 +717,24 @@ test('on death every recorded contributor earns shared XP and its own loot roll'
 		16,
 	);
 	expect(next.zone.monsters.length).toBe(0);
-	// Shared, not split: each contributor gets the FULL kill XP.
+	// Shared, not split: each contributor gets the FULL kill XP immediately.
 	expect(next.avatars[0].progress.xp).toBe(XP_PER_KILL);
 	expect(next.avatars[1].progress.xp).toBe(XP_PER_KILL);
-	// Each rolls its OWN private loot, seeded per-Player (instanced).
+	// The killer stands on the kill, so it collects its own instanced Drop this tick.
 	expect(next.avatars[0].inventory.length).toBe(1);
-	expect(next.avatars[1].inventory.length).toBe(1);
-	const expected = rollItem(999, next.avatars[1].progress.level);
-	expect(next.avatars[1].inventory[0]).toEqual({ ...expected.item, id: 1 });
+	// The helper is far away: its private Drop rests in the Zone for it alone, uncollected.
+	expect(next.avatars[1].inventory.length).toBe(0);
+	const helperDrops = (next.zone.drops ?? []).filter((d) => d.owner === 8);
+	expect(helperDrops.length).toBe(1);
+	// Seeded per-Player (instanced): the helper's Drop is exactly the dungeon-table roll
+	// off its OWN seed, proving loot never crosses between contributors.
+	const expected = rollDrop(
+		999,
+		next.avatars[1].progress.level,
+		lootTableFor('dungeon-01'),
+	);
+	if (!expected.item) throw new Error('dungeon table must always drop');
+	expect(helperDrops[0].item).toEqual({ ...expected.item, id: 1 });
 });
 
 test('a non-contributor present at a shared kill receives nothing', () => {
@@ -702,6 +758,54 @@ test('a non-contributor present at a shared kill receives nothing', () => {
 	expect(next.avatars[0].progress.xp).toBe(XP_PER_KILL);
 	expect(next.avatars[1].progress.xp).toBe(0);
 	expect(next.avatars[1].inventory.length).toBe(0);
+});
+
+// A minimal loot Item for the Drop fixtures below.
+function testItem(id = 1): Item {
+	return {
+		id,
+		base: 'Rusty Sword',
+		slot: 'weapon',
+		rarity: 'rare',
+		affixes: [{ stat: 'str', value: 3 }],
+	};
+}
+
+test('an uncollected Drop fades once its ttl drains', () => {
+	// A Drop resting far from its owner with almost no ttl left: one tick drains it and it
+	// is gone — grab it before it vanishes (#238).
+	const owner = serverAvatar(7, 20);
+	const drop: Drop = {
+		id: 1,
+		owner: 7,
+		item: testItem(),
+		x: 300, // across the Zone from the owner at x=20 — never overlaps
+		y,
+		w: 9,
+		h: 5,
+		ttl: 0.005,
+	};
+	const zone: Zone = { ...zoneWith([]), drops: [drop], nextDropId: 2 };
+	const next = stepZone(
+		{ zone, avatars: [owner], tick: 0 },
+		[holdAt(7, owner.avatar)],
+		16,
+	);
+	expect(next.zone.drops ?? []).toEqual([]); // faded, not collected
+	expect(next.avatars[0].inventory.length).toBe(0);
+});
+
+test('snapshotFor streams a session only its OWN Drops (instanced/private)', () => {
+	const a = serverAvatar(7, 20);
+	const b = serverAvatar(8, 60);
+	const box = { w: 9, h: 5, y, ttl: 5 };
+	const mine: Drop = { id: 1, owner: 7, item: testItem(1), x: 20, ...box };
+	const theirs: Drop = { id: 2, owner: 8, item: testItem(2), x: 60, ...box };
+	const zone: Zone = { ...zoneWith([]), drops: [mine, theirs], nextDropId: 3 };
+	const state: ZoneState = { zone, avatars: [a, b], tick: 0 };
+	// 7 sees only its own Drop; 8 sees only its own — never a rival's pickup.
+	expect(snapshotFor(state, 7).drops.map((d) => d.owner)).toEqual([7]);
+	expect(snapshotFor(state, 8).drops.map((d) => d.owner)).toEqual([8]);
 });
 
 test('an Avatar reduced to 0 HP respawns at the safe point at full HP', () => {
