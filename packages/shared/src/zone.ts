@@ -188,9 +188,10 @@ function resolveAvatarIntent(
 	// The shared per-Avatar combat fold (ADR 0022 slice 1): runs the `resolveCombat`
 	// gate and folds the swing/Dodge/Guard/cooldown delta + the `swingHits` reset onto
 	// the Avatar. The networked client runs the EXACT same function for its own Avatar,
-	// so this fold cannot drift from the prediction. The equipped Weapon drives the
-	// swing's phase durations, damage, and arc through the gate (ADR 0017 §14) — absent
-	// == the default sword. `dodge` is the client's already-gated decision (grounded +
+	// so this fold cannot drift from the prediction. The equipped Weapon contributes
+	// only its damage through the gate (ADR 0024 — timing and arc are the one shared
+	// moveset) — absent == the default sword. `dodge` is the client's already-gated
+	// decision (grounded +
 	// moving checked at the impulse site before the hop ungrounds the body, ADR 0017 §5
 	// / ADR 0001); the server only re-enforces the tick-stable timing here. `guard`
 	// raises the held Guard, resolved authoritatively.
@@ -514,12 +515,7 @@ export function stepZone(
 	// against Avatars (the Guard hub) and projectile contacts stay on their own paths
 	// (slices 3/4). Runs AFTER monster AI so a swing this tick sees post-move Monsters,
 	// exactly as the old per-monster interleaving did (the hit always followed the AI).
-	const hitsOnMonsters = resolveHitsOnMonsters(
-		advanced,
-		strikes,
-		avatars.map((a) => a.avatar),
-		swingHits,
-	);
+	const hitsOnMonsters = resolveHitsOnMonsters(advanced, strikes, swingHits);
 	effects.push(...hitsOnMonsters.effects);
 
 	// The death *decision* stays at the resolution site (ADR 0019/0022): applying lethal
@@ -796,12 +792,12 @@ export function snapshotFor(
 		maxHp: a.avatar.maxHp,
 		hurtT: a.avatar.hurtT,
 		// The equipped Weapon index joins the broadcast appearance (ADR 0017 §14), so
-		// every other client renders THIS Avatar's weapon — composited sprite + trail.
+		// every other client renders THIS Avatar's composited weapon sprite.
 		weapon: a.avatar.weapon ?? DEFAULT_WEAPON,
-		// Derived from the Avatar's swing timer AGAINST its weapon's phase durations, so
-		// every other client can render the swing (ADR 0017 §10) — this is what makes the
-		// basic attack visible to others, and a slow greatsword read as slow.
-		action: actionStateOf(a.avatar, weaponById(a.avatar.weapon).swing),
+		// Derived from the Avatar's swing timer against the ONE shared phase machine
+		// (ADR 0024 — no per-weapon durations), so every other client can render the
+		// swing (ADR 0017 §10) — this is what makes the basic attack visible to others.
+		action: actionStateOf(a.avatar),
 	}));
 	const monsters: MonsterSnapshot[] = state.zone.monsters.map((m) => ({
 		id: m.id,

@@ -1,10 +1,10 @@
 import type { Sprite } from './sprite';
 
 // The art colour key whose cells are the weapon's dynamic ACCENT (ADR 0018 §6): the
-// renderer repaints these to the resolved `accent` colour every frame, so the blade,
-// the blade-edge arc and the motion Trail all read in one weapon colour — and the whole
-// blade re-tints when a rarity tier later feeds the accent channel. Structural cells
-// (guard, grip) keep their authored keys, so only the one dynamic channel moves.
+// renderer repaints these to the resolved `accent` colour every frame, so the blade
+// and the blade-edge arc read in one weapon colour — and the whole blade re-tints
+// when a rarity tier later feeds the accent channel. Structural cells (guard, grip)
+// keep their authored keys, so only the one dynamic channel moves.
 export const WEAPON_ACCENT_KEY = 'a';
 
 // The frames a WeaponSprite may pose through (ADR 0018 §4). `idle`, `windup` and
@@ -33,7 +33,7 @@ export interface WeaponSprite {
 	// grip cell, grip-to-grip (ADR 0018 §3). Mirrored alongside the art on facing.
 	grip: { x: number; y: number };
 	// The one dynamic colour channel (ADR 0018 §6): a palette key fed to the blade
-	// highlight, blade-edge arc and motion trail in the swing rework. This is the
-	// rarity-ready seam — a rolled tier colour later flows through the same channel.
+	// highlight and blade-edge arc. This is the rarity-ready seam — a rolled tier
+	// colour later flows through the same channel.
 	accent: string;
 }

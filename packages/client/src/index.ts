@@ -47,6 +47,7 @@ import {
 	landed,
 	leveledUp,
 } from './sound/triggers';
+import { discoverSshIdentity, NO_KEY_HINT } from './ssh-auth';
 import { CLIENT_VERSION } from './version';
 
 // The sim is dt-based, so this only affects smoothness + CPU, never game speed.
@@ -87,11 +88,11 @@ const renderer = await createCliRenderer({
 const SCHEME = process.env.MMO_SCHEME === 'mouse' ? 'mouse' : 'keyboard';
 const input = new InputState(SCHEME);
 
-// Equipped Weapon (ADR 0017 §14). There is no in-game equip UI yet, so MMO_WEAPON
-// selects the demo weapon by NAME (e.g. MMO_WEAPON=greatsword / dagger) or by catalog
-// index; an unknown value falls back to the default Warrior sword. This is the seam
-// the "equip a heavy greatsword vs a fast dagger and feel the difference" demo uses,
-// and it drives BOTH the local prediction and the broadcast appearance.
+// Equipped Weapon. There is no in-game equip UI yet, so MMO_WEAPON selects the demo
+// weapon by NAME or by catalog index; an unknown value falls back to the default
+// Warrior sword. The catalog is the one sword today (ADR 0024 — weapons differ only
+// in damage + looks), but the seam stays: it drives BOTH the local prediction and
+// the broadcast appearance, and rolled loot weapons will flow through it later.
 function selectWeapon(): number {
 	const raw = (process.env.MMO_WEAPON ?? '').trim();
 	if (!raw) return DEFAULT_WEAPON;
@@ -297,8 +298,24 @@ function localZone(id: string): Zone {
 	return LOCAL_ZONES.get(id) ?? LOCAL_ZONES.get('field-01') ?? loadZones()[0];
 }
 
-function runNetworked(url: string) {
-	const handle = process.env.USER || 'wanderer';
+async function runNetworked(url: string) {
+	// The desired Handle for a first launch (ADR 0004, #235): MMO_HANDLE wins
+	// verbatim (the server validates it), otherwise $USER squeezed into the allowed
+	// shape — falling back to 'wanderer' when even that leaves it too short. A
+	// returning key ignores this — its registered Handle is durable.
+	const fromUser = (process.env.USER || '')
+		.replace(/[^A-Za-z0-9_-]/g, '-')
+		.slice(0, 16);
+	const handle =
+		process.env.MMO_HANDLE || (fromUser.length >= 2 ? fromUser : 'wanderer');
+	// The SSH identity that will answer the server's challenge (ADR 0004, #235),
+	// resolved before any UI shows so a keyless launch fails fast with guidance.
+	const found = await discoverSshIdentity();
+	if (!found) {
+		quit(NO_KEY_HINT);
+		return;
+	}
+	const identity = found; // narrowed const, so the play() closure sees non-null
 	// Pre-spawn customization (#36, story 7): the Player picks hue / hat / nameplate
 	// and confirms BEFORE we connect, so the chosen look rides the connect handshake
 	// (#35) and everyone sees it the moment they spawn in. Seeded with a randomized
@@ -336,6 +353,7 @@ function runNetworked(url: string) {
 		const net = new NetClient(
 			url,
 			handle,
+			identity,
 			(reason) => {
 				quit(reason);
 			},

@@ -14,6 +14,14 @@ import { NetClient, snapshotToGame } from '../src/net';
 
 const y = GROUND_TOP - BOX.h;
 
+// A stub SSH identity (#235): NetClient only needs a key to offer and a signer
+// for the challenge — no real crypto in these transport tests (the verifier has
+// its own seam tests in @mmo/shared).
+const FAKE_IDENTITY = {
+	publicKey: 'ssh-ed25519 AAAATEST',
+	signChallenge: async () => Uint8Array.of(1, 2, 3),
+};
+
 // The authored Field, parsed (ADR 0008) — snapshotToGame needs a Zone's local
 // geometry; the snapshot supplies the live entities.
 function loadField(): Zone {
@@ -219,7 +227,7 @@ function snapAt(x: number): Extract<ServerMessage, { t: 'snapshot' }> {
 }
 
 test('NetClient samples co-present motion interpolated INTERP_DELAY_MS in the past', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	// Two 20Hz frames, avatar 1 sliding 40 -> 60 over 50 ms.
 	net.ingest(snapAt(40), 1000);
 	net.ingest(snapAt(60), 1050);
@@ -231,13 +239,13 @@ test('NetClient samples co-present motion interpolated INTERP_DELAY_MS in the pa
 });
 
 test('NetClient.sample is null until the first snapshot arrives', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	expect(net.sample(1000)).toBe(null);
 	net.close();
 });
 
 test('NetClient drops the interpolation buffer (and tracks the Zone) on a Zone change', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest(snapAt(40), 1000); // field-01, avatar at x=40
 	const town = snapAt(12);
 	town.zoneId = 'town-01'; // arrived in a new Zone
@@ -251,7 +259,7 @@ test('NetClient drops the interpolation buffer (and tracks the Zone) on a Zone c
 });
 
 test('NetClient.ingest collects chat lines attributed to the sender handle', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest(
 		{ t: 'chat', sessionId: 1, handle: 'neo', text: 'hi field' },
 		1000,
@@ -262,7 +270,7 @@ test('NetClient.ingest collects chat lines attributed to the sender handle', () 
 });
 
 test('NetClient.chatLog is bounded so it cannot grow without limit', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	for (let i = 0; i < 200; i++)
 		net.ingest(
 			{ t: 'chat', sessionId: 3, handle: 'spammer', text: `msg ${i}` },
@@ -275,7 +283,7 @@ test('NetClient.chatLog is bounded so it cannot grow without limit', () => {
 });
 
 test('NetClient.ingest renders a whisper distinctly by direction (#40)', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.sessionId = 7; // this client
 	// Incoming: another session whispered us.
 	net.ingest(
@@ -292,7 +300,7 @@ test('NetClient.ingest renders a whisper distinctly by direction (#40)', () => {
 });
 
 test('NetClient.ingest does NOT open a Speech bubble for a private whisper', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.sessionId = 7;
 	net.ingest(
 		{ t: 'whisper', fromSessionId: 9, from: 'neo', to: 'tester', text: 'psst' },
@@ -303,21 +311,21 @@ test('NetClient.ingest does NOT open a Speech bubble for a private whisper', () 
 });
 
 test('NetClient.ingest surfaces a server notice as a system line', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest({ t: 'notice', text: 'No player named "ghost" is online.' }, 1000);
 	expect(net.chatLog).toEqual(['* No player named "ghost" is online.']);
 	net.close();
 });
 
 test('NetClient.notice surfaces a local system line without a round-trip', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.notice('Usage: /w <handle> <message>');
 	expect(net.chatLog).toEqual(['* Usage: /w <handle> <message>']);
 	net.close();
 });
 
 test('NetClient.ingest opens a Speech bubble keyed to the sender, replacing the prior one', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest({ t: 'chat', sessionId: 2, handle: 'rival', text: 'hi' }, 1000);
 	expect(net.bubbles.get(2)?.text).toBe('hi');
 	// A new message from the same sender replaces the text (one bubble per sender).
@@ -328,7 +336,7 @@ test('NetClient.ingest opens a Speech bubble keyed to the sender, replacing the 
 });
 
 test('NetClient.decayBubbles expires a bubble after its length-scaled ttl', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest({ t: 'chat', sessionId: 5, handle: 'neo', text: 'gg' }, 1000);
 	net.decayBubbles(2); // 2s elapsed, ttl floor is 3s -> still alive
 	expect(net.bubbles.has(5)).toBe(true);
@@ -379,14 +387,64 @@ test('snapshotToGame stamps active bubbles onto the sender entities, incl. own',
 });
 
 test('NetClient.ingest applies the welcome handshake and tracks the latest snapshot', () => {
-	const net = new NetClient('ws://127.0.0.1:1', 'tester');
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest(
-		{ t: 'welcome', sessionId: 7, zoneId: 'field-01', tickRate: 20 },
+		{
+			t: 'welcome',
+			sessionId: 7,
+			zoneId: 'field-01',
+			tickRate: 20,
+			handle: 'Tester',
+		},
 		0,
 	);
 	expect(net.sessionId).toBe(7);
 	expect(net.ready).toBe(true);
+	// The durable Handle the server resolved this key to (#235) — may differ from
+	// the requested one; the client adopts it.
+	expect(net.handle).toBe('Tester');
 	net.ingest(snapAt(42), 1000);
 	expect(net.latest?.avatars[0].x).toBe(42);
+	net.close();
+});
+
+test('NetClient hands a challenge nonce to the identity signer (#235)', async () => {
+	// The transport's half of challenge-response: a `challenge` frame routes its
+	// nonce to the SSH identity. (Domain separation lives inside the identity's
+	// signChallenge; the resulting proof send needs an open socket, exercised in
+	// the end-to-end run.)
+	const saw: { nonce: Uint8Array | null } = { nonce: null };
+	const identity = {
+		publicKey: 'ssh-ed25519 AAAATEST',
+		signChallenge: async (nonce: Uint8Array) => {
+			saw.nonce = nonce;
+			return Uint8Array.of(9);
+		},
+	};
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', identity);
+	const nonce = Uint8Array.of(4, 5, 6);
+	net.ingest({ t: 'challenge', nonce }, 0);
+	await Promise.resolve(); // let the async signer settle
+	expect(saw.nonce).toEqual(nonce);
+	net.close();
+});
+
+test('NetClient surfaces a signer failure as a rejection (#235)', async () => {
+	const saw: { reason: string | null } = { reason: null };
+	const identity = {
+		publicKey: 'ssh-ed25519 AAAATEST',
+		signChallenge: async () => {
+			throw new Error('ssh-agent refused to sign');
+		},
+	};
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', identity, (r) => {
+		saw.reason = r;
+	});
+	net.ingest({ t: 'challenge', nonce: Uint8Array.of(1) }, 0);
+	// Two microtask hops: the rejected sign promise, then the failure handler.
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(saw.reason).toBe('ssh-agent refused to sign');
+	expect(net.rejected).toBe('ssh-agent refused to sign');
 	net.close();
 });

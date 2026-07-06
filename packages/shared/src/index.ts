@@ -1,3 +1,4 @@
+export * from './auth';
 export * from './combat';
 export * from './constants';
 export * from './cosmetics';

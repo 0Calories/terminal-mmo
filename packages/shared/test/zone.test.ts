@@ -14,6 +14,7 @@ import {
 	clientStepAvatar,
 	createZoneState,
 	DEFAULT_COSMETICS,
+	DEFAULT_WEAPON,
 	DODGE_TOTAL,
 	dodgePhase,
 	entityTint,
@@ -30,9 +31,7 @@ import {
 	spawnMonster,
 	stepZone,
 	swingPhase,
-	WEAPONS,
 	weaponById,
-	weaponSwingTotal,
 	XP_PER_KILL,
 } from '../src';
 import { flatTerrain, makeProjectile } from './helpers';
@@ -1060,75 +1059,54 @@ test('Poise regenerates once pressure stops (a spaced poke does not accumulate t
 	expect(state.zone.monsters[0].poise).toBe(COMBAT.poise.max); // fully recovered
 });
 
-// --- Weapon stat block feeds combat (ADR 0017 §14, #168) --------------------
+// --- Weapon = damage + visuals only; one shared moveset (ADR 0024, #232) ----
 
-const GREAT = WEAPONS.findIndex((w) => w.name === 'Greatsword');
-const DAGGER = WEAPONS.findIndex((w) => w.name === 'Dagger');
-
-// Prime a swing into the active window of a SPECIFIC weapon (its phase durations
-// differ from the default), so the hit lands in one tick under that weapon.
-function primeWeaponSwing(av: ServerAvatar, weapon: number): ServerAvatar {
-	const w = weaponById(weapon);
-	av.avatar.weapon = weapon;
-	av.avatar.attackT = weaponSwingTotal(w) - w.swing.windup - w.swing.active / 2;
-	return av;
-}
-
-test('the equipped weapon drives HP damage dealt through stepZone', () => {
+test('a landed swing deals the equipped weapon damage but the SHARED poise chip', () => {
+	// The weapon contributes its damage and nothing else to resolution: the Poise
+	// chip comes from the one COMBAT constant, so no weapon staggers faster from data.
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 100;
-	const av = primeWeaponSwing(serverAvatar(7, 20), GREAT);
+	const av = primeSwing(serverAvatar(7, 20));
+	av.avatar.weapon = DEFAULT_WEAPON;
 	const next = stepZone(
 		{ zone: zoneWith([m]), avatars: [av], tick: 0 },
 		[attackRight(av)],
 		16,
 	);
-	expect(next.zone.monsters[0].hp).toBe(100 - weaponById(GREAT).damage);
+	expect(next.zone.monsters[0].hp).toBe(
+		100 - weaponById(DEFAULT_WEAPON).damage,
+	);
+	expect(next.zone.monsters[0].poise).toBe(
+		COMBAT.poise.max - COMBAT.poiseDamage,
+	);
 });
 
-test('a heavy weapon breaks Poise where the default sword only chips (data alone)', () => {
-	// A full-Poise Monster (max 16): the greatsword's 16 poise damage breaks it in one
-	// connect, while the default sword's 8 only chips — same hit, different weapon.
-	function breaks(weapon: number): boolean {
-		const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
-		m.hp = 100;
-		const av = primeWeaponSwing(serverAvatar(7, 20), weapon);
-		const next = stepZone(
-			{ zone: zoneWith([m]), avatars: [av], tick: 0 },
-			[attackRight(av)],
-			16,
-		);
-		return (next.zone.monsters[0].stunT ?? 0) > 0;
+test('every weapon index swings the one shared moveset — timing from COMBAT.swing', () => {
+	// Whatever the equipped index (the default, or a forward-version one that clamps),
+	// a swing primed mid-active under the SHARED phase total replicates as `active` —
+	// there are no per-weapon phase durations left to diverge on.
+	for (const weapon of [DEFAULT_WEAPON, 999]) {
+		const av = primeSwing(serverAvatar(7, 20));
+		av.avatar.weapon = weapon;
+		const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
+		const snap = snapshotFor(state, 7);
+		expect(snap.avatars[0].action.move).toBe('basic');
+		expect(snap.avatars[0].action.phase).toBe('active');
 	}
-	expect(breaks(GREAT)).toBe(true);
-	expect(breaks(DAGGER)).toBe(false);
 });
 
-test('a heavier weapon throws a broken body farther than a light one (Knockback from data)', () => {
-	function breakIvx(weapon: number): number {
-		const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
-		m.hp = 100;
-		m.poise = 1; // already near break so even the dagger's small poise damage breaks it
-		const av = primeWeaponSwing(serverAvatar(7, 20), weapon);
-		const next = stepZone(
-			{ zone: zoneWith([m]), avatars: [av], tick: 0 },
-			[attackRight(av)],
-			16,
-		);
-		return next.zone.monsters[0].ivx ?? 0;
-	}
-	expect(breakIvx(GREAT)).toBeGreaterThan(breakIvx(DAGGER));
-});
-
-test('snapshotFor derives an Avatar action from its weapon phase durations', () => {
-	// A greatsword swing primed mid-active under the DEFAULT phase total would read as
-	// a different phase; the snapshot must interpret attackT against the weapon's own
-	// swing, so the replicated action is genuinely `active`.
-	const av = primeWeaponSwing(serverAvatar(7, 20), GREAT);
-	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
-	const snap = snapshotFor(state, 7);
-	expect(snap.avatars[0].action.move).toBe('basic');
-	expect(snap.avatars[0].action.phase).toBe('active');
+test('a Poise break throws the body along the swing — the SHARED Knockback', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 100;
+	m.poise = 1; // on the brink so the shared chip breaks it this hit
+	const av = primeSwing(serverAvatar(7, 20));
+	const next = stepZone(
+		{ zone: zoneWith([m]), avatars: [av], tick: 0 },
+		[attackRight(av)],
+		16,
+	);
+	expect(next.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0);
+	expect(next.zone.monsters[0].ivx ?? 0).toBeGreaterThan(0);
 });
 
 // --- resolveDeaths: the death-consequences pass (ADR 0022 slice 5) -----------

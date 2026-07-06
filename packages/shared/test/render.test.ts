@@ -789,7 +789,7 @@ test('mid-active-swing the composited weapon plays the sweep frame, and no box-f
 	// The legacy `╱`/`╲` box-fill is RETIRED: the melee hitbox is purely logical and is
 	// never flood-filled. Prove it — count the written cells across the hitbox region;
 	// a fill would have written EVERY cell, so at least one must remain untouched.
-	const hb = meleeHitbox(e, weaponById(0).reach);
+	const hb = meleeHitbox(e);
 	let written = 0;
 	let total = 0;
 	for (let yy = 0; yy < hb.h; yy++) {

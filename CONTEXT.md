@@ -138,11 +138,14 @@ same space the Player has been exploring.
 _Avoid_: Raid boss, elite, miniboss, dungeon boss
 
 **Handle**:
-The ephemeral display label a Player is known by in the social layer — painted on
-the nameplate and attributed on each Chat message (set at connection, per ADR
-0006). A *label, not an identity*: it carries no uniqueness guarantee and must
-never be used to address an entity. The session id is identity.
-_Avoid_: Username, nick, name, identity
+The durable, unique username a Player claims on first launch, bound to their SSH
+public key (ADR 0004, #235 — revising the ephemeral per-connection label of ADR
+0006). Painted on the nameplate and attributed on each Chat message; a returning
+key always resolves to the same Handle, whatever name that launch asked for.
+Unique case-insensitively (2–16 of `[A-Za-z0-9_-]`), so `/w <handle>` is
+unambiguous — but entities are still *addressed* by session id at runtime: the
+Handle names the account, not the connection.
+_Avoid_: Username, nick, name, label
 
 **Chat**:
 Real-time text communication between Players. The first form is **Zone chat**: a
@@ -452,22 +455,15 @@ its own input. Distinct from a passive **Moveset ability**.
 _Avoid_: Ability, spell, move
 
 **Weapon stat block**:
-The data an equipped Weapon **Item** contributes to combat and visuals (ADR 0017
-§14): damage, arc size (melee reach), **Poise** damage, **Knockback**, and the
-**Attack phase** durations (phase-speed), plus its **Weapon sprite** and an optional
-**Trail**. Drives a greatsword's slow-and-heavy feel vs a dagger's fast-and-light
-one through the *same* resolution path — no per-weapon special-casing. The
-weapon's catalog index joins the Avatar's replicated appearance, so others see
-your weapon. All weapons share the one Warrior **Moveset** for now.
-_Avoid_: Weapon type, weapon class (reserve **Class** for the Avatar archetype)
-
-**Trail**:
-A short-lived particle streak that follows a **Weapon**'s blade through its
-**active** phase (ADR 0017 §14), defined per-weapon by a key the client resolves
-to a ParticleType — the same shared-owns-the-fact / client-owns-the-pixels seam as
-an Effect. Purely visual; absent on a weapon means no trail. One of the three
-layers of a swing alongside the **Weapon sprite** sweep and the **Blade-edge arc**.
-_Avoid_: Swoosh, slash effect (reserve **Blade-edge arc** for the tip-tracing glyphs)
+The data an equipped Weapon **Item** contributes (ADR 0024): **damage**, its
+rolled **Affixes**, and its visuals — the **Weapon sprite** and that sprite's
+**Weapon accent** colour. Nothing else: every weapon swings the one
+sword-and-shield **Moveset** with the one shared animation set (phase durations,
+arc/reach, **Poise** damage, and **Knockback** are shared COMBAT constants), so a
+weapon can never change playstyle — loot variety is stats and looks. The weapon's
+catalog index joins the Avatar's replicated appearance, so others see your weapon.
+_Avoid_: Weapon type, weapon class (reserve **Class** for the Avatar archetype);
+per-weapon feel / phase-speed / arc (removed with the demo scope freeze)
 
 **Weapon sprite**:
 The animated ASCII-art of an equipped **Weapon**, composited onto the **Avatar**
@@ -493,11 +489,11 @@ it replaces the retired `///` **hitbox** box-fill, which is no longer drawn.
 _Avoid_: Slash-arc, slash, swing fill (the legacy hitbox-fill, now retired)
 
 **Weapon accent**:
-The single per-**Weapon** colour that drives its blade highlight, **Blade-edge
-arc**, and **Trail**, so a weapon reads as a distinct object even at rest (ADR
-0018). The rarity-ready seam: when loot rolls rarity tiers, the tier colour feeds
-this same channel with no rework. The weapon's structural palette (grip, guard) is
-authored separately on the sprite; the accent is the one dynamic channel.
+The single per-**Weapon** colour that drives its blade highlight and **Blade-edge
+arc**, so a weapon reads as a distinct object even at rest (ADR 0018). The
+rarity-ready seam: when loot rolls rarity tiers, the tier colour feeds this same
+channel with no rework. The weapon's structural palette (grip, guard) is authored
+separately on the sprite; the accent is the one dynamic channel.
 _Avoid_: Tint, weapon colour (reserve for the static sprite palette)
 
 **Intent**:
