@@ -1,3 +1,4 @@
+import { fillRatio } from './bars';
 import { PROGRESSION } from './constants';
 import type { PlayerProgress } from './types';
 
@@ -33,6 +34,25 @@ export function applyXp(
 	}
 	if (level >= PROGRESSION.levelCap) xp = 0;
 	return { progress: { level, xp, gold: p.gold }, leveled };
+}
+
+// The XP bar's state for the HUD (#243): how far the Avatar is toward its next level,
+// as raw counts and a [0,1] fill ratio. At the cap there is no next level, so `needed` is
+// 0 and the bar reads full (`ratio: 1`) — "maxed", never a divide-by-Infinity gap.
+export interface XpProgress {
+	current: number; // XP banked toward the next level
+	needed: number; // XP required to reach it (0 at the cap)
+	ratio: number; // fill fraction [0,1]; 1 at the cap
+	atCap: boolean;
+}
+
+export function xpProgress(level: number, xp: number): XpProgress {
+	const needed = xpToNext(level);
+	if (!Number.isFinite(needed)) {
+		return { current: 0, needed: 0, ratio: 1, atCap: true };
+	}
+	const current = Math.max(0, Math.min(xp, needed));
+	return { current, needed, ratio: fillRatio(xp, needed), atCap: false };
 }
 
 // --- Capability ladder (ADR 0024 §5) ----------------------------------------
