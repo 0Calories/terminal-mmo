@@ -1,6 +1,7 @@
 import { emoteById } from '../emote';
 import type { AttackPhase, Facing, MoveId } from '../types';
 import { buddy } from './forms/buddy';
+import { wisp } from './forms/wisp';
 import type { Sprite } from './sprite';
 
 // The Poses a BodySprite may animate through (ADR 0020 §1). `idle`, `walkA`, `walkB`
@@ -49,8 +50,11 @@ export interface BodySprite {
 
 // The Form registry (ADR 0020 §4): a flat array of BodySprites selected by the
 // `cosmetics.form` index, riding the same appearance rails as HATS / hues. Append-only
-// and Form-keyed so a second Form is pure data later. Index 0 is the launch humanoid.
-export const FORMS: readonly BodySprite[] = [buddy];
+// and Form-keyed so a Form is pure data. Index 0 is the launch humanoid buddy; the slim
+// `wisp` is the demo's one extra Form, landing the total at ADR 0024 §8's 2-Forms cap.
+// Every Form keeps the same logical box — the Form changes only art, never combat (ADR
+// 0020 §3).
+export const FORMS: readonly BodySprite[] = [buddy, wisp];
 
 export const DEFAULT_FORM = 0;
 

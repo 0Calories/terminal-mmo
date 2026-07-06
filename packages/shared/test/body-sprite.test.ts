@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	BOX,
 	type BodySprite,
 	type BodyState,
 	bodyFrame,
@@ -38,6 +39,81 @@ describe('FORMS registry', () => {
 		expect(formById(-1)).toBe(FORMS[0]);
 		expect(formById(FORMS.length)).toBe(FORMS[0]);
 		expect(formById(1.5)).toBe(FORMS[0]);
+	});
+
+	test('the demo ships the buddy plus one extra Form (ADR 0024 §8: 2 Forms total)', () => {
+		// The registry holds the launch buddy at index 0 and the demo's one extra Form after
+		// it, each selectable by its `cosmetics.form` index and resolvable by `formById`. The
+		// cap is a TOTAL of 2 (ADR 0024 line 120), so this is exact, not a lower bound.
+		expect(FORMS.length).toBe(2);
+		for (let i = 0; i < FORMS.length; i++) expect(formById(i)).toBe(FORMS[i]);
+	});
+});
+
+describe('every Form honours the authoring contract (ADR 0020 §5)', () => {
+	// The extra Forms beyond the buddy — the demo's one new body. Each must author the
+	// required core and keep the shared footprint so anchors / the logical box are stable.
+	const extraForms = FORMS.slice(1);
+
+	for (let i = 0; i < extraForms.length; i++) {
+		const form = extraForms[i];
+		describe(`FORMS[${i + 1}]`, () => {
+			test('authors the required idle / walkA / walkB core as distinct grids', () => {
+				const idle = formFrame(form, 'idle');
+				const walkA = formFrame(form, 'walkA');
+				const walkB = formFrame(form, 'walkB');
+				expect(idle).toBeInstanceOf(Sprite);
+				// walkA / walkB are real authored grids, not idle fallbacks, and differ so the
+				// stride visibly alternates the feet.
+				expect(walkA).not.toBe(idle);
+				expect(walkB).not.toBe(idle);
+				expect(walkA.rows(1)).not.toEqual(walkB.rows(1));
+			});
+
+			test('authors a distinct airborne jump Pose', () => {
+				const idle = formFrame(form, 'idle');
+				const jump = formFrame(form, 'jump');
+				expect(jump).not.toBe(idle);
+				expect(jump.rows(1)).not.toEqual(idle.rows(1));
+			});
+
+			test('shares one footprint across the whole frame set (anchors + logical box stable)', () => {
+				const idle = formFrame(form, 'idle');
+				for (const pose of ['walkA', 'walkB', 'jump'] as const) {
+					const grid = formFrame(form, pose);
+					expect(grid.w).toBe(idle.w);
+					expect(grid.h).toBe(idle.h);
+				}
+				// Same 9×3 footprint as the launch buddy, so world-scale is unchanged (ADR 0020).
+				expect(idle.w).toBe(formFrame(FORMS[0], 'idle').w);
+				expect(idle.h).toBe(formFrame(FORMS[0], 'idle').h);
+			});
+
+			test('every authored Pose mirrors left/right by facing', () => {
+				for (const pose of ['idle', 'walkA', 'walkB', 'jump'] as const) {
+					const grid = formFrame(form, pose);
+					expect(grid.rows(-1)[0].length).toBe(grid.w);
+				}
+			});
+		});
+	}
+});
+
+describe('a Form is purely cosmetic — zero combat effect (ADR 0020 §3)', () => {
+	test('a Form carries only art + anchors, never stats or combat numbers', () => {
+		// A Form is a flat bag of art (`frames`) plus the grip/head anchors and an optional
+		// baseline — and NOTHING else. There is deliberately no HP / damage / mass / speed
+		// field, so picking a Form can never touch combat or platforming (ADR 0020 §3).
+		const allowed = new Set(['frames', 'grip', 'head', 'baseline']);
+		for (const form of FORMS)
+			for (const key of Object.keys(form)) expect(allowed.has(key)).toBe(true);
+	});
+
+	test('the logical collision box is one shared constant, independent of Form', () => {
+		// Every Avatar collides through the SAME `BOX`, whatever its `cosmetics.form`. The
+		// Form only swaps the decorative BodySprite; the ~5×5 logical footprint never varies,
+		// so every Avatar platforms and fights identically across all Forms (ADR 0020 §3).
+		expect(BOX).toEqual({ w: 5, h: 5 });
 	});
 });
 

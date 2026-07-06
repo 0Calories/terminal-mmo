@@ -215,14 +215,16 @@ export type ClientMessage =
 	// glyph. `emote` is an EMOTES id; the server drops an unknown one.
 	| { t: 'emote'; emote: string };
 
-// Cosmetics are three small catalog indices (#35): one u8 each. Decode clamps to a
-// valid index so a forward-version / garbled value can never crash the renderer. The
-// `form` index (ADR 0020) is NOT on the wire yet — only one Form exists, so it defaults
-// — keeping this slice's per-frame wire cost unchanged; it joins when a second Form ships.
+// Cosmetics are four small catalog indices (#35, ADR 0020): one u8 each — hue, hat,
+// nameplate, then `form`. Decode clamps to a valid index so a forward-version / garbled
+// value can never crash the renderer. `form` joins the wire now that more than one Form
+// ships (ADR 0024 §8), so every observer sees which Form an Avatar chose; it is written
+// last so the hue/hat/nameplate byte positions are unchanged.
 function writeCosmetics(w: Writer, c: Cosmetics) {
 	w.u8(c.hue);
 	w.u8(c.hat);
 	w.u8(c.nameplate);
+	w.u8(c.form);
 }
 
 function readCosmetics(r: Reader): Cosmetics {
@@ -230,7 +232,7 @@ function readCosmetics(r: Reader): Cosmetics {
 		hue: r.u8(),
 		hat: r.u8(),
 		nameplate: r.u8(),
-		form: DEFAULT_COSMETICS.form,
+		form: r.u8(),
 	});
 }
 
@@ -305,10 +307,11 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			// short/garbled read, and the bogus Version simply fails the equality gate
 			// (reject) — exactly the "your client is out of date" outcome we want.
 			const version = r.remaining() >= 4 ? r.str() : '';
-			// Cosmetics (#35) are trailing too; a client predating them defaults to the
-			// bareheaded look (it is rejected by the version gate regardless).
+			// Cosmetics (#35, ADR 0020) are trailing too — four u8 now that `form` is on the
+			// wire; a client predating them (fewer than 4 bytes) defaults to the bareheaded
+			// look (it is rejected by the version gate regardless).
 			const cosmetics =
-				r.remaining() >= 3 ? readCosmetics(r) : DEFAULT_COSMETICS;
+				r.remaining() >= 4 ? readCosmetics(r) : DEFAULT_COSMETICS;
 			// Weapon (ADR 0017 §14) trails cosmetics; a client predating it defaults to
 			// the Warrior sword (it is rejected by the version gate regardless).
 			const weapon = r.remaining() >= 1 ? r.u8() : DEFAULT_WEAPON;

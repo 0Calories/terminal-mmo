@@ -65,8 +65,8 @@ export function randomCosmetics(seed: number): Cosmetics {
 		s ^= s << 5;
 		return (s >>> 0) % 1_000_000;
 	};
-	// `form` is drawn last so the hue/hat/nameplate sequence is unchanged; today FORMS
-	// holds a single Form, so it is always 0 until more Forms ship.
+	// `form` is drawn last so the hue/hat/nameplate sequence is unchanged; FORMS now
+	// holds more than one Form (ADR 0024 §8), so a connecting Avatar draws a varied Form.
 	return {
 		hue: next() % HUE_COUNT,
 		hat: next() % HAT_COUNT,

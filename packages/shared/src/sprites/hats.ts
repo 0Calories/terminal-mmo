@@ -51,6 +51,22 @@ kkkkkk`,
 	},
 );
 
+// A festive cone party hat with a coloured band — the demo's one added hat, landing the
+// catalog at ADR 0024 §8's 4–5 hats cap (the four originals + this one).
+const partyHat = new Sprite(
+	`
+··▲··
+·▟█▙·
+▄███▄`,
+	{
+		defaultKey: 'c',
+		colors: `
+··y··
+·ccc·
+·mmm·`,
+	},
+);
+
 // Index is the on-the-wire cosmetic hat id; order is stable (append only).
 export const HATS: readonly HatDef[] = [
 	{ name: 'None', sprite: null },
@@ -58,4 +74,5 @@ export const HATS: readonly HatDef[] = [
 	{ name: 'Crown', sprite: crown },
 	{ name: 'Wizard', sprite: wizard },
 	{ name: 'Top Hat', sprite: topHat },
+	{ name: 'Party Hat', sprite: partyHat },
 ];

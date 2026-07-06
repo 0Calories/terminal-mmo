@@ -6,6 +6,7 @@
 import {
 	type Cosmetics,
 	clampCosmetics,
+	FORM_COUNT,
 	HAT_COUNT,
 	HATS,
 	HUE_COUNT,
@@ -25,6 +26,7 @@ export interface CustomizeFieldDef {
 }
 
 export const CUSTOMIZE_FIELDS: readonly CustomizeFieldDef[] = [
+	{ key: 'form', label: 'Form', count: FORM_COUNT },
 	{ key: 'hue', label: 'Body hue', count: HUE_COUNT },
 	{ key: 'hat', label: 'Hat', count: HAT_COUNT },
 	{ key: 'nameplate', label: 'Nameplate', count: NAMEPLATE_COUNT },
