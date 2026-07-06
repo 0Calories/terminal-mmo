@@ -4,6 +4,7 @@ import { chaser } from './chaser';
 import { merchant } from './merchant';
 import { player } from './player';
 import { shooter } from './shooter';
+import { signpost } from './signpost';
 import type { Sprite } from './sprite';
 
 // `Record<EntityType, …>` forces every entity type to have art at compile time.
@@ -21,6 +22,7 @@ export function spriteFor(type: EntityType): Sprite {
 // NPCs aren't entities (not simulated), so they key off their own `kind`.
 const NPC_REGISTRY: Record<Npc['kind'], Sprite> = {
 	vendor: merchant,
+	signpost,
 };
 
 export function spriteForNpc(kind: Npc['kind']): Sprite {

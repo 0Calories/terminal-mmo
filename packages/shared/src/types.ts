@@ -290,8 +290,11 @@ export interface Projectile {
 
 export interface Npc extends Box {
 	id: number;
-	kind: 'vendor';
+	kind: 'vendor' | 'signpost';
 	name: string;
+	// Signpost directional dialogue (PRD story 9): the nudge lines a signpost shows
+	// when a Player reads it. Absent for a vendor, whose interaction is the shop.
+	lines?: string[];
 }
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
