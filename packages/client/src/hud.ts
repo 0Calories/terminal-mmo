@@ -8,11 +8,12 @@ import {
 } from '@opentui/core';
 import { COLORS } from './theme';
 
-// Keyboard binding per Warrior skill slot — kept in lockstep with input.ts.
-const SKILL_KEYS = ['k', 'l'];
+// Keyboard binding per Warrior skill slot — kept in lockstep with input.ts (skills
+// are u/i; k/l are Block/Dodge).
+const SKILL_KEYS = ['u', 'i'];
 
 const HINT =
-	'move ←/→ a/d  jump ␣/↑  attack j/x  skills k/l  interact e  chat ⏎ (/w whisper, /em emote)  quit q';
+	'move ←/→ a/d  jump ␣/↑  attack j/x  block k  dodge l  skills u/i  interact e  chat ⏎  ? controls  quit q';
 const Z = 10; // above the playfield (zIndex 0)
 const CHAT_LINES = 4; // recent Zone-chat lines shown above the input
 
