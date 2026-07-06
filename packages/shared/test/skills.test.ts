@@ -3,6 +3,7 @@ import type { GameState, Input, PlayerState, Zone } from '../src';
 import {
 	activeZone,
 	BOX,
+	CAPABILITY_UNLOCK,
 	GROUND_POUND,
 	GROUND_TOP,
 	MONSTER,
@@ -81,6 +82,15 @@ function flankedGame(level: number): GameState {
 const IDLE: Input = { moveX: 0, jump: false, attack: false };
 const POWER: Input = { moveX: 0, jump: false, attack: false, skill: 1 };
 const POUND: Input = { moveX: 0, jump: false, attack: false, skill: 2 };
+
+test('the Active skills unlock on their capability-ladder rungs (Power Strike L3, Ground Pound L5)', () => {
+	// The skills read their unlock from the single capability table (ADR 0024 §5), so the
+	// ladder can never drift between the skill data and the progression module.
+	expect(POWER_STRIKE.unlockLevel).toBe(3);
+	expect(POWER_STRIKE.unlockLevel).toBe(CAPABILITY_UNLOCK['power-strike']);
+	expect(GROUND_POUND.unlockLevel).toBe(5);
+	expect(GROUND_POUND.unlockLevel).toBe(CAPABILITY_UNLOCK['ground-pound']);
+});
 
 test('skillForSlot binds Warrior slot 1 to Power Strike, slot 2 to Ground Pound; empty slots are undefined', () => {
 	expect(skillForSlot('warrior', 1)).toBe(POWER_STRIKE);

@@ -1,4 +1,5 @@
 import { BOX } from './constants';
+import { CAPABILITY_UNLOCK } from './progression';
 import type { Box, Entity } from './types';
 
 export type PlayerClass = 'warrior';
@@ -22,7 +23,8 @@ export const POWER_STRIKE: Skill = {
 	id: 'power-strike',
 	name: 'Power Strike',
 	kind: 'frontal',
-	unlockLevel: 1, // temporarily L1 so the feel is testable from spawn; bump once signed off
+	// The Player's first Active skill — the L3 rung of the capability ladder (ADR 0024 §5).
+	unlockLevel: CAPABILITY_UNLOCK['power-strike'],
 	cooldown: 2.5,
 	damage: 20,
 	reach: 9,
@@ -32,7 +34,8 @@ export const GROUND_POUND: Skill = {
 	id: 'ground-pound',
 	name: 'Ground Pound',
 	kind: 'aoe',
-	unlockLevel: 5,
+	// The cap-level (L5) reward — the final rung of the capability ladder (ADR 0024 §5).
+	unlockLevel: CAPABILITY_UNLOCK['ground-pound'],
 	cooldown: 6,
 	damage: 30,
 	reach: 7, // extends this far on BOTH sides of the Avatar

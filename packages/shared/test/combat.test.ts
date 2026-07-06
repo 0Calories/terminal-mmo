@@ -32,6 +32,7 @@ import {
 	meleeActive,
 	meleeHitbox,
 	POWER_STRIKE,
+	PROGRESSION,
 	type Projectile,
 	predictHits,
 	regenPoise,
@@ -468,7 +469,7 @@ describe('resolveCombat', () => {
 		const r = resolveCombat(
 			a,
 			{},
-			1,
+			POWER_STRIKE.unlockLevel,
 			'warrior',
 			{ attack: true, skill: 1 },
 			0.016,
@@ -726,8 +727,10 @@ describe('resolveCombat swingStarted', () => {
 describe('stepAvatarCombat', () => {
 	const avatar = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, ...over });
+	// Default to a fully-leveled (cap) Avatar so every verb — block, dodge, both skills —
+	// is unlocked (ADR 0024 §5); individual cases override `level` to test the gating.
 	const ctx = (over: Partial<Parameters<typeof stepAvatarCombat>[2]> = {}) => ({
-		level: 1,
+		level: PROGRESSION.levelCap,
 		cls: 'warrior' as const,
 		weapon: weaponById(undefined),
 		dt: 0.016,
@@ -920,7 +923,14 @@ describe('resolveCombat dodge', () => {
 	// site ran the full grounded+moving `canStartDodge` pre-hop); here it only re-checks
 	// the tick-stable timing (`dodgeReady`) and loads the timers.
 	test('a gated dodge intent loads the full hop, arms the cooldown, flags dodgeStarted', () => {
-		const r = resolveCombat(player(), {}, 1, 'warrior', { dodge: true }, 0.016);
+		const r = resolveCombat(
+			player(),
+			{},
+			PROGRESSION.levelCap,
+			'warrior',
+			{ dodge: true },
+			0.016,
+		);
 		expect(r.dodgeStarted).toBe(true);
 		expect(r.dodgeT).toBe(DODGE_TOTAL);
 		expect(dodgePhase(r.dodgeT)).toBe('active'); // i-frames live on the start tick
@@ -931,7 +941,7 @@ describe('resolveCombat dodge', () => {
 		const r = resolveCombat(
 			player({ dodgeT: 0, dodgeCdT: 0.5 }),
 			{},
-			1,
+			PROGRESSION.levelCap,
 			'warrior',
 			{ dodge: true },
 			0.016,
@@ -957,7 +967,7 @@ describe('resolveCombat dodge', () => {
 		const r = resolveCombat(
 			player({ dodgeT: 0.2 }),
 			{},
-			1,
+			PROGRESSION.levelCap,
 			'warrior',
 			{ dodge: true },
 			0.02,
@@ -970,7 +980,7 @@ describe('resolveCombat dodge', () => {
 		const r = resolveCombat(
 			player(),
 			{},
-			1,
+			PROGRESSION.levelCap,
 			'warrior',
 			{ attack: true, dodge: true },
 			0.016,
@@ -984,7 +994,7 @@ describe('resolveCombat dodge', () => {
 		const r = resolveCombat(
 			player({ attackT: 0.2 }),
 			{},
-			1,
+			PROGRESSION.levelCap,
 			'warrior',
 			{ dodge: true },
 			0.016,
@@ -1266,7 +1276,7 @@ describe('resolveCombat threads the held Guard (ADR 0017 §5)', () => {
 		const raised = resolveCombat(
 			avatar({ guardT: 0 }),
 			{},
-			1,
+			PROGRESSION.levelCap,
 			'warrior',
 			{
 				attack: false,
@@ -1278,7 +1288,7 @@ describe('resolveCombat threads the held Guard (ADR 0017 §5)', () => {
 		const held = resolveCombat(
 			avatar({ guardT: 0.05 }),
 			{},
-			1,
+			PROGRESSION.levelCap,
 			'warrior',
 			{
 				attack: false,
@@ -1306,7 +1316,7 @@ describe('resolveCombat threads the held Guard (ADR 0017 §5)', () => {
 		const r = resolveCombat(
 			avatar({ attackT: 0 }),
 			{},
-			1,
+			PROGRESSION.levelCap,
 			'warrior',
 			{
 				attack: true,
@@ -1323,7 +1333,7 @@ describe('resolveCombat threads the held Guard (ADR 0017 §5)', () => {
 		const r = resolveCombat(
 			avatar({ attackT: 0.1 }),
 			{},
-			1,
+			PROGRESSION.levelCap,
 			'warrior',
 			{
 				attack: false,

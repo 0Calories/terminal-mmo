@@ -3,6 +3,7 @@ import { COMBAT, PHYS, SPAWN } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
 import { applyImpulse, stepEntity } from './physics';
 import { type PlayerState, spawnPlayerState } from './player';
+import { capabilityUnlocked } from './progression';
 import type { Effect, Entity, Input } from './types';
 import type { World, Zone } from './world';
 import { type AvatarIntent, type ServerAvatar, stepZone } from './zone';
@@ -97,7 +98,12 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	// the upward pop ungrounds the body; the gated decision is passed to stepZone as the
 	// `dodge` intent so resolveCombat loads `dodgeT` iff the hop fired. Direction = moveX.
 	let body = game.player.avatar;
-	const dodging = (input.dodge ?? false) && canStartDodge(body, input.moveX);
+	// Also gated by the Dodge capability (L4, ADR 0024 §5): below the unlock the hop
+	// impulse never fires, matching resolveCombat's i-frame gate so the two agree.
+	const dodging =
+		(input.dodge ?? false) &&
+		canStartDodge(body, input.moveX) &&
+		capabilityUnlocked('dodge', game.player.progress.level);
 	if (dodging)
 		body = applyImpulse(
 			body,

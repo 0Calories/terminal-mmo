@@ -142,7 +142,23 @@ export const SHOOTER = {
 
 export const PROJECTILE = { w: 1, h: 1 } as const;
 
-export const PROGRESSION = { levelCap: 30 } as const;
+// The five-level demo ladder (ADR 0024 §5): a short, hand-paced climb whose rungs
+// double as the mechanics tutorial (one verb per level). `levelCap` is a hard ceiling
+// the level-up loop can never cross. The EXP curve and per-level HP scaling below are
+// tuned for this arc — not the retired 30-level MVP — so the Dungeon faucet is a sane,
+// reliable climb rather than a wall (ADR 0024 amendment §3).
+export const PROGRESSION = {
+	levelCap: 5,
+	// EXP to advance from level L to L+1 is `xpBase * L` — a gentle arithmetic ramp
+	// (each level costs `xpBase` more than the last: 40 / 80 / 120 / 160, 400 total to
+	// cap). At `XP_PER_KILL` that is ~20 Dungeon kills to cap — a couple of runs.
+	xpBase: 40,
+	// Per-level HP scaling: survivability is the level's baseline reward (raw attack
+	// power arrives as the gated verbs — Power Strike, Ground Pound — not a flat damage
+	// creep, keeping weapons the only damage stat per ADR 0024). Doubles L1→L5.
+	baseHp: 100,
+	hpPerLevel: 25,
+} as const;
 
 export const SPAWN = { x: 10, y: GROUND_TOP - BOX.h } as const;
 
@@ -163,7 +179,10 @@ export const RESPAWN = { delaySec: 5 } as const;
 // entrants. The Player never picks a Channel. Drain/consolidation is post-MVP.
 export const CHANNEL = { softCap: 50 } as const;
 
-export const XP_PER_KILL = 12;
+// The Dungeon faucet's per-kill XP grant (ADR 0024 §2). Sized against the reworked
+// EXP curve so cap 5 (400 XP total) lands in ~20 kills — a reliable, unfrustrating
+// climb of a couple of Dungeon runs, not a long grind.
+export const XP_PER_KILL = 20;
 
 // Max length of a Chat line, shared by the input cap, the server relay clamp, the
 // chat log, and the over-head Speech bubble (#59, ADR 0007). Kept low enough that a

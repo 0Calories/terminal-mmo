@@ -10,6 +10,7 @@ import {
 	ACTION_FLAG,
 	addAvatar,
 	BOX,
+	CAPABILITY_UNLOCK,
 	COMBAT,
 	clientStepAvatar,
 	createZoneState,
@@ -40,13 +41,16 @@ function serverAvatar(
 	sessionId: number,
 	x: number,
 	handle = 'hero',
+	// Level gates the capability verbs (ADR 0024 §5): default level 1 (attack only) for
+	// the XP/kill tests; the block/dodge/skill tests raise it past the relevant unlock.
+	level = 1,
 ): ServerAvatar {
 	return {
 		sessionId,
 		handle,
 		cosmetics: DEFAULT_COSMETICS,
 		avatar: { ...spawnAvatar(x, y), id: sessionId },
-		progress: { level: 1, xp: 0, gold: 0 },
+		progress: { level, xp: 0, gold: 0 },
 		inventory: [],
 		log: [],
 		nextId: 1,
@@ -147,7 +151,7 @@ test('a skill intent damages a Monster and the server folds its cooldown + log',
 	// resolveCombat seam (combat.test.ts); here we only confirm a skill intent
 	// flows through a full stepZone tick and the server folds the result.
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
-	const av = serverAvatar(7, 20); // level 1; Power Strike unlocks at L1
+	const av = serverAvatar(7, 20, 'hero', CAPABILITY_UNLOCK['power-strike']);
 	av.class = 'warrior';
 	av.skillCooldowns = {};
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
@@ -398,7 +402,7 @@ test('a Dodge slips a projectile during its active window but not its recovery',
 });
 
 test('a dodge intent loads the i-frame timer through stepZone (active on the first tick)', () => {
-	const av = serverAvatar(7, 20);
+	const av = serverAvatar(7, 20, 'hero', CAPABILITY_UNLOCK.dodge);
 	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
 	// The report carries the client's already-gated `dodge` decision (grounded + moving
 	// were verified client-side pre-hop); the server loads the i-frame timer on trust.
@@ -429,7 +433,7 @@ function guardIntent(
 
 test('Block: a frontal committer strike is chipped, not full, and drains Poise', () => {
 	const m = strikingCommitterAt20();
-	const av = serverAvatar(7, 20);
+	const av = serverAvatar(7, 20, 'hero', CAPABILITY_UNLOCK.block);
 	av.avatar.facing = -1; // face the committer on the left (frontal)
 	av.avatar.guardT = 0.5; // a raised Guard → Block
 	const poiseBefore = av.avatar.poise ?? COMBAT.poise.max;
@@ -465,7 +469,7 @@ test('an unguarded committer chip emits source-less hurt-blood biased away from 
 
 test('Block to a Poise break is a guard-break Stagger', () => {
 	const m = strikingCommitterAt20();
-	const av = serverAvatar(7, 20);
+	const av = serverAvatar(7, 20, 'hero', CAPABILITY_UNLOCK.block);
 	av.avatar.facing = -1;
 	av.avatar.guardT = 0.5; // a raised Guard → Block
 	av.avatar.poise = COMBAT.guard.blockPoise - 1; // one block empties the pool
@@ -479,7 +483,7 @@ test('Block to a Poise break is a guard-break Stagger', () => {
 
 test('Guard only protects the frontal arc — a rear strike ignores it', () => {
 	const m = strikingCommitterAt20(); // attacker to the LEFT
-	const av = serverAvatar(7, 20);
+	const av = serverAvatar(7, 20, 'hero', CAPABILITY_UNLOCK.block);
 	av.avatar.facing = 1; // facing AWAY from the committer (rear hit)
 	av.avatar.guardT = 0.5; // a raised Guard — but the hit lands from behind
 	const hpBefore = av.avatar.hp;
@@ -490,7 +494,7 @@ test('Guard only protects the frontal arc — a rear strike ignores it', () => {
 });
 
 test('a guarding Avatar replicates the guarding flag to others (ADR 0017 §10)', () => {
-	const av = serverAvatar(7, 20);
+	const av = serverAvatar(7, 20, 'hero', CAPABILITY_UNLOCK.block);
 	av.avatar.facing = -1;
 	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
@@ -782,7 +786,7 @@ test('an unguarded heavy projectile Staggers the Avatar on a Poise break, like a
 });
 
 test('Block: a frontal Guard chips a projectile, drains Poise, and consumes the shot', () => {
-	const av = serverAvatar(7, 20);
+	const av = serverAvatar(7, 20, 'hero', CAPABILITY_UNLOCK.block);
 	av.avatar.facing = 1; // face the shot coming from the right (frontal)
 	av.avatar.guardT = 0.5; // a raised Guard → Block
 	const pr = makeProjectile({
