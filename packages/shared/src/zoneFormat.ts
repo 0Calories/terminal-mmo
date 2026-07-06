@@ -201,10 +201,14 @@ function parseHeader(text: string): ZoneHeader {
 			'bad-header',
 			"header must not carry an 'id' — a Zone's id is its filename (ADR 0011)",
 		);
-	if (header.type !== 'field' && header.type !== 'town')
+	if (
+		header.type !== 'field' &&
+		header.type !== 'town' &&
+		header.type !== 'dungeon'
+	)
 		throw new ZoneParseError(
 			'bad-header',
-			`header.type must be 'field' or 'town', got '${header.type}'`,
+			`header.type must be 'field', 'town', or 'dungeon', got '${header.type}'`,
 		);
 	if (header.name !== undefined && typeof header.name !== 'string')
 		throw new ZoneParseError(

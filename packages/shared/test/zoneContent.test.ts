@@ -63,6 +63,20 @@ test('difficulty rises with distance: pokers only Field 2+, Brute only in Field 
 	expect(behaviors('field-03').has('shooter')).toBe(true);
 });
 
+test('the Dungeon is authored: a combat Zone entered from Town, round-tripping (D3, #240)', () => {
+	const zones = loadZones();
+	const dungeon = zones.find((z) => z.id === 'dungeon-01');
+	const town = zones.find((z) => z.id === 'town-01');
+
+	// Fixed-difficulty, repeatable combat faucet: the instanced kind, with Monsters.
+	expect(dungeon?.type).toBe('dungeon');
+	expect(dungeon?.spawns.length).toBeGreaterThan(0);
+	expect(dungeon?.monsters.length).toBe(dungeon?.spawns.length);
+	// Entered from Town, and returns to it (round-trip).
+	expect(town?.portals.some((p) => p.target === 'dungeon-01')).toBe(true);
+	expect(dungeon?.portals.some((p) => p.target === 'town-01')).toBe(true);
+});
+
 test('Town has 2-3 signpost NPCs with directional dialogue (D3, #239)', () => {
 	const town = loadZones().find((z) => z.id === 'town-01');
 	const signs = (town?.npcs ?? []).filter((n) => n.kind === 'signpost');

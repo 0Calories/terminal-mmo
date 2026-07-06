@@ -110,9 +110,11 @@ export function setZoneName(doc: EditorDoc, name: string): EditorDoc {
 	return { header, rows: doc.rows };
 }
 
-/** The Zone type (`field`|`town`); anything unexpected reads as `field`. */
+/** The Zone type (`field`|`town`|`dungeon`); anything unexpected reads as `field`. */
 export function zoneType(doc: EditorDoc): ZoneType {
-	return doc.header.type === 'town' ? 'town' : 'field';
+	if (doc.header.type === 'town') return 'town';
+	if (doc.header.type === 'dungeon') return 'dungeon';
+	return 'field';
 }
 
 /** Set the Zone type (the `t` toggle). Decorative on its own — live validation flags

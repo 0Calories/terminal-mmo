@@ -12,7 +12,10 @@ import type {
 } from './types';
 
 export type ZoneId = string;
-export type ZoneType = 'field' | 'town';
+// The three kinds of Zone. Town and Field run one shared instance each (funnel, ADR
+// 0024); a `dungeon` is the instanced kind — entering it from Town spins up a private
+// per-player/per-party ZoneState (never shared with strangers), torn down on exit (#240).
+export type ZoneType = 'field' | 'town' | 'dungeon';
 
 /** A trigger box that, on entry, moves the Avatar to `target` at `arrival`. */
 export interface Portal extends Box {

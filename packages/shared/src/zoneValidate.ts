@@ -111,11 +111,12 @@ function perFile(zone: Zone): Diagnostic[] {
 			zoneId: zone.id,
 			message: `town Zone '${zone.id}' must have no monster spawns (found ${zone.spawns.length})`,
 		});
-	if (zone.type === 'field' && zone.spawns.length === 0)
+	// A combat Zone (Field or the instanced Dungeon) is pointless without Monsters.
+	if (zone.type !== 'town' && zone.spawns.length === 0)
 		out.push({
 			severity: 'error',
 			zoneId: zone.id,
-			message: `field Zone '${zone.id}' must have at least one monster spawn`,
+			message: `${zone.type} Zone '${zone.id}' must have at least one monster spawn`,
 		});
 
 	for (const s of zone.spawns)

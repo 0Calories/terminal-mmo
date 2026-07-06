@@ -6,6 +6,7 @@ import {
 	createServerWorld,
 	GROUND_TOP,
 	handleOf,
+	joinParty,
 	loadZones,
 	removeSession,
 	sessionByHandle,
@@ -175,9 +176,11 @@ test('every entrant to a Zone joins its single shared instance — no channel sp
 	expect(zoneOf(w, 2)).toBe('field-01');
 	expect(zoneOf(w, 3)).toBe('field-01');
 
-	// Exactly one ZoneState per authored Zone; the Field holds everyone.
+	// One shared ZoneState per NON-Dungeon Zone; the instanced Dungeon (#240) has no
+	// shared instance, so it is absent from `zones`. The Field holds everyone.
 	expect(Object.keys(w.zones).sort()).toEqual(
 		loadZones()
+			.filter((z) => z.type !== 'dungeon')
 			.map((z) => z.id)
 			.sort(),
 	);
@@ -272,4 +275,186 @@ test('handleOf returns a placed session handle, undefined otherwise', () => {
 	const w = addSession(makeWorld(), 7, 'Neo');
 	expect(handleOf(w, 7)).toBe('Neo');
 	expect(handleOf(w, 99)).toBeUndefined();
+});
+
+// --- Dungeon: private, instanced entry from Town (#240) -----------------------
+
+// A Town-start world: sessions spawn in the hub, from where they portal into the
+// instanced Dungeon.
+function townWorld(): ServerWorld {
+	return createServerWorld({
+		zones: loadZones(),
+		start: 'town-01',
+		town: 'town-01',
+	});
+}
+
+// The x of the Town → Dungeon Portal (glyph S) an Avatar stands on to enter.
+function dungeonEntryX(w: ServerWorld): number {
+	const p = w.templates['town-01'].portals.find(
+		(pp) => pp.target === 'dungeon-01',
+	);
+	if (!p) throw new Error('town-01 must portal to dungeon-01');
+	return p.x;
+}
+
+// The x of the Dungeon → Town return Portal an Avatar stands on to leave.
+function dungeonExitX(w: ServerWorld): number {
+	const p = w.templates['dungeon-01'].portals.find(
+		(pp) => pp.target === 'town-01',
+	);
+	if (!p) throw new Error('dungeon-01 must portal back to town-01');
+	return p.x;
+}
+
+// Walk one session from Town onto the Dungeon Portal and enter — one step relocates it
+// into a private instance.
+function enterDungeon(w: ServerWorld, sessionId: number): ServerWorld {
+	return stepServerWorld(w, [holdAt(sessionId, dungeonEntryX(w), true)], 16);
+}
+
+test('the authored Dungeon exists, is instanced, and has no shared instance', () => {
+	const w = townWorld();
+	const dungeon = w.templates['dungeon-01'];
+	expect(dungeon?.type).toBe('dungeon');
+	expect(dungeon.spawns.length).toBeGreaterThan(0); // a reliable XP/loot faucet
+	// Fixed difficulty, repeatable: no shared ZoneState is ever created for it.
+	expect(zoneInstance(w, 'dungeon-01')).toBeUndefined();
+	expect(w.zones['dungeon-01']).toBeUndefined();
+	// It is reachable from the hub (entered from Town) and round-trips back.
+	expect(dungeon.portals.some((p) => p.target === 'town-01')).toBe(true);
+});
+
+test('entering the Dungeon from Town spins up a private instance (create on entry)', () => {
+	let w = addSession(townWorld(), 1, 'neo');
+	expect(Object.keys(w.instances).length).toBe(0);
+
+	w = enterDungeon(w, 1);
+
+	expect(zoneOf(w, 1)).toBe('dungeon-01');
+	expect(Object.keys(w.instances).length).toBe(1);
+	expect(w.instanceOf[1]).toBeDefined();
+	// The Avatar is inside its instance, and the instance streams as its Zone.
+	const zs = zoneStateOf(w, 1);
+	expect(zs?.zone.id).toBe('dungeon-01');
+	expect(zs?.avatars.some((a) => a.sessionId === 1)).toBe(true);
+	expect(worldSnapshotFor(w, 1).zoneId).toBe('dungeon-01');
+});
+
+test('leaving the Dungeon tears the instance down (teardown on exit)', () => {
+	let w = addSession(townWorld(), 1, 'neo');
+	w = enterDungeon(w, 1);
+	expect(Object.keys(w.instances).length).toBe(1);
+
+	// Stand on the Dungeon's return Portal and step back out to Town.
+	w = stepServerWorld(w, [holdAt(1, dungeonExitX(w), true)], 16);
+
+	expect(zoneOf(w, 1)).toBe('town-01');
+	expect(w.instanceOf[1]).toBeUndefined();
+	expect(Object.keys(w.instances).length).toBe(0); // torn down — nobody left inside
+});
+
+test('a forgiving death in the Dungeon exits to Town and tears the instance down', () => {
+	let w = addSession(townWorld(), 1, 'neo');
+	w = enterDungeon(w, 1);
+	const key = w.instanceOf[1];
+	// Drive the Avatar's HP to 0 inside the instance; the next tick is a forgiving death.
+	w.instances[key] = {
+		...w.instances[key],
+		avatars: w.instances[key].avatars.map((a) => ({
+			...a,
+			avatar: { ...a.avatar, hp: 0 },
+		})),
+	};
+	w = stepServerWorld(w, [holdAt(1, 10)], 16);
+
+	expect(zoneOf(w, 1)).toBe('town-01');
+	expect(w.instanceOf[1]).toBeUndefined();
+	expect(Object.keys(w.instances).length).toBe(0);
+});
+
+test('strangers never share a Dungeon instance — each gets its own private run', () => {
+	let w = addSession(townWorld(), 1, 'neo');
+	w = addSession(w, 2, 'trinity'); // unrelated session, same hub, no party
+	// Both step onto the Dungeon Portal together.
+	const x = dungeonEntryX(w);
+	w = stepServerWorld(w, [holdAt(1, x, true), holdAt(2, x, true)], 16);
+
+	expect(zoneOf(w, 1)).toBe('dungeon-01');
+	expect(zoneOf(w, 2)).toBe('dungeon-01');
+	// Two separate instances — different keys, one Avatar each.
+	expect(Object.keys(w.instances).length).toBe(2);
+	expect(w.instanceOf[1]).not.toBe(w.instanceOf[2]);
+	expect(w.instances[w.instanceOf[1]].avatars.length).toBe(1);
+	expect(w.instances[w.instanceOf[2]].avatars.length).toBe(1);
+	// They neither share a simulation nor see each other.
+	expect(sessionsInZone(w, 1)).toEqual([1]);
+	expect(sessionsInZone(w, 2)).toEqual([2]);
+	expect(worldSnapshotFor(w, 1).avatars.some((a) => a.sessionId === 2)).toBe(
+		false,
+	);
+});
+
+test('a friend (party) co-locates in one shared Dungeon instance', () => {
+	let w = addSession(townWorld(), 1, 'neo');
+	w = addSession(w, 2, 'trinity');
+	w = joinParty(w, 2, 1); // trinity runs with neo
+	const x = dungeonEntryX(w);
+	w = stepServerWorld(w, [holdAt(1, x, true), holdAt(2, x, true)], 16);
+
+	// One instance, both inside it.
+	expect(Object.keys(w.instances).length).toBe(1);
+	expect(w.instanceOf[1]).toBe(w.instanceOf[2]);
+	expect(w.instances[w.instanceOf[1]].avatars.length).toBe(2);
+	// They share the simulation and see each other.
+	expect(sessionsInZone(w, 1).sort()).toEqual([1, 2]);
+	expect(
+		worldSnapshotFor(w, 1)
+			.avatars.map((a) => a.sessionId)
+			.sort(),
+	).toEqual([1, 2]);
+});
+
+test('the last party-mate leaving tears the shared instance down; the first does not', () => {
+	let w = addSession(townWorld(), 1, 'neo');
+	w = addSession(w, 2, 'trinity');
+	w = joinParty(w, 2, 1);
+	const x = dungeonEntryX(w);
+	w = stepServerWorld(w, [holdAt(1, x, true), holdAt(2, x, true)], 16);
+	const key = w.instanceOf[1];
+
+	// Session 1 leaves; the instance stays up for session 2.
+	w = stepServerWorld(w, [holdAt(1, dungeonExitX(w), true), holdAt(2, 20)], 16);
+	expect(zoneOf(w, 1)).toBe('town-01');
+	expect(zoneOf(w, 2)).toBe('dungeon-01');
+	expect(w.instances[key]?.avatars.length).toBe(1);
+
+	// Session 2 leaves too; now the run is empty and torn down.
+	w = stepServerWorld(w, [holdAt(2, dungeonExitX(w), true)], 16);
+	expect(zoneOf(w, 2)).toBe('town-01');
+	expect(Object.keys(w.instances).length).toBe(0);
+});
+
+test('disconnecting inside a Dungeon tears down a solo instance', () => {
+	let w = addSession(townWorld(), 1, 'neo');
+	w = enterDungeon(w, 1);
+	expect(Object.keys(w.instances).length).toBe(1);
+	w = removeSession(w, 1);
+	expect(zoneOf(w, 1)).toBeUndefined();
+	expect(w.instanceOf[1]).toBeUndefined();
+	expect(Object.keys(w.instances).length).toBe(0);
+});
+
+test('a re-entered Dungeon is a fresh instance (repeatable faucet)', () => {
+	let w = addSession(townWorld(), 1, 'neo');
+	w = enterDungeon(w, 1);
+	const first = w.instanceOf[1];
+	w = stepServerWorld(w, [holdAt(1, dungeonExitX(w), true)], 16); // back to Town
+	expect(Object.keys(w.instances).length).toBe(0);
+	w = enterDungeon(w, 1); // run it again
+	expect(zoneOf(w, 1)).toBe('dungeon-01');
+	expect(Object.keys(w.instances).length).toBe(1);
+	// Same solo key (keyed by owner), but a freshly-created ZoneState (tick reset).
+	expect(w.instanceOf[1]).toBe(first);
+	expect(w.instances[w.instanceOf[1]].tick).toBe(0);
 });

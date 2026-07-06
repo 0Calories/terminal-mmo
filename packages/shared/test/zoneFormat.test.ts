@@ -155,9 +155,10 @@ describe('parseZone — fails safely', () => {
 	});
 
 	test('invalid zone type', () => {
-		expect(() =>
-			parseZone(`{ "type": "dungeon" }${grid}`, catalogs, 'x'),
-		).toThrow(ZoneParseError);
+		// 'field' | 'town' | 'dungeon' are the only accepted types (#240 added dungeon).
+		expect(() => parseZone(`{ "type": "cave" }${grid}`, catalogs, 'x')).toThrow(
+			ZoneParseError,
+		);
 	});
 
 	test('undeclared glyph in the grid', () => {
