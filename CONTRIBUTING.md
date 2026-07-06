@@ -5,22 +5,25 @@
 The client ships as `bunx terminal-mmo` and is **cached** on players' machines, so
 a returning player can run an old client against a freshly-deployed server. The
 wire protocol is hand-rolled binary frames — a mismatch doesn't fail cleanly, it
-silently mis-decodes bytes into garbage. To prevent that, every connection
-carries a `PROTOCOL_VERSION` and the server rejects mismatches loudly (ADR
-[0009](./docs/adr/0009-live-hosting-and-bunx-delivery.md)).
+silently mis-decodes bytes into garbage. To prevent that, `hello` carries the
+client's release **Version** (sourced from the git tag — ADR
+[0012](./docs/adr/0012-release-versioning-and-cicd.md), which replaced the old
+hand-bumped `PROTOCOL_VERSION` integer) and a deployed server rejects a mismatch
+loudly (ADR [0009](./docs/adr/0009-live-hosting-and-bunx-delivery.md)).
 
 **Any time you change the wire format** — add/remove/reorder a field, change a
-type, add a message — follow this checklist, in order:
+type, add a message — keep to these rules:
 
-1. **Bump `PROTOCOL_VERSION`** in `packages/shared/src/protocol.ts`.
-2. **Bump the `version`** of the publishable package in `packages/cli/package.json`.
-3. **Deploy the server first** (merge to `main` → Railway redeploys). The new
-   server must be live *before* the new client exists, so it can reject stragglers
-   on the old version.
-4. **Then publish the client**: `cd packages/cli && npm publish`.
-
-If you publish before redeploying, the new client will be rejected by the still-old
-server. Server-first is the safe order.
+1. **No manual version bump.** The gate is intrinsic to cutting a release tag:
+   the pipeline deploys the server first and only publishes the client once
+   `/health` reports the new Version (ADR 0012). A dev server (`MMO_VERSION`
+   unset) skips the gate, so local dev is never rejected.
+2. **Append, don't reorder.** A new field goes at the END of its message (and a
+   new catalog entry at the end of its table), with a `remaining()` guard on
+   decode — so an old frame still decodes cleanly and the version gate, not a
+   garbled read, is what refuses a stale peer.
+3. **Round-trip test every change** in `packages/shared/test/protocol.test.ts`,
+   including the truncated legacy form wherever a trailing field is optional.
 
 A stale client is bounced with: *"Your client is out of date — run
 `bunx terminal-mmo@latest`."* That message is the whole point of the version gate —

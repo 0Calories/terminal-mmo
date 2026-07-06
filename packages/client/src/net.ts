@@ -21,6 +21,7 @@ import {
 } from '@mmo/shared';
 import { bubbleTtl } from './bubble';
 import { INTERP_DELAY_MS, SnapshotBuffer } from './interp';
+import type { SshIdentity } from './ssh-auth';
 import { CLIENT_VERSION } from './version';
 
 // A transient over-head Speech bubble (#59, ADR 0007): the latest Chat line from
@@ -44,6 +45,11 @@ export class NetClient {
 	zoneId = '';
 	tickRate = 20;
 	ready = false; // welcome received
+	// The durable Handle this connection authenticated as (#235) — the registered
+	// Handle for a returning key, which may differ from what we asked for.
+	// Initialized to the requested handle so a pre-#235 server (whose welcome
+	// carries none) leaves it meaningful.
+	handle: string;
 	latest: Snapshot | null = null;
 	// Zone-local chat lines received from the server (#34), each "handle: text",
 	// bounded so an idle session can't accumulate them forever.
@@ -59,10 +65,15 @@ export class NetClient {
 	constructor(
 		url: string,
 		handle: string,
+		// The SSH identity that answers the server's auth challenge (ADR 0004,
+		// #235): its public key rides `hello`, and `signChallenge` produces the
+		// `proof` when the `challenge` arrives.
+		private identity: Pick<SshIdentity, 'publicKey' | 'signChallenge'>,
 		private onReject: (reason: string) => void = () => {},
 		cosmetics: Cosmetics = DEFAULT_COSMETICS,
 		weapon = 0,
 	) {
+		this.handle = handle;
 		this.ws = new WebSocket(url);
 		this.ws.binaryType = 'arraybuffer';
 		this.ws.onopen = () => {
@@ -75,6 +86,7 @@ export class NetClient {
 					// The chosen Weapon rides the connect handshake (ADR 0017 §14), so every
 					// client sees it the moment this Avatar spawns in.
 					weapon,
+					publicKey: this.identity.publicKey,
 				}),
 			);
 		};
@@ -92,10 +104,34 @@ export class NetClient {
 	// against). `recvTimeMs` is the local clock at receipt, passed in by the caller
 	// so the buffer never reads a clock itself and stays deterministically testable.
 	ingest(msg: ServerMessage, recvTimeMs: number) {
+		// The auth challenge (ADR 0004, #235): sign the nonce and answer with the
+		// proof. Signing is async (ssh-agent round-trip), so the proof is sent from
+		// the promise — pre-welcome, hence directly on the socket, not via send().
+		if (msg.t === 'challenge') {
+			this.identity.signChallenge(msg.nonce).then(
+				(signature) => {
+					if (this.ws.readyState === WebSocket.OPEN)
+						this.ws.send(encodeClientMessage({ t: 'proof', signature }));
+				},
+				(err) => {
+					this.rejected = String(err instanceof Error ? err.message : err);
+					this.onReject(this.rejected);
+					this.close();
+				},
+			);
+			return;
+		}
 		if (msg.t === 'welcome') {
 			this.sessionId = msg.sessionId;
 			this.zoneId = msg.zoneId;
 			this.tickRate = msg.tickRate;
+			// '' only from a pre-#235 server; the requested handle stays then.
+			if (msg.handle) {
+				this.handle = msg.handle;
+				// Surface the durable identity — a returning key may resolve to a
+				// different Handle than the one this launch asked for (#235).
+				this.notice(`signed in as ${msg.handle}`);
+			}
 			this.ready = true;
 			return;
 		}

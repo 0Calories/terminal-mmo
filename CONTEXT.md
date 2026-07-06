@@ -138,11 +138,14 @@ same space the Player has been exploring.
 _Avoid_: Raid boss, elite, miniboss, dungeon boss
 
 **Handle**:
-The ephemeral display label a Player is known by in the social layer — painted on
-the nameplate and attributed on each Chat message (set at connection, per ADR
-0006). A *label, not an identity*: it carries no uniqueness guarantee and must
-never be used to address an entity. The session id is identity.
-_Avoid_: Username, nick, name, identity
+The durable, unique username a Player claims on first launch, bound to their SSH
+public key (ADR 0004, #235 — revising the ephemeral per-connection label of ADR
+0006). Painted on the nameplate and attributed on each Chat message; a returning
+key always resolves to the same Handle, whatever name that launch asked for.
+Unique case-insensitively (2–16 of `[A-Za-z0-9_-]`), so `/w <handle>` is
+unambiguous — but entities are still *addressed* by session id at runtime: the
+Handle names the account, not the connection.
+_Avoid_: Username, nick, name, label
 
 **Chat**:
 Real-time text communication between Players. The first form is **Zone chat**: a
