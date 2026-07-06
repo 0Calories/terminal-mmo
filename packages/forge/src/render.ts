@@ -4,6 +4,7 @@ import type { EntityType, Zone } from '@mmo/shared';
 const SPAWN_GLYPH: Partial<Record<EntityType, string>> = {
 	chaser: 'c',
 	shooter: 's',
+	brute: 'b',
 };
 const NPC_GLYPH = 'N';
 const PORTAL_GLYPH = 'P';
@@ -12,6 +13,7 @@ const LEGEND: Record<string, string> = {
 	'#': 'solid terrain',
 	c: 'chaser spawn',
 	s: 'shooter spawn',
+	b: 'brute spawn',
 	N: 'npc',
 	P: 'portal',
 };

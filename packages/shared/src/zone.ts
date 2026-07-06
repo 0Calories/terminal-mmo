@@ -19,6 +19,7 @@ import {
 	IDLE_ACTION,
 	meleeActive,
 	meleeHitbox,
+	meleeProfileOf,
 	regenPoise,
 	resolveGuard,
 	resolveHitsOnMonsters,
@@ -30,7 +31,6 @@ import {
 import {
 	BOX,
 	COMBAT,
-	MONSTER,
 	PHYS,
 	RESPAWN,
 	SHOOTER,
@@ -354,7 +354,7 @@ export function stepZone(
 		const attackTBefore = m.attackT;
 		m.attackT = Math.max(0, m.attackT - dt);
 		// Ranged-poker fire cadence (ADR 0017 §8): decays toward 0, gating the next commit.
-		m.fireCdT = Math.max(0, (m.fireCdT ?? 0) - dt);
+		m.attackCdT = Math.max(0, (m.attackCdT ?? 0) - dt);
 		// Hitstun + Poise bookkeeping (ADR 0017 §2/§3): decay the Stagger timer and
 		// regenerate the Poise pool under no pressure. `stunned` locks CONTROL (no AI),
 		// not physics — the body below still integrates its Knockback impulse + gravity.
@@ -365,13 +365,16 @@ export function stepZone(
 		m.poiseT = Math.max(0, (m.poiseT ?? 0) - dt);
 		if ((m.poiseT ?? 0) <= 0) m.poise = regenPoise(m, dt);
 		const stunned = (m.stunT ?? 0) > 0;
-		// A committer (chaser melee OR shooter ranged poker) that has begun a swing is
-		// COMMITTED for the whole wind-up→active→recovery: it neither moves nor re-targets
-		// nor re-commits until the swing fully recovers (attackT decays to 0). That
-		// commitment is precisely what makes the recovery a punishable opening (ADR 0017
-		// §9): the poker, too, holds its ground through the telegraph rather than kiting.
-		const committed =
-			(m.type === 'chaser' || m.type === 'shooter') && m.attackT > 0;
+		// A committer (chaser/brute melee OR shooter ranged poker) that has begun a swing
+		// is COMMITTED for the whole wind-up→active→recovery: it neither moves nor
+		// re-targets nor re-commits until the swing fully recovers (attackT decays to 0).
+		// That commitment is precisely what makes the recovery a punishable opening (ADR
+		// 0017 §9): every archetype holds its ground through the telegraph rather than
+		// kiting or cancelling.
+		const committed = m.type !== 'player' && m.attackT > 0;
+		// The melee-committer profile drives the chaser and the brute off one code path
+		// (approach → commit → active-phase strike); null for the ranged-poker shooter.
+		const melee = meleeProfileOf(m.type);
 
 		const target = nearestAvatar(avatars, m.x);
 		const dx = target >= 0 ? avatars[target].avatar.x - m.x : 0;
@@ -383,10 +386,11 @@ export function stepZone(
 			// Staggered or mid-swing: no input drive. stepEntity still carries ivx
 			// (Knockback) + gravity, and a committed swing holds its ground to strike.
 			moveX = 0;
-		else if (target >= 0 && m.type === 'chaser' && adx < MONSTER.chaserAggro)
-			// hold (moveX 0) inside the deadzone so facing doesn't flip-flop frame
-			// to frame when the Avatar is sitting on top of the chaser
-			moveX = adx < MONSTER.chaserDeadzone ? 0 : dx > 0 ? 1 : -1;
+		else if (melee && target >= 0 && adx < melee.aggro)
+			// A melee committer (chaser or brute) closes on its target; hold (moveX 0)
+			// inside the deadzone so facing doesn't flip-flop frame to frame when the
+			// Avatar is sitting on top of it.
+			moveX = adx < melee.deadzone ? 0 : dx > 0 ? 1 : -1;
 		else if (engaged) moveX = adx < SHOOTER.keepDist ? (dx > 0 ? -1 : 1) : 0;
 		else moveX = m.facing;
 		const res = stepEntity(t, m, { moveX, jump: false }, dt);
@@ -404,11 +408,11 @@ export function stepZone(
 		// Ranged poker (ADR 0017 §8): the reworked shooter never auto-fires. While engaged
 		// and free it FACES its target and, once off its fire cadence, COMMITS the shared
 		// wind-up→active→recovery swing (the visible telegraph). It then fires exactly one
-		// shot on the tick the swing crosses into its `active` phase, and arms `fireCdT` to
+		// shot on the tick the swing crosses into its `active` phase, and arms `attackCdT` to
 		// pace the next commit — so the Player reads the wind-up, then dodges/blocks/parries
 		// the reactable shot or closes in to punish the recovery.
 		if (engaged && !committed) m.facing = dx >= 0 ? 1 : -1;
-		if (engaged && !committed && (m.fireCdT ?? 0) <= 0 && m.attackT <= 0)
+		if (engaged && !committed && (m.attackCdT ?? 0) <= 0 && m.attackT <= 0)
 			m = { ...m, attackT: SWING_TOTAL };
 		if (
 			m.type === 'shooter' &&
@@ -416,26 +420,29 @@ export function stepZone(
 			meleeActive(m.attackT)
 		) {
 			fired.push(spawnProjectile(nextProjectileId++, m, m.facing));
-			m = { ...m, fireCdT: SHOOTER.fireCooldown };
+			m = { ...m, attackCdT: SHOOTER.fireCooldown };
 		}
 
-		// Melee committer (ADR 0017 §9): the reworked chaser deals damage ONLY through a
-		// telegraphed phased swing — never by contact. When an Avatar is within reach and
-		// the chaser is free (not staggered, not already mid-swing), it COMMITS: it faces
-		// the target and loads the full wind-up→active→recovery into `attackT`. The
-		// wind-up replicates through the action-state (snapshotFor) for the Player to
-		// read; the active phase below is the only damaging window; and because `attackT`
-		// stays > 0 through recovery, the committer cannot re-commit or cancel — that
-		// recovery is the Player's punish opening.
+		// Melee committer (ADR 0017 §9): the chaser and the brute deal damage ONLY through
+		// a telegraphed phased swing — never by contact. When an Avatar is within reach and
+		// the committer is free (not staggered, not already mid-swing, and — for the
+		// deliberate brute — off its commit cool-down), it COMMITS: it faces the target and
+		// loads the full wind-up→active→recovery into `attackT`, and arms `attackCdT` to pace
+		// the next commit (0 for the chaser, which re-commits immediately). The wind-up
+		// replicates through the action-state (snapshotFor) for the Player to read; the
+		// active phase below is the only damaging window; and because `attackT` stays > 0
+		// through recovery, the committer cannot re-commit or cancel — that recovery is the
+		// Player's punish opening.
 		if (
 			!stunned &&
 			!committed &&
-			m.type === 'chaser' &&
+			melee &&
 			target >= 0 &&
-			adx <= MONSTER.meleeRange
+			adx <= melee.range &&
+			(m.attackCdT ?? 0) <= 0
 		) {
 			m.facing = dx >= 0 ? 1 : -1;
-			m = { ...m, attackT: SWING_TOTAL };
+			m = { ...m, attackT: SWING_TOTAL, attackCdT: melee.commitCd };
 		}
 
 		// The committer's strike: during its active phase ONLY, project the melee hitbox
@@ -444,7 +451,7 @@ export function stepZone(
 		// Stagger a poise-broken Player. Gated by the victim's i-frames so the multi-tick
 		// active window lands once. A break Staggers (Hitstun + a Mass-scaled Knockback
 		// impulse); a chip just damages + flinches.
-		if (m.type === 'chaser' && meleeActive(m.attackT)) {
+		if (melee && meleeActive(m.attackT)) {
 			const hb = meleeHitbox(m);
 			for (let i = 0; i < avatars.length; i++) {
 				const a = avatars[i].avatar;
@@ -456,7 +463,7 @@ export function stepZone(
 				// raise Blocks it (chip + Poise drain), a rear hit ignores Guard. The i-frame
 				// (set on every branch) gates the multi-tick active window to one resolution
 				// per swing.
-				const g = resolveGuard(a, m.x, MONSTER.meleeDamage);
+				const g = resolveGuard(a, m.x, melee.damage);
 				// Direction away from the Monster (0 when they share a column), reused by the
 				// hurt-blood bias.
 				const away: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
@@ -465,7 +472,7 @@ export function stepZone(
 				// Block; for an unguarded hit, apply the full Poise damage here. A guard-break
 				// and an unguarded Poise break both Stagger the Avatar through the same path.
 				const unguarded =
-					g.result === 'none' ? applyPoiseDamage(a, COMBAT.poiseDamage) : null;
+					g.result === 'none' ? applyPoiseDamage(a, melee.poise) : null;
 				const broke = unguarded ? unguarded.broke : g.guardBroke;
 				const poise = unguarded ? unguarded.poise : g.defenderPoise;
 				let na: Entity = {
@@ -491,9 +498,7 @@ export function stepZone(
 					// (ADR 0019). No `source`, so — like a Monster break — it reaches everyone in
 					// range including the victim's client (hitstop + camera-kick).
 					effects.push(
-						...effectsOf(
-							combatEventAt('break', a, m.facing, MONSTER.meleeDamage),
-						),
+						...effectsOf(combatEventAt('break', a, m.facing, melee.damage)),
 					);
 				} else if (g.result !== 'block') {
 					// Incoming hurt resolves to a `hit` CombatEvent → blood via `effectsOf` (ADR
@@ -502,7 +507,7 @@ export function stepZone(
 					// to the victim too, in sync with the hurt-flash. A clean Block emits no blood —
 					// the brace soaked it, only the chip + Poise drain show.
 					effects.push(
-						...effectsOf(combatEventAt('hit', a, away, MONSTER.meleeDamage)),
+						...effectsOf(combatEventAt('hit', a, away, melee.damage)),
 					);
 				}
 				avatars[i] = { ...avatars[i], avatar: na };
@@ -768,13 +773,13 @@ export function snapshotFor(
 		hp: m.hp,
 		maxHp: m.maxHp,
 		hurtT: m.hurtT,
-		// Both committer archetypes — the melee chaser and the ranged-poker shooter — run
-		// the shared phase machine on their `attackT`, so each replicates its real swing
-		// action-state and its wind-up telegraph is visible to the Player (ADR 0017
-		// §8/§9/§10). A Staggered Monster of either type surfaces its reaction through the
-		// action `flags`.
+		// Every committer archetype — the melee chaser, the heavy melee brute, and the
+		// ranged-poker shooter — runs the shared phase machine on its `attackT`, so each
+		// replicates its real swing action-state and its wind-up telegraph is visible to
+		// the Player (ADR 0017 §8/§9/§10). A Staggered Monster surfaces its reaction through
+		// the action `flags`.
 		action:
-			m.type === 'chaser' || m.type === 'shooter'
+			m.type !== 'player'
 				? actionStateOf(m)
 				: { ...IDLE_ACTION, flags: actionFlags(m) },
 	}));

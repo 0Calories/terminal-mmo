@@ -116,6 +116,44 @@ export const MONSTER = {
 	meleeRange: 4,
 } as const;
 
+// The brute is a HEAVY MELEE COMMITTER (ADR 0017 §9, ADR 0024 §8): the Field-3
+// bruiser. Like the chaser it deals damage ONLY through a telegraphed
+// wind-up→active→recovery swing — no passive contact damage — but its whole profile
+// is the chaser's opposite. It LUMBERS (half the chaser's speed), is HARD TO STAGGER
+// (a big Poise pool + heavy Mass), hits FAR HARDER (more than double the HP damage,
+// and a Poise bite that breaks a full Player pool in one clean connect), and attacks
+// DELIBERATELY (a long cool-down between commits, on the shared `attackCdT` cadence
+// timer) — so it reads as a bruiser you bait and punish rather than trade with.
+export const BRUTE = {
+	hp: 60, // a poise-tank sponge — far more hits than the chaser's 24
+	speed: 6, // half the chaser's 12: it lumbers rather than chases
+	aggro: 26, // notices you a touch further out than the chaser
+	// Hold inside this dx so facing doesn't flip-flop frame to frame (mirrors
+	// chaserDeadzone) when the Avatar sits on top of the brute.
+	deadzone: 2,
+	// Heavy Mass (ADR 0017): a Knockback that rockets a chaser barely nudges the brute,
+	// reinforcing the immovable-bruiser feel (Mass divides the impulse in applyImpulse).
+	mass: 4,
+	// High Poise (ADR 0017 §3) — the "high-poise" identity. 48 = 3× the shared default
+	// (16), so where a chaser breaks on the Player's 2nd basic hit the brute shrugs off a
+	// whole flurry before any of the Player's hits can Stagger it.
+	poiseMax: 48,
+	// Hard-hitting: more than double the chaser's 8 HP damage…
+	meleeDamage: 18,
+	// …and a Poise bite heavy enough to break a full Player pool (COMBAT.poise.max, 16)
+	// in one clean connect, so a brute hit that lands Staggers — the heavy blow reads.
+	meleePoise: 16,
+	// Slightly longer reach than the chaser (4), still just inside meleeReach (6) so the
+	// active strike connects on a target that holds its ground while the long telegraph
+	// gives a reading Player room to step out and punish the recovery.
+	meleeRange: 5,
+	// Seconds it must wait after COMMITTING before it may commit the next swing (the
+	// shared `attackCdT` cadence the shooter uses to pace its shots). Generous vs the swing
+	// total (~0.38s) so a long, punishable opening sits between the brute's heavy swings —
+	// it attacks deliberately, never flurrying like the chaser.
+	commitCooldown: 1.6,
+} as const;
+
 export const SHOOTER = {
 	hp: 16,
 	speed: 9,

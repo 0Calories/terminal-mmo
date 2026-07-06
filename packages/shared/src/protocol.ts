@@ -468,7 +468,12 @@ const SERVER_TAG = {
 	challenge: 7,
 } as const;
 
-const ENTITY_TYPES: readonly EntityType[] = ['player', 'chaser', 'shooter'];
+const ENTITY_TYPES: readonly EntityType[] = [
+	'player',
+	'chaser',
+	'shooter',
+	'brute',
+];
 // Append-only: indices are the wire encoding, so a new kind goes on the END (a
 // reorder would remap existing Effects). A forward-version kind clamps to `blood`
 // on decode (see readEffect) so a newer server can't crash an older client.
