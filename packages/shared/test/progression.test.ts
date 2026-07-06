@@ -50,7 +50,10 @@ test('the level cap is 5 and progression can never advance past it', () => {
 	expect(r.progress.level).toBe(PROGRESSION.levelCap);
 	expect(r.progress.xp).toBe(0);
 	// Already at the cap: more XP is inert — no further level, no banked xp.
-	const capped = applyXp({ level: PROGRESSION.levelCap, xp: 0, gold: 0 }, 1_000_000);
+	const capped = applyXp(
+		{ level: PROGRESSION.levelCap, xp: 0, gold: 0 },
+		1_000_000,
+	);
 	expect(capped.progress.level).toBe(PROGRESSION.levelCap);
 	expect(capped.leveled).toBe(0);
 	expect(capped.progress.xp).toBe(0);
@@ -86,5 +89,7 @@ test('a fresh Avatar unlocks each capability in order as it levels to the cap', 
 	}
 	// Attack is available from spawn; the cap skill never is before the cap.
 	expect(capabilityUnlocked('attack', 1)).toBe(true);
-	expect(capabilityUnlocked('ground-pound', PROGRESSION.levelCap - 1)).toBe(false);
+	expect(capabilityUnlocked('ground-pound', PROGRESSION.levelCap - 1)).toBe(
+		false,
+	);
 });
