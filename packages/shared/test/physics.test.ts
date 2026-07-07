@@ -68,7 +68,7 @@ const PLATFORM = parseTerrain([
 	'............', // 5
 	'............', // 6
 	'............', // 7
-	'..######....', // 8  one-way platform
+	'..======....', // 8  one-way platform (`=`, ADR 0026)
 	'............', // 9
 	'............', // 10
 	'............', // 11
@@ -152,6 +152,41 @@ test('one-way platform: descending with feet below the surface does not land', (
 	const e = stepEntity(PLATFORM, straddling, IDLE, 1 / 60).e;
 	expect(e.onGround).toBe(false);
 	expect(e.y).toBeGreaterThan(3.5); // kept falling, was not snapped up to y=3
+});
+
+test('one-way platform: horizontal movement is preserved while rising through it (#262 halt regression)', () => {
+	// A wide zone so there is horizontal room to run: a one-way platform (`=`) at row
+	// 8, cols 5..20, suspended over a full-width floor. Standing beneath it, jump while
+	// holding right. Before ADR 0026 the horizontal sweep treated the platform as a
+	// wall, so `vx` was zeroed the instant the rising box overlapped the tile — the
+	// "jumping up through a platform halts sideways movement" feel bug. Now the body
+	// must keep advancing every airborne tick.
+	const ground = '#'.repeat(40);
+	const PLATFORM_WIDE = parseTerrain([
+		...Array(8).fill('.'.repeat(40)),
+		`.....${'='.repeat(16)}${'.'.repeat(19)}`, // 8  one-way platform, cols 5..20
+		...Array(9).fill('.'.repeat(40)),
+		ground, // 18
+		ground, // 19
+	]);
+	const grounded = settle(PLATFORM_WIDE, spawnAvatar(6, 13));
+	expect(grounded.onGround).toBe(true);
+
+	let e = stepEntity(
+		PLATFORM_WIDE,
+		grounded,
+		{ moveX: 1, jump: true },
+		1 / 60,
+	).e;
+	let minY = e.y;
+	let prevX = e.x;
+	for (let i = 0; i < 120 && !e.onGround; i++) {
+		e = stepEntity(PLATFORM_WIDE, e, { moveX: 1, jump: false }, 1 / 60).e;
+		expect(e.x).toBeGreaterThan(prevX); // never stalls sideways mid-pass-through
+		prevX = e.x;
+		minY = Math.min(minY, e.y);
+	}
+	expect(minY).toBeLessThan(8); // it really did rise up THROUGH the platform row
 });
 
 // --- Momentum body (ADR 0017, #162) -----------------------------------------

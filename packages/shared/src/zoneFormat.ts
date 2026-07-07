@@ -1,4 +1,5 @@
 import { NPC_BOX, PORTAL_BOX, ZONE_MAX } from './constants';
+import { terrainCell } from './terrain';
 import type { Entity, Npc, SpawnPoint, Terrain } from './types';
 import { type Portal, spawnMonster, type Zone, type ZoneType } from './world';
 
@@ -84,9 +85,10 @@ type Glyph =
 
 /**
  * Pure loader for the `.zone` format (ADR 0008): a JSON header, a `---` line, then
- * an ASCII grid. `#` is solid, `.` is empty, and every other glyph anchors one
- * entity (resolved through the header maps + catalogs). Grid extents are inferred;
- * entity boxes are engine-derived. No FS, no RNG — sibling to `parseTerrain`.
+ * an ASCII grid. `#` is a wall, `=` is a one-way platform (ADR 0026), `.` is empty,
+ * and every other glyph anchors one entity (resolved through the header maps +
+ * catalogs). Grid extents are inferred; entity boxes are engine-derived. No FS, no
+ * RNG — sibling to `parseTerrain`.
  *
  * `id` is the Zone's identity and comes from the FILENAME (ADR 0011), threaded in
  * by the loader — never from the header, so the path and a header field can't drift.
@@ -127,9 +129,11 @@ export function parseZone(text: string, catalogs: Catalogs, id: string): Zone {
 		const line = body[y];
 		for (let x = 0; x < line.length; x++) {
 			const ch = line[x];
-			if (ch === '.' || ch === ' ') continue;
-			if (ch === '#') {
-				cells[y * w + x] = 1;
+			// A terrain glyph (`.`/space empty, `#` wall, `=` platform) sets the cell and
+			// moves on; anything else is an entity anchor resolved through the header.
+			const cell = terrainCell(ch);
+			if (cell !== undefined) {
+				if (cell) cells[y * w + x] = cell;
 				continue;
 			}
 			const g = glyphs.get(ch);
@@ -227,7 +231,7 @@ function buildGlyphMap(header: ZoneHeader): Map<string, Glyph> {
 				'bad-header',
 				`glyph key '${ch}' must be one character`,
 			);
-		if (ch === '#' || ch === '.' || ch === ' ')
+		if (ch === '#' || ch === '=' || ch === '.' || ch === ' ')
 			throw new ZoneParseError(
 				'bad-header',
 				`'${ch}' is reserved and cannot be a glyph key`,

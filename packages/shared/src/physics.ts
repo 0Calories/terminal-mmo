@@ -1,5 +1,5 @@
 import { BOX, DEFAULT_MASS, PHYS } from './constants';
-import { isSolid } from './terrain';
+import { isSolid, isWall } from './terrain';
 import type { Control, Entity, Terrain } from './types';
 
 // Add an external impulse to a body's momentum (ADR 0017): the hook a later
@@ -45,10 +45,13 @@ export function stepEntity(
 	e.x += e.vx * dt;
 	const top = Math.floor(e.y);
 	const bot = Math.ceil(e.y + BOX.h) - 1;
+	// Only WALLS block horizontal motion (`isWall`), never one-way platforms (ADR
+	// 0026): a body sliding left/right while it rises through a platform passes it
+	// horizontally instead of snagging on the tile its box momentarily overlaps.
 	if (e.vx > 0) {
 		const r = Math.ceil(e.x + BOX.w) - 1;
 		for (let cy = top; cy <= bot; cy++)
-			if (isSolid(t, r, cy)) {
+			if (isWall(t, r, cy)) {
 				e.x = r - BOX.w;
 				e.vx = 0;
 				ivx = 0; // a wall absorbs the shove, not just this tick's drive
@@ -58,7 +61,7 @@ export function stepEntity(
 	} else if (e.vx < 0) {
 		const l = Math.floor(e.x);
 		for (let cy = top; cy <= bot; cy++)
-			if (isSolid(t, l, cy)) {
+			if (isWall(t, l, cy)) {
 				e.x = l + 1;
 				e.vx = 0;
 				ivx = 0;
@@ -76,14 +79,14 @@ export function stepEntity(
 	const l = Math.floor(e.x);
 	const r = Math.ceil(e.x + BOX.w) - 1;
 	e.onGround = false;
-	// One-way platforms (#262): every solid still walls off HORIZONTAL motion
-	// (handled above), but vertically a solid only stops a DESCENDING body — a
-	// rising body passes straight through (no head bonk), so there is no head-snap
-	// branch. The came-from-above guard (`prevFeetBottom <= surface`) refuses the
-	// landing unless the feet were at or above the tile's top surface last tick,
-	// so a body that peaks with its feet still below the surface keeps falling
-	// instead of snapping up onto it (no teleport glitch). Current zones have no
-	// ceilings, so global one-way behaviour needs no per-tile type (ADR 0024).
+	// One-way platforms (#262): both walls and platforms stop a DESCENDING body here
+	// (`isSolid`), but a rising body passes straight through (no head bonk), so there is
+	// no head-snap branch. The came-from-above guard (`prevFeetBottom <= surface`)
+	// refuses the landing unless the feet were at or above the tile's top surface last
+	// tick, so a body that peaks with its feet still below the surface keeps falling
+	// instead of snapping up onto it (no teleport glitch). Vertically a wall and a
+	// platform are identical — the two differ only on the HORIZONTAL axis above
+	// (`isWall`), which is the whole of the platform tile type (ADR 0026).
 	if (e.vy > 0) {
 		const feet = Math.ceil(e.y + BOX.h) - 1;
 		// The tile row's top surface sits at world-y `feet`.
