@@ -13,6 +13,7 @@ import {
 	type RGBA,
 	TextRenderable,
 } from '@opentui/core';
+import { MessageLog } from './message-log';
 import { COLORS } from './theme';
 
 // The level-up banner (#271): a brief "LEVEL UP!" flash centred over the playfield,
@@ -23,7 +24,6 @@ const BANNER_TEXT = '★  LEVEL UP!  ★';
 const HINT =
 	'move ←/→ a/d  jump ␣/↑  attack j/x  block k  dodge l  skills u/i  interact e  chat ⏎  ? controls  quit q';
 const Z = 10; // above the playfield (zIndex 0)
-const CHAT_LINES = 4; // recent Zone-chat lines shown above the input
 const BAR_WIDTH = 10; // glyph cells per HUD vital bar
 const BAR_FILL = '█';
 const BAR_TRACK = '░';
@@ -106,9 +106,9 @@ export class Hud {
 	private readonly alpha: TextRenderable;
 	private readonly meta: TextRenderable;
 	private readonly skills: TextRenderable;
-	private readonly log: TextRenderable;
-	private readonly chat: TextRenderable;
-	private readonly chatInput: TextRenderable;
+	// The bottom-left message log + chat (#272): a ScrollBox display and a chat input,
+	// replacing the old unbounded log/chat TextRenderables.
+	private readonly messages: MessageLog;
 	// The level-up banner (#271): a centred flash. Empty until flashLevelUp() arms it;
 	// `bannerUntil` is the wall-clock time (performance.now scale) it clears at.
 	private readonly banner: BoxRenderable;
@@ -186,25 +186,11 @@ export class Hud {
 			bg: COLORS.bg,
 		});
 		this.bottom.add(this.skills);
-		this.log = new TextRenderable(ctx, {
-			content: '',
-			fg: COLORS.dim,
-			bg: COLORS.bg,
-		});
-		this.bottom.add(this.log);
-		// Zone-local chat (#34): received lines, then the active typing line below.
-		this.chat = new TextRenderable(ctx, {
-			content: '',
-			fg: COLORS.chat,
-			bg: COLORS.bg,
-		});
-		this.bottom.add(this.chat);
-		this.chatInput = new TextRenderable(ctx, {
-			content: '',
-			fg: COLORS.telegraph,
-			bg: COLORS.bg,
-		});
-		this.bottom.add(this.chatInput);
+		// The message log + chat (#272): the scrolling display sits under the skills line;
+		// its chat input is attached below only when chat is enabled (networked play, via
+		// enableChat) so the offline loop shows the log alone with no dead input row.
+		this.messages = new MessageLog(ctx);
+		this.bottom.add(this.messages.scrollBox);
 
 		// The level-up banner (#271): an absolutely-positioned row a few cells below the
 		// top bar, its text centred over the playfield. Kept empty (so it takes no visual
@@ -258,17 +244,41 @@ export class Hud {
 		this.wallet.content = `Gold ${player.progress.gold}  Items ${player.inventory.length} `;
 		this.meta.content = `FPS ${fps}  monsters ${zone.monsters.length} `;
 		this.skills.content = skillReadout(player);
-		this.log.content = player.log.slice(-3).join('\n');
+		// Append any new game-log lines (loot / vendor / travel / level-up unlocks) to the
+		// scrolling message log; a loot pickup line is tinted by rarity (#272).
+		this.messages.syncLog(player.log);
 		// Hold the level-up banner while its window is live, then clear it (#271).
 		this.bannerText.content =
 			performance.now() < this.bannerUntil ? BANNER_TEXT : '';
 	}
 
-	// Render the Zone-chat log and, while typing, the active input line with a
-	// cursor. `lines` are pre-formatted "handle: text"; `draft` is the in-progress
-	// message. Driven each frame from NetClient.chatLog + the ChatInput state.
-	updateChat(lines: string[], open: boolean, draft: string): void {
-		this.chat.content = lines.slice(-CHAT_LINES).join('\n');
-		this.chatInput.content = open ? `say> ${draft}█` : '';
+	// Enable the chat input (networked play, #272): attach it under the message log and
+	// wire the submit callback the loop uses to parse + relay a sent line. The offline
+	// loop never calls this, so it shows the log with no chat input.
+	enableChat(onSubmit: (text: string) => void): void {
+		this.messages.onSubmit = onSubmit;
+		this.bottom.add(this.messages.inputRow);
+	}
+
+	// Append any new Zone-chat lines (say / whisper / notice) to the message log. Driven
+	// each frame from NetClient.chatLog (#272).
+	syncChat(lines: string[]): void {
+		this.messages.syncChat(lines);
+	}
+
+	// Whether the chat input owns the keyboard. The loop gates game input on this so
+	// movement / combat / menu keys stay inert while typing (#272).
+	get chatOpen(): boolean {
+		return this.messages.chatOpen;
+	}
+
+	// Focus / blur the chat input (#272). Opening consumes the triggering key in the loop
+	// so it isn't also delivered to the freshly-focused input.
+	openChat(): void {
+		this.messages.openChat();
+	}
+
+	closeChat(): void {
+		this.messages.closeChat();
 	}
 }

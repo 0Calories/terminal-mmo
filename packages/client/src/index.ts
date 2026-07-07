@@ -35,7 +35,7 @@ import {
 import { createCliRenderer } from '@opentui/core';
 import { AudioOptions } from './audio-options-view';
 import { CharacterCreator } from './character-creator';
-import { ChatInput, parseChatCommand } from './chat';
+import { parseChatCommand } from './chat';
 import { ConfigStore } from './config';
 import { Controls } from './controls';
 import { Hud } from './hud';
@@ -451,7 +451,6 @@ async function runNetworked(url: string) {
 		};
 		const SEND_INTERVAL = 1000 / 30; // throttle input reports to ~30 Hz
 		let sendAcc = 0;
-		const chat = new ChatInput(); // Zone-local chat typing mode (#34)
 		// Audio options modal (ADR 0014/0015): a global overlay opened with `o` during play.
 		const options = new AudioOptions(renderer, sound);
 		options.attach(renderer.root);
@@ -513,33 +512,42 @@ async function runNetworked(url: string) {
 			if (shop.open) shop.update(shopView());
 		};
 
+		// A submitted chat line (Enter in the InputRenderable, #272): classify it and relay
+		// it, then leave typing mode. A Zone-local say or a `/w` whisper goes to the wire; an
+		// emote triggers server-side AND predicts locally for zero lag; a bad command surfaces
+		// a local usage notice (no round-trip); an empty line just closes.
+		const submitChat = (text: string): void => {
+			const line = text.trim();
+			if (line) {
+				const cmd = parseChatCommand(line);
+				if (cmd.kind === 'say') net.send({ t: 'chat', text: cmd.text });
+				else if (cmd.kind === 'whisper')
+					net.send({ t: 'whisper', to: cmd.to, text: cmd.text });
+				else if (cmd.kind === 'emote') {
+					// Arm the predicted Avatar now (a oneshot seeds its countdown, a loop/hold its
+					// elapsed clock at 0); clientStepAvatar advances it and cancels it on
+					// movement/combat, mirroring the server (ADR 0020 §9).
+					net.send({ t: 'emote', emote: cmd.emote });
+					const def = emoteById(cmd.emote);
+					if (def)
+						predicted = {
+							...predicted,
+							emoteId: def.id,
+							emoteT: initialEmoteT(def),
+						};
+				} else net.notice(cmd.message);
+			}
+			hud.closeChat();
+		};
+		hud.enableChat(submitChat);
+
 		renderer.keyInput.on('keypress', (k) => {
-			// While typing, chat OWNS the keyboard: every key edits the line (or sends /
-			// cancels) and none reaches movement / combat (no keystroke leak).
-			if (chat.open) {
-				const r = chat.key(k);
-				if (r.action === 'send') {
-					// A sent line is either a Zone-local say or a `/w` whisper (#40); a bad
-					// whisper surfaces a local usage notice rather than going to the wire.
-					const cmd = parseChatCommand(r.text);
-					if (cmd.kind === 'say') net.send({ t: 'chat', text: cmd.text });
-					else if (cmd.kind === 'whisper')
-						net.send({ t: 'whisper', to: cmd.to, text: cmd.text });
-					else if (cmd.kind === 'emote') {
-						// Trigger on the server AND predict locally so the emote plays with zero
-						// lag (ADR 0020 §9): arm the predicted Avatar now (a oneshot seeds its
-						// countdown, a loop/hold its elapsed clock at 0); clientStepAvatar advances
-						// it and cancels it on movement/combat, mirroring the server.
-						net.send({ t: 'emote', emote: cmd.emote });
-						const def = emoteById(cmd.emote);
-						if (def)
-							predicted = {
-								...predicted,
-								emoteId: def.id,
-								emoteT: initialEmoteT(def),
-							};
-					} else net.notice(cmd.message);
-				}
+			// While typing, chat OWNS the keyboard: the focused InputRenderable edits the
+			// line itself (it subscribes to keys on focus) and submits on Enter via
+			// submitChat; here Escape closes and every other key is swallowed so none
+			// reaches movement / combat (no keystroke leak, #272).
+			if (hud.chatOpen) {
+				if (k.name === 'escape') hud.closeChat();
 				return;
 			}
 			if (k.name === 'q') quit();
@@ -576,7 +584,12 @@ async function runNetworked(url: string) {
 				return;
 			}
 			if (k.name === 'return') {
-				chat.start();
+				// Open chat and CONSUME this Enter (preventDefault) so it isn't also delivered
+				// to the input we just focused — the focused InputRenderable subscribes to keys
+				// during this same dispatch, so an un-consumed Enter would submit an empty line
+				// and snap chat shut again (#272).
+				k.preventDefault();
+				hud.openChat();
 				input.clear(); // a key held at the switch must not stick while typing
 				return;
 			}
@@ -593,7 +606,7 @@ async function runNetworked(url: string) {
 		});
 		// Ignore releases while typing so play-mode keys can't be toggled mid-message.
 		renderer.keyInput.on('keyrelease', (k) => {
-			if (!chat.open) input.release(k.name);
+			if (!hud.chatOpen) input.release(k.name);
 		});
 
 		const meter = fpsMeter();
@@ -605,7 +618,7 @@ async function runNetworked(url: string) {
 			// Freeze movement / combat while a modal (chat line, controls, Merchant) has the
 			// keyboard.
 			const inp =
-				chat.open || controls.open || shop.open
+				hud.chatOpen || controls.open || shop.open
 					? IDLE_INPUT
 					: input.poll(performance.now());
 
@@ -783,7 +796,7 @@ async function runNetworked(url: string) {
 				playfield.emitPredicted(events.flatMap(effectsOf));
 			}
 			hud.update(game, fps);
-			hud.updateChat(net.chatLog, chat.open, chat.text);
+			hud.syncChat(net.chatLog);
 			// Re-render the Merchant from the freshest snapshot so a completed sell (Item gone,
 			// Gold up) shows the moment the server confirms it (#267).
 			if (shop.open) shop.update(shopView());
