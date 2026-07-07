@@ -45,7 +45,7 @@ import {
 	landed,
 	leveledUp,
 } from './sound/triggers';
-import { discoverSshIdentity, NO_KEY_HINT } from './ssh-auth';
+import { discoverSshIdentity } from './ssh-auth';
 import { CLIENT_VERSION } from './version';
 
 // The sim is dt-based, so this only affects smoothness + CPU, never game speed.
@@ -159,6 +159,12 @@ sound.onDegraded = () => {
 	audioDegraded = true;
 };
 
+// A one-line Identity Key notice to surface on exit (#297): the generated-key notice
+// ("kept your identity at …") or the ephemeral-fallback warning ("progress won't be
+// saved"). Printed after teardown like the audio warning so it lands on the normal
+// screen, never corrupting the live TUI (the discovery resolves after renderer.start).
+let identityNotice: string | null = null;
+
 function quit(message?: string) {
 	sound.dispose(); // tear the engine down without blocking exit
 	try {
@@ -168,6 +174,7 @@ function quit(message?: string) {
 	// cleared alt-screen (e.g. a server rejection reason, ADR 0009).
 	if (audioDegraded)
 		console.error('audio disabled after repeated engine errors this session');
+	if (identityNotice) console.error(identityNotice);
 	if (message) console.error(message);
 	process.exit(message ? 1 : 0);
 }
@@ -216,14 +223,19 @@ async function runNetworked(url: string) {
 		.slice(0, 16);
 	const handle =
 		process.env.MMO_HANDLE || (fromUser.length >= 2 ? fromUser : 'wanderer');
-	// The SSH identity that will answer the server's challenge (ADR 0004, #235),
-	// resolved before any UI shows so a keyless launch fails fast with guidance.
-	const found = await discoverSshIdentity();
-	if (!found) {
-		quit(NO_KEY_HINT);
+	// The Identity Key that will answer the server's challenge (ADR 0004, #235,
+	// amendment #297): the anchored key, a real external SSH key, or a generated
+	// fallback so a keyless launch is never locked out. Resolved before any UI shows.
+	// Sharing the existing `config` keeps the anchor write in the same in-memory config
+	// a later audio save persists, so it can't be clobbered. The only refusal left is an
+	// anchored external key that's temporarily unreachable (recoverable, non-destructive).
+	const resolved = await discoverSshIdentity(config);
+	if (!resolved.ok) {
+		quit(resolved.refusal);
 		return;
 	}
-	const identity = found; // narrowed const, so the play() closure sees non-null
+	const identity = resolved.identity; // narrowed const, so the play() closure sees it
+	identityNotice = resolved.notice ?? null; // surfaced on exit (generated / ephemeral)
 	// Pre-spawn customization (#36, story 7): the Player picks hue / hat / nameplate
 	// and confirms BEFORE we connect, so the chosen look rides the connect handshake
 	// (#35) and everyone sees it the moment they spawn in. Seeded with a randomized

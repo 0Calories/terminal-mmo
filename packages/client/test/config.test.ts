@@ -7,8 +7,10 @@ import {
 	ConfigStore,
 	parseConfig,
 	readAudioPrefs,
+	readIdentityAnchor,
 	resolveConfigPath,
 	writeAudioPrefs,
+	writeIdentityAnchor,
 } from '../src/config';
 
 const tmpDirs: string[] = [];
@@ -132,4 +134,87 @@ test('a failed write degrades to in-memory and returns false, never throws', () 
 	expect(store.saveAudio({ ...AUDIO_DEFAULTS, master: 0.5 })).toBe(false);
 	// Still readable in-memory for the session.
 	expect(store.audio().master).toBe(0.5);
+});
+
+// --- identity anchor (ADR 0004 amendment, #297) ----------------------------
+
+test('readIdentityAnchor returns null for a missing or malformed anchor', () => {
+	expect(readIdentityAnchor({})).toBeNull();
+	expect(readIdentityAnchor({ identity: {} })).toBeNull();
+	// A bad `source` or a non-string / empty `publicKey` reads as "no anchor" so
+	// discovery falls through to a fresh mint rather than refusing on garbage.
+	expect(
+		readIdentityAnchor({
+			identity: { anchor: { publicKey: 'k', source: 'nope' } },
+		}),
+	).toBeNull();
+	expect(
+		readIdentityAnchor({
+			identity: { anchor: { publicKey: '', source: 'generated' } },
+		}),
+	).toBeNull();
+	expect(
+		readIdentityAnchor({
+			identity: { anchor: { publicKey: 42, source: 'external' } },
+		}),
+	).toBeNull();
+});
+
+test('readIdentityAnchor accepts a well-formed external / generated anchor', () => {
+	expect(
+		readIdentityAnchor({
+			identity: {
+				anchor: { publicKey: 'ssh-ed25519 AAAA', source: 'external' },
+			},
+		}),
+	).toEqual({ publicKey: 'ssh-ed25519 AAAA', source: 'external' });
+	expect(
+		readIdentityAnchor({
+			identity: {
+				anchor: { publicKey: 'ssh-ed25519 BBBB', source: 'generated' },
+			},
+		}),
+	).toEqual({ publicKey: 'ssh-ed25519 BBBB', source: 'generated' });
+});
+
+test('writeIdentityAnchor preserves unknown top-level and nested keys', () => {
+	const raw = {
+		audio: { muted: true }, // unknown-to-identity area survives
+		identity: { migratedAt: 123 }, // unknown nested key survives
+	};
+	const next = writeIdentityAnchor(raw, {
+		publicKey: 'ssh-ed25519 K',
+		source: 'generated',
+	});
+	expect((next.audio as Record<string, unknown>).muted).toBe(true);
+	const identity = next.identity as Record<string, unknown>;
+	expect(identity.migratedAt).toBe(123);
+	expect(identity.anchor).toEqual({
+		publicKey: 'ssh-ed25519 K',
+		source: 'generated',
+	});
+});
+
+test('identityKeyPath is a sibling of config.json in the config dir', () => {
+	const store = new ConfigStore('/xdg/terminal-mmo/config.json');
+	expect(store.identityKeyPath).toBe('/xdg/terminal-mmo/id_ed25519');
+});
+
+test('saveIdentityAnchor round-trips and preserves the audio area', () => {
+	const path = join(tmp(), 'config.json');
+	const first = new ConfigStore(path);
+	expect(first.saveAudio({ ...AUDIO_DEFAULTS, muted: true })).toBe(true);
+	expect(
+		first.saveIdentityAnchor({
+			publicKey: 'ssh-ed25519 X',
+			source: 'external',
+		}),
+	).toBe(true);
+	// A second store reads both areas back off disk — neither clobbered the other.
+	const reloaded = new ConfigStore(path).load();
+	expect(reloaded.identityAnchor()).toEqual({
+		publicKey: 'ssh-ed25519 X',
+		source: 'external',
+	});
+	expect(reloaded.audio().muted).toBe(true);
 });

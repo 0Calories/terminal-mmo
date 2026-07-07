@@ -1,16 +1,26 @@
-// The client's key-file identity path (#235): discoverSshIdentity against a
-// synthesized `~/.ssh` directory — no agent, no real home directory, no
-// ssh-keygen binary. The openssh-key-v1 file is built in-process from a freshly
-// generated ed25519 key, byte-identical in layout to what ssh-keygen writes
-// (magic, none/none cipher+kdf, check ints, seed‖pub, 8-byte padding), and the
-// produced signature must satisfy the server's pure verifier.
+// The client's Identity Key discovery (#235, amendment #297): discoverSshIdentity
+// against synthesized `~/.ssh` and config directories — no agent, no real home, no
+// ssh-keygen binary. The external openssh-key-v1 file is built in-process from a
+// freshly generated ed25519 key, byte-identical in layout to what ssh-keygen writes
+// (magic, none/none cipher+kdf, check ints, seed‖pub, 8-byte padding); the generated
+// fallback is minted by discovery itself. Every produced signature must satisfy the
+// server's pure verifier.
 import { expect, test } from 'bun:test';
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { SshBlobWriter, verifyChallenge } from '@mmo/shared';
-import { discoverSshIdentity } from '../src/ssh-auth';
+import { dirname, join } from 'node:path';
+import {
+	encodePublicKeyLine,
+	SshBlobWriter,
+	verifyChallenge,
+} from '@mmo/shared';
+import { ConfigStore } from '../src/config';
+import {
+	discoverSshIdentity,
+	planIdentity,
+	type SshIdentity,
+} from '../src/ssh-auth';
 
 // Assemble an unencrypted openssh-key-v1 `id_ed25519` from raw key material —
 // the format ssh-keygen writes with no passphrase.
@@ -54,7 +64,8 @@ function opensshPrivateKeyFile(seed: Uint8Array, pub: Uint8Array): string {
 	return `-----BEGIN OPENSSH PRIVATE KEY-----\n${lines.join('\n')}\n-----END OPENSSH PRIVATE KEY-----\n`;
 }
 
-function makeSshDir(): { dir: string; pub: Uint8Array } {
+// The raw 32-byte public/seed material of a fresh ed25519 key.
+function freshKey(): { pub: Uint8Array; seed: Uint8Array } {
 	const { publicKey, privateKey } = generateKeyPairSync('ed25519');
 	const pub = new Uint8Array(
 		Buffer.from(publicKey.export({ format: 'jwk' }).x as string, 'base64url'),
@@ -62,37 +73,195 @@ function makeSshDir(): { dir: string; pub: Uint8Array } {
 	const seed = new Uint8Array(
 		Buffer.from(privateKey.export({ format: 'jwk' }).d as string, 'base64url'),
 	);
+	return { pub, seed };
+}
+
+function makeSshDir(): { dir: string; pub: Uint8Array } {
+	const { pub, seed } = freshKey();
 	const dir = mkdtempSync(join(tmpdir(), 'mmo-ssh-'));
 	writeFileSync(join(dir, 'id_ed25519'), opensshPrivateKeyFile(seed, pub));
 	return { dir, pub };
 }
 
-test('discoverSshIdentity signs verifiably from an unencrypted id_ed25519 (no agent)', async () => {
-	const { dir, pub } = makeSshDir();
-	// No SSH_AUTH_SOCK in the env, so only the file path can answer.
-	const id = await discoverSshIdentity({}, dir);
-	expect(id).not.toBeNull();
-	if (!id) throw new Error('unreachable');
+// An empty temp dir (no key), plus a fresh ConfigStore rooted in its own temp dir so
+// anchor + generated-key writes never touch the real config.
+function emptySshDir(): string {
+	return mkdtempSync(join(tmpdir(), 'mmo-ssh-empty-'));
+}
+function tmpConfig(): ConfigStore {
+	const dir = mkdtempSync(join(tmpdir(), 'mmo-cfg-'));
+	return new ConfigStore(join(dir, 'config.json')).load();
+}
+
+// A minimal stand-in SshIdentity for the pure planIdentity tests (never signs).
+function fakeIdentity(publicKey: string): SshIdentity {
+	return { publicKey, signChallenge: async () => new Uint8Array() };
+}
+
+// --- external SSH key (unchanged behavior for existing key users) -------------
+
+test('discoverSshIdentity signs verifiably from an unencrypted id_ed25519 and anchors it external', async () => {
+	const { dir } = makeSshDir();
+	const config = tmpConfig();
+	// No SSH_AUTH_SOCK in the env, so only the file path can answer. No anchor yet.
+	const res = await discoverSshIdentity(config, {}, dir);
+	expect(res.ok).toBe(true);
+	if (!res.ok) throw new Error('unreachable');
 	// The offered public key is the one embedded in the file…
-	expect(id.publicKey.startsWith('ssh-ed25519 ')).toBe(true);
+	expect(res.identity.publicKey.startsWith('ssh-ed25519 ')).toBe(true);
 	// …and its signature over a nonce satisfies the server's pure verifier.
 	const nonce = new Uint8Array(32).fill(7);
-	const sig = await id.signChallenge(nonce);
-	expect(verifyChallenge(id.publicKey, nonce, sig)).toBe(true);
-	// Sanity: the key bytes round-tripped (line contains the same 32 bytes).
-	expect(pub.length).toBe(32);
-});
-
-test('discoverSshIdentity is null with no agent and no key file', async () => {
-	const empty = mkdtempSync(join(tmpdir(), 'mmo-ssh-empty-'));
-	expect(await discoverSshIdentity({}, empty)).toBeNull();
+	const sig = await res.identity.signChallenge(nonce);
+	expect(verifyChallenge(res.identity.publicKey, nonce, sig)).toBe(true);
+	// A first launch with a real key writes an `external` anchor — no notice, no mint.
+	expect(res.notice).toBeUndefined();
+	const anchor = config.identityAnchor();
+	expect(anchor).toEqual({
+		publicKey: res.identity.publicKey,
+		source: 'external',
+	});
+	expect(existsSync(config.identityKeyPath)).toBe(false);
 });
 
 test('discoverSshIdentity skips an unreachable agent socket and falls back to the file', async () => {
 	const { dir } = makeSshDir();
-	const id = await discoverSshIdentity(
+	const res = await discoverSshIdentity(
+		tmpConfig(),
 		{ SSH_AUTH_SOCK: join(dir, 'no-such-agent.sock') },
 		dir,
 	);
-	expect(id).not.toBeNull();
+	expect(res.ok).toBe(true);
+});
+
+// --- generated fallback (nobody locked out) -----------------------------------
+
+test('a keyless first launch mints a generated identity, anchors it, and relaunches to the same key', async () => {
+	const config = tmpConfig();
+	const sshDir = emptySshDir(); // no external key
+	const res = await discoverSshIdentity(config, {}, sshDir); // no agent
+	expect(res.ok).toBe(true);
+	if (!res.ok) throw new Error('unreachable');
+	// A generated launch prints the non-blocking notice and signs verifiably.
+	expect(res.notice).toContain('created a local game identity');
+	const nonce = new Uint8Array(32).fill(3);
+	const sig = await res.identity.signChallenge(nonce);
+	expect(verifyChallenge(res.identity.publicKey, nonce, sig)).toBe(true);
+	// The private key was written as PKCS8 PEM at the config-dir path, mode 0600.
+	const keyPath = config.identityKeyPath;
+	expect(keyPath).toBe(join(dirname(config.path), 'id_ed25519'));
+	expect(existsSync(keyPath)).toBe(true);
+	expect(statSync(keyPath).mode & 0o777).toBe(0o600);
+	// The anchor recorded it as generated…
+	expect(config.identityAnchor()).toEqual({
+		publicKey: res.identity.publicKey,
+		source: 'generated',
+	});
+	// …so a relaunch (fresh store, still no agent, no external key) resolves the SAME
+	// character straight from the file — no notice, no re-mint.
+	const relaunch = await discoverSshIdentity(
+		new ConfigStore(config.path).load(),
+		{},
+		emptySshDir(),
+	);
+	expect(relaunch.ok).toBe(true);
+	if (!relaunch.ok) throw new Error('unreachable');
+	expect(relaunch.identity.publicKey).toBe(res.identity.publicKey);
+	expect(relaunch.notice).toBeUndefined();
+});
+
+test('an anchored external key that is unreachable refuses WITHOUT minting a new key', async () => {
+	const config = tmpConfig();
+	// Seed an external anchor for a key that isn't present anywhere (no agent, no file).
+	const { pub } = freshKey();
+	const line = encodePublicKeyLine(pub);
+	config.saveIdentityAnchor({ publicKey: line, source: 'external' });
+	const res = await discoverSshIdentity(config, {}, emptySshDir());
+	expect(res.ok).toBe(false);
+	if (res.ok) throw new Error('unreachable');
+	// Recovery guidance, and the Save-safety guarantees: no key minted, anchor intact.
+	expect(res.refusal).toContain('ssh-add');
+	expect(existsSync(config.identityKeyPath)).toBe(false);
+	expect(new ConfigStore(config.path).load().identityAnchor()).toEqual({
+		publicKey: line,
+		source: 'external',
+	});
+});
+
+test('a read-only home degrades to an ephemeral in-memory key with a warning, no lockout', async () => {
+	// A config path whose PARENT is a file makes both the key-file and anchor writes
+	// fail (mkdir/write throw), standing in for a read-only / unwritable home.
+	const dir = mkdtempSync(join(tmpdir(), 'mmo-ro-'));
+	const filePath = join(dir, 'afile');
+	writeFileSync(filePath, 'x');
+	const config = new ConfigStore(join(filePath, 'config.json')).load();
+	const res = await discoverSshIdentity(config, {}, emptySshDir()); // no agent, no key
+	// No crash, no refusal: we play this session with the in-memory key…
+	expect(res.ok).toBe(true);
+	if (!res.ok) throw new Error('unreachable');
+	expect(res.notice).toContain("won't be saved");
+	const nonce = new Uint8Array(32).fill(9);
+	const sig = await res.identity.signChallenge(nonce);
+	expect(verifyChallenge(res.identity.publicKey, nonce, sig)).toBe(true);
+	// …but nothing persisted — no key file and no anchor landed on disk.
+	expect(existsSync(config.identityKeyPath)).toBe(false);
+});
+
+// --- the pure ordering / Save-safety decision ---------------------------------
+
+test('planIdentity: no anchor + an external key uses it and anchors it', () => {
+	const ext = fakeIdentity('ssh-ed25519 AAAA');
+	expect(planIdentity(null, ext, null)).toEqual({
+		kind: 'external',
+		writeAnchor: true,
+	});
+});
+
+test('planIdentity: no anchor + no external key mints a generated identity', () => {
+	expect(planIdentity(null, null, null)).toEqual({ kind: 'mint' });
+});
+
+test('planIdentity: a generated anchor resolves from its file, or refuses when missing', () => {
+	const gen = fakeIdentity('ssh-ed25519 GEN');
+	const anchor = { publicKey: 'ssh-ed25519 GEN', source: 'generated' as const };
+	expect(planIdentity(anchor, null, gen)).toEqual({ kind: 'generated' });
+	// File gone → refuse (never mint: a new key would orphan the Save).
+	expect(planIdentity(anchor, null, null)).toEqual({
+		kind: 'refuse',
+		reason: 'generated-missing',
+	});
+});
+
+test('planIdentity: an external anchor uses the SAME key, and never re-anchors it', () => {
+	const { pub } = freshKey();
+	const line = encodePublicKeyLine(pub, 'a-comment');
+	const anchor = {
+		publicKey: encodePublicKeyLine(pub),
+		source: 'external' as const,
+	};
+	// A returning key with a different comment is still the same identity → use it.
+	expect(planIdentity(anchor, fakeIdentity(line), null)).toEqual({
+		kind: 'external',
+		writeAnchor: false,
+	});
+});
+
+test('planIdentity: an unreachable external anchor refuses without minting', () => {
+	const anchor = { publicKey: 'ssh-ed25519 WANT', source: 'external' as const };
+	expect(planIdentity(anchor, null, null)).toEqual({
+		kind: 'refuse',
+		reason: 'external-unreachable',
+	});
+});
+
+test('planIdentity: a DIFFERENT external key does not satisfy an external anchor (Save-safety)', () => {
+	const wanted = freshKey();
+	const other = freshKey();
+	const anchor = {
+		publicKey: encodePublicKeyLine(wanted.pub),
+		source: 'external' as const,
+	};
+	// Some other key is loaded, but it isn't the anchored one → refuse, don't hijack.
+	expect(
+		planIdentity(anchor, fakeIdentity(encodePublicKeyLine(other.pub)), null),
+	).toEqual({ kind: 'refuse', reason: 'external-unreachable' });
 });
