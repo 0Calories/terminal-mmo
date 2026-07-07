@@ -25,12 +25,20 @@ export interface CustomizeFieldDef {
 	count: number;
 }
 
-export const CUSTOMIZE_FIELDS: readonly CustomizeFieldDef[] = [
+const ALL_CUSTOMIZE_FIELDS: readonly CustomizeFieldDef[] = [
 	{ key: 'form', label: 'Form', count: FORM_COUNT },
 	{ key: 'hue', label: 'Body hue', count: HUE_COUNT },
 	{ key: 'hat', label: 'Hat', count: HAT_COUNT },
 	{ key: 'nameplate', label: 'Nameplate', count: NAMEPLATE_COUNT },
 ];
+
+// A field with a single catalog entry offers no real choice, so we hide it from
+// the picker rather than render a dead `1/1` switcher row the Player can focus but
+// never change. Today this drops the Form row: Form 2 (wisp) is drafted out pending
+// art rework, leaving a single shippable Form. Shipping a second Form (FORM_COUNT
+// back above 1) re-lists the row automatically — this gate is the whole "disable".
+export const CUSTOMIZE_FIELDS: readonly CustomizeFieldDef[] =
+	ALL_CUSTOMIZE_FIELDS.filter((f) => f.count > 1);
 
 // Which field has focus (index into CUSTOMIZE_FIELDS) plus the current choices.
 export interface CustomizeState {
