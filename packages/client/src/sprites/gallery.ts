@@ -2,10 +2,12 @@
 //     bun packages/client/src/sprites/preview.ts
 import { Sprite, spriteFor, spriteForNpc } from '@mmo/shared';
 
-// The live Avatar/vendor art lives in @mmo/shared's registry; pull it through the
-// lookup so the gallery and game can't drift.
+// The live Avatar/vendor/brute art lives in @mmo/shared's registry; pull it through
+// the lookup so the gallery and game can't drift.
 const player = spriteFor('player');
 const merchant = spriteForNpc('vendor');
+// The Golem is the live brute Monster's art (spriteFor('brute')); see brute.ts.
+const golem = spriteFor('brute');
 
 export interface GalleryEntry {
 	category: 'Avatar' | 'Monster';
@@ -144,26 +146,6 @@ k·kkk·k`,
 	},
 );
 
-const golem = new Sprite(
-	`
-·▟███▙·
-▐█▀█▀█▌
-▟█████▙
-██████▙
-▐█▌·▐█▌
-·▀▀·▀▀·`,
-	{
-		defaultKey: 's',
-		colors: `
-·sssss·
-ssykyss
-sssssss
-sssssss
-sss·sss
-·ss·ss·`,
-	},
-);
-
 const sentryEye = new Sprite(
 	`
 ·▗▄▄▄▖·
@@ -246,7 +228,7 @@ export const GALLERY: readonly GalleryEntry[] = [
 	{
 		category: 'Monster',
 		label: 'Golem',
-		note: 'elite stone bruiser',
+		note: 'live brute Monster (brute.ts)',
 		sprite: golem,
 	},
 	{
