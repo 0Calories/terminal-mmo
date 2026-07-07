@@ -119,7 +119,6 @@ test('both schemes map their bindings to identical intents', () => {
 		attack: true,
 		dodge: false,
 		guard: false,
-		interact: false,
 		skill: 1,
 	});
 });
@@ -132,38 +131,53 @@ test('mouse attack is dropped on clear() (no stuck button after a mode switch)',
 	expect(input.poll(0).attack).toBe(false);
 });
 
-test('interact is edge-triggered: one press yields exactly one true poll, not one per held tick (#261)', () => {
+test('interact is edge-triggered: one press yields exactly one consume, not one per held tick (#261)', () => {
 	const input = new InputState('keyboard');
-	expect(input.poll(0).interact).toBe(false);
+	expect(input.consumeInteract()).toBe(false);
 
 	input.press('e', 0); // interact key pressed
-	expect(input.poll(0).interact).toBe(true); // rising edge fires once
-	expect(input.poll(0).interact).toBe(false); // still held: no re-trigger
-	expect(input.poll(0).interact).toBe(false);
+	expect(input.consumeInteract()).toBe(true); // rising edge fires once
+	expect(input.consumeInteract()).toBe(false); // still held: no re-trigger
+	expect(input.consumeInteract()).toBe(false);
 
 	// A key-repeat while already held must not re-arm the edge.
 	input.press('e', 0);
-	expect(input.poll(0).interact).toBe(false);
+	expect(input.consumeInteract()).toBe(false);
 
 	// A fresh press after release fires again.
 	input.release('e');
 	input.press('e', 0);
-	expect(input.poll(0).interact).toBe(true);
-	expect(input.poll(0).interact).toBe(false);
+	expect(input.consumeInteract()).toBe(true);
+	expect(input.consumeInteract()).toBe(false);
 });
 
 test('interact is edge-triggered under the mouse scheme too (bound to f) (#261)', () => {
 	const input = new InputState('mouse');
 	input.press('f', 0);
-	expect(input.poll(0).interact).toBe(true);
-	expect(input.poll(0).interact).toBe(false); // held: no re-trigger
+	expect(input.consumeInteract()).toBe(true);
+	expect(input.consumeInteract()).toBe(false); // held: no re-trigger
+});
+
+test('poll() does NOT consume the interact edge, so a press survives fast polls between slow sends (#261 portal regression)', () => {
+	// The render loop polls at up to 120 Hz but reports to the server ~30 Hz. If poll()
+	// consumed the edge, ~3 of every 4 presses would be swallowed on a non-send frame
+	// and never reach the wire ("portals don't fire"). poll() must leave the edge for
+	// consumeInteract(), which the send block calls once per network send.
+	const input = new InputState('keyboard');
+	input.press('e', 0);
+	// Several render polls happen before the next send; none of them eat the edge.
+	input.poll(0);
+	input.poll(0);
+	input.poll(0);
+	expect(input.consumeInteract()).toBe(true); // the press still made it to the send
+	expect(input.consumeInteract()).toBe(false); // and only once
 });
 
 test('clear() drops a pending interact edge so it cannot fire after a mode switch (#261)', () => {
 	const input = new InputState('keyboard');
 	input.press('e', 0);
-	input.clear(); // e.g. entering chat typing mode before the edge was polled
-	expect(input.poll(0).interact).toBe(false);
+	input.clear(); // e.g. entering chat typing mode before the edge was consumed
+	expect(input.consumeInteract()).toBe(false);
 });
 
 test('the 220ms held-key timeout still drops a stuck key without release events', () => {

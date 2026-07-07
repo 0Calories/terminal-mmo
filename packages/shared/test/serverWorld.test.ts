@@ -89,6 +89,26 @@ test('entering a Portal transfers the session to the target Zone at the arrival 
 	expect(moved?.avatar.y).toBe(fieldPortal.arrival.y);
 });
 
+test('one interact EDGE transfers exactly once and does not ping-pong on the overlapping arrival (ADR 0027)', () => {
+	// The Field→Town arrival sits ON the Town's return Portal (#90, left alone), so a
+	// *sustained* interact would bounce Field↔Town every tick. Safety therefore rests
+	// entirely on interact being a one-shot EDGE: the client latch + server pending-edge
+	// queue (index.ts) deliver interact=true for exactly ONE tick, then false. This test
+	// models that delivery — true then false — and proves the transfer happens once and
+	// the Avatar then stays put, even though it is standing on the return Portal.
+	let w = addSession(makeWorld(), 7, 'neo');
+	const fieldPortal = zoneOrThrow(w, 'field-01').zone.portals[0];
+	// The single true tick (what the edge queue emits) — transfer to Town.
+	w = stepServerWorld(w, [holdAt(7, fieldPortal.x, true)], 16);
+	expect(zoneOf(w, 7)).toBe('town-01');
+	const arrived = zoneStateOf(w, 7)?.avatars.find((a) => a.sessionId === 7);
+	// Every subsequent tick reports interact=false (the edge was consumed) — no bounce,
+	// even though the arrival overlaps the return Portal.
+	for (let i = 0; i < 3; i++)
+		w = stepServerWorld(w, [holdAt(7, arrived?.avatar.x ?? 0, false)], 16);
+	expect(zoneOf(w, 7)).toBe('town-01');
+});
+
 test('a session receives snapshots for only its current Zone', () => {
 	let w = addSession(makeWorld(), 7, 'neo'); // mover
 	w = addSession(w, 8, 'trinity'); // stays in the Field

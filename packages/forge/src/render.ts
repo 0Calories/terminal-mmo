@@ -1,4 +1,4 @@
-import type { EntityType, Zone } from '@mmo/shared';
+import { cellGlyph, type EntityType, type Zone } from '@mmo/shared';
 
 /** Display glyph for each entity kind, overlaid on the terrain at its anchor. */
 const SPAWN_GLYPH: Partial<Record<EntityType, string>> = {
@@ -10,7 +10,8 @@ const NPC_GLYPH = 'N';
 const PORTAL_GLYPH = 'P';
 
 const LEGEND: Record<string, string> = {
-	'#': 'solid terrain',
+	'#': 'wall (full solid)',
+	'=': 'one-way platform',
 	c: 'chaser spawn',
 	s: 'shooter spawn',
 	b: 'brute spawn',
@@ -25,14 +26,20 @@ const LEGEND: Record<string, string> = {
  */
 export function renderZone(zone: Zone): string {
 	const { w, h, cells } = zone.terrain;
+	// Seed the legend with whichever terrain glyphs actually appear, so a Zone with no
+	// platforms doesn't advertise `=` (and vice-versa).
+	const present = new Set<string>();
 	const grid: string[][] = [];
 	for (let y = 0; y < h; y++) {
 		const row: string[] = [];
-		for (let x = 0; x < w; x++) row.push(cells[y * w + x] === 1 ? '#' : '.');
+		for (let x = 0; x < w; x++) {
+			const ch = cellGlyph(cells[y * w + x]);
+			row.push(ch);
+			if (ch !== '.') present.add(ch);
+		}
 		grid.push(row);
 	}
 
-	const present = new Set<string>(['#']);
 	const place = (x: number, y: number, ch: string) => {
 		if (y >= 0 && y < h && x >= 0 && x < w) grid[y][x] = ch;
 		present.add(ch);
