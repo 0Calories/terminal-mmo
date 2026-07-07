@@ -81,12 +81,40 @@ jobs:
             --service "$RAILWAY_SERVICE" \
             --skip-deploys
           bunx @railway/cli up --detach -y --service "$RAILWAY_SERVICE"
+          # SERVER_VERSION is read from the MMO_VERSION env var at process start
+          # (packages/server/src/index.ts), so /health only reports $VERSION once a
+          # container actually (re)starts with the staged variable. On a client-only
+          # release the `up` above skips the build (no watch-path change), so NO new
+          # container ever starts and /health would report the old Version forever —
+          # the health gate could never pass. Force a redeploy so the current
+          # deployment restarts with the staged MMO_VERSION regardless of whether a
+          # build ran. On a server-change release this is a cheap redundant restart
+          # of the just-deployed code; on a client-only release it is what applies
+          # the new Version at all.
+          #
+          # `up --detach` returns the moment it triggers the deployment, before that
+          # deployment settles — so a bare redeploy races it and Railway errors with
+          # "the latest deployment ... cannot be redeployed ... currently building,
+          # deploying, or was removed". Retry until Railway accepts it (the up-created
+          # deployment reaches a redeployable state); fail hard if it never does so we
+          # never fall through to a /health gate that can't pass.
+          for i in $(seq 1 30); do
+            if bunx @railway/cli redeploy -y --service "$RAILWAY_SERVICE"; then
+              echo "redeploy accepted on attempt $i"
+              exit 0
+            fi
+            echo "redeploy not yet accepted (attempt $i) — deployment still settling, retrying in 10s"
+            sleep 10
+          done
+          echo "::error::redeploy never accepted after 30 attempts (~5 min)"
+          exit 1
 
       # --- Gate: the live server must report exactly this Version ----------------
       # Now that the deploy is detached, this gate spans the whole build → deploy →
       # healthy cycle (not just container startup), so it polls generously: 90 × 5s
-      # ≈ 7.5 min. A skipped build (server already serving $VERSION) passes on the
-      # first attempt; a real build that never comes up trips the refuse-to-publish.
+      # ≈ 7.5 min. The forced redeploy above restarts the container with the staged
+      # MMO_VERSION even when the build is skipped, so this gate passes once that
+      # restart is healthy; a real build that never comes up trips the refuse-to-publish.
       - name: Assert /health reports the tag
         run: |
           for i in $(seq 1 90); do
