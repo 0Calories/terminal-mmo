@@ -56,6 +56,31 @@ const WIDE = parseTerrain([
 	floor,
 	floor,
 ]);
+// A one-way platform (row 8, x=2..7) suspended above a ground floor (rows
+// 18-19). Its top surface is world-y 8: a body rising into it from below passes
+// through, a body descending onto it from above lands on top.
+const PLATFORM = parseTerrain([
+	'............', // 0
+	'............', // 1
+	'............', // 2
+	'............', // 3
+	'............', // 4
+	'............', // 5
+	'............', // 6
+	'............', // 7
+	'..######....', // 8  one-way platform
+	'............', // 9
+	'............', // 10
+	'............', // 11
+	'............', // 12
+	'............', // 13
+	'............', // 14
+	'............', // 15
+	'............', // 16
+	'............', // 17
+	'############', // 18 ground
+	'############', // 19
+]);
 const IDLE: Control = { moveX: 0, jump: false };
 
 function settle(t: Terrain, e: Entity, ctl: Control = IDLE, n = 240): Entity {
@@ -81,6 +106,52 @@ test('jump: leaves the ground with upward velocity', () => {
 	const jumped = stepEntity(FLAT, grounded, { moveX: 0, jump: true }, 1 / 60).e;
 	expect(jumped.vy).toBeLessThan(0);
 	expect(jumped.onGround).toBe(false);
+});
+
+// --- One-way platforms (#262) -----------------------------------------------
+
+test('one-way platform: rising through a platform passes through (no head bonk)', () => {
+	// Stand on the ground below the platform, then jump straight up into it. A
+	// two-sided solid would bonk the head and stop it at row 9 (just under the
+	// surface); one-way lets the rising head rise past the surface (row 8).
+	const grounded = settle(PLATFORM, spawnAvatar(3, 13));
+	expect(grounded.onGround).toBe(true);
+	let e = stepEntity(PLATFORM, grounded, { moveX: 0, jump: true }, 1 / 60).e;
+	let minY = e.y;
+	for (let i = 0; i < 120 && !(i > 0 && e.onGround); i++) {
+		e = stepEntity(PLATFORM, e, IDLE, 1 / 60).e;
+		minY = Math.min(minY, e.y);
+	}
+	expect(minY).toBeLessThan(8); // the head cleared the platform's top row
+});
+
+test('one-way platform: descending from above lands on top', () => {
+	// Spawn above the platform and fall — it catches the body on its surface
+	// (top at row 8, so the box's top rests at row 8 - BOX.h = 3).
+	const e = settle(PLATFORM, spawnAvatar(3, 0));
+	expect(e.onGround).toBe(true);
+	expect(e.y).toBeCloseTo(8 - BOX.h, 5);
+});
+
+test('one-way platform: came-from-below never snaps up (no teleport glitch)', () => {
+	// Jump up through the platform from below, then let the whole arc play out:
+	// the body must fall back to the ground it launched from, never snapping onto
+	// the platform it entered from underneath.
+	const grounded = settle(PLATFORM, spawnAvatar(3, 13));
+	let e = stepEntity(PLATFORM, grounded, { moveX: 0, jump: true }, 1 / 60).e;
+	e = settle(PLATFORM, e);
+	expect(e.onGround).toBe(true);
+	expect(e.y).toBeCloseTo(grounded.y, 5); // back on the ground, not up on the platform
+});
+
+test('one-way platform: descending with feet below the surface does not land', () => {
+	// The came-from-above guard in isolation: the box straddles the platform with
+	// its feet already below the surface (row 8) and it is moving down. It must
+	// keep falling rather than snap its feet up onto the surface.
+	const straddling: Entity = { ...spawnAvatar(3, 3.5), vy: 2, onGround: false };
+	const e = stepEntity(PLATFORM, straddling, IDLE, 1 / 60).e;
+	expect(e.onGround).toBe(false);
+	expect(e.y).toBeGreaterThan(3.5); // kept falling, was not snapped up to y=3
 });
 
 // --- Momentum body (ADR 0017, #162) -----------------------------------------

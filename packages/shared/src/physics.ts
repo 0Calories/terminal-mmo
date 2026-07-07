@@ -69,25 +69,29 @@ export function stepEntity(
 	e.ivx = ivx;
 
 	e.vy += PHYS.grav * dt;
+	// Feet position (world-y of the box's bottom edge) BEFORE this tick's vertical
+	// move — the came-from-above reference for one-way landing below.
+	const prevFeetBottom = e.y + BOX.h;
 	e.y += e.vy * dt;
 	const l = Math.floor(e.x);
 	const r = Math.ceil(e.x + BOX.w) - 1;
 	e.onGround = false;
+	// One-way platforms (#262): every solid still walls off HORIZONTAL motion
+	// (handled above), but vertically a solid only stops a DESCENDING body — a
+	// rising body passes straight through (no head bonk), so there is no head-snap
+	// branch. The came-from-above guard (`prevFeetBottom <= surface`) refuses the
+	// landing unless the feet were at or above the tile's top surface last tick,
+	// so a body that peaks with its feet still below the surface keeps falling
+	// instead of snapping up onto it (no teleport glitch). Current zones have no
+	// ceilings, so global one-way behaviour needs no per-tile type (ADR 0024).
 	if (e.vy > 0) {
 		const feet = Math.ceil(e.y + BOX.h) - 1;
+		// The tile row's top surface sits at world-y `feet`.
 		for (let cx = l; cx <= r; cx++)
-			if (isSolid(t, cx, feet)) {
+			if (isSolid(t, cx, feet) && prevFeetBottom <= feet) {
 				e.y = feet - BOX.h;
 				e.vy = 0;
 				e.onGround = true;
-				break;
-			}
-	} else if (e.vy < 0) {
-		const head = Math.floor(e.y);
-		for (let cx = l; cx <= r; cx++)
-			if (isSolid(t, cx, head)) {
-				e.y = head + 1;
-				e.vy = 0;
 				break;
 			}
 	}
