@@ -26,10 +26,10 @@ test('no hat selection clips the stack at the top or bottom of the preview', () 
 		const spriteTop = spriteTopOf(hat);
 		const hatH = HATS[hat]?.sprite?.h ?? 0;
 		const hatTop = spriteTop - hatH;
-		// The boxed nameplate sits below the feet (#103), so its bottom is the lowest row.
+		// The nameplate sits below the feet (#103), so its bottom is the lowest row.
 		const nameplateBottom = spriteTop + PLAYER.h + NAMEPLATE_H;
 		expect(hatTop).toBeGreaterThanOrEqual(0); // tallest hat fits above
-		expect(nameplateBottom).toBeLessThanOrEqual(PREVIEW_H); // boxed plate fits below
+		expect(nameplateBottom).toBeLessThanOrEqual(PREVIEW_H); // nameplate fits below
 	}
 });
 

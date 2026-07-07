@@ -11,6 +11,7 @@ import type { Cosmetics, Entity, RenderStyle } from '@mmo/shared';
 import {
 	BOX,
 	buildSceneStyle,
+	drawNameplates,
 	HATS,
 	maxHpForLevel,
 	renderZoneScene,
@@ -42,11 +43,12 @@ const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 
 // Preview geometry, derived from the real Sprite / hat catalog so it always frames
 // the whole Avatar. Top to bottom the drawn stack is hat (0–MAX_HAT_H rows) + Sprite
-// + boxed nameplate (NAMEPLATE_H rows, below the feet — #103), with a row of padding
-// above and below; the canvas is sized for the tallest possible stack so no selection
-// ever clips.
+// + nameplate (NAMEPLATE_H rows below the feet — #103), with a row of padding above
+// and below; the canvas is sized for the tallest possible stack so no selection ever
+// clips.
 export const PLAYER = spriteFor('player');
-// The nameplate pill is 2 rows: the handle row and a thin lip (#103, ADR 0016).
+// The nameplate is a single row of the handle below the feet (drawNameplates, ADR 0023),
+// with one extra row of slack for a form's baseline offset so it never clips.
 export const NAMEPLATE_H = 2;
 const MAX_HAT_H = Math.max(0, ...HATS.map((h) => h.sprite?.h ?? 0));
 export const VPAD = 1;
@@ -57,7 +59,7 @@ export const PREVIEW_H = MAX_HAT_H + PLAYER.h + NAMEPLATE_H + 2 * VPAD;
 // the in-progress cosmetics + handle so the body hue, hat, AND nameplate colour all
 // preview. The Sprite is ANCHORED at a fixed vertical position — VPAD plus reserved
 // headroom for the tallest possible hat — so cycling hats only moves the headwear
-// above the head, never the body/feet (#104). Room is reserved below for the boxed
+// above the head, never the body/feet (#104). Room is reserved below for the
 // nameplate (#103). x/y are the inverse of drawEntitySprite's placement, so the
 // resolved Sprite lands where intended.
 export function previewAvatar(cosmetics: Cosmetics, name: string): Entity {
@@ -83,8 +85,9 @@ export function previewAvatar(cosmetics: Cosmetics, name: string): Entity {
 }
 
 // A live node that draws the preview Avatar through the shared renderer's full path
-// (renderZoneScene -> Sprite + hat + nameplate), so the preview is exactly what ships
-// in-world. `live` so it redraws every frame; `avatar` is swapped on each picker change.
+// (renderZoneScene -> Sprite + hat, then the drawNameplates top layer -> handle), so
+// the preview is exactly what ships in-world. `live` so it redraws every frame;
+// `avatar` is swapped on each picker change.
 class PreviewRenderable extends Renderable {
 	avatar: Entity = previewAvatar({ hue: 0, hat: 0, nameplate: 0, form: 0 }, '');
 
@@ -108,6 +111,10 @@ class PreviewRenderable extends Renderable {
 			{ x: 0, y: 0 },
 			STYLE,
 		);
+		// Nameplates are a caller-composited top layer now (ADR 0023), so renderZoneScene
+		// no longer draws them; add the pass here so the chosen handle previews above the
+		// Avatar. Unlike the playfield this SHOWS the self plate, since it's a preview.
+		drawNameplates(buffer, [this.avatar], { x: 0, y: 0 }, terrain, STYLE);
 	}
 }
 
