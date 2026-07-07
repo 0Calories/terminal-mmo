@@ -42,7 +42,11 @@ import type {
 	MonsterSnapshot,
 	ServerMessage,
 } from './protocol';
-import { type PlayerClass, skillForSlot } from './skills';
+import {
+	type PlayerClass,
+	skillForSlot,
+	skillsUnlockedBetween,
+} from './skills';
 import { isSolid } from './terrain';
 import type {
 	Control,
@@ -761,6 +765,14 @@ function grantXp(
 		const mhp = maxHpForLevel(ap.progress.level);
 		avatar = { ...avatar, maxHp: mhp, hp: mhp };
 		log.push(`Level up! Now level ${ap.progress.level}.`);
+		// Name each Active skill this level-up crossed the unlock rung for (#271), so the
+		// Player learns WHAT they gained and its key — a multi-level jump lists every rung.
+		for (const skill of skillsUnlockedBetween(
+			sa.class ?? 'warrior',
+			sa.progress.level,
+			ap.progress.level,
+		))
+			log.push(`Unlocked: ${skill.name} [${skill.key}]!`);
 	}
 	return { ...sa, avatar, progress: ap.progress, log };
 }

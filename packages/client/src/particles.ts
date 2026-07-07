@@ -152,6 +152,38 @@ export const IMPACT: ParticleType = {
 	z: 0,
 };
 
+// The `levelup` profile (#271): a celebratory fountain fired at the Player on a level-up.
+// Unlike the combat looks it is NOT driven by a wire Effect — the playfield spawns it
+// directly (client-only cosmetic), so it never touches progression. Bright gold sparks
+// erupt radially and mostly UP (a low gravity lets them hang like a firework), never
+// collide (they wink out in the air), and fade over ~1s so the burst reads as a quick
+// flourish that clears fast. A hot-gold → warm-amber curve, kin to the vendor gold.
+export const LEVELUP: ParticleType = {
+	gravity: 22, // light — sparks rise and hang like a firework rather than dropping
+	restitution: 0,
+	collide: false, // pure air burst; never pools on the floor
+	restMs: 0,
+	fadeMs: 500,
+	maxLifeMs: 1000, // ~1s flourish, matched to the HUD banner
+	launchSpeed: 16,
+	launchSpread: 12,
+	countScale: 1,
+	glyphs: {
+		airborne: ['★', '✦', '✧', '•', '＊'],
+		rest: ['·'],
+	},
+	colors: [
+		{ t: 0, r: 255, g: 240, b: 180 }, // hot gold flash
+		{ t: 0.5, r: 255, g: 205, b: 90 }, // warm amber (kin to the vendor gold)
+		{ t: 1, r: 220, g: 150, b: 60 }, // fading ember
+	],
+	z: 0,
+};
+
+// The speck count for the level-up fountain (#271): a fixed, generous burst — no combat
+// intensity drives it, so it always reads as a full celebratory pop.
+export const LEVELUP_SPECKS = 28;
+
 // The client-side map from a semantic game event to the look(s) it spawns. 1:1
 // today; the indirection lets a future event fan out into several ParticleTypes
 // (e.g. death → blood + gib) with no wire change.

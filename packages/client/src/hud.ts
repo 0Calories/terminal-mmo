@@ -15,9 +15,10 @@ import {
 } from '@opentui/core';
 import { COLORS } from './theme';
 
-// Keyboard binding per Warrior skill slot — kept in lockstep with input.ts (skills
-// are u/i; k/l are Block/Dodge).
-const SKILL_KEYS = ['u', 'i'];
+// The level-up banner (#271): a brief "LEVEL UP!" flash centred over the playfield,
+// shown for this long from the moment the Player's level ticks up, then cleared.
+const BANNER_MS = 1000;
+const BANNER_TEXT = '★  LEVEL UP!  ★';
 
 const HINT =
 	'move ←/→ a/d  jump ␣/↑  attack j/x  block k  dodge l  skills u/i  interact e  chat ⏎  ? controls  quit q';
@@ -90,7 +91,7 @@ function skillReadout(player: GameState['player']): string {
 			const cd = player.skillCooldowns?.[skill.id] ?? 0;
 			state = cd > 0 ? `${cd.toFixed(1)}s` : 'ready';
 		}
-		segs.push(`${SKILL_KEYS[slot - 1] ?? '?'} ${skill.name}: ${state}`);
+		segs.push(`${skill.key} ${skill.name}: ${state}`);
 	}
 	return segs.join('   ');
 }
@@ -108,6 +109,11 @@ export class Hud {
 	private readonly log: TextRenderable;
 	private readonly chat: TextRenderable;
 	private readonly chatInput: TextRenderable;
+	// The level-up banner (#271): a centred flash. Empty until flashLevelUp() arms it;
+	// `bannerUntil` is the wall-clock time (performance.now scale) it clears at.
+	private readonly banner: BoxRenderable;
+	private readonly bannerText: TextRenderable;
+	private bannerUntil = 0;
 
 	constructor(ctx: RenderContext) {
 		this.topBar = new BoxRenderable(ctx, {
@@ -199,11 +205,39 @@ export class Hud {
 			bg: COLORS.bg,
 		});
 		this.bottom.add(this.chatInput);
+
+		// The level-up banner (#271): an absolutely-positioned row a few cells below the
+		// top bar, its text centred over the playfield. Kept empty (so it takes no visual
+		// space) until a level-up arms it, then cleared after BANNER_MS.
+		this.banner = new BoxRenderable(ctx, {
+			position: 'absolute',
+			top: 2,
+			left: 0,
+			right: 0,
+			height: 1,
+			flexDirection: 'row',
+			justifyContent: 'center',
+			zIndex: Z,
+		});
+		this.bannerText = new TextRenderable(ctx, {
+			content: '',
+			fg: COLORS.xp,
+			bg: COLORS.hudBg,
+		});
+		this.banner.add(this.bannerText);
 	}
 
 	attach(parent: Renderable): void {
 		parent.add(this.topBar);
 		parent.add(this.bottom);
+		parent.add(this.banner);
+	}
+
+	// Arm the level-up banner (#271): flashes BANNER_TEXT for BANNER_MS from now. Fired on
+	// the rising edge of the Player's level, alongside the burst + sound. Idempotent —
+	// re-arming just extends the window, so back-to-back level-ups read as one flash.
+	flashLevelUp(): void {
+		this.bannerUntil = performance.now() + BANNER_MS;
 	}
 
 	// Surface the ephemeral-alpha warning in the top bar (ADR 0009). Called once on
@@ -225,6 +259,9 @@ export class Hud {
 		this.meta.content = `FPS ${fps}  monsters ${zone.monsters.length} `;
 		this.skills.content = skillReadout(player);
 		this.log.content = player.log.slice(-3).join('\n');
+		// Hold the level-up banner while its window is live, then clear it (#271).
+		this.bannerText.content =
+			performance.now() < this.bannerUntil ? BANNER_TEXT : '';
 	}
 
 	// Render the Zone-chat log and, while typing, the active input line with a
