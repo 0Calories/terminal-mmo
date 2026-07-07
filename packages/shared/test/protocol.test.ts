@@ -217,6 +217,12 @@ test('sell (client -> server) round-trips the Item id (#267, ADR 0025)', () => {
 	expect(decoded).toEqual(msg);
 });
 
+test('buy (client -> server) round-trips the catalog index (#273, ADR 0025)', () => {
+	const msg: ClientMessage = { t: 'buy', index: 2 };
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
 test('notice (server -> client) round-trips the sender-only system line', () => {
 	const msg: ServerMessage = {
 		t: 'notice',

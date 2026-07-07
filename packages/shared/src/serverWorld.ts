@@ -13,7 +13,7 @@ import { itemLabel } from './loot';
 import type { RestoredAvatar } from './persistence';
 import type { ServerMessage } from './protocol';
 import type { Box, Cosmetics } from './types';
-import { saleValue, sellItem } from './vendor';
+import { buyItem, STARTER_GOODS, saleValue, sellItem } from './vendor';
 import type { Zone, ZoneId } from './world';
 import {
 	type AvatarIntent,
@@ -273,6 +273,45 @@ export function applySell(
 		],
 	}));
 	return { world: next, sold: true };
+}
+
+// Apply a server-validated buy of one starter good for a session (#273, ADR 0025). The
+// mirror of `applySell` and just as defensive: the buyer must be standing at a Merchant,
+// the `index` must name a real entry in the fixed STARTER_GOODS catalog, and the price is
+// re-derived from that catalog server-side — the client's request carries only the index,
+// never a price. `buyItem` refuses when the Player can't afford it, so a forged/stale
+// request can neither conjure an Item for free nor push Gold into debt; any failed check is
+// a silent no-op (`bought: false`, World unchanged). On success the price is deducted, a
+// fresh affix-free `common` Item minted with the Avatar's own id source (`nextId`, then
+// advanced so ids never collide with loot) is appended, and a log line recorded; the caller
+// persists the change (a trade is a significant event). Pure — the whole rule is one
+// testable function.
+export function applyBuy(
+	world: ServerWorld,
+	sessionId: number,
+	index: number,
+): { world: ServerWorld; bought: boolean } {
+	if (!atMerchant(world, sessionId)) return { world, bought: false };
+	const good = STARTER_GOODS[index];
+	if (good === undefined) return { world, bought: false }; // non-purchasable/unknown
+	const zs = zoneStateOf(world, sessionId);
+	const sa = zs?.avatars.find((a) => a.sessionId === sessionId);
+	if (sa === undefined) return { world, bought: false };
+	const { progress, inventory, bought } = buyItem(
+		sa.progress,
+		sa.inventory,
+		good,
+		sa.nextId,
+	);
+	if (!bought) return { world, bought: false }; // couldn't afford
+	const next = withAvatar(world, sessionId, (a) => ({
+		...a,
+		progress,
+		inventory,
+		nextId: a.nextId + 1,
+		log: [...a.log.slice(-5), `Bought ${good.base} (−${good.price}g).`],
+	}));
+	return { world: next, bought: true };
 }
 
 // Spawn a joining session's Avatar and record its membership. A fresh account spawns in
