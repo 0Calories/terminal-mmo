@@ -344,12 +344,19 @@ function runOffline() {
 		// the take-off frame and the landing footfall on the touchdown frame.
 		if (jumpStarted(prevAvatar, game.player.avatar)) sound.play('jump');
 		if (landed(prevAvatar, game.player.avatar)) sound.play('land');
-		// Level-up flourish, once per rising edge of the Player's level.
-		const level = game.player.progress.level;
-		if (leveledUp(prevLevel, level)) sound.play('level-up');
-		prevLevel = level;
 		const fps = meter(dt);
 		playfield.game = game;
+		// Level-up flourish, once per rising edge of the Player's level: the sound, a
+		// gold particle burst at the Avatar (spawned off the just-set playfield state),
+		// and the HUD banner (#271). The unlock log lines ride the shared sim's
+		// `player.log`, so the HUD surfaces them for free.
+		const level = game.player.progress.level;
+		if (leveledUp(prevLevel, level)) {
+			sound.play('level-up');
+			playfield.levelUpBurst();
+			hud.flashLevelUp();
+		}
+		prevLevel = level;
 		hud.update(game, fps);
 		if (shop.open) shop.update(game.player);
 	});
@@ -650,13 +657,6 @@ async function runNetworked(url: string) {
 			if (jumpStarted({ onGround: prevOnGround }, predicted))
 				sound.play('jump');
 			if (landed({ onGround: prevOnGround }, predicted)) sound.play('land');
-			// Level-up flourish off the server-authoritative progression in the snapshot.
-			const snapLevel = net.latest?.progress.level;
-			if (snapLevel != null) {
-				if (prevLevel != null && leveledUp(prevLevel, snapLevel))
-					sound.play('level-up');
-				prevLevel = snapLevel;
-			}
 			// Optimistic local telegraph (story 17): mirror the server's cooldown gate
 			// so the swing/skill flash shows before the snapshot confirms the hit. The
 			// same gate yields the outgoing hitbox + damage for blood prediction (ADR
@@ -747,6 +747,20 @@ async function runNetworked(url: string) {
 				net.bubbles,
 			);
 			playfield.game = game;
+			// Level-up flourish off the server-authoritative progression in the snapshot:
+			// the sound, a gold particle burst at the Avatar (spawned off the just-set
+			// playfield state so it lands on the fresh position), and the HUD banner (#271).
+			// The unlock log lines ride the snapshot's `player.log`, surfaced by the HUD.
+			// Mirrors the offline loop's ordering.
+			const snapLevel = net.latest?.progress.level;
+			if (snapLevel != null) {
+				if (prevLevel != null && leveledUp(prevLevel, snapLevel)) {
+					sound.play('level-up');
+					playfield.levelUpBurst();
+					hud.flashLevelUp();
+				}
+				prevLevel = snapLevel;
+			}
 			// Predict our own outgoing-hit blood off the rendered (interpolated)
 			// Monsters, so it erupts instantly; the server suppresses the matching
 			// Effect back to us, so there is no double-render (ADR 0013). Resolve the

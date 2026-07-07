@@ -37,6 +37,7 @@ import {
 	swingPhase,
 	weaponById,
 	xpForKill,
+	xpToNext,
 } from '../src';
 import { flatTerrain, makeProjectile } from './helpers';
 
@@ -735,6 +736,27 @@ test('on death every recorded contributor earns shared XP and its own loot roll'
 	);
 	if (!expected.item) throw new Error('dungeon table must always drop');
 	expect(helperDrops[0].item).toEqual({ ...expected.item, id: 1 });
+});
+
+test('a kill that crosses a skill-unlock rung logs a specific "Unlocked: <skill> [<key>]!" line (#271)', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 4; // the next swing kills it, granting XP
+	// Poised one XP short of L3 at level 2, so the kill's XP tips the Player over the
+	// Power Strike (L3) rung — exactly one level, so only that skill unlocks.
+	const killer = primeSwing(serverAvatar(7, 20, 'hero', 2));
+	killer.progress = { level: 2, xp: xpToNext(2) - 1, gold: 0 };
+	const state: ZoneState = { zone: zoneWith([m]), avatars: [killer], tick: 0 };
+	const next = stepZone(
+		state,
+		[{ ...holdAt(7, killer.avatar), attack: true }],
+		16,
+	);
+	const me = next.avatars[0];
+	expect(me.progress.level).toBe(3); // crossed exactly one rung
+	expect(me.log).toContain('Level up! Now level 3.'); // existing line intact
+	expect(me.log).toContain('Unlocked: Power Strike [u]!');
+	// Ground Pound (L5) was NOT crossed, so its line must not appear.
+	expect(me.log.some((l) => l.includes('Ground Pound'))).toBe(false);
 });
 
 test('a non-contributor present at a shared kill receives nothing', () => {

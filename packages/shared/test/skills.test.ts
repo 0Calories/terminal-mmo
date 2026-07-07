@@ -10,6 +10,7 @@ import {
 	POWER_STRIKE,
 	skillForSlot,
 	skillHitbox,
+	skillsUnlockedBetween,
 	skillUnlocked,
 	spawnAvatar,
 	spawnMonster,
@@ -103,6 +104,34 @@ test('Ground Pound is an AoE Warrior skill with an unlock level and a cooldown',
 	expect(GROUND_POUND.unlockLevel).toBeGreaterThan(1);
 	expect(GROUND_POUND.cooldown).toBeGreaterThan(0);
 	expect(GROUND_POUND.damage).toBeGreaterThan(0);
+});
+
+test('each Active skill carries its default key (u/i), matching the slot order', () => {
+	// The key is part of the skill data so the unlock line + HUD readout name one source.
+	expect(POWER_STRIKE.key).toBe('u');
+	expect(GROUND_POUND.key).toBe('i');
+});
+
+test('skillsUnlockedBetween surfaces only the rung(s) a level-up crossed', () => {
+	// Power Strike (L3): fired by 2→3, not by 1→2 (below) or 3→4 (already had it).
+	expect(skillsUnlockedBetween('warrior', 2, 3)).toEqual([POWER_STRIKE]);
+	expect(skillsUnlockedBetween('warrior', 1, 2)).toEqual([]);
+	expect(skillsUnlockedBetween('warrior', 3, 4)).toEqual([]);
+	// Ground Pound (L5): fired by 4→5.
+	expect(skillsUnlockedBetween('warrior', 4, 5)).toEqual([GROUND_POUND]);
+});
+
+test('skillsUnlockedBetween lists every rung crossed on a multi-level jump, in ladder order', () => {
+	// A 1→5 leap hands over BOTH Active skills, Power Strike (L3) before Ground Pound (L5).
+	expect(skillsUnlockedBetween('warrior', 1, 5)).toEqual([
+		POWER_STRIKE,
+		GROUND_POUND,
+	]);
+});
+
+test('skillsUnlockedBetween crosses no rung when the level is unchanged or falls', () => {
+	expect(skillsUnlockedBetween('warrior', 5, 5)).toEqual([]);
+	expect(skillsUnlockedBetween('warrior', 5, 6)).toEqual([]);
 });
 
 test('skillUnlocked gates on the unlock level', () => {

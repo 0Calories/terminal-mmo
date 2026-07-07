@@ -64,6 +64,8 @@ import {
 	triggerHitstop,
 } from './hitstop';
 import {
+	LEVELUP,
+	LEVELUP_SPECKS,
 	type Particle,
 	ParticleSystem,
 	particleColor,
@@ -581,6 +583,19 @@ export class PlayfieldRenderable extends Renderable {
 	// us (originator-suppression), so they never double-render against a snapshot.
 	emitPredicted(effects: Effect[]): void {
 		if (effects.length) this.predicted.push(...effects);
+	}
+
+	// Fire the celebratory level-up fountain at the local Avatar (#271): a radial gold
+	// burst spawned straight into the particle pool — client-only cosmetic, off the wire
+	// and off the sim, so it never touches progression. The specks then simulate + draw
+	// through the normal particle path. Called on the rising edge of the Player's level.
+	levelUpBurst(): void {
+		if (!this.game) return;
+		const a = this.game.player.avatar;
+		const cx = a.x + BOX.w / 2;
+		const cy = a.y + BOX.h / 2;
+		for (let i = 0; i < LEVELUP_SPECKS; i++)
+			this.particles.spawn(LEVELUP, cx, cy, 0, Math.random);
 	}
 
 	// Consume this render frame's snapshot Effects exactly once per sim tick. A faster

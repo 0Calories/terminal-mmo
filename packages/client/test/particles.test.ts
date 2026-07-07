@@ -5,6 +5,8 @@ import {
 	BLOOD,
 	GORE,
 	IMPACT,
+	LEVELUP,
+	LEVELUP_SPECKS,
 	type Particle,
 	ParticleSystem,
 	type ParticleType,
@@ -57,6 +59,26 @@ test('a blood Effect expands into a burst of specks', () => {
 	const sys = new ParticleSystem();
 	stepParticles(sys, [bloodAt(5, 5)], 16, floorTerrain(), seededRng(1));
 	expect(sys.activeCount).toBeGreaterThan(0);
+});
+
+test('the level-up fountain is a non-colliding gold air burst spawned straight into the pool (#271)', () => {
+	// The level-up burst bypasses the Effect/SPAWN_MAP path (it is client-only cosmetic,
+	// off the wire), so the playfield spawns LEVELUP directly. It must be a pure air burst
+	// (never pools on the floor) and a gold flash (red+green dominant over blue).
+	expect(LEVELUP.collide).toBe(false);
+	const born = LEVELUP.colors[0];
+	expect(born.r).toBeGreaterThan(born.b);
+	expect(born.g).toBeGreaterThan(born.b);
+
+	const sys = new ParticleSystem();
+	for (let i = 0; i < LEVELUP_SPECKS; i++)
+		sys.spawn(LEVELUP, 10, 10, 0, seededRng(i + 1));
+	expect(sys.activeCount).toBe(LEVELUP_SPECKS);
+	// The whole fountain clears within its ~1s lifetime — a quick flourish, not a linger.
+	const terrain = floorTerrain();
+	for (let i = 0; i < 80; i++)
+		stepParticles(sys, [], 16, terrain, seededRng(7));
+	expect(sys.activeCount).toBe(0);
 });
 
 test('bigger hits spawn visibly more specks, clamped to a sane range', () => {
