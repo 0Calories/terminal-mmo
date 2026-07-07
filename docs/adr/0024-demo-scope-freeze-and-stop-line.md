@@ -152,7 +152,13 @@ Breaking the roadmap into slices (PRD #230 → `/to-issues`) surfaced four adjus
    `rollItem`). D3's loot work reworks *how drops behave and how rarity reads visually* (in-world
    and on pickup), on top of the existing roll logic.
 3. **Level scaling & EXP is a rework.** Beyond setting cap=5, D1 reworks the scaling curve and
-   EXP so the Dungeon is a sane, reliable climb.
+   EXP so the Dungeon is a sane, reliable climb. **Tuning (#266):** the EXP-to-next curve is now
+   *geometric* — `xpBase(60) · 2^(L-1)` → **60 / 120 / 240 / 480**, 900 total to the cap — so the
+   ask accelerates and the last level is by far the biggest. XP-per-kill is no longer a flat
+   constant: it is `MONSTER_XP[type] · ZONE_XP_MULT[zone]`, floored. Monster bases **Slime 5 <
+   Sporeling 8 < Golem 14**; zone depth **field-01 ×1, field-02 ×1.5, field-03 ×2, dungeon-01
+   ×2.5**. So a Field-1 Slime is a 5-XP trickle (no power-levelling) while a Field-3 Golem pays 28
+   and the Dungeon faucet (a Slime at 12) reaches the cap in ~75 kills — the tuned 60–80 window.
 4. **HUD gains real bars.** Today the HUD is a single text line; D4 adds visual **HP + EXP**
    bars (the Stamina bar lands with the stretch below).
 

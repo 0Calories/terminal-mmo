@@ -1,3 +1,5 @@
+import type { EntityType } from './types';
+
 export const WORLD = { w: 240, h: 40 } as const;
 export const GROUND_TOP = WORLD.h - 3;
 
@@ -187,10 +189,13 @@ export const PROJECTILE = { w: 1, h: 1 } as const;
 // reliable climb rather than a wall (ADR 0024 amendment §3).
 export const PROGRESSION = {
 	levelCap: 5,
-	// EXP to advance from level L to L+1 is `xpBase * L` — a gentle arithmetic ramp
-	// (each level costs `xpBase` more than the last: 40 / 80 / 120 / 160, 400 total to
-	// cap). At `XP_PER_KILL` that is ~20 Dungeon kills to cap — a couple of runs.
-	xpBase: 40,
+	// EXP to advance from level L to L+1 is `xpBase * xpGrowth^(L-1)` — a GEOMETRIC ramp
+	// that doubles each rung (60 / 120 / 240 / 480, 900 total to cap), so the last level
+	// is by far the biggest ask and reaching the cap feels earned rather than the old
+	// ~20-kill sprint (#266, ADR 0024 amendment §3, which records the full kills-to-cap
+	// tuning). `xpToNext` in progression.ts is the single source of truth for the shape.
+	xpBase: 60,
+	xpGrowth: 2,
 	// Per-level HP scaling: survivability is the level's baseline reward (raw attack
 	// power arrives as the gated verbs — Power Strike, Ground Pound — not a flat damage
 	// creep, keeping weapons the only damage stat per ADR 0024). Doubles L1→L5.
@@ -222,10 +227,29 @@ export const LOOT = {
 	ttlSec: 30,
 } as const;
 
-// The Dungeon faucet's per-kill XP grant (ADR 0024 §2). Sized against the reworked
-// EXP curve so cap 5 (400 XP total) lands in ~20 kills — a reliable, unfrustrating
-// climb of a couple of Dungeon runs, not a long grind.
-export const XP_PER_KILL = 20;
+// Base XP a kill yields, by Monster archetype (#266, ADR 0024 amendment §3). The world's three
+// combatants are worth progressively more so deeper fights advance you meaningfully: a
+// Slime (chaser) is a warm-up, a Sporeling (shooter) a step up, a Golem (brute) the
+// elite payout. This base is scaled by the Zone's depth multiplier (ZONE_XP_MULT) at
+// award time (see xpForKill), so the same Monster pays more the deeper you fight it.
+// Non-combat types (the Player) earn nothing.
+export const MONSTER_XP: Record<EntityType, number> = {
+	player: 0,
+	chaser: 5, // Slime — the Field-1 warm-up
+	shooter: 8, // Sporeling — the ranged poker of the deeper Fields
+	brute: 14, // Golem — the elite Field-3 bruiser
+} as const;
+
+// Per-Zone XP depth multiplier (#266, ADR 0024 amendment §3): the exploration-spine Fields pay
+// more the further from the hub (so Field 1 never power-levels), and the instanced
+// Dungeon is the RELIABLE faucet at the top of the curve. A Zone not listed (Town,
+// where nothing spawns) falls back to ×1.
+export const ZONE_XP_MULT: Record<string, number> = {
+	'field-01': 1,
+	'field-02': 1.5,
+	'field-03': 2,
+	'dungeon-01': 2.5,
+} as const;
 
 // Max length of a Chat line, shared by the input cap, the server relay clamp, the
 // chat log, and the over-head Speech bubble (#59, ADR 0007). Kept low enough that a

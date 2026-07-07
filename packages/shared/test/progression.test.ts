@@ -6,15 +6,60 @@ import {
 	capabilityUnlocked,
 	maxHpForLevel,
 	PROGRESSION,
+	xpForKill,
 	xpToNext,
 } from '../src';
 
-test('xpToNext rises with level and is infinite at the cap', () => {
-	// The reworked arithmetic ramp: xpBase * level (40 / 80 / 120 / 160 to the cap).
-	expect(xpToNext(1)).toBe(40);
-	expect(xpToNext(2)).toBe(80);
-	expect(xpToNext(4)).toBe(160);
+test('xpToNext accelerates geometrically and is infinite at the cap', () => {
+	// The reworked geometric ramp: xpBase * xpGrowth^(L-1), doubling each rung
+	// (60 / 120 / 240 / 480 to the cap) so the ask accelerates and the last level
+	// is the biggest — the cap has to be earned (#266).
+	expect(xpToNext(1)).toBe(60);
+	expect(xpToNext(2)).toBe(120);
+	expect(xpToNext(3)).toBe(240);
+	expect(xpToNext(4)).toBe(480);
+	// Each rung is strictly costlier than the last, and by a widening margin.
+	expect(xpToNext(2) - xpToNext(1)).toBeLessThan(xpToNext(4) - xpToNext(3));
 	expect(xpToNext(PROGRESSION.levelCap)).toBe(Infinity);
+});
+
+test('reaching the cap takes a tuned ~60-80 kills at the Dungeon faucet', () => {
+	// The reliable faucet is the Dungeon's Slimes (#266): grind them and count the
+	// kills to the cap. Must land in the tuned 60-80 window — no longer the ~20-kill
+	// sprint the old linear ramp gave, nor an unfrustrating wall.
+	const perKill = xpForKill('chaser', 'dungeon-01');
+	let p = { level: 1, xp: 0, gold: 0 };
+	let kills = 0;
+	while (p.level < PROGRESSION.levelCap) {
+		p = applyXp(p, perKill).progress;
+		kills++;
+	}
+	expect(kills).toBeGreaterThanOrEqual(60);
+	expect(kills).toBeLessThanOrEqual(80);
+});
+
+test('xpForKill scales by monster archetype and zone depth', () => {
+	// Deeper archetype = more XP, at every depth (Slime < Sporeling < Golem, #266).
+	expect(xpForKill('chaser', 'field-01')).toBeLessThan(
+		xpForKill('shooter', 'field-01'),
+	);
+	expect(xpForKill('shooter', 'field-01')).toBeLessThan(
+		xpForKill('brute', 'field-01'),
+	);
+	// Same monster pays more the deeper the Zone; Field 1 is the floor.
+	expect(xpForKill('chaser', 'field-01')).toBeLessThan(
+		xpForKill('chaser', 'field-02'),
+	);
+	expect(xpForKill('chaser', 'field-02')).toBeLessThan(
+		xpForKill('chaser', 'dungeon-01'),
+	);
+	// Concrete tuned values: Slime base 5 × depth, floored.
+	expect(xpForKill('chaser', 'field-01')).toBe(5);
+	expect(xpForKill('brute', 'field-03')).toBe(28);
+	expect(xpForKill('chaser', 'dungeon-01')).toBe(12);
+	// Non-combatants and unknown zones fall back gracefully, never crashing the faucet.
+	expect(xpForKill('player', 'dungeon-01')).toBe(0);
+	expect(xpForKill('chaser', 'town-01')).toBe(5);
 });
 
 test('applyXp levels up when the threshold is met', () => {

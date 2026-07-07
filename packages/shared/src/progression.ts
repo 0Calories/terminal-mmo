@@ -1,15 +1,25 @@
 import { fillRatio } from './bars';
-import { PROGRESSION } from './constants';
-import type { PlayerProgress } from './types';
+import { MONSTER_XP, PROGRESSION, ZONE_XP_MULT } from './constants';
+import type { EntityType, PlayerProgress } from './types';
 
-// EXP to advance from `level` to the next — a gentle arithmetic ramp (`xpBase * level`),
-// so each rung costs `xpBase` more than the last (40 / 80 / 120 / 160, 400 total to the
-// cap). Tuned for the five-level demo arc so the Dungeon faucet is a sane, reliable
-// climb (ADR 0024 §5, amendment §3). Infinity at the cap, so the level-up loop can
-// never advance past it.
+// EXP to advance from `level` to the next — a GEOMETRIC ramp (`xpBase * xpGrowth^(L-1)`),
+// doubling each rung (60 / 120 / 240 / 480, 900 total to the cap) so the ask accelerates
+// and the last level is by far the biggest, making the cap feel earned rather than the
+// old ~20-kill sprint (#266, ADR 0024 §5, amendment §3). Infinity at the cap, so the
+// level-up loop can never advance past it.
 export function xpToNext(level: number): number {
 	if (level >= PROGRESSION.levelCap) return Infinity;
-	return PROGRESSION.xpBase * level;
+	return PROGRESSION.xpBase * PROGRESSION.xpGrowth ** (level - 1);
+}
+
+// XP a single kill awards each contributor (#266, ADR 0024 amendment §3): the Monster's base worth
+// (MONSTER_XP by archetype) scaled by the Zone's depth multiplier (ZONE_XP_MULT), floored
+// to a whole number. This is the ONE XP faucet the offline sim and the server both run
+// through (grantXp), so a Slime in Field 1 is a trickle (5) while a Golem in the deepest
+// Field (28) — or any Dungeon kill — advances you meaningfully. An unknown Monster or Zone
+// falls back to 0 base / ×1 depth rather than crashing the faucet.
+export function xpForKill(monster: EntityType, zoneId: string): number {
+	return Math.floor((MONSTER_XP[monster] ?? 0) * (ZONE_XP_MULT[zoneId] ?? 1));
 }
 
 // Per-level max HP: survivability is the level's baseline reward, rising linearly off a
