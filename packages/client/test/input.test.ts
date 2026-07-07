@@ -180,13 +180,69 @@ test('clear() drops a pending interact edge so it cannot fire after a mode switc
 	expect(input.consumeInteract()).toBe(false);
 });
 
-test('the 220ms held-key timeout still drops a stuck key without release events', () => {
+test('a fresh press is dropped on the SHORT window without release events (ADR 0024 §5)', () => {
 	// A terminal without Kitty key-release reporting never calls release(), so a held
-	// key is dropped after the idle timeout (degraded but playable, ADR 0017 §11).
+	// key is dropped after its idle window. A first (fresh) press uses the short tier,
+	// so a quick tap stops the Avatar promptly (low overshoot).
 	const input = new InputState('keyboard');
 	input.press('d', 0);
-	expect(input.poll(100).moveX).toBe(1); // still held within the window
-	expect(input.poll(300).moveX).toBe(0); // dropped after 220ms with no release
+	expect(input.poll(130).moveX).toBe(1); // still held within the short window (140ms)
+	expect(input.poll(200).moveX).toBe(0); // dropped past the short window with no release
+});
+
+test('a second press within the confirm interval extends the key to the LONG window (ADR 0024 §5)', () => {
+	// Auto-repeat: the first press drops on the short window (its ~500ms-delayed second
+	// beat has not arrived yet), then a second press within HELD_CONFIRM_MS (600ms)
+	// confirms a genuine repeat stream and promotes the key to the long window.
+	const input = new InputState('keyboard');
+	input.press('d', 0); // fresh press → short window (140ms)
+	expect(input.poll(200).moveX).toBe(0); // dropped on the short window, no release reported
+
+	input.press('d', 550); // 550ms later (< 600ms) → confirmed repeat → long window (300ms)
+	// 150ms after the second press: past the 140ms short window, but the long window keeps it.
+	expect(input.poll(700).moveX).toBe(1);
+	expect(input.poll(900).moveX).toBe(0); // finally dropped past the 300ms long window
+});
+
+test('after the long window lapses, the next fresh press resets to the SHORT tier (ADR 0024 §5)', () => {
+	const input = new InputState('keyboard');
+	input.press('d', 0); // short
+	input.press('d', 500); // confirmed repeat → long window (300ms)
+	expect(input.poll(801).moveX).toBe(0); // 301ms after the last press → long window lapsed
+
+	// A genuinely fresh press long after the drop (> 600ms since the last press) is NOT a
+	// repeat, so it starts on the short tier again — proven by dropping past 140ms, not 300ms.
+	input.press('d', 2000);
+	expect(input.poll(2130).moveX).toBe(1); // within the short window
+	expect(input.poll(2200).moveX).toBe(0); // dropped past the short window (would still hold if long)
+});
+
+test('a key dropped from the long tier resets to SHORT even if re-pressed within the confirm interval (ADR 0024 §5, #227 criterion 3)', () => {
+	// The reset is drop-based, not merely timer-based: once the long window lapses and
+	// the poll drops the key, its auto-repeat stream is considered ended. A re-press that
+	// still falls inside the 600ms confirm interval (350ms after the last press here) is
+	// therefore a FRESH press on the short tier, not a re-promotion to long.
+	const input = new InputState('keyboard');
+	input.press('d', 0); // short
+	input.press('d', 500); // confirmed repeat → long window (300ms)
+	expect(input.poll(801).moveX).toBe(0); // 301ms later: long window lapsed, stream forgotten
+
+	input.press('d', 850); // 350ms after the last press (< 600ms) but the stream had ended
+	expect(input.poll(980).moveX).toBe(1); // within the short window (850 + 140)
+	expect(input.poll(1000).moveX).toBe(0); // dropped past the short window (would still hold if long)
+});
+
+test('a sustained auto-repeat stream stays held across gaps longer than the short window (ADR 0024 §5)', () => {
+	// Once promoted to the long window, repeats arriving within it keep refreshing the key,
+	// so an irregular auto-repeat stream never drops mid-walk.
+	const input = new InputState('keyboard');
+	input.press('d', 0); // short
+	input.press('d', 500); // → long window
+	expect(input.poll(700).moveX).toBe(1); // held (200ms gap < 300ms long window)
+	input.press('d', 750); // next repeat refreshes
+	expect(input.poll(1000).moveX).toBe(1); // still held (250ms gap < 300ms)
+	input.press('d', 1050);
+	expect(input.poll(1300).moveX).toBe(1); // still walking
 });
 
 test('a reported release disables the timeout fallback (held keys persist)', () => {
