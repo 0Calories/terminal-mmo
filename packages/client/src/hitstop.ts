@@ -1,8 +1,7 @@
 // Hitstop (ADR 0017 §13c): a render-only freeze on a meaty hit. For a few dozen
 // milliseconds the playfield holds its last drawn frame, so a Poise break lands with
-// a punch — but the SIM NEVER PAUSES. Offline the sim advances in index.ts's frame
-// callback while the playfield (the only thing this gates) skips its redraw;
-// networked, snapshots keep arriving and interpolation keeps buffering. The frozen
+// a punch — but the SIM NEVER PAUSES. Snapshots keep arriving and interpolation keeps
+// buffering while the playfield (the only thing this gates) skips its redraw. The frozen
 // frame just isn't repainted until the timer drains. View-only and deterministic;
 // the server has no concept of it.
 

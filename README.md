@@ -27,7 +27,7 @@ curl -fsSL https://bun.sh/install | bash   # then: bunx terminal-mmo@latest
 > [ADR 0009](./docs/adr/0009-live-hosting-and-bunx-delivery.md).
 
 Environment overrides: `MMO_SERVER=ws://localhost:8080` to point at your own
-server, `MMO_OFFLINE=1` to run the single-player loop with no network.
+server.
 
 In-game: press `m` to mute and `o` to open the audio options (master + per-bus
 volume). These prefs persist to `~/.config/terminal-mmo/config.json` (honoring
@@ -54,7 +54,7 @@ pure, deterministic functions so client and server can never diverge.
 bun install            # install workspace deps
 bun test               # run the shared simulation test suite
 bun run typecheck      # typecheck all packages
-bun run dev:client     # play the single-player loop (run in a REAL terminal)
+bun run dev:client     # play the client against a server (run in a REAL terminal)
 bun run lint           # lint with Biome
 bun run format         # format in place with Biome
 bun run check          # lint + format + organize imports, write fixes (Biome)

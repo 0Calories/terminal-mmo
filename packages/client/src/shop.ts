@@ -1,10 +1,8 @@
-// View + selection state only — never the transaction. WHERE the Gold/inventory
-// mutation happens depends on the caller: the offline loop applies it locally in
-// index.ts (it owns game state), while the networked path issues a `sell`/`buy` intent and
-// the SERVER owns the change (#267/#273, ADR 0025) — either way this class only renders and
-// tracks the cursor. The Merchant has two tabs — Sell (your loot) and Buy (the Town's
-// starter goods) — switched with ←/→ (#242). The optional `sellOnly` mode collapses it to
-// just the Sell tab (tab-switching inert); the networked Merchant uses the full overlay.
+// View + selection state only — never the transaction. The networked path issues a
+// `sell`/`buy` intent and the SERVER owns the Gold/inventory change (#267/#273, ADR 0025);
+// this class only renders and tracks the cursor. The Merchant has two tabs — Sell (your
+// loot) and Buy (the Town's starter goods) — switched with ←/→ (#242). The optional
+// `sellOnly` mode collapses it to just the Sell tab (tab-switching inert).
 import type { GameState } from '@mmo/shared';
 import { STARTER_GOODS, saleValue } from '@mmo/shared';
 import {
@@ -20,9 +18,8 @@ const SLOT_PAD = 9; // width of 'accessory', the widest Slot word
 
 export type ShopMode = 'sell' | 'buy';
 
-// The Gold + inventory the Merchant view reads. The offline loop passes its full
-// `GameState['player']`; the networked path passes a view assembled from the server
-// snapshot (which owns Gold + inventory) — both satisfy this Pick.
+// The Gold + inventory the Merchant view reads. The networked path passes a view
+// assembled from the server snapshot (which owns Gold + inventory) — it satisfies this Pick.
 export type ShopView = Pick<GameState['player'], 'inventory' | 'progress'>;
 
 export class Shop {

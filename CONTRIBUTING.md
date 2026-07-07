@@ -54,7 +54,6 @@ bun install
 bun run dev:server                       # ws://localhost:8080
 bun run dev:client                       # from-source clients default to the local server
 MMO_SERVER=ws://host:port bun run dev:client   # ...or point at another server
-MMO_OFFLINE=1 bun run dev:client         # single-player, no network
 bun test && bun run typecheck && bun run ci
 ```
 
