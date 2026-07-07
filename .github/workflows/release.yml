@@ -91,7 +91,23 @@ jobs:
           # build ran. On a server-change release this is a cheap redundant restart
           # of the just-deployed code; on a client-only release it is what applies
           # the new Version at all.
-          bunx @railway/cli redeploy -y --service "$RAILWAY_SERVICE"
+          #
+          # `up --detach` returns the moment it triggers the deployment, before that
+          # deployment settles — so a bare redeploy races it and Railway errors with
+          # "the latest deployment ... cannot be redeployed ... currently building,
+          # deploying, or was removed". Retry until Railway accepts it (the up-created
+          # deployment reaches a redeployable state); fail hard if it never does so we
+          # never fall through to a /health gate that can't pass.
+          for i in $(seq 1 30); do
+            if bunx @railway/cli redeploy -y --service "$RAILWAY_SERVICE"; then
+              echo "redeploy accepted on attempt $i"
+              exit 0
+            fi
+            echo "redeploy not yet accepted (attempt $i) — deployment still settling, retrying in 10s"
+            sleep 10
+          done
+          echo "::error::redeploy never accepted after 30 attempts (~5 min)"
+          exit 1
 
       # --- Gate: the live server must report exactly this Version ----------------
       # Now that the deploy is detached, this gate spans the whole build → deploy →
