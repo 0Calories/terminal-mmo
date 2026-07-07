@@ -78,6 +78,12 @@ inspired it, without the input lag.
 33. As a Player, I never want to pick a channel manually; the server should place me, so that I don't think about infrastructure.
 34. As a Player, I want to be routed to the same Channel as my party/friends when that exists (post-MVP), so that I'm with the people I came to see.
 
+> **Superseded by [ADR 0024](./adr/0024-demo-scope-freeze-and-stop-line.md).** Stories 33–34
+> describe the automatic, server-managed **Channel** routing from the world-scaling model in
+> ADR 0001 (§ "Interest & channeling" below). The demo scope freeze supersedes them: the demo
+> is solo-fun-first / multiplayer-*capable*, running a single Zone instance with **no Channels**,
+> so no channel routing is built.
+
 ## Implementation Decisions
 
 - **Monorepo, three packages:** `client` (OpenTUI TUI), `server` (Bun WebSocket + Zone simulation), `shared` (wire protocol, physics constants, combat/progression formulas). The shared package is imported by both sides so game logic is written once. (Per ADR 0002.)

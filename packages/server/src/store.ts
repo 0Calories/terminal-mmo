@@ -20,8 +20,8 @@ export function openPlayerStore(path = ':memory:'): PlayerStore {
 	const db = new Database(path);
 	// WAL keeps concurrent reads snappy and survives an unclean shutdown better; a no-op
 	// for :memory:.
-	db.exec('PRAGMA journal_mode = WAL;');
-	db.exec(
+	db.run('PRAGMA journal_mode = WAL;');
+	db.run(
 		`CREATE TABLE IF NOT EXISTS players (
 			key          TEXT PRIMARY KEY,
 			handle       TEXT NOT NULL,
