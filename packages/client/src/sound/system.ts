@@ -42,11 +42,20 @@ export class SoundSystem {
 	private isMuted = false;
 	private readonly debug: boolean;
 	private warned = false;
+	// Running count of engine `error` events; audio degrades only once it passes
+	// ERROR_LIMIT (see handleEngineError, #268).
+	private static readonly ERROR_LIMIT = 8;
+	private engineErrors = 0;
 	// Notified after any user-facing mixer change (volume / mute) so the caller can
 	// write the new state through to the persisted config (#150, ADR 0015). Not fired
 	// by applyAudioPrefs, which is a load — that would round-trip a fresh launch's
 	// loaded prefs straight back to disk for no reason.
 	onChange?: () => void;
+	// Fired exactly once, the first time sustained engine errors force audio off for the
+	// rest of the session (#268). The `warn` channel is debug-only and one-shot, so this
+	// is the seam the caller uses to surface a visible warning that audio degraded — a
+	// permanent audio loss should announce itself, not fail silently.
+	onDegraded?: () => void;
 
 	constructor(opts: SoundSystemOptions = {}) {
 		this.debug = opts.debug ?? false;
@@ -60,12 +69,10 @@ export class SoundSystem {
 				this.warn('Audio.create() returned null');
 				return;
 			}
-			// A serious engine-level error degrades to silence rather than throwing
-			// into the render loop; per-voice glitches are tolerated best-effort.
-			engine.on('error', (err) => {
-				this.enabled = false;
-				this.warn(`audio engine error: ${err.message}`);
-			});
+			// Engine-level errors are tolerated best-effort rather than thrown into the
+			// render loop: a single transient error must not permanently silence audio,
+			// so we only degrade after a sustained burst (see handleEngineError).
+			engine.on('error', (err) => this.handleEngineError(err));
 			if (!engine.start()) {
 				this.warn('audio engine start() returned false');
 				engine.dispose();
@@ -211,6 +218,21 @@ export class SoundSystem {
 		} catch {}
 		this.engine = null;
 		this.enabled = false;
+	}
+
+	// Handle an engine `error` event. Transient errors (a per-voice glitch, a momentary
+	// voice-pool exhaustion on a room switch) must not permanently disable audio, so we
+	// count them and stay enabled through a burst; a single error is a debug-logged
+	// no-op. Only once the count passes ERROR_LIMIT — a sustained, non-transient fault —
+	// do we degrade to silence for the rest of the session, firing onDegraded once (on
+	// the enabled→disabled edge) so the caller can surface a visible warning (#268).
+	private handleEngineError(err: Error): void {
+		this.engineErrors++;
+		this.warn(`audio engine error: ${err.message}`);
+		if (this.engineErrors > SoundSystem.ERROR_LIMIT && this.enabled) {
+			this.enabled = false;
+			this.onDegraded?.();
+		}
 	}
 
 	// Log the first failure only, and only when debugging — a disabled SoundSystem

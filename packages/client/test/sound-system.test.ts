@@ -90,6 +90,44 @@ test('applyAudioPrefs clamps stored values and does not fire onChange', () => {
 	expect(changes).toBe(0); // a load, not a user edit
 });
 
+// Sound robustness (#268): an engine `error` event used to flip enabled=false on the
+// very first hiccup, permanently and silently killing audio for the session. Transient
+// errors (a per-voice glitch, momentary voice-pool exhaustion on a room switch) must be
+// tolerated; only a sustained burst degrades to silence.
+test('a single transient engine error does not permanently disable audio', () => {
+	const sound = new SoundSystem({ isTTY: false });
+	sound.enabled = true; // simulate a live engine
+	let degraded = 0;
+	sound.onDegraded = () => degraded++;
+	(sound as unknown as { handleEngineError(e: Error): void }).handleEngineError(
+		new Error('voice pool exhausted'),
+	);
+	expect(sound.enabled).toBe(true);
+	expect(degraded).toBe(0); // a transient error must not surface a degrade warning
+});
+
+test('audio degrades to silence and surfaces once after a sustained burst of engine errors', () => {
+	const sound = new SoundSystem({ isTTY: false });
+	sound.enabled = true;
+	let degraded = 0;
+	sound.onDegraded = () => degraded++;
+	const fire = (
+		sound as unknown as { handleEngineError(e: Error): void }
+	).handleEngineError.bind(sound);
+	// A handful of errors is still tolerated...
+	for (let i = 0; i < 8; i++) fire(new Error('glitch'));
+	expect(sound.enabled).toBe(true);
+	expect(degraded).toBe(0);
+	// ...but a sustained fault past the limit finally degrades to silence, surfacing a
+	// single visible warning on the enabled→disabled edge.
+	fire(new Error('glitch'));
+	expect(sound.enabled).toBe(false);
+	expect(degraded).toBe(1);
+	// Further errors after degrade must not re-fire the warning.
+	fire(new Error('glitch'));
+	expect(degraded).toBe(1);
+});
+
 test('every user-facing mixer change notifies onChange for write-through', () => {
 	const sound = new SoundSystem({ isTTY: false });
 	let changes = 0;
