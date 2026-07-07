@@ -9,6 +9,7 @@ import { randomBytes } from 'node:crypto';
 import {
 	type AvatarIntent,
 	addSession,
+	applySell,
 	CHAT_MAX_LEN,
 	type Cosmetics,
 	canonicalPublicKey,
@@ -300,6 +301,20 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		if (!emoteById(msg.emote)) return;
 		if (zoneStateOf(world, sessionId) === undefined) return; // emote before hello
 		pendingEmotes.set(sessionId, msg.emote);
+		return;
+	}
+	if (msg.t === 'sell') {
+		// Server-authoritative economy (#267, ADR 0025): the whole rule is the pure
+		// `applySell` — the seller must be at a Merchant, own the `itemId`, and the price is
+		// re-derived server-side. A rejected sell (unowned id / not at a Merchant) is a
+		// silent no-op; the next snapshot simply re-affirms the unchanged bag. A successful
+		// sell is a significant durable event (Gold moved), so flush it immediately (#236)
+		// instead of waiting for the periodic sweep.
+		const res = applySell(world, sessionId, msg.itemId);
+		if (res.sold) {
+			world = res.world;
+			flushSession(sessionId);
+		}
 		return;
 	}
 	// input: trust the reported position with only a loose bounds clamp (against the

@@ -211,6 +211,12 @@ test('emote (client -> server) round-trips the trigger id (#38, ADR 0020 §9)', 
 	expect(decoded).toEqual(msg);
 });
 
+test('sell (client -> server) round-trips the Item id (#267, ADR 0025)', () => {
+	const msg: ClientMessage = { t: 'sell', itemId: 4242 };
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
 test('notice (server -> client) round-trips the sender-only system line', () => {
 	const msg: ServerMessage = {
 		t: 'notice',

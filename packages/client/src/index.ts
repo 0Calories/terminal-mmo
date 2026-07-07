@@ -43,7 +43,7 @@ import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
 import { PlayfieldRenderable } from './playfield';
 import { resolveServerUrl } from './server-url';
-import { Shop } from './shop';
+import { Shop, type ShopView } from './shop';
 import { SoundSystem } from './sound/system';
 import {
 	isMenuBlipKey,
@@ -91,6 +91,10 @@ const renderer = await createCliRenderer({
 // difference. The mouse scheme also binds the playfield's mouse buttons below.
 const SCHEME = process.env.MMO_SCHEME === 'mouse' ? 'mouse' : 'keyboard';
 const input = new InputState(SCHEME);
+// The physical key bound to `interact` under the active scheme (ADR 0017 §12): `e`
+// keyboard-only, `f` in the keyboard+mouse scheme (where `e` is a skill). Opens the
+// Merchant when standing at one and closes it again (#267).
+const INTERACT_KEY = SCHEME === 'mouse' ? 'f' : 'e';
 
 // Equipped Weapon. There is no in-game equip UI yet, so MMO_WEAPON selects the demo
 // weapon by NAME or by catalog index; an unknown value falls back to the default
@@ -439,6 +443,59 @@ async function runNetworked(url: string) {
 		// against the live server-authoritative level.
 		const controls = new Controls(renderer);
 		controls.attach(renderer.root);
+		// Server-authoritative Merchant (#267, ADR 0025): a sell-only overlay. Gold +
+		// inventory are read straight off the snapshot (the server owns the bag); a confirmed
+		// sell issues a validated `sell` intent and the NEXT snapshot reflects the removal —
+		// no optimistic local mutation, so the client can never drift from the server's Gold.
+		// The Buy path is a separate later issue (#273), hence sell-only here.
+		const shop = new Shop(renderer, true);
+		shop.attach(renderer.root);
+		// The Gold + inventory the Merchant renders, sourced from the latest snapshot. Empty
+		// until the first snapshot arrives.
+		const shopView = (): ShopView => ({
+			inventory: net.latest?.inventory ?? [],
+			progress: net.latest?.progress ?? { level: 1, xp: 0, gold: 0 },
+		});
+		// A Merchant (vendor NPC) overlapping the predicted Avatar in the current Zone — the
+		// client-side gate to OPEN the overlay. The server re-checks this proximity
+		// authoritatively on every sell, so a client can't trade from afar (#267).
+		const merchantUnder = (): boolean => {
+			const box = entityBox(predicted);
+			return (zone.npcs ?? []).some(
+				(n) => n.kind === 'vendor' && aabbOverlap(box, n),
+			);
+		};
+		// Issue a validated sell of the selected Item. Sends only the id — the server
+		// re-derives the price and re-checks ownership + proximity. No local Gold/inventory
+		// edit: the authoritative bag arrives on the next snapshot.
+		const sellSelected = (): void => {
+			const inv = shopView().inventory;
+			const item = inv[shop.selected];
+			if (!item) return;
+			net.send({ t: 'sell', itemId: item.id });
+			shop.move(0, Math.max(0, inv.length - 1)); // clamp the cursor optimistically
+		};
+		const handleShopKey = (name: string): void => {
+			// UI blip on menu navigation / confirm (ADR 0014); close (interact/esc) is silent.
+			if (isMenuBlipKey(name)) sound.play('ui');
+			const count = shop.count(shopView());
+			switch (name) {
+				case 'up':
+					shop.move(-1, count);
+					break;
+				case 'down':
+					shop.move(1, count);
+					break;
+				case 'return':
+					sellSelected();
+					break;
+				case INTERACT_KEY:
+				case 'escape':
+					shop.hide();
+					break;
+			}
+			if (shop.open) shop.update(shopView());
+		};
 
 		renderer.keyInput.on('keypress', (k) => {
 			// While typing, chat OWNS the keyboard: every key edits the line (or sends /
@@ -488,6 +545,12 @@ async function runNetworked(url: string) {
 				sound.toggleMute();
 				return;
 			}
+			// The Merchant overlay owns the keyboard while open (#267): navigate / sell /
+			// close, and swallow every key so none reaches the sim.
+			if (shop.open) {
+				handleShopKey(k.name);
+				return;
+			}
 			if (isHelpKey(k)) {
 				controls.show(net.latest?.progress.level ?? 1, SCHEME);
 				return;
@@ -499,6 +562,15 @@ async function runNetworked(url: string) {
 			if (k.name === 'return') {
 				chat.start();
 				input.clear(); // a key held at the switch must not stick while typing
+				return;
+			}
+			// Open the Merchant when standing at one (#267): swallow the interact key so it
+			// isn't also fed to the sim as a Portal intent, and clear held movement so a key
+			// down at the switch can't stick while the overlay owns the keyboard.
+			if (k.name === INTERACT_KEY && merchantUnder()) {
+				input.clear();
+				shop.show();
+				shop.update(shopView());
 				return;
 			}
 			input.press(k.name, performance.now());
@@ -514,9 +586,12 @@ async function runNetworked(url: string) {
 		// once on each rising edge of the server-authoritative level.
 		let prevLevel: number | null = null;
 		renderer.setFrameCallback(async (dt) => {
-			// Freeze movement / combat while the chat line has the keyboard.
+			// Freeze movement / combat while a modal (chat line, controls, Merchant) has the
+			// keyboard.
 			const inp =
-				chat.open || controls.open ? IDLE_INPUT : input.poll(performance.now());
+				chat.open || controls.open || shop.open
+					? IDLE_INPUT
+					: input.poll(performance.now());
 
 			// Follow a server-driven Zone change (portal travel / death respawn): swap the
 			// local Zone and snap the predicted Avatar to the server's arrival position so
@@ -686,6 +761,9 @@ async function runNetworked(url: string) {
 			}
 			hud.update(game, fps);
 			hud.updateChat(net.chatLog, chat.open, chat.text);
+			// Re-render the Merchant from the freshest snapshot so a completed sell (Item gone,
+			// Gold up) shows the moment the server confirms it (#267).
+			if (shop.open) shop.update(shopView());
 		});
 	}
 }

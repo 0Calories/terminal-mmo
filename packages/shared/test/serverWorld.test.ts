@@ -1,14 +1,19 @@
 import { expect, test } from 'bun:test';
-import type { AvatarIntent, ServerWorld } from '../src';
+import type { AvatarIntent, Item, Npc, ServerWorld } from '../src';
 import {
 	addSession,
+	applySell,
+	atMerchant,
 	BOX,
 	createServerWorld,
+	emptySave,
 	GROUND_TOP,
 	handleOf,
 	joinParty,
 	loadZones,
 	removeSession,
+	restoredFromSave,
+	saleValue,
 	sessionByHandle,
 	sessionsInZone,
 	stepServerWorld,
@@ -457,4 +462,119 @@ test('a re-entered Dungeon is a fresh instance (repeatable faucet)', () => {
 	// Same solo key (keyed by owner), but a freshly-created ZoneState (tick reset).
 	expect(w.instanceOf[1]).toBe(first);
 	expect(w.instances[w.instanceOf[1]].tick).toBe(0);
+});
+
+// --- Server-authoritative sell (#267, ADR 0025) ----------------------------
+
+const sellable = (over: Partial<Item> = {}): Item => ({
+	id: 1,
+	base: 'Rusty Sword',
+	slot: 'weapon',
+	rarity: 'rare',
+	affixes: [{ stat: 'str', value: 3 }],
+	...over,
+});
+
+// Place session 1 in Town with a seeded inventory, then report it standing at `x` — the
+// Merchant's column by default, so it passes the proximity gate (positions are client-
+// trusted, ADR 0001). Returns the world and the Town's Merchant NPC.
+function sellWorld(
+	inventory: Item[],
+	gold: number,
+	standAtMerchant = true,
+): { w: ServerWorld; merchant: Npc } {
+	let w = townWorld();
+	w = addSession(
+		w,
+		1,
+		'neo',
+		undefined,
+		undefined,
+		restoredFromSave({
+			...emptySave('neo', 'town-01'),
+			inventory,
+			progress: { level: 2, xp: 0, gold },
+		}),
+	);
+	const merchant = zoneOrThrow(w, 'town-01').zone.npcs?.find(
+		(n) => n.kind === 'vendor',
+	);
+	if (!merchant) throw new Error('town-01 must have a Merchant');
+	// Report the Avatar either on the Merchant or far away (x 0), trusted verbatim.
+	const x = standAtMerchant ? merchant.x : 0;
+	w = stepServerWorld(
+		w,
+		[
+			{
+				sessionId: 1,
+				x,
+				y: merchant.y,
+				vx: 0,
+				vy: 0,
+				facing: 1,
+				onGround: true,
+				attack: false,
+			},
+		],
+		16,
+	);
+	return { w, merchant };
+}
+
+function avatarOf(w: ServerWorld, sessionId: number) {
+	return zoneStateOf(w, sessionId)?.avatars.find(
+		(a) => a.sessionId === sessionId,
+	);
+}
+
+test('atMerchant is true standing on the Town Merchant, false when away', () => {
+	expect(atMerchant(sellWorld([sellable()], 0).w, 1)).toBe(true);
+	expect(atMerchant(sellWorld([sellable()], 0, false).w, 1)).toBe(false);
+});
+
+test('applySell removes the Item and credits its re-derived sale value to Gold', () => {
+	const item = sellable({ id: 7 });
+	const { w } = sellWorld(
+		[item, sellable({ id: 8, base: 'Copper Ring' })],
+		100,
+	);
+	const res = applySell(w, 1, 7);
+	expect(res.sold).toBe(true);
+	const sa = avatarOf(res.world, 1);
+	expect(sa?.inventory.map((i) => i.id)).toEqual([8]); // id 7 gone
+	expect(sa?.progress.gold).toBe(100 + saleValue(item)); // price is server-derived
+	expect(sa?.log.at(-1)).toContain('Sold'); // a sell log line is appended
+});
+
+test('selling an unowned id is a no-op — Gold and inventory unchanged', () => {
+	const { w } = sellWorld([sellable({ id: 7 })], 100);
+	const res = applySell(w, 1, 999); // 999 not held
+	expect(res.sold).toBe(false);
+	const sa = avatarOf(res.world, 1);
+	expect(sa?.inventory.map((i) => i.id)).toEqual([7]);
+	expect(sa?.progress.gold).toBe(100);
+});
+
+test('selling the same id twice: the second sell is a no-op (no double credit)', () => {
+	const item = sellable({ id: 7 });
+	const first = applySell(sellWorld([item], 0).w, 1, 7);
+	expect(first.sold).toBe(true);
+	const gold = avatarOf(first.world, 1)?.progress.gold;
+	const second = applySell(first.world, 1, 7); // already gone
+	expect(second.sold).toBe(false);
+	expect(avatarOf(second.world, 1)?.progress.gold).toBe(gold);
+});
+
+test('a sell away from any Merchant is refused — never trust the client', () => {
+	const { w } = sellWorld([sellable({ id: 7 })], 100, false); // standing at x 0
+	const res = applySell(w, 1, 7);
+	expect(res.sold).toBe(false);
+	const sa = avatarOf(res.world, 1);
+	expect(sa?.inventory.map((i) => i.id)).toEqual([7]); // Item kept
+	expect(sa?.progress.gold).toBe(100);
+});
+
+test('applySell for an unplaced session is a no-op', () => {
+	const res = applySell(townWorld(), 999, 1);
+	expect(res.sold).toBe(false);
 });

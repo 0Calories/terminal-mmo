@@ -9,9 +9,11 @@
 
 import { aabbOverlap } from './combat';
 import { BOX, TOWN_SPAWN } from './constants';
+import { itemLabel } from './loot';
 import type { RestoredAvatar } from './persistence';
 import type { ServerMessage } from './protocol';
 import type { Box, Cosmetics } from './types';
+import { saleValue, sellItem } from './vendor';
 import type { Zone, ZoneId } from './world';
 import {
 	type AvatarIntent,
@@ -196,6 +198,81 @@ export function handleOf(
 	return zoneStateOf(world, sessionId)?.avatars.find(
 		(a) => a.sessionId === sessionId,
 	)?.handle;
+}
+
+// True when a session's Avatar box overlaps a Merchant (vendor NPC) in the ZoneState it
+// occupies — the server-authoritative gate for a trade (#267, ADR 0025). Read off the
+// client-reported position on the ServerAvatar (positions are client-authoritative, ADR
+// 0001), the same box the Portal-interact gate trusts. Merchants live only in a Town, so a
+// session in a Field/Dungeon is never at one.
+export function atMerchant(world: ServerWorld, sessionId: number): boolean {
+	const zs = zoneStateOf(world, sessionId);
+	if (zs === undefined) return false;
+	const sa = zs.avatars.find((a) => a.sessionId === sessionId);
+	if (sa === undefined) return false;
+	const box = boxAt(sa.avatar.x, sa.avatar.y);
+	return (zs.zone.npcs ?? []).some(
+		(n) => n.kind === 'vendor' && aabbOverlap(box, n),
+	);
+}
+
+// Replace one session's ServerAvatar via `fn`, in whichever container it occupies (its
+// shared Zone or its private Dungeon instance), returning a fresh World. A no-op if the
+// session is unplaced. The single write path the economy mutations funnel through, so a
+// sell can never edit the wrong instance.
+function withAvatar(
+	world: ServerWorld,
+	sessionId: number,
+	fn: (sa: ServerAvatar) => ServerAvatar,
+): ServerWorld {
+	const map = (zs: ZoneState): ZoneState => ({
+		...zs,
+		avatars: zs.avatars.map((a) => (a.sessionId === sessionId ? fn(a) : a)),
+	});
+	const inst = world.instanceOf[sessionId];
+	if (inst !== undefined)
+		return {
+			...world,
+			instances: { ...world.instances, [inst]: map(world.instances[inst]) },
+		};
+	const zone = world.location[sessionId];
+	if (zone === undefined) return world;
+	return {
+		...world,
+		zones: { ...world.zones, [zone]: map(world.zones[zone]) },
+	};
+}
+
+// Apply a server-validated sell of one Item for a session (#267, ADR 0025). Server-
+// authoritative and defensive on every axis: the seller must be standing at a Merchant, the
+// `itemId` must be in ITS OWN inventory, and the credited price is re-derived from the Item
+// (`saleValue`) — the client's request carries only the id, never a price. Any failed check
+// is a silent no-op (`sold: false`, World unchanged), so a forged/stale request can neither
+// conjure Gold nor delete another Player's Item. On success the Item leaves the bag, its
+// sale value is credited to Gold, and a log line is appended; the caller persists the
+// change (a trade is a significant event). Pure — the whole rule is one testable function.
+export function applySell(
+	world: ServerWorld,
+	sessionId: number,
+	itemId: number,
+): { world: ServerWorld; sold: boolean } {
+	if (!atMerchant(world, sessionId)) return { world, sold: false };
+	const zs = zoneStateOf(world, sessionId);
+	const sa = zs?.avatars.find((a) => a.sessionId === sessionId);
+	if (sa === undefined) return { world, sold: false };
+	const item = sa.inventory.find((i) => i.id === itemId);
+	if (item === undefined) return { world, sold: false }; // unowned/unknown id
+	const { progress, inventory } = sellItem(sa.progress, sa.inventory, itemId);
+	const next = withAvatar(world, sessionId, (a) => ({
+		...a,
+		progress,
+		inventory,
+		log: [
+			...a.log.slice(-5),
+			`Sold ${itemLabel(item)} (+${saleValue(item)}g).`,
+		],
+	}));
+	return { world: next, sold: true };
 }
 
 // Spawn a joining session's Avatar and record its membership. A fresh account spawns in

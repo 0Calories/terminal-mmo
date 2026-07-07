@@ -607,6 +607,26 @@ A direct, face-to-face, both-sides-confirm Item/Gold swap between two Players in
 Town. Server-authoritative and atomic.
 _Avoid_: Swap, exchange, deal
 
+**Server-authoritative economy**:
+Every Gold-and-Item transaction (selling loot to a **Merchant**, and later **Trade** /
+**Auction House** / NPC purchases) is resolved on the server and never trusted from the
+client (#267, ADR 0025). A client sends only an *intent* — e.g. "sell item #7" — and the
+server re-derives the price (`saleValue`), verifies the Item is in that Player's own
+inventory, and gates the transaction on the Player standing at the relevant NPC; an
+unowned/unknown id or a request from afar is a silent no-op. The whole rule lives in a
+pure `@mmo/shared` function so the (removed) offline loop and the live server can't
+diverge, and the authoritative Gold/inventory ride the **snapshot** back — the client
+never mutates its own balance optimistically. Successful transactions are durable
+(persisted as a significant event).
+_Avoid_: Client-side shop, optimistic economy, trusting the client price
+
+**Merchant**:
+The Town **NPC** a Player interacts with (walk over, press interact) to open the
+shop overlay and **sell** loot for **Gold** (buying starter goods is a later slice).
+Reads the Player's Gold + inventory from the **snapshot** and issues `sell` intents;
+the server owns the outcome (see Server-authoritative economy).
+_Avoid_: Shopkeeper (when you mean the mechanic), store, vendor UI
+
 **Auction House**:
 A global asynchronous market where Players list Items for Gold; the server escrows
 listed Items and Gold. Coexists with Trade. Post-MVP. Bots/RMT are explicitly a
