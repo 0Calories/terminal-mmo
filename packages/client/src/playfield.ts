@@ -560,6 +560,9 @@ export class PlayfieldRenderable extends Renderable {
 	// it, it's advanced at render framerate, drawn two-pass by drawPlayfield.
 	private particles = new ParticleSystem();
 	private lastParticleTick = -1;
+	// The zone the dedup gate above was last advanced in, so it can be reset on a zone
+	// change (see consumeSnapshotEffects, #268).
+	private lastZoneId: string | null = null;
 	private lastTime = 0;
 	// Dodge after-images (ADR 0017 §5/§13e): live echoes + the per-entity bookkeeping
 	// to spot a dodge-start edge. Each frame we compare every on-screen Avatar's
@@ -578,6 +581,26 @@ export class PlayfieldRenderable extends Renderable {
 	// us (originator-suppression), so they never double-render against a snapshot.
 	emitPredicted(effects: Effect[]): void {
 		if (effects.length) this.predicted.push(...effects);
+	}
+
+	// Consume this render frame's snapshot Effects exactly once per sim tick. A faster
+	// render loop re-sees the same tick, so effects only fire on a tick change; but a
+	// zone change starts a new Effect stream on a tick that can collide with the last
+	// one consumed in the old zone, which would wedge the gate and silently swallow the
+	// new zone's first burst. Resetting the gate on any zone change guarantees entry
+	// effects (and the voices spawned from the same set) always fire (#268).
+	private consumeSnapshotEffects(
+		zoneId: string,
+		tick: number,
+		effects: Effect[],
+	): Effect[] {
+		if (zoneId !== this.lastZoneId) {
+			this.lastParticleTick = -1;
+			this.lastZoneId = zoneId;
+		}
+		const fresh = tick !== this.lastParticleTick ? effects : [];
+		this.lastParticleTick = tick;
+		return fresh;
 	}
 
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
@@ -618,10 +641,11 @@ export class PlayfieldRenderable extends Renderable {
 		// Advance the particle system at render framerate. Fresh Effects are consumed
 		// once per sim tick (guarded by world.tick so a faster render loop can't spawn
 		// the same burst twice); off-camera bursts are skipped inside stepParticles.
-		const tick = this.game.world.tick;
-		const snapshotEffects =
-			tick !== this.lastParticleTick ? (this.game.effects ?? []) : [];
-		this.lastParticleTick = tick;
+		const snapshotEffects = this.consumeSnapshotEffects(
+			this.game.player.zoneId,
+			this.game.world.tick,
+			this.game.effects ?? [],
+		);
 		// Snapshot Effects fire once per server tick; predicted Effects (own swing)
 		// fire immediately and are drained each frame so they spawn exactly once.
 		const fresh = this.predicted.length

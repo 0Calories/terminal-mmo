@@ -137,6 +137,13 @@ playfield.sound = sound;
 const config = new ConfigStore().load();
 sound.applyAudioPrefs(config.audio());
 sound.onChange = () => config.saveAudio(sound.audioPrefs());
+// If sustained engine errors force audio off mid-session (#268), remember it and
+// surface a one-line warning on exit — printed after teardown (below) so it lands on
+// the normal screen, never corrupting the live TUI.
+let audioDegraded = false;
+sound.onDegraded = () => {
+	audioDegraded = true;
+};
 
 function quit(message?: string) {
 	sound.dispose(); // tear the engine down without blocking exit
@@ -145,6 +152,8 @@ function quit(message?: string) {
 	} catch {}
 	// Printed after the TUI is torn down so it lands on the normal screen, not the
 	// cleared alt-screen (e.g. a server rejection reason, ADR 0009).
+	if (audioDegraded)
+		console.error('audio disabled after repeated engine errors this session');
 	if (message) console.error(message);
 	process.exit(message ? 1 : 0);
 }
