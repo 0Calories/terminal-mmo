@@ -217,6 +217,13 @@ function tintStops(tint: Tint): ColorStop[] {
 	];
 }
 
+// Opacity along a fade ramp: full (255) at `elapsedMs <= 0`, ramping linearly to 0
+// at `elapsedMs >= fadeMs`. Shared by both fade drivers below — a colliding speck
+// times its ramp off the `fade` stage, a spark off its age (see `particleColor`).
+function fadeRamp(elapsedMs: number, fadeMs: number): number {
+	return Math.round(255 * Math.max(0, Math.min(1, 1 - elapsedMs / fadeMs)));
+}
+
 export function particleColor(p: Particle): Rgba {
 	const stops = p.tint ? tintStops(p.tint) : p.type.colors;
 	const t = Math.max(0, Math.min(1, p.ageMs / p.type.maxLifeMs));
@@ -232,10 +239,16 @@ export function particleColor(p: Particle): Rgba {
 	const span = hi.t - lo.t || 1;
 	const f = Math.max(0, Math.min(1, (t - lo.t) / span));
 	const lerp = (a: number, b: number) => Math.round(a + (b - a) * f);
-	const a =
-		p.stage === 'fade'
-			? Math.round(255 * Math.max(0, 1 - p.stageMs / p.type.fadeMs))
-			: 255;
+	// Opacity: a colliding speck holds full until it reaches the `fade` stage (after
+	// resting), then ramps to zero over `fadeMs`. A non-colliding spark never bounces
+	// or rests, so it never reaches that stage — drive its alpha off AGE instead,
+	// entering the fade ramp at `maxLifeMs - fadeMs`, so it winks out smoothly in the
+	// air rather than holding full opacity and popping at end of life (#264).
+	const a = p.type.collide
+		? p.stage === 'fade'
+			? fadeRamp(p.stageMs, p.type.fadeMs)
+			: 255
+		: fadeRamp(p.ageMs - (p.type.maxLifeMs - p.type.fadeMs), p.type.fadeMs);
 	return { r: lerp(lo.r, hi.r), g: lerp(lo.g, hi.g), b: lerp(lo.b, hi.b), a };
 }
 
@@ -249,12 +262,9 @@ export function particleGlyph(p: Particle): string {
 }
 
 // The world row a speck should DRAW into, given the rounded cell the projection
-// picked. The physics keeps `floor(p.y)` empty (a speck never rests inside or
-// below solid), but rounding `p.y` for display can push the drawn cell one row
-// DOWN into the solid surface directly beneath a near-surface speck — a one-frame
-// flicker reading as blood sunk into the ground (#134). Bias the draw UP to the
-// nearest empty row (never down, so it can only float a hair high, never tunnel).
-// A no-op for a non-colliding profile, which is meant to pass through terrain.
+// picked. The physics keeps `floor(p.y)` empty (a speck never rests inside or below
+// solid), so the drawn row reconciles that physics cell with what the terrain layer
+// actually paints. A no-op for a non-colliding profile, which passes through terrain.
 export function particleDrawRow(
 	p: Particle,
 	terrain: Terrain,
@@ -262,6 +272,22 @@ export function particleDrawRow(
 	row: number,
 ): number {
 	if (!p.type.collide) return row;
+	// A SETTLED speck (rest/fade) parks physically in the empty cell directly ABOVE
+	// the surface, but a top-surface solid cell renders as a lower-half `▄` block
+	// (render.ts), dropping the visible ground line to that cell's vertical middle. So
+	// a lower-anchored rest glyph drawn in the empty cell floats a half-cell above the
+	// line. Bias the draw DOWN into the `▄` surface cell so the speck sits flush on the
+	// visible ground rather than hovering over it (#264) — only when the current cell
+	// is open air with solid directly beneath, so it can never bury into interior rock.
+	if (p.stage !== 'airborne') {
+		return !isSolid(terrain, col, row) && isSolid(terrain, col, row + 1)
+			? row + 1
+			: row;
+	}
+	// An AIRBORNE near-surface speck can round DOWN into the solid surface for one
+	// frame — a flicker reading as blood sunk into the ground (#134). Bias the draw UP
+	// to the nearest empty row (never down, so it can only float a hair high, never
+	// tunnel), so in-flight blood is never painted inside the terrain.
 	let r = row;
 	while (r > 0 && isSolid(terrain, col, r)) r--;
 	return r;
