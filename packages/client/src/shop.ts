@@ -1,6 +1,11 @@
-// View + selection state only; the transaction and Gold/inventory mutation live
-// in index.ts, which owns game state. The Merchant has two tabs — Sell (your loot)
-// and Buy (the Town's starter goods) — switched with ←/→ (#242).
+// View + selection state only — never the transaction. WHERE the Gold/inventory
+// mutation happens depends on the caller: the offline loop applies it locally in
+// index.ts (it owns game state), while the networked path (`sellOnly`) issues a `sell`
+// intent and the SERVER owns the change (#267/ADR 0025) — either way this class only
+// renders and tracks the cursor. The Merchant has two tabs — Sell (your loot) and Buy
+// (the Town's starter goods) — switched with ←/→ (#242). In `sellOnly` mode (the
+// networked path — the Buy path is a later issue #273) only the Sell tab exists and
+// tab-switching is inert.
 import type { GameState } from '@mmo/shared';
 import { STARTER_GOODS, saleValue } from '@mmo/shared';
 import {
@@ -16,6 +21,11 @@ const SLOT_PAD = 9; // width of 'accessory', the widest Slot word
 
 export type ShopMode = 'sell' | 'buy';
 
+// The Gold + inventory the Merchant view reads. The offline loop passes its full
+// `GameState['player']`; the networked path passes a view assembled from the server
+// snapshot (which owns Gold + inventory) — both satisfy this Pick.
+export type ShopView = Pick<GameState['player'], 'inventory' | 'progress'>;
+
 export class Shop {
 	private readonly container: BoxRenderable;
 	private readonly panel: BoxRenderable;
@@ -24,8 +34,10 @@ export class Shop {
 	private readonly list: TextRenderable;
 	selected = 0;
 	mode: ShopMode = 'sell';
+	private readonly sellOnly: boolean;
 
-	constructor(ctx: RenderContext) {
+	constructor(ctx: RenderContext, sellOnly = false) {
+		this.sellOnly = sellOnly;
 		// zIndex 20 puts it above the HUD (z10).
 		this.container = new BoxRenderable(ctx, {
 			position: 'absolute',
@@ -66,7 +78,9 @@ export class Shop {
 			bg: COLORS.hudBg,
 		});
 		const footer = new TextRenderable(ctx, {
-			content: '←/→ tab   ↑/↓ select   ↵ trade   e/esc close',
+			content: sellOnly
+				? '↑/↓ select   ↵ sell   e/esc close'
+				: '←/→ tab   ↑/↓ select   ↵ trade   e/esc close',
 			fg: COLORS.dim,
 			bg: COLORS.hudBg,
 		});
@@ -86,7 +100,7 @@ export class Shop {
 	}
 
 	// The number of rows the active tab offers, so the caller can clamp selection.
-	count(player: GameState['player']): number {
+	count(player: ShopView): number {
 		return this.mode === 'buy' ? STARTER_GOODS.length : player.inventory.length;
 	}
 
@@ -101,7 +115,9 @@ export class Shop {
 	}
 
 	// Flip between the Sell and Buy tabs, resetting the cursor to the top of the new list.
+	// Inert in `sellOnly` mode — there is no Buy tab to flip to (#267).
 	switchTab(): void {
+		if (this.sellOnly) return;
 		this.mode = this.mode === 'sell' ? 'buy' : 'sell';
 		this.selected = 0;
 	}
@@ -114,11 +130,15 @@ export class Shop {
 		this.selected = Math.max(0, Math.min(count - 1, this.selected + delta));
 	}
 
-	update(player: GameState['player']): void {
+	update(player: ShopView): void {
 		const count = this.count(player);
 		if (this.selected > count - 1) this.selected = Math.max(0, count - 1);
-		this.tabs.content =
-			this.mode === 'sell' ? '[ Sell ]  Buy' : '  Sell  [ Buy ]';
+		// A sell-only Merchant hides the tab strip entirely — there is no Buy to advertise.
+		this.tabs.content = this.sellOnly
+			? ''
+			: this.mode === 'sell'
+				? '[ Sell ]  Buy'
+				: '  Sell  [ Buy ]';
 		this.gold.content = `Gold ${player.progress.gold}`;
 		this.panel.title =
 			this.mode === 'sell'
@@ -128,7 +148,7 @@ export class Shop {
 			this.mode === 'sell' ? this.sellRows(player) : this.buyRows();
 	}
 
-	private sellRows(player: GameState['player']): string {
+	private sellRows(player: ShopView): string {
 		const inv = player.inventory;
 		if (inv.length === 0) return '\n(your bags are empty)\n';
 		const rows = inv.map((it, i) => {

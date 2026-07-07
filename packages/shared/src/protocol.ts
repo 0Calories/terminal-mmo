@@ -213,7 +213,12 @@ export type ClientMessage =
 	// A triggered emote from the fixed set (#38). Zone-local like chat: the server
 	// relays it to the sender's Zone, where it renders as a transient over-head
 	// glyph. `emote` is an EMOTES id; the server drops an unknown one.
-	| { t: 'emote'; emote: string };
+	| { t: 'emote'; emote: string }
+	// A request to sell one owned Item to the Town Merchant (#267, ADR 0025). The
+	// server-authoritative economy never trusts this: it re-derives the sale price,
+	// checks the Item is in THIS session's inventory, and gates on the seller standing
+	// at a Merchant — a request for an unowned/unknown `itemId` is a silent no-op.
+	| { t: 'sell'; itemId: number };
 
 // Cosmetics are four small catalog indices (#35, ADR 0020): one u8 each — hue, hat,
 // nameplate, then `form`. Decode clamps to a valid index so a forward-version / garbled
@@ -243,6 +248,7 @@ const CLIENT_TAG = {
 	whisper: 4,
 	emote: 5,
 	proof: 6,
+	sell: 7,
 } as const;
 
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
@@ -291,6 +297,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 		case 'emote':
 			w.u8(CLIENT_TAG.emote);
 			w.str(msg.emote);
+			break;
+		case 'sell':
+			w.u8(CLIENT_TAG.sell);
+			w.u32(msg.itemId);
 			break;
 	}
 	return w.finish();
@@ -359,6 +369,8 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			return { t: 'whisper', to: r.str(), text: r.str() };
 		case CLIENT_TAG.emote:
 			return { t: 'emote', emote: r.str() };
+		case CLIENT_TAG.sell:
+			return { t: 'sell', itemId: r.u32() };
 		default:
 			throw new Error(`unknown client message tag ${tag}`);
 	}
