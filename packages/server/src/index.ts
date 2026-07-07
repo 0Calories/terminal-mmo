@@ -37,6 +37,7 @@ import {
 	zoneStateOf,
 } from '@mmo/shared';
 import type { ServerWebSocket } from 'bun';
+import { installShutdownHooks } from './shutdown';
 import { openPlayerStore } from './store';
 
 // Railway injects PORT; MMO_PORT stays as a local-dev override (ADR 0009).
@@ -468,6 +469,12 @@ const server = Bun.serve<WsData>({
 
 setInterval(tick, MS_PER_TICK);
 setInterval(flushAll, FLUSH_MS);
+
+// Clean shutdown (#269): on SIGTERM (Railway redeploy) or SIGINT (Ctrl-C) flush every online
+// Avatar's dirty state and close the store before exit, so nothing since the last periodic
+// flush — or the per-event flushes from logout / Town-entry / a sell (#267) — is lost. The
+// hook is idempotent, so a repeated / racing signal never double-closes the store.
+installShutdownHooks({ flushAll, close: () => store.close() });
 
 console.log(
 	`@mmo/server (${SERVER_VERSION}) ticking the world at ${TICK_RATE} Hz on ws://localhost:${server.port}`,

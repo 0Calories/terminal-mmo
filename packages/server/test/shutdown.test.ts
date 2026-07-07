@@ -1,0 +1,111 @@
+// Clean-shutdown hook tests (#269). Covers the flush→close→exit sequence, its order, its
+// at-most-once guard (a repeated / cross signal must not double-flush or double-close), and
+// an end-to-end proof against a real file-backed store: state flushed only in the shutdown
+// routine survives because `close()` checkpoints it to disk — i.e. no progress loss on a
+// clean shutdown between periodic flushes.
+
+import { expect, test } from 'bun:test';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createShutdown } from '../src/shutdown';
+import { openPlayerStore } from '../src/store';
+
+const richSave = () => ({
+	handle: 'Trinity',
+	progress: { level: 7, xp: 420, gold: 999 },
+	inventory: [],
+	equippedWeapon: 2,
+	cosmetics: { hue: 1, hat: 1, nameplate: 1, form: 0 },
+	lastTown: 'town-01' as const,
+	bossDefeated: true,
+});
+
+test('shutdown flushes dirty state, then closes the store, then exits 0', () => {
+	const calls: string[] = [];
+	const shutdown = createShutdown({
+		flushAll: () => calls.push('flush'),
+		close: () => calls.push('close'),
+		exit: (code) => calls.push(`exit:${code}`),
+		log: () => {},
+	});
+
+	shutdown('SIGTERM');
+
+	// Order matters: flush must complete before the store is closed, and exit is last.
+	expect(calls).toEqual(['flush', 'close', 'exit:0']);
+});
+
+test('a repeated / cross signal is idempotent — never double-flush or double-close', () => {
+	let flushes = 0;
+	let closes = 0;
+	let exits = 0;
+	const shutdown = createShutdown({
+		flushAll: () => flushes++,
+		close: () => closes++,
+		exit: () => exits++,
+		log: () => {},
+	});
+
+	// First SIGINT, then a racing SIGTERM: only the first wins.
+	shutdown('SIGINT');
+	shutdown('SIGTERM');
+	shutdown('SIGINT');
+
+	expect(flushes).toBe(1);
+	expect(closes).toBe(1);
+	expect(exits).toBe(1);
+});
+
+test('a throwing flush still closes the store and exits — no stranded handle', () => {
+	const calls: string[] = [];
+	let loggedError = false;
+	const shutdown = createShutdown({
+		flushAll: () => {
+			calls.push('flush');
+			throw new Error('one bad save');
+		},
+		close: () => calls.push('close'),
+		exit: (code) => calls.push(`exit:${code}`),
+		log: () => {},
+		logError: () => {
+			loggedError = true;
+		},
+	});
+
+	// A single failing session save must not strand the WAL checkpoint or the exit — the
+	// store's close() and the exit still run so already-flushed rows are made durable.
+	shutdown('SIGTERM');
+
+	expect(calls).toEqual(['flush', 'close', 'exit:0']);
+	expect(loggedError).toBe(true);
+});
+
+test('no progress loss: state flushed only at shutdown survives via close()', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'mmo-shutdown-'));
+	const path = join(dir, 'state.sqlite');
+	try {
+		const store = openPlayerStore(path);
+		const key = 'ssh-ed25519 AAAAtestkeyblob';
+
+		// The shutdown routine's flushAll writes the dirty save; close() then checkpoints the
+		// WAL to the main db file. Nothing else persists this row, so its survival proves the
+		// hook is what saved the progress.
+		const shutdown = createShutdown({
+			flushAll: () => store.save(key, richSave()),
+			close: () => store.close(),
+			exit: () => {},
+			log: () => {},
+		});
+		shutdown('SIGTERM');
+
+		expect(existsSync(path)).toBe(true);
+
+		// Re-open the same file in a fresh store: the flushed row is durably present.
+		const reopened = openPlayerStore(path);
+		expect(reopened.load(key)).toEqual(richSave());
+		reopened.close();
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
