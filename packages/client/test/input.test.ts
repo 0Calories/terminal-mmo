@@ -132,6 +132,40 @@ test('mouse attack is dropped on clear() (no stuck button after a mode switch)',
 	expect(input.poll(0).attack).toBe(false);
 });
 
+test('interact is edge-triggered: one press yields exactly one true poll, not one per held tick (#261)', () => {
+	const input = new InputState('keyboard');
+	expect(input.poll(0).interact).toBe(false);
+
+	input.press('e', 0); // interact key pressed
+	expect(input.poll(0).interact).toBe(true); // rising edge fires once
+	expect(input.poll(0).interact).toBe(false); // still held: no re-trigger
+	expect(input.poll(0).interact).toBe(false);
+
+	// A key-repeat while already held must not re-arm the edge.
+	input.press('e', 0);
+	expect(input.poll(0).interact).toBe(false);
+
+	// A fresh press after release fires again.
+	input.release('e');
+	input.press('e', 0);
+	expect(input.poll(0).interact).toBe(true);
+	expect(input.poll(0).interact).toBe(false);
+});
+
+test('interact is edge-triggered under the mouse scheme too (bound to f) (#261)', () => {
+	const input = new InputState('mouse');
+	input.press('f', 0);
+	expect(input.poll(0).interact).toBe(true);
+	expect(input.poll(0).interact).toBe(false); // held: no re-trigger
+});
+
+test('clear() drops a pending interact edge so it cannot fire after a mode switch (#261)', () => {
+	const input = new InputState('keyboard');
+	input.press('e', 0);
+	input.clear(); // e.g. entering chat typing mode before the edge was polled
+	expect(input.poll(0).interact).toBe(false);
+});
+
 test('the 220ms held-key timeout still drops a stuck key without release events', () => {
 	// A terminal without Kitty key-release reporting never calls release(), so a held
 	// key is dropped after the idle timeout (degraded but playable, ADR 0017 §11).

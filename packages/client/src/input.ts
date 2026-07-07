@@ -71,6 +71,12 @@ export class InputState {
 	// apart from `held` for the same reason as `mouseAttack` (mouse releases are always
 	// reported) and OR'd into the guard intent in poll().
 	private mouseGuard = false;
+	// `interact` is edge-triggered: a single physical press yields exactly one true
+	// poll, not one per held tick (#261). Without this, standing on a Portal whose
+	// arrival point overlaps it would re-trigger the transition every frame, and any
+	// held-key interaction (the merchant) would fire repeatedly. Set on the rising
+	// edge of the bound key (press while not already held) and consumed by poll().
+	private interactEdge = false;
 	private readonly bindings: Readonly<Record<string, Action>>;
 
 	constructor(scheme: Scheme = 'keyboard') {
@@ -84,6 +90,9 @@ export class InputState {
 	press(name: string, now: number) {
 		const a = this.actionFor(name);
 		if (!a) return;
+		// Rising edge only: a key-repeat while already held must not re-arm interact.
+		if (a === 'interact' && !this.held.has('interact'))
+			this.interactEdge = true;
 		this.held.add(a);
 		this.seen.set(a, now);
 	}
@@ -113,6 +122,7 @@ export class InputState {
 		this.held.clear();
 		this.mouseAttack = false;
 		this.mouseGuard = false;
+		this.interactEdge = false;
 	}
 
 	poll(now: number): Input {
@@ -122,13 +132,17 @@ export class InputState {
 		}
 		const moveX =
 			(this.held.has('right') ? 1 : 0) - (this.held.has('left') ? 1 : 0);
+		// Consume the interact edge: it reads true for this poll only, then re-arms
+		// on the next fresh press. Held ticks in between report false.
+		const interact = this.interactEdge;
+		this.interactEdge = false;
 		return {
 			moveX: moveX as -1 | 0 | 1,
 			jump: this.held.has('jump'),
 			attack: this.held.has('attack') || this.mouseAttack,
 			dodge: this.held.has('dodge'),
 			guard: this.held.has('guard') || this.mouseGuard,
-			interact: this.held.has('interact'),
+			interact,
 			skill: this.held.has('skill1')
 				? 1
 				: this.held.has('skill2')
