@@ -28,23 +28,14 @@ import {
 	swatEvent,
 	swingPhase,
 } from './combat';
-import {
-	BOX,
-	COMBAT,
-	LOOT,
-	PHYS,
-	RESPAWN,
-	SHOOTER,
-	SPAWN,
-	XP_PER_KILL,
-} from './constants';
+import { BOX, COMBAT, LOOT, PHYS, RESPAWN, SHOOTER, SPAWN } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
 import { emoteById, emoteInterrupted, initialEmoteT, stepEmote } from './emote';
 import { itemLabel, lootTableFor, rollDrop } from './loot';
 import type { RestoredAvatar } from './persistence';
 import { applyImpulse, stepEntity } from './physics';
 import { spawnAvatar } from './player';
-import { applyXp, maxHpForLevel } from './progression';
+import { applyXp, maxHpForLevel, xpForKill } from './progression';
 import { projectileBox, spawnProjectile, stepProjectile } from './projectile';
 import type {
 	AvatarSnapshot,
@@ -59,6 +50,7 @@ import type {
 	Drop,
 	Effect,
 	Entity,
+	EntityType,
 	Facing,
 	Item,
 	PendingRespawn,
@@ -562,7 +554,7 @@ export function stepZone(
 		for (const sid of m.contributors ?? []) {
 			const idx = avatars.findIndex((a) => a.sessionId === sid);
 			if (idx < 0) continue;
-			let sa = grantXp(avatars[idx]);
+			let sa = grantXp(avatars[idx], m.type, zone.id);
 			const roll = rollDrop(sa.rngState, sa.progress.level, lootTable);
 			sa = { ...sa, rngState: roll.state };
 			if (roll.item) {
@@ -751,13 +743,18 @@ export function stepZone(
 	return { zone: newZone, avatars, tick: state.tick + 1, deaths, effects };
 }
 
-// Award shared kill XP (+ any level-up HP bump) to one contributor. The loot roll is a
-// separate step now (#238): a kill leaves an in-world Drop, not a bag insert, so XP and
-// loot no longer travel together.
-function grantXp(sa: ServerAvatar): ServerAvatar {
+// Award shared kill XP (+ any level-up HP bump) to one contributor. The grant scales with
+// the Monster's archetype and the Zone's depth (xpForKill, #266) — a shared, not split,
+// full award to every contributor. The loot roll is a separate step (#238): a kill leaves
+// an in-world Drop, not a bag insert, so XP and loot no longer travel together.
+function grantXp(
+	sa: ServerAvatar,
+	monster: EntityType,
+	zoneId: string,
+): ServerAvatar {
 	// Logs are already trimmed to the last 5 by resolveAvatarIntent; accumulate
 	// this tick's messages without re-trimming so the order matches single-player.
-	const ap = applyXp(sa.progress, XP_PER_KILL);
+	const ap = applyXp(sa.progress, xpForKill(monster, zoneId));
 	const log = [...sa.log];
 	let avatar = sa.avatar;
 	if (ap.leveled > 0) {

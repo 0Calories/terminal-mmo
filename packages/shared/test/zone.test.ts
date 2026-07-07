@@ -36,7 +36,7 @@ import {
 	stepZone,
 	swingPhase,
 	weaponById,
-	XP_PER_KILL,
+	xpForKill,
 } from '../src';
 import { flatTerrain, makeProjectile } from './helpers';
 
@@ -225,7 +225,7 @@ test('the Avatar landing the killing blow earns the XP and, standing on the kill
 	const next = stepZone(state, [intent], 16);
 	expect(next.zone.monsters.length).toBe(0);
 	const me = next.avatars[0];
-	expect(me.progress.xp).toBe(XP_PER_KILL);
+	expect(me.progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
 	expect(me.inventory.length).toBe(1);
 	expect(me.inventory[0].id).toBe(1); // from the killer's own nextId
 	expect(next.zone.drops ?? []).toEqual([]); // collected, nothing left resting
@@ -683,7 +683,7 @@ test('only the Avatar landing the kill is credited when two are present', () => 
 		],
 		16,
 	);
-	expect(next.avatars[0].progress.xp).toBe(XP_PER_KILL);
+	expect(next.avatars[0].progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
 	expect(next.avatars[0].inventory.length).toBe(1); // killer grabs its Drop on the kill
 	expect(next.avatars[1].progress.xp).toBe(0);
 	expect(next.avatars[1].inventory.length).toBe(0);
@@ -718,8 +718,8 @@ test('on death every recorded contributor earns shared XP and its own loot roll'
 	);
 	expect(next.zone.monsters.length).toBe(0);
 	// Shared, not split: each contributor gets the FULL kill XP immediately.
-	expect(next.avatars[0].progress.xp).toBe(XP_PER_KILL);
-	expect(next.avatars[1].progress.xp).toBe(XP_PER_KILL);
+	expect(next.avatars[0].progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
+	expect(next.avatars[1].progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
 	// The killer stands on the kill, so it collects its own instanced Drop this tick.
 	expect(next.avatars[0].inventory.length).toBe(1);
 	// The helper is far away: its private Drop rests in the Zone for it alone, uncollected.
@@ -755,7 +755,7 @@ test('a non-contributor present at a shared kill receives nothing', () => {
 		],
 		16,
 	);
-	expect(next.avatars[0].progress.xp).toBe(XP_PER_KILL);
+	expect(next.avatars[0].progress.xp).toBe(xpForKill('chaser', 'field-01'));
 	expect(next.avatars[1].progress.xp).toBe(0);
 	expect(next.avatars[1].inventory.length).toBe(0);
 });

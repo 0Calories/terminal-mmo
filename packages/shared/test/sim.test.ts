@@ -15,7 +15,7 @@ import {
 	spawnAvatar,
 	spawnMonster,
 	step,
-	XP_PER_KILL,
+	xpForKill,
 } from '../src';
 import { flatTerrain, makeProjectile } from './helpers';
 
@@ -147,7 +147,7 @@ test('killing a monster grants XP and, standing on the kill, collects its instan
 	const zone = activeZone(g.world, g.player.zoneId);
 	expect(zone.monsters.length).toBe(0);
 	expect(g.player.inventory.length).toBe(1);
-	expect(g.player.progress.xp).toBe(XP_PER_KILL);
+	expect(g.player.progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
 	expect(g.player.inventory[0].id).toBe(1); // assigned from the Player's nextId
 	expect(zone.drops ?? []).toEqual([]); // collected, nothing left resting
 });
