@@ -555,9 +555,9 @@ test("an Avatar renders its Form's idle Pose as its body, through the bodyFrame 
 });
 
 test('each Avatar Form renders its own idle body through the shared render path (ADR 0020)', () => {
-	// Every registered Form (buddy + the two demo Forms) renders as its own `idle` grid at
-	// the shared body anchor — proving a selected `cosmetics.form` composites correctly
-	// through drawEntitySprite for observers, on either facing.
+	// Every shippable Form (currently just the buddy; Form 2/wisp is drafted out) renders as
+	// its own `idle` grid at the shared body anchor — proving a selected `cosmetics.form`
+	// composites correctly through drawEntitySprite for observers, on either facing.
 	for (let form = 0; form < FORMS.length; form++) {
 		for (const facing of [1, -1] as Facing[]) {
 			const buf = new FakeBuffer(20, 16);

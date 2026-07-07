@@ -5,6 +5,7 @@ import {
 	type BodyState,
 	bodyFrame,
 	DEFAULT_FORM,
+	DRAFTED_FORMS,
 	EMOTE_FPS,
 	FORMS,
 	formById,
@@ -41,11 +42,11 @@ describe('FORMS registry', () => {
 		expect(formById(1.5)).toBe(FORMS[0]);
 	});
 
-	test('the demo ships the buddy plus one extra Form (ADR 0024 §8: 2 Forms total)', () => {
-		// The registry holds the launch buddy at index 0 and the demo's one extra Form after
-		// it, each selectable by its `cosmetics.form` index and resolvable by `formById`. The
-		// cap is a TOTAL of 2 (ADR 0024 line 120), so this is exact, not a lower bound.
-		expect(FORMS.length).toBe(2);
+	test('the demo ships a single shippable Form (Form 2 drafted out pending art rework)', () => {
+		// Form 2 (wisp) is drafted out of FORMS pending art rework, so the shippable catalog
+		// currently holds just the launch buddy at index 0, selectable by its `cosmetics.form`
+		// index and resolvable by `formById`. Re-adding `wisp` to FORMS restores the 2nd Form.
+		expect(FORMS.length).toBe(1);
 		for (let i = 0; i < FORMS.length; i++) expect(formById(i)).toBe(FORMS[i]);
 	});
 });
@@ -53,7 +54,9 @@ describe('FORMS registry', () => {
 describe('every Form honours the authoring contract (ADR 0020 §5)', () => {
 	// The extra Forms beyond the buddy — the demo's one new body. Each must author the
 	// required core and keep the shared footprint so anchors / the logical box are stable.
-	const extraForms = FORMS.slice(1);
+	// Includes the drafted-out Form (wisp) so its art stays valid and re-enabling stays a
+	// one-line change; concat with FORMS.slice(1) so any future shippable extra is covered too.
+	const extraForms = [...FORMS.slice(1), ...DRAFTED_FORMS];
 
 	for (let i = 0; i < extraForms.length; i++) {
 		const form = extraForms[i];

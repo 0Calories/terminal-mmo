@@ -50,11 +50,16 @@ export interface BodySprite {
 
 // The Form registry (ADR 0020 §4): a flat array of BodySprites selected by the
 // `cosmetics.form` index, riding the same appearance rails as HATS / hues. Append-only
-// and Form-keyed so a Form is pure data. Index 0 is the launch humanoid buddy; the slim
-// `wisp` is the demo's one extra Form, landing the total at ADR 0024 §8's 2-Forms cap.
+// and Form-keyed so a Form is pure data. Index 0 is the launch humanoid buddy.
 // Every Form keeps the same logical box — the Form changes only art, never combat (ADR
 // 0020 §3).
-export const FORMS: readonly BodySprite[] = [buddy, wisp];
+// Form 2 (wisp) drafted out pending art rework — re-add `wisp` to FORMS to ship. Its
+// authored art still lives in `./forms/wisp` (imported below) so re-enabling is one line.
+export const FORMS: readonly BodySprite[] = [buddy];
+
+// Drafted Form kept out of the shippable catalog (see note above). Referenced here so the
+// `wisp` import stays live and re-enabling is a one-line edit to FORMS.
+export const DRAFTED_FORMS: readonly BodySprite[] = [wisp];
 
 export const DEFAULT_FORM = 0;
 

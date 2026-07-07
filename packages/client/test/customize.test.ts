@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { DEFAULT_COSMETICS, FORM_COUNT } from '@mmo/shared';
+import { DEFAULT_COSMETICS, FORM_COUNT, HUE_COUNT } from '@mmo/shared';
 import {
 	CUSTOMIZE_FIELDS,
 	customizeRows,
@@ -8,18 +8,22 @@ import {
 } from '../src/customize';
 
 test('right cycles the focused field forward', () => {
-	const s = initCustomize(DEFAULT_COSMETICS); // field 0 = form
+	// Form has a single shippable option (Form 2 drafted out), so cycle the hue field
+	// to exercise a forward step over a multi-entry catalog.
+	let s = initCustomize(DEFAULT_COSMETICS);
+	s = reduceCustomize(s, 'down').state; // field 1 = hue
 	const { state } = reduceCustomize(s, 'right');
-	expect(state.cosmetics.form).toBe(1);
-	expect(state.cosmetics.hue).toBe(0); // unfocused fields untouched
+	expect(state.cosmetics.hue).toBe(1);
+	expect(state.cosmetics.form).toBe(0); // unfocused fields untouched
 	expect(state.cosmetics.hat).toBe(0);
 	expect(state.cosmetics.nameplate).toBe(0);
 });
 
 test('left wraps the focused field from 0 to the last index', () => {
-	const s = initCustomize(DEFAULT_COSMETICS); // form = 0
+	let s = initCustomize(DEFAULT_COSMETICS);
+	s = reduceCustomize(s, 'down').state; // field 1 = hue (a multi-entry catalog)
 	const { state } = reduceCustomize(s, 'left');
-	expect(state.cosmetics.form).toBe(FORM_COUNT - 1);
+	expect(state.cosmetics.hue).toBe(HUE_COUNT - 1);
 });
 
 test('down moves focus to the next field, so right then cycles that field', () => {
@@ -39,24 +43,27 @@ test('up wraps focus from the first field to the last', () => {
 
 test('return confirms with the chosen cosmetics, leaving them unchanged', () => {
 	let s = initCustomize(DEFAULT_COSMETICS);
-	s = reduceCustomize(s, 'right').state; // form -> 1
+	s = reduceCustomize(s, 'down').state; // focus hue (form has a single option)
+	s = reduceCustomize(s, 'right').state; // hue -> 1
 	const { state, confirm } = reduceCustomize(s, 'return');
 	expect(confirm).toBe(true);
-	expect(state.cosmetics).toEqual({ hue: 0, hat: 0, nameplate: 0, form: 1 });
+	expect(state.cosmetics).toEqual({ hue: 1, hat: 0, nameplate: 0, form: 0 });
 });
 
-test('the Form field cycles through the FORMS catalog and confirms into the cosmetics (ADR 0020)', () => {
-	// The picker exposes `form` as a first-class, replicated cosmetic choice: cycling it
-	// selects a different Avatar body, which then rides the connect handshake to the World.
+test('the Form field is a first-class cosmetic choice that confirms into the cosmetics (ADR 0020)', () => {
+	// The picker exposes `form` as a first-class, replicated cosmetic choice that rides the
+	// connect handshake to the World. Form 2 (wisp) is drafted out pending art rework, so the
+	// catalog currently holds a single shippable Form and cycling stays on it (never crashes,
+	// never offers a broken second option).
 	let s = initCustomize(DEFAULT_COSMETICS); // field 0 = form
 	expect(CUSTOMIZE_FIELDS[0].key).toBe('form');
 	expect(CUSTOMIZE_FIELDS[0].count).toBe(FORM_COUNT);
-	// FORMS caps at 2 (buddy + one extra, ADR 0024 §8), so one step lands on the last Form.
-	s = reduceCustomize(s, 'right').state; // form -> 1 (the last Form)
-	expect(s.cosmetics.form).toBe(FORM_COUNT - 1);
+	expect(FORM_COUNT).toBe(1);
+	s = reduceCustomize(s, 'right').state; // single Form: index stays at 0
+	expect(s.cosmetics.form).toBe(0);
 	const { state, confirm } = reduceCustomize(s, 'return');
 	expect(confirm).toBe(true);
-	expect(state.cosmetics.form).toBe(FORM_COUNT - 1);
+	expect(state.cosmetics.form).toBe(0);
 });
 
 test('customizeRows yields one focused-marked row per field, hat named from catalog', () => {

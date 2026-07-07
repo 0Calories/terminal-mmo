@@ -27,11 +27,12 @@ test('catalog counts agree with the underlying catalogs', () => {
 	expect(FORM_COUNT).toBe(FORMS.length);
 });
 
-test('the demo ships the extra Form + hat at ADR 0024 §8 cap (2 Forms, 5 hats)', () => {
-	// buddy + 1 new Form = 2 Forms total; the 4 original hats + the bareheaded default +
-	// 1 new hat = 6 catalog slots (5 hats). The cap is a TOTAL, not an additive amount
-	// (ADR 0024 §"What the demo is", line 120), so these are exact, not lower bounds.
-	expect(FORM_COUNT).toBe(2);
+test('the demo ships a single shippable Form + hats at the ADR 0024 §8 cap (5 hats)', () => {
+	// Form 2 (wisp) is drafted out pending art rework, so a single shippable Form ships for
+	// now (re-add `wisp` to FORMS to restore the 2nd). The 4 original hats + the bareheaded
+	// default + 1 new hat = 6 catalog slots (5 hats); the hat cap is a TOTAL, not additive
+	// (ADR 0024 §"What the demo is", line 120), so it is exact, not a lower bound.
+	expect(FORM_COUNT).toBe(1);
 	expect(HAT_COUNT).toBe(6);
 	// Every hat past the bareheaded default carries real overlay art.
 	for (let i = 1; i < HATS.length; i++) expect(HATS[i].sprite).not.toBeNull();
@@ -88,6 +89,8 @@ test('randomCosmetics spreads across the catalogs (not a constant)', () => {
 		forms.add(randomCosmetics(seed).form);
 	}
 	expect(hats.size).toBeGreaterThan(1);
-	// Now that more than one Form ships, a connecting Avatar draws a varied Form too.
-	expect(forms.size).toBeGreaterThan(1);
+	// With Form 2 (wisp) drafted out, a single Form ships, so every roll lands on it. Re-add
+	// `wisp` to FORMS and this becomes a varied spread (> 1) again.
+	expect(forms.size).toBe(1);
+	expect(forms.has(0)).toBe(true);
 });

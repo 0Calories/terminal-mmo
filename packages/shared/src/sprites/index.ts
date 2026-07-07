@@ -34,6 +34,7 @@ export {
 	type BodyState,
 	bodyFrame,
 	DEFAULT_FORM,
+	DRAFTED_FORMS,
 	EMOTE_FPS,
 	type EmotePoseId,
 	FORMS,

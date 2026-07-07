@@ -65,8 +65,9 @@ export function randomCosmetics(seed: number): Cosmetics {
 		s ^= s << 5;
 		return (s >>> 0) % 1_000_000;
 	};
-	// `form` is drawn last so the hue/hat/nameplate sequence is unchanged; FORMS now
-	// holds more than one Form (ADR 0024 §8), so a connecting Avatar draws a varied Form.
+	// `form` is drawn last so the hue/hat/nameplate sequence is unchanged. FORMS currently
+	// holds a single shippable Form (Form 2/wisp drafted out pending art rework), so this
+	// draw always lands on it; re-adding `wisp` to FORMS restores a varied Form here.
 	return {
 		hue: next() % HUE_COUNT,
 		hat: next() % HAT_COUNT,
