@@ -187,8 +187,7 @@ export class Hud {
 		});
 		this.bottom.add(this.skills);
 		// The message log + chat (#272): the scrolling display sits under the skills line;
-		// its chat input is attached below only when chat is enabled (networked play, via
-		// enableChat) so the offline loop shows the log alone with no dead input row.
+		// its chat input is attached below when chat is enabled (via enableChat).
 		this.messages = new MessageLog(ctx);
 		this.bottom.add(this.messages.scrollBox);
 
@@ -227,7 +226,7 @@ export class Hud {
 	}
 
 	// Surface the ephemeral-alpha warning in the top bar (ADR 0009). Called once on
-	// entering networked play; the offline loop leaves it blank.
+	// entering networked play.
 	showAlphaNotice(): void {
 		this.alpha.content = ' ⚠ ALPHA · progress resets when the server restarts ';
 	}
@@ -253,8 +252,7 @@ export class Hud {
 	}
 
 	// Enable the chat input (networked play, #272): attach it under the message log and
-	// wire the submit callback the loop uses to parse + relay a sent line. The offline
-	// loop never calls this, so it shows the log with no chat input.
+	// wire the submit callback the loop uses to parse + relay a sent line.
 	enableChat(onSubmit: (text: string) => void): void {
 		this.messages.onSubmit = onSubmit;
 		this.bottom.add(this.messages.inputRow);

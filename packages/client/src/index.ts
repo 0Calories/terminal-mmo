@@ -2,19 +2,16 @@ import {
 	aabbOverlap,
 	activeZone,
 	applyImpulse,
-	buyItem,
 	COMBAT,
 	type Cosmetics,
 	canStartDodge,
 	capabilityUnlocked,
 	clientStepAvatar,
-	createGame,
 	DEFAULT_WEAPON,
 	type Entity,
 	effectsOf,
 	emoteById,
 	entityBox,
-	type GameState,
 	type Input,
 	initialEmoteT,
 	loadZones,
@@ -22,11 +19,7 @@ import {
 	predictHits,
 	randomCosmetics,
 	SPAWN,
-	STARTER_GOODS,
-	saleValue,
-	sellItem,
 	spawnAvatar,
-	step,
 	stepAvatarCombat,
 	WEAPONS,
 	weaponById,
@@ -59,12 +52,10 @@ import { CLIENT_VERSION } from './version';
 // on a 60Hz panel, or over SSH where the refresh is unknowable (#22).
 const RENDER_FPS = Number(process.env.MMO_FPS) || 120;
 
-// Connection resolution (ADR 0009 / 0012): MMO_OFFLINE forces the single-player loop;
-// otherwise resolveServerUrl picks the target — an explicit MMO_SERVER override
-// (e.g. MMO_SERVER=ws://localhost:8080) wins, a from-source `dev` client defaults to
-// the local dev server, and a published client defaults to the live World on Railway.
-const OFFLINE =
-	process.env.MMO_OFFLINE === '1' || process.env.MMO_OFFLINE === 'true';
+// Connection resolution (ADR 0009 / 0012): resolveServerUrl picks the target — an
+// explicit MMO_SERVER override (e.g. MMO_SERVER=ws://localhost:8080) wins, a
+// from-source `dev` client defaults to the local dev server, and a published client
+// defaults to the live World on Railway.
 const SERVER = resolveServerUrl(process.env.MMO_SERVER, CLIENT_VERSION);
 
 // No movement / combat this frame — fed to the sim while a modal (shop, chat)
@@ -117,8 +108,7 @@ const WEAPON = selectWeapon();
 const playfield = new PlayfieldRenderable(renderer);
 renderer.root.add(playfield);
 // In the mouse scheme, route the playfield's left mouse button to the attack intent
-// (OpenTUI fires these alongside held movement keys). Wired once here so both loops
-// inherit it; a no-op in the keyboard scheme.
+// (OpenTUI fires these alongside held movement keys). A no-op in the keyboard scheme.
 if (SCHEME === 'mouse') {
 	playfield.onMouseDown = (e: { button: number }) => input.mouseDown(e.button);
 	playfield.onMouseUp = (e: { button: number }) => input.mouseUp(e.button);
@@ -168,7 +158,7 @@ function isHelpKey(k: { name: string; sequence?: string }): boolean {
 	return k.name === '?' || k.sequence === '?';
 }
 
-// A running FPS estimate shared by both loops.
+// A running FPS estimate for the render loop.
 function fpsMeter() {
 	let fps = 0;
 	let acc = 0;
@@ -183,183 +173,6 @@ function fpsMeter() {
 		}
 		return fps;
 	};
-}
-
-// --- Offline single-player (M1 loop) ---------------------------------------
-
-function runOffline() {
-	let game = createGame();
-	// Equip the chosen demo Weapon (ADR 0017 §14): it lives on the Avatar entity, so
-	// stepZone's combat resolution and the renderer both read it from one place.
-	game = {
-		...game,
-		player: {
-			...game.player,
-			avatar: { ...game.player.avatar, weapon: WEAPON },
-		},
-	};
-	const shop = new Shop(renderer);
-	shop.attach(renderer.root);
-	// Audio options modal (ADR 0014/0015): a global, Shop-class overlay opened with `o`.
-	const options = new AudioOptions(renderer, sound);
-	options.attach(renderer.root);
-	// Controls cheat-sheet (#242): a global, read-only overlay toggled with `?`.
-	const controls = new Controls(renderer);
-	controls.attach(renderer.root);
-
-	function vendorUnder(g: GameState) {
-		const zone = activeZone(g.world, g.player.zoneId);
-		const box = entityBox(g.player.avatar);
-		return (
-			(zone.npcs ?? []).find(
-				(n) => n.kind === 'vendor' && aabbOverlap(box, n),
-			) ?? null
-		);
-	}
-
-	function sellSelected() {
-		const inv = game.player.inventory;
-		if (inv.length === 0) return;
-		const item = inv[shop.selected];
-		const { progress, inventory } = sellItem(
-			game.player.progress,
-			inv,
-			item.id,
-		);
-		const log = [
-			...game.player.log.slice(-5),
-			`Sold ${item.rarity} ${item.base} (+${saleValue(item)}g).`,
-		];
-		game = { ...game, player: { ...game.player, progress, inventory, log } };
-		shop.move(0, inventory.length); // clamp selection into the new bounds
-	}
-
-	function buySelected() {
-		const good = STARTER_GOODS[shop.selected];
-		if (!good) return;
-		const { nextId } = game.player;
-		const { progress, inventory, bought } = buyItem(
-			game.player.progress,
-			game.player.inventory,
-			good,
-			nextId,
-		);
-		const line = bought
-			? `Bought ${good.base} (−${good.price}g).`
-			: `Not enough Gold for ${good.base} (${good.price}g).`;
-		const log = [...game.player.log.slice(-5), line];
-		game = {
-			...game,
-			player: {
-				...game.player,
-				progress,
-				inventory,
-				// A minted Item consumed the id; a refused buy leaves the source untouched.
-				nextId: bought ? nextId + 1 : nextId,
-				log,
-			},
-		};
-	}
-
-	function handleShopKey(name: string) {
-		// UI blip on menu navigation / confirm (ADR 0014): a centered, full-volume
-		// interface click. Close (e/esc) is silent — it marks moving *through* a menu.
-		if (isMenuBlipKey(name)) sound.play('ui');
-		const count = shop.count(game.player);
-		switch (name) {
-			case 'left':
-			case 'right':
-				shop.switchTab();
-				break;
-			case 'up':
-				shop.move(-1, count);
-				break;
-			case 'down':
-				shop.move(1, count);
-				break;
-			case 'return':
-				if (shop.mode === 'buy') buySelected();
-				else sellSelected();
-				break;
-			case 'e':
-			case 'escape':
-				shop.hide();
-				break;
-		}
-		if (shop.open) shop.update(game.player);
-	}
-
-	renderer.keyInput.on('keypress', (k) => {
-		if (k.name === 'q') quit();
-		// `m` toggles master mute instantly (ADR 0014), reachable even with the shop
-		// modal open — it's a global audio control, not a gameplay/menu key.
-		// While the options modal is open it owns the keyboard: arrows/m adjust the
-		// mixer (persisted live), o/esc close. Swallow every key so none hits the sim.
-		if (options.open) {
-			options.key(k.name);
-			return;
-		}
-		// The controls overlay owns the keyboard while open: `?`/esc close it, every
-		// other key is swallowed so it never reaches the sim.
-		if (controls.open) {
-			if (isHelpKey(k) || k.name === 'escape') controls.hide();
-			return;
-		}
-		if (k.name === 'm') {
-			sound.toggleMute();
-			return;
-		}
-		if (shop.open) {
-			handleShopKey(k.name);
-			return;
-		}
-		if (isHelpKey(k)) {
-			controls.show(game.player.progress.level, SCHEME);
-			return;
-		}
-		if (k.name === 'o') {
-			options.show();
-			return;
-		}
-		// Swallow the key so it isn't also fed to the sim as a portal/interact intent.
-		if (k.name === 'e' && vendorUnder(game)) {
-			shop.show();
-			shop.update(game.player);
-			return;
-		}
-		input.press(k.name, performance.now());
-	});
-	renderer.keyInput.on('keyrelease', (k) => input.release(k.name));
-
-	const meter = fpsMeter();
-	let prevLevel = game.player.progress.level;
-	renderer.setFrameCallback(async (dt) => {
-		const prevAvatar = game.player.avatar;
-		game = step(
-			game,
-			shop.open || controls.open ? IDLE_INPUT : input.poll(performance.now()),
-			dt,
-		);
-		// Self SoundEffects (client-local, centered, full volume): the jump blip on
-		// the take-off frame and the landing footfall on the touchdown frame.
-		if (jumpStarted(prevAvatar, game.player.avatar)) sound.play('jump');
-		if (landed(prevAvatar, game.player.avatar)) sound.play('land');
-		const fps = meter(dt);
-		playfield.game = game;
-		// Level-up flourish, once per rising edge of the Player's level: the sound, a
-		// gold particle burst at the Avatar (spawned off the just-set playfield state),
-		// and the HUD banner (#271). The unlock log lines ride the shared sim's
-		// `player.log`, so the HUD surfaces them for free.
-		const level = game.player.progress.level;
-		if (leveledUp(prevLevel, level)) {
-			sound.play('level-up');
-			playfield.levelUpBurst();
-			hud.flashLevelUp();
-		}
-		prevLevel = level;
-		hud.update(game, fps);
-		if (shop.open) shop.update(game.player);
-	});
 }
 
 // --- Networked (M2) ---------------------------------------------------------
@@ -776,7 +589,6 @@ async function runNetworked(url: string) {
 			// the sound, a gold particle burst at the Avatar (spawned off the just-set
 			// playfield state so it lands on the fresh position), and the HUD banner (#271).
 			// The unlock log lines ride the snapshot's `player.log`, surfaced by the HUD.
-			// Mirrors the offline loop's ordering.
 			const snapLevel = net.latest?.progress.level;
 			if (snapLevel != null) {
 				if (prevLevel != null && leveledUp(prevLevel, snapLevel)) {
@@ -817,10 +629,9 @@ async function runNetworked(url: string) {
 	}
 }
 
-// Dispatch + start last, after every module-level declaration: runNetworked reads
-// the `LOCAL_ZONES` const (below), so invoking it earlier would hit that const's
-// temporal dead zone (the functions themselves are hoisted and callable here).
-if (OFFLINE) runOffline();
-else runNetworked(SERVER);
+// Start last, after every module-level declaration: runNetworked reads the
+// `LOCAL_ZONES` const (above), so invoking it earlier would hit that const's
+// temporal dead zone (the function itself is hoisted and callable here).
+runNetworked(SERVER);
 
 renderer.start();
