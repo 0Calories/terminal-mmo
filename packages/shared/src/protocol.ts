@@ -218,7 +218,13 @@ export type ClientMessage =
 	// server-authoritative economy never trusts this: it re-derives the sale price,
 	// checks the Item is in THIS session's inventory, and gates on the seller standing
 	// at a Merchant — a request for an unowned/unknown `itemId` is a silent no-op.
-	| { t: 'sell'; itemId: number };
+	| { t: 'sell'; itemId: number }
+	// A request to buy one starter good from the Town Merchant (#273, ADR 0025). Carries
+	// only the good's index into the fixed STARTER_GOODS catalog — never a price. The
+	// server-authoritative economy re-derives the price, checks affordability, and gates on
+	// the buyer standing at a Merchant; an out-of-range index or an unaffordable buy is a
+	// silent no-op.
+	| { t: 'buy'; index: number };
 
 // Cosmetics are four small catalog indices (#35, ADR 0020): one u8 each — hue, hat,
 // nameplate, then `form`. Decode clamps to a valid index so a forward-version / garbled
@@ -249,6 +255,7 @@ const CLIENT_TAG = {
 	emote: 5,
 	proof: 6,
 	sell: 7,
+	buy: 8,
 } as const;
 
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
@@ -301,6 +308,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 		case 'sell':
 			w.u8(CLIENT_TAG.sell);
 			w.u32(msg.itemId);
+			break;
+		case 'buy':
+			w.u8(CLIENT_TAG.buy);
+			w.u32(msg.index);
 			break;
 	}
 	return w.finish();
@@ -371,6 +382,8 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			return { t: 'emote', emote: r.str() };
 		case CLIENT_TAG.sell:
 			return { t: 'sell', itemId: r.u32() };
+		case CLIENT_TAG.buy:
+			return { t: 'buy', index: r.u32() };
 		default:
 			throw new Error(`unknown client message tag ${tag}`);
 	}

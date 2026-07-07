@@ -9,6 +9,7 @@ import { randomBytes } from 'node:crypto';
 import {
 	type AvatarIntent,
 	addSession,
+	applyBuy,
 	applySell,
 	CHAT_MAX_LEN,
 	type Cosmetics,
@@ -313,6 +314,21 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		// instead of waiting for the periodic sweep.
 		const res = applySell(world, sessionId, msg.itemId);
 		if (res.sold) {
+			world = res.world;
+			flushSession(sessionId);
+		}
+		return;
+	}
+	if (msg.t === 'buy') {
+		// Server-authoritative economy (#273, ADR 0025): the whole rule is the pure
+		// `applyBuy` — the buyer must be at a Merchant, the `index` must name a real
+		// starter good, the price is re-derived server-side, and it's refused when the
+		// Player can't afford it. A rejected buy (bad index / unaffordable / not at a
+		// Merchant) is a silent no-op; the next snapshot re-affirms the unchanged bag. A
+		// successful buy is a significant durable event (Gold moved), so flush immediately
+		// (#236) instead of waiting for the periodic sweep.
+		const res = applyBuy(world, sessionId, msg.index);
+		if (res.bought) {
 			world = res.world;
 			flushSession(sessionId);
 		}

@@ -458,12 +458,12 @@ async function runNetworked(url: string) {
 		// against the live server-authoritative level.
 		const controls = new Controls(renderer);
 		controls.attach(renderer.root);
-		// Server-authoritative Merchant (#267, ADR 0025): a sell-only overlay. Gold +
-		// inventory are read straight off the snapshot (the server owns the bag); a confirmed
-		// sell issues a validated `sell` intent and the NEXT snapshot reflects the removal —
-		// no optimistic local mutation, so the client can never drift from the server's Gold.
-		// The Buy path is a separate later issue (#273), hence sell-only here.
-		const shop = new Shop(renderer, true);
+		// Server-authoritative Merchant (#267/#273, ADR 0025): a full Sell + Buy overlay.
+		// Gold + inventory are read straight off the snapshot (the server owns the bag); a
+		// confirmed sell/buy issues a validated `sell`/`buy` intent and the NEXT snapshot
+		// reflects the change — no optimistic local mutation, so the client can never drift
+		// from the server's Gold.
+		const shop = new Shop(renderer);
 		shop.attach(renderer.root);
 		// The Gold + inventory the Merchant renders, sourced from the latest snapshot. Empty
 		// until the first snapshot arrives.
@@ -490,11 +490,22 @@ async function runNetworked(url: string) {
 			net.send({ t: 'sell', itemId: item.id });
 			shop.move(0, Math.max(0, inv.length - 1)); // clamp the cursor optimistically
 		};
+		// Issue a validated buy of the selected starter good. Sends only its catalog index —
+		// the server re-derives the price, re-checks affordability + proximity, and mints the
+		// Item. No local Gold/inventory edit: the authoritative bag arrives on the next
+		// snapshot (#273).
+		const buySelected = (): void => {
+			net.send({ t: 'buy', index: shop.selected });
+		};
 		const handleShopKey = (name: string): void => {
 			// UI blip on menu navigation / confirm (ADR 0014); close (interact/esc) is silent.
 			if (isMenuBlipKey(name)) sound.play('ui');
 			const count = shop.count(shopView());
 			switch (name) {
+				case 'left':
+				case 'right':
+					shop.switchTab();
+					break;
 				case 'up':
 					shop.move(-1, count);
 					break;
@@ -502,7 +513,8 @@ async function runNetworked(url: string) {
 					shop.move(1, count);
 					break;
 				case 'return':
-					sellSelected();
+					if (shop.mode === 'buy') buySelected();
+					else sellSelected();
 					break;
 				case INTERACT_KEY:
 				case 'escape':
@@ -569,8 +581,8 @@ async function runNetworked(url: string) {
 				sound.toggleMute();
 				return;
 			}
-			// The Merchant overlay owns the keyboard while open (#267): navigate / sell /
-			// close, and swallow every key so none reaches the sim.
+			// The Merchant overlay owns the keyboard while open (#267/#273): tab / navigate /
+			// sell / buy / close, and swallow every key so none reaches the sim.
 			if (shop.open) {
 				handleShopKey(k.name);
 				return;
@@ -798,7 +810,8 @@ async function runNetworked(url: string) {
 			hud.update(game, fps);
 			hud.syncChat(net.chatLog);
 			// Re-render the Merchant from the freshest snapshot so a completed sell (Item gone,
-			// Gold up) shows the moment the server confirms it (#267).
+			// Gold up) or buy (Item in, Gold down) shows the moment the server confirms it
+			// (#267/#273).
 			if (shop.open) shop.update(shopView());
 		});
 	}

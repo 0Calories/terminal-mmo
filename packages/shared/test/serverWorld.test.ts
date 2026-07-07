@@ -2,6 +2,7 @@ import { expect, test } from 'bun:test';
 import type { AvatarIntent, Item, Npc, ServerWorld } from '../src';
 import {
 	addSession,
+	applyBuy,
 	applySell,
 	atMerchant,
 	BOX,
@@ -13,6 +14,7 @@ import {
 	loadZones,
 	removeSession,
 	restoredFromSave,
+	STARTER_GOODS,
 	saleValue,
 	sessionByHandle,
 	sessionsInZone,
@@ -577,4 +579,74 @@ test('a sell away from any Merchant is refused — never trust the client', () =
 test('applySell for an unplaced session is a no-op', () => {
 	const res = applySell(townWorld(), 999, 1);
 	expect(res.sold).toBe(false);
+});
+
+// --- Server-authoritative buy (#273, ADR 0025) -----------------------------
+
+test('applyBuy deducts the re-derived price, appends the good, and logs it', () => {
+	const good = STARTER_GOODS[0]; // Rusty Sword, price 15
+	const { w } = sellWorld([], 100);
+	const res = applyBuy(w, 1, 0);
+	expect(res.bought).toBe(true);
+	const sa = avatarOf(res.world, 1);
+	expect(sa?.progress.gold).toBe(100 - good.price); // price is server-derived
+	const added = sa?.inventory.at(-1);
+	expect(added?.base).toBe(good.base);
+	expect(added?.slot).toBe(good.slot);
+	expect(added?.rarity).toBe('common');
+	expect(added?.affixes).toEqual([]);
+	expect(sa?.log.at(-1)).toContain('Bought'); // a buy log line is appended
+});
+
+test('two buys mint distinct Item ids (nextId advances)', () => {
+	const { w } = sellWorld([], 100);
+	const first = applyBuy(w, 1, 0);
+	const second = applyBuy(first.world, 1, 0);
+	expect(second.bought).toBe(true);
+	const ids = avatarOf(second.world, 1)?.inventory.map((i) => i.id) ?? [];
+	expect(new Set(ids).size).toBe(ids.length); // all unique
+	expect(ids.length).toBe(2);
+});
+
+test('buying when unaffordable is a no-op — Gold and inventory unchanged', () => {
+	const good = STARTER_GOODS[0];
+	const { w } = sellWorld([], good.price - 1); // one Gold short
+	const res = applyBuy(w, 1, 0);
+	expect(res.bought).toBe(false);
+	const sa = avatarOf(res.world, 1);
+	expect(sa?.progress.gold).toBe(good.price - 1);
+	expect(sa?.inventory).toEqual([]);
+});
+
+test('buying an out-of-range catalog index is refused', () => {
+	const { w } = sellWorld([], 1000);
+	expect(applyBuy(w, 1, STARTER_GOODS.length).bought).toBe(false);
+	expect(applyBuy(w, 1, -1).bought).toBe(false);
+	expect(avatarOf(applyBuy(w, 1, 99).world, 1)?.progress.gold).toBe(1000);
+});
+
+test('a buy away from any Merchant is refused — never trust the client', () => {
+	const { w } = sellWorld([], 1000, false); // standing at x 0
+	const res = applyBuy(w, 1, 0);
+	expect(res.bought).toBe(false);
+	const sa = avatarOf(res.world, 1);
+	expect(sa?.inventory).toEqual([]);
+	expect(sa?.progress.gold).toBe(1000);
+});
+
+test('applyBuy for an unplaced session is a no-op', () => {
+	expect(applyBuy(townWorld(), 999, 0).bought).toBe(false);
+});
+
+test('round-trip buy then sell is always a net Gold loss', () => {
+	for (let i = 0; i < STARTER_GOODS.length; i++) {
+		const { w } = sellWorld([], 100);
+		const boughtRes = applyBuy(w, 1, i);
+		expect(boughtRes.bought).toBe(true);
+		const minted = avatarOf(boughtRes.world, 1)?.inventory.at(-1);
+		if (!minted) throw new Error('bought Item missing');
+		const soldRes = applySell(boughtRes.world, 1, minted.id);
+		expect(soldRes.sold).toBe(true);
+		expect(avatarOf(soldRes.world, 1)?.progress.gold).toBeLessThan(100);
+	}
 });
