@@ -25,7 +25,7 @@ import {
 	weaponById,
 	type Zone,
 } from '@mmo/shared';
-import { createCliRenderer } from '@opentui/core';
+import { createCliRenderer, type TerminalCapabilities } from '@opentui/core';
 import { AudioOptions } from './audio-options-view';
 import { CharacterCreator } from './character-creator';
 import { parseChatCommand } from './chat';
@@ -34,6 +34,7 @@ import { Controls } from './controls';
 import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
+import { NoKittyNotice, shouldWarnNoKitty } from './no-kitty';
 import { PlayfieldRenderable } from './playfield';
 import { resolveServerUrl } from './server-url';
 import { Shop, type ShopView } from './shop';
@@ -115,6 +116,25 @@ if (SCHEME === 'mouse') {
 }
 const hud = new Hud(renderer);
 hud.attach(renderer.root);
+
+// Non-Kitty input notice (#228, ADR 0024 §1–§4). Detection is PROACTIVE and fail-open:
+// we read the terminal's resolved Kitty-keyboard capability, not the reactive
+// releaseCapable flag. The capability probe resolves asynchronously (it is `null` until
+// then), so we wait for the `capabilities` event rather than reading synchronously at
+// boot; on a CONFIRMED no-Kitty terminal we raise a blocking, press-any-key overlay. It
+// is re-evaluated fresh every launch (self-clears on a capable terminal) with no
+// persistence and no opt-out — the keypress handlers below dismiss it on the first key.
+const noKittyNotice = new NoKittyNotice(renderer);
+noKittyNotice.attach(renderer.root);
+function evaluateKittyNotice(capabilities: TerminalCapabilities | null): void {
+	if (shouldWarnNoKitty(capabilities)) noKittyNotice.show();
+}
+renderer.on('capabilities', (capabilities: TerminalCapabilities) =>
+	evaluateKittyNotice(capabilities),
+);
+// Guard the rare case the probe already resolved before this listener attached; if it is
+// still null (the common case at boot) this no-ops and the event handler runs later.
+if (renderer.capabilities) evaluateKittyNotice(renderer.capabilities);
 
 // Best-effort, always-optional audio (ADR 0014). Init is attempted once here,
 // gated inside the facade on an interactive TTY, so a headless/piped launch
@@ -223,6 +243,12 @@ async function runNetworked(url: string) {
 	let started = false;
 	renderer.keyInput.on('keypress', (k) => {
 		if (started) return;
+		// The blocking no-Kitty notice owns the keyboard while up: the first key press
+		// dismisses it and is swallowed so it doesn't also drive customization (#228).
+		if (noKittyNotice.open) {
+			noKittyNotice.hide();
+			return;
+		}
 		if (k.name === 'q') quit();
 		// UI blip on customize navigation / confirm (ADR 0014), the same menu click
 		// the shop uses — a centered, full-volume interface tick.
@@ -367,6 +393,13 @@ async function runNetworked(url: string) {
 		hud.enableChat(submitChat);
 
 		renderer.keyInput.on('keypress', (k) => {
+			// The blocking no-Kitty notice owns the keyboard first (it can resolve a beat
+			// into play on a slow probe): the first key dismisses it and is swallowed so it
+			// can't also drive movement / combat (#228).
+			if (noKittyNotice.open) {
+				noKittyNotice.hide();
+				return;
+			}
 			// While typing, chat OWNS the keyboard: the focused InputRenderable edits the
 			// line itself (it subscribes to keys on focus) and submits on Enter via
 			// submitChat; here Escape closes and every other key is swallowed so none
@@ -444,7 +477,11 @@ async function runNetworked(url: string) {
 			// audio options) has the keyboard; the same gate suppresses the interact
 			// edge on send so a menu can't fire a Portal from under itself.
 			const modalActive =
-				hud.chatOpen || controls.open || shop.open || options.open;
+				hud.chatOpen ||
+				controls.open ||
+				shop.open ||
+				options.open ||
+				noKittyNotice.open;
 			const inp = modalActive ? IDLE_INPUT : input.poll(performance.now());
 
 			// Follow a server-driven Zone change (portal travel / death respawn): swap the
