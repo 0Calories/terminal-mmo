@@ -440,12 +440,12 @@ async function runNetworked(url: string) {
 		// once on each rising edge of the server-authoritative level.
 		let prevLevel: number | null = null;
 		renderer.setFrameCallback(async (dt) => {
-			// Freeze movement / combat while a modal (chat line, controls, Merchant) has the
-			// keyboard.
-			const inp =
-				hud.chatOpen || controls.open || shop.open
-					? IDLE_INPUT
-					: input.poll(performance.now());
+			// Freeze movement / combat while a modal (chat line, controls, Merchant,
+			// audio options) has the keyboard; the same gate suppresses the interact
+			// edge on send so a menu can't fire a Portal from under itself.
+			const modalActive =
+				hud.chatOpen || controls.open || shop.open || options.open;
+			const inp = modalActive ? IDLE_INPUT : input.poll(performance.now());
 
 			// Follow a server-driven Zone change (portal travel / death respawn): swap the
 			// local Zone and snap the predicted Avatar to the server's arrival position so
@@ -548,6 +548,11 @@ async function runNetworked(url: string) {
 			sendAcc += dt;
 			if (sendAcc >= SEND_INTERVAL) {
 				sendAcc = 0;
+				// Read the latched interact edge exactly once per send (never per poll,
+				// which runs far faster) so a single press reaches the wire once. During a
+				// modal we still drain it — but report false — so it clears instead of
+				// firing a Portal the instant the menu closes.
+				const interact = input.consumeInteract();
 				net.send({
 					t: 'input',
 					x: predicted.x,
@@ -558,7 +563,7 @@ async function runNetworked(url: string) {
 					onGround: predicted.onGround,
 					attack: inp.attack,
 					guard: inp.guard ?? false,
-					interact: inp.interact ?? false,
+					interact: modalActive ? false : interact,
 					// the gated decision, so the server starts the i-frame timer iff the hop
 					// fired client-side (grounded + moving), not on every key-press (ADR 0017 §5).
 					dodge: dodging,

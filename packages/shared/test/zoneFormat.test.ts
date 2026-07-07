@@ -181,6 +181,20 @@ describe('parseZone — fails safely', () => {
 		expect(() => parseZone(z, catalogs, 'x')).toThrow(ZoneParseError);
 	});
 
+	test('the platform glyph = is reserved and cannot be a header key (ADR 0026)', () => {
+		const z = `{ "type": "field", "spawns": { "=": "goblin-01" } }\n---\n.c..\n####`;
+		expect(() => parseZone(z, catalogs, 'x')).toThrow(/reserved/i);
+	});
+
+	test('= parses as a one-way platform (cell 2), distinct from a wall (cell 1) (ADR 0026)', () => {
+		const z = `{ "type": "field" }\n---\n..==..\n######`;
+		const { terrain } = parseZone(z, catalogs, 'x');
+		const { w, cells } = terrain;
+		expect(cells[0 * w + 2]).toBe(2); // platform
+		expect(cells[0 * w + 0]).toBe(0); // empty
+		expect(cells[1 * w + 0]).toBe(1); // wall floor
+	});
+
 	test('oversize grid', () => {
 		const wide = '.'.repeat(5000);
 		expect(() =>

@@ -72,10 +72,14 @@ export class InputState {
 	// reported) and OR'd into the guard intent in poll().
 	private mouseGuard = false;
 	// `interact` is edge-triggered: a single physical press yields exactly one true
-	// poll, not one per held tick (#261). Without this, standing on a Portal whose
+	// read, not one per held tick (#261). Without this, standing on a Portal whose
 	// arrival point overlaps it would re-trigger the transition every frame, and any
 	// held-key interaction (the merchant) would fire repeatedly. Set on the rising
-	// edge of the bound key (press while not already held) and consumed by poll().
+	// edge of the bound key (press while not already held). Consumed by
+	// `consumeInteract()` at the network SEND cadence — NOT by `poll()`: the render
+	// loop polls at up to 120 Hz but only reports to the server ~30 Hz, so a
+	// poll-consumed edge would be discarded on ~3 of every 4 frames and the press
+	// would never reach the wire (the "portals don't fire" regression, #261 fallout).
 	private interactEdge = false;
 	private readonly bindings: Readonly<Record<string, Action>>;
 
@@ -132,22 +136,31 @@ export class InputState {
 		}
 		const moveX =
 			(this.held.has('right') ? 1 : 0) - (this.held.has('left') ? 1 : 0);
-		// Consume the interact edge: it reads true for this poll only, then re-arms
-		// on the next fresh press. Held ticks in between report false.
-		const interact = this.interactEdge;
-		this.interactEdge = false;
+		// `interact` is deliberately absent here: it is latched on the rising edge and
+		// read once at the send cadence via `consumeInteract()`, so a fast poll can't
+		// swallow a press between two slower network sends.
 		return {
 			moveX: moveX as -1 | 0 | 1,
 			jump: this.held.has('jump'),
 			attack: this.held.has('attack') || this.mouseAttack,
 			dodge: this.held.has('dodge'),
 			guard: this.held.has('guard') || this.mouseGuard,
-			interact,
 			skill: this.held.has('skill1')
 				? 1
 				: this.held.has('skill2')
 					? 2
 					: undefined,
 		};
+	}
+
+	// Read and clear the latched interact edge. Called once per network send (not per
+	// render frame) so a single press survives the poll/send cadence gap and reaches
+	// the server exactly once (see `interactEdge`). Returns false when no press is
+	// pending; the caller must NOT call this while a modal owns the keyboard, so a
+	// press latched just before opening a menu can't fire a Portal from under it.
+	consumeInteract(): boolean {
+		const fired = this.interactEdge;
+		this.interactEdge = false;
+		return fired;
 	}
 }

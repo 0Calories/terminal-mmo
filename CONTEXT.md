@@ -646,8 +646,33 @@ _Avoid_: Loot share, drop table (per-player), kill credit
 The solid geometry of the world (platforms, walls, ground, ropes/ladders) — the
 only thing Avatars physically collide with. Avatars do NOT collide with each
 other; they pass through one another freely. Movement is a real-time platformer
-(gravity + jumping).
+(gravity + jumping). Two solid tile kinds: **Wall** and **One-way platform**.
 _Avoid_: Tiles, level, collision map
+
+**Wall**:
+A fully solid Terrain tile — glyph `#`, cell value `1`. Blocks every side: you land
+on its top, and it stops horizontal motion beside it. The world bounds read as walls
+too, so an Avatar can never leave its Zone sideways. Ground and vertical posts are
+walls.
+_Avoid_: Solid, block
+
+**One-way platform**:
+A Terrain tile you can stand on but also pass through — glyph `=`, cell value `2`
+(ADR 0026). Vertically it behaves like any solid: a descending body lands on its top
+surface, a rising body passes through it (the global one-way rule, #262).
+Horizontally it is **transparent** — unlike a Wall it never halts sideways motion, so
+jumping up through a platform while moving left/right feels smooth. Authored per tile,
+distinct from a Wall so a structure can mix posts (walls) and ledges (platforms).
+_Avoid_: Ledge, floor, semisolid
+
+**Interact edge**:
+The `interact` intent as a one-shot **edge**, not a held flag (ADR 0027): a single
+physical press of the interact key yields exactly one true reading, used to enter a
+**Portal** or open a **Merchant**. Latched on the client until the next network send
+(so a fast render poll can't lose it) and consumed once per server tick via a
+pending-edge queue (so it can't re-fire) — the reason a press enters a Portal exactly
+once even though the arrival can overlap the return Portal (#90).
+_Avoid_: Interact flag, use key, action button
 
 **Hacking (sub-theme)**:
 Developer/hacker-culture flavor that may inspire some mechanics. Explicitly NOT

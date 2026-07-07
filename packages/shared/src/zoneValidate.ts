@@ -21,11 +21,11 @@ function inBounds(b: Box, t: Terrain): boolean {
 	return b.x >= 0 && b.y >= 0 && b.x + b.w <= t.w && b.y + b.h <= t.h;
 }
 
-/** Any in-grid cell under the box footprint is solid. */
+/** Any in-grid cell under the box footprint is solid (a wall OR a platform). */
 function clipsSolid(b: Box, t: Terrain): boolean {
 	for (let y = b.y; y < b.y + b.h; y++)
 		for (let x = b.x; x < b.x + b.w; x++)
-			if (y >= 0 && x >= 0 && y < t.h && x < t.w && t.cells[y * t.w + x] === 1)
+			if (y >= 0 && x >= 0 && y < t.h && x < t.w && t.cells[y * t.w + x] !== 0)
 				return true;
 	return false;
 }

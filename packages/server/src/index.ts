@@ -38,6 +38,7 @@ import {
 	zoneStateOf,
 } from '@mmo/shared';
 import type { ServerWebSocket } from 'bun';
+import { foldPendingEdges } from './intents';
 import { installShutdownHooks } from './shutdown';
 import { openPlayerStore } from './store';
 
@@ -132,6 +133,13 @@ const onlineSessionByKey = new Map<string, number>();
 // in `tick` by folding onto that session's intent as a one-shot edge — so the emote arms
 // once instead of re-firing every input tick the way a sticky intent flag would.
 const pendingEmotes = new Map<number, string>();
+// Portal/interact presses received since the last tick (ADR 0027), the same one-shot
+// edge idiom as `pendingEmotes`. `interact` is NOT kept on the sticky per-session intent
+// (which is reused every tick): a held/duplicated flag would re-fire the Portal each tick
+// or be missed entirely when the 20 Hz tick fails to sample the ~33 ms it sat on the
+// wire. Set when an input frame reports the edge, folded onto that session's intent once
+// in `tick`, and consumed there — so one press transfers the Avatar exactly once.
+const pendingInteract = new Set<number>();
 
 const clamp = (v: number, hi: number) =>
 	Number.isFinite(v) ? Math.max(0, Math.min(v, hi)) : 0;
@@ -349,10 +357,14 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		onGround: msg.onGround,
 		attack: msg.attack,
 		guard: msg.guard,
-		interact: msg.interact,
+		// `interact` rides a one-shot edge queue, NOT this sticky intent (ADR 0027): the
+		// client latches each press and sends it true on exactly one frame, which we
+		// register here for `tick` to fold in once and consume.
+		interact: false,
 		dodge: msg.dodge,
 		skill: msg.skill,
 	});
+	if (msg.interact) pendingInteract.add(sessionId);
 }
 
 // Persist one online Avatar's durable state (#236): lift its ServerAvatar to a PlayerSave
@@ -375,15 +387,14 @@ function flushAll() {
 }
 
 function tick() {
-	// Fold any queued body emote onto its session's intent for this tick (ADR 0020 §9),
-	// consuming it so it fires exactly once. A queued emote with no input this cycle waits
-	// (input flows continuously at ~30 Hz), so it isn't dropped.
-	const tickIntents = [...intents.values()].map((i) => {
-		const em = pendingEmotes.get(i.sessionId);
-		if (em === undefined) return i;
-		pendingEmotes.delete(i.sessionId);
-		return { ...i, emote: em };
-	});
+	// Fold any queued body emote (ADR 0020 §9) and interact edge (ADR 0027) onto this
+	// tick's intent, consuming each so it fires exactly once. A queued edge with no input
+	// this cycle waits (input flows continuously at ~30 Hz), so it isn't dropped.
+	const tickIntents = foldPendingEdges(
+		intents.values(),
+		pendingEmotes,
+		pendingInteract,
+	);
 	// Snapshot each session's Zone before the step so we can detect a transition INTO a
 	// Town this tick — reaching safety is a significant event (#236), a natural save point,
 	// so we flush just those sessions. This fires only on a Zone change, never per-tick.
@@ -470,6 +481,7 @@ const server = Bun.serve<WsData>({
 			sockets.delete(sessionId);
 			intents.delete(sessionId);
 			pendingEmotes.delete(sessionId);
+			pendingInteract.delete(sessionId);
 			pendingAuth.delete(sessionId);
 			// Release this identity's presence so the key can log in again (#235).
 			const key = onlineKeyBySession.get(sessionId);
