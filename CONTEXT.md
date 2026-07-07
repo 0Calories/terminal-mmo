@@ -316,8 +316,8 @@ chaser's speed, carries a much larger Poise pool and heavy **Mass** (so it shrug
 flurry and barely flinches from **Knockback**), hits far harder, and attacks
 *deliberately* — a long cool-down between commits leaves a wide, punishable opening
 between heavy blows. Read it and punish the recovery; don't trade with it.
-_Avoid_: Tank, ogre (that is only its Sprite/name), heavy mob, boss (the Boss is its
-own single authored Monster)
+_Avoid_: Tank, Golem (that is only its player-facing Sprite/name), heavy mob, boss
+(the Boss is its own single authored Monster)
 
 **Ranged poker**:
 A Monster archetype that fights at distance — the reworked shooter. Like the **melee
@@ -428,7 +428,7 @@ _Avoid_: Pushback, recoil, impulse
 
 **Mass**:
 An entity's resistance to **Knockback** distance — the same **Launcher** rockets a
-light Slime across the screen but barely lifts a heavy ogre.
+light Slime across the screen but barely lifts a heavy Golem.
 _Avoid_: Weight, heaviness
 
 **Momentum body**:
