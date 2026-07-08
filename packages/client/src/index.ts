@@ -34,7 +34,7 @@ import { Controls } from './controls';
 import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
-import { NoKittyNotice, shouldWarnNoKitty } from './no-kitty';
+import { NoKittyNotice, NoticeGate, shouldWarnNoKitty } from './no-kitty';
 import { PlayfieldRenderable } from './playfield';
 import { resolveServerUrl } from './server-url';
 import { Shop, type ShopView } from './shop';
@@ -126,8 +126,21 @@ hud.attach(renderer.root);
 // persistence and no opt-out — the keypress handlers below dismiss it on the first key.
 const noKittyNotice = new NoKittyNotice(renderer);
 noKittyNotice.attach(renderer.root);
+// The notice is a STRICT sequential pre-gate (#301): while it is up it owns the screen and
+// keyboard, and anything else that would appear at launch (the Avatar creator) is queued
+// behind it via this gate rather than drawn under it. reconcile() runs whenever the notice
+// opens or is dismissed so a late-resolving probe still holds — then releases — the queue.
+const gate = new NoticeGate(noKittyNotice);
 function evaluateKittyNotice(capabilities: TerminalCapabilities | null): void {
-	if (shouldWarnNoKitty(capabilities)) noKittyNotice.show();
+	if (shouldWarnNoKitty(capabilities)) {
+		noKittyNotice.show();
+		gate.reconcile(); // hold anything already queued behind the freshly-raised notice
+	}
+}
+// Dismiss the notice on the first key and release the gate so the queued UI appears now.
+function dismissNoKittyNotice(): void {
+	noKittyNotice.hide();
+	gate.reconcile();
 }
 renderer.on('capabilities', (capabilities: TerminalCapabilities) =>
 	evaluateKittyNotice(capabilities),
@@ -246,7 +259,10 @@ async function runNetworked(url: string) {
 		randomCosmetics((Math.random() * 0x7fffffff) | 0),
 	);
 	creator.attach(renderer.root);
-	creator.show();
+	// Queue the creator strictly behind the notice (#301): the gate shows it now if the
+	// notice isn't up, or holds it hidden and un-interactive until the notice is
+	// dismissed — so the creator never paints over or steals input from the notice.
+	gate.request(creator);
 
 	// Phase 1 — the picker owns the keyboard: every key drives a selection and, on
 	// Enter, hands back the chosen Cosmetics. `started` makes this handler inert once
@@ -256,9 +272,10 @@ async function runNetworked(url: string) {
 	renderer.keyInput.on('keypress', (k) => {
 		if (started) return;
 		// The blocking no-Kitty notice owns the keyboard while up: the first key press
-		// dismisses it and is swallowed so it doesn't also drive customization (#228).
+		// dismisses it and is swallowed so it doesn't also drive customization (#228,
+		// #301). Dismissal releases the gate, which then reveals the queued creator.
 		if (noKittyNotice.open) {
-			noKittyNotice.hide();
+			dismissNoKittyNotice();
 			return;
 		}
 		if (k.name === 'q') quit();
@@ -268,7 +285,7 @@ async function runNetworked(url: string) {
 		const chosen = creator.key(k.name);
 		if (!chosen) return;
 		started = true;
-		creator.hide();
+		gate.release(creator); // done with the gate; hide the creator and hand off to play
 		play(chosen);
 	});
 
@@ -407,9 +424,9 @@ async function runNetworked(url: string) {
 		renderer.keyInput.on('keypress', (k) => {
 			// The blocking no-Kitty notice owns the keyboard first (it can resolve a beat
 			// into play on a slow probe): the first key dismisses it and is swallowed so it
-			// can't also drive movement / combat (#228).
+			// can't also drive movement / combat (#228, #301).
 			if (noKittyNotice.open) {
-				noKittyNotice.hide();
+				dismissNoKittyNotice();
 				return;
 			}
 			// While typing, chat OWNS the keyboard: the focused InputRenderable edits the
