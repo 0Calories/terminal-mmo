@@ -34,7 +34,7 @@ import { Controls } from './controls';
 import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
-import { NoKittyNotice, shouldWarnNoKitty } from './no-kitty';
+import { NoKittyNotice, NoticeGate, shouldWarnNoKitty } from './no-kitty';
 import { PlayfieldRenderable } from './playfield';
 import { resolveServerUrl } from './server-url';
 import { Shop, type ShopView } from './shop';
@@ -136,24 +136,36 @@ hud.attach(renderer.root);
 // answers nothing at all stays fail-open silent (ADR §2, the high-latency-SSH case).
 const noKittyNotice = new NoKittyNotice(renderer);
 noKittyNotice.attach(renderer.root);
+// The notice is a STRICT sequential pre-gate (#301): while it is up it owns the screen and
+// keyboard, and anything else that would appear at launch (the Avatar creator) is queued
+// behind it via this gate rather than drawn under it. reconcile() runs whenever the notice
+// opens or is dismissed so a late-resolving probe still holds — then releases — the queue.
+const gate = new NoticeGate(noKittyNotice);
 const KITTY_PROBE_SETTLE_MS = 500;
 let kittyConfirmed = false;
 let kittySettleTimer: ReturnType<typeof setTimeout> | null = null;
 function warnNoKittyNow(): void {
 	kittySettleTimer = null;
 	if (kittyConfirmed || noKittyNotice.open) return;
-	if (shouldWarnNoKitty(renderer.capabilities)) noKittyNotice.show();
+	if (shouldWarnNoKitty(renderer.capabilities)) {
+		noKittyNotice.show();
+		gate.reconcile(); // hold anything already queued behind the freshly-raised notice
+	}
 }
 function onKittyCapabilities(capabilities: TerminalCapabilities | null): void {
 	if (capabilities?.kitty_keyboard === true) {
 		// Confirmed capable — cancel a pending evaluation and retract a notice we may have
-		// raised from an earlier, still-unresolved (false-default) reading.
+		// raised from an earlier, still-unresolved (false-default) reading; releasing the gate
+		// so any UI queued behind the notice appears now.
 		kittyConfirmed = true;
 		if (kittySettleTimer) {
 			clearTimeout(kittySettleTimer);
 			kittySettleTimer = null;
 		}
-		if (noKittyNotice.open) noKittyNotice.hide();
+		if (noKittyNotice.open) {
+			noKittyNotice.hide();
+			gate.reconcile();
+		}
 		return;
 	}
 	// A still-false reading: (re)start the quiet timer. Each further probe response pushes it
@@ -161,6 +173,11 @@ function onKittyCapabilities(capabilities: TerminalCapabilities | null): void {
 	if (kittyConfirmed) return;
 	if (kittySettleTimer) clearTimeout(kittySettleTimer);
 	kittySettleTimer = setTimeout(warnNoKittyNow, KITTY_PROBE_SETTLE_MS);
+}
+// Dismiss the notice on the first key and release the gate so the queued UI appears now.
+function dismissNoKittyNotice(): void {
+	noKittyNotice.hide();
+	gate.reconcile();
 }
 renderer.on('capabilities', (capabilities: TerminalCapabilities) =>
 	onKittyCapabilities(capabilities),
@@ -303,7 +320,10 @@ async function runNetworked(url: string) {
 			if (isNew) {
 				creating = true;
 				creator.attach(renderer.root);
-				creator.show();
+				// Queue the creator strictly behind the no-Kitty notice (#301): the gate shows it
+				// now if the notice isn't up, or holds it hidden and un-interactive until the
+				// notice is dismissed — so the creator never paints over or steals input from it.
+				gate.request(creator);
 			} else {
 				play();
 			}
@@ -316,9 +336,10 @@ async function runNetworked(url: string) {
 	renderer.keyInput.on('keypress', (k) => {
 		if (started) return;
 		// The blocking no-Kitty notice owns the keyboard while up: the first key press
-		// dismisses it and is swallowed so it doesn't also drive customization (#228).
+		// dismisses it and is swallowed so it doesn't also drive customization (#228,
+		// #301). Dismissal releases the gate, which then reveals the queued creator.
 		if (noKittyNotice.open) {
-			noKittyNotice.hide();
+			dismissNoKittyNotice();
 			return;
 		}
 		if (k.name === 'q') quit();
@@ -329,7 +350,8 @@ async function runNetworked(url: string) {
 		const chosen = creator.key(k.name);
 		if (!chosen) return;
 		creating = false;
-		creator.hide();
+		// #301: done with the gate — hides the creator and stops the gate ever re-showing it.
+		gate.release(creator);
 		net.send({ t: 'createAvatar', cosmetics: chosen });
 		play();
 	});
@@ -461,9 +483,9 @@ async function runNetworked(url: string) {
 		renderer.keyInput.on('keypress', (k) => {
 			// The blocking no-Kitty notice owns the keyboard first (it can resolve a beat
 			// into play on a slow probe): the first key dismisses it and is swallowed so it
-			// can't also drive movement / combat (#228).
+			// can't also drive movement / combat (#228, #301).
 			if (noKittyNotice.open) {
-				noKittyNotice.hide();
+				dismissNoKittyNotice();
 				return;
 			}
 			// While typing, chat OWNS the keyboard: the focused InputRenderable edits the
