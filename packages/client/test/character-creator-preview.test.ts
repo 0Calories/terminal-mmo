@@ -6,9 +6,18 @@
 import { expect, test } from 'bun:test';
 import type { CapturedFrame, CapturedSpan } from '@opentui/core';
 import { createTestRenderer } from '@opentui/core/testing';
-import { CharacterCreator } from '../src/character-creator';
+import { CharacterCreator, type CreatorKey } from '../src/character-creator';
 
 const HANDLE = 'Neo';
+
+// A menu keypress for the creator (#304 changed `key()` to take a structural CreatorKey rather
+// than a bare name): navigation keys carry no printable sequence.
+const menuKey = (name: string): CreatorKey => ({
+	name,
+	sequence: '',
+	ctrl: false,
+	meta: false,
+});
 
 async function mountCreator(nameplate: number) {
 	const t = await createTestRenderer({ width: 80, height: 40 });
@@ -56,9 +65,9 @@ test('cycling the nameplate colour re-tints the preview nameplate in real time',
 
 	// Focus the Nameplate field (Form is hidden, so the picker rows are hue, hat,
 	// nameplate) and cycle its colour one step.
-	creator.key('down');
-	creator.key('down');
-	creator.key('right');
+	creator.key(menuKey('down'));
+	creator.key(menuKey('down'));
+	creator.key(menuKey('right'));
 	await renderOnce();
 
 	const after = nameplateSpan(captureSpans());

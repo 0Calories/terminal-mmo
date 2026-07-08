@@ -14,6 +14,7 @@ import {
 	CHAT_MAX_LEN,
 	type Cosmetics,
 	canonicalPublicKey,
+	claimHandle,
 	createServerWorld,
 	decodeClientMessage,
 	emoteById,
@@ -33,6 +34,7 @@ import {
 	sessionsInZone,
 	spawnNewAvatar,
 	stepServerWorld,
+	validHandle,
 	worldSnapshotFor,
 	zoneOf,
 	zoneStateOf,
@@ -132,11 +134,15 @@ const onlineSessionByKey = new Map<string, number>();
 // New accounts that authenticated but are NOT yet spawned (#302, ADR 0028): a Save lookup
 // found nothing, so the server holds them authenticated-but-unplaced (no Avatar in any
 // Zone, never broadcast) while the client shows the creator over a neutral hold screen.
-// `createAvatar` consumes this to mint the Save and spawn the Avatar; `close` drops it if
-// they disconnect at the creator. The retained `weapon` (declared at `hello`) and `key`
-// (the durable identity) are the fields the spawn still needs — cosmetics arrive later.
+// `createAvatar` consumes this to claim the typed Handle, mint the Save, and spawn the Avatar;
+// `close` drops it if they disconnect at the creator. The retained `weapon` (declared at
+// `hello`) and `key` (the durable identity) are the fields the spawn still needs; `publicKey`
+// (the offered one-line key) is what `claimHandle` re-parses to bind the typed Handle to this
+// account (#304); `handle` is the auto-derived placeholder used when the Player leaves the
+// field empty. Cosmetics + the Player-typed Handle arrive later, on `createAvatar`.
 interface PendingSpawn {
 	key: string;
+	publicKey: string;
 	handle: string;
 	weapon: number;
 }
@@ -258,6 +264,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		// screen; `zoneId` names where it WILL spawn. The Save is minted only on finalise.
 		pendingSpawn.set(sessionId, {
 			key,
+			publicKey: pending.publicKey,
 			handle: auth.handle,
 			weapon: pending.weapon,
 		});
@@ -277,20 +284,41 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		return;
 	}
 	if (msg.t === 'createAvatar') {
-		// Finalise a new account's creation (#302, ADR 0028): valid only for a session the
-		// server is holding unspawned (a returning or already-spawned session has no pending
-		// entry, so a stray/duplicate createAvatar is a silent no-op). Mint the Save from the
-		// chosen Cosmetics and spawn the Avatar into the starting Town through the shared
-		// `spawnNewAvatar` seam, persist the Save immediately (a significant durable event —
-		// the Handle claim must survive a restart), then join it to `sockets` so the next
-		// tick broadcasts the freshly placed Avatar.
+		// Finalise a new account's creation (#302, ADR 0028; #304 threads the typed Handle):
+		// valid only for a session the server is holding unspawned (a returning or already-
+		// spawned session has no pending entry, so a stray/duplicate createAvatar is a silent
+		// no-op).
 		const pending = pendingSpawn.get(sessionId);
 		if (!pending) return;
+		// The Handle is claimed HERE, not at the handshake (#304). An empty typed field falls
+		// back to the auto-derived placeholder (the client already does this; re-applied here so
+		// an empty field is never claimed literally). Validate the shape, then claim it case-
+		// insensitively. On either failure the session stays HELD (pendingSpawn kept) and a
+		// `createRejected` lets the client keep the creator open and retry with another Handle.
+		const desired = msg.handle.trim() || pending.handle;
+		if (!validHandle(desired)) {
+			ws.send(encodeServerMessage({ t: 'createRejected', reason: 'invalid' }));
+			return;
+		}
+		const claim = claimHandle(accounts, pending.publicKey, desired);
+		if (!claim.ok) {
+			// The key owns no Handle yet and `desired` already passed `validHandle`, so the only
+			// failure left is `taken`; surface it and keep the hold for a retry.
+			ws.send(
+				encodeServerMessage({ t: 'createRejected', reason: claim.reason }),
+			);
+			return;
+		}
+		accounts = claim.registry;
 		pendingSpawn.delete(sessionId);
+		// Mint the Save from the claimed Handle + chosen Cosmetics and spawn into the starting
+		// Town through the shared `spawnNewAvatar` seam, persist the Save immediately (a
+		// significant durable event — the Handle claim must survive a restart), then join it to
+		// `sockets` so the next tick broadcasts the freshly placed Avatar.
 		const { world: next, save } = spawnNewAvatar(
 			world,
 			sessionId,
-			pending.handle,
+			claim.handle,
 			msg.cosmetics,
 			pending.weapon,
 			TOWN_ZONE,
@@ -299,7 +327,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		store.save(pending.key, save);
 		sockets.set(sessionId, ws);
 		console.log(
-			`session ${sessionId} (${pending.handle}) created and spawned into ${zoneOf(world, sessionId) ?? START_ZONE}`,
+			`session ${sessionId} (${claim.handle}) created and spawned into ${zoneOf(world, sessionId) ?? START_ZONE}`,
 		);
 		return;
 	}

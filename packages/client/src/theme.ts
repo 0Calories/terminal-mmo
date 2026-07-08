@@ -33,6 +33,9 @@ export const COLORS = {
 	// green HP bar so the HUD vitals read apart at a glance.
 	xp: RGBA.fromInts(120, 170, 255, 255),
 	dim: RGBA.fromInts(150, 156, 168, 255),
+	// An inline warning / error line (e.g. a rejected Handle at Avatar creation, #304): a warm
+	// red distinct from the dim hint text so a refusal reads at a glance.
+	warn: RGBA.fromInts(255, 120, 90, 255),
 	chat: RGBA.fromInts(120, 200, 235, 255),
 	// Over-head Speech bubble (#59, ADR 0007), ADR 0016: the frame + tail float over a
 	// transparent background (no square stamp, no corner bleed), the interior padding is

@@ -164,7 +164,7 @@ test('claimHandle rejects an invalid username', () => {
 
 // --- resolveAuth: the whole server-side decision, sockets excluded ---------------
 
-test('resolveAuth: sign → verify → first launch claims the desired username', () => {
+test('resolveAuth: a brand-new key is admitted UNCLAIMED — the Handle is claimed later at createAvatar', () => {
 	const id = makeIdentity();
 	const res = resolveAuth(
 		createAccountRegistry(),
@@ -174,23 +174,20 @@ test('resolveAuth: sign → verify → first launch claims the desired username'
 		'Trinity',
 	);
 	if (!res.ok) throw new Error(`expected success, got: ${res.reason}`);
+	// The desired (auto-derived) Handle rides through as the provisional value the creator
+	// pre-fills, but resolveAuth no longer CLAIMS it (#304, ADR 0028) — the registry is untouched.
 	expect(res.handle).toBe('Trinity');
-	expect(handleForKey(res.registry, id.line)).toBe('Trinity');
+	expect(handleForKey(res.registry, id.line)).toBeUndefined();
 });
 
-test('resolveAuth: a returning key resolves to the same identity, whatever handle it asks for', () => {
+test('resolveAuth: a returning key resolves its durable Handle, whatever handle it asks for', () => {
 	const id = makeIdentity();
-	const first = resolveAuth(
-		createAccountRegistry(),
-		id.line,
-		NONCE,
-		id.signChallenge(NONCE),
-		'Trinity',
-	);
-	if (!first.ok) throw new Error('first auth should succeed');
+	// Seed the durable claim the way createAvatar does — via claimHandle, not the handshake.
+	const seeded = claimHandle(createAccountRegistry(), id.line, 'Trinity');
+	if (!seeded.ok) throw new Error('seed claim should succeed');
 	const nonce2 = new Uint8Array(32).fill(3);
 	const back = resolveAuth(
-		first.registry,
+		seeded.registry,
 		id.line,
 		nonce2,
 		id.signChallenge(nonce2),
@@ -200,21 +197,12 @@ test('resolveAuth: a returning key resolves to the same identity, whatever handl
 	expect(back.handle).toBe('Trinity');
 });
 
-test('resolveAuth rejects a bad signature and a taken username with human-readable reasons', () => {
+test('resolveAuth rejects a bad signature before resolving any Handle', () => {
 	const a = makeIdentity();
 	const b = makeIdentity();
-	const seeded = resolveAuth(
-		createAccountRegistry(),
-		a.line,
-		NONCE,
-		a.signChallenge(NONCE),
-		'Trinity',
-	);
-	if (!seeded.ok) throw new Error('seed auth should succeed');
-
-	// Wrong key's signature: refused before any claim happens.
+	// Wrong key's signature: refused with a human-readable reason.
 	const badSig = resolveAuth(
-		seeded.registry,
+		createAccountRegistry(),
 		b.line,
 		NONCE,
 		a.signChallenge(NONCE),
@@ -223,18 +211,6 @@ test('resolveAuth rejects a bad signature and a taken username with human-readab
 	expect(badSig.ok).toBe(false);
 	if (badSig.ok) throw new Error('unreachable');
 	expect(badSig.reason.length).toBeGreaterThan(0);
-
-	// Valid signature, but the desired name belongs to another key.
-	const taken = resolveAuth(
-		seeded.registry,
-		b.line,
-		NONCE,
-		b.signChallenge(NONCE),
-		'trinity',
-	);
-	expect(taken.ok).toBe(false);
-	if (taken.ok) throw new Error('unreachable');
-	expect(taken.reason).toContain('trinity');
 });
 
 test('resolveAuth rejects an unparseable public key', () => {

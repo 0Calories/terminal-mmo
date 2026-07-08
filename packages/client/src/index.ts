@@ -330,9 +330,26 @@ async function runNetworked(url: string) {
 		},
 	);
 
-	// The creator owns the keyboard while up (a new account only): every key drives a
-	// selection and, on Enter, sends `createAvatar` with the chosen Cosmetics and starts the
-	// live loop. Inert once we are spawned (`started`) or before the creator opens.
+	// A rejected Handle (#304): the server refused the createAvatar claim (taken / invalid) but
+	// kept the session — surface the reason inline and re-open the field so the Player retries.
+	net.onCreateRejected = (reason) => {
+		creator.showRejection(reason);
+	};
+	// The server spawned us (first snapshot): a new account leaves the creator for the World.
+	// Idempotent — a returning account already started the loop on `welcome`.
+	net.onSpawned = () => {
+		if (creating) {
+			creating = false;
+			// #301: done with the gate — hides the creator and stops the gate ever re-showing it.
+			gate.release(creator);
+		}
+		play();
+	};
+
+	// The creator owns the keyboard while up (a new account only): keys type the Handle or drive
+	// the cosmetic picker, and a valid Enter sends `createAvatar{handle, cosmetics}`. The creator
+	// stays up (frozen) until the server confirms the spawn (`onSpawned`) or rejects the Handle
+	// (`onCreateRejected`). Inert once we are spawned (`started`) or before the creator opens.
 	renderer.keyInput.on('keypress', (k) => {
 		if (started) return;
 		// The blocking no-Kitty notice owns the keyboard while up: the first key press
@@ -342,18 +359,27 @@ async function runNetworked(url: string) {
 			dismissNoKittyNotice();
 			return;
 		}
-		if (k.name === 'q') quit();
-		if (!creating) return; // still connecting / holding — nothing to customize yet
-		// UI blip on customize navigation / confirm (ADR 0014), the same menu click
-		// the shop uses — a centered, full-volume interface tick.
+		if (!creating) {
+			// Still connecting / holding — nothing to customize yet; q quits.
+			if (k.name === 'q') quit();
+			return;
+		}
+		// UI blip on customize navigation / confirm (ADR 0014), the same menu click the shop
+		// uses. Only menu keys (arrows / enter) blip — typing the Handle is silent. 'q' now types
+		// into the Handle instead of quitting, so the creator can spell handles containing it.
 		if (isMenuBlipKey(k.name)) sound.play('ui');
-		const chosen = creator.key(k.name);
-		if (!chosen) return;
-		creating = false;
-		// #301: done with the gate — hides the creator and stops the gate ever re-showing it.
-		gate.release(creator);
-		net.send({ t: 'createAvatar', cosmetics: chosen });
-		play();
+		const result = creator.key(k);
+		if (!result) return;
+		// A valid Handle was confirmed: freeze the creator and finalise. The World starts only
+		// when the server's spawn snapshot arrives (onSpawned), so a rejection re-opens the field.
+		// The gate is released later, in onSpawned — the creator stays visible (frozen) during
+		// the server round-trip rather than being hidden the instant Enter is pressed.
+		creator.setBusy(true);
+		net.send({
+			t: 'createAvatar',
+			handle: result.handle,
+			cosmetics: result.cosmetics,
+		});
 	});
 
 	// Connect-and-run the live World loop, once the server has spawned us (a returning

@@ -7,11 +7,44 @@ import {
 	type Cosmetics,
 	clampCosmetics,
 	FORM_COUNT,
+	HANDLE_CHAR_RE,
+	HANDLE_MAX_LEN,
 	HAT_COUNT,
 	HATS,
 	HUE_COUNT,
 	NAMEPLATE_COUNT,
+	validHandle,
 } from '@mmo/shared';
+
+// --- Player-typed Handle (#304, ADR 0028) -----------------------------------------
+// The pure, tested rules behind the creator's editable Handle field. The retained-UI
+// shell (character-creator.ts) drives these from key events and mirrors the result into
+// an OpenTUI InputRenderable; the validation itself stays here so it's unit-testable
+// without a renderer. The Handle RULE — legal characters, length bounds — is owned by
+// @mmo/shared (HANDLE_CHAR_RE / HANDLE_MAX_LEN / validHandle), so the client's typing gate
+// and the server's claim can never diverge (CLAUDE.md). Re-exported for the creator + tests.
+export { HANDLE_MAX_LEN } from '@mmo/shared';
+
+// Fold one typed character into the Handle draft: append a legal char up to the cap, ignore
+// anything else (arrows, punctuation, an over-cap keystroke). Pure, so the editing rule is
+// unit-tested. Backspace is the caller's business (it's a key name, not a character).
+export function typeHandleChar(draft: string, char: string): string {
+	if (char.length !== 1 || !HANDLE_CHAR_RE.test(char)) return draft;
+	return draft.length >= HANDLE_MAX_LEN ? draft : draft + char;
+}
+
+// The Handle that will actually be submitted: the typed draft, or the auto-derived placeholder
+// when the field is left empty (#304 — confirming an empty field uses the placeholder, still
+// uniqueness-checked server-side).
+export function effectiveHandle(draft: string, placeholder: string): string {
+	return draft.trim() || placeholder;
+}
+
+// Whether confirm is allowed: the effective Handle must pass the shared 2–16 [A-Za-z0-9_-]
+// rule. The creator disables the confirm key + shows a hint until this holds.
+export function handleConfirmable(draft: string, placeholder: string): boolean {
+	return validHandle(effectiveHandle(draft, placeholder));
+}
 
 // The fields the Player cycles through, in display order. Each names the matching
 // `Cosmetics` key, a human label, and how many catalog entries it has (the valid
