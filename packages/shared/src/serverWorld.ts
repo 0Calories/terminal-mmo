@@ -10,7 +10,12 @@
 import { aabbOverlap } from './combat';
 import { BOX, TOWN_SPAWN } from './constants';
 import { itemLabel } from './loot';
-import type { RestoredAvatar } from './persistence';
+import {
+	emptySave,
+	type PlayerSave,
+	type RestoredAvatar,
+	restoredFromSave,
+} from './persistence';
 import type { ServerMessage } from './protocol';
 import type { Box, Cosmetics } from './types';
 import { buyItem, STARTER_GOODS, saleValue, sellItem } from './vendor';
@@ -364,6 +369,43 @@ export function addSession(
 		zones: { ...world.zones, [zone]: zoneState },
 		location: { ...world.location, [sessionId]: zone },
 	};
+}
+
+// Mint a brand-new account's durable Save from its finalised creator choice and spawn its
+// Avatar into the starting Town (#302, ADR 0028). This is the ONE seam a new account's
+// first entry funnels through: the server calls it on `createAvatar`, persists the returned
+// Save, adds the session to its socket set, and lets the next snapshot broadcast the freshly
+// placed Avatar. Returning accounts never pass here — they restore an existing Save. Pure
+// and deterministic (no store, no clock): the caller owns persistence and broadcast. #304
+// will thread a typed Handle through here; #305's `setCosmetics` shares the cosmetics-apply
+// on an already-live Avatar. `town` is the default starting Town for a Save with no
+// last-Town yet — a fresh account has none, so it anchors here.
+export function spawnNewAvatar(
+	world: ServerWorld,
+	sessionId: number,
+	handle: string,
+	cosmetics: Cosmetics,
+	weapon: number,
+	town: ZoneId,
+): { world: ServerWorld; save: PlayerSave } {
+	// The minted Save carries the finalised look + Weapon from the start, so it survives a
+	// restart exactly as a returning account would restore.
+	const save: PlayerSave = {
+		...emptySave(handle, town),
+		cosmetics,
+		equippedWeapon: weapon,
+	};
+	// Spawn through the same restore path a returning login uses, so a new account and a
+	// returning one can never place differently — the Save is the single source of the look.
+	const next = addSession(
+		world,
+		sessionId,
+		handle,
+		cosmetics,
+		weapon,
+		restoredFromSave(save),
+	);
+	return { world: next, save };
 }
 
 // Drop a disconnected session from its Zone and the membership maps. A session leaving a

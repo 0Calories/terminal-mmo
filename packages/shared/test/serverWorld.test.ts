@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { AvatarIntent, Item, Npc, ServerWorld } from '../src';
+import type { AvatarIntent, Cosmetics, Item, Npc, ServerWorld } from '../src';
 import {
 	addSession,
 	applyBuy,
@@ -7,6 +7,7 @@ import {
 	atMerchant,
 	BOX,
 	createServerWorld,
+	DEFAULT_COSMETICS,
 	emptySave,
 	GROUND_TOP,
 	handleOf,
@@ -18,6 +19,7 @@ import {
 	saleValue,
 	sessionByHandle,
 	sessionsInZone,
+	spawnNewAvatar,
 	stepServerWorld,
 	TOWN_SPAWN,
 	worldSnapshotFor,
@@ -188,6 +190,46 @@ test('removeSession drops a disconnected session from its Zone and the map', () 
 	expect(zoneOf(w, 7)).toBeUndefined();
 	expect(zoneOrThrow(w, 'field-01').avatars.length).toBe(0);
 	expect(removeSession(w, 99)).toBe(w); // unknown session is a no-op
+});
+
+// --- New-account creation seam (#302, ADR 0028) -------------------------------
+
+test('spawnNewAvatar spawns into the starting Town with the chosen look, and mints a matching Save', () => {
+	const chosen: Cosmetics = { hue: 5, hat: 1, nameplate: 2, form: 0 };
+	// A world with no session yet: the account is authenticated-but-unspawned, absent from
+	// every Zone (this is the "held until createAvatar" state the server keeps).
+	const before = townWorld();
+	expect(zoneOf(before, 7)).toBeUndefined();
+
+	const { world, save } = spawnNewAvatar(
+		before,
+		7,
+		'neo',
+		chosen,
+		3,
+		'town-01',
+	);
+
+	// Spawned into the starting Town with the finalised Cosmetics + Weapon.
+	expect(zoneOf(world, 7)).toBe('town-01');
+	const sa = avatarOf(world, 7);
+	expect(sa?.handle).toBe('neo');
+	expect(sa?.cosmetics).toEqual(chosen);
+	expect(sa?.avatar.weapon).toBe(3);
+	// The minted Save is a fresh level-1 account anchored to the starting Town, carrying the
+	// same look + Weapon so a restart restores it exactly as this spawn placed it.
+	expect(save.handle).toBe('neo');
+	expect(save.cosmetics).toEqual(chosen);
+	expect(save.equippedWeapon).toBe(3);
+	expect(save.lastTown).toBe('town-01');
+	expect(save.progress).toEqual({ level: 1, xp: 0, gold: 0 });
+	expect(save.inventory).toEqual([]);
+});
+
+test('spawnNewAvatar is pure — it never mutates the world passed in', () => {
+	const before = townWorld();
+	spawnNewAvatar(before, 7, 'neo', DEFAULT_COSMETICS, 0, 'town-01');
+	expect(zoneOf(before, 7)).toBeUndefined(); // the original world is untouched
 });
 
 // --- Funnel: one shared instance per Zone, no Channels (ADR 0024, #234) -------

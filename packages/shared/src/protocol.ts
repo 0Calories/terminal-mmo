@@ -224,7 +224,14 @@ export type ClientMessage =
 	// server-authoritative economy re-derives the price, checks affordability, and gates on
 	// the buyer standing at a Merchant; an out-of-range index or an unaffordable buy is a
 	// silent no-op.
-	| { t: 'buy'; index: number };
+	| { t: 'buy'; index: number }
+	// Finalise brand-new Avatar creation (#302, ADR 0028). Sent once, only after the
+	// server's `welcome` reported `isNew` and the client showed the creator over a neutral
+	// hold screen: it hands the server the chosen Cosmetics so it mints the durable Save and
+	// spawns the Avatar into the starting Town. A returning account never sends this — its
+	// look is restored from its Save. #304 threads a typed Handle through this message; #305
+	// adds a sibling `setCosmetics` for in-game re-customization, sharing the apply path.
+	| { t: 'createAvatar'; cosmetics: Cosmetics };
 
 // Cosmetics are four small catalog indices (#35, ADR 0020): one u8 each — hue, hat,
 // nameplate, then `form`. Decode clamps to a valid index so a forward-version / garbled
@@ -256,6 +263,7 @@ const CLIENT_TAG = {
 	proof: 6,
 	sell: 7,
 	buy: 8,
+	createAvatar: 9,
 } as const;
 
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
@@ -312,6 +320,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 		case 'buy':
 			w.u8(CLIENT_TAG.buy);
 			w.u32(msg.index);
+			break;
+		case 'createAvatar':
+			w.u8(CLIENT_TAG.createAvatar);
+			writeCosmetics(w, msg.cosmetics);
 			break;
 	}
 	return w.finish();
@@ -384,6 +396,8 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			return { t: 'sell', itemId: r.u32() };
 		case CLIENT_TAG.buy:
 			return { t: 'buy', index: r.u32() };
+		case CLIENT_TAG.createAvatar:
+			return { t: 'createAvatar', cosmetics: readCosmetics(r) };
 		default:
 			throw new Error(`unknown client message tag ${tag}`);
 	}
@@ -449,6 +463,12 @@ export type ServerMessage =
 			tickRate: number;
 			// The durable claimed username this connection authenticated as (#235).
 			handle: string;
+			// The server's new-vs-returning verdict (#302, ADR 0028), derived from its Save
+			// lookup — the ONLY authority for it (never a client flag). `true` for an account
+			// with no Save: the client shows the creator over a neutral hold screen and the
+			// server holds the session authenticated but UNSPAWNED until `createAvatar`.
+			// `false` for a returning account: already spawned into its last Town.
+			isNew: boolean;
 	  }
 	| {
 			t: 'snapshot';
@@ -764,6 +784,9 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			// The durable Handle trails the pre-auth fields (#235), so an older decoder
 			// still reads a valid welcome.
 			w.str(msg.handle);
+			// The new-vs-returning verdict trails the Handle (#302), append-only for the same
+			// reason; an older decoder that stops after the Handle simply never reads it.
+			w.bool(msg.isNew);
 			break;
 		case 'snapshot':
 			w.u8(SERVER_TAG.snapshot);
@@ -825,7 +848,10 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			// Durable Handle (#235) trails; absent decodes as '' (a pre-auth welcome) —
 			// the caller falls back to the handle it asked for.
 			const handle = r.remaining() >= 4 ? r.str() : '';
-			return { t: 'welcome', sessionId, zoneId, tickRate, handle };
+			// The new-vs-returning verdict (#302) trails the Handle; a welcome that predates it
+			// (or any short read) defaults to `false` — a returning account, so no creator shows.
+			const isNew = r.remaining() >= 1 ? r.bool() : false;
+			return { t: 'welcome', sessionId, zoneId, tickRate, handle, isNew };
 		}
 		case SERVER_TAG.snapshot: {
 			const tick = r.u32();
