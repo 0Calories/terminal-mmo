@@ -119,22 +119,56 @@ hud.attach(renderer.root);
 
 // Non-Kitty input notice (#228, ADR 0024 §1–§4). Detection is PROACTIVE and fail-open:
 // we read the terminal's resolved Kitty-keyboard capability, not the reactive
-// releaseCapable flag. The capability probe resolves asynchronously (it is `null` until
-// then), so we wait for the `capabilities` event rather than reading synchronously at
-// boot; on a CONFIRMED no-Kitty terminal we raise a blocking, press-any-key overlay. It
-// is re-evaluated fresh every launch (self-clears on a capable terminal) with no
+// releaseCapable flag. On a CONFIRMED no-Kitty terminal we raise a blocking, press-any-key
+// overlay. It is re-evaluated fresh every launch (self-clears on a capable terminal) with no
 // persistence and no opt-out — the keypress handlers below dismiss it on the first key.
+//
+// The Kitty-keyboard capability is NOT a null-until-resolved tri-state in OpenTUI: the native
+// struct field is a plain boolean that DEFAULTS to false and only flips true once the async
+// `ESC[?u` probe response is parsed (which fires a fresh `capabilities` event). So
+// `renderer.capabilities` is already NON-null with `kitty_keyboard === false` the instant
+// `createCliRenderer` resolves — reading it synchronously (or acting on the first, still-
+// unresolved `capabilities` event) mistakes "not answered yet" for "confirmed absent" and
+// wrongly warns on capable terminals like Ghostty. To honour ADR 0024 §2 ("warn only once
+// RESOLVED") without a dedicated OpenTUI signal we: (a) treat a `kitty_keyboard === true` event
+// as positive confirmation that cancels/retracts any warning, and (b) only warn once the probe
+// response burst has gone quiet for the settle window with the flag still false. A terminal that
+// answers nothing at all stays fail-open silent (ADR §2, the high-latency-SSH case).
 const noKittyNotice = new NoKittyNotice(renderer);
 noKittyNotice.attach(renderer.root);
-function evaluateKittyNotice(capabilities: TerminalCapabilities | null): void {
-	if (shouldWarnNoKitty(capabilities)) noKittyNotice.show();
+const KITTY_PROBE_SETTLE_MS = 500;
+let kittyConfirmed = false;
+let kittySettleTimer: ReturnType<typeof setTimeout> | null = null;
+function warnNoKittyNow(): void {
+	kittySettleTimer = null;
+	if (kittyConfirmed || noKittyNotice.open) return;
+	if (shouldWarnNoKitty(renderer.capabilities)) noKittyNotice.show();
+}
+function onKittyCapabilities(capabilities: TerminalCapabilities | null): void {
+	if (capabilities?.kitty_keyboard === true) {
+		// Confirmed capable — cancel a pending evaluation and retract a notice we may have
+		// raised from an earlier, still-unresolved (false-default) reading.
+		kittyConfirmed = true;
+		if (kittySettleTimer) {
+			clearTimeout(kittySettleTimer);
+			kittySettleTimer = null;
+		}
+		if (noKittyNotice.open) noKittyNotice.hide();
+		return;
+	}
+	// A still-false reading: (re)start the quiet timer. Each further probe response pushes it
+	// back, so we evaluate only after the burst settles — then warn if it is still false.
+	if (kittyConfirmed) return;
+	if (kittySettleTimer) clearTimeout(kittySettleTimer);
+	kittySettleTimer = setTimeout(warnNoKittyNow, KITTY_PROBE_SETTLE_MS);
 }
 renderer.on('capabilities', (capabilities: TerminalCapabilities) =>
-	evaluateKittyNotice(capabilities),
+	onKittyCapabilities(capabilities),
 );
-// Guard the rare case the probe already resolved before this listener attached; if it is
-// still null (the common case at boot) this no-ops and the event handler runs later.
-if (renderer.capabilities) evaluateKittyNotice(renderer.capabilities);
+// If the probe somehow already resolved before this listener attached, act on a POSITIVE only —
+// never treat the synchronous, pre-probe default of `false` as authoritative (that is the bug
+// this replaces). A false/undefined here just waits for the `capabilities` events above.
+if (renderer.capabilities?.kitty_keyboard === true) kittyConfirmed = true;
 
 // Best-effort, always-optional audio (ADR 0014). Init is attempted once here,
 // gated inside the facade on an interactive TTY, so a headless/piped launch
