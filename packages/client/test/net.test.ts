@@ -396,6 +396,7 @@ test('NetClient.ingest applies the welcome handshake and tracks the latest snaps
 			zoneId: 'field-01',
 			tickRate: 20,
 			handle: 'Tester',
+			isNew: false,
 		},
 		0,
 	);

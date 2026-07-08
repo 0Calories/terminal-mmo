@@ -17,7 +17,6 @@ import {
 	createServerWorld,
 	decodeClientMessage,
 	emoteById,
-	emptySave,
 	encodeServerMessage,
 	handleOf,
 	isReleaseVersion,
@@ -32,6 +31,7 @@ import {
 	saveFromAvatar,
 	sessionByHandle,
 	sessionsInZone,
+	spawnNewAvatar,
 	stepServerWorld,
 	worldSnapshotFor,
 	zoneOf,
@@ -129,6 +129,18 @@ const pendingAuth = new Map<number, PendingAuth>();
 // same key is refused while the first is connected).
 const onlineKeyBySession = new Map<number, string>();
 const onlineSessionByKey = new Map<string, number>();
+// New accounts that authenticated but are NOT yet spawned (#302, ADR 0028): a Save lookup
+// found nothing, so the server holds them authenticated-but-unplaced (no Avatar in any
+// Zone, never broadcast) while the client shows the creator over a neutral hold screen.
+// `createAvatar` consumes this to mint the Save and spawn the Avatar; `close` drops it if
+// they disconnect at the creator. The retained `weapon` (declared at `hello`) and `key`
+// (the durable identity) are the fields the spawn still needs — cosmetics arrive later.
+interface PendingSpawn {
+	key: string;
+	handle: string;
+	weapon: number;
+}
+const pendingSpawn = new Map<number, PendingSpawn>();
 // Body emotes triggered since the last tick (ADR 0020 §9), keyed by session. Consumed
 // in `tick` by folding onto that session's intent as a one-shot edge — so the emote arms
 // once instead of re-firing every input tick the way a sticky intent flag would.
@@ -210,42 +222,85 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		accounts = auth.registry;
 		onlineKeyBySession.set(sessionId, key);
 		onlineSessionByKey.set(key, sessionId);
-		// Load the durable save keyed by this account (#236). A first-ever login has none:
-		// mint an empty save and persist it immediately so the Handle claim survives a
-		// restart. A returning login is restored to its last Town with its saved level/XP/
-		// Gold, inventory, equipped Weapon, cosmetics, and boss-defeated flag; the handshake
-		// cosmetics/weapon are the fresh-account choice, overridden by the save when present.
-		let saved = store.load(key);
-		if (!saved) {
-			// A fresh account keeps its connect-time cosmetics/Weapon choice (the handshake
-			// picker), persisted from the start so it survives a restart.
-			saved = {
-				...emptySave(auth.handle, TOWN_ZONE),
-				cosmetics: pending.cosmetics,
-				equippedWeapon: pending.weapon,
-			};
-			store.save(key, saved);
+		// The server is the sole authority on new-vs-returning (#302, ADR 0028): the Save
+		// lookup keyed by this account decides it, never a client flag. A returning account
+		// (Save present) is restored and spawned straight away into its last Town with its
+		// saved level/XP/Gold, inventory, equipped Weapon, cosmetics, and boss-defeated flag.
+		const saved = store.load(key);
+		if (saved) {
+			world = addSession(
+				world,
+				sessionId,
+				auth.handle,
+				pending.cosmetics,
+				pending.weapon,
+				restoredFromSave(saved),
+			);
+			sockets.set(sessionId, ws);
+			const zoneId = zoneOf(world, sessionId) ?? START_ZONE;
+			ws.send(
+				encodeServerMessage({
+					t: 'welcome',
+					sessionId,
+					zoneId,
+					tickRate: TICK_RATE,
+					handle: auth.handle,
+					isNew: false,
+				}),
+			);
+			console.log(`session ${sessionId} (${auth.handle}) joined ${zoneId}`);
+			return;
 		}
-		world = addSession(
-			world,
-			sessionId,
-			auth.handle,
-			pending.cosmetics,
-			pending.weapon,
-			restoredFromSave(saved),
-		);
-		sockets.set(sessionId, ws);
-		const zoneId = zoneOf(world, sessionId) ?? START_ZONE;
+		// A brand-new account (no Save): hold it authenticated but UNSPAWNED — no Avatar in
+		// any Zone, so it is never broadcast to others and `tick` never streams it a snapshot
+		// (it is deliberately kept out of `sockets` until `createAvatar` places it). The
+		// `welcome` reports `isNew` so the client shows the creator over a neutral hold
+		// screen; `zoneId` names where it WILL spawn. The Save is minted only on finalise.
+		pendingSpawn.set(sessionId, {
+			key,
+			handle: auth.handle,
+			weapon: pending.weapon,
+		});
 		ws.send(
 			encodeServerMessage({
 				t: 'welcome',
 				sessionId,
-				zoneId,
+				zoneId: START_ZONE,
 				tickRate: TICK_RATE,
 				handle: auth.handle,
+				isNew: true,
 			}),
 		);
-		console.log(`session ${sessionId} (${auth.handle}) joined ${zoneId}`);
+		console.log(
+			`session ${sessionId} (${auth.handle}) authenticated as a new account — awaiting createAvatar`,
+		);
+		return;
+	}
+	if (msg.t === 'createAvatar') {
+		// Finalise a new account's creation (#302, ADR 0028): valid only for a session the
+		// server is holding unspawned (a returning or already-spawned session has no pending
+		// entry, so a stray/duplicate createAvatar is a silent no-op). Mint the Save from the
+		// chosen Cosmetics and spawn the Avatar into the starting Town through the shared
+		// `spawnNewAvatar` seam, persist the Save immediately (a significant durable event —
+		// the Handle claim must survive a restart), then join it to `sockets` so the next
+		// tick broadcasts the freshly placed Avatar.
+		const pending = pendingSpawn.get(sessionId);
+		if (!pending) return;
+		pendingSpawn.delete(sessionId);
+		const { world: next, save } = spawnNewAvatar(
+			world,
+			sessionId,
+			pending.handle,
+			msg.cosmetics,
+			pending.weapon,
+			TOWN_ZONE,
+		);
+		world = next;
+		store.save(pending.key, save);
+		sockets.set(sessionId, ws);
+		console.log(
+			`session ${sessionId} (${pending.handle}) created and spawned into ${zoneOf(world, sessionId) ?? START_ZONE}`,
+		);
 		return;
 	}
 	if (msg.t === 'chat') {
@@ -417,93 +472,126 @@ function tick() {
 		ws.send(encodeServerMessage(worldSnapshotFor(world, sessionId)));
 }
 
-const server = Bun.serve<WsData>({
-	port: PORT,
-	fetch(req, srv) {
-		const upgraded = srv.upgrade(req, {
-			data: {
-				sessionId: nextSessionId++,
-				ip: clientIp(req, srv),
-				counted: false,
+// Tear down a departed session's server-side state (#236, #302): flush its durable Avatar
+// (a significant event — logout must not lose progress), drop it from every per-session map
+// (including a `pendingSpawn` hold if it left at the creator, authenticated but unspawned),
+// release its identity presence so the key can log in again (#235), and remove its Avatar
+// from the World. Extracted from the socket `close` handler so the lifecycle is exercised
+// under test, not only over a live socket. Idempotent for an unknown session.
+function dropSession(sessionId: number) {
+	flushSession(sessionId);
+	sockets.delete(sessionId);
+	intents.delete(sessionId);
+	pendingEmotes.delete(sessionId);
+	pendingInteract.delete(sessionId);
+	pendingAuth.delete(sessionId);
+	// A new account that disconnected at the creator (authenticated but never spawned): drop
+	// its hold so a reconnect starts clean. Its presence slot is released just below.
+	pendingSpawn.delete(sessionId);
+	// Release this identity's presence so the key can log in again (#235).
+	const key = onlineKeyBySession.get(sessionId);
+	if (key !== undefined) {
+		onlineKeyBySession.delete(sessionId);
+		onlineSessionByKey.delete(key);
+	}
+	world = removeSession(world, sessionId);
+}
+
+// A read-only window onto the live World for tests (the module keeps `world` private, and
+// ES export bindings would expose the reassignment but not read cleanly): #302's server
+// tests drive `onMessage` with fake sockets and assert new accounts stay unspawned until
+// `createAvatar`.
+function currentWorld(): ServerWorld {
+	return world;
+}
+
+// The server bootstrap runs only when this module is the entrypoint (production / dev).
+// Under test the module is imported for its pure `onMessage`/`dropSession` seam, so the
+// listener, tick loop, and shutdown hooks stay dormant (#302 server tests drive the
+// handshake directly with fake sockets).
+if (import.meta.main) {
+	const server = Bun.serve<WsData>({
+		port: PORT,
+		fetch(req, srv) {
+			const upgraded = srv.upgrade(req, {
+				data: {
+					sessionId: nextSessionId++,
+					ip: clientIp(req, srv),
+					counted: false,
+				},
+			});
+			if (upgraded) return;
+			// Any plain HTTP GET answers 200 so Railway's healthcheck passes (ADR 0009).
+			// `/health` also reports this server's release Version (ADR 0012): the release
+			// pipeline polls it after deploy and refuses to publish the client unless the
+			// reported version matches the tag it just shipped.
+			const path = new URL(req.url).pathname;
+			if (path === '/health')
+				return Response.json({ status: 'ok', version: SERVER_VERSION });
+			return new Response('terminal-mmo server — connect over WebSocket');
+		},
+		websocket: {
+			// Enforce the connection caps at the socket level, before any handshake.
+			open(ws) {
+				const { ip } = ws.data;
+				const ipCount = perIp.get(ip) ?? 0;
+				if (openConnections >= MAX_CONNECTIONS) {
+					reject(ws, 'Server is full — please try again shortly.');
+					return;
+				}
+				if (ipCount >= MAX_PER_IP) {
+					reject(ws, 'Too many connections from your network.');
+					return;
+				}
+				openConnections++;
+				perIp.set(ip, ipCount + 1);
+				ws.data.counted = true;
 			},
-		});
-		if (upgraded) return;
-		// Any plain HTTP GET answers 200 so Railway's healthcheck passes (ADR 0009).
-		// `/health` also reports this server's release Version (ADR 0012): the release
-		// pipeline polls it after deploy and refuses to publish the client unless the
-		// reported version matches the tag it just shipped.
-		const path = new URL(req.url).pathname;
-		if (path === '/health')
-			return Response.json({ status: 'ok', version: SERVER_VERSION });
-		return new Response('terminal-mmo server — connect over WebSocket');
-	},
-	websocket: {
-		// Enforce the connection caps at the socket level, before any handshake.
-		open(ws) {
-			const { ip } = ws.data;
-			const ipCount = perIp.get(ip) ?? 0;
-			if (openConnections >= MAX_CONNECTIONS) {
-				reject(ws, 'Server is full — please try again shortly.');
-				return;
-			}
-			if (ipCount >= MAX_PER_IP) {
-				reject(ws, 'Too many connections from your network.');
-				return;
-			}
-			openConnections++;
-			perIp.set(ip, ipCount + 1);
-			ws.data.counted = true;
+			message(ws, message) {
+				const bytes =
+					typeof message === 'string'
+						? new TextEncoder().encode(message)
+						: new Uint8Array(message);
+				try {
+					onMessage(ws, bytes);
+				} catch (err) {
+					console.error('bad frame from session', ws.data.sessionId, err);
+				}
+			},
+			close(ws) {
+				const { sessionId, ip, counted } = ws.data;
+				// Release the cap slot only if this socket was admitted (a rejected one
+				// never incremented the counters).
+				if (counted) {
+					openConnections--;
+					const n = (perIp.get(ip) ?? 1) - 1;
+					if (n <= 0) perIp.delete(ip);
+					else perIp.set(ip, n);
+				}
+				// Logout is a significant event (#236): flush this Avatar's durable state and
+				// release its presence before it leaves the World, so nothing since the last
+				// periodic flush is lost and the key can reconnect.
+				dropSession(sessionId);
+				console.log(`session ${sessionId} left`);
+			},
 		},
-		message(ws, message) {
-			const bytes =
-				typeof message === 'string'
-					? new TextEncoder().encode(message)
-					: new Uint8Array(message);
-			try {
-				onMessage(ws, bytes);
-			} catch (err) {
-				console.error('bad frame from session', ws.data.sessionId, err);
-			}
-		},
-		close(ws) {
-			const { sessionId, ip, counted } = ws.data;
-			// Release the cap slot only if this socket was admitted (a rejected one
-			// never incremented the counters).
-			if (counted) {
-				openConnections--;
-				const n = (perIp.get(ip) ?? 1) - 1;
-				if (n <= 0) perIp.delete(ip);
-				else perIp.set(ip, n);
-			}
-			// Logout is a significant event (#236): flush this Avatar's durable state
-			// before it leaves the World, so nothing since the last periodic flush is lost.
-			flushSession(sessionId);
-			sockets.delete(sessionId);
-			intents.delete(sessionId);
-			pendingEmotes.delete(sessionId);
-			pendingInteract.delete(sessionId);
-			pendingAuth.delete(sessionId);
-			// Release this identity's presence so the key can log in again (#235).
-			const key = onlineKeyBySession.get(sessionId);
-			if (key !== undefined) {
-				onlineKeyBySession.delete(sessionId);
-				onlineSessionByKey.delete(key);
-			}
-			world = removeSession(world, sessionId);
-			console.log(`session ${sessionId} left`);
-		},
-	},
-});
+	});
 
-setInterval(tick, MS_PER_TICK);
-setInterval(flushAll, FLUSH_MS);
+	setInterval(tick, MS_PER_TICK);
+	setInterval(flushAll, FLUSH_MS);
 
-// Clean shutdown (#269): on SIGTERM (Railway redeploy) or SIGINT (Ctrl-C) flush every online
-// Avatar's dirty state and close the store before exit, so nothing since the last periodic
-// flush — or the per-event flushes from logout / Town-entry / a sell (#267) — is lost. The
-// hook is idempotent, so a repeated / racing signal never double-closes the store.
-installShutdownHooks({ flushAll, close: () => store.close() });
+	// Clean shutdown (#269): on SIGTERM (Railway redeploy) or SIGINT (Ctrl-C) flush every online
+	// Avatar's dirty state and close the store before exit, so nothing since the last periodic
+	// flush — or the per-event flushes from logout / Town-entry / a sell (#267) — is lost. The
+	// hook is idempotent, so a repeated / racing signal never double-closes the store.
+	installShutdownHooks({ flushAll, close: () => store.close() });
 
-console.log(
-	`@mmo/server (${SERVER_VERSION}) ticking the world at ${TICK_RATE} Hz on ws://localhost:${server.port}`,
-);
+	console.log(
+		`@mmo/server (${SERVER_VERSION}) ticking the world at ${TICK_RATE} Hz on ws://localhost:${server.port}`,
+	);
+}
+
+// Test surface (#302): the message handler, the session teardown, and a read-only World
+// window, so a headless test can prove a new account is held unspawned until `createAvatar`
+// and a returning one is restored with no creator. Not part of the wire/runtime contract.
+export { currentWorld, dropSession, onMessage };

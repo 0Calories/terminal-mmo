@@ -3,10 +3,10 @@ import {
 	activeZone,
 	applyImpulse,
 	COMBAT,
-	type Cosmetics,
 	canStartDodge,
 	capabilityUnlocked,
 	clientStepAvatar,
+	DEFAULT_COSMETICS,
 	DEFAULT_WEAPON,
 	type Entity,
 	effectsOf,
@@ -270,23 +270,49 @@ async function runNetworked(url: string) {
 	}
 	const identity = resolved.identity; // narrowed const, so the play() closure sees it
 	identityNotice = resolved.notice ?? null; // surfaced on exit (generated / ephemeral)
-	// Pre-spawn customization (#36, story 7): the Player picks hue / hat / nameplate
-	// and confirms BEFORE we connect, so the chosen look rides the connect handshake
-	// (#35) and everyone sees it the moment they spawn in. Seeded with a randomized
-	// starting look so a Player who just hits Enter still gets a distinct Avatar.
+	// Server-gated Avatar creation (#302, ADR 0028): connect FIRST, then the server's
+	// `welcome` decides new-vs-returning from its Save lookup — never a client flag. A
+	// returning account skips the creator and drops straight into its last Town; a new one
+	// is held authenticated-but-unspawned while the creator shows over a neutral hold screen
+	// (the live World is NOT rendered — no snapshot arrives until `createAvatar`). Cosmetics
+	// no longer ride `hello`: a new account's look flows via `createAvatar`, a returning
+	// account's is restored from its Save, so the handshake carries only a placeholder.
 	const creator = new CharacterCreator(
 		renderer,
 		handle,
 		randomCosmetics((Math.random() * 0x7fffffff) | 0),
 	);
-	creator.attach(renderer.root);
-	creator.show();
 
-	// Phase 1 — the picker owns the keyboard: every key drives a selection and, on
-	// Enter, hands back the chosen Cosmetics. `started` makes this handler inert once
-	// play() has taken over the keys (its own listener is added then), so the two
-	// phases never both react to a key.
-	let started = false;
+	let started = false; // the live World loop is running (we are spawned)
+	let creating = false; // the creator is up (a new account finalising its look)
+
+	// On a server refusal (protocol mismatch / connection cap, ADR 0009), tear down the TUI
+	// and print the reason so it isn't buried under the alt-screen.
+	const net = new NetClient(
+		url,
+		handle,
+		identity,
+		(reason) => {
+			quit(reason);
+		},
+		DEFAULT_COSMETICS,
+		WEAPON,
+		(isNew) => {
+			// The server's verdict on `welcome`: a returning account plays immediately; a new
+			// one customizes first over the hold screen, then `createAvatar` spawns it.
+			if (isNew) {
+				creating = true;
+				creator.attach(renderer.root);
+				creator.show();
+			} else {
+				play();
+			}
+		},
+	);
+
+	// The creator owns the keyboard while up (a new account only): every key drives a
+	// selection and, on Enter, sends `createAvatar` with the chosen Cosmetics and starts the
+	// live loop. Inert once we are spawned (`started`) or before the creator opens.
 	renderer.keyInput.on('keypress', (k) => {
 		if (started) return;
 		// The blocking no-Kitty notice owns the keyboard while up: the first key press
@@ -296,30 +322,24 @@ async function runNetworked(url: string) {
 			return;
 		}
 		if (k.name === 'q') quit();
+		if (!creating) return; // still connecting / holding — nothing to customize yet
 		// UI blip on customize navigation / confirm (ADR 0014), the same menu click
 		// the shop uses — a centered, full-volume interface tick.
 		if (isMenuBlipKey(k.name)) sound.play('ui');
 		const chosen = creator.key(k.name);
 		if (!chosen) return;
-		started = true;
+		creating = false;
 		creator.hide();
-		play(chosen);
+		net.send({ t: 'createAvatar', cosmetics: chosen });
+		play();
 	});
 
-	// Phase 2 — connect with the confirmed look and run the live World loop.
-	function play(cosmetics: Cosmetics) {
-		// On a server refusal (protocol mismatch / connection cap, ADR 0009), tear down
-		// the TUI and print the reason so it isn't buried under the alt-screen.
-		const net = new NetClient(
-			url,
-			handle,
-			identity,
-			(reason) => {
-				quit(reason);
-			},
-			cosmetics,
-			WEAPON,
-		);
+	// Connect-and-run the live World loop, once the server has spawned us (a returning
+	// account on `welcome`, a new one after `createAvatar`). Idempotent guard so the two
+	// mutually-exclusive entry paths can never double-start it.
+	function play() {
+		if (started) return;
+		started = true;
 		hud.showAlphaNotice(); // ephemeral live World (ADR 0009)
 		// The Zone we currently render + predict against; swapped when the server moves
 		// us between Zones (portal travel, death respawn).
