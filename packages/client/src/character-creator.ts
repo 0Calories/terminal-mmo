@@ -163,9 +163,20 @@ export class CharacterCreator {
 	// True between sending `createAvatar` and the server's verdict: input is frozen so the draft
 	// can't change mid round-trip. Cleared on a rejection so the Player can retry.
 	private busy = false;
+	// Whether the Handle field is editable. Creation mode (#304) lets the Player type it; the
+	// in-game re-customize mode (#305, [c] in Town — ADR 0028) reopens the SAME creator with the
+	// Handle set-once and read-only, editing Cosmetics only. When false the field shows the
+	// durable Handle verbatim, typing/backspace are inert, and confirm is always allowed.
+	private readonly editableHandle: boolean;
 
-	constructor(ctx: RenderContext, handle: string, start: Cosmetics) {
+	constructor(
+		ctx: RenderContext,
+		handle: string,
+		start: Cosmetics,
+		editableHandle = true,
+	) {
 		this.placeholder = handle;
+		this.editableHandle = editableHandle;
 		this.state = initCustomize(start);
 
 		this.container = new BoxRenderable(ctx, {
@@ -188,7 +199,7 @@ export class CharacterCreator {
 			border: true,
 			borderStyle: 'single',
 			borderColor: COLORS.vendor,
-			title: ' Create your Avatar ',
+			title: editableHandle ? ' Create your Avatar ' : ' Re-customize ',
 			titleColor: COLORS.vendor,
 			backgroundColor: COLORS.hudBg,
 		});
@@ -265,9 +276,24 @@ export class CharacterCreator {
 		return this.errorText;
 	}
 
-	// Whether the confirm key is currently accepted (the effective Handle is valid).
+	// Whether the confirm key is currently accepted. Creation gates on a valid effective Handle;
+	// re-customize (read-only Handle) is always confirmable — the durable Handle is already valid
+	// and only Cosmetics change.
 	get confirmable(): boolean {
-		return handleConfirmable(this.handleText, this.placeholder);
+		return this.editableHandle
+			? handleConfirmable(this.handleText, this.placeholder)
+			: true;
+	}
+
+	// Re-seed the re-customize creator to the Avatar's CURRENT Cosmetics before reopening it
+	// (#305): each `[c]` press must start from what the Player looks like NOW, which may have
+	// changed since the last edit. Clears any transient busy/error and refreshes the preview.
+	// Only meaningful in read-only-Handle mode (the durable Handle never changes).
+	reopen(cosmetics: Cosmetics): void {
+		this.state = initCustomize(cosmetics);
+		this.errorText = '';
+		this.busy = false;
+		this.refresh();
 	}
 
 	show(): void {
@@ -304,23 +330,27 @@ export class CharacterCreator {
 	key(k: CreatorKey): CreatorResult | null {
 		if (this.busy) return null;
 		const { name, sequence } = k;
-		if (name === 'backspace') {
-			if (this.handleText) {
-				this.handleText = this.handleText.slice(0, -1);
-				this.errorText = '';
-				this.refresh();
-			}
-			return null;
-		}
-		// A printable, claimable character types into the Handle (ctrl/meta chords are commands,
-		// not text). Typing supersedes the cosmetic picker's left/right so the two never fight.
-		if (!k.ctrl && !k.meta && sequence) {
-			const next = typeHandleChar(this.handleText, sequence);
-			if (next !== this.handleText) {
-				this.handleText = next;
-				this.errorText = '';
-				this.refresh();
+		// Handle editing is disabled in re-customize mode (#305): the Handle is set-once, so
+		// backspace and typing are inert and every key just drives the cosmetic picker.
+		if (this.editableHandle) {
+			if (name === 'backspace') {
+				if (this.handleText) {
+					this.handleText = this.handleText.slice(0, -1);
+					this.errorText = '';
+					this.refresh();
+				}
 				return null;
+			}
+			// A printable, claimable character types into the Handle (ctrl/meta chords are commands,
+			// not text). Typing supersedes the cosmetic picker's left/right so the two never fight.
+			if (!k.ctrl && !k.meta && sequence) {
+				const next = typeHandleChar(this.handleText, sequence);
+				if (next !== this.handleText) {
+					this.handleText = next;
+					this.errorText = '';
+					this.refresh();
+					return null;
+				}
 			}
 		}
 		if (name === 'return') {
@@ -329,7 +359,11 @@ export class CharacterCreator {
 				return null;
 			}
 			return {
-				handle: effectiveHandle(this.handleText, this.placeholder),
+				// A read-only Handle confirms with the durable value (the placeholder holds it), so
+				// re-customize never mutates the Handle — only `cosmetics` is acted on downstream.
+				handle: this.editableHandle
+					? effectiveHandle(this.handleText, this.placeholder)
+					: this.placeholder,
 				cosmetics: this.state.cosmetics,
 			};
 		}
@@ -347,17 +381,25 @@ export class CharacterCreator {
 			this.state.cosmetics,
 			effectiveHandle(this.handleText, this.placeholder),
 		);
-		this.handleInput.value = this.handleText;
+		// In re-customize mode the field shows the durable, read-only Handle verbatim; in creation
+		// mode it mirrors the editable draft (empty ⇒ the placeholder shows through).
+		this.handleInput.value = this.editableHandle
+			? this.handleText
+			: this.placeholder;
 		const lines = customizeRows(this.state).map((r) => {
 			const caret = r.focused ? '▸' : ' ';
 			return `${caret} ${r.label.padEnd(10)} ◂ ${r.value} ▸`;
 		});
 		this.rows.content = `\n${lines.join('\n')}\n`;
 		// The hint prefers a server error, then the validity rule, then blank; the footer drops
-		// the "enter the World" affordance until confirm is actually accepted.
+		// the "enter the World" affordance until confirm is actually accepted. Re-customize has no
+		// Handle rule to satisfy — it notes the set-once Handle and offers save/cancel.
 		if (this.errorText) {
 			this.hint.content = this.errorText;
 			this.hint.fg = COLORS.warn;
+		} else if (!this.editableHandle) {
+			this.hint.content = 'handle is set for life';
+			this.hint.fg = COLORS.dim;
 		} else if (!this.confirmable) {
 			this.hint.content = 'handle: 2–16 of letters, digits, - or _';
 			this.hint.fg = COLORS.dim;
@@ -366,9 +408,13 @@ export class CharacterCreator {
 			this.hint.fg = COLORS.dim;
 		}
 		this.footer.content = this.busy
-			? 'creating…'
-			: this.confirmable
-				? 'type a handle   ↑/↓ field   ←/→ change   ↵ enter the World'
-				: 'type a handle   ↑/↓ field   ←/→ change';
+			? this.editableHandle
+				? 'creating…'
+				: 'saving…'
+			: this.editableHandle
+				? this.confirmable
+					? 'type a handle   ↑/↓ field   ←/→ change   ↵ enter the World'
+					: 'type a handle   ↑/↓ field   ←/→ change'
+				: '↑/↓ field   ←/→ change   ↵ save   esc cancel';
 	}
 }

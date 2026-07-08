@@ -3,6 +3,7 @@ import type { AvatarIntent, Cosmetics, Item, Npc, ServerWorld } from '../src';
 import {
 	addSession,
 	applyBuy,
+	applyCosmetics,
 	applySell,
 	atMerchant,
 	BOX,
@@ -711,4 +712,81 @@ test('round-trip buy then sell is always a net Gold loss', () => {
 		expect(soldRes.sold).toBe(true);
 		expect(avatarOf(soldRes.world, 1)?.progress.gold).toBeLessThan(100);
 	}
+});
+
+// --- In-game re-customization: applyCosmetics (#305, ADR 0028) ----------------------
+// The pure Town-gated cosmetics apply both `setCosmetics` and (via `withCosmetics`) a fresh
+// spawn funnel through. Proves the Town-only rule + the defensive clamp without a socket.
+
+test('applyCosmetics in a Town stamps the new look on the live Avatar (rebroadcast + persist path) (#305)', () => {
+	// Spawn straight into the starting Town, then re-customize there.
+	const { world } = spawnNewAvatar(
+		makeWorld(),
+		7,
+		'neo',
+		DEFAULT_COSMETICS,
+		0,
+		'town-01',
+	);
+	expect(zoneOf(world, 7)).toBe('town-01');
+	const next: Cosmetics = { hue: 3, hat: 1, nameplate: 2, form: 0 };
+	const res = applyCosmetics(world, 7, next);
+	expect(res.changed).toBe(true);
+	// The new Cosmetics are on the live Avatar, so the very next snapshot rebroadcasts them to
+	// everyone in the Zone (snapshotFor reads sa.cosmetics) and a flush persists them.
+	const seen = worldSnapshotFor(res.world, 7).avatars.find(
+		(a) => a.sessionId === 7,
+	);
+	expect(seen?.cosmetics).toEqual(next);
+});
+
+test('applyCosmetics clamps an out-of-range index at the apply boundary (#305)', () => {
+	const { world } = spawnNewAvatar(
+		makeWorld(),
+		7,
+		'neo',
+		DEFAULT_COSMETICS,
+		0,
+		'town-01',
+	);
+	const res = applyCosmetics(world, 7, {
+		hue: 2,
+		hat: 250,
+		nameplate: 1,
+		form: 250,
+	});
+	expect(res.changed).toBe(true);
+	expect(avatarOf(res.world, 7)?.cosmetics).toEqual({
+		hue: 2,
+		hat: 0,
+		nameplate: 1,
+		form: 0,
+	});
+});
+
+test('applyCosmetics outside a Town is a silent no-op (Town-only re-customize) (#305)', () => {
+	// The start Zone is a Field, so a re-customize request there changes nothing.
+	const world = addSession(makeWorld(), 7, 'neo');
+	expect(zoneOf(world, 7)).toBe('field-01');
+	const res = applyCosmetics(world, 7, {
+		hue: 3,
+		hat: 1,
+		nameplate: 2,
+		form: 0,
+	});
+	expect(res.changed).toBe(false);
+	expect(res.world).toBe(world); // World unchanged, referentially
+	expect(avatarOf(world, 7)?.cosmetics).toEqual(DEFAULT_COSMETICS);
+});
+
+test('applyCosmetics for an unplaced session is a silent no-op (#305)', () => {
+	const world = makeWorld();
+	const res = applyCosmetics(world, 999, {
+		hue: 1,
+		hat: 1,
+		nameplate: 1,
+		form: 0,
+	});
+	expect(res.changed).toBe(false);
+	expect(res.world).toBe(world);
 });

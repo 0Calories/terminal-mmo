@@ -29,7 +29,7 @@ import {
 	swingPhase,
 } from './combat';
 import { BOX, COMBAT, LOOT, PHYS, RESPAWN, SHOOTER, SPAWN } from './constants';
-import { DEFAULT_COSMETICS } from './cosmetics';
+import { clampCosmetics, DEFAULT_COSMETICS } from './cosmetics';
 import { emoteById, emoteInterrupted, initialEmoteT, stepEmote } from './emote';
 import { itemLabel, type LootTable, lootTableFor, rollDrop } from './loot';
 import type { RestoredAvatar } from './persistence';
@@ -957,6 +957,19 @@ export function createZoneState(zone: Zone): ZoneState {
 	return { zone, avatars: [], tick: 0 };
 }
 
+// The single cosmetics write both entry points funnel through (#302 new-Avatar spawn via
+// `addAvatar`, #305 in-game `setCosmetics`, ADR 0028): clamp the untrusted catalog indices,
+// then stamp them on the ServerAvatar so the broadcast look (`snapshotFor` reads
+// `sa.cosmetics`) and the durable Save (`saveFromAvatar` reads `sa.cosmetics`) can never
+// diverge from what the Player picked. Pure — no store, no clock; the caller persists +
+// rebroadcasts.
+export function withCosmetics(
+	sa: ServerAvatar,
+	cosmetics: Cosmetics,
+): ServerAvatar {
+	return { ...sa, cosmetics: clampCosmetics(cosmetics) };
+}
+
 // Add a freshly-spawned Avatar for a connecting session. The entity id mirrors
 // the session id (Avatars are identified by session on the wire). An optional
 // `restore` seeds durable state loaded from persistence (#236): the returning
@@ -986,21 +999,29 @@ export function addAvatar(
 		avatar.maxHp = mhp;
 		avatar.hp = mhp;
 	}
-	const sa: ServerAvatar = {
-		sessionId,
-		handle,
-		cosmetics: cos,
-		avatar,
-		progress: restore?.progress ?? { level: 1, xp: 0, gold: 0 },
-		inventory: restore?.inventory ?? [],
-		log: ['Welcome. Hunt the chasers (j attack, k guard).'],
-		nextId: nextItemId(restore?.inventory),
-		rngState: sessionId,
-		class: 'warrior',
-		skillCooldowns: {},
-		lastTown: restore?.lastTown,
-		bossDefeated: restore?.bossDefeated,
-	};
+	// Cosmetics are stamped through the shared `withCosmetics` — the ONE apply path both a fresh
+	// spawn and in-game re-customization funnel through (ADR 0028) — so the fresh Avatar is
+	// clamped identically to a live `setCosmetics`.
+	const sa: ServerAvatar = withCosmetics(
+		{
+			sessionId,
+			handle,
+			// Placeholder — `withCosmetics` below overwrites it with the clamped `cos`; it exists
+			// only to satisfy the required field before the single stamp runs.
+			cosmetics: cos,
+			avatar,
+			progress: restore?.progress ?? { level: 1, xp: 0, gold: 0 },
+			inventory: restore?.inventory ?? [],
+			log: ['Welcome. Hunt the chasers (j attack, k guard).'],
+			nextId: nextItemId(restore?.inventory),
+			rngState: sessionId,
+			class: 'warrior',
+			skillCooldowns: {},
+			lastTown: restore?.lastTown,
+			bossDefeated: restore?.bossDefeated,
+		},
+		cos,
+	);
 	return { ...state, avatars: [...state.avatars, sa] };
 }
 

@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { BOX, DEFAULT_COSMETICS, HATS } from '@mmo/shared';
+import { BOX, type Cosmetics, DEFAULT_COSMETICS, HATS } from '@mmo/shared';
 import { createTestRenderer } from '@opentui/core/testing';
 import {
 	CharacterCreator,
@@ -103,4 +103,47 @@ test('a createRejected keeps the creator open with an inline error, cleared on t
 	// Editing the Handle again clears the inline error so the retry reads clean.
 	cc.key(key('backspace'));
 	expect(cc.errorMessage).toBe('');
+});
+
+// --- In-game re-customization: cosmetics-only mode (#305, ADR 0028) ----------------
+// The SAME creator reopened with `editableHandle = false`: the Handle is set-once and read-
+// only, and only Cosmetics change. Drives it headlessly to assert the read-only Handle + the
+// current-look seed + confirm returning cosmetics (the interactive logic, not the pixels).
+
+const SEED: Cosmetics = { hue: 2, hat: 1, nameplate: 3, form: 0 };
+
+async function mountRecustomize(handle = 'Neo', cosmetics = SEED) {
+	const { renderer } = await createTestRenderer({ width: 80, height: 30 });
+	const cc = new CharacterCreator(renderer, handle, cosmetics, false);
+	cc.attach(renderer.root);
+	cc.show();
+	return cc;
+}
+
+test('re-customize seeds the current cosmetics and is confirmable immediately with a read-only Handle', async () => {
+	const cc = await mountRecustomize();
+	// The durable Handle is already valid, so confirm is allowed with no typing.
+	expect(cc.confirmable).toBe(true);
+	// Typing / backspace can't edit the set-once Handle (each is inert, returns null).
+	expect(cc.key(key('z', 'z'))).toBeNull();
+	expect(cc.key(key('backspace'))).toBeNull();
+	// Confirm keeps the durable Handle and hands back the seeded (current) cosmetics unchanged.
+	expect(cc.key(key('return'))).toEqual({ handle: 'Neo', cosmetics: SEED });
+});
+
+test('re-customize edits cosmetics only; a picker change rides the confirm, the Handle never does', async () => {
+	const cc = await mountRecustomize();
+	// Cycle the focused field, then confirm: the Handle is still the durable one and the
+	// cosmetics reflect the change (so it differs from the seed).
+	expect(cc.key(key('right'))).toBeNull();
+	const result = cc.key(key('return'));
+	expect(result?.handle).toBe('Neo');
+	expect(result?.cosmetics).not.toEqual(SEED);
+});
+
+test('reopen re-seeds the picker to the latest cosmetics for the next [c] press', async () => {
+	const cc = await mountRecustomize('Neo', DEFAULT_COSMETICS);
+	// A previous session tweaked the look; the next open must start from the CURRENT cosmetics.
+	cc.reopen(SEED);
+	expect(cc.key(key('return'))).toEqual({ handle: 'Neo', cosmetics: SEED });
 });

@@ -233,7 +233,13 @@ export type ClientMessage =
 	// its Save. `handle` is the Player-typed Handle (#304); an empty string means "use the
 	// auto-derived placeholder", which the server re-applies before the uniqueness check. #305
 	// adds a sibling `setCosmetics` for in-game re-customization, sharing the apply path.
-	| { t: 'createAvatar'; handle: string; cosmetics: Cosmetics };
+	| { t: 'createAvatar'; handle: string; cosmetics: Cosmetics }
+	// In-game Avatar re-customization (#305, ADR 0028). Sent when a Player confirms the
+	// creator reopened in cosmetics-only mode ([c], Town-only): it changes Cosmetics only,
+	// never the Handle (set-once). The server gates on the Player standing in a Town, applies
+	// the new look through the same validate/apply path as `createAvatar`, persists it to the
+	// Save, and rebroadcasts the appearance to the Zone. A no-op / rejection outside a Town.
+	| { t: 'setCosmetics'; cosmetics: Cosmetics };
 
 // Cosmetics are four small catalog indices (#35, ADR 0020): one u8 each — hue, hat,
 // nameplate, then `form`. Decode clamps to a valid index so a forward-version / garbled
@@ -266,6 +272,7 @@ const CLIENT_TAG = {
 	sell: 7,
 	buy: 8,
 	createAvatar: 9,
+	setCosmetics: 10,
 } as const;
 
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
@@ -330,6 +337,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			// client that omitted it still decodes (the server then falls back to the
 			// auto-derived placeholder). '' encodes as "use the placeholder".
 			w.str(msg.handle);
+			break;
+		case 'setCosmetics':
+			w.u8(CLIENT_TAG.setCosmetics);
+			writeCosmetics(w, msg.cosmetics);
 			break;
 	}
 	return w.finish();
@@ -408,6 +419,10 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			// falls back to the auto-derived placeholder and still runs the uniqueness check.
 			const handle = r.remaining() >= 4 ? r.str() : '';
 			return { t: 'createAvatar', handle, cosmetics };
+		}
+		case CLIENT_TAG.setCosmetics: {
+			const cosmetics = readCosmetics(r);
+			return { t: 'setCosmetics', cosmetics };
 		}
 		default:
 			throw new Error(`unknown client message tag ${tag}`);

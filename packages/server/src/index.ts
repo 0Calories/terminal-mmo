@@ -10,6 +10,7 @@ import {
 	type AvatarIntent,
 	addSession,
 	applyBuy,
+	applyCosmetics,
 	applySell,
 	CHAT_MAX_LEN,
 	type Cosmetics,
@@ -329,6 +330,20 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		console.log(
 			`session ${sessionId} (${claim.handle}) created and spawned into ${zoneOf(world, sessionId) ?? START_ZONE}`,
 		);
+		return;
+	}
+	if (msg.t === 'setCosmetics') {
+		// In-game re-customization (#305, ADR 0028): change the live Avatar's look through the
+		// SAME apply path a fresh spawn uses (`applyCosmetics` → `withCosmetics`), gated on the
+		// Player standing in a Town. A request from a Field/Dungeon (or a pre-spawn session) is a
+		// silent no-op — the next snapshot re-affirms the unchanged look. On success persist
+		// immediately (a significant durable event — the new look must survive a restart) and let
+		// the next snapshot rebroadcast the appearance to everyone in the sender's Zone.
+		const res = applyCosmetics(world, sessionId, msg.cosmetics);
+		if (res.changed) {
+			world = res.world;
+			flushSession(sessionId);
+		}
 		return;
 	}
 	if (msg.t === 'chat') {

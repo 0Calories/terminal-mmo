@@ -259,6 +259,28 @@ test('createAvatar clamps an out-of-range cosmetic index on decode', () => {
 	});
 });
 
+test('setCosmetics (client -> server) round-trips the chosen Cosmetics (#305)', () => {
+	const msg: ClientMessage = {
+		t: 'setCosmetics',
+		cosmetics: { hue: 3, hat: 2, nameplate: 1, form: 0 },
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('setCosmetics clamps an out-of-range cosmetic index on decode (#305)', () => {
+	// Cosmetics decode is defensive at the trust boundary: a garbled/forward-version index falls
+	// back to 0 per field, so the server never applies a stray index to the live Avatar.
+	const encoded = encodeClientMessage({
+		t: 'setCosmetics',
+		cosmetics: { hue: 4, hat: 250, nameplate: 2, form: 250 },
+	});
+	expect(decodeClientMessage(encoded)).toEqual({
+		t: 'setCosmetics',
+		cosmetics: { hue: 4, hat: 0, nameplate: 2, form: 0 },
+	});
+});
+
 test('a #302-era createAvatar (no trailing handle) decodes handle as empty', () => {
 	// The typed Handle (#304) is append-only after the cosmetics, so a frame that predates it
 	// (just tag + 4 cosmetic bytes) must decode without throwing and yield handle: '' — the
