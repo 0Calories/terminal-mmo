@@ -21,7 +21,8 @@ The in-world character a Player controls and customizes; one Avatar per Player.
 Rendered as an **expressive multi-row ASCII-art figure** (~4–6 rows, roughly the
 level of detail of the Claude mascot), NOT a single glyph or 2-cell blob.
 Customizable via: a chosen **Form**, a color/hue, one cosmetic accessory slot (e.g.
-hat; cosmetic-only, separate from gear stats), and a nameplate (name + color).
+hat; cosmetic-only, separate from gear stats), and the **Nameplate** colour (whose
+text is the Player's **Handle**, not a separate name).
 _Avoid_: Character, hero
 
 **Form**:
@@ -171,15 +172,23 @@ replaced (which would orphan the Save).
 _Avoid_: SSH key (it may be generated), guest key, throwaway key
 
 **Handle**:
-The durable, unique username a Player claims on first launch, bound to their
-**Identity Key** (ADR 0004, #235 — revising the ephemeral per-connection label of
-ADR 0006). Painted on the nameplate and attributed on each Chat message; a
-returning key always resolves to the same Handle, whatever name that launch asked
-for.
+The durable, unique username a Player **types and claims at Avatar creation**, bound
+to their **Identity Key** (ADR 0004, #235 — revising the ephemeral per-connection
+label of ADR 0006). It **is** the text on the Player's **Nameplate** and the
+attribution on each Chat message; set **once** at creation and durable — a returning
+key always resolves to the same Handle.
 Unique case-insensitively (2–16 of `[A-Za-z0-9_-]`), so `/w <handle>` is
 unambiguous — but entities are still *addressed* by session id at runtime: the
 Handle names the account, not the connection.
 _Avoid_: Username, nick, name, label
+
+**Nameplate**:
+The floating label showing an **Avatar**'s **Handle**, tinted by a chosen palette
+colour — rendered *below* the Avatar's feet (deliberately, not over the head, to keep
+the headroom clear for the **Speech bubble**; ADR 0023). Its text is *always* the
+Handle, never a separate string; the only customizable part is the **colour** (a
+palette index).
+_Avoid_: Name tag, label, tag, title (the text is the Handle, not a free label)
 
 **Save**:
 The durable per-account snapshot persisted across sessions (#236, bun:sqlite),
