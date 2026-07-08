@@ -18,9 +18,8 @@ const npcs: NpcCatalogEntry[] = [
 ];
 const catalogs = { monsters, npcs };
 
-// header + `---` + a 4-row grid: solid floor, two spawns, one portal, one npc.
-// No `id` in the header — a Zone's identity is its filename (ADR 0011), passed
-// to parseZone as the third argument.
+// A minimal field fixture. No `id` in the header — a Zone's identity is its filename
+// (ADR 0011), passed to parseZone as the third argument.
 const FIELD = `{ "type": "field",
   "spawns":  { "c": "goblin-01", "s": "archer-01" },
   "portals": { "a": { "target": "town-01", "arrival": [12, 32] } },
@@ -52,12 +51,10 @@ describe('parseZone — happy path', () => {
 
 	test('# is solid, everything else (incl. glyphs) is empty terrain', () => {
 		const { w, cells } = zone.terrain;
-		// floor rows fully solid
 		expect(cells[2 * w + 0]).toBe(1);
 		expect(cells[3 * w + 13]).toBe(1);
-		// the spawn-glyph cell on row 1 is empty terrain
+		// a spawn-glyph cell is empty terrain, not solid
 		expect(cells[1 * w + 2]).toBe(0);
-		// a plain '.' is empty
 		expect(cells[0 * w + 0]).toBe(0);
 	});
 

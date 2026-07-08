@@ -20,7 +20,7 @@ describe('newZoneTemplate', () => {
 			catalogs,
 			'town-99',
 		);
-		expect(zone.name).toBe('town-99'); // a sensible, editable default label
+		expect(zone.name).toBe('town-99');
 	});
 
 	test('a field template parses; its only error is the missing spawn', () => {

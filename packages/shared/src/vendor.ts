@@ -15,10 +15,9 @@ export function saleValue(item: Item): number {
 	return RARITY_VALUE[item.rarity] + AFFIX_VALUE * affixTotal;
 }
 
-// The fixed shortlist a Town Merchant stocks (#242): plain, affix-free `common` goods a
-// fresh Player can buy with early Gold — one per Slot so a starter can round out a kit.
-// Every price sits ABOVE the common `saleValue` (5), so buying then re-selling is always
-// a loss — the shop can never be farmed for free Gold.
+// The fixed shortlist a Town Merchant stocks (#242): affix-free `common` goods, one per
+// Slot. Every price sits above the common `saleValue` (5), so buy-then-resell is always a
+// loss — the shop can't be farmed for Gold.
 export interface StarterGood {
 	base: string;
 	slot: Slot;
@@ -45,11 +44,10 @@ export function sellItem(
 	};
 }
 
-/** Buying a starter good round-trips Gold + inventory: it's refused (`bought: false`,
- * both unchanged) when the Player can't afford it, so a caller can never go into Gold
- * debt or conjure an Item for free. On success the price is deducted and a fresh
- * affix-free `common` Item — minted with the caller-supplied `itemId` — is appended.
- * The vendor never allocates ids; the caller passes its own unique source (`nextId`). */
+/** Refused (`bought: false`, both unchanged) when the Player can't afford it, so a caller
+ * can't go into Gold debt or conjure an Item free. On success the price is deducted and a
+ * fresh `common` Item minted with the caller-supplied `itemId` — the vendor never
+ * allocates ids. */
 export function buyItem(
 	progress: PlayerProgress,
 	inventory: Item[],

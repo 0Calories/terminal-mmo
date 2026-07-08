@@ -1,8 +1,6 @@
-// Clean-shutdown hook tests (#269). Covers the flush→close→exit sequence, its order, its
-// at-most-once guard (a repeated / cross signal must not double-flush or double-close), and
-// an end-to-end proof against a real file-backed store: state flushed only in the shutdown
-// routine survives because `close()` checkpoints it to disk — i.e. no progress loss on a
-// clean shutdown between periodic flushes.
+// Clean-shutdown hook tests (#269): the flush→close→exit sequence, its order, its
+// at-most-once guard, and an end-to-end proof that state flushed only at shutdown survives
+// because `close()` checkpoints the WAL to disk (no progress loss between periodic flushes).
 
 import { expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -88,9 +86,8 @@ test('no progress loss: state flushed only at shutdown survives via close()', ()
 		const store = openPlayerStore(path);
 		const key = 'ssh-ed25519 AAAAtestkeyblob';
 
-		// The shutdown routine's flushAll writes the dirty save; close() then checkpoints the
-		// WAL to the main db file. Nothing else persists this row, so its survival proves the
-		// hook is what saved the progress.
+		// Nothing else persists this row, so its survival after close() checkpoints the WAL
+		// proves the hook is what saved the progress.
 		const shutdown = createShutdown({
 			flushAll: () => store.save(key, richSave()),
 			close: () => store.close(),
@@ -101,7 +98,6 @@ test('no progress loss: state flushed only at shutdown survives via close()', ()
 
 		expect(existsSync(path)).toBe(true);
 
-		// Re-open the same file in a fresh store: the flushed row is durably present.
 		const reopened = openPlayerStore(path);
 		expect(reopened.load(key)).toEqual(richSave());
 		reopened.close();

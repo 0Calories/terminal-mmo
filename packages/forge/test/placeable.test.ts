@@ -11,7 +11,6 @@ const CATALOGS: Catalogs = {
 	npcs: [{ id: 'merchant', kind: 'vendor', name: 'Merchant' }],
 };
 
-// A blank 5×3 field doc to place into.
 function blank(): EditorDoc {
 	return {
 		header: { type: 'field', spawns: {}, npcs: {}, portals: {} },
@@ -19,7 +18,6 @@ function blank(): EditorDoc {
 	};
 }
 
-// The glyph stamped into the grid for a given header entry (test convenience).
 function glyphAt(doc: EditorDoc, x: number, y: number): string {
 	return cellAt(doc, x, y);
 }
@@ -30,7 +28,7 @@ describe('placing a Placeable declares + stamps it', () => {
 		const spawns = doc.header.spawns as Record<string, string>;
 		const glyph = glyphAt(doc, 1, 1);
 		expect(glyph).not.toBe('.');
-		expect(spawns[glyph]).toBe('chaser'); // declared, mapped to the catalog id
+		expect(spawns[glyph]).toBe('chaser');
 	});
 
 	test('Terrain stamps `#` and adds no header entry', () => {
@@ -149,9 +147,7 @@ describe('orphan/undeclared glyph states are unreachable through the editor', ()
 		});
 		doc = erase(doc, 2, 1); // remove the only shooter → its header entry GCs
 		const text = serializeDoc(doc);
-		// No declared-but-unused glyphs (orphans)…
 		expect(findOrphanGlyphs(text)).toEqual([]);
-		// …and every placed glyph is declared, so parseZone resolves cleanly.
 		expect(() => parseZone(text, CATALOGS, 'z')).not.toThrow();
 	});
 

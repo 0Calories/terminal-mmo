@@ -10,15 +10,13 @@ import { runPreview } from '../src/preview';
 const root = join(process.cwd(), 'zones');
 const deps = { root, log: (l: string) => console.log(l) };
 
-// `forge` is the content-authoring suite: a single CLI that dispatches into one
-// editor per content type. `zone` is the first domain; `sprite`, `npc`, `quest`
-// will slot in alongside it.
+// `forge` is the content-authoring suite: one CLI dispatching per content type.
+// `zone` is the first domain; `sprite`, `npc`, `quest` slot in alongside it.
 const [domain, ...rest] = process.argv.slice(2);
 
 if (domain === 'zone') {
-	// `preview` and `play` are interactive + long-lived (mount opentui), so they
-	// run the async shell and let opentui own the process lifecycle. The other
-	// commands are synchronous and return an exit code.
+	// `preview`/`play`/`edit` are interactive + long-lived (mount opentui), so they run
+	// the async shell; the rest are synchronous and return an exit code.
 	if (rest[0] === 'preview') await runPreview(rest.slice(1), deps);
 	else if (rest[0] === 'play') await runPlay(rest.slice(1), deps);
 	else if (rest[0] === 'edit') await runEdit(rest.slice(1), deps);

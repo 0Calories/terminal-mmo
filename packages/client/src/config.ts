@@ -1,42 +1,32 @@
-// The client's first footprint on the player's disk (ADR 0015): one general,
-// human-readable, XDG-aware config file (`~/.config/terminal-mmo/config.json`,
-// honoring XDG_CONFIG_HOME). It is a settings store keyed by area — audio is its
-// first tenant, not its schema — and tolerant by construction: a missing/partial/
-// corrupt file falls back to built-in defaults, a failed write degrades to
-// in-memory-only for the session, and unknown keys survive a rewrite so a newer
-// client's settings outlive an older one. Client-only; never sent over the wire.
-//
-// The path resolution and the parse/merge/clamp are the PURE, testable seam; the
-// `ConfigStore` shell is the thin fs wrapper around them (round-trip-tested via a
-// temp path).
+// The client's config file (ADR 0015): XDG-aware (`~/.config/terminal-mmo/config.json`,
+// honoring XDG_CONFIG_HOME), keyed by area. Tolerant by construction: a missing/corrupt
+// file falls back to defaults, a failed write degrades to in-memory for the session, and
+// unknown keys survive a rewrite so a newer client's settings outlive an older one.
+// Client-only; never sent over the wire.
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-// The identity area's persisted shape (ADR 0004 amendment, #297): the per-machine
-// **anchor** that pins which Identity Key won last, so a returning Player always
-// resolves to the same account. `source` records whether that key is the Player's
-// own external SSH key or a game-generated one (kept as PKCS8 PEM beside this file).
-// The anchor is the Save-safety guard: discovery only ever mints a new key when
-// there is NO anchor, so an anchored machine can never silently flip keys and orphan
-// its Save.
+// The per-machine anchor pinning which Identity Key won last, so a returning Player
+// resolves to the same account (#297). It is the Save-safety guard: discovery mints a
+// new key only when there is NO anchor, so an anchored machine can't silently flip keys
+// and orphan its Save.
 export interface IdentityAnchor {
 	publicKey: string; // OpenSSH one-line form of the anchored Identity Key
 	source: 'external' | 'generated';
 }
 
-// The audio area's persisted shape (ADR 0014/0015). `muted` is the master mute;
-// `buses` holds the per-bus volumes the mixer exposes (combat / movement / ui —
-// `ambient` has no voices yet, so it isn't persisted). Volumes are 0..1.
+// `muted` is master mute; `buses` holds per-bus volumes (`ambient` has no voices yet,
+// so it isn't persisted). Volumes are 0..1 (ADR 0014/0015).
 export interface AudioPrefs {
 	master: number;
 	muted: boolean;
 	buses: { combat: number; movement: number; ui: number };
 }
 
-// Sound on, everything at full volume — the fallback whenever the file (or a key)
-// is missing or unreadable. Picked so a first-ever launch is audible.
+// Sound on, full volume — the fallback when the file (or a key) is missing. Picked so
+// a first-ever launch is audible.
 export const AUDIO_DEFAULTS: AudioPrefs = {
 	master: 1,
 	muted: false,
@@ -48,15 +38,14 @@ type Raw = Record<string, unknown>;
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
 // A finite number in 0..1, else the default — tolerates a string/null/NaN/Infinity
-// in the file without erroring.
+// in the file.
 const vol = (v: unknown, fallback: number) =>
 	typeof v === 'number' && Number.isFinite(v) ? clamp01(v) : fallback;
 
 const isObject = (v: unknown): v is Raw =>
 	typeof v === 'object' && v !== null && !Array.isArray(v);
 
-// Resolve the config path from the XDG_CONFIG_HOME override (when set + non-blank)
-// or `<home>/.config`. Pure given its inputs so it's testable without touching env.
+// From XDG_CONFIG_HOME (when set + non-blank), else `<home>/.config`.
 export function resolveConfigPath(
 	xdgConfigHome: string | undefined,
 	home: string,
@@ -65,8 +54,8 @@ export function resolveConfigPath(
 	return join(base, 'terminal-mmo', 'config.json');
 }
 
-// Parse the file's text into a raw object, tolerating anything: invalid JSON, or a
-// top-level non-object (array / number / null), both yield `{}`. Never throws.
+// Tolerates anything: invalid JSON or a non-object top-level (array/number/null) both
+// yield `{}`.
 export function parseConfig(text: string): Raw {
 	try {
 		const v: unknown = JSON.parse(text);
@@ -76,8 +65,8 @@ export function parseConfig(text: string): Raw {
 	}
 }
 
-// Extract the audio prefs from a raw config, default-filling and clamping every
-// field so a partial / wrong-typed `audio` block resolves to a valid AudioPrefs.
+// Default-fill and clamp every field so a partial / wrong-typed `audio` block still
+// resolves to a valid AudioPrefs.
 export function readAudioPrefs(raw: Raw): AudioPrefs {
 	const a = isObject(raw.audio) ? raw.audio : {};
 	const b = isObject(a.buses) ? a.buses : {};
@@ -92,9 +81,8 @@ export function readAudioPrefs(raw: Raw): AudioPrefs {
 	};
 }
 
-// Merge audio prefs into a raw config, returning a new object. Unknown top-level
-// keys AND unknown keys inside `audio` / `audio.buses` are preserved (spread first,
-// then overwritten), so a setting a newer client wrote survives an older client's
+// Merge audio into raw, preserving unknown keys at top level and inside `audio`/
+// `audio.buses` (spread first), so a newer client's setting survives an older client's
 // rewrite.
 export function writeAudioPrefs(raw: Raw, audio: AudioPrefs): Raw {
 	const prevAudio = isObject(raw.audio) ? raw.audio : {};
@@ -110,11 +98,9 @@ export function writeAudioPrefs(raw: Raw, audio: AudioPrefs): Raw {
 	};
 }
 
-// Extract the identity anchor from a raw config, validating it strictly: a missing
-// `identity.anchor`, a non-string / empty `publicKey`, or an unknown `source` all
-// resolve to `null` (treated as "no anchor"). Being strict here is deliberate — a
-// malformed anchor must read as absent so discovery falls through to a fresh mint
-// rather than refusing a launch on garbage it can never satisfy.
+// Strict: a missing anchor, a non-string/empty `publicKey`, or an unknown `source` all
+// resolve to `null`. Deliberate — a malformed anchor must read as absent so discovery
+// falls through to a fresh mint rather than refusing launch on garbage.
 export function readIdentityAnchor(raw: Raw): IdentityAnchor | null {
 	const identity = isObject(raw.identity) ? raw.identity : {};
 	const a = isObject(identity.anchor) ? identity.anchor : null;
@@ -126,10 +112,7 @@ export function readIdentityAnchor(raw: Raw): IdentityAnchor | null {
 	return { publicKey, source };
 }
 
-// Merge an identity anchor into a raw config, returning a new object. Unknown
-// top-level keys AND unknown keys inside `identity` are preserved (spread first,
-// then overwritten), mirroring writeAudioPrefs so a setting a newer client wrote
-// survives an older client's rewrite.
+// Merge the anchor into raw, preserving unknown keys like writeAudioPrefs.
 export function writeIdentityAnchor(raw: Raw, anchor: IdentityAnchor): Raw {
 	const prevIdentity = isObject(raw.identity) ? raw.identity : {};
 	return {
@@ -141,10 +124,9 @@ export function writeIdentityAnchor(raw: Raw, anchor: IdentityAnchor): Raw {
 	};
 }
 
-// The fs shell: holds the raw config in memory (preserving unknown keys) and reads/
-// writes it at `path`. Every operation is tolerant — load never throws (missing /
-// unreadable / corrupt → defaults), and saveAudio is best-effort (a failed write
-// keeps the merged state in memory for the session and returns false, never throws).
+// The fs shell: holds the raw config in memory (preserving unknown keys), reads/writes
+// at `path`. Tolerant — load never throws, saves are best-effort (a failed write keeps
+// the merged state in memory for the session).
 export class ConfigStore {
 	readonly path: string;
 	private raw: Raw = {};
@@ -155,8 +137,8 @@ export class ConfigStore {
 		this.path = path;
 	}
 
-	// Read + parse the file into memory. A missing or unreadable file leaves the
-	// in-memory config empty, so every getter falls back to defaults.
+	// A missing or unreadable file leaves the in-memory config empty, so every getter
+	// falls back to defaults.
 	load(): this {
 		try {
 			this.raw = parseConfig(readFileSync(this.path, 'utf8'));
@@ -166,10 +148,9 @@ export class ConfigStore {
 		return this;
 	}
 
-	// The generated Identity Key's on-disk home (ADR 0004 amendment, #297): a sibling
-	// of config.json in the same XDG config dir (`.../terminal-mmo/id_ed25519`), NOT
-	// `~/.ssh`, so it can't collide with the real `ssh`. Only generated players write
-	// it; ssh-auth owns its PKCS8 read/write, this is just the resolved path.
+	// A sibling of config.json in the XDG dir (`.../terminal-mmo/id_ed25519`), NOT
+	// `~/.ssh`, so it can't collide with the real `ssh`. Only generated players write it
+	// (#297).
 	get identityKeyPath(): string {
 		return join(dirname(this.path), 'id_ed25519');
 	}
@@ -182,24 +163,21 @@ export class ConfigStore {
 		return readIdentityAnchor(this.raw);
 	}
 
-	// Merge audio prefs into the in-memory config and best-effort persist to disk.
-	// Returns whether the write landed; on failure the merged config still lives in
-	// memory for the rest of the session.
+	// Merge audio into memory and best-effort persist; on failure the merged config stays
+	// in memory. Returns whether the write landed.
 	saveAudio(audio: AudioPrefs): boolean {
 		this.raw = writeAudioPrefs(this.raw, audio);
 		return this.persist();
 	}
 
-	// Merge the identity anchor into the in-memory config and best-effort persist.
-	// Same tolerance as saveAudio: a failed write keeps the anchor in memory for the
-	// session and returns false, never throws.
+	// Merge the anchor into memory and best-effort persist; same tolerance as saveAudio.
 	saveIdentityAnchor(anchor: IdentityAnchor): boolean {
 		this.raw = writeIdentityAnchor(this.raw, anchor);
 		return this.persist();
 	}
 
 	// Serialize the in-memory config to disk (creating the dir), returning whether the
-	// write landed. Shared by every save* so they degrade to in-memory identically.
+	// write landed.
 	private persist(): boolean {
 		try {
 			mkdirSync(dirname(this.path), { recursive: true });

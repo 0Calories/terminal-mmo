@@ -20,9 +20,9 @@ const LEGEND: Record<string, string> = {
 };
 
 /**
- * Renderer-free ASCII dump of a parsed Zone: the normalized terrain grid with
- * entity glyphs overlaid at their anchor cells, plus a legend of every glyph
- * present. This is what an agent reads to "see" a Zone — no opentui. Pure.
+ * Renderer-free ASCII dump of a parsed Zone: terrain grid with entity glyphs overlaid
+ * at their anchors, plus a legend of the glyphs present — what an agent reads to "see"
+ * a Zone without opentui.
  */
 export function renderZone(zone: Zone): string {
 	const { w, h, cells } = zone.terrain;

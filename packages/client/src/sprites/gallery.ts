@@ -2,11 +2,9 @@
 //     bun packages/client/src/sprites/preview.ts
 import { Sprite, spriteFor, spriteForNpc } from '@mmo/shared';
 
-// The live Avatar/vendor/brute art lives in @mmo/shared's registry; pull it through
-// the lookup so the gallery and game can't drift.
+// Live art pulled through the registry lookup so the gallery and game can't drift.
 const player = spriteFor('player');
 const merchant = spriteForNpc('vendor');
-// The Golem is the live brute Monster's art (spriteFor('brute')); see brute.ts.
 const golem = spriteFor('brute');
 
 export interface GalleryEntry {
@@ -44,8 +42,6 @@ const scout = new Sprite(
 	},
 );
 
-// Sage was picked as the live vendor; its art lives in merchant.ts (imported
-// above) so the gallery and game can't drift. Same for Buddy ← player.ts.
 const knight = new Sprite(
 	`
 ··▟██▙··

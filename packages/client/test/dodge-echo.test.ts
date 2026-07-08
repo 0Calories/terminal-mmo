@@ -44,13 +44,11 @@ test('isDodging is true via a co-present Avatar’s replicated action', () => {
 test('dodgeStarted fires only on the rising edge, not while the hop continues', () => {
 	const idle = avatar({ dodgeT: 0 });
 	const hopping = avatar({ dodgeT: DODGE_TOTAL });
-	// Edge: not dodging → dodging.
 	expect(dodgeStarted(idle, hopping)).toBe(true);
-	// Mid-hop: already dodging → still dodging is NOT a fresh start (no double-spawn).
+	// Already dodging → still dodging is NOT a fresh start (no double-spawn).
 	expect(dodgeStarted(hopping, avatar({ dodgeT: DODGE_TOTAL * 0.5 }))).toBe(
 		false,
 	);
-	// Ending: dodging → idle is not a start either.
 	expect(dodgeStarted(hopping, idle)).toBe(false);
 });
 

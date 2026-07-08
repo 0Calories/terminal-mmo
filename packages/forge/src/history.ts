@@ -1,13 +1,9 @@
-// Undo/redo history for the Zone editor's edit lifecycle (#98). A classic
-// past/present/future model, kept pure and generic so it can be unit-tested
-// independently of the opentui shell (the editor stores `EditorDoc` snapshots).
-//
-// Two behaviours beyond the textbook model:
-//  · Gesture coalescing — a drag stroke (brush/eraser) fires many edits but must
-//    undo in ONE step. `record(h, next, tag)` merges into the current step when
-//    `tag` matches the step that produced the present; a different (or absent)
-//    tag begins a new step. Each stroke gets its own unique tag; single-key edits
-//    pass none, so they never coalesce.
+// Undo/redo for the Zone editor (#98): a past/present/future model. Two behaviours
+// beyond the textbook model:
+//  · Gesture coalescing — a drag stroke fires many edits but must undo in ONE step.
+//    `record` merges into the current step when `tag` matches the step that produced
+//    the present; a different or absent tag begins a new step. Each stroke gets a
+//    unique tag; single-key edits pass none, so they never coalesce.
 //  · Depth cap — `past` is bounded at HISTORY_CAP; the oldest entries fall off.
 
 /** Max retained undo steps. Beyond this the oldest edits are forgotten. */
@@ -16,7 +12,6 @@ export const HISTORY_CAP = 200;
 export interface History<T> {
 	/** Prior states, oldest first; the top is the most recent undo target. */
 	past: T[];
-	/** The current (live) state. */
 	present: T;
 	/** Undone states, in redo order (index 0 = the next redo). */
 	future: T[];
@@ -36,10 +31,9 @@ export function canRedo<T>(h: History<T>): boolean {
 	return h.future.length > 0;
 }
 
-/** Record a new state. With a `tag` equal to the current step's tag, the edit
- *  coalesces into that step (the drag keeps growing one undo entry); otherwise it
- *  opens a fresh step, pushing the prior present onto `past` (capped) and clearing
- *  the redo `future`. */
+/** Record a new state. A `tag` matching the current step coalesces into it (the drag
+ *  grows one undo entry); otherwise a fresh step is opened, `past` capped and the redo
+ *  `future` cleared. */
 export function record<T>(h: History<T>, next: T, tag?: string): History<T> {
 	if (tag != null && tag === h.tag) {
 		// Same gesture: replace the present in place, keep `past` as-is. A new edit

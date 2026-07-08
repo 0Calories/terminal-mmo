@@ -1,21 +1,13 @@
 import { Sprite } from '../sprite';
 import type { WeaponSprite } from '../weapon-sprite';
 
-// The default Warrior Sword's appearance (ADR 0018). A held one-hander posed at the
-// hand at all times: an upright steel blade at rest, raised on wind-up, sweeping
-// down through the active strike, and trailing low on recovery. Authored right-facing;
-// the renderer mirrors the art (and the grip column) when the Avatar faces left.
-//
-// All frames anchor the GRIP at row index 2 (the hand), so the blade pivots around a
-// fixed hand as it swings — wind-up reaches above the hand, recovery hangs below it.
-// `·` (SENTINEL) marks a transparent padding cell; it keeps a frame's leading/trailing
-// rows from being trimmed away, preserving the grip row across frames of differing height.
+// The default Warrior Sword (ADR 0018). All frames anchor the grip at row 2 so the blade
+// pivots around a fixed hand; the `·` SENTINEL marks padding cells that keep leading/
+// trailing rows from being trimmed, preserving the grip row across differing frame heights.
 //
 // VISUAL ARTEFACT — the art here needs design review / sign-off before merge.
 
-// Rest: blade upright at the side, steel rising from a dark guard (the hand cell).
-// Blade cells carry the dynamic ACCENT key (`a`, ADR 0018 §6) so the whole blade reads
-// in the weapon's accent colour and re-tints with rarity later; the guard stays authored.
+// Blade cells carry the accent key (`a`); the guard keeps its authored key (ADR 0018 §6).
 const idle = new Sprite(
 	`
 ▐▌
@@ -24,7 +16,6 @@ const idle = new Sprite(
 	{ defaultKey: 'a', colors: `\naa\naa\nkk` },
 );
 
-// Wind-up: blade cocked up-and-forward, raised to strike (above the hand).
 const windup = new Sprite(
 	`
 ·▙
@@ -41,17 +32,8 @@ const windup = new Sprite(
 	},
 );
 
-// Active sweep (ADR 0018 §4): a fixed-length ordered arc the renderer samples by
-// swingProgress — first frame at 0, last at 1. The blade rotates around the hand from
-// high (up-forward) through a level strike to low (down-forward); heft comes from the
-// weapon's phase DURATIONS, not from more frames.
-
-// ▃▅▁▁▁▁
-// ▔▀▔▔▔▔
-
-// ▃▙▂▂▂▂
-//  ▘▔▔▔▔
-
+// Active sweep sampled by swingProgress: heft comes from the phase DURATIONS, not from
+// more frames (ADR 0018 §4).
 const active1 = new Sprite(
 	`
 ·
@@ -72,8 +54,7 @@ kaaaa
 
 export const sword: WeaponSprite = {
 	frames: { idle, windup, active: [active1] },
-	// Bottom-of-rest cell (the guard) sits in the hand: grip-to-grip with the body grip,
-	// row 2 in every frame so the blade pivots around a fixed hand through the swing.
+	// The guard cell sits in the hand, grip-to-grip; row 2 in every frame (ADR 0018 §3).
 	grip: { x: -1, y: 2 },
 	// Steel — the rarity-ready accent channel (today a hand-authored colour key).
 	accent: 's',

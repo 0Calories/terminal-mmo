@@ -8,17 +8,15 @@ const SIZE: Record<ZoneType, { w: number; h: number }> = {
 };
 
 /**
- * Emit a blank-grid `.zone` template: a valid header plus a `.`-filled grid with
- * a solid floor row, ready to edit. A `town` template validates clean; a combat
- * template (`field`/`dungeon`) has one error — the missing spawn (the expected next
- * edit). Pure.
+ * Emit a blank-grid `.zone` template: valid header, `.`-filled grid, solid floor row.
+ * A `town` template validates clean; a combat template (`field`/`dungeon`) has one
+ * error — the missing spawn, the expected next edit.
  */
 export function newZoneTemplate(id: string, type: ZoneType): string {
 	const { w, h } = SIZE[type];
-	// The Zone's id is its filename (ADR 0011) — never a header field, so the template
-	// emits no `id`. `name` is the optional display label (#99) — seeded to the id as a
-	// sensible, editable default (the editor's `n` prompt renames it; decorative, never
-	// resolves a Zone).
+	// The id is the filename (ADR 0011), never a header field, so the template emits no
+	// `id`. `name` is the decorative display label (#99), seeded to the id as an editable
+	// default — it never resolves a Zone.
 	const header =
 		type === 'town'
 			? { name: id, type, npcs: {}, portals: {} }

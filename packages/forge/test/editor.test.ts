@@ -44,7 +44,6 @@ const CATALOGS: Catalogs = {
 	npcs: [],
 };
 
-// A blank 5×3 field doc, floor on the bottom row.
 function blank(): EditorDoc {
 	return {
 		header: { id: 'z', type: 'field', spawns: {}, npcs: {}, portals: {} },
@@ -62,7 +61,6 @@ describe('growToInclude', () => {
 	test('grows the canvas height to include a row below the content', () => {
 		const grown = growToInclude(blank(), 2, 5);
 		expect(grown.rows.length).toBe(6);
-		// The original rows are untouched; the new rows are empty.
 		expect(grown.rows.slice(0, 3)).toEqual(blank().rows);
 		expect(grown.rows.slice(3)).toEqual(['', '', '']);
 	});
@@ -108,7 +106,6 @@ describe('clampRoam', () => {
 	});
 
 	test('never roams past the ZONE_MAX cap', () => {
-		// A margin wider than the whole world still can't push past the cap.
 		const c = clampRoam(blank(), 1e9, 1e9, 1e9);
 		expect(c).toEqual({ x: ZONE_MAX.w - 1, y: ZONE_MAX.h - 1 });
 	});
@@ -149,12 +146,10 @@ describe('cursorEdge', () => {
 	});
 
 	test('points toward an off-screen cursor (free-panned away)', () => {
-		// Pan the camera right + down so the cursor falls off the top-left.
 		expect(cursorEdge({ x: 5, y: 5 }, { x: 30, y: 30 }, 20, 10)).toEqual({
 			dx: -1,
 			dy: -1,
 		});
-		// Cursor past the bottom-right margin.
 		expect(cursorEdge({ x: 25, y: 12 }, { x: 0, y: 0 }, 20, 10)).toEqual({
 			dx: 1,
 			dy: 1,
@@ -302,7 +297,6 @@ describe('diagPanelSummary', () => {
 const key = (c: { x: number; y: number }) => `${c.x},${c.y}`;
 const setOf = (cs: { x: number; y: number }[]) => new Set(cs.map(key));
 
-// A doc with one floored row plus blank space above, header maps present.
 function field(rows: string[]): EditorDoc {
 	return {
 		header: { id: 'z', type: 'field', spawns: {}, npcs: {}, portals: {} },
@@ -392,7 +386,6 @@ describe('lineCells', () => {
 
 describe('paintCells', () => {
 	test('a wall is one rectangle stroke — terrain fills and grows the canvas', () => {
-		// A 5×3 field; paint a solid block reaching down past the content.
 		const doc = paintCells(
 			field(['.....', '.....', '#####']),
 			rectCells({ x: 0, y: 0 }, { x: 1, y: 4 }),
@@ -574,7 +567,6 @@ describe('ghostEntity (#118)', () => {
 });
 
 describe('placementState (#96)', () => {
-	// A 10-wide field: empty headroom with a solid floor on the bottom row.
 	const grounded: EditorDoc = {
 		header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 		rows: [
@@ -742,7 +734,6 @@ describe('groundSnap (#96)', () => {
 });
 
 describe('cursorToAnchor (#114)', () => {
-	// Floor on the bottom row; ample headroom above it.
 	const field: EditorDoc = {
 		header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 		rows: [

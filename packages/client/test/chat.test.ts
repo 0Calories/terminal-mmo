@@ -14,7 +14,6 @@ test('parseChatCommand parses /w <handle> <message> into a whisper (#40)', () =>
 		to: 'Trinity',
 		text: 'follow the rabbit',
 	});
-	// The long form and surrounding whitespace work too.
 	expect(parseChatCommand('  /whisper  neo   hey there  ')).toEqual({
 		kind: 'whisper',
 		to: 'neo',
@@ -32,7 +31,6 @@ test('parseChatCommand parses /em <name> into a body-emote trigger (ADR 0020 §9
 		kind: 'emote',
 		emote: 'wave',
 	});
-	// The long form and surrounding whitespace work too.
 	expect(parseChatCommand('  /emote   wave  ')).toEqual({
 		kind: 'emote',
 		emote: 'wave',

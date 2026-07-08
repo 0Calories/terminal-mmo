@@ -3,23 +3,22 @@ import { terrainCell } from './terrain';
 import type { Entity, Npc, SpawnPoint, Terrain } from './types';
 import { type Portal, spawnMonster, type Zone, type ZoneType } from './world';
 
-// Entity boxes are engine-derived from the anchor glyph, not authored (ADR 0008).
-// The footprint dims live in constants.ts so the editor's placement ghost (#96)
-// shares this single source of truth.
+// Entity boxes are engine-derived from the anchor glyph, not authored (ADR 0008);
+// footprint dims live in constants.ts, shared with the editor placement ghost (#96).
 
-/** A by-reference Monster: a spawn glyph resolves to one of these. */
+/** A spawn glyph resolves to one of these. */
 export interface MonsterCatalogEntry {
 	id: string;
 	behavior: 'chaser' | 'shooter' | 'brute';
 	name: string;
 }
 
-/** A by-reference NPC: an npc glyph resolves to one of these. */
+/** An npc glyph resolves to one of these. */
 export interface NpcCatalogEntry {
 	id: string;
 	kind: 'vendor' | 'signpost';
 	name: string;
-	// Directional dialogue authored for a signpost (PRD story 9); unused by a vendor.
+	// Signpost dialogue (PRD story 9); unused by a vendor.
 	lines?: string[];
 }
 
@@ -29,9 +28,8 @@ export interface Catalogs {
 }
 
 /**
- * Thrown when a `.zone` string (or a catalog reference) is malformed. `code` is a
- * stable tag; the validator (#53) turns these into human messages. parseZone only
- * has to fail safely, never produce a half-built Zone.
+ * Malformed `.zone` or catalog reference. `code` is a stable tag the validator (#53)
+ * turns into a human message; parseZone fails safe, never half-builds a Zone.
  */
 export class ZoneParseError extends Error {
 	constructor(
@@ -84,14 +82,11 @@ type Glyph =
 	| { kind: 'portal'; ref: PortalSpec };
 
 /**
- * Pure loader for the `.zone` format (ADR 0008): a JSON header, a `---` line, then
- * an ASCII grid. `#` is a wall, `=` is a one-way platform (ADR 0026), `.` is empty,
- * and every other glyph anchors one entity (resolved through the header maps +
- * catalogs). Grid extents are inferred; entity boxes are engine-derived. No FS, no
- * RNG — sibling to `parseTerrain`.
+ * Loads the `.zone` format (ADR 0008): a JSON header, a `---` line, then an ASCII
+ * grid where `#` is a wall, `=` a one-way platform (ADR 0026), `.` empty, and every
+ * other glyph anchors an entity resolved through the header maps + catalogs.
  *
- * `id` is the Zone's identity and comes from the FILENAME (ADR 0011), threaded in
- * by the loader — never from the header, so the path and a header field can't drift.
+ * `id` comes from the FILENAME (ADR 0011), never the header, so the two can't drift.
  */
 export function parseZone(text: string, catalogs: Catalogs, id: string): Zone {
 	const lines = text.split('\n');
@@ -129,8 +124,7 @@ export function parseZone(text: string, catalogs: Catalogs, id: string): Zone {
 		const line = body[y];
 		for (let x = 0; x < line.length; x++) {
 			const ch = line[x];
-			// A terrain glyph (`.`/space empty, `#` wall, `=` platform) sets the cell and
-			// moves on; anything else is an entity anchor resolved through the header.
+			// A terrain glyph sets the cell; anything else is an entity anchor.
 			const cell = terrainCell(ch);
 			if (cell !== undefined) {
 				if (cell) cells[y * w + x] = cell;
@@ -198,8 +192,8 @@ function parseHeader(text: string): ZoneHeader {
 			`header is not valid JSON: ${(e as Error).message}`,
 		);
 	}
-	// A Zone's id is its filename (ADR 0011); a header `id` would be a second,
-	// drift-prone source of identity, so we reject it outright rather than ignore it.
+	// Reject a header `id` outright rather than ignore it: the id is the filename, and
+	// a second source of identity would drift (ADR 0011).
 	if ('id' in header)
 		throw new ZoneParseError(
 			'bad-header',

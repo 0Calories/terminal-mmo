@@ -2,9 +2,7 @@ import { expect, test } from 'bun:test';
 import { CAPABILITY_UNLOCK } from '@mmo/shared';
 import { CONTROL_ROWS, controlRowText, keysFor } from '../src/controls';
 
-// The controls overlay must cover EVERY input the AC lists (#242): move, jump, attack,
-// block, dodge, both skills, emote, and chat. This asserts none silently drops off the
-// cheat-sheet.
+// Every input the AC lists must appear on the cheat-sheet — none silently drops (#242).
 test('the controls listing covers every required input', () => {
 	const labels = CONTROL_ROWS.map((r) => r.label);
 	for (const required of [

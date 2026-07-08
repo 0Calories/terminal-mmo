@@ -135,10 +135,9 @@ function cmdNew(args: string[], deps: CliDeps): number {
 }
 
 /**
- * Rename a Zone: a Zone's id is its filename (ADR 0011), so this moves
- * `<old>.zone` → `<new>.zone` AND rewrites every Portal `target` in the set that
- * referenced the old id — one mechanical, git-visible diff. The in-editor name
- * edit (#99) is for the decorative display label; identity is renamed here.
+ * Rename a Zone: its id is its filename (ADR 0011), so this moves `<old>.zone` →
+ * `<new>.zone` AND rewrites every Portal `target` that referenced the old id. The
+ * in-editor name edit (#99) is the decorative display label; identity is renamed here.
  */
 function cmdRename(args: string[], deps: CliDeps): number {
 	const [oldId, newId] = args.filter((a) => !a.startsWith('-'));

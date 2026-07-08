@@ -1,29 +1,22 @@
-// The Portal config form's pure core (#97, epic #91, ADR 0010). A Portal is the
-// one data-carrying Placeable — it carries `{ target, arrival }` — so placing it
-// is a small form, not a one-glyph stamp. This module owns the form's pure
-// decisions (which Zones can be targeted, how the target list autocompletes, the
-// default arrival point, and parsing the arrival field); the editor's modal that
-// drives them is opentui shell, validated by eye per the PRD.
-//
-// Pure: no FS, no opentui. The editor loads the Zone set (io.ts) and feeds it in.
+// A Portal is the one data-carrying Placeable (`{ target, arrival }`), so placing it
+// is a small form rather than a one-glyph stamp (#97). This module owns the form's
+// pure decisions; the opentui modal that drives them is validated by eye.
 
 import { type Portal, SPAWN } from '@mmo/shared';
 
 /** A grid coordinate pair `[x, y]` as stored in a Portal header entry. */
 export type Arrival = [number, number];
 
-/** A Zone the form can target: its id (used to resolve the Portal) plus the
- *  optional display name (shown in the picker so the author reads a label). */
+/** A Zone the form can target: id plus optional display name (shown in the picker). */
 export interface PortalCandidate {
 	id: string;
 	name?: string;
 }
 
 /**
- * The Zones a Portal in `currentId` may target — every authored Zone except the
- * current one (a Zone never portals to itself), id-sorted for a stable list. The
- * form only ever offers these, so a committed Portal can never name a nonexistent
- * Zone (the issue's "can't target a nonexistent zone").
+ * The Zones a Portal in `currentId` may target: every authored Zone but the current
+ * one (no self-portal), id-sorted. The form only offers these, so a committed Portal
+ * can never name a nonexistent Zone.
  */
 export function portalCandidates(
 	zones: readonly PortalCandidate[],
@@ -38,10 +31,9 @@ export function portalCandidates(
 }
 
 /**
- * Parse the arrival field's text (`"x,y"`, spaces tolerated) into a coordinate
- * tuple, or `undefined` when it isn't two non-negative integers. The editor uses
- * `undefined` to keep the form open (and the field flagged) rather than committing
- * a malformed Portal.
+ * Parse the arrival field (`"x,y"`, spaces tolerated) into a tuple, or `undefined`
+ * when it isn't two non-negative integers — which keeps the form open (field flagged)
+ * rather than committing a malformed Portal.
  */
 export function parseArrival(text: string): Arrival | undefined {
 	const m = text.trim().match(/^(\d+)\s*,\s*(\d+)$/);
@@ -50,11 +42,9 @@ export function parseArrival(text: string): Arrival | undefined {
 }
 
 /**
- * Autocomplete the target list against a typed `query` (case-insensitive): keep
- * the candidates whose id or display name contains it, ranking those that START
- * with the query ahead of inner-substring hits (id-sorted within each rank, since
- * {@link portalCandidates} already sorted them). An empty query keeps the full
- * list. The editor's modal narrows the visible rows as the author types.
+ * Autocomplete `candidates` against `query` (case-insensitive): keep those whose id or
+ * name contains it, ranking prefix hits ahead of inner-substring hits (id-sorted within
+ * a rank, since {@link portalCandidates} pre-sorted). Empty query keeps the full list.
  */
 export function filterCandidates(
 	candidates: readonly PortalCandidate[],
@@ -77,12 +67,9 @@ export function filterCandidates(
 }
 
 /**
- * The arrival point a new Portal into `target` defaults to: the cell of the
- * target's RETURN portal (the one already pointing back at `currentId`), so the
- * traveller lands beside the way home. With no return portal yet, fall back to the
- * global avatar {@link SPAWN}. The author can always override the field; this just
- * seeds a sensible, ground-valid default (the issue's "defaulting to the target's
- * return-portal cell (or spawn)").
+ * The arrival point a new Portal into `target` defaults to: the target's RETURN portal
+ * cell (the one pointing back at `currentId`), so the traveller lands beside the way
+ * home; with no return portal yet, the global {@link SPAWN}. The author can override.
  */
 export function defaultArrival(
 	target: { portals: readonly Portal[] },

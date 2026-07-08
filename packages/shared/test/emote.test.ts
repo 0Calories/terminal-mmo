@@ -11,7 +11,7 @@ import {
 test('EMOTES is a non-empty fixed set of distinct ids with a known lifetime', () => {
 	expect(EMOTES.length).toBeGreaterThan(0);
 	const ids = EMOTES.map((e) => e.id);
-	expect(new Set(ids).size).toBe(ids.length); // no duplicate ids
+	expect(new Set(ids).size).toBe(ids.length);
 	for (const e of EMOTES) {
 		expect(e.id.length).toBeGreaterThan(0);
 		expect(['oneshot', 'loop', 'hold']).toContain(e.lifetime);
@@ -43,8 +43,7 @@ test('emoteById resolves a known id and is undefined for an unknown one', () => 
 	expect(emoteById('definitely-not-an-emote')).toBeUndefined();
 });
 
-// The pure emote-state machine the owner predicts and the server runs identically
-// (ADR 0020 §9). These lock in the precedence-ladder cancel and the oneshot lifetime.
+// The pure emote-state machine the owner predicts and the server runs identically (ADR 0020 §9).
 test('stepEmote counts a oneshot down while the Avatar stands still', () => {
 	const r = stepEmote('wave', 1.0, false, 0.25);
 	expect(r.emoteId).toBe('wave');
@@ -58,8 +57,8 @@ test('stepEmote returns to idle once the oneshot timer elapses (ADR 0020 §8)', 
 });
 
 test('stepEmote accumulates a loop/hold elapsed clock and never times out', () => {
-	// A loop/hold persists until interrupted; its emoteT counts UP as elapsed sim-time,
-	// the opposite of a oneshot's countdown. Even far past any oneshot duration it stays.
+	// A loop/hold's emoteT counts UP as elapsed sim-time (the opposite of a oneshot's
+	// countdown) and never auto-clears, even far past any oneshot duration.
 	let s = { emoteId: 'dance' as string | null, emoteT: 0 };
 	for (let i = 0; i < 100; i++) s = stepEmote(s.emoteId, s.emoteT, false, 0.1);
 	expect(s.emoteId).toBe('dance');
@@ -69,17 +68,14 @@ test('stepEmote accumulates a loop/hold elapsed clock and never times out', () =
 });
 
 test('a loop emote frame is a deterministic function of elapsed sim-time — owner and observers agree (ADR 0020 §9)', () => {
-	// AC: the loop frame index is a pure function of the replicated emoteT, so an owner who
-	// stepped the clock and an observer who only received the snapshot compute the SAME
-	// frame. We model both: drive emoteT forward by uneven dt (owner) vs read it whole
-	// (observer); equal emoteT ⇒ equal sampled frame for any FPS.
+	// The loop frame is a pure function of the replicated emoteT, so an owner who stepped
+	// the clock by uneven dt and an observer who only received the snapshot compute the
+	// same frame for any FPS.
 	const frame = (t: number) => Math.floor(Math.max(0, t) * EMOTE_FPS);
-	// Owner integrates 0.07 + 0.13 + 0.05 = 0.25s of elapsed time across three ticks.
 	let owner = { emoteId: 'dance' as string | null, emoteT: 0 };
 	for (const dt of [0.07, 0.13, 0.05])
 		owner = stepEmote(owner.emoteId, owner.emoteT, false, dt);
 	expect(owner.emoteT).toBeCloseTo(0.25);
-	// Observer receives emoteT=0.25 on the wire and samples the identical frame.
 	expect(frame(owner.emoteT)).toBe(frame(0.25));
 });
 
@@ -91,8 +87,8 @@ test('stepEmote drops an unknown (forward-version) emote id rather than posing i
 });
 
 test('stepEmote cancels the emote the instant the Avatar acts (ADR 0020 §6/§9)', () => {
-	// `acting` true (moving / combat / stagger) clears it even with time to spare, and it
-	// does not resume — the cleared id is what the next tick steps from.
+	// `acting` clears the emote even with time to spare, and it does not resume — the
+	// cleared id is what the next tick steps from.
 	const r = stepEmote('wave', 1.0, true, 0.05);
 	expect(r.emoteId).toBeNull();
 	expect(r.emoteT).toBe(0);

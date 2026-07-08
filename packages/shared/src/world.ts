@@ -12,9 +12,8 @@ import type {
 } from './types';
 
 export type ZoneId = string;
-// The three kinds of Zone. Town and Field run one shared instance each (funnel, ADR
-// 0024); a `dungeon` is the instanced kind — entering it from Town spins up a private
-// per-player/per-party ZoneState (never shared with strangers), torn down on exit (#240).
+// Town and Field run one shared instance each; a `dungeon` is instanced — a private
+// per-player/per-party ZoneState spun up on entry, torn down on exit (#240, ADR 0024).
 export type ZoneType = 'field' | 'town' | 'dungeon';
 
 /** A trigger box that, on entry, moves the Avatar to `target` at `arrival`. */
@@ -25,8 +24,7 @@ export interface Portal extends Box {
 
 export interface Zone {
 	id: ZoneId;
-	/** Optional human display label, distinct from `id` — decorative, never used to
-	 *  resolve a Zone (cf. Zone id vs Zone name in CONTEXT.md). */
+	/** Human display label, distinct from `id` — decorative, never used to resolve a Zone. */
 	name?: string;
 	type: ZoneType;
 	terrain: Terrain;
@@ -38,10 +36,8 @@ export interface Zone {
 	nextMonsterId: number;
 	portals: Portal[];
 	npcs?: Npc[];
-	// In-world, instanced loot Drops resting in this Zone (#238): private per owner, so a
-	// Drop is only ever streamed to and collected by its owner. Optional (absent == none)
-	// so authored/static Zones and test fixtures need not declare an empty list; `stepZone`
-	// reads it through `?? []` and threads the surviving Drops back on.
+	// Instanced loot Drops resting here (#238): private per owner. Optional (absent == none)
+	// so static Zones and fixtures need no empty list; `stepZone` reads it through `?? []`.
 	drops?: Drop[];
 	// Id source for this Zone's Drops (absent == start at 1), advanced as kills spawn them.
 	nextDropId?: number;
@@ -56,10 +52,8 @@ export function activeZone(world: World, zoneId: ZoneId): Zone {
 	return world.zones[zoneId];
 }
 
-// The per-archetype spawn stats (HP / speed / Mass / Poise ceiling), in one lookup so
-// each Monster type is defined in a single place rather than scattered across parallel
-// ternaries. `poiseMax` absent inherits the shared COMBAT.poise.max; only the heavy
-// brute overrides it (its "high-poise" identity) and its Mass (Knockback resistance).
+// Per-archetype spawn stats. `poiseMax` absent inherits the shared COMBAT.poise.max;
+// only the brute overrides it and its Mass.
 interface SpawnStats {
 	hp: number;
 	speed: number;

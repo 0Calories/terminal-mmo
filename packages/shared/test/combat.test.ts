@@ -119,8 +119,8 @@ describe('combatEventAt', () => {
 	});
 
 	test('a `break` is source-less even if a source is passed — it reaches everyone', () => {
-		// Only a predicted `hit` is suppressed back to its attacker (ADR 0013 §3); the
-		// big moments are source-less by construction, so the field never attaches.
+		// Only a predicted `hit` is suppressed back to its attacker; the big moments are
+		// source-less by construction, so the field never attaches (ADR 0013 §3).
 		expect(combatEventAt('break', monster(0, 0), 1, 6)).not.toHaveProperty(
 			'source',
 		);
@@ -199,9 +199,8 @@ describe('meleeProfileOf', () => {
 
 describe('deathEvent', () => {
 	test('projects to a radial (dir 0) gore at the entity centre, high intensity, entity-tinted', () => {
-		// The death site resolves a `death` CombatEvent (ADR 0019, #139); its projection is
-		// a chunkier, entity-coloured burst spraying in every direction — same centre, radial
-		// dir, high intensity, and the Monster's body tint (chaser = red).
+		// A `death` projects to a chunkier, entity-coloured burst: same centre, radial dir,
+		// high intensity, the Monster's body tint (ADR 0019, #139).
 		const m = monster(10, 4, { type: 'chaser' });
 		expect(effectsOf(deathEvent(m))).toEqual([
 			{
@@ -256,9 +255,8 @@ describe('swingHitsTarget', () => {
 	});
 
 	test('the registry, NOT hurtT, is the gate — an i-framed target still strikes', () => {
-		// The bug ADR 0019 fixes: a player hit never sets a Monster's hurtT, so a
-		// hurtT gate never closed and predicted blood sprayed every frame. The swing
-		// registry is the gate; hurtT is irrelevant to it.
+		// The bug ADR 0019 fixes: a player hit never sets a Monster's hurtT, so a hurtT gate
+		// never closed and predicted blood sprayed every frame. The registry is the gate.
 		const target = monster(hb.x, hb.y, { id: 7, hurtT: 0.3 });
 		expect(swingHitsTarget(hb, new Set(), target)).toBe(true);
 	});
@@ -374,9 +372,8 @@ describe('predictHits', () => {
 		expect(events[0]).not.toHaveProperty('source');
 	});
 
-	// The headline fix (ADR 0019): a swing's active window spans many render frames,
-	// but the per-swing registry means a single target yields exactly ONE predicted
-	// hit across the whole window — no rapid-fire blood/sound spray.
+	// The headline fix: a swing's active window spans many frames, but the per-swing
+	// registry yields exactly ONE predicted hit per target — no rapid-fire spray (ADR 0019).
 	test('a multi-tick active window yields exactly one hit per target per swing', () => {
 		const target = monster(hb.x, hb.y, { id: 7 });
 		const swingHits = new Set<number>(); // cleared on swingStarted; persists across active ticks
@@ -417,8 +414,8 @@ describe('resolveCombat', () => {
 	test('starting a basic swing loads the full phase sequence and is in wind-up (no hitbox yet)', () => {
 		const a = avatar({ attackT: 0 });
 		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.016);
-		// The swing commits this tick but the hitbox is NOT live during wind-up
-		// (ADR 0017 §1) — it goes live a few ticks later, in the active phase.
+		// The swing commits but the hitbox is NOT live during wind-up — it goes live later,
+		// in the active phase (ADR 0017 §1).
 		expect(r.attackT).toBe(SWING_TOTAL);
 		expect(swingPhase(r.attackT)).toBe('windup');
 		expect(r.hitbox).toBeNull();
@@ -456,8 +453,8 @@ describe('resolveCombat', () => {
 	});
 
 	test('a fresh attack press mid-swing does not restart the swing (stays committed)', () => {
-		// Holding attack while in recovery must not re-trigger; the phase machine runs
-		// to completion before a new swing can begin.
+		// Holding attack mid-recovery must not re-trigger — the machine runs to completion
+		// first.
 		const a = avatar({ attackT: 0.1 });
 		const before = a.attackT;
 		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.02);
@@ -640,8 +637,8 @@ describe('applyPoiseDamage', () => {
 	});
 
 	test('accumulates across hits and breaks only when the pool empties', () => {
-		// Pure accumulation (no regen between hits): the pool depletes by poiseDamage
-		// each connect and breaks exactly when the accumulated damage empties it.
+		// Pure accumulation (no regen between hits): the pool depletes by poiseDamage each
+		// connect and breaks when it empties.
 		const hitsToBreak = Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage);
 		let poise: number = COMBAT.poise.max;
 		let brokeAt = -1;
@@ -671,8 +668,8 @@ describe('applyPoiseDamage', () => {
 	});
 
 	test('a high-poise entity refills to its OWN poiseMax on a break, not the default', () => {
-		// The brute's big pool (poiseMax > default) makes it the poise-tank: a hit that
-		// would break a default entity only chips it, and a break refills to ITS ceiling.
+		// The brute's big pool makes it the poise-tank: a hit that would break a default
+		// entity only chips it, and a break refills to ITS ceiling.
 		const brute = monster(0, 0, { type: 'brute', poiseMax: BRUTE.poiseMax });
 		expect(BRUTE.poiseMax).toBeGreaterThan(COMBAT.poise.max);
 		// An absent pool starts full at the entity's own max.
@@ -789,15 +786,14 @@ describe('resolveCombat swingStarted', () => {
 	});
 });
 
-// The shared per-Avatar combat fold (ADR 0022): the seam both the server's `stepAvatars`
-// and the networked client's prediction run, so the previously-untested client fold path
-// is covered here. Assert the folded Avatar state + the projected `strikes` given
-// (avatar, intent, ctx) — the external behaviour, not the internal assignment order.
+// The shared per-Avatar combat fold both the server and the client's prediction run, so
+// the previously-untested client fold path is covered here. Assert external behaviour,
+// not internal assignment order (ADR 0022).
 describe('stepAvatarCombat', () => {
 	const avatar = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, ...over });
-	// Default to a fully-leveled (cap) Avatar so every verb — block, dodge, both skills —
-	// is unlocked (ADR 0024 §5); individual cases override `level` to test the gating.
+	// Default to a cap-level Avatar so every verb is unlocked; individual cases override
+	// `level` to test the gating (ADR 0024 §5).
 	const ctx = (over: Partial<Parameters<typeof stepAvatarCombat>[2]> = {}) => ({
 		level: PROGRESSION.levelCap,
 		cls: 'warrior' as const,
@@ -807,8 +803,8 @@ describe('stepAvatarCombat', () => {
 	});
 
 	test('a fresh swing loads the phase sequence and RESETS swingHits', () => {
-		// Carry stale hit ids from a prior swing; a fresh swing must drop them so the new
-		// swing can connect again (ADR 0017 §2).
+		// Stale hit ids from a prior swing: a fresh swing must drop them so it can connect
+		// again (ADR 0017 §2).
 		const a = avatar({ attackT: 0, swingHits: [7, 9] });
 		const r = stepAvatarCombat(a, { attack: true }, ctx());
 		expect(r.avatar.attackT).toBe(SWING_TOTAL);
@@ -817,8 +813,8 @@ describe('stepAvatarCombat', () => {
 	});
 
 	test('an in-flight swing KEEPS its swingHits so it lands once per target', () => {
-		// Mid-swing (attackT > 0): holding attack does not restart it, and the registry
-		// of already-struck ids persists.
+		// Mid-swing: holding attack does not restart it, so the already-struck registry
+		// persists.
 		const a = avatar({ attackT: 0.1, swingHits: [7, 9] });
 		const r = stepAvatarCombat(a, { attack: true }, ctx({ dt: 0.02 }));
 		expect(r.avatar.swingHits).toEqual([7, 9]);
@@ -856,8 +852,8 @@ describe('stepAvatarCombat', () => {
 	});
 
 	test('the Dodge i-frame + cooldown timers fold deterministically on a fresh hop', () => {
-		// Grounded + moving Avatar, off cooldown: the gate arms both timers to their full
-		// windows (the hop impulse itself is the caller's; this only folds the timing).
+		// Grounded + moving, off cooldown: the gate arms both timers to full (the hop
+		// impulse is the caller's; this only folds the timing).
 		const r = stepAvatarCombat(
 			avatar({ onGround: true, dodgeT: 0, dodgeCdT: 0 }),
 			{ dodge: true },
@@ -874,8 +870,8 @@ describe('stepAvatarCombat', () => {
 	});
 
 	test('skill cooldowns fold onto the Avatar: a fired skill arms its cooldown, others decay', () => {
-		// Cooldowns now live on the Entity (ADR 0022 slice 2): seed them there, read them
-		// back off the folded avatar.
+		// Cooldowns live on the Entity: seed them there, read them back off the folded
+		// avatar (ADR 0022 slice 2).
 		const a = avatar({
 			attackT: 0,
 			skillCooldowns: { [GROUND_POUND.id]: 2.0 },
@@ -966,8 +962,8 @@ describe('canStartDodge', () => {
 	});
 
 	test('cannot dodge while the post-recovery cooldown is still draining', () => {
-		// dodgeCdT outlives dodgeT: the spam-gate that keeps a fresh hop from
-		// starting the instant the i-frame timer hits 0 (ADR 0017 §5 committal).
+		// dodgeCdT outlives dodgeT: the spam-gate that keeps a fresh hop from starting the
+		// instant the i-frame timer hits 0 (ADR 0017 §5).
 		expect(canStartDodge(player({ dodgeT: 0, dodgeCdT: 0.5 }), 1)).toBe(false);
 	});
 
@@ -977,7 +973,7 @@ describe('canStartDodge', () => {
 
 	test('dodgeReady is the timing half only — ignores grounded + moving', () => {
 		// Airborne and standstill still read "ready" by timing alone; the movement gate
-		// lives in canStartDodge (pre-hop), not in the server-side timing re-check.
+		// lives in canStartDodge, not the server-side timing re-check.
 		expect(dodgeReady(player({ onGround: false }))).toBe(true);
 		expect(dodgeReady(player({ dodgeCdT: 0.3 }))).toBe(false); // cooldown blocks
 		expect(dodgeReady(player({ attackT: 0.1 }))).toBe(false); // mid-swing blocks
@@ -988,9 +984,8 @@ describe('resolveCombat dodge', () => {
 	const player = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, attackT: 0, ...over });
 
-	// resolveCombat receives the caller's ALREADY-GATED `dodge` decision (the impulse
-	// site ran the full grounded+moving `canStartDodge` pre-hop); here it only re-checks
-	// the tick-stable timing (`dodgeReady`) and loads the timers.
+	// resolveCombat receives the caller's ALREADY-GATED `dodge` decision; here it only
+	// re-checks the tick-stable timing (`dodgeReady`) and loads the timers.
 	test('a gated dodge intent loads the full hop, arms the cooldown, flags dodgeStarted', () => {
 		const r = resolveCombat(
 			player(),
@@ -1085,8 +1080,8 @@ describe('dodge action-state + pose', () => {
 	});
 
 	test('a Dodge takes the move slot over a concurrent swing timer', () => {
-		// Both timers nonzero (a dodge started while a swing was mid-recovery shouldn't
-		// happen via resolveCombat, but actionStateOf must still pick one move): dodge wins.
+		// Both timers nonzero (shouldn't happen via resolveCombat, but actionStateOf must
+		// still pick one move): dodge wins.
 		const a = actionStateOf(player({ dodgeT: DODGE_TOTAL, attackT: 0.1 }));
 		expect(a.move).toBe('dodge');
 	});
@@ -1459,8 +1454,8 @@ describe('effectsOf', () => {
 	});
 
 	test('a death carries its entity tint through to the gore burst', () => {
-		// The gore recolours to the dead entity's body (#139), so the tint rides the
-		// CombatEvent and `effectsOf` projects it onto the burst — absent on a tintless event.
+		// The tint rides the CombatEvent and `effectsOf` projects it onto the burst —
+		// absent on a tintless event (#139).
 		const tint = { r: 1, g: 2, b: 3 };
 		const e: CombatEvent = {
 			kind: 'death',
@@ -1484,9 +1479,9 @@ describe('effectsOf', () => {
 	});
 
 	test('swatEvent builds a swat at the shot itself (its position + id), keyed to its damage', () => {
-		// A swat resolves against a Projectile, not an Entity (ADR 0019), so it carries the
-		// shot's own position (NOT an entity-box centre) and id, and the shot's damage as
-		// intensity. dir is the clink bias (back along the swat). No source.
+		// A swat resolves against a Projectile, so it carries the shot's own position (not
+		// an entity-box centre) and id, the shot's damage as intensity, and the clink-bias
+		// dir. No source (ADR 0019).
 		const pr = projectile({ id: 42, x: 27, y: 6, damage: 7 });
 		const e = swatEvent(pr, -1);
 		expect(e).toEqual({
@@ -1501,10 +1496,8 @@ describe('effectsOf', () => {
 	});
 
 	test('a swat projects to a sourceless impact at the shot, NOT heavier than its damage', () => {
-		// The swat is a Player's melee frame shattering a hostile shot (ADR 0019): a light
-		// clink, not a Poise break — so unlike `break` it carries NO poise.max bump, just
-		// the shot's own damage as intensity. Source-less: the clink + camera juice reaches
-		// everyone in range, the attacker included.
+		// A light clink, not a Poise break — so unlike `break` it carries NO poise.max bump,
+		// just the shot's own damage as intensity. Source-less, reaching everyone (ADR 0019).
 		const e: CombatEvent = {
 			kind: 'swat',
 			targetId: 9,

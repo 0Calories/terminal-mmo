@@ -1,8 +1,6 @@
-// SSH-key challenge-response auth (ADR 0004, #235): the pure verifier and the
-// username-claim registry. Everything here is socket-free — keys are generated
-// in-process and signatures produced with node:crypto, exactly the bytes an
-// ssh-agent would hand the client (the agent signs the raw payload and wraps
-// the result in the same {algo, sig} blob `encodeSignatureBlob` builds).
+// SSH-key challenge-response auth (ADR 0004, #235), socket-free: keys are generated
+// in-process and signatures produced with node:crypto — the same bytes an ssh-agent
+// would hand the client.
 import { expect, test } from 'bun:test';
 import { generateKeyPairSync, type KeyObject, sign } from 'node:crypto';
 import {
@@ -18,8 +16,7 @@ import {
 	verifyChallenge,
 } from '../src';
 
-// A throwaway ed25519 identity: the OpenSSH one-line public key plus a signer
-// producing the agent-style signature blob over a challenge nonce.
+// A throwaway ed25519 identity: OpenSSH public-key line plus an agent-style signer.
 function makeIdentity(comment?: string) {
 	const { publicKey, privateKey } = generateKeyPairSync('ed25519');
 	const jwk = publicKey.export({ format: 'jwk' });
@@ -52,8 +49,7 @@ test('parsePublicKeyLine reads an ssh-ed25519 line, with or without a comment', 
 });
 
 test('parsePublicKeyLine rejects other key types and garbage', () => {
-	// An RSA line (algo mismatch inside the blob too) and assorted junk must all
-	// come back null rather than throw — the server feeds it untrusted input.
+	// Untrusted input: an RSA line and assorted junk must come back null, not throw.
 	expect(parsePublicKeyLine('ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAB')).toBeNull();
 	expect(parsePublicKeyLine('')).toBeNull();
 	expect(parsePublicKeyLine('ssh-ed25519')).toBeNull();
@@ -132,8 +128,7 @@ test('a key that already owns a username keeps it — re-claiming returns the or
 	const id = makeIdentity();
 	const first = claimHandle(createAccountRegistry(), id.line, 'Neo');
 	if (!first.ok) throw new Error('first claim should succeed');
-	// Same key, different desired name: identity is durable, so the registered
-	// username wins and the registry is unchanged.
+	// Same key, different desired name: identity is durable, so the registered name wins.
 	const again = claimHandle(first.registry, id.line, 'Morpheus');
 	if (!again.ok) throw new Error('re-claim should resolve, not fail');
 	expect(again.handle).toBe('Neo');
@@ -174,8 +169,8 @@ test('resolveAuth: a brand-new key is admitted UNCLAIMED — the Handle is claim
 		'Trinity',
 	);
 	if (!res.ok) throw new Error(`expected success, got: ${res.reason}`);
-	// The desired (auto-derived) Handle rides through as the provisional value the creator
-	// pre-fills, but resolveAuth no longer CLAIMS it (#304, ADR 0028) — the registry is untouched.
+	// The desired Handle rides through to pre-fill the creator, but resolveAuth no longer
+	// claims it (#304, ADR 0028) — the registry stays untouched.
 	expect(res.handle).toBe('Trinity');
 	expect(handleForKey(res.registry, id.line)).toBeUndefined();
 });

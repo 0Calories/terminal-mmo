@@ -3,7 +3,7 @@ import { InputState } from '../src/input';
 
 test('clear() releases all held keys so they cannot stick after a mode switch', () => {
 	const input = new InputState();
-	input.press('d', 0); // moving right
+	input.press('d', 0);
 	expect(input.poll(0).moveX).toBe(1);
 	input.clear(); // e.g. entering chat typing mode
 	expect(input.poll(0).moveX).toBe(0);
@@ -31,19 +31,19 @@ test('keyboard scheme: l is Dodge, k is Guard — distinct verbs (ADR 0017 §5/�
 	expect(input.poll(0).dodge).toBe(false);
 	expect(input.poll(0).guard).toBe(false);
 
-	input.press('l', 0); // dedicated Dodge key
+	input.press('l', 0);
 	let polled = input.poll(0);
 	expect(polled.dodge).toBe(true);
-	expect(polled.guard).toBe(false); // Dodge is not Guard
-	expect(polled.skill).toBeUndefined(); // not a skill
+	expect(polled.guard).toBe(false);
+	expect(polled.skill).toBeUndefined();
 	input.release('l');
 	expect(input.poll(0).dodge).toBe(false);
 
-	input.press('k', 0); // dedicated Guard key
+	input.press('k', 0);
 	polled = input.poll(0);
 	expect(polled.guard).toBe(true);
-	expect(polled.dodge).toBe(false); // Guard is not Dodge
-	expect(polled.attack).toBe(false); // not an attack
+	expect(polled.dodge).toBe(false);
+	expect(polled.attack).toBe(false);
 	expect(polled.skill).toBeUndefined();
 	input.release('k');
 	expect(input.poll(0).guard).toBe(false);
@@ -135,8 +135,8 @@ test('interact is edge-triggered: one press yields exactly one consume, not one 
 	const input = new InputState('keyboard');
 	expect(input.consumeInteract()).toBe(false);
 
-	input.press('e', 0); // interact key pressed
-	expect(input.consumeInteract()).toBe(true); // rising edge fires once
+	input.press('e', 0);
+	expect(input.consumeInteract()).toBe(true);
 	expect(input.consumeInteract()).toBe(false); // still held: no re-trigger
 	expect(input.consumeInteract()).toBe(false);
 
@@ -169,8 +169,8 @@ test('poll() does NOT consume the interact edge, so a press survives fast polls 
 	input.poll(0);
 	input.poll(0);
 	input.poll(0);
-	expect(input.consumeInteract()).toBe(true); // the press still made it to the send
-	expect(input.consumeInteract()).toBe(false); // and only once
+	expect(input.consumeInteract()).toBe(true);
+	expect(input.consumeInteract()).toBe(false);
 });
 
 test('clear() drops a pending interact edge so it cannot fire after a mode switch (#261)', () => {

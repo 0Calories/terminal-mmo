@@ -12,21 +12,19 @@ import { loadZones } from './zoneContent';
 export interface GameState {
 	player: PlayerState;
 	world: World;
-	// Co-present Avatars to draw alongside (networked render only; ADR 0003
-	// z-orders them with Monsters, local Avatar on top). Absent offline.
+	// Co-present Avatars to draw alongside — networked render only, absent offline; ADR
+	// 0003 z-orders them with Monsters, local Avatar on top.
 	others?: Entity[];
-	// Combat Effects emitted by the most recent `step` (transient, ADR 0013). The
-	// offline loop reads them straight off the result and feeds the client particle
-	// system — no wire, identical behavior to networked play.
+	// Combat Effects from the most recent `step` (transient, ADR 0013): the offline loop
+	// reads them straight off the result, no wire, identical to networked play.
 	effects?: Effect[];
 }
 
 /**
- * Seed a playable World from an explicit set of Zones, spawning the Player in
- * `startId` (falling back to the first Zone for an unknown id). The whole set is
- * kept in the World so portal travel between the Zones works. This is the seam
- * `zone play` uses to boot the offline sim from `.zone` files under edit, sharing
- * one code path with `createGame` so the playtest and the game never diverge.
+ * Seed a playable World from a set of Zones, spawning the Player in `startId` (falling back
+ * to the first Zone for an unknown id). The seam `zone play` uses to boot the offline sim
+ * from `.zone` files under edit, sharing `createGame`'s code path so playtest and game
+ * never diverge.
  */
 export function createGameFromZones(
 	zones: Zone[],
@@ -41,9 +39,8 @@ export function createGameFromZones(
 }
 
 export function createGame(seed = 1): GameState {
-	// The data-driven World (ADR 0008): zones are loaded from the authored `.zone`
-	// files, not built by a factory. loadZones() returns the start Zone (the Town)
-	// first; the Player spawns there at the shared safe point.
+	// Data-driven World (ADR 0008): zones loaded from authored `.zone` files. loadZones()
+	// returns the start Zone (the Town) first, where the Player spawns.
 	const loaded = loadZones();
 	return createGameFromZones(loaded, loaded[0].id, seed);
 }
@@ -53,19 +50,17 @@ export function createGame(seed = 1): GameState {
 /**
  * Advance the active Zone + the Player one tick. Deterministic given inputs.
  *
- * Single-player is the M2 client/server split applied to one local Avatar: the
- * client-local physics prediction feeds a one-Avatar server-authoritative
- * `stepZone`. Routing both through the same consequence engine is what keeps the
- * offline loop and the networked server from ever diverging (ADR 0006).
+ * Single-player is the M2 client/server split applied to one local Avatar: client-local
+ * physics prediction feeds a one-Avatar server-authoritative `stepZone`, so the offline
+ * loop and the networked server can't diverge (ADR 0006).
  */
 export function step(game: GameState, input: Input, dtMs: number): GameState {
 	const dt = Math.min(dtMs / 1000, PHYS.maxDt);
 	const zone = game.world.zones[game.player.zoneId];
 	const t = zone.terrain;
 
-	// Portals are a client-local Zone transition (cross-Zone routing over the wire
-	// is a later slice); handled before movement/combat so the transition tick
-	// runs neither.
+	// A client-local Zone transition, handled before movement/combat so the transition
+	// tick runs neither.
 	if (input.interact) {
 		const here = entityBox(game.player.avatar);
 		const portal = zone.portals.find((p) => aabbOverlap(here, p));
@@ -90,16 +85,13 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		}
 	}
 
-	// A Dodge hop (ADR 0017 §5) is a momentum-body impulse on the client-authoritative
-	// body, applied BEFORE physics so stepEntity integrates it this tick. Gated by the
-	// same `canStartDodge` predicate `resolveCombat` (inside stepZone) uses to load
-	// `dodgeT`, so the impulse and the i-frame window begin on the same tick. The full
-	// gate (grounded + held direction + off cooldown) is evaluated HERE, pre-hop, before
-	// the upward pop ungrounds the body; the gated decision is passed to stepZone as the
-	// `dodge` intent so resolveCombat loads `dodgeT` iff the hop fired. Direction = moveX.
+	// The Dodge hop impulse, applied BEFORE physics so stepEntity integrates it this tick.
+	// The full gate is evaluated HERE, pre-hop, before the upward pop ungrounds the body,
+	// and the same decision passes to stepZone as the `dodge` intent so resolveCombat loads
+	// `dodgeT` iff the hop fired (ADR 0017 §5). Direction = moveX.
 	let body = game.player.avatar;
-	// Also gated by the Dodge capability (L4, ADR 0024 §5): below the unlock the hop
-	// impulse never fires, matching resolveCombat's i-frame gate so the two agree.
+	// Also gated by the Dodge capability (L4, ADR 0024 §5), matching resolveCombat's i-frame
+	// gate so the two agree.
 	const dodging =
 		(input.dodge ?? false) &&
 		canStartDodge(body, input.moveX) &&
@@ -122,7 +114,7 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	const sa: ServerAvatar = {
 		sessionId: game.player.avatar.id,
 		handle: '', // offline single-player has no broadcast handle
-		cosmetics: DEFAULT_COSMETICS, // unused offline (no broadcast); default look
+		cosmetics: DEFAULT_COSMETICS, // unused offline (no broadcast)
 		avatar: game.player.avatar,
 		progress: game.player.progress,
 		inventory: game.player.inventory,
@@ -138,14 +130,14 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		y: predicted.y,
 		vx: predicted.vx,
 		vy: predicted.vy,
-		// Carry the integrated impulse residual so the hop persists across ticks (the
-		// returned avatar is rebuilt from this intent, ADR 0001).
+		// Carry the integrated impulse residual so the hop persists across ticks — the
+		// returned avatar is rebuilt from this intent (ADR 0001).
 		ivx: predicted.ivx,
 		facing: predicted.facing,
 		onGround: predicted.onGround,
 		attack: input.attack,
-		// The gated Dodge decision (ADR 0017 §5): true only if the hop actually fired, so
-		// resolveCombat loads the i-frame timer in lockstep with the impulse above.
+		// True only if the hop actually fired, so resolveCombat loads the i-frame timer in
+		// lockstep with the impulse above (ADR 0017 §5).
 		dodge: dodging,
 		guard: input.guard,
 		skill: input.skill,

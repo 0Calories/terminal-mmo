@@ -15,7 +15,6 @@ import {
 } from '../src/doc';
 import { newZoneTemplate } from '../src/template';
 
-// A tiny 3×2 doc: top row empty, bottom row a solid floor.
 const sample: EditorDoc = {
 	header: { id: 'z', type: 'field' },
 	rows: ['...', '###'],

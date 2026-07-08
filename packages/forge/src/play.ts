@@ -19,8 +19,7 @@ import { type Cam, clampPreviewCam } from './preview';
 // --- Pure helpers (unit-tested; the opentui shell below is manual per PRD) ----
 
 /**
- * The active Zone of a running game as a renderable scene: terrain, portals,
- * NPCs, and the simulated Monsters. The Player Avatar is drawn on top by the
+ * The active Zone as a renderable scene. The Player Avatar is drawn on top by the
  * shell (ADR 0003), so it is NOT in `entities` here.
  */
 export function playSceneOf(game: GameState): ZoneScene {
@@ -34,8 +33,7 @@ export function playSceneOf(game: GameState): ZoneScene {
 }
 
 /**
- * Centre the camera on a world point and clamp it to the Zone grid, so the
- * followed Avatar sits near the viewport middle but blank space never scrolls
+ * Centre the camera on a world point, clamped to the grid so blank space never scrolls
  * in past an edge. Kept as a float — the renderer rounds at draw time.
  */
 export function followCam(
@@ -92,9 +90,8 @@ function actionFor(name: string): Action | null {
 	}
 }
 
-// A minimal held-key tracker mapping the keyboard to the sim's `Input`. Distinct
-// from the client's InputState (which also drives skills/chat) but the same
-// view-layer glue — not physics or combat, which stay in the shared `step`.
+// A minimal held-key tracker mapping the keyboard to the sim's `Input` — view-layer
+// glue, not physics or combat, which stay in the shared `step`.
 class PlayInput {
 	private held = new Set<Action>();
 	private seen = new Map<Action, number>();
@@ -130,11 +127,9 @@ class PlayInput {
 }
 
 /**
- * `zone play <id>`: boot the authored Zone set into the offline single-player sim
- * and drop a controllable Avatar into `<id>` — run/jump the terrain, take portals,
- * fight the spawned Monsters — all from the `.zone` content, no game server.
- * Reuses the shared renderer (#56) and the shared `step` (no duplicate physics or
- * combat). Long-lived: opentui owns the process lifecycle (ctrl-c / q exit).
+ * `zone play <id>`: boot the authored Zone set into the offline sim and drop a
+ * controllable Avatar into `<id>`. Reuses the shared renderer (#56) and `step`, so no
+ * physics/combat is duplicated. Long-lived: opentui owns the lifecycle (ctrl-c / q).
  */
 export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 	const id = args[0];
@@ -185,8 +180,7 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 			// The local Avatar is drawn on top of the z-sorted scene (ADR 0003), planting
 			// onto the same terrain renderZoneScene drew (ADR 0021).
 			drawEntitySprite(buf, a, cam, style, scene.terrain);
-			// Status header on row 0 (sky in most Zones), so vitals stay visible
-			// without hiding terrain.
+			// Status header on row 0 (sky in most Zones), so it doesn't hide terrain.
 			const status = playStatusLine(game);
 			for (let x = 0; x < buf.width; x++)
 				buf.setCell(x, 0, ' ', style.paletteDefault, style.terrainBg);
@@ -215,7 +209,6 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 		input.release(k.name),
 	);
 
-	// Drive the shared offline sim each frame; the Renderable live-renders `game`.
 	renderer.setFrameCallback(async (dt: number) => {
 		game = step(game, input.poll(performance.now()), dt);
 	});

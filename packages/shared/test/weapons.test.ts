@@ -31,8 +31,8 @@ function avatar(over: Partial<Entity> = {}): Entity {
 
 describe('WEAPONS catalog — damage + visuals only (ADR 0024)', () => {
 	test('a Weapon carries damage plus visuals (sprite/accent) and nothing else', () => {
-		// The reduced stat block: no per-weapon phase-speed, arc (reach), poise,
-		// Knockback, or trail — those all collapsed onto the shared COMBAT constants.
+		// Phase-speed, reach, poise, Knockback and trail all collapsed onto the shared
+		// COMBAT constants, so a Weapon carries only damage + visuals.
 		const allowed = new Set(['name', 'damage', 'sprite']);
 		for (const w of WEAPONS)
 			for (const key of Object.keys(w)) expect(allowed).toContain(key);
@@ -67,8 +67,8 @@ describe('one shared moveset — no weapon reshapes combat resolution', () => {
 	});
 
 	test('the active hitbox spans the shared melee reach, not a per-weapon arc', () => {
-		// Prime attackT inside the shared active window; the projected box must be the
-		// COMBAT.meleeReach arc whatever weapon is equipped.
+		// Primed inside the active window; the box must be the COMBAT.meleeReach arc
+		// whatever weapon is equipped.
 		const inActive =
 			SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
 		for (let i = 0; i < WEAPONS.length; i++) {

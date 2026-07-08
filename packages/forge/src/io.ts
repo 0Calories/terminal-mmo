@@ -23,8 +23,8 @@ export interface LoadedZone {
 }
 
 /**
- * Load the shared catalog file from a zones dir. Absent file → empty catalogs
- * (a town/blank template needs none), so the CLI still works on a bare dir.
+ * Load the shared catalog file. Absent file → empty catalogs (a town/blank template
+ * needs none), so the CLI still works on a bare dir.
  */
 export function loadCatalogs(root: string): Catalogs {
 	const path = join(root, CATALOGS_FILE);
@@ -71,12 +71,9 @@ export function zoneExists(root: string, id: string): boolean {
 	return existsSync(zonePath(root, id));
 }
 
-/** Write raw `.zone` text to `<root>/<id>.zone` — symmetric with `loadZone`. The
- *  editor (#84) serializes an `EditorDoc` and writes the result here. Atomic
- *  (#98): the bytes land in a sibling temp file first, then a single `rename`
- *  swaps it over the target — so a crash mid-write can never leave a half-written
- *  `.zone`, and no stray temp file survives a successful save. We lean on git for
- *  history (no `.bak`). */
+/** Write raw `.zone` text atomically (#98): the bytes land in a sibling temp file,
+ *  then one `rename` swaps it over the target — so a crash mid-write can't leave a
+ *  half-written `.zone`. We lean on git for history (no `.bak`). */
 export function writeZone(root: string, id: string, text: string): void {
 	const target = zonePath(root, id);
 	const tmp = `${target}.tmp`;
@@ -95,11 +92,9 @@ export function renameZoneFile(
 }
 
 /**
- * Rewrite every Portal `target` in one `.zone` file's header that references
- * `oldId`, so a rename of a Zone keeps the cross-zone links intact (ADR 0011).
- * Pure + surgical: only whole-value `"target": "<oldId>"` matches in the HEADER
- * are touched (the grid body is left alone), so the resulting diff is minimal and
- * the rest of the file — formatting, other targets, unrelated keys — is byte-stable.
+ * Rewrite every Portal `target` referencing `oldId` in one file's header, so a rename
+ * keeps cross-zone links intact (ADR 0011). Surgical: only whole-value `"target":
+ * "<oldId>"` matches in the HEADER are touched, so the rest of the file is byte-stable.
  */
 export function rewritePortalTarget(
 	text: string,

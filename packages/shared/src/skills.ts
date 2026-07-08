@@ -12,12 +12,10 @@ export type SkillKind = 'frontal' | 'aoe';
 export interface Skill {
 	id: string;
 	name: string;
-	// The canonical keycap shown for this skill (u = slot 1, i = slot 2) — a presentation
-	// label kept next to `name`, so the shared "Unlocked: <name> [<key>]!" feedback line
-	// (#271, generated server-side where the client's input scheme is unknown) and the HUD
-	// readout name one key from one source. This is the DEFAULT keyboard binding; the opt-in
-	// mouse scheme (MMO_SCHEME=mouse) rebinds skills to e/r, which only the scheme-aware
-	// controls overlay reflects — the demo's feedback line stays on the canonical keycap.
+	// The canonical keycap (u = slot 1, i = slot 2), so the server-generated "Unlocked:
+	// <name> [<key>]!" line (#271) and the HUD name one key from one source. This is the
+	// DEFAULT binding; the mouse scheme (MMO_SCHEME=mouse) rebinds to e/r, but the feedback
+	// line stays on the canonical keycap.
 	key: string;
 	kind: SkillKind;
 	unlockLevel: number;
@@ -68,10 +66,9 @@ export function skillUnlocked(skill: Skill, level: number): boolean {
 	return level >= skill.unlockLevel;
 }
 
-// The Active skills newly unlocked by climbing from `fromLevel` to `toLevel` on a level-up,
-// in ladder order — each skill whose unlock rung lands in the half-open span (fromLevel,
-// toLevel]. A multi-level jump surfaces every rung it crossed. Drives the cosmetic
-// "Unlocked: <name> [<key>]!" feedback line (#271); no mechanics ride on it.
+// The Active skills unlocked by climbing from `fromLevel` to `toLevel`, each whose unlock
+// rung lands in the half-open span (fromLevel, toLevel] — a multi-level jump surfaces every
+// rung crossed. Cosmetic only: drives the "Unlocked: <name> [<key>]!" line (#271).
 export function skillsUnlockedBetween(
 	cls: PlayerClass,
 	fromLevel: number,

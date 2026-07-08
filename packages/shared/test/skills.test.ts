@@ -18,7 +18,6 @@ import {
 } from '../src';
 import { flatTerrain } from './helpers';
 
-// Player at x=20 facing right, one chaser directly in front on flat ground.
 function skillGame(level: number): GameState {
 	const y = GROUND_TOP - BOX.h;
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
@@ -48,12 +47,12 @@ function skillGame(level: number): GameState {
 	return { player, world: { zones: { [zone.id]: zone }, tick: 0 } };
 }
 
-// Player at x=20 facing right, flanked by a chaser on each side, both within the
-// AoE reach. Lets a both-sides Ground Pound be observed hitting front AND back.
+// The Avatar flanked by a chaser on each side, both within AoE reach, so a both-sides
+// Ground Pound can be observed hitting front AND back.
 function flankedGame(level: number): GameState {
 	const y = GROUND_TOP - BOX.h;
-	const front = spawnMonster('chaser', 2, 20 + BOX.w, y); // body to the right
-	const back = spawnMonster('chaser', 3, 20 - BOX.w, y); // body to the left
+	const front = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	const back = spawnMonster('chaser', 3, 20 - BOX.w, y);
 	const zone: Zone = {
 		id: 'field-01',
 		type: 'field',
@@ -85,8 +84,8 @@ const POWER: Input = { moveX: 0, jump: false, attack: false, skill: 1 };
 const POUND: Input = { moveX: 0, jump: false, attack: false, skill: 2 };
 
 test('the Active skills unlock on their capability-ladder rungs (Power Strike L3, Ground Pound L5)', () => {
-	// The skills read their unlock from the single capability table (ADR 0024 §5), so the
-	// ladder can never drift between the skill data and the progression module.
+	// Skills read their unlock from the single capability table (ADR 0024 §5), so the
+	// ladder can't drift between skill data and the progression module.
 	expect(POWER_STRIKE.unlockLevel).toBe(3);
 	expect(POWER_STRIKE.unlockLevel).toBe(CAPABILITY_UNLOCK['power-strike']);
 	expect(GROUND_POUND.unlockLevel).toBe(5);
@@ -188,9 +187,9 @@ test('Power Strike fires at its unlock level, hitting harder than a basic swing'
 
 test('Power Strike cannot re-fire while on cooldown', () => {
 	let g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16);
-	g = step(g, POWER, 16); // pressed again while on cooldown
+	g = step(g, POWER, 16);
 	const cd = g.player.skillCooldowns?.[POWER_STRIKE.id] ?? 0;
-	// cooldown ticked down rather than reset to full — proves it did not re-fire
+	// cooldown ticked down rather than resetting to full — proves it did not re-fire
 	expect(cd).toBeGreaterThan(0);
 	expect(cd).toBeLessThan(POWER_STRIKE.cooldown);
 });
@@ -200,7 +199,7 @@ test('Power Strike re-fires once its cooldown elapses', () => {
 	// idle long enough for the cooldown to expire (dt clamped to 0.05s/tick)
 	for (let i = 0; i < 80; i++) g = step(g, IDLE, 50);
 	expect(g.player.skillCooldowns?.[POWER_STRIKE.id] ?? 0).toBe(0);
-	g = step(g, POWER, 16); // fires again → cooldown reset to full
+	g = step(g, POWER, 16);
 	expect(g.player.skillCooldowns?.[POWER_STRIKE.id]).toBe(
 		POWER_STRIKE.cooldown,
 	);
@@ -216,7 +215,6 @@ test('Ground Pound is locked below its unlock level — no effect, no cooldown',
 
 test('Ground Pound damages monsters on BOTH sides of the Avatar at once', () => {
 	const g = step(flankedGame(GROUND_POUND.unlockLevel), POUND, 16);
-	// one pound clears both flanking chasers (front + back) — crowd control
 	expect(activeZone(g.world, g.player.zoneId).monsters.length).toBe(0);
 	expect(g.player.skillCooldowns?.[GROUND_POUND.id]).toBe(
 		GROUND_POUND.cooldown,
@@ -224,8 +222,8 @@ test('Ground Pound damages monsters on BOTH sides of the Avatar at once', () => 
 });
 
 test('a frontal skill leaves the monster behind the Avatar untouched (contrast)', () => {
-	// Power Strike at the same flanked layout — only the front chaser is hit, the
-	// one behind keeps full HP, isolating Ground Pound's both-sides reach.
+	// A frontal skill on the flanked layout hits only the front chaser, isolating Ground
+	// Pound's both-sides reach by contrast.
 	const g = step(flankedGame(POWER_STRIKE.unlockLevel), POWER, 16);
 	const back = activeZone(g.world, g.player.zoneId).monsters.find(
 		(m) => m.id === 3,
@@ -235,7 +233,7 @@ test('a frontal skill leaves the monster behind the Avatar untouched (contrast)'
 
 test('Ground Pound cannot re-fire while on cooldown', () => {
 	let g = step(flankedGame(GROUND_POUND.unlockLevel), POUND, 16);
-	g = step(g, POUND, 16); // pressed again while on cooldown
+	g = step(g, POUND, 16);
 	const cd = g.player.skillCooldowns?.[GROUND_POUND.id] ?? 0;
 	expect(cd).toBeGreaterThan(0);
 	expect(cd).toBeLessThan(GROUND_POUND.cooldown);

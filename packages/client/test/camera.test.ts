@@ -111,11 +111,9 @@ import {
 const mag = (k: Kick) => Math.max(Math.abs(k.x), Math.abs(k.y));
 
 test('applyKick clamps each axis to ±maxCells (≤2 cells)', () => {
-	// A huge impulse on both axes saturates at the clamp, never beyond.
 	const k = applyKick(NO_KICK, 100, -100);
 	expect(k.x).toBe(CAMERA_KICK.maxCells);
 	expect(k.y).toBe(-CAMERA_KICK.maxCells);
-	// Stacking more never pushes past the clamp.
 	const k2 = applyKick(k, 50, -50);
 	expect(mag(k2)).toBeLessThanOrEqual(CAMERA_KICK.maxCells);
 });
@@ -125,7 +123,6 @@ test('stepKick decays a kick monotonically toward zero and reaches exactly 0 wit
 	let prev = mag(k);
 	let elapsed = 0;
 	const dt = 16;
-	// Over one full duration the offset must be back to exactly zero (no lingering, no overshoot).
 	for (let i = 0; i < Math.ceil(CAMERA_KICK.durationMs / dt); i++) {
 		k = stepKick(k, dt);
 		elapsed += dt;
@@ -136,7 +133,7 @@ test('stepKick decays a kick monotonically toward zero and reaches exactly 0 wit
 		prev = m;
 	}
 	expect(elapsed).toBeGreaterThanOrEqual(CAMERA_KICK.durationMs);
-	expect(k).toEqual({ x: 0, y: 0 }); // fully settled
+	expect(k).toEqual({ x: 0, y: 0 });
 });
 
 test('stepKick clamps the decremented value at zero (never overshoots past 0)', () => {
@@ -159,7 +156,6 @@ test('hitstop freezes on trigger and drains to unfrozen over its duration', () =
 	expect(isFrozen(NO_HITSTOP)).toBe(false);
 	let h = triggerHitstop(NO_HITSTOP);
 	expect(isFrozen(h)).toBe(true);
-	// Drains by real wall time; after the full duration it is no longer frozen.
 	h = stepHitstop(h, HITSTOP_MS);
 	expect(isFrozen(h)).toBe(false);
 });

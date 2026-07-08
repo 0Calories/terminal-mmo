@@ -1,9 +1,6 @@
-// The controls overlay (#242, ADR 0024 — "learn controls (?)" is a beat of the demo
-// arc). A toggleable, read-only cheat-sheet of every input, in the Shop/AudioOptions
-// mold: an absolute, centered panel on the modal layer. Level-gated verbs (the #233
-// capability ladder) show WHEN they unlock, so a fresh Player reads the overlay and
-// knows both the key and whether it's earned yet. The row data is pure and exported so
-// a test can assert every input is covered.
+// The controls overlay (#242): a read-only cheat-sheet of every input on the modal layer.
+// Level-gated verbs (#233) show WHEN they unlock, so a fresh Player knows both the key
+// and whether it's earned yet.
 
 import type { Capability } from '@mmo/shared';
 import { CAPABILITY_UNLOCK, capabilityUnlocked } from '@mmo/shared';
@@ -18,18 +15,16 @@ import { COLORS } from './theme';
 
 export interface ControlRow {
 	label: string;
-	// The binding(s) in the default keyboard scheme (input.ts KEYBOARD_BINDINGS).
+	// Binding(s) in the default keyboard scheme.
 	keys: string;
-	// The binding(s) under the keyboard+mouse scheme (MOUSE_BINDINGS), for the rows that
-	// move — attack/skills/interact/block. Absent when the scheme doesn't change the key.
+	// Binding under the keyboard+mouse scheme; absent when the scheme doesn't change the key.
 	mouseKeys?: string;
-	// The capability a level-gated verb sits behind (#233); drives the "unlocks at L?"
-	// note. Absent for inputs available from the start.
+	// The capability a level-gated verb sits behind (#233); absent for always-available inputs.
 	capability?: Capability;
 }
 
-// Every input the client understands, grouped move → combat → social → system. Kept in
-// lockstep with the two binding tables in input.ts and the emote set in chat.ts.
+// Every input, grouped move → combat → social → system. Keep in lockstep with the
+// binding tables in input.ts and the emotes in chat.ts.
 export const CONTROL_ROWS: readonly ControlRow[] = [
 	{ label: 'Move', keys: '←/→  ·  a/d' },
 	{ label: 'Jump', keys: '␣  ·  ↑' },
@@ -70,14 +65,11 @@ export const CONTROL_ROWS: readonly ControlRow[] = [
 
 const LABEL_PAD = Math.max(...CONTROL_ROWS.map((r) => r.label.length));
 
-// The binding shown for a row under the active scheme — the mouse override when the
-// keyboard+mouse scheme is running and this row moves, else the keyboard binding.
+// The mouse override when the mouse scheme is active and the row has one, else the keyboard binding.
 export function keysFor(row: ControlRow, scheme: Scheme): string {
 	return scheme === 'mouse' && row.mouseKeys ? row.mouseKeys : row.keys;
 }
 
-// One rendered line: label, the active scheme's binding, and — for a still-locked verb —
-// when it unlocks.
 export function controlRowText(
 	row: ControlRow,
 	level: number,
@@ -142,9 +134,6 @@ export class Controls {
 		return this.container.visible;
 	}
 
-	// Render against the Player's current level (locked verbs note when they unlock) and
-	// the active control scheme (so the keys shown are the ones that actually act), then
-	// reveal the overlay.
 	show(level: number, scheme: Scheme): void {
 		this.rows.content = `\n${CONTROL_ROWS.map((r) =>
 			controlRowText(r, level, scheme),

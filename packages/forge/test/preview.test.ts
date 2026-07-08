@@ -2,7 +2,6 @@ import { describe, expect, it } from 'bun:test';
 import { parseZone } from '@mmo/shared';
 import { clampPreviewCam, sceneOf } from '../src/preview';
 
-// A minimal field: 10 wide, floor on the bottom row, one chaser spawn + a portal.
 const CATALOGS = {
 	monsters: [{ id: 'slime', behavior: 'chaser' as const, name: 'Slime' }],
 	npcs: [],

@@ -10,10 +10,8 @@ import {
 	undo,
 } from '../src/history';
 
-// The undo/redo history is the pure seam of the edit lifecycle (#98): a past/
-// present/future model with gesture coalescing (one drag = one step) and a depth
-// cap. The editor stores `EditorDoc` snapshots in it; these tests use strings as
-// stand-in states since the model is generic.
+// The tests use strings as stand-in states — History<T> is generic (the editor
+// stores `EditorDoc` snapshots). Coalescing merges one drag into a single step (#98).
 
 describe('initHistory', () => {
 	test('starts with the present and empty stacks', () => {
@@ -38,7 +36,7 @@ describe('record', () => {
 		let h = record(initHistory('a'), 'b');
 		h = undo(h); // present back to 'a', future = ['b']
 		expect(canRedo(h)).toBe(true);
-		h = record(h, 'c'); // a fresh edit must drop the redo branch
+		h = record(h, 'c');
 		expect(h.future).toEqual([]);
 		expect(canRedo(h)).toBe(false);
 		expect(h.past).toEqual(['a']);
@@ -58,7 +56,7 @@ describe('record with coalescing tag', () => {
 	test('same tag merges into the current step (no new past entry)', () => {
 		let h = record(initHistory('a'), 'b', 'stroke1'); // first cell of a drag
 		expect(h.past).toEqual(['a']);
-		h = record(h, 'c', 'stroke1'); // more cells, same stroke
+		h = record(h, 'c', 'stroke1');
 		h = record(h, 'd', 'stroke1');
 		expect(h.present).toBe('d');
 		expect(h.past).toEqual(['a']); // still ONE step for the whole drag
@@ -68,14 +66,14 @@ describe('record with coalescing tag', () => {
 
 	test('a different tag begins a new step', () => {
 		let h = record(initHistory('a'), 'b', 'stroke1');
-		h = record(h, 'c', 'stroke2'); // a second, separate stroke
+		h = record(h, 'c', 'stroke2');
 		expect(h.past).toEqual(['a', 'b']);
 		expect(undo(h).present).toBe('b');
 	});
 
 	test('an untagged edit never coalesces, even back-to-back', () => {
-		let h = record(initHistory('a'), 'b'); // single-key edit
-		h = record(h, 'c'); // another single-key edit
+		let h = record(initHistory('a'), 'b');
+		h = record(h, 'c');
 		expect(h.past).toEqual(['a', 'b']);
 	});
 
@@ -131,7 +129,7 @@ describe('undo / redo', () => {
 		// undo resets the coalesce anchor so the next stroke is its own step.
 		let h = record(initHistory('a'), 'b', 'stroke1');
 		h = undo(h);
-		h = record(h, 'c', 'stroke1'); // same literal tag, but after an undo
+		h = record(h, 'c', 'stroke1');
 		expect(h.past).toEqual(['a']);
 		expect(undo(h).present).toBe('a');
 	});

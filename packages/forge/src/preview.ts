@@ -20,9 +20,8 @@ export interface Cam {
 }
 
 /**
- * Clamp the pan camera so it can't scroll past the Zone grid. Caps at
- * `gridDim - view` (0 when the grid is smaller than the viewport), so the far
- * edge of a ~240-wide Zone is reachable but blank space never scrolls in.
+ * Clamp the pan camera so it can't scroll past the grid: caps at `gridDim - view`
+ * (0 when the grid is smaller than the viewport), so blank space never scrolls in.
  */
 export function clampPreviewCam(
 	cam: Cam,
@@ -38,9 +37,8 @@ export function clampPreviewCam(
 }
 
 /**
- * The static (no avatar, no simulation) scene for a parsed Zone: terrain,
- * portals, NPCs, and the Monsters at their spawn points — the same `ZoneScene`
- * the game feeds the shared renderer, so the preview is faithful (#56).
+ * The static (no avatar, no sim) scene for a parsed Zone — the same `ZoneScene` the
+ * game feeds the shared renderer, so the preview is faithful (#56).
  */
 export function sceneOf(zone: Zone): ZoneScene {
 	return {
@@ -58,14 +56,11 @@ export function statusLine(zone: Zone): string {
 
 // --- Interactive shell (opentui; not unit-tested, validated by eye) -----------
 
-// opentui is imported dynamically so this module's pure helpers can be unit-
-// tested without loading a terminal renderer.
 const PAN_STEP = 4;
 
 /**
  * `zone preview <id>`: mount the shared renderer over a parsed Zone, pan with the
- * arrow keys / hjkl, and re-render on save. Long-lived — opentui owns the process
- * lifecycle (ctrl-c / q exit), so this never returns under normal use.
+ * arrows / hjkl, re-render on save. Long-lived — opentui owns the lifecycle (ctrl-c / q).
  */
 export async function runPreview(args: string[], deps: CliDeps): Promise<void> {
 	const id = args[0];
@@ -109,8 +104,7 @@ export async function runPreview(args: string[], deps: CliDeps): Promise<void> {
 			// Names are a caller-composited top layer now (ADR 0023): the preview runs the
 			// pass right after the scene so authored named entities still render, on top.
 			drawNameplates(buf, scene.entities, cam, scene.terrain, style);
-			// Status header on row 0 (sky in most Zones), so live dimensions and
-			// reload/parse state are visible without hiding terrain.
+			// Status header on row 0 (sky in most Zones), so it doesn't hide terrain.
 			for (let x = 0; x < buf.width; x++)
 				buf.setCell(x, 0, ' ', style.paletteDefault, style.terrainBg);
 			for (let i = 0; i < status.length && i < buf.width; i++)

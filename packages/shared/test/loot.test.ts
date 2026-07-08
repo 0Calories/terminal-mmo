@@ -47,8 +47,8 @@ test('rolling many items produces variety', () => {
 
 test('every rarity tier maps to a distinct colour (in-world + on-pickup source)', () => {
 	const tiers: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
-	// Every declared tier has a colour, and each channel is a valid 0–255 byte so both
-	// the shared renderer and the client theme can consume it directly.
+	// Each channel is a valid 0–255 byte so both the shared renderer and the client theme
+	// can consume it directly.
 	for (const t of tiers) {
 		const c = RARITY_COLOR[t];
 		expect(c).toBeDefined();
@@ -80,8 +80,8 @@ test('lootTableFor resolves each shipped Zone and falls back to the default', ()
 });
 
 test('a Zone table only ever rolls its own base pool', () => {
-	// field-01's warm-up pool excludes the Iron Sword / Chain Mail / Jade Amulet, so no roll
-	// off that table can ever produce a base outside it — the table biases WHAT drops.
+	// The table biases WHAT drops: no roll off field-01's warm-up pool can produce a base
+	// outside it.
 	const table = lootTableFor('field-01');
 	let state = 5;
 	for (let i = 0; i < 200; i++) {
@@ -92,8 +92,8 @@ test('a Zone table only ever rolls its own base pool', () => {
 });
 
 test('the Dungeon faucet drops on every kill; a Field drops only sometimes', () => {
-	// dropChance is the reworked "when" lever (ADR 0024 §2): the Dungeon is reliable (1.0),
-	// a Field is occasional (< 1). Count drops over many seeded rolls off each table.
+	// dropChance is the "when" lever (ADR 0024 §2): the Dungeon is reliable (1.0), a Field
+	// occasional (< 1).
 	const dungeon = lootTableFor('dungeon-01');
 	const field = lootTableFor('field-01');
 	expect(dungeon.dropChance).toBe(1);
@@ -112,14 +112,13 @@ test('the Dungeon faucet drops on every kill; a Field drops only sometimes', () 
 		fs = f.state;
 		if (f.item) fieldDrops++;
 	}
-	expect(dungeonDrops).toBe(N); // every kill drops in the Dungeon
-	expect(fieldDrops).toBeGreaterThan(0); // Fields still drop…
-	expect(fieldDrops).toBeLessThan(N); // …but not on every kill
+	expect(dungeonDrops).toBe(N);
+	expect(fieldDrops).toBeGreaterThan(0);
+	expect(fieldDrops).toBeLessThan(N);
 });
 
 test('rollDrop is deterministic and threads state on BOTH the drop and no-drop paths', () => {
 	const table = lootTableFor('field-01');
-	// Same seed → identical outcome (item or null) and identical next state.
 	const a = rollDrop(42, 5, table);
 	const b = rollDrop(42, 5, table);
 	expect(a.item).toEqual(b.item);
@@ -131,7 +130,7 @@ test('rollDrop is deterministic and threads state on BOTH the drop and no-drop p
 		const r = rollDrop(state, 5, table);
 		if (!r.item) {
 			sawNoDrop = true;
-			expect(r.state).not.toBe(state); // state moved even though nothing dropped
+			expect(r.state).not.toBe(state);
 		}
 		state = r.state;
 	}
@@ -139,8 +138,8 @@ test('rollDrop is deterministic and threads state on BOTH the drop and no-drop p
 });
 
 test('a deeper Zone tilts toward higher rarity tiers than a starter Field', () => {
-	// field-03 / dungeon carry richer rarity weights, so over many rolls they produce more
-	// above-common loot than field-01's default weights — the "deeper = better" tilt.
+	// The "deeper = better" tilt: field-03/dungeon carry richer rarity weights, so over
+	// many rolls they produce more above-common loot than field-01.
 	function aboveCommon(tableId: string, seed: number): number {
 		const table = lootTableFor(tableId);
 		let state = seed;

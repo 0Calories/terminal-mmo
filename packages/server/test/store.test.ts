@@ -1,8 +1,6 @@
 // Persistence seam tests (#236) against an in-memory bun:sqlite — the same store the
-// server runs, opened at ':memory:'. Asserts the full durable round-trip through the
-// sqlite backing + the pure @mmo/shared transforms: every persisted field survives a
-// save→load (including the boss-defeated flag), excluded transient state is not
-// persisted, and a returning login is placed back in its last safe Town.
+// server runs. Durable fields survive save→load, transient state does not, and a
+// returning login lands back in its last safe Town.
 
 import { expect, test } from 'bun:test';
 import {
@@ -57,7 +55,6 @@ test('save then load round-trips every persisted field, incl the boss-defeated f
 	const save = richSave();
 	store.save(KEY, save);
 	expect(store.load(KEY)).toEqual(save);
-	// Explicit: the boss-defeated flag field exists and survives the round-trip.
 	expect(store.load(KEY)?.bossDefeated).toBe(true);
 	store.close();
 });
@@ -82,8 +79,6 @@ test('registryFromSaves rebuilds the account registry from persisted rows', () =
 	store.close();
 });
 
-// The seam's whole point: a live Avatar's durable state survives a save→load→restore and
-// comes back identical, while its transient position/HP/timers do NOT.
 test('a live Avatar round-trips durable state but not transient position/HP', () => {
 	const store = openPlayerStore(':memory:');
 	const world = createServerWorld({
@@ -92,7 +87,6 @@ test('a live Avatar round-trips durable state but not transient position/HP', ()
 		town: 'town-01',
 	});
 
-	// Place a fresh session, then simulate progression by editing its ServerAvatar.
 	let w = addSession(world, 1, 'Trinity');
 	const sa = avatarOf(w, 1);
 	const progressed = {
@@ -104,7 +98,6 @@ test('a live Avatar round-trips durable state but not transient position/HP', ()
 		avatar: { ...sa.avatar, weapon: 2, x: 123, y: 45, hp: 3, vx: 9 },
 	};
 
-	// Flush → persist → reload → restore into a brand-new login.
 	const save = saveFromAvatar(progressed, 'town-01');
 	store.save(KEY, save);
 	const reloaded = store.load(KEY);
@@ -133,7 +126,6 @@ test('a live Avatar round-trips durable state but not transient position/HP', ()
 	store.close();
 });
 
-// Monsters and transient Zone state never reach the save — it carries only account fields.
 test('the save carries no Monster or transient Zone state', () => {
 	const store = openPlayerStore(':memory:');
 	const world = createServerWorld({
@@ -158,7 +150,6 @@ test('the save carries no Monster or transient Zone state', () => {
 	store.close();
 });
 
-// Login returns the Avatar to the last safe Town it stood in — not its logged-off Zone.
 test('login returns the Avatar to its last safe Town', () => {
 	const store = openPlayerStore(':memory:');
 	const world = createServerWorld({
@@ -188,7 +179,6 @@ test('login returns the Avatar to its last safe Town', () => {
 	w = stepServerWorld(w, [intent], 50);
 	expect(zoneOf(w, 1)).toBe('town-01');
 
-	// Flush, disconnect, and log back in — restored into town-01, not field-01.
 	const save = saveFromAvatar(avatarOf(w, 1), 'town-01');
 	expect(save.lastTown).toBe('town-01');
 	store.save(KEY, save);

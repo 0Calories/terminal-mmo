@@ -28,13 +28,10 @@ test('catalog counts agree with the underlying catalogs', () => {
 });
 
 test('the demo ships a single shippable Form + hats at the ADR 0024 §8 cap (5 hats)', () => {
-	// Form 2 (wisp) is drafted out pending art rework, so a single shippable Form ships for
-	// now (re-add `wisp` to FORMS to restore the 2nd). The 4 original hats + the bareheaded
-	// default + 1 new hat = 6 catalog slots (5 hats); the hat cap is a TOTAL, not additive
-	// (ADR 0024 §"What the demo is", line 120), so it is exact, not a lower bound.
+	// Form 2 (wisp) is drafted out pending art rework, leaving one shippable Form. The
+	// hat cap is a TOTAL, not additive (ADR 0024 §8): 6 slots = bareheaded + 5 hats, exact.
 	expect(FORM_COUNT).toBe(1);
 	expect(HAT_COUNT).toBe(6);
-	// Every hat past the bareheaded default carries real overlay art.
 	for (let i = 1; i < HATS.length; i++) expect(HATS[i].sprite).not.toBeNull();
 });
 
@@ -58,8 +55,8 @@ test('clampCosmetics collapses out-of-range / non-integer indices to the default
 });
 
 test('clampCosmetics defaults an out-of-range form index to 0 (mirrors hue/hat/nameplate)', () => {
-	// `form` joins hue/hat/nameplate as a fourth catalog index (ADR 0020); a stray
-	// or forward-version value can never produce an out-of-range FORMS lookup.
+	// `form` is a fourth catalog index (ADR 0020); a stray value can never produce an
+	// out-of-range FORMS lookup.
 	const base = { hue: 0, hat: 0, nameplate: 0 };
 	expect(clampCosmetics({ ...base, form: FORM_COUNT }).form).toBe(0);
 	expect(clampCosmetics({ ...base, form: -1 }).form).toBe(0);
@@ -69,7 +66,7 @@ test('clampCosmetics defaults an out-of-range form index to 0 (mirrors hue/hat/n
 test('randomCosmetics is deterministic for a seed and always in range', () => {
 	for (let seed = 0; seed < 200; seed++) {
 		const c = randomCosmetics(seed);
-		expect(c).toEqual(randomCosmetics(seed)); // reproducible
+		expect(c).toEqual(randomCosmetics(seed));
 		// Always a valid, clamp-stable catalog index.
 		expect(clampCosmetics(c)).toEqual(c);
 		expect(c.hue).toBeGreaterThanOrEqual(0);
@@ -89,8 +86,7 @@ test('randomCosmetics spreads across the catalogs (not a constant)', () => {
 		forms.add(randomCosmetics(seed).form);
 	}
 	expect(hats.size).toBeGreaterThan(1);
-	// With Form 2 (wisp) drafted out, a single Form ships, so every roll lands on it. Re-add
-	// `wisp` to FORMS and this becomes a varied spread (> 1) again.
+	// With Form 2 (wisp) drafted out, only one Form ships, so every roll lands on it.
 	expect(forms.size).toBe(1);
 	expect(forms.has(0)).toBe(true);
 });

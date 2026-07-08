@@ -21,9 +21,8 @@ import { flatTerrain, makeProjectile } from './helpers';
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false };
 
-// The basic swing is phased now (ADR 0017 §1): the hitbox is live only in the active
-// window, so a hit isn't instant. Prime an Avatar mid-active so a single attacking
-// step lands the swing (the wind-up→active timing is covered in combat.test / zone.test).
+// The swing is phased (ADR 0017 §1): the hitbox is live only in the active window.
+// Prime an Avatar mid-active so a single attacking step lands the swing.
 const MID_ACTIVE = SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
 function primeSwing(g: GameState): GameState {
 	g.player.avatar.attackT = MID_ACTIVE;
@@ -36,8 +35,8 @@ test('createGame separates Player state from the World of Zones', () => {
 	expect(g.player.avatar.type).toBe('player');
 	expect(g.player.zoneId in g.world.zones).toBe(true);
 	const zone = activeZone(g.world, g.player.zoneId);
-	expect(zone.type).toBe('town'); // the Player spawns into the safe hub
-	expect(zone.monsters.length).toBe(0); // a town has no Monster spawns
+	expect(zone.type).toBe('town');
+	expect(zone.monsters.length).toBe(0);
 });
 
 test('createGameFromZones seeds the sim from an explicit Zone set + start id', () => {
@@ -45,7 +44,6 @@ test('createGameFromZones seeds the sim from an explicit Zone set + start id', (
 	const field = zones.find((z) => z.type === 'field');
 	if (!field) throw new Error('expected an authored field Zone');
 	const g = createGameFromZones(zones, field.id);
-	// Player spawns in the requested start Zone, not the default first Zone.
 	expect(g.player.zoneId).toBe(field.id);
 	// Every loaded Zone is in the World so portal travel between them works.
 	for (const z of zones) expect(z.id in g.world.zones).toBe(true);
@@ -79,7 +77,6 @@ test('step is deterministic for identical seed + inputs', () => {
 	);
 });
 
-// player at x, one chaser directly in front on flat ground, in one Field Zone
 function adjacentGame(monsterHp?: number, id = 'field-01'): GameState {
 	const y = GROUND_TOP - BOX.h;
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
@@ -137,8 +134,8 @@ test('a step with no combat surfaces no Effects', () => {
 });
 
 test('killing a monster grants XP and, standing on the kill, collects its instanced loot Drop', () => {
-	// In the Dungeon every kill drops (ADR 0024 §2); the Avatar is on the kill site, so its
-	// private Drop is picked up on touch the same tick — into its own bag (#238).
+	// Every Dungeon kill drops (ADR 0024 §2); standing on the kill site collects the
+	// private Drop the same tick, into its own bag (#238).
 	const g = step(
 		primeSwing(adjacentGame(4, 'dungeon-01')),
 		{ moveX: 0, jump: false, attack: true },
@@ -149,11 +146,11 @@ test('killing a monster grants XP and, standing on the kill, collects its instan
 	expect(g.player.inventory.length).toBe(1);
 	expect(g.player.progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
 	expect(g.player.inventory[0].id).toBe(1); // assigned from the Player's nextId
-	expect(zone.drops ?? []).toEqual([]); // collected, nothing left resting
+	expect(zone.drops ?? []).toEqual([]);
 });
 
-// one chaser sharing the Avatar's x on flat ground, facing right — the
-// on-top-of-you case where naive homing would flip-flop direction each frame.
+// A chaser stacked on the Avatar's x: the case where naive homing would flip-flop
+// direction each frame.
 function stackedGame(): GameState {
 	const y = GROUND_TOP - BOX.h;
 	const m = spawnMonster('chaser', 2, 40, y);
@@ -198,10 +195,9 @@ test('a chaser inside the deadzone holds position and keeps its facing', () => {
 test('a chaser outside the deadzone still closes in on the Avatar', () => {
 	const g = step(adjacentGame(), IDLE, 16);
 	const m = activeZone(g.world, g.player.zoneId).monsters[0];
-	expect(m.x).toBeLessThan(20 + BOX.w); // moved left toward the Avatar at x=20
+	expect(m.x).toBeLessThan(20 + BOX.w);
 });
 
-// player at x=40, one shooter `gap` cells to the right on flat ground.
 function shooterGame(gap: number): GameState {
 	const y = GROUND_TOP - BOX.h;
 	const m = spawnMonster('shooter', 2, 40 + gap, y);
@@ -231,15 +227,14 @@ function shooterGame(gap: number): GameState {
 }
 
 test('a ranged poker telegraphs a swing before firing — no shot on the commit tick', () => {
-	// The reworked shooter is a ranged poker (ADR 0017 §8): it never auto-fires. The
-	// first tick in range COMMITS the wind-up→active→recovery swing (attackT loaded) but
-	// projects NO shot; the pebble appears only once the swing crosses into `active`.
+	// The shooter is a ranged poker (ADR 0017 §8): it never auto-fires. The first tick
+	// in range commits the swing (attackT loaded) but projects no shot; the pebble
+	// appears only once the swing crosses into `active`.
 	let g = step(shooterGame(30), IDLE, 16);
 	expect(
 		activeZone(g.world, g.player.zoneId).monsters[0].attackT,
 	).toBeGreaterThan(0);
 	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(0);
-	// Drive the telegraph forward; the shot lands during the active phase.
 	let fired = 0;
 	for (let i = 0; i < 12 && fired === 0; i++) {
 		g = step(g, IDLE, 16);
@@ -249,8 +244,7 @@ test('a ranged poker telegraphs a swing before firing — no shot on the commit 
 });
 
 test('a ranged poker does not auto-fire a second shot during its cooldown', () => {
-	// After the active-frame shot, `fireCdT` paces the next commit — stepping on does not
-	// immediately spit a second pebble.
+	// After the shot, `fireCdT` paces the next commit — no immediate second pebble.
 	let g = shooterGame(30);
 	let fired = 0;
 	for (let i = 0; i < 12 && fired === 0; i++) {
@@ -258,8 +252,7 @@ test('a ranged poker does not auto-fire a second shot during its cooldown', () =
 		fired = activeZone(g.world, g.player.zoneId).projectiles.length;
 	}
 	expect(fired).toBe(1);
-	// A few more ticks: the single shot may travel/expire, but no NEW one is fired while
-	// the cooldown holds.
+	// The single shot may travel/expire, but no NEW one is fired while the cooldown holds.
 	const idAfterFirst = activeZone(g.world, g.player.zoneId).projectiles[0]?.id;
 	let extraFired = false;
 	for (let i = 0; i < 6; i++) {
@@ -278,7 +271,7 @@ test('a shooter does not fire when the Avatar is out of range', () => {
 test('a shooter backs away when the Avatar gets too close', () => {
 	const g = step(shooterGame(SHOOTER.keepDist - 5), IDLE, 16);
 	const m = activeZone(g.world, g.player.zoneId).monsters[0];
-	// player is at 40, shooter started to its right; retreating means moving right
+	// shooter started right of the Avatar, so retreating means moving further right
 	expect(m.x).toBeGreaterThan(40 + SHOOTER.keepDist - 5);
 });
 
@@ -320,11 +313,11 @@ test('a projectile overlapping the Avatar damages it and applies i-frames', () =
 	);
 	expect(g.player.avatar.hp).toBe(before - SHOOTER.projDamage);
 	expect(g.player.avatar.hurtT).toBeGreaterThan(0);
-	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(0); // consumed on hit
+	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(0);
 });
 
-// player adjacent to a low-hp Field monster bound to spawn point 0, so killing
-// it exercises the spawn-point → respawn machinery.
+// A low-hp Field monster bound to spawn point 0, so killing it exercises the
+// spawn-point → respawn machinery.
 function fieldSpawnGame(monsterHp: number): GameState {
 	const y = GROUND_TOP - BOX.h;
 	const spawn = { type: 'chaser' as const, x: 20 + BOX.w, y };
@@ -343,8 +336,7 @@ function fieldSpawnGame(monsterHp: number): GameState {
 		nextMonsterId: 3,
 	};
 	const player: PlayerState = {
-		// Primed mid-active so the single ATTACK step lands the kill (ADR 0017 §1):
-		// every fieldSpawnGame caller swings to exercise the spawn/respawn machinery.
+		// Primed mid-active so a single ATTACK step lands the kill (ADR 0017 §1).
 		avatar: { ...spawnAvatar(20, y), attackT: MID_ACTIVE },
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
@@ -385,7 +377,7 @@ test('a scheduled respawn restores the monster at full HP at its spawn point', (
 			const m = zone.monsters[0];
 			expect(m.hp).toBe(MONSTER.chaserHp);
 			expect(m.hp).toBe(m.maxHp);
-			expect(m.x).toBe(20 + BOX.w); // at the spawn point
+			expect(m.x).toBe(20 + BOX.w);
 			expect(m.y).toBe(GROUND_TOP - BOX.h);
 			expect(m.spawnIndex).toBe(0);
 			expect(zone.respawns.length).toBe(0);
@@ -432,25 +424,23 @@ test("only the active Zone ticks; the Avatar's persistent state lives above it",
 	};
 	const before = g.world.zones['field-02'];
 	g = step(g, { moveX: 1, jump: false, attack: false }, 16);
-	// dormant Zone untouched (same reference)
-	expect(g.world.zones['field-02']).toBe(before);
+	expect(g.world.zones['field-02']).toBe(before); // dormant Zone untouched, same reference
 	expect(g.player.zoneId).toBe('town-01');
 });
 
 // --- Dodge hop (ADR 0017 §5, #165) ------------------------------------------
-// The hop is a client-authoritative momentum-body impulse (ADR 0001), so it is
-// exercised through the full offline prediction path (step → applyImpulse →
-// stepEntity → stepZone), which is where direction + impulse become observable.
+// A client-authoritative momentum-body impulse (ADR 0001), so it is exercised through
+// the full offline prediction path where direction + impulse become observable.
 
 test('a Dodge hops in the held direction via a momentum-body impulse', () => {
 	let g = createGame();
-	g.player.avatar.onGround = true; // grounded — the hop is a grounded move
+	g.player.avatar.onGround = true; // the hop is a grounded move
 	g.player.progress.level = CAPABILITY_UNLOCK.dodge; // Dodge unlocks at L4 (ADR 0024 §5)
 	const x0 = g.player.avatar.x;
 	g = step(g, { moveX: 1, jump: false, attack: false, dodge: true }, 16);
-	expect(g.player.avatar.dodgeT ?? 0).toBeGreaterThan(0); // the Dodge started
-	expect(g.player.avatar.ivx ?? 0).toBeGreaterThan(0); // rightward impulse
-	expect(g.player.avatar.x).toBeGreaterThan(x0); // hopped right
+	expect(g.player.avatar.dodgeT ?? 0).toBeGreaterThan(0);
+	expect(g.player.avatar.ivx ?? 0).toBeGreaterThan(0);
+	expect(g.player.avatar.x).toBeGreaterThan(x0);
 });
 
 test('the hop follows the held direction (left)', () => {
@@ -458,7 +448,7 @@ test('the hop follows the held direction (left)', () => {
 	g.player.avatar.onGround = true;
 	g.player.progress.level = CAPABILITY_UNLOCK.dodge;
 	g = step(g, { moveX: -1, jump: false, attack: false, dodge: true }, 16);
-	expect(g.player.avatar.ivx ?? 0).toBeLessThan(0); // hops LEFT with the held dir
+	expect(g.player.avatar.ivx ?? 0).toBeLessThan(0);
 });
 
 test('a standstill dodge does nothing — a direction must be held', () => {
@@ -466,8 +456,8 @@ test('a standstill dodge does nothing — a direction must be held', () => {
 	g.player.avatar.onGround = true;
 	g.player.progress.level = CAPABILITY_UNLOCK.dodge;
 	g = step(g, { moveX: 0, jump: false, attack: false, dodge: true }, 16);
-	expect(g.player.avatar.dodgeT ?? 0).toBe(0); // no hop started
-	expect(g.player.avatar.ivx ?? 0).toBe(0); // no impulse
+	expect(g.player.avatar.dodgeT ?? 0).toBe(0);
+	expect(g.player.avatar.ivx ?? 0).toBe(0);
 });
 
 test('a Dodge cannot be re-triggered mid-hop (committal)', () => {
@@ -476,9 +466,8 @@ test('a Dodge cannot be re-triggered mid-hop (committal)', () => {
 	g.player.progress.level = CAPABILITY_UNLOCK.dodge;
 	g = step(g, { moveX: 1, jump: false, attack: false, dodge: true }, 16);
 	const ivxAfterStart = g.player.avatar.ivx ?? 0;
-	// Holding dodge again next tick must not re-impulse — ivx only DECAYS, never jumps
-	// back up to a fresh hop.
+	// Holding dodge again must not re-impulse — ivx only decays, never re-kicks.
 	g = step(g, { moveX: 1, jump: false, attack: false, dodge: true }, 16);
-	expect(g.player.avatar.ivx ?? 0).toBeLessThan(ivxAfterStart); // decayed, not re-kicked
+	expect(g.player.avatar.ivx ?? 0).toBeLessThan(ivxAfterStart);
 	expect(g.player.avatar.ivx ?? 0).toBeGreaterThan(0);
 });

@@ -1,19 +1,13 @@
-// The entity-centric editor layer (ADR 0010). The author works in **Placeables**
-// — a Terrain type, a catalog Monster/NPC, or a Structure (Portal) — never in
-// glyphs. This module owns the glyph↔Placeable mapping in the header: it
-// allocates a glyph the first time a Placeable type is used, reuses it for
-// further instances, and garbage-collects the header entry when the last
-// instance is erased. Orphan glyphs (declared-but-unused) and undeclared glyphs
-// become unrepresentable through the editor, not merely validated (#50).
-//
-// Pure: no FS, no opentui. Sits on top of the lossless `EditorDoc` (doc.ts) —
-// `parseZone` is lossy, so every edit mutates the raw header + rows.
+// The author works in Placeables — Terrain, a catalog Monster/NPC, or a Portal —
+// never in glyphs. This module owns the glyph↔Placeable header mapping: allocate a
+// glyph on first use, reuse it for further instances, GC the header entry when the
+// last instance is erased — so orphan and undeclared glyphs are unrepresentable
+// through the editor, not merely validated (#50).
 
 import type { Catalogs } from '@mmo/shared';
 import { cellAt, type EditorDoc, setCell } from './doc';
 
-/** A thing the editor can place into a Zone. The author selects one of these
- *  from the Palette; the editor resolves it to a header glyph on placement. */
+/** A thing the editor can place, resolved to a header glyph on placement. */
 export type Placeable =
 	| { kind: 'terrain' }
 	| { kind: 'monster'; id: string }
@@ -23,8 +17,7 @@ export type Placeable =
 // Reserved grid glyphs (mirrors parseZone): never allocated to a Placeable.
 const RESERVED = new Set(['#', '.', ' ']);
 
-// The pool the editor draws fresh glyphs from, in a stable order so allocation is
-// deterministic. None of these are reserved.
+// Stable order so allocation is deterministic.
 const ALLOC_ALPHABET =
 	'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
@@ -74,7 +67,6 @@ function valueMatches(p: Placeable, v: unknown): boolean {
 	return false;
 }
 
-/** The glyph already mapped to this Placeable type, or undefined if unused. */
 function findGlyph(doc: EditorDoc, p: Placeable): string | undefined {
 	const slot = slotOf(p);
 	if (!slot) return undefined;
@@ -91,7 +83,6 @@ function declaredGlyphs(doc: EditorDoc): Set<string> {
 	return s;
 }
 
-/** Pick the first free glyph from the pool (not reserved, not already declared). */
 function allocateGlyph(doc: EditorDoc): string {
 	const used = declaredGlyphs(doc);
 	for (const ch of ALLOC_ALPHABET)
@@ -100,11 +91,10 @@ function allocateGlyph(doc: EditorDoc): string {
 }
 
 /**
- * Place a Placeable at `(x, y)`, returning a new doc. Terrain stamps the reserved
- * `#`. For a catalog/structure Placeable, the editor reuses the glyph already
- * mapped to that type, or allocates a fresh one and adds its header entry, then
- * stamps it — so a placed glyph is always declared. Out-of-grid is a no-op (and
- * allocates nothing, so no orphan entry is ever created).
+ * Place a Placeable at `(x, y)`, returning a new doc. A catalog/structure Placeable
+ * reuses its mapped glyph or allocates and declares a fresh one — so a placed glyph
+ * is always declared. Out-of-grid is a no-op that allocates nothing, so it can't
+ * leave an orphan entry.
  */
 export function place(
 	doc: EditorDoc,
@@ -129,7 +119,6 @@ export function place(
 	return setCell({ header, rows: doc.rows }, x, y, glyph);
 }
 
-/** Does any grid row contain `ch`? */
 function gridHas(rows: string[], ch: string): boolean {
 	return rows.some((r) => r.includes(ch));
 }
@@ -148,10 +137,9 @@ function gcGlyph(doc: EditorDoc, ch: string): EditorDoc {
 }
 
 /**
- * Erase whatever Placeable occupies `(x, y)`, returning a new doc. Clears the cell
- * to `.`; if that was the LAST instance of a catalog/structure glyph, its header
- * entry is garbage-collected so no orphan declaration survives. Terrain (`#`) has
- * no header entry. Erasing an empty cell is a no-op.
+ * Erase whatever occupies `(x, y)`. Clearing the LAST instance of a catalog/structure
+ * glyph GCs its header entry so no orphan declaration survives; terrain (`#`) has no
+ * entry. Erasing an empty cell is a no-op.
  */
 export function erase(doc: EditorDoc, x: number, y: number): EditorDoc {
 	const ch = cellAt(doc, x, y);
@@ -168,16 +156,14 @@ export interface PaletteItem {
 	placeable?: Placeable;
 }
 
-/** A labelled group of Palette entries. */
 export interface PaletteGroup {
 	label: 'Terrain' | 'Monsters' | 'NPCs' | 'Structures';
 	items: PaletteItem[];
 }
 
 /**
- * Build the Palette from the catalog plus the structural primitives (ADR 0010).
- * The editor CONSUMES the catalog — it never edits it. Monsters/NPCs come straight
- * from `catalogs`; Structures are stub slots until their forms land (Portal #97).
+ * Build the Palette from the catalog plus structural primitives. Monsters/NPCs come
+ * straight from `catalogs`; Structures are stub slots until their forms land (#97).
  */
 export function buildPalette(catalogs: Catalogs): PaletteGroup[] {
 	return [

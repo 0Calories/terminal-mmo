@@ -12,8 +12,7 @@ import {
 } from '../src/customize';
 
 test('right cycles the focused field forward', () => {
-	// Form is drafted down to a single shippable option, so it's hidden from the
-	// picker and hue is the first (field 0) row.
+	// Form is hidden from the picker (single shippable option), so hue is field 0.
 	const s = initCustomize(DEFAULT_COSMETICS); // field 0 = hue
 	const { state } = reduceCustomize(s, 'right');
 	expect(state.cosmetics.hue).toBe(1);
@@ -52,10 +51,8 @@ test('return confirms with the chosen cosmetics, leaving them unchanged', () => 
 });
 
 test('the single-option Form is hidden from the picker but still confirms as form 0', () => {
-	// Form 2 (wisp) is drafted out pending art rework, leaving a single shippable
-	// Form. A one-option field is no choice at all, so the picker hides the Form row
-	// (no dead `1/1` switcher) — yet `form` stays a first-class, replicated cosmetic
-	// pinned to 0 through confirm. Re-adding a second Form re-lists the row.
+	// A one-option field is no choice, so the picker hides the Form row — yet `form`
+	// stays a replicated cosmetic, pinned to 0 through confirm.
 	expect(FORM_COUNT).toBe(1);
 	expect(CUSTOMIZE_FIELDS.some((f) => f.key === 'form')).toBe(false);
 	let s = initCustomize(DEFAULT_COSMETICS);
@@ -87,15 +84,12 @@ test('a key with no binding is a no-op and never confirms', () => {
 // --- Player-typed Handle / "name" field (#304, #315, ADR 0028) --------------------
 
 test('filterHandleDraft keeps only legal characters and caps at the max length', () => {
-	// Legal characters (letters, digits, - and _) survive verbatim.
 	expect(filterHandleDraft('neo')).toBe('neo');
 	expect(filterHandleDraft('Ne0-_')).toBe('Ne0-_');
-	// Illegal characters (spaces, punctuation) are stripped wherever they appear, so an
-	// illegal keystroke never lands in the draft.
+	// Illegal characters are stripped wherever they appear, so an illegal keystroke never lands.
 	expect(filterHandleDraft('ne o')).toBe('neo');
 	expect(filterHandleDraft('n!e@o#')).toBe('neo');
 	expect(filterHandleDraft('  n e o  ')).toBe('neo');
-	// The cap (matching the shared 2–16 rule) truncates an over-long value.
 	const full = 'a'.repeat(HANDLE_MAX_LEN);
 	expect(full.length).toBe(HANDLE_MAX_LEN);
 	expect(filterHandleDraft(`${full}bcd`)).toBe(full);
@@ -115,6 +109,5 @@ test('handleConfirmable gates confirm on the shared 2–16 [A-Za-z0-9_-] rule', 
 	// A one-character draft is too short: confirm is blocked until it becomes valid.
 	expect(handleConfirmable('a', 'wanderer')).toBe(false);
 	expect(handleConfirmable('ab', 'wanderer')).toBe(true);
-	// The cap is respected; a 16-char handle is still valid.
 	expect(handleConfirmable('a'.repeat(HANDLE_MAX_LEN), 'wanderer')).toBe(true);
 });

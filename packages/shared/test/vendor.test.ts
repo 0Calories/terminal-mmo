@@ -16,7 +16,7 @@ describe('saleValue', () => {
 	test('is deterministic and rises with rarity', () => {
 		const common = saleValue(item({ rarity: 'common' }));
 		const legendary = saleValue(item({ rarity: 'legendary' }));
-		expect(common).toBe(saleValue(item({ rarity: 'common' }))); // deterministic
+		expect(common).toBe(saleValue(item({ rarity: 'common' })));
 		expect(legendary).toBeGreaterThan(common);
 	});
 });
@@ -28,14 +28,14 @@ describe('sellItem', () => {
 		const sword = item({ id: 7, rarity: 'rare' });
 		const ring = item({ id: 8, base: 'Copper Ring', slot: 'accessory' });
 		const res = sellItem(progress(100), [sword, ring], 7);
-		expect(res.inventory).toEqual([ring]); // sword gone
+		expect(res.inventory).toEqual([ring]);
 		expect(res.progress.gold).toBe(100 + saleValue(sword));
 		expect(res.progress.level).toBe(3); // other progress untouched
 	});
 
 	test('cannot sell an Item not held — Gold and inventory unchanged', () => {
 		const ring = item({ id: 8 });
-		const res = sellItem(progress(100), [ring], 999); // 999 not in inventory
+		const res = sellItem(progress(100), [ring], 999);
 		expect(res.inventory).toEqual([ring]);
 		expect(res.progress.gold).toBe(100);
 	});
@@ -64,7 +64,7 @@ describe('buyItem', () => {
 		const res = buyItem(progress(good.price - 1), [ring], good, 42);
 		expect(res.bought).toBe(false);
 		expect(res.progress.gold).toBe(good.price - 1);
-		expect(res.inventory).toEqual([ring]); // no Item minted
+		expect(res.inventory).toEqual([ring]);
 	});
 
 	test('buying exactly to zero Gold succeeds', () => {
@@ -76,7 +76,7 @@ describe('buyItem', () => {
 	test('buy then sell round-trips at a loss — the shop is not free Gold', () => {
 		const bought = buyItem(progress(50), [], good, 1);
 		const sold = sellItem(bought.progress, bought.inventory, 1);
-		expect(sold.inventory).toEqual([]); // the Item is gone again
+		expect(sold.inventory).toEqual([]);
 		expect(sold.progress.gold).toBeLessThan(50); // price > sale value
 	});
 

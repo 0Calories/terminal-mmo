@@ -1,11 +1,8 @@
-// The server-authoritative multi-Zone world (#33, #39). The server owns which
-// Zone each session occupies. The World is *funnelled*, not channelled (ADR 0024):
-// each Zone runs exactly one shared simulation, so any two online Players in the
-// same Zone always co-locate — never scattered across parallel empty instances.
-// Joiners enter the start Zone; Portal entry and a forgiving death (respawn in
-// Town) move sessions between Zones. Pure and deterministic — no sockets, no clock
-// — so it drives identically under test and over the wire. AOI culling is post-MVP
-// (out of scope).
+// The server-authoritative multi-Zone world (#33, #39). The World is *funnelled*, not
+// channelled (ADR 0024): each Zone runs exactly one shared simulation, so two online
+// Players in the same Zone always co-locate rather than scattering across parallel empty
+// instances. Joiners enter the start Zone; Portal entry and a forgiving death (respawn in
+// Town) move sessions between Zones.
 
 import { aabbOverlap } from './combat';
 import { BOX, TOWN_SPAWN } from './constants';
@@ -33,24 +30,19 @@ import {
 } from './zone';
 
 export interface ServerWorld {
-	// The one shared simulation per shared Zone (Town + Fields), keyed by Zone id.
-	// Every such Zone exists from the start and there is exactly one instance of each
-	// (funnel, ADR 0024). A `dungeon`-type Zone is deliberately absent here — it is the
-	// instanced kind, so it has no shared simulation, only the private `instances` below.
+	// One shared simulation per shared Zone (Town + Fields), keyed by Zone id. A
+	// `dungeon`-type Zone is absent here — it is the instanced kind, living only in
+	// `instances` below (funnel, ADR 0024).
 	zones: Record<ZoneId, ZoneState>;
-	// Live private Dungeon instances (#240), keyed by an instance id
-	// (`<zoneId>#<partyLeader>`). Created on entry from Town — one per player, or one per
-	// party — and torn down the moment the last occupant leaves (a Portal out or a
-	// forgiving death), so strangers never share a Dungeon run.
+	// Live private Dungeon instances (#240), keyed `<zoneId>#<partyLeader>`. Created on
+	// entry, torn down when the last occupant leaves, so strangers never share a run.
 	instances: Record<string, ZoneState>;
 	location: Record<number, ZoneId>; // sessionId -> its current (logical) Zone id
-	// sessionId -> the instance id it occupies, for a session inside a Dungeon. Absent
-	// for a session in a shared Zone. Two sessions with the same logical `location`
-	// (`dungeon-01`) but different `instanceOf` are in separate private runs.
+	// sessionId -> the instance id it occupies inside a Dungeon; absent in a shared Zone.
+	// Same `location` but different `instanceOf` = separate private runs.
 	instanceOf: Record<number, string>;
-	// sessionId -> the party leader whose Dungeon run it shares (default: itself). The one
-	// grouping seam that lets a friend co-locate: two sessions mapped to the same leader
-	// key one shared instance; everyone else is their own leader, so strangers never meet.
+	// sessionId -> the party leader whose Dungeon run it shares (default: itself): two
+	// sessions mapped to the same leader key one shared instance, so a friend can co-locate.
 	party: Record<number, number>;
 	templates: Record<ZoneId, Zone>; // pristine Zone content
 	startZone: ZoneId; // where a joining session spawns
@@ -66,8 +58,7 @@ export function createServerWorld(opts: {
 	const zones: Record<ZoneId, ZoneState> = {};
 	for (const z of opts.zones) {
 		templates[z.id] = z;
-		// A Dungeon has no shared simulation — its ZoneStates are spun up privately per
-		// entry (#240). Every other Zone runs its one shared instance from the start.
+		// A Dungeon has no shared simulation — spun up privately per entry (#240).
 		if (z.type !== 'dungeon') zones[z.id] = createZoneState(z);
 	}
 	return {
@@ -82,22 +73,20 @@ export function createServerWorld(opts: {
 	};
 }
 
-// The party leader whose Dungeon run a session shares — itself unless it has joined
-// another's party. Deterministic; the key half of an instance id.
+// The party leader whose Dungeon run a session shares — itself unless it joined another's
+// party. The key half of an instance id.
 function partyLeaderOf(world: ServerWorld, sessionId: number): number {
 	return world.party[sessionId] ?? sessionId;
 }
 
-// The instance id for a party's private run of a Dungeon Zone. Same party + same Zone ⇒
-// same key (they co-locate); a different party keys a different instance (strangers never
-// share).
+// The instance id for a party's private run of a Dungeon Zone: same party + Zone ⇒ same
+// key, different party ⇒ different instance.
 function instanceKey(zone: ZoneId, leader: number): string {
 	return `${zone}#${leader}`;
 }
 
-// Apply a per-simulation step to every ZoneState in a record, returning a fresh record —
-// so the shared-Zone pass and the private-instance pass are literally the same code and
-// can never drift apart.
+// Step every ZoneState in a record, returning a fresh one — so the shared-Zone pass and
+// the private-instance pass run the identical code and can't drift apart.
 function mapSims(
 	sims: Record<string, ZoneState>,
 	step: (zs: ZoneState) => ZoneState,
@@ -108,8 +97,7 @@ function mapSims(
 }
 
 // Put `member` in `leader`'s party so the two share one private Dungeon instance on entry
-// (#240) — the minimal "with a friend" seam. Idempotent; a member is otherwise its own
-// leader (solo). Pure.
+// (#240). Idempotent; a member is otherwise its own leader (solo).
 export function joinParty(
 	world: ServerWorld,
 	member: number,
@@ -145,17 +133,15 @@ export function zoneInstance(
 	return world.zones[zone];
 }
 
-// Every session sharing `sessionId`'s current Zone — including itself, so a chat
-// sender receives its own line. Empty if the session is not placed. The primitive
-// for Zone-scoped social broadcast (chat #34, emotes #38): the server relays a
-// chat line to exactly these sockets, so it never crosses into another Zone (AC:
-// relayed only to the same Zone).
+// Every session sharing `sessionId`'s current Zone — including itself, so a chat sender
+// receives its own line. The primitive for Zone-scoped social broadcast (chat #34,
+// emotes #38); empty if the session is not placed.
 export function sessionsInZone(
 	world: ServerWorld,
 	sessionId: number,
 ): number[] {
-	// Inside a Dungeon, the "Zone" is the private instance, not the logical id: two
-	// separate runs of `dungeon-01` must never hear each other, so group by instance id.
+	// Inside a Dungeon the "Zone" is the private instance, not the logical id: two runs of
+	// `dungeon-01` must never hear each other, so group by instance id.
 	const inst = world.instanceOf[sessionId];
 	if (inst !== undefined) {
 		const out: number[] = [];
@@ -173,10 +159,9 @@ export function sessionsInZone(
 	return out;
 }
 
-// The online session whose handle matches `handle`, world-wide — the routing
-// primitive for whisper (#40), which (unlike chat) crosses Zones. Case-
-// insensitive; a duplicated handle resolves to the lowest sessionId so the lookup
-// is unambiguous and deterministic. Undefined if no online session matches.
+// The online session whose handle matches `handle`, world-wide — whisper (#40) crosses
+// Zones, unlike chat. Case-insensitive; a duplicated handle resolves to the lowest
+// sessionId for a deterministic lookup. Undefined if none matches.
 export function sessionByHandle(
 	world: ServerWorld,
 	handle: string,
@@ -194,9 +179,8 @@ export function sessionByHandle(
 	return found;
 }
 
-// The handle a placed session registered at the handshake (its canonical casing),
-// or undefined if the session is not online. Used to attribute a whisper to its
-// sender and to echo the recipient's real handle back (#40).
+// The handle a placed session registered at the handshake (its canonical casing), or
+// undefined if offline. Attributes a whisper to its sender / echoes the real handle (#40).
 export function handleOf(
 	world: ServerWorld,
 	sessionId: number,
@@ -206,11 +190,9 @@ export function handleOf(
 	)?.handle;
 }
 
-// True when a session's Avatar box overlaps a Merchant (vendor NPC) in the ZoneState it
-// occupies — the server-authoritative gate for a trade (#267, ADR 0025). Read off the
-// client-reported position on the ServerAvatar (positions are client-authoritative, ADR
-// 0001), the same box the Portal-interact gate trusts. Merchants live only in a Town, so a
-// session in a Field/Dungeon is never at one.
+// The server-authoritative gate for a trade (#267, ADR 0025): does the session's Avatar box
+// overlap a vendor NPC. Read off the client-authoritative position (ADR 0001), the same box
+// the Portal-interact gate trusts. Merchants live only in a Town.
 export function atMerchant(world: ServerWorld, sessionId: number): boolean {
 	const zs = zoneStateOf(world, sessionId);
 	if (zs === undefined) return false;
@@ -222,10 +204,9 @@ export function atMerchant(world: ServerWorld, sessionId: number): boolean {
 	);
 }
 
-// Replace one session's ServerAvatar via `fn`, in whichever container it occupies (its
-// shared Zone or its private Dungeon instance), returning a fresh World. A no-op if the
-// session is unplaced. The single write path the economy mutations funnel through, so a
-// sell can never edit the wrong instance.
+// Replace one session's ServerAvatar via `fn` in whichever container it occupies (shared
+// Zone or private instance), returning a fresh World. The single write path the economy
+// mutations funnel through, so a sell can't edit the wrong instance. No-op if unplaced.
 function withAvatar(
 	world: ServerWorld,
 	sessionId: number,
@@ -249,14 +230,11 @@ function withAvatar(
 	};
 }
 
-// Apply a server-validated sell of one Item for a session (#267, ADR 0025). Server-
-// authoritative and defensive on every axis: the seller must be standing at a Merchant, the
-// `itemId` must be in ITS OWN inventory, and the credited price is re-derived from the Item
-// (`saleValue`) — the client's request carries only the id, never a price. Any failed check
-// is a silent no-op (`sold: false`, World unchanged), so a forged/stale request can neither
-// conjure Gold nor delete another Player's Item. On success the Item leaves the bag, its
-// sale value is credited to Gold, and a log line is appended; the caller persists the
-// change (a trade is a significant event). Pure — the whole rule is one testable function.
+// A server-validated sell of one Item (#267, ADR 0025). Defensive on every axis: the seller
+// must be at a Merchant, the `itemId` in ITS OWN inventory, and the price is re-derived
+// (`saleValue`) — the request carries only the id. Any failed check is a silent no-op, so a
+// forged request can neither conjure Gold nor delete another Player's Item. Caller persists
+// on success.
 export function applySell(
 	world: ServerWorld,
 	sessionId: number,
@@ -281,17 +259,11 @@ export function applySell(
 	return { world: next, sold: true };
 }
 
-// Apply a server-validated buy of one starter good for a session (#273, ADR 0025). The
-// mirror of `applySell` and just as defensive: the buyer must be standing at a Merchant,
-// the `index` must name a real entry in the fixed STARTER_GOODS catalog, and the price is
-// re-derived from that catalog server-side — the client's request carries only the index,
-// never a price. `buyItem` refuses when the Player can't afford it, so a forged/stale
-// request can neither conjure an Item for free nor push Gold into debt; any failed check is
-// a silent no-op (`bought: false`, World unchanged). On success the price is deducted, a
-// fresh affix-free `common` Item minted with the Avatar's own id source (`nextId`, then
-// advanced so ids never collide with loot) is appended, and a log line recorded; the caller
-// persists the change (a trade is a significant event). Pure — the whole rule is one
-// testable function.
+// A server-validated buy of one starter good (#273, ADR 0025), the mirror of `applySell`:
+// the buyer must be at a Merchant, the `index` a real STARTER_GOODS entry, and the price
+// re-derived server-side. `buyItem` refuses when the Player can't afford it, so a forged
+// request can't conjure a free Item or push Gold into debt. The minted Item takes the
+// Avatar's own `nextId` (advanced so ids never collide with loot). Caller persists on success.
 export function applyBuy(
 	world: ServerWorld,
 	sessionId: number,
@@ -320,14 +292,10 @@ export function applyBuy(
 	return { world: next, bought: true };
 }
 
-// Apply an in-game re-customization for a session (#305, ADR 0028). Cosmetics-only — the
-// Handle is set-once at creation and never touched here. Town-only, mirroring the "Towns are
-// where you show off avatars" rule: a request from a Field/Dungeon is a silent no-op
-// (`changed: false`, World unchanged), so it can never change a look mid-combat. On success
-// the new Cosmetics are stamped onto the live Avatar through the SAME `withCosmetics` path a
-// fresh spawn uses (one apply mechanism, two entry points) — the next snapshot rebroadcasts
-// the appearance to the Zone and the caller persists it (a significant durable event). Pure —
-// the whole rule is one testable function; the caller owns store + broadcast.
+// An in-game re-customization (#305, ADR 0028): Cosmetics-only (the Handle is set-once) and
+// Town-only, so a look can't change mid-combat — a request from a Field/Dungeon is a silent
+// no-op. Applied through the same `withCosmetics` path a fresh spawn uses. Caller persists +
+// rebroadcasts.
 export function applyCosmetics(
 	world: ServerWorld,
 	sessionId: number,
@@ -342,12 +310,10 @@ export function applyCosmetics(
 	return { world: next, changed: true };
 }
 
-// Spawn a joining session's Avatar and record its membership. A fresh account spawns in
-// the shared start Zone; a returning account (with `restore` from persistence, #236) is
-// dropped into its last safe Town — never its logged-off position, which is never
-// persisted — and its durable level/XP/Gold, inventory, equipped Weapon, cosmetics, and
-// boss-defeated flag are seeded onto the Avatar. A restored `lastTown` that no longer
-// exists (a removed/renamed Zone) falls back to the start Zone.
+// Spawn a joining session's Avatar and record its membership. A fresh account spawns in the
+// start Zone; a returning account (`restore`, #236) drops into its last safe Town — never
+// its logged-off position (never persisted) — with its durable progress/inventory/weapon/
+// cosmetics seeded. A `lastTown` that no longer exists falls back to the start Zone.
 export function addSession(
 	world: ServerWorld,
 	sessionId: number,
@@ -361,9 +327,8 @@ export function addSession(
 		wanted !== undefined && world.zones[wanted] !== undefined
 			? wanted
 			: world.startZone;
-	// The Town to anchor `lastTown` to at spawn: the spawn Zone itself when it is a Town, so
-	// a first flush before any Zone change persists the Town the Avatar actually stands in
-	// (not a fallback constant). A restore already carries its own `lastTown`.
+	// Anchor `lastTown` to the spawn Zone when it is a Town, so a first flush before any
+	// Zone change persists where the Avatar actually stands. A restore carries its own.
 	const spawnTown =
 		world.templates[zone].type === 'town' ? zone : restore?.lastTown;
 	const seeded = restore
@@ -394,15 +359,10 @@ export function addSession(
 	};
 }
 
-// Mint a brand-new account's durable Save from its finalised creator choice and spawn its
-// Avatar into the starting Town (#302, ADR 0028). This is the ONE seam a new account's
-// first entry funnels through: the server calls it on `createAvatar`, persists the returned
-// Save, adds the session to its socket set, and lets the next snapshot broadcast the freshly
-// placed Avatar. Returning accounts never pass here — they restore an existing Save. Pure
-// and deterministic (no store, no clock): the caller owns persistence and broadcast. #304
-// will thread a typed Handle through here; #305's `setCosmetics` shares the cosmetics-apply
-// on an already-live Avatar. `town` is the default starting Town for a Save with no
-// last-Town yet — a fresh account has none, so it anchors here.
+// Mint a brand-new account's durable Save and spawn its Avatar into the starting Town
+// (#302, ADR 0028). Returning accounts never pass here — they restore an existing Save. The
+// caller owns persistence and broadcast. `town` is the default starting Town for a Save with
+// no last-Town yet.
 export function spawnNewAvatar(
 	world: ServerWorld,
 	sessionId: number,
@@ -411,15 +371,15 @@ export function spawnNewAvatar(
 	weapon: number,
 	town: ZoneId,
 ): { world: ServerWorld; save: PlayerSave } {
-	// The minted Save carries the finalised look + Weapon from the start, so it survives a
-	// restart exactly as a returning account would restore.
+	// The Save carries the finalised look + Weapon so it survives a restart exactly as a
+	// returning account restores.
 	const save: PlayerSave = {
 		...emptySave(handle, town),
 		cosmetics,
 		equippedWeapon: weapon,
 	};
-	// Spawn through the same restore path a returning login uses, so a new account and a
-	// returning one can never place differently — the Save is the single source of the look.
+	// Spawn through the same restore path a returning login uses, so a new and a returning
+	// account can never place differently.
 	const next = addSession(
 		world,
 		sessionId,
@@ -466,15 +426,14 @@ export function removeSession(
 	};
 }
 
-// The snapshot for one session: the authoritative view of its CURRENT Zone — so
-// presence is the whole shared Zone and the stream switches automatically on a
-// Zone change.
+// The snapshot for one session: the authoritative view of its CURRENT Zone, so the stream
+// switches automatically on a Zone change.
 export function worldSnapshotFor(
 	world: ServerWorld,
 	sessionId: number,
 ): Extract<ServerMessage, { t: 'snapshot' }> {
-	// zoneStateOf resolves to the private Dungeon instance when the session is in one, so
-	// the stream is the run it actually occupies — never a stranger's parallel instance.
+	// zoneStateOf resolves to the private instance when the session is in one, so the stream
+	// is the run it actually occupies, not a stranger's.
 	const zs = zoneStateOf(world, sessionId);
 	if (zs === undefined)
 		throw new Error(`session ${sessionId} is not placed in any Zone`);
@@ -485,8 +444,8 @@ function boxAt(x: number, y: number): Box {
 	return { x, y, w: BOX.w, h: BOX.h };
 }
 
-// Drop an Avatar into a new Zone at `arrival`, killing momentum (it re-falls onto
-// the ground), preserving every server-owned field (HP, progress, inventory).
+// Drop an Avatar into a new Zone at `arrival`, killing momentum (it re-falls onto the
+// ground) but preserving every server-owned field (HP, progress, inventory).
 function reposition(sa: ServerAvatar, x: number, y: number): ServerAvatar {
 	return {
 		...sa,
@@ -503,12 +462,10 @@ interface Move {
 }
 
 /**
- * Advance every live simulation one tick under server authority, then apply cross-Zone
- * relocations: a session pressing interact on a Portal transfers to the Portal's target,
- * and a forgiving death relocates the respawn to Town. A shared destination (Town/Field)
- * is the one funnelled instance of that Zone (ADR 0024); a Dungeon destination spins up —
- * or joins — a PRIVATE per-party instance, torn down when its last occupant leaves (#240).
- * Deterministic given the prior world, the per-session intents, and dt.
+ * Advance every live simulation one tick, then apply cross-Zone relocations: interact on a
+ * Portal transfers to its target, a forgiving death relocates the respawn to Town. A shared
+ * destination is the one funnelled instance (ADR 0024); a Dungeon destination spins up — or
+ * joins — a PRIVATE per-party instance, torn down when its last occupant leaves (#240).
  */
 export function stepServerWorld(
 	world: ServerWorld,
@@ -517,9 +474,8 @@ export function stepServerWorld(
 ): ServerWorld {
 	const byId = new Map(intents.map((i) => [i.sessionId, i]));
 
-	// Portal detection runs on the reported (pre-step) position: overlapping a Portal
-	// while pressing interact leaves now. The portals are read off the logical Zone
-	// template, so a Dungeon instance uses its Zone's own return Portal.
+	// Portal detection runs on the reported (pre-step) position. Portals are read off the
+	// logical Zone template, so a Dungeon instance uses its Zone's own return Portal.
 	const portalDest = new Map<
 		number,
 		{ dest: ZoneId; arrival: Move['arrival'] }
@@ -542,9 +498,8 @@ export function stepServerWorld(
 	const instanceOf = { ...world.instanceOf };
 	const moves: Move[] = [];
 
-	// Step one simulation (a shared Zone OR a private instance) with the sessions staying
-	// in it. Portal-takers are pulled out first so their transition tick runs neither
-	// movement nor combat, and queued as `moves`.
+	// Step one simulation with the sessions staying in it. Portal-takers are pulled out
+	// first — their transition tick runs no movement or combat — and queued as `moves`.
 	const stepSim = (zs: ZoneState): ZoneState => {
 		const staying: ServerAvatar[] = [];
 		const stayingIds = new Set<number>();
@@ -595,15 +550,14 @@ export function stepServerWorld(
 			? { ...moved, log: [...moved.log.slice(-5), m.log] }
 			: moved;
 		const destType = world.templates[m.dest].type;
-		// Reaching a safe Town updates the durable `lastTown` (#236) — a significant
-		// event, so login returns the Avatar to the last Town it actually stood in.
+		// Reaching a safe Town updates the durable `lastTown` (#236), so login returns the
+		// Avatar to the last Town it actually stood in.
 		const withLog =
 			destType === 'town' ? { ...logged, lastTown: m.dest } : logged;
 		location[m.sa.sessionId] = m.dest;
 		if (destType === 'dungeon') {
-			// Enter the party's PRIVATE run: reuse an existing instance keyed by the same
-			// party (a friend already inside), else spin a fresh one up. Strangers key
-			// different instances, so they never share (#240).
+			// Enter the party's PRIVATE run: reuse the instance keyed by the same party (a
+			// friend already inside), else spin a fresh one up (#240).
 			const key = instanceKey(m.dest, partyLeaderOf(world, m.sa.sessionId));
 			const inst = instances[key] ?? createZoneState(world.templates[m.dest]);
 			instances[key] = { ...inst, avatars: [...inst.avatars, withLog] };
@@ -616,7 +570,7 @@ export function stepServerWorld(
 	}
 
 	// Tear down any instance left empty this tick — its last occupant portalled out or
-	// died (#240). A live instance always holds ≥1 Avatar (the entrant that spun it up).
+	// died (#240).
 	for (const key of Object.keys(instances))
 		if (instances[key].avatars.length === 0) delete instances[key];
 

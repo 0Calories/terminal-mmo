@@ -1,6 +1,6 @@
-// View-only, deliberately NOT in the @mmo/shared sim (the server has no camera).
-// The world only scrolls when the Avatar pushes out of a central window, so
-// small steps and jumps don't make the whole field (and every Monster) shimmer.
+// View-only, deliberately NOT in the @mmo/shared sim (the server has no camera). The
+// world scrolls only when the Avatar pushes out of a central window, so small steps
+// and jumps don't make the whole field shimmer.
 import { BOX } from '@mmo/shared';
 
 export interface Cam {
@@ -11,9 +11,8 @@ export interface Cam {
 export const CAMERA = {
 	bandWidthFrac: 1 / 3,
 	bandHeight: 14, // taller than a full jump (~6.4 cells) so hops don't scroll
-	// A single-frame move beyond this is a teleport (respawn / portal), not
-	// walking — snap-cut instead of chasing it. Normal motion is ~2 cells/frame
-	// even at the dt clamp, so 8 is a safe margin.
+	// A single-frame move beyond this is a teleport (respawn / portal), not walking —
+	// snap-cut instead of chasing it. Normal motion is ~2 cells/frame, so 8 is safe.
 	snapDeltaCells: 8,
 } as const;
 
@@ -37,12 +36,9 @@ export const initCameraState = (): CameraState => ({
 });
 
 /**
- * The camera is kept as a FLOAT, not rounded here: the renderer rounds at draw
- * time (terrain on the integer grid, entities relative to the float camera). If
- * we rounded the camera too, a followed Avatar would be `round(p.x - round(p.x
- * - edge))` — two roundings at different sub-cell phases — which bounces ±1 cell
- * frame to frame (sprite shimmer). Holding the float here makes a pinned Avatar
- * render at `round(edge)`, dead stable.
+ * The camera is kept as a FLOAT, not rounded here: the renderer rounds at draw time.
+ * Rounding the camera too would double-round a followed Avatar (`round(p.x - round(p.x
+ * - edge))`) at different sub-cell phases, bouncing ±1 cell frame to frame (shimmer).
  */
 export function stepCamera(
 	state: CameraState,
@@ -85,11 +81,8 @@ export function stepCamera(
 
 // --- Camera-kick (ADR 0017 §13c) --------------------------------------------
 //
-// A short, decaying viewport offset added on a "big moment" (a Poise break in this
-// slice), layered ON TOP of the follow camera above. View-only, like the camera
-// itself — the server never knows. Deliberately small and brief: a 1–2 cell punch
-// that decays to zero in <150ms. Micro-shake reads as jank at cell granularity, so
-// this is a single directional pop, not a rumble.
+// A short, decaying viewport offset on a "big moment", layered on the follow camera.
+// A single directional pop, not a rumble — micro-shake reads as jank at cell granularity.
 
 export const CAMERA_KICK = {
 	maxCells: 2, // hard clamp on the offset magnitude (≤2 cells, per ADR)
@@ -103,17 +96,16 @@ export interface Kick {
 
 export const NO_KICK: Kick = { x: 0, y: 0 };
 
-// Add a fresh kick impulse, clamping each axis into ±maxCells so a burst of breaks
-// can't stack into a nauseating lurch. Pure.
+// Add a kick impulse, clamping each axis into ±maxCells so a burst of breaks can't
+// stack into a lurch.
 export function applyKick(kick: Kick, dx: number, dy: number): Kick {
 	const clamp = (v: number) =>
 		Math.max(-CAMERA_KICK.maxCells, Math.min(CAMERA_KICK.maxCells, v));
 	return { x: clamp(kick.x + dx), y: clamp(kick.y + dy) };
 }
 
-// Decay a kick toward zero by one frame: a linear ramp that reaches EXACTLY zero
-// within `durationMs` from full magnitude (and sooner from a smaller one), so the
-// offset never lingers or overshoots past 0. Pure; `dtMs` is wall time.
+// Decay a kick toward zero: a linear ramp reaching EXACTLY zero within `durationMs`,
+// so the offset never lingers or overshoots. `dtMs` is wall time.
 export function stepKick(kick: Kick, dtMs: number): Kick {
 	const step =
 		CAMERA_KICK.maxCells * (Math.max(0, dtMs) / CAMERA_KICK.durationMs);

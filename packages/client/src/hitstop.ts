@@ -1,13 +1,8 @@
-// Hitstop (ADR 0017 §13c): a render-only freeze on a meaty hit. For a few dozen
-// milliseconds the playfield holds its last drawn frame, so a Poise break lands with
-// a punch — but the SIM NEVER PAUSES. Snapshots keep arriving and interpolation keeps
-// buffering while the playfield (the only thing this gates) skips its redraw. The frozen
-// frame just isn't repainted until the timer drains. View-only and deterministic;
-// the server has no concept of it.
+// Hitstop (ADR 0017 §13c): a render-only freeze on a meaty hit — the playfield holds
+// its last frame for a few dozen ms so a Poise break reads as a punch. The SIM NEVER
+// PAUSES; snapshots and interpolation keep running, only the redraw is gated.
 
-// Default freeze on a poise-break. Short — long enough to read as a hit-pause, brief
-// enough not to feel like a stutter (~4 frames at 60fps). A heavier future hit can
-// pass a longer duration.
+// Short enough not to read as a stutter, long enough to feel a hit-pause (~4 frames at 60fps).
 export const HITSTOP_MS = 70;
 
 export interface Hitstop {
@@ -16,20 +11,17 @@ export interface Hitstop {
 
 export const NO_HITSTOP: Hitstop = { remainingMs: 0 };
 
-// Whether the view is currently frozen (a redraw should be skipped). Pure.
 export function isFrozen(h: Hitstop): boolean {
 	return h.remainingMs > 0;
 }
 
-// Begin (or extend) a freeze — the longer of the current and requested durations
-// wins, so a second break mid-freeze can't shorten it. Pure.
+// The longer of current and requested wins, so a second break mid-freeze can't shorten it.
 export function triggerHitstop(h: Hitstop, ms: number = HITSTOP_MS): Hitstop {
 	return { remainingMs: Math.max(h.remainingMs, ms) };
 }
 
-// Drain the freeze by one frame of wall time, clamped at zero. Pure; `dtMs` is the
-// real elapsed time even though the rendered view is frozen, so the freeze lasts a
-// fixed duration regardless of framerate.
+// `dtMs` is real wall time even though the view is frozen, so the freeze lasts a fixed
+// duration regardless of framerate.
 export function stepHitstop(h: Hitstop, dtMs: number): Hitstop {
 	return { remainingMs: Math.max(0, h.remainingMs - Math.max(0, dtMs)) };
 }

@@ -1,10 +1,7 @@
-// The Zone editor's pure navigation + canvas core (ADR 0010, issue #94). The
-// author moves a single crosshair cursor over a free-roaming, auto-growing canvas
-// — painting into virgin space extends the inferred dimensions, deleting the far
-// edge shrinks them back on save. This module owns the geometry (extent, grow,
-// trim), the edit-scroll viewport (scrolloff), and the status line; the opentui
-// shell at the bottom draws the rulers/crosshair/palette and is eyeball-only per
-// the PRD. All geometry sits on top of the lossless `EditorDoc` (doc.ts).
+// The Zone editor's pure navigation + canvas core (issue #94): painting into virgin
+// space extends the inferred dimensions, deleting the far edge shrinks them back on
+// save. The pure geometry here is unit-tested; the opentui shell below is eyeball-only
+// per the PRD. All geometry sits on the lossless `EditorDoc` (doc.ts).
 
 import {
 	BOX,
@@ -26,8 +23,8 @@ import {
 	ZONE_MAX,
 	type Zone,
 } from '@mmo/shared';
-// Type-only import is erased at compile time, so it never loads opentui's
-// runtime — the pure helpers above stay testable without a terminal.
+// Type-only so it never loads opentui's runtime — the pure helpers stay testable
+// without a terminal.
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import {
@@ -55,11 +52,10 @@ import {
 } from './portalForm';
 import { type Cam, sceneOf } from './preview';
 
-// --- Pure geometry (unit-tested; the opentui shell below is manual per PRD) ----
+// --- Pure geometry -----------------------------------------------------------
 
-/** The inferred Zone dimensions from the document's content — width is the
- *  longest row, height is the row count. Matches how `parseZone` infers extents,
- *  so the editor's canvas size is exactly what will ship. */
+/** Inferred Zone dimensions, matching how `parseZone` infers extents — so the
+ *  editor's canvas size is exactly what ships. */
 export function editorExtent(doc: EditorDoc): { w: number; h: number } {
 	return {
 		w: doc.rows.reduce((m, r) => Math.max(m, r.length), 0),
@@ -68,10 +64,9 @@ export function editorExtent(doc: EditorDoc): { w: number; h: number } {
 }
 
 /**
- * Return a doc whose grid is large enough to include `(x, y)`, appending empty
- * rows below the content as needed (column width is padded by `setCell`/`place`
- * at paint time). A coordinate that is negative or beyond `ZONE_MAX` is a no-op,
- * so the canvas can never grow past the engine's hard cap.
+ * Grow the grid to include `(x, y)` by appending empty rows (column width is padded
+ * by `setCell`/`place` at paint time). A coordinate past `ZONE_MAX` is a no-op, so
+ * the canvas can never grow past the engine's hard cap.
  */
 export function growToInclude(doc: EditorDoc, x: number, y: number): EditorDoc {
 	if (x < 0 || y < 0 || x >= ZONE_MAX.w || y >= ZONE_MAX.h) return doc;
@@ -82,11 +77,9 @@ export function growToInclude(doc: EditorDoc, x: number, y: number): EditorDoc {
 }
 
 /**
- * Trim the canvas back to its true content: drop trailing empty cells (`.`/space)
- * from each row, then drop trailing empty rows. These cells are redundant —
- * `parseZone` treats any cell past a row's end as empty — so trimming is lossless
- * yet shrinks the inferred extent (the "delete the far edge → smaller on save"
- * half of #94). The header is untouched. Run on serialize, not on every edit.
+ * Trim trailing empty cells then trailing empty rows. Lossless — `parseZone` treats
+ * any cell past a row's end as empty — yet it shrinks the inferred extent (the
+ * "delete the far edge → smaller on save" half of #94). Run on serialize, not every edit.
  */
 export function trimDoc(doc: EditorDoc): EditorDoc {
 	const rows = doc.rows.map((r) => r.replace(/[.\s]+$/, ''));
@@ -95,9 +88,8 @@ export function trimDoc(doc: EditorDoc): EditorDoc {
 }
 
 /**
- * Clamp a cursor coordinate to the roam region: the content extent plus `margin`
- * cells of virgin space (so the author can move into empty canvas to paint there),
- * floored at the origin and capped one cell inside `ZONE_MAX`.
+ * Clamp a cursor to the roam region: content extent plus `margin` cells of virgin
+ * space (so the author can move into empty canvas to paint), capped inside `ZONE_MAX`.
  */
 export function clampRoam(
 	doc: EditorDoc,
@@ -113,10 +105,8 @@ export function clampRoam(
 }
 
 /**
- * Edit-scroll one axis: keep `cursor` within `scrolloff` cells of either margin of
- * a `viewLen`-wide window currently at `cam`. The window holds still while the
- * cursor roams the comfortable middle band and only scrolls when the cursor nears
- * an edge (vim's `scrolloff`). Never scrolls before the origin; unlike the preview
+ * Edit-scroll one axis (vim's `scrolloff`): the window holds still while the cursor
+ * roams the middle band, scrolling only when it nears an edge. Unlike the preview
  * camera it does NOT clamp to the content's far edge, so the cursor can roam into
  * virgin canvas to paint there.
  */
@@ -136,7 +126,6 @@ export function scrollAxis(
 	return Math.max(0, next);
 }
 
-/** Apply the scrolloff edit-scroll to both axes, returning the new camera. */
 export function scrollViewport(
 	cam: Cam,
 	cursor: { x: number; y: number },
@@ -151,10 +140,9 @@ export function scrollViewport(
 }
 
 /**
- * Which way the cursor lies relative to the viewport, as a unit step per axis:
- * `-1`/`+1` when it is off the near/far edge, `0` when on screen. After a
- * middle-mouse free pan the cursor can leave the viewport; the shell draws an edge
- * arrow in this direction (and any cursor move re-reveals it via `scrollViewport`).
+ * Which way the cursor lies outside the viewport, as a unit step per axis (`0` when
+ * on screen). After a middle-mouse free pan the cursor can leave the viewport; the
+ * shell draws an edge arrow in this direction.
  */
 export function cursorEdge(
 	cursor: { x: number; y: number },
@@ -171,10 +159,8 @@ export function cursorEdge(
 }
 
 /**
- * The live health of the document, exactly as `zone check` would report it:
- * serialize → `parseZone` (a failure is one parse-error finding) → `validateZone`
- * plus the raw-text `findOrphanGlyphs` pass. Going through the same code path as
- * the CLI means the editor's health badge can never drift from CI.
+ * Document health, via the same path as `zone check` (serialize → `parseZone` →
+ * `validateZone` + `findOrphanGlyphs`), so the editor's badge can't drift from CI.
  */
 export function docDiagnostics(
 	doc: EditorDoc,
@@ -197,8 +183,6 @@ export function docDiagnostics(
 	return [...validateZone(zone, catalogs), ...findOrphanGlyphs(text, id)];
 }
 
-/** The inputs the status line summarizes. `tool`/`placeable` are the active
- *  modal Tool (#95) and Placeable selections. */
 export interface StatusLineModel {
 	tool: string;
 	placeable: string;
@@ -207,12 +191,6 @@ export interface StatusLineModel {
 	diags: Diagnostic[];
 }
 
-/**
- * The one-line editor status bar: active Tool · active Placeable · `(x,y)` cursor
- * · a `*` when there are unsaved edits · a health badge (`✓` when clean, else
- * `✗N` with the first error message) · the save/quit hints. Pure, like
- * `playStatusLine`; the shell paints the returned string.
- */
 export function editorStatusLine(m: StatusLineModel): string {
 	const errors = m.diags.filter((d) => d.severity === 'error');
 	const health =
@@ -223,37 +201,23 @@ export function editorStatusLine(m: StatusLineModel): string {
 
 // --- Diagnostics panel (#100): pure drill-down helpers ------------------------
 
-/**
- * The cell a diagnostic points at, or null when the finding isn't tied to one
- * (zone-type / orphan-glyph / catalog findings carry no `cell`). The diagnostics
- * panel uses this for jump-to-cell: a navigable row moves the cursor there.
- */
+/** The cell a diagnostic points at, or null (zone-type / orphan-glyph / catalog
+ *  findings carry no `cell`). Drives the panel's jump-to-cell. */
 export function diagJumpTarget(d: Diagnostic): { x: number; y: number } | null {
 	return d.cell ?? null;
 }
 
-/**
- * Keep a panel selection index inside `[0, count)` as the live diagnostics list
- * grows/shrinks under edits; 0 for an empty list.
- */
+/** Keep a selection index inside `[0, count)` as the diagnostics list changes under
+ *  edits; 0 when empty. */
 export function clampDiagIndex(idx: number, count: number): number {
 	if (count <= 0) return 0;
 	return Math.max(0, Math.min(idx, count - 1));
 }
 
-/**
- * One diagnostics-panel row: a severity marker (`✗` error / `▲` warning) plus the
- * finding's message. The message already embeds any coordinates, so the row stays
- * self-describing.
- */
 export function formatDiagLine(d: Diagnostic): string {
 	return `${d.severity === 'error' ? '✗' : '▲'} ${d.message}`;
 }
 
-/**
- * The panel header: counts by severity (pluralized), or an all-clear line. Mirrors
- * the at-a-glance status badge so the drill-down opens with the same verdict.
- */
 export function diagPanelSummary(diags: Diagnostic[]): string {
 	if (diags.length === 0) return 'No issues — zone is clean';
 	const errors = diags.filter((d) => d.severity === 'error').length;
@@ -266,9 +230,8 @@ export function diagPanelSummary(diags: Diagnostic[]): string {
 
 // --- Modal tools (#95): geometry, eyedropper, and select/clipboard ops --------
 
-/** A modal editing tool. `drag` tools work over an anchor→cursor gesture
- *  (Rectangle/Line/Select drag A→B); the others act on the single cursor cell.
- *  `key` is the tool's mnemonic; it never collides with a movement key. */
+/** A modal editing tool. `drag` tools work over an anchor→cursor gesture (A→B);
+ *  the rest act on the cursor cell. `key` never collides with a movement key. */
 export interface ToolDef {
 	id: 'brush' | 'eraser' | 'rectangle' | 'line' | 'select' | 'stamp';
 	label: string;
@@ -278,11 +241,8 @@ export interface ToolDef {
 
 export type ToolId = ToolDef['id'];
 
-/**
- * The six modal tools, in palette order (#114). Brush/Rectangle/Line paint terrain
- * only; Stamp places entities via its modal picker; Select is the region clipboard.
- * The Eyedropper was dropped with the bottom palette bar. Flood-fill is deferred.
- */
+/** The six modal tools, in palette order (#114). Brush/Rectangle/Line paint terrain
+ *  only; Stamp places entities; Select is the region clipboard. */
 export const TOOLS: readonly ToolDef[] = [
 	{ id: 'brush', label: 'Brush', key: 'b', drag: false },
 	{ id: 'eraser', label: 'Eraser', key: 'e', drag: false },
@@ -293,9 +253,9 @@ export const TOOLS: readonly ToolDef[] = [
 ];
 
 /**
- * Resolve a key to a tool: its mnemonic letter, or its 1-based digit. Line and
- * Select get digit-only access because their natural letters (`l`/`s`) are taken
- * by movement — but every tool stays reachable with no mouse (SSH/tmux parity).
+ * Resolve a key to a tool: mnemonic letter or 1-based digit. Line and Select are
+ * digit-only because `l`/`s` are movement keys — but every tool stays keyboard-
+ * reachable (SSH/tmux parity).
  */
 export function toolByKey(key: string): ToolDef | undefined {
 	const byLetter = TOOLS.find((t) => t.key === key);
@@ -306,14 +266,13 @@ export function toolByKey(key: string): ToolDef | undefined {
 		: undefined;
 }
 
-/** A grid coordinate. */
 export interface Point {
 	x: number;
 	y: number;
 }
 
-/** Every cell of the filled axis-aligned rectangle spanning corners `a`..`b`
- *  (inclusive, order-independent) — a wall/room is one Rectangle drag. */
+/** Every cell of the filled rectangle spanning corners `a`..`b` (inclusive,
+ *  order-independent). */
 export function rectCells(a: Point, b: Point): Point[] {
 	const x0 = Math.min(a.x, b.x);
 	const x1 = Math.max(a.x, b.x);
@@ -325,8 +284,7 @@ export function rectCells(a: Point, b: Point): Point[] {
 	return cells;
 }
 
-/** Every cell on the straight line from `a` to `b` via Bresenham (inclusive
- *  endpoints) — a floor is one Line drag; horizontal/vertical are special cases. */
+/** Every cell on the Bresenham line from `a` to `b` (inclusive endpoints). */
 export function lineCells(a: Point, b: Point): Point[] {
 	const dx = Math.abs(b.x - a.x);
 	const dy = Math.abs(b.y - a.y);
@@ -352,8 +310,7 @@ export function lineCells(a: Point, b: Point): Point[] {
 	return cells;
 }
 
-/** Stamp a Placeable across many cells, growing the canvas to include each (a
- *  Brush stroke, or a Rectangle/Line commit). */
+/** Paint a Placeable across many cells, growing the canvas to include each. */
 export function paintCells(
 	doc: EditorDoc,
 	cells: Point[],
@@ -376,11 +333,8 @@ function readHeaderMap(doc: EditorDoc, name: string): Record<string, unknown> {
 	return m && typeof m === 'object' ? (m as Record<string, unknown>) : {};
 }
 
-/**
- * The Placeable currently under `(x, y)`, resolved from the grid glyph plus the
- * header maps — what the Eyedropper adopts. Terrain `#` → terrain; a declared
- * spawn/npc/portal glyph → that Placeable; an empty or undeclared cell → undefined.
- */
+/** The Placeable under `(x, y)`, resolved from the grid glyph plus the header maps;
+ *  an empty or undeclared cell → undefined. */
 export function placeableAt(
 	doc: EditorDoc,
 	x: number,
@@ -406,16 +360,16 @@ export function placeableAt(
 	return undefined;
 }
 
-/** A captured rectangle of Placeables, ready to paste. Empty cells are not
- *  captured; offsets are relative to the region's top-left. */
+/** A captured rectangle of Placeables, ready to paste. Empty cells are skipped;
+ *  offsets are relative to the region's top-left. */
 export interface Clip {
 	w: number;
 	h: number;
 	cells: { dx: number; dy: number; placeable: Placeable }[];
 }
 
-/** Capture the Placeables in the rectangle `a`..`b` into a clipboard (empty cells
- *  skipped). Stores Placeables, not raw glyphs, so a paste re-resolves the header. */
+/** Capture the Placeables in `a`..`b` into a clipboard. Stores Placeables, not raw
+ *  glyphs, so a paste re-resolves the header. */
 export function copyRegion(doc: EditorDoc, a: Point, b: Point): Clip {
 	const x0 = Math.min(a.x, b.x);
 	const x1 = Math.max(a.x, b.x);
@@ -430,9 +384,8 @@ export function copyRegion(doc: EditorDoc, a: Point, b: Point): Clip {
 	return { w: x1 - x0 + 1, h: y1 - y0 + 1, cells };
 }
 
-/** Stamp a clipboard with its top-left at `(x, y)`, growing as needed. Because it
- *  re-places Placeables, a pasted catalog entity reuses (or freshly declares) its
- *  glyph — never an orphan or a duplicate declaration. */
+/** Paste a clipboard with its top-left at `(x, y)`, growing as needed. Re-places
+ *  Placeables, so a pasted entity never leaves an orphan or duplicate declaration. */
 export function pasteClip(
 	doc: EditorDoc,
 	clip: Clip,
@@ -451,11 +404,8 @@ export function deleteRegion(doc: EditorDoc, a: Point, b: Point): EditorDoc {
 	return eraseCells(doc, rectCells(a, b));
 }
 
-/**
- * Move the rectangle `a`..`b` by `(dx, dy)`: capture, clear the source, then paste
- * at the offset. Placeables (not raw glyphs) move, so the header stays consistent —
- * no orphan declaration is left behind and none is duplicated.
- */
+/** Move the rectangle `a`..`b` by `(dx, dy)`. Placeables (not raw glyphs) move, so
+ *  the header stays consistent — no orphan left behind, none duplicated. */
 export function moveRegion(
 	doc: EditorDoc,
 	a: Point,
@@ -481,11 +431,9 @@ export interface FootBox {
 }
 
 /**
- * The engine-derived collision box an entity Placeable occupies when its anchor
- * glyph sits at `(x, y)` — the glyph is the box's TOP-LEFT corner (ADR 0008).
- * Dimensions come from the shared constants `parseZone` builds its boxes from, so
- * the editor's placement ghost can't drift from what `zone check` validates.
- * Terrain has no real footprint (it stamps one solid cell).
+ * The collision box an entity Placeable occupies with its anchor glyph at `(x, y)` —
+ * the glyph is the box's TOP-LEFT corner (ADR 0008). Dimensions come from the shared
+ * constants `parseZone` uses, so the ghost can't drift from what `zone check` validates.
  */
 export function footprintBox(p: Placeable, x: number, y: number): FootBox {
 	switch (p.kind) {
@@ -500,26 +448,19 @@ export function footprintBox(p: Placeable, x: number, y: number): FootBox {
 	}
 }
 
-/** The translucent glyph the placement ghost fills the footprint box with when a
- *  Placeable has no sprite preview yet (the portal fallback, #118). Sprite ghosts
- *  keep their real glyphs and fade the colours instead (see the `fade` in the Stamp
- *  preview). */
+/** The glyph the placement ghost fills the footprint with when a Placeable has no
+ *  sprite preview (the portal fallback, #118); sprite ghosts fade colours instead. */
 export const GHOST_GLYPH = '░';
 
-/** How much of a sprite's own colour survives in its placement ghost; the rest is
- *  the placement-state tint it's composited onto. Low enough to read as translucent,
- *  high enough to keep the entity's hues recognisable (#118). */
+/** Fraction of a sprite's own colour that survives in its ghost; the rest is the
+ *  placement-state tint. Balanced to read translucent yet recognisable (#118). */
 const GHOST_OPACITY = 0.5;
 
 /**
- * The scene object the placement ghost should draw to preview an entity Placeable
- * landing with its anchor glyph at `(x, y)` (#118). Rather than a coloured box, the
- * ghost is the entity's ACTUAL sprite — same art, same glyphs — blit with every
- * cell's colour faded onto the placement-state tint so it reads as a translucent
- * preview. Synthesising the very Entity/Npc that `parseZone` would spawn keeps
- * the preview from drifting from what ships (#56): a monster resolves to its
- * behaviour sprite, an NPC to its kind sprite. Returns `undefined` for kinds with
- * no sprite preview yet (portals — #97 — and terrain), so the caller can fall back.
+ * The scene object the ghost draws to preview an entity Placeable landing at `(x, y)`
+ * (#118): the entity's ACTUAL sprite, not a coloured box. Synthesises the very
+ * Entity/Npc that `parseZone` would spawn, so the preview can't drift from what ships
+ * (#56). Returns `undefined` for kinds with no sprite yet (portals, terrain).
  */
 export function ghostEntity(
 	catalogs: Catalogs,
@@ -552,10 +493,9 @@ export function ghostEntity(
 }
 
 /**
- * Editor-grid solidity, matching the runtime's `isSolid` (shared/terrain): a `#`
- * cell is solid; horizontal out-of-bounds and below the canvas read as solid
- * wall/floor, above the canvas as open sky. Lets the placement checks see the same
- * world the validator/runtime does (incl. the implicit world floor).
+ * Editor-grid solidity, matching the runtime's `isSolid`: a `#` is solid; horizontal
+ * out-of-bounds and below-canvas read as solid wall/floor, above-canvas as open sky —
+ * so placement checks see the same world (incl. the implicit floor) the runtime does.
  */
 function gridSolid(
 	doc: EditorDoc,
@@ -574,8 +514,8 @@ function boxInBounds(b: FootBox, ext: { w: number; h: number }): boolean {
 	return b.x >= 0 && b.y >= 0 && b.x + b.w <= ext.w && b.y + b.h <= ext.h;
 }
 
-/** Any in-grid cell under the footprint is solid terrain (`#`). Mirrors the
- *  validator's `clipsSolid` — out-of-bounds is `boxInBounds`'s concern, not this. */
+/** Any in-grid cell under the footprint is solid `#` (mirrors the validator's
+ *  `clipsSolid`; out-of-bounds is `boxInBounds`'s concern). */
 function boxClips(doc: EditorDoc, b: FootBox): boolean {
 	for (let y = b.y; y < b.y + b.h; y++)
 		for (let x = b.x; x < b.x + b.w; x++)
@@ -599,13 +539,10 @@ function boxRestsOnGround(
 export type PlacementState = 'grounded' | 'airborne' | 'invalid';
 
 /**
- * Classify where an entity Placeable would land if its anchor were `(x, y)`, using
- * the SAME footprint/clip/ground rules the validator applies — so the green/blue/red
- * ghost predicts exactly what `zone check` will say. `invalid` (red) = the footprint
- * clips solid terrain or extends off the canvas; `airborne` (blue) = it fits but has
- * no solid beneath its feet (informational — not an error for Monsters until #90);
- * `grounded` (green) = it rests on ground. Portals need no ground; terrain is always
- * placeable.
+ * Classify where an entity Placeable would land, using the SAME footprint/clip/ground
+ * rules the validator applies — so the green/blue/red ghost predicts what `zone check`
+ * says. `invalid` = clips terrain or off-canvas; `airborne` = fits but no ground below
+ * (informational — not an error for Monsters until #90); `grounded` = rests on ground.
  */
 export function placementState(
 	doc: EditorDoc,
@@ -622,23 +559,17 @@ export function placementState(
 	return 'grounded';
 }
 
-/** How far below the feet ground-snap will reach, in cells (#117). A surface
- *  farther than this reads as "not nearby ground", so the box stays where the
- *  author aimed (airborne) rather than falling to a distant floor. Tuned by feel. */
+/** How far below the feet ground-snap reaches, in cells (#117): a farther surface
+ *  reads as "not nearby ground", so the box stays where aimed rather than falling to
+ *  a distant floor. Tuned by feel. */
 const MAX_SNAP_DROP = 3;
 
 /**
  * Auto-ground-snap (#96): drop an entity's anchor so its feet rest on the nearest
- * solid surface at or below the cursor. Scans the footprint columns downward for the
- * first solid row — a `#` cell or the implicit canvas floor — and seats the box just
- * above it. An already-grounded anchor (or a Placeable with no surface below, or
- * terrain) is returned unchanged. The shell offers a free-place modifier that
- * bypasses this to drop exactly at the cursor (incl. mid-air).
- *
- * Snap should feel like "settle onto nearby ground", not "fall to the floor"
- * (#117): the scan reaches at most {@link MAX_SNAP_DROP} cells below the feet, so
- * a cursor held high above any surface keeps the author's feet anchor (airborne)
- * instead of teleporting down to a distant surface or the implicit world floor.
+ * solid surface at or below the cursor. Snap should feel like "settle onto nearby
+ * ground", not "fall to the floor" (#117), so the scan reaches at most
+ * {@link MAX_SNAP_DROP} cells — a cursor held high keeps its feet anchor (airborne).
+ * Free-place bypasses this to drop exactly at the cursor.
  */
 export function groundSnap(
 	doc: EditorDoc,
@@ -649,8 +580,7 @@ export function groundSnap(
 	if (p.kind === 'terrain') return { x, y };
 	const ext = editorExtent(doc);
 	const box = footprintBox(p, x, y);
-	// The first solid row at or below the box's current bottom edge, but no
-	// farther than the snap cap — beyond it the box stays at the feet anchor.
+	// First solid row at or below the box bottom, no farther than the snap cap.
 	const limit = Math.min(ext.h, y + box.h + MAX_SNAP_DROP);
 	for (let r = y + box.h; r <= limit; r++) {
 		let solid = false;
@@ -666,8 +596,8 @@ export function groundSnap(
 
 // --- Center-origin placement + footprint hit-test (#114) -----------------------
 
-/** The renderer's entity draw order (render.ts): monsters draw last and sit on
- *  top, then NPCs, then portals. A higher rank means "in front" on overlap. */
+/** Mirrors the renderer's draw order: monsters on top, then NPCs, then portals.
+ *  Higher rank = "in front" on overlap. */
 const ENTITY_LAYER: Record<Placeable['kind'], number> = {
 	monster: 3,
 	npc: 2,
@@ -677,16 +607,10 @@ const ENTITY_LAYER: Record<Placeable['kind'], number> = {
 
 /**
  * Convert a CENTER-origin cursor to the stored TOP-LEFT glyph anchor (ADR 0008).
- * The cursor tracks the sprite's visual centre horizontally — `x = cx - floor(w/2)`
- * always — while the existing free-place toggle owns the vertical anchor AND the
- * snap, so there is never a per-cell auto-jump:
- *   - free-place ON  → the box is centred on the cursor (`cy - floor(h/2)`), dropped
- *     exactly where aimed (incl. mid-air).
- *   - free-place OFF → the cursor is the entity's feet (`cy - (h-1)`), then
- *     `groundSnap` drops the box onto the nearest surface at or below it.
- * One conversion shared by the ghost preview, `stampAt`, and the erase hit-test so
- * none of them can drift from where the glyph actually lands. Terrain (1×1) maps
- * the cursor straight through to the anchor. Zero file-format/engine change.
+ * Horizontal always tracks the sprite's centre; the free-place toggle owns the
+ * vertical anchor and the snap (free-place ON → centred on the cursor; OFF → the
+ * cursor is the feet, then `groundSnap`). One conversion shared by the ghost preview,
+ * `stampAt`, and the erase hit-test, so none can drift from where the glyph lands.
  */
 export function cursorToAnchor(
 	doc: EditorDoc,
@@ -701,8 +625,6 @@ export function cursorToAnchor(
 	return groundSnap(doc, p, x, cy - (h - 1));
 }
 
-/** An entity glyph located by a footprint hit-test: its stored top-left origin and
- *  the resolved Placeable. */
 export interface EntityHit {
 	originX: number;
 	originY: number;
@@ -711,14 +633,10 @@ export interface EntityHit {
 
 /**
  * The renderer-topmost entity whose footprint covers `(x, y)`, or `undefined`.
- * Entities store only their origin glyph, so the rest of the footprint is empty
- * grid — this reverse-lookup scans every placed entity glyph (row-major, as
- * `parseZone` does), keeps those whose `footprintBox` contains the cell, and
- * returns the one the author sees on top: ordered by render layer
- * (monster > npc > portal), then larger anchor `y` (drawn later → in front), then
- * later in the scan. Deterministic from the doc and survives save/reload. The one
- * shared hit-test behind erase-anywhere now, and move + edit-on-click (#97) later.
- * Terrain is not an entity (it has no footprint to grab).
+ * Entities store only their origin glyph, so this reverse-lookup scans every placed
+ * glyph and keeps those whose `footprintBox` contains the cell, then returns the one
+ * on top: by render layer (monster > npc > portal), then larger anchor `y` (drawn
+ * later → in front), then later in the scan. Terrain has no footprint to grab.
  */
 export function entityAt(
 	doc: EditorDoc,
@@ -762,7 +680,7 @@ const SCROLLOFF = 4; // edit-scroll margin before the viewport follows
 const ROAM_MARGIN = 16; // virgin space the cursor may roam past the content
 
 /** Terrain is the only non-entity Placeable, so Brush/Rectangle/Line just paint it
- *  (no selector). Entities are chosen in the Stamp tool's modal picker (#114). */
+ *  (no selector). */
 const TERRAIN: Placeable = { kind: 'terrain' };
 
 /** One entity the Stamp picker can place, with its display label and group. */
@@ -773,18 +691,16 @@ interface PickerEntry {
 }
 
 /** The placeholder Portal a picker row carries (#97). A Portal is data-carrying —
- *  its real `target`/`arrival` come from the config form — so picking this row puts
- *  the editor into "place a portal" mode; the actual placement happens on form
- *  commit. `stampAt` detects the portal kind and opens the form instead of stamping. */
+ *  `target`/`arrival` come from the config form — so `stampAt` opens the form instead
+ *  of stamping. */
 const PORTAL_SENTINEL: Placeable = {
 	kind: 'portal',
 	target: '',
 	arrival: [0, 0],
 };
 
-/** The Stamp picker's entries: the catalog Monsters + NPCs, plus the Structures'
- *  Portal (#97). Terrain is implicit. Group labels are kept for the modal's section
- *  headers. */
+/** The Stamp picker's entries: catalog Monsters + NPCs plus the Portal (#97).
+ *  Terrain is implicit. */
 function entityPalette(catalogs: Catalogs): PickerEntry[] {
 	const entries = buildPalette(catalogs)
 		.filter((g) => g.label === 'Monsters' || g.label === 'NPCs')
@@ -804,11 +720,9 @@ function entityPalette(catalogs: Catalogs): PickerEntry[] {
 }
 
 /**
- * The Portal config form's live state (#97), or `null` when closed. The author
- * first chooses a `target` Zone (autocompleted from `query`), then edits the
- * `arrival` text — committing places (or, in `edit` mode, re-places) the Portal.
- * Shell state; the modal is eyeball-only per the PRD, its decisions are the pure
- * `portalForm` helpers.
+ * The Portal config form's live state (#97), or `null` when closed: choose a `target`
+ * Zone (autocompleted from `query`), then edit `arrival` — committing places (or, in
+ * `edit` mode, re-places) the Portal.
  */
 interface PortalForm {
 	stage: 'target' | 'arrival';
@@ -817,24 +731,15 @@ interface PortalForm {
 	query: string; // typed target filter (target stage)
 	target: string; // chosen target Zone id
 	selIdx: number; // highlighted row in the filtered candidate list
-	arrivalText: string; // the arrival field's editable text
+	arrivalText: string;
 }
 
 /**
- * `zone edit <id>`: mount the entity-centric editor over an authored Zone. A
- * single crosshair cursor roams a free-growing canvas with wasd / vim (hjkl) /
- * arrow keys. Six modal Tools drive the canvas (#114): Brush/Rectangle/Line paint
- * terrain only, Eraser removes whatever entity or terrain the cursor covers, Stamp
- * opens a modal picker then places the chosen entity (center-origin, ground-snapped),
- * and Select captures a region for copy (`c`) / cut (`x`) / paste (`y`) / delete.
- * Tools switch by mnemonic key, `1`-`6`, or a click on the tool bar; with a mouse,
- * click/drag drives the cursor and middle-mouse free-pans the camera — but every
- * Tool is fully reachable with no mouse (SSH/tmux parity). `f` toggles ground-snap
- * vs. free-place, `^s` saves (trimming the trailing empties), `q` quits. The rulers,
- * crosshair, status/tool bars and Stamp picker are drawn here and validated by eye
- * (PRD); all geometry comes from the pure helpers above. Reuses the shared renderer
- * (#56) and the lossless `EditorDoc`, so nothing is lost on a round-trip.
- * Long-lived: opentui owns the process lifecycle (ctrl-c / q exit).
+ * `zone edit <id>`: mount the entity-centric editor over an authored Zone (#114). Six
+ * modal Tools drive a free-growing canvas; every Tool is fully reachable with no mouse
+ * (SSH/tmux parity). The chrome is drawn here and validated by eye (PRD); all geometry
+ * comes from the pure helpers above. Reuses the shared renderer (#56) and the lossless
+ * `EditorDoc`, so nothing is lost on a round-trip. opentui owns the process lifecycle.
  */
 export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	const id = args[0];
@@ -844,8 +749,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		return;
 	}
 
-	// The editor only opens a parseable file (it edits the raw doc, but needs the
-	// initial parse to render and to report a clear error otherwise).
+	// The editor only opens a parseable file: it edits the raw doc, but needs the
+	// initial parse to render.
 	const catalogs = loadCatalogs(deps.root);
 	const loaded = loadZone(deps.root, id, catalogs);
 	if (!loaded.zone || loaded.text === undefined) {
@@ -855,25 +760,23 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	}
 
 	let doc = parseDoc(loaded.text);
-	// Undo/redo history (#98): past/present/future over `EditorDoc` snapshots. Every
-	// edit funnels through `commit`; a drag stroke coalesces into one step via a
-	// per-stroke `strokeTag`, single-key edits pass none (always their own step).
+	// Undo/redo history (#98) over `EditorDoc` snapshots. Every edit funnels through
+	// `commit`; a drag stroke coalesces into one step via `strokeTag`.
 	let history = initHistory(doc);
 	let strokeTag: string | null = null; // non-null only mid mouse brush/eraser stroke
 	let strokeSeq = 0; // makes each stroke's coalesce tag unique
 	const cursor = { x: 0, y: 0 };
 	const cam: Cam = { x: 0, y: 0 };
-	const picker = entityPalette(catalogs); // entities the Stamp tool can place
-	// The Portal config form (#97) needs the rest of the Zone set: the candidate
-	// targets (so a Portal can never name a nonexistent Zone) and each target's
-	// parsed Zone (to seed the default arrival from its return portal). Parse failures
-	// are excluded — they can't be a valid target anyway.
+	const picker = entityPalette(catalogs);
+	// The Portal form (#97) needs the rest of the Zone set: candidate targets (so a
+	// Portal can't name a nonexistent Zone) and each target's parsed Zone (to seed the
+	// default arrival). Parse failures are excluded — they can't be a valid target.
 	const zoneSet = loadZoneSet(deps.root, catalogs).flatMap((l) =>
 		l.zone ? [l.zone] : [],
 	);
 	const portalCands: PortalCandidate[] = portalCandidates(zoneSet, id);
 	const zoneById = new Map<string, Zone>(zoneSet.map((z) => [z.id, z]));
-	let portalForm: PortalForm | null = null; // the open config form, or null
+	let portalForm: PortalForm | null = null;
 	let stampP: Placeable | undefined; // the entity Stamp will place (picked in the modal)
 	let stampLabel = ''; // its display label (for the hint line)
 	let pickerOpen = false; // the Stamp modal is capturing input
@@ -894,9 +797,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let diagPanel = false; // diagnostics drill-down panel (#100) is open
 	let diagIdx = 0; // highlighted diagnostic row
 
-	// Footer hit-test spans, recomputed each frame so mouse clicks select the Tool
-	// under the pointer (keyboard parity is the canonical path). The Stamp picker's
-	// rows get their own hit-test while it is open.
+	// Footer hit-test spans, recomputed each frame so a mouse click selects the Tool
+	// under the pointer (keyboard is the canonical path).
 	let frameW = 0;
 	let frameH = 0;
 	let toolHits: { x0: number; x1: number; idx: number }[] = [];
@@ -948,16 +850,14 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			frameH = H;
 			const viewW = Math.max(1, W - GUTTER_W);
 			const viewH = Math.max(1, H - RULER_H - FOOTER_H);
-			// Keep the cursor inside the scrolloff band (edit-scroll viewport). While
-			// the camera is free-panned (middle-mouse) it stays put; any cursor move
-			// clears `panned` so the viewport re-follows and re-reveals the cursor.
+			// Edit-scroll viewport. While free-panned (middle-mouse) the camera stays
+			// put; any cursor move clears `panned` so the viewport re-follows.
 			if (!panned) {
 				const next = scrollViewport(cam, cursor, viewW, viewH, SCROLLOFF);
 				cam.x = next.x;
 				cam.y = next.y;
 			}
 
-			// World→screen: the canvas origin (GUTTER_W, RULER_H) shows world `cam`.
 			// renderZoneScene maps screen→world via its own camera, so shift it left/up
 			// by the chrome inset; the rulers/footer overpaint the bleed.
 			renderZoneScene(
@@ -973,15 +873,15 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			const inCanvasX = (x: number) => x >= GUTTER_W && x < W;
 			const inCanvasY = (y: number) => y >= RULER_H && y < RULER_H + viewH;
 
-			// Floor guide: a faint line just below the content's bottom row, so the
-			// author sees where the canvas currently ends (only over empty cells).
+			// Floor guide just below the content's bottom row, so the author sees where
+			// the canvas ends (only over empty cells).
 			const floorY = sy(ext.h);
 			if (inCanvasY(floorY))
 				for (let x = GUTTER_W; x < W; x++)
 					buf.setCell(x, floorY, '─', C.floorFg, style.terrainBg);
 
-			// Crosshair: tint the cursor's row + column, but only over empty doc cells
-			// so authored content stays readable. The bright intersection is the cursor.
+			// Crosshair over the cursor's row + column, but only over empty cells so
+			// authored content stays readable; the bright intersection is the cursor.
 			const cx = sx(cursor.x);
 			const cy = sy(cursor.y);
 			for (let y = RULER_H; y < RULER_H + viewH; y++) {
@@ -999,8 +899,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				buf.setCell(cx, cy, here === '.' ? '+' : here, C.cursorFg, C.cursorBg);
 			}
 
-			// Region highlight: the in-progress drag (anchor→cursor, shaped by the
-			// active Tool) and any captured Select region, so A→B reads before commit.
+			// Region highlight: the in-progress drag and any captured Select region, so
+			// A→B reads before commit.
 			const tint = (cells: Point[], bg: typeof C.selBg) => {
 				for (const p of cells) {
 					const px = sx(p.x);
@@ -1019,14 +919,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				tint(cells, C.gestureBg);
 			}
 
-			// Ghost preview (#96/#114/#118): while the Stamp tool holds a picked
-			// entity, preview the actual entity that will land — its real sprite art,
-			// every glyph kept, each colour faded onto the placement-state tint — at
-			// the spot it will actually land. The cursor is the sprite's CENTER
-			// (or feet when ground-snapping): one `cursorToAnchor` conversion feeds
-			// the ghost, the stamp, and the erase hit-test, so it can't drift from
-			// where the glyph lands. The placement state tints the glyph background —
-			// green grounded, blue airborne, red clipping/off-canvas.
+			// Ghost preview (#96/#114/#118): while Stamp holds a picked entity, preview
+			// the actual entity that will land, faded onto the placement-state tint
+			// (green grounded, blue airborne, red clipping/off-canvas).
 			const ghostP = stampP;
 			if (ghostP && TOOLS[toolIdx].id === 'stamp' && !anchor) {
 				const a = cursorToAnchor(doc, ghostP, cursor.x, cursor.y, freePlace);
@@ -1037,10 +932,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 						: st === 'airborne'
 							? C.ghostAir
 							: C.ghostBad;
-				// Fade each sprite colour by compositing it onto the placement-state
-				// tint at GHOST_OPACITY, so the ghost reads as a translucent preview of
-				// the REAL entity — same glyphs, faded colours — instead of swapping
-				// each glyph for a lighter character (which garbled puzzle-shape blocks).
+				// Composite each sprite colour onto the placement tint at GHOST_OPACITY,
+				// rather than swapping glyphs for lighter chars (which garbled puzzle-
+				// shape blocks).
 				const b = bg.toInts();
 				const fade = (fg?: typeof C.selBg): typeof C.selBg | undefined => {
 					if (!fg) return fg;
@@ -1053,10 +947,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					bg,
 					fade,
 				};
-				// Draw the synthesized entity through the SHARED renderer with the same
-				// chrome-inset camera renderZoneScene uses, so the ghost sits exactly
-				// where the placed entity would render. Kinds with no sprite yet
-				// (portals, #97) fall back to a ░-filled footprint box.
+				// Draw through the SHARED renderer with the same chrome-inset camera, so
+				// the ghost sits exactly where the placed entity would render. No-sprite
+				// kinds (portals, #97) fall back to a ░-filled box.
 				const sceneCam = { x: cam.x - GUTTER_W, y: cam.y - RULER_H };
 				const ghost = ghostEntity(catalogs, ghostP, a.x, a.y);
 				if (ghost?.kind === 'entity') {
@@ -1104,7 +997,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					buf.setCell(ax, ay, glyph, C.hot, C.chromeBg);
 			}
 
-			// Top column ruler: ticks every 5, the tens label, cursor column hot.
 			buf.fillRect(0, 0, W, RULER_H, C.chromeBg);
 			for (let x = GUTTER_W; x < W; x++) {
 				const wx = cam.x + (x - GUTTER_W);
@@ -1119,7 +1011,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				}
 			}
 
-			// Left row ruler: right-aligned row number per canvas row, cursor row hot.
 			buf.fillRect(0, RULER_H, GUTTER_W, viewH, C.chromeBg);
 			for (let y = RULER_H; y < RULER_H + viewH; y++) {
 				const wy = cam.y + (y - RULER_H);
@@ -1129,8 +1020,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			}
 			buf.fillRect(0, 0, GUTTER_W, RULER_H, C.chromeBg); // corner
 
-			// Tool bar: the six modal Tools, the active one bracketed + highlighted.
-			// Each label's span is recorded so a mouse click selects that Tool.
+			// Tool bar: the six Tools, active one bracketed. Each label's span is recorded
+			// so a mouse click selects that Tool.
 			const toolbarRow = H - FOOTER_H;
 			buf.fillRect(0, toolbarRow, W, 1, C.chromeBg);
 			toolHits = [];
@@ -1149,9 +1040,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				toolHits.push({ x0: tx, x1: tx + seg.length, idx: i });
 				tx += seg.length;
 			}
-			// Right of the tool bar: the Stamp placement-mode badge (#96), or — when
-			// not actively stamping — a persistent Zone identity readout (#99) so the
-			// author always sees the display name + type they're editing.
+			// Right of the tool bar: the Stamp placement-mode badge (#96), else a Zone
+			// identity readout (#99) — name + type always visible.
 			if (TOOLS[toolIdx].id === 'stamp' && stampP) {
 				const badge = freePlace ? 'free-place (f)' : 'ground-snap (f)';
 				const bx = Math.max(tx + 1, W - badge.length);
@@ -1163,7 +1053,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				if (bx < W) buf.drawText(readout, bx, toolbarRow, C.dimFg, C.chromeBg);
 			}
 
-			// Status bar (reflects the active Tool; entity = the picked Stamp, if any).
 			const statusRow = H - 2;
 			buf.fillRect(0, statusRow, W, 1, C.chromeBg);
 			const isStamp = TOOLS[toolIdx].id === 'stamp';
@@ -1176,7 +1065,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			});
 			buf.drawText(status.slice(0, W), 0, statusRow, C.textFg, C.chromeBg);
 
-			// Hint line: context help (the bottom palette bar + `tab` are retired, #114).
+			// Hint line: context help.
 			const hintRow = H - 1;
 			buf.fillRect(0, hintRow, W, 1, C.chromeBg);
 			const hint = isStamp
@@ -1196,10 +1085,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					C.chromeBg,
 				);
 
-			// Stamp entity-picker modal (#114): a bordered panel (the `drawOverheadBox`
-			// pattern from playfield.ts) over the canvas, grouped Monsters / NPCs, the
-			// highlighted row bracketed. Drawn LAST so it sits on top; its rows are
-			// hit-tested for a mouse click. Keys are captured by `pickerOpen` early-return.
+			// Stamp entity-picker modal (#114): grouped Monsters / NPCs, highlighted row
+			// bracketed. Drawn LAST so it sits on top; keys captured by the `pickerOpen`
+			// early-return.
 			pickerHits = [];
 			if (pickerOpen) {
 				const rows: { text: string; idx: number; header: boolean }[] = [];
@@ -1266,9 +1154,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					buf.drawText(foot.slice(0, boxW), ox, oy + boxH, C.dimFg, C.chromeBg);
 			}
 
-			// Name-edit modal (#99): a single-line text field with a caret. Drawn last
-			// so it floats over everything; keys are captured by the `namePrompt`
-			// early-return in the keypress handler.
+			// Name-edit modal (#99). Drawn last so it floats over everything; keys captured
+			// by the `namePrompt` early-return.
 			if (namePrompt !== null) {
 				const title = ' Zone display name ';
 				const field = `${namePrompt}▏`;
@@ -1312,8 +1199,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				);
 			}
 
-			// Quit-with-unsaved modal (#98): a real three-way choice (drawn last, on
-			// top). Replaces the old "press q twice to discard" footgun.
+			// Quit-with-unsaved modal (#98): a three-way choice, drawn last (on top).
 			if (quitPrompt) {
 				const title = ' Unsaved changes ';
 				const choices = ' [S]ave & quit · [D]iscard · [Esc] cancel ';
@@ -1357,10 +1243,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				);
 			}
 
-			// Portal config form (#97): a floating modal, drawn last. The target stage
-			// shows the typed filter + the autocompleted candidate Zones (highlighted
-			// row bracketed); the arrival stage shows the chosen target + the editable
-			// `x,y` field. Keys are captured by the `portalForm` early-return above.
+			// Portal config form (#97): a floating modal, drawn last. Target stage shows
+			// the filter + candidate Zones; arrival stage shows target + editable `x,y`.
+			// Keys captured by the `portalForm` early-return.
 			if (portalForm) {
 				const f = portalForm;
 				const verb = f.edit ? 'Edit' : 'New';
@@ -1427,11 +1312,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				);
 			}
 
-			// Diagnostics drill-down panel (#100): the live `diags` (the same findings
-			// `zone check` emits, recomputed on every edit) listed in full, the selected
-			// row bracketed and a `→` marking the navigable ones. Drawn last; keys are
-			// captured by the `diagPanel` early-return. The status badge stays the
-			// always-on signal — this is the opt-in detail view.
+			// Diagnostics drill-down panel (#100): the live `diags` listed in full, `→`
+			// marking the navigable rows. Drawn last; keys captured by the `diagPanel`
+			// early-return.
 			if (diagPanel) {
 				diagIdx = clampDiagIndex(diagIdx, diags.length);
 				const title = ' Diagnostics ';
@@ -1504,9 +1387,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		backgroundColor: '#10121a',
 		useMouse: true,
 		// Kitty keyboard protocol (#98): lets the terminal report the Cmd (`super`)
-		// modifier and shifted keys, so Cmd-Z / Cmd-Shift-Z and Shift-U undo/redo are
-		// distinguishable. Terminals that don't speak it ignore the enable sequence and
-		// fall back to legacy parsing (the bare `u`/`U` path still works either way).
+		// modifier so Cmd-Z / Cmd-Shift-Z are distinguishable. Terminals that don't speak
+		// it fall back to legacy parsing (the bare `u`/`U` path still works).
 		useKittyKeyboard: {},
 	});
 	const view = new EditRenderable(renderer);
@@ -1526,9 +1408,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		dirty = false;
 	};
 
-	// Apply an edit: swap in the new doc, record it on the history (coalescing into
-	// the current step when `tag` matches, e.g. a brush stroke), and recompute. The
-	// single funnel every mutation goes through so undo/redo can never miss one.
+	// Apply an edit: swap in the doc, record on history (coalescing when `tag` matches),
+	// recompute. The single funnel every mutation goes through, so undo/redo can't miss one.
 	const commit = (next: EditorDoc, tag?: string) => {
 		doc = next;
 		history = record(history, doc, tag);
@@ -1536,7 +1417,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	};
 	// Undo / redo (#98): restore the snapshot and drop any in-progress gesture so the
 	// view can't reference a cell from the reverted state. `dirty` is derived in
-	// recompute, so it tracks back to clean when we land on the saved snapshot.
+	// recompute, so it tracks back to clean on the saved snapshot.
 	const doUndo = () => {
 		if (!canUndo(history)) return;
 		history = undo(history);
@@ -1556,9 +1437,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 
 	const activeTool = () => TOOLS[toolIdx];
 
-	// Open / close the Stamp picker. Selecting the Stamp tool with no entity yet
-	// opens it automatically; confirming keeps the tool active for "pick once, stamp
-	// many". An empty catalog (no entities to pick) never opens.
+	// Open / close the Stamp picker. Confirming keeps the tool active for "pick once,
+	// stamp many". An empty catalog never opens.
 	const openPicker = () => {
 		if (picker.length === 0) return;
 		pickerOpen = true;
@@ -1573,23 +1453,20 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		pickerOpen = false;
 	};
 
-	// Paint terrain `#` at a cell (Brush / Rectangle / Line are terrain-only, #114).
-	// `strokeTag` is set only during a mouse drag, so a stroke is one undo step while
-	// each keyboard press is its own.
+	// Paint terrain `#` at a cell. `strokeTag` is set only during a mouse drag, so a
+	// stroke is one undo step while each keyboard press is its own.
 	const paintAt = (x: number, y: number) => {
 		commit(
 			place(growToInclude(doc, x, y), x, y, TERRAIN),
 			strokeTag ?? undefined,
 		);
 	};
-	// The filtered target candidates for the form's current query (target stage).
 	const formCandidates = (): PortalCandidate[] =>
 		portalForm ? filterCandidates(portalCands, portalForm.query) : [];
 
-	// Open the Portal config form (#97). For a NEW portal, `edit` is null and the
-	// anchor is where the ghost sits; for an EDIT, `edit` is the existing origin and
-	// the form is seeded with its current target + arrival. With no candidate Zones
-	// to target, the form can't resolve, so it never opens.
+	// Open the Portal config form (#97). NEW: `edit` null, anchor where the ghost sits.
+	// EDIT: `edit` is the existing origin, seeded with its target + arrival. With no
+	// candidate Zones the form can't resolve, so it never opens.
 	const openPortalForm = (
 		anchor: Point,
 		edit: Point | null,
@@ -1615,9 +1492,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		};
 	};
 
-	// Commit the Portal form: build the data-carrying Placeable and stamp it at the
-	// anchor. An edit first erases the old origin so a changed target/arrival doesn't
-	// leave a stale glyph (place then re-declares). Stays open on a malformed arrival.
+	// Commit the Portal form: build the Placeable and stamp it at the anchor. An edit
+	// first erases the old origin so a changed target/arrival leaves no stale glyph.
+	// Stays open on a malformed arrival.
 	const commitPortalForm = () => {
 		if (!portalForm) return;
 		const arrival = parseArrival(portalForm.arrivalText);
@@ -1628,10 +1505,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			arrival,
 		};
 		const a = portalForm.anchor;
-		// Placing/editing a portal is one atomic edit → one undo step (#98). Route it
-		// through `commit` (records history + recomputes) rather than mutating `doc`
-		// directly, so it isn't swallowed by the next edit's snapshot. An edit-on-click
-		// first erases the old portal, then re-places, within the same commit.
+		// One atomic edit → one undo step (#98): route through `commit`, not a direct
+		// `doc` mutation, so it isn't swallowed by the next edit's snapshot. An edit
+		// erases the old portal then re-places within the same commit.
 		const base = portalForm.edit
 			? erase(doc, portalForm.edit.x, portalForm.edit.y)
 			: doc;
@@ -1639,10 +1515,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		commit(place(growToInclude(base, a.x, a.y), a.x, a.y, p));
 	};
 
-	// Stamp the picked entity: the cursor is its CENTER, converted to the stored
-	// top-left anchor (ground-snapped unless free-place) by the shared `cursorToAnchor`.
-	// A Portal is data-carrying — instead of stamping, it opens the config form (#97)
-	// at the landing anchor.
+	// Stamp the picked entity via the shared `cursorToAnchor`. A Portal is data-carrying,
+	// so instead of stamping it opens the config form (#97) at the landing anchor.
 	const stampAt = (x: number, y: number) => {
 		if (!stampP) return openPicker();
 		const a = cursorToAnchor(doc, stampP, x, y, freePlace);
@@ -1657,9 +1531,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		commit(next, strokeTag ?? undefined);
 	};
 
-	// Edit-on-click (#97): if the cell holds a data-carrying Portal, re-open its
-	// config form (seeded with the current target + arrival) and report it handled.
-	// Plain Monsters/NPCs carry no data, so they fall through to move/delete.
+	// Edit-on-click (#97): if the cell holds a Portal, re-open its form (seeded) and
+	// report handled. Plain Monsters/NPCs carry no data, so they fall through.
 	const tryEditPortal = (x: number, y: number): boolean => {
 		const hit = entityAt(doc, x, y);
 		if (hit?.placeable.kind !== 'portal') return false;
@@ -1674,15 +1547,14 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		return true;
 	};
 
-	// The Tool's primary action at the cursor (`space`/click). Drag tools toggle
-	// the anchor (press A, then press B to commit); the rest act immediately.
+	// The Tool's primary action at the cursor (`space`/click). Drag tools toggle the
+	// anchor (press A, then B to commit); the rest act immediately.
 	const toolPrimary = () => {
 		const t = activeTool();
 		if (t.id === 'brush') return paintAt(cursor.x, cursor.y);
 		if (t.id === 'eraser') return eraseAt(cursor.x, cursor.y);
 		if (t.id === 'stamp') return stampAt(cursor.x, cursor.y);
-		// Select: a press on a Portal opens its form (edit-on-click); otherwise it
-		// anchors a region (first press) then commits the selection (second press).
+		// Select: a press on a Portal opens its form (edit-on-click); else anchor then commit.
 		if (t.id === 'select' && !anchor && tryEditPortal(cursor.x, cursor.y))
 			return;
 		// Rectangle / Line / Select: first press anchors, second commits.
@@ -1698,8 +1570,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		const a = anchor;
 		const b = { x: cursor.x, y: cursor.y };
 		const t = activeTool();
-		// Rectangle / Line paint terrain only (#114); Select captures the region.
-		// Each is one atomic edit → one undo step (no per-cell coalescing needed).
+		// Rectangle / Line paint terrain (#114); Select captures the region. Each is one
+		// atomic edit → one undo step.
 		if (t.id === 'rectangle') {
 			commit(paintCells(doc, rectCells(a, b), TERRAIN));
 		} else if (t.id === 'line') {
@@ -1729,14 +1601,11 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	view.onMouseDown = (e: { button: number; x: number; y: number }) => {
 		pendingTownToggle = false;
 		// While the quit modal (#98) or name prompt is open they own input — ignore
-		// canvas/tool clicks so a stray click can't paint or dismiss them (the modal
-		// resolves only via S/D/Esc; the prompt via Enter/Esc).
+		// canvas/tool clicks so a stray click can't paint or dismiss them.
 		if (quitPrompt || namePrompt !== null) return;
-		// The Portal config form (#97) is keyboard-driven (like the name prompt) — a
-		// stray canvas/tool click can't paint while it's open.
+		// The Portal form (#97) is keyboard-driven — a stray click can't paint while open.
 		if (portalForm) return;
-		// The diagnostics panel (#100) is keyboard-driven too — ignore canvas clicks
-		// while it's open so a stray click can't paint behind it.
+		// The diagnostics panel (#100) is keyboard-driven too — ignore canvas clicks.
 		if (diagPanel) return;
 		// The Stamp picker modal eats clicks: a row confirms, anywhere else cancels.
 		if (pickerOpen) {
@@ -1752,7 +1621,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			return;
 		}
 		if (e.button !== 0) return;
-		// Tool bar clicks select the Tool (and open the picker for Stamp).
 		if (e.y === frameH - FOOTER_H) {
 			const hit = toolHits.find((h) => e.x >= h.x0 && e.x < h.x1);
 			if (hit) {
@@ -1766,12 +1634,11 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		const w = toWorld(e.x, e.y);
 		moveCursorTo(w.x, w.y);
 		const t = activeTool();
-		// Select-clicking a Portal opens its config form (edit-on-click, #97) rather
-		// than starting a region drag; start the drag on empty space to select instead.
+		// Select-clicking a Portal opens its form (edit-on-click, #97) instead of a drag.
 		if (t.id === 'select' && tryEditPortal(cursor.x, cursor.y)) return;
-		// Drag tools anchor on down; Stamp picks up a ghost (commit one on release);
-		// Brush/Eraser act immediately and drag-paint. A brush/eraser stroke opens a
-		// fresh coalesce tag so the whole down→drag→up paint is one undo step.
+		// Drag tools anchor on down; Stamp picks up a ghost (commit on release);
+		// Brush/Eraser act immediately. A brush/eraser stroke opens a fresh coalesce tag
+		// so the whole down→drag→up is one undo step.
 		if (t.id === 'brush' || t.id === 'eraser')
 			strokeTag = `stroke${++strokeSeq}`;
 		if (t.drag) anchor = { x: cursor.x, y: cursor.y };
@@ -1790,8 +1657,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		if (e.button !== 0 || !inCanvasRegion(e.x, e.y)) return;
 		const w = toWorld(e.x, e.y);
 		moveCursorTo(w.x, w.y);
-		// Terrain Brush drag-paints continuously; Eraser drag-erases. Stamp's ghost
-		// just trails the cursor (one entity on release); drag tools trail for the preview.
+		// Brush drag-paints continuously; Eraser drag-erases. Stamp's ghost just trails
+		// the cursor (one entity on release).
 		if (activeTool().id === 'brush') paintAt(cursor.x, cursor.y);
 		else if (activeTool().id === 'eraser') eraseAt(cursor.x, cursor.y);
 	};
@@ -1803,8 +1670,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		}
 		// The brush/eraser stroke is over; the next stroke gets a fresh coalesce tag.
 		strokeTag = null;
-		// Stamp drag-place commits ONE entity at the release point (a plain click is a
-		// zero-length drag → one placement).
+		// Stamp drag-place commits ONE entity at the release point (a click is a
+		// zero-length drag).
 		if (stampDrag) {
 			stampDrag = false;
 			stampAt(cursor.x, cursor.y);
@@ -1814,7 +1681,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	};
 	view.onMouseUp = endDrag;
 	view.onMouseDragEnd = endDrag;
-	// Wheel scrolls the canvas vertically (a quick way to roam tall Zones).
 	view.onMouse = (e: { type: string; scroll?: { direction: string } }) => {
 		if (e.type !== 'scroll' || !e.scroll) return;
 		const dy =
@@ -1825,7 +1691,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		}
 	};
 
-	// True when the Select tool holds a captured region (gates copy/cut/delete).
 	const hasSelection = () => activeTool().id === 'select' && selection !== null;
 
 	type EditKey = {
@@ -1833,15 +1698,15 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		ctrl: boolean;
 		meta?: boolean;
 		shift?: boolean;
-		// macOS Cmd arrives as `super` (only over the Kitty keyboard protocol); Alt/
-		// Option as `meta`/`option`. We treat any of them as the "command" modifier so
-		// Cmd-Z works wherever the terminal forwards it.
+		// macOS Cmd arrives as `super` (only over Kitty keyboard); Alt/Option as
+		// `meta`/`option`. We treat any as the "command" modifier so Cmd-Z works wherever
+		// the terminal forwards it.
 		super?: boolean;
 		option?: boolean;
 		sequence?: string;
 	};
-	// Tear down opentui and exit. The single quit path, shared by the clean-quit `q`
-	// and the [S]ave / [D]iscard choices of the unsaved-changes modal (#98).
+	// Tear down opentui and exit. The single quit path, shared by clean-quit `q` and the
+	// unsaved-changes modal's [S]ave / [D]iscard (#98).
 	const doQuit = () => {
 		(renderer as unknown as { destroy?: () => void }).destroy?.();
 		process.exit(0);
@@ -1851,9 +1716,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		const wasPendingTownToggle = pendingTownToggle;
 		pendingTownToggle = false;
 
-		// Quit-with-unsaved modal (#98) owns every key while open: a real three-way
-		// choice — [S]ave & quit, [D]iscard & quit, [Esc] cancel — replacing the old
-		// "press q twice to discard" footgun. Captured first, like the other modals.
+		// Quit-with-unsaved modal (#98) owns every key while open: [S]ave & quit,
+		// [D]iscard & quit, [Esc] cancel. Captured first, like the other modals.
 		if (quitPrompt) {
 			if (k.name === 'escape') quitPrompt = false;
 			else if (k.name === 's') {
@@ -1863,9 +1727,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			return;
 		}
 
-		// The name-edit modal (#99) owns every key while open: printable chars extend
-		// the buffer (sequence = the literal char, like ChatInput), Enter commits via
-		// setZoneName, Esc cancels. Drawn last; captured here first.
+		// The name-edit modal (#99) owns every key while open: printable chars extend the
+		// buffer, Enter commits via setZoneName, Esc cancels.
 		if (namePrompt !== null) {
 			if (k.name === 'escape') {
 				namePrompt = null;
@@ -1887,12 +1750,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			return;
 		}
 
-		// The Portal config form (#97) owns every key while open. Two stages:
-		//  - target: type to autocomplete the candidate Zones, ↑/↓ to highlight, Enter
-		//    to choose (seeds the default arrival from the target's return portal),
-		//    Esc to cancel the form.
-		//  - arrival: edit the `x,y` text, Enter to commit (stays open if malformed),
-		//    Esc to step back to the target stage.
+		// The Portal config form (#97) owns every key while open. target: autocomplete +
+		// ↑/↓ + Enter (seeds the default arrival), Esc cancels. arrival: edit `x,y`, Enter
+		// commits (stays open if malformed), Esc steps back.
 		if (portalForm) {
 			const f = portalForm;
 			if (f.stage === 'target') {
@@ -1908,8 +1768,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					const chosen = cands[f.selIdx];
 					if (chosen) {
 						f.target = chosen.id;
-						// Seed the arrival only when it's still blank (a fresh portal), so an
-						// edit keeps the author's existing point unless they clear it.
+						// Seed the arrival only when blank (a fresh portal), so an edit keeps
+						// the author's existing point unless they clear it.
 						if (!f.arrivalText.trim()) {
 							const tz = zoneById.get(chosen.id);
 							if (tz) f.arrivalText = formatArrival(defaultArrival(tz, id));
@@ -1942,8 +1802,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			return;
 		}
 
-		// The Stamp picker modal captures all keys while open (#114): navigate the
-		// entity list, Enter / a digit confirms, Esc cancels — like `pendingQuit`.
+		// The Stamp picker modal captures all keys while open (#114): navigate, Enter /
+		// a digit confirms, Esc cancels.
 		if (pickerOpen) {
 			if (k.name === 'escape') {
 				pickerOpen = false;
@@ -1965,9 +1825,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			return;
 		}
 
-		// The diagnostics panel (#100) owns navigation while open: ↑/↓ (jk) move the
-		// selection, Enter/space jumps the cursor to the offending cell (and closes),
-		// Esc / i close. It's a drill-down over the live `diags`, never a blocking modal.
+		// The diagnostics panel (#100) owns navigation while open: ↑/↓ (jk) move, Enter/
+		// space jumps to the offending cell (and closes), Esc / i close.
 		if (diagPanel) {
 			diagIdx = clampDiagIndex(diagIdx, diags.length);
 			if (k.name === 'escape' || k.name === 'i') {
@@ -1991,23 +1850,17 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		// Save is ^s so the bare `s` (and the rest of wasd) is free for movement.
 		if (k.ctrl && k.name === 's') return save();
 
-		// Undo / redo (#98). Bound on every modifier a terminal might forward, plus a
-		// modifier-FREE pair so you're never stuck if Ctrl/Cmd is awkward:
-		//   · `u` undo / `U` (Shift-U) redo — always available, no Ctrl needed.
-		//   · Ctrl-Z undo, Ctrl-R / Ctrl-Y redo (vim-style).
-		//   · Cmd-Z undo, Cmd-Shift-Z / Cmd-Y redo (macOS-native; needs a terminal that
-		//     speaks the Kitty keyboard protocol — Ghostty, Kitty, WezTerm, iTerm2 cfg).
+		// Undo / redo (#98), bound on every modifier a terminal might forward plus a
+		// modifier-FREE pair (`u` / Shift-U) so you're never stuck if Ctrl/Cmd is awkward.
 		// Checked BEFORE `toolByKey` so Ctrl/Cmd-R isn't read as the Rectangle tool.
 		const cmd = k.super === true || k.meta === true || k.option === true;
 		if ((k.ctrl || cmd) && k.name === 'z') return k.shift ? doRedo() : doUndo();
 		if ((k.ctrl || cmd) && (k.name === 'r' || k.name === 'y')) return doRedo();
-		// Bare-key fallbacks: `u` undo, Shift-U redo (or a literal uppercase 'U').
 		if (k.name === 'u') return k.shift ? doRedo() : doUndo();
 		if (k.sequence === 'U') return doRedo();
 
-		// Tool selection (mnemonic letter or 1-6 digit). These never collide with a
-		// movement key, so they're safe to intercept before the movement switch. The
-		// Stamp tool (`p`/`6`) opens its picker — so re-pressing it re-picks the entity.
+		// Tool selection (mnemonic or 1-6). Never collides with a movement key, so it's
+		// safe to intercept before the movement switch. Stamp (`p`/`6`) opens its picker.
 		const tool = toolByKey(k.name);
 		if (tool) {
 			toolIdx = TOOLS.indexOf(tool);
@@ -2058,9 +1911,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				namePrompt = zoneName(doc) ?? '';
 				return;
 			case 't': {
-				// Toggle Zone type field↔town (#99). Switching a populated Field → Town
-				// would invalidate its Monsters (Towns forbid spawns), so warn once and
-				// require a second `t` to confirm; live validation backstops it either way.
+				// Toggle Zone type field↔town (#99). A populated Field → Town invalidates
+				// its Monsters (Towns forbid spawns), so warn once and require a second `t`.
 				const target = zoneType(doc) === 'field' ? 'town' : 'field';
 				if (
 					target === 'town' &&

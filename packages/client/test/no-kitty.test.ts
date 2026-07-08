@@ -11,8 +11,7 @@ import {
 	shouldWarnNoKitty,
 } from '../src/no-kitty';
 
-// Build a resolved capability object with a chosen kitty_keyboard flag. Only that field
-// matters to the predicate; the rest are filled with harmless defaults so the fixture is
+// Only kitty_keyboard matters to the predicate; the rest are harmless defaults to keep
 // a real TerminalCapabilities shape.
 function caps(kitty: boolean): TerminalCapabilities {
 	return {
@@ -39,8 +38,8 @@ function caps(kitty: boolean): TerminalCapabilities {
 	} as TerminalCapabilities;
 }
 
-// The AC's truth table (ADR 0024 §2): warn ONLY on a resolved, confirmed no-Kitty
-// terminal; every unresolved / unknown state is fail-open silent.
+// Warn ONLY on a resolved, confirmed no-Kitty terminal; every unresolved / unknown
+// state is fail-open silent (ADR 0024 §2).
 
 test('resolved + no Kitty support → warn', () => {
 	expect(shouldWarnNoKitty(caps(false))).toBe(true);
@@ -68,8 +67,8 @@ test('unknown / missing kitty_keyboard field → no warn (fail-open)', () => {
 	expect(shouldWarnNoKitty(unknown)).toBe(false);
 });
 
-// The embedded remedy is self-contained: a short, non-empty terminal list and a
-// tmux/screen caveat, with no external URL (ADR 0024 §4).
+// The embedded remedy is self-contained: a short terminal list and a tmux/screen
+// caveat, with no external URL (ADR 0024 §4).
 
 test('the terminal list is short, non-empty, and URL-free', () => {
 	expect(KITTY_TERMINALS.length).toBeGreaterThan(0);
@@ -84,14 +83,13 @@ test('the caveat names a multiplexer and carries no URL', () => {
 
 // --- Strict sequential pre-gate (#301) --------------------------------------
 //
-// The notice must win the SCREEN, not just the keyboard: on a confirmed no-Kitty terminal
-// it draws over every other launch overlay so the Player can read it, and nothing else is
-// shown or interactive until it is dismissed. These headless render checks (via
-// `@opentui/core/testing`) prove the layering and the gate, no TTY needed.
+// On a confirmed no-Kitty terminal the notice must win the SCREEN, not just the
+// keyboard: it draws over every launch overlay and nothing else is shown or interactive
+// until it is dismissed.
 
-// A sentinel unique to each overlay's INTERIOR — the notice's press-any-key footer and one
-// of the creator's field rows — so "which one is on top" is decided by whose interior
-// survived compositing where the two centered panels overlap, not by a border that peeks.
+// A sentinel unique to each overlay's INTERIOR — so "which is on top" is decided by whose
+// interior survived compositing where the two centered panels overlap, not by a peeking
+// border.
 const NOTICE_BODY = 'Press any key to continue';
 const CREATOR_BODY = 'Nameplate';
 
@@ -105,20 +103,18 @@ test('the notice draws ABOVE the Avatar creator (top layer), matching the real a
 	});
 	const notice = new NoKittyNotice(renderer);
 	const creator = new CharacterCreator(renderer, 'tester', STARTER_LOOK);
-	// The real launch order that used to lose: the notice attaches first, the creator later.
-	// With equal z the later node won and buried the notice — the raised z fixes it (#301).
+	// The real launch order that used to lose: notice attaches first, creator later. With
+	// equal z the later node won and buried the notice — the raised z fixes it (#301).
 	notice.attach(renderer.root);
 	creator.attach(renderer.root);
 
-	// First establish the baseline: with only the creator up, its interior row DOES render
-	// at this geometry — so the sentinel's later absence can only mean the notice covered it,
-	// not that it was never drawn.
+	// Baseline: with only the creator up, its interior row DOES render at this geometry —
+	// so the sentinel's later absence can only mean the notice covered it, not that it was
+	// never drawn.
 	creator.show();
 	await renderOnce();
 	expect(captureCharFrame()).toContain(CREATOR_BODY);
 
-	// Now raise the notice over the (still-shown) creator: the notice interior wins and the
-	// creator interior is buried where the two centered panels overlap.
 	notice.show();
 	await renderOnce();
 	const frame = captureCharFrame();
@@ -138,8 +134,8 @@ test('on a Kitty-capable terminal the notice never appears and the creator shows
 	creator.attach(renderer.root);
 	const gate = new NoticeGate(notice);
 
-	// The launch path on a capable terminal: shouldWarnNoKitty is false, so the notice is
-	// never shown; the gate then reveals the queued creator at once — launch unaffected.
+	// On a capable terminal shouldWarnNoKitty is false, so the notice never shows and the
+	// gate reveals the queued creator at once — launch unaffected.
 	const capable = caps(true);
 	if (shouldWarnNoKitty(capable)) notice.show();
 	gate.reconcile();
@@ -164,8 +160,8 @@ test('the gate holds the creator hidden while the notice is open, then reveals i
 	creator.attach(renderer.root);
 	const gate = new NoticeGate(notice);
 
-	// The notice is up first, then the creator is queued behind it: the gate must hold it
-	// hidden and un-interactive, so only the notice is on screen.
+	// Notice up first, creator queued behind it: the gate must hold it hidden and
+	// un-interactive, so only the notice is on screen.
 	notice.show();
 	gate.reconcile();
 	gate.request(creator);
@@ -185,8 +181,8 @@ test('the gate holds the creator hidden while the notice is open, then reveals i
 	expect(frame).toContain(CREATOR_BODY);
 });
 
-// The gate logic on its own (renderer-free): intent is tracked separately from the notice
-// so a late-resolving probe still wins, and a released modal is never re-shown.
+// The gate logic renderer-free: intent is tracked separately from the notice, so a
+// late-resolving probe still wins and a released modal is never re-shown.
 function fakeModal(): Gateable & { visible: boolean } {
 	return {
 		visible: false,

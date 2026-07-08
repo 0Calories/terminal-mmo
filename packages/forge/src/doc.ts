@@ -1,18 +1,14 @@
-// The editor's source of truth is the RAW `.zone` document — a JSON header object
-// plus the char-grid rows — NOT a parsed `Zone`. `parseZone` is lossy (a spawn
-// glyph `c` resolves to `behavior: 'chaser'` and the original glyph + catalog id
-// are discarded; unused header keys are dropped — see #50's orphan-key work), so
-// an editor that round-tripped through a `Zone` would lose identity. `EditorDoc`
-// keeps the header VERBATIM and the grid as raw rows, so `serializeDoc(parseDoc(
-// text))` preserves exactly what was authored. All pure: no FS, sibling to the
-// readers in `io.ts` (which owns the disk side).
+// The editor's source of truth is the RAW `.zone` document (JSON header + char-grid
+// rows), not a parsed `Zone`: `parseZone` is lossy (glyphs resolve to behaviours,
+// unused keys drop — #50), so a round-trip through `Zone` would lose identity.
+// `EditorDoc` keeps the header verbatim, so `serializeDoc(parseDoc(text))` preserves
+// what was authored.
 
 import type { ZoneType } from '@mmo/shared';
 
 /** A `.zone` document held losslessly for editing: header object + grid rows. */
 export interface EditorDoc {
-	/** The header JSON, kept verbatim so nothing (orphan keys, catalog refs,
-	 *  dialogue, …) is dropped on a round-trip. */
+	/** Header JSON, kept verbatim so nothing is dropped on a round-trip. */
 	header: Record<string, unknown>;
 	/** The grid below the `---`, one string per row (trailing blanks trimmed). */
 	rows: string[];
@@ -21,10 +17,9 @@ export interface EditorDoc {
 const DELIM = '---';
 
 /**
- * Split raw `.zone` text into its header object and grid rows. Mirrors how
- * `parseZone` finds the `---` delimiter, but keeps the whole header object and
- * the raw rows instead of resolving (and discarding) them. Throws on a missing
- * delimiter or unparseable header — the editor only opens a parseable file.
+ * Split raw `.zone` text into header object + grid rows, keeping both verbatim rather
+ * than resolving them like `parseZone`. Throws on a missing delimiter or unparseable
+ * header — the editor only opens a parseable file.
  */
 export function parseDoc(text: string): EditorDoc {
 	const lines = text.split('\n');
@@ -45,9 +40,8 @@ export function parseDoc(text: string): EditorDoc {
 }
 
 /**
- * Serialize a doc back to canonical `.zone` text: pretty-printed header, the
- * `---` delimiter, then the grid plus a trailing newline. Matches the shape
- * `newZoneTemplate` emits, so a canonical file round-trips byte-for-byte.
+ * Serialize back to canonical `.zone` text. Matches the shape `newZoneTemplate` emits,
+ * so a canonical file round-trips byte-for-byte.
  */
 export function serializeDoc(doc: EditorDoc): string {
 	return `${JSON.stringify(doc.header, null, 2)}\n${DELIM}\n${doc.rows.join('\n')}\n`;
@@ -62,9 +56,9 @@ export function cellAt(doc: EditorDoc, x: number, y: number): string {
 }
 
 /**
- * Return a new doc with `(x, y)` set to `ch`. Immutable (the edit ops below feed
- * the undo stack with snapshots). A short row is padded with `.` so a glyph can
- * be placed past its current end; an out-of-grid coordinate is a no-op.
+ * Return a new doc with `(x, y)` set to `ch`. Immutable (edits feed the undo stack
+ * snapshots). A short row is padded with `.` so a glyph can be placed past its end;
+ * out-of-grid is a no-op.
  */
 export function setCell(
 	doc: EditorDoc,
@@ -84,15 +78,11 @@ export function toggleSolid(doc: EditorDoc, x: number, y: number): EditorDoc {
 	return setCell(doc, x, y, cellAt(doc, x, y) === '#' ? '.' : '#');
 }
 
-/** Reset `(x, y)` to empty (`.`). */
 export function clearCell(doc: EditorDoc, x: number, y: number): EditorDoc {
 	return setCell(doc, x, y, '.');
 }
 
 // --- Header fields: display name + zone type (#99) ----------------------------
-// Pure, immutable header mutators (like the grid ops above) — they return a fresh
-// doc so the editor's undo stack keeps snapshots. The header is kept verbatim, so a
-// name/type edit round-trips losslessly through serializeDoc.
 
 /** The optional display label (#99), or undefined when unset. */
 export function zoneName(doc: EditorDoc): string | undefined {

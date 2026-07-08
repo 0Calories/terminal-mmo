@@ -1,15 +1,12 @@
 import type { RenderStyle } from './render';
 
-// The static Zone scene's colour DATA, as plain RGBA int tuples — the single
-// source of truth shared by the game (client) and `forge zone preview` (forge),
-// so the preview is faithful ("what you see is what ships", #56). It is data
-// only: @mmo/shared stays opentui-free, and each consumer binds its own colour
-// type (opentui `RGBA.fromInts`) via `buildSceneStyle`.
+// The Zone scene's colour data as plain RGBA int tuples, shared by the client and `forge
+// zone preview` so the preview is faithful (#56). Data only — @mmo/shared stays
+// opentui-free; each consumer binds its colour type via `buildSceneStyle`.
 export type RGBAQuad = readonly [number, number, number, number];
 
-// Chrome the static renderer needs (mirrors the subset of the client theme that
-// `RenderStyle` consumes). `nameplate` is the client's dim text; `paletteDefault`
-// is its bright HUD colour, used for sprite glyphs whose key isn't in the palette.
+// Chrome the static renderer needs. `paletteDefault` is the bright HUD colour, used for
+// sprite glyphs whose key isn't in the palette.
 export const SCENE_COLORS = {
 	bg: [16, 18, 26, 255],
 	terrainFg: [70, 82, 104, 255],
@@ -17,24 +14,19 @@ export const SCENE_COLORS = {
 	portal: [180, 130, 255, 255],
 	transparent: [0, 0, 0, 0],
 	hurt: [255, 240, 120, 255],
-	// `nameplate` is the Handle text colour (the cosmetic ink colour, #35). The Handle
-	// is bare text on a tight per-glyph backing drawn below the feet (ADR 0023): the
-	// bright ink sits on an opaque ~30%-darkened same-hue backing (`nameplateBg` /
-	// `cosmetics.nameplateBgs`), prebuilt below since @mmo/shared can't darken an opaque
-	// colour at draw time (it only holds resolved colours).
+	// The Handle text colour. The Handle is bright ink on an opaque ~30%-darkened same-hue
+	// backing (`nameplateBg`), prebuilt below because @mmo/shared can't darken a resolved
+	// colour at draw time (ADR 0023, #35).
 	nameplate: [150, 156, 168, 255],
 	paletteDefault: [232, 232, 238, 255],
 } as const satisfies Record<string, RGBAQuad>;
 
-// How much to darken a nameplate colour to make its per-glyph backing: the bright ink
-// over a same-hue backing at this fraction of its brightness reads legibly whether the
-// name lands over bright terrain, a bright sprite, or sky (ADR 0023). A judgement call,
-// tuned in a real terminal.
+// How much to darken a nameplate colour for its backing so the ink reads legibly over any
+// terrain/sprite/sky. A judgement call, tuned in a real terminal (ADR 0023).
 export const NAMEPLATE_BG_DARKEN = 0.3;
 
-// An opaque, darkened variant of an RGBA tuple: each channel scaled to
-// `NAMEPLATE_BG_DARKEN` of its value, alpha forced opaque. The Handle backing (ADR
-// 0023) — same hue as the ink, far darker, so the cosmetic colour still reads.
+// An opaque, darkened variant of an RGBA tuple — the Handle backing: same hue as the ink,
+// far darker, so the cosmetic colour still reads (ADR 0023).
 export function darken(q: RGBAQuad): RGBAQuad {
 	return [
 		Math.round(q[0] * NAMEPLATE_BG_DARKEN),
@@ -44,10 +36,8 @@ export function darken(q: RGBAQuad): RGBAQuad {
 	];
 }
 
-// The cosmetic Avatar hue catalog (#35, ADR 0003): the body-recolour options an
-// Avatar chooses from, indexed by the on-the-wire hue id. Index 0 is the default
-// amber (identical to the `p` body key) so a defaulted Avatar looks unchanged. The
-// rest are a small, fixed, reviewed set. Append-only so ids stay stable.
+// The cosmetic Avatar hue catalog (#35, ADR 0003), indexed by the wire hue id. Index 0 is
+// the default amber (identical to the `p` body key). Append-only so ids stay stable.
 //
 // VISUAL ARTEFACT — this palette needs design review / sign-off before merge.
 export const HUES = [
@@ -61,9 +51,9 @@ export const HUES = [
 	[245, 150, 205, 255], // pink
 ] as const satisfies readonly RGBAQuad[];
 
-// The cosmetic nameplate-colour catalog (#35): the handle-tint options, indexed by
-// the on-the-wire nameplate id. Index 0 is the default dim grey (identical to
-// SCENE_COLORS.nameplate). Append-only so ids stay stable.
+// The cosmetic nameplate-colour catalog (#35), indexed by the wire nameplate id. Index 0
+// is the default dim grey (identical to SCENE_COLORS.nameplate). Append-only so ids stay
+// stable.
 //
 // VISUAL ARTEFACT — this set needs design review / sign-off before merge.
 export const NAMEPLATE_COLORS = [
@@ -96,9 +86,8 @@ export const SCENE_PALETTE = {
 export type ColorFactory<C> = (r: number, g: number, b: number, a: number) => C;
 
 /**
- * Resolve the shared scene colour data into a `RenderStyle<C>` using a caller-
- * supplied colour factory. One place builds the style so the game and the
- * `forge zone preview` can't drift apart.
+ * Resolve the shared scene colour data into a `RenderStyle<C>` via a caller-supplied colour
+ * factory. One place, so the game and `forge zone preview` can't drift apart.
  */
 export function buildSceneStyle<C>(toColor: ColorFactory<C>): RenderStyle<C> {
 	const c = (q: RGBAQuad) => toColor(q[0], q[1], q[2], q[3]);
@@ -118,10 +107,9 @@ export function buildSceneStyle<C>(toColor: ColorFactory<C>): RenderStyle<C> {
 		nameplateBg: bg(SCENE_COLORS.nameplate),
 		palette,
 		paletteDefault: c(SCENE_COLORS.paletteDefault),
-		// Cosmetic catalogs resolved into the colour type once, so the renderer can
-		// index them per Avatar without re-resolving (#35). `nameplateBgs` is the
-		// parallel darkened backing for each Handle ink, prebuilt here because the
-		// generic renderer can't derive a darker variant from an opaque `C` (ADR 0023).
+		// Cosmetic catalogs resolved into the colour type once, so the renderer can index
+		// per Avatar without re-resolving. `nameplateBgs` is prebuilt here because the
+		// generic renderer can't darken an opaque `C` (#35, ADR 0023).
 		cosmetics: {
 			hues: HUES.map((q) => c(q)),
 			nameplates: NAMEPLATE_COLORS.map((q) => c(q)),

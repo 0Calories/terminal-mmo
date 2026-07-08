@@ -27,10 +27,9 @@ import { DEFAULT_WEAPON, type Weapon, weaponById } from './weapons';
 
 const BODY_PALETTE: Record<string, RGBAQuad> = SCENE_PALETTE;
 
-// The body colour to tint an entity's death gore with (#139): an Avatar uses its
-// chosen cosmetic hue (a stray index falls back to the default), every other
-// entity uses its sprite's dominant body colour (the sprite `defaultKey`). One
-// lookup off the shared sprite/palette data so the tint can't drift from the art.
+// An Avatar tints to its chosen cosmetic hue; every other entity to its sprite's
+// dominant body colour — read off the shared sprite/palette data so the tint can't
+// drift from the art (#139).
 export function entityTint(e: Entity): Tint {
 	const quad =
 		e.cosmetics !== undefined
@@ -43,23 +42,14 @@ export function entityBox(e: Entity): Box {
 	return { x: e.x, y: e.y, w: BOX.w, h: BOX.h };
 }
 
-// --- Basic-swing phase machine (ADR 0017 §1) --------------------------------
-//
-// A swing is modeled by a single scalar, `attackT` on the Entity: the time
-// REMAINING in the whole swing (wind-up + active + recovery), counting down to 0
-// (idle/ready). `elapsed = SWING_TOTAL - attackT` walks the three phases in order.
-// Folding the whole machine onto the one existing field keeps the snapshot cheap
-// (the action-state is derived, not stored extra) and means client prediction and
-// the server share the exact same scalar through `resolveCombat`.
+// A swing is one scalar, `attackT`: the time REMAINING in the wind-up→active→recovery
+// sequence, counting down to 0. `elapsed = SWING_TOTAL - attackT` walks the phases.
+// One field shared by client prediction and server through `resolveCombat`.
 
-// The total committed duration of a swing. ONE shared phase config drives every
-// swing — Avatar and Monster, whatever weapon is equipped (ADR 0024: weapons never
-// reshape the machine) — so the total is a constant of COMBAT.swing.
+// A constant, not per-weapon: weapons never reshape the swing machine (ADR 0024).
 export const SWING_TOTAL =
 	COMBAT.swing.windup + COMBAT.swing.active + COMBAT.swing.recovery;
 
-// The phase of a basic swing for a given `attackT` (time remaining), or null when
-// idle. Pure; the single source of truth for "what phase is this swing in".
 export function swingPhase(attackT: number): AttackPhase | null {
 	if (attackT <= 0) return null;
 	const { windup, active } = COMBAT.swing;
@@ -69,8 +59,6 @@ export function swingPhase(attackT: number): AttackPhase | null {
 	return 'recovery';
 }
 
-// Progress 0..1 through the CURRENT phase, for render interpolation (pose lean,
-// arc sweep). 0 at a phase's start, →1 at its end. Idle reads 0.
 export function swingProgress(attackT: number): number {
 	const phase = swingPhase(attackT);
 	if (!phase) return 0;
@@ -86,13 +74,8 @@ export function meleeActive(attackT: number): boolean {
 	return swingPhase(attackT) === 'active';
 }
 
-// --- Melee-committer archetypes (ADR 0017 §9) -------------------------------
-//
-// The chaser and the brute are both **melee committers**: they approach, then COMMIT
-// the shared telegraphed swing (wind-up→active→recovery) and deal damage ONLY in its
-// active window — no passive contact damage. They differ purely in these tuned
-// numbers, so one code path in `stepZone` drives both off the profile.
-
+// The chaser and brute differ only in these tuned numbers, so one code path in
+// `stepZone` drives both (ADR 0017 §9).
 export interface MeleeProfile {
 	damage: number; // HP an active-phase connect deals
 	poise: number; // Poise damage the connect chips off the victim
@@ -102,9 +85,7 @@ export interface MeleeProfile {
 	commitCd: number; // seconds to wait after a commit before committing the next
 }
 
-// The melee-committer profile for an entity type, or null for a non-committer (the
-// ranged-poker shooter and the player). Pure — one source of truth for "how this
-// archetype approaches and commits its melee".
+// Null for a non-committer (the ranged shooter, the player).
 export function meleeProfileOf(type: EntityType): MeleeProfile | null {
 	if (type === 'chaser')
 		return {
@@ -127,30 +108,21 @@ export function meleeProfileOf(type: EntityType): MeleeProfile | null {
 	return null;
 }
 
-// --- Dodge phase machine (ADR 0017 §5) --------------------------------------
-//
-// The Dodge is the swing machine's sibling: one scalar `dodgeT` (time remaining)
-// runs an `active` window (i-frames) then a `recovery` tail (exposed, committed).
-// It reuses the AttackPhase value names so it round-trips through the same
-// action-state — only `active` and `recovery` ever appear (a Dodge has no wind-up).
-
+// The Dodge is the swing machine's sibling: one scalar `dodgeT` running an `active`
+// window (i-frames) then an exposed `recovery` tail. It reuses the AttackPhase names —
+// but has no wind-up, so only `active` and `recovery` ever appear (ADR 0017 §5).
 export const DODGE_TOTAL = COMBAT.dodge.active + COMBAT.dodge.recovery;
 
-// The full re-dodge lockout (ADR 0017 §5): the hop (active + recovery) plus the
-// `cooldown` tail, armed as `dodgeCdT` on the start tick and counted down. Anchoring
-// the whole lockout at dodge start — rather than detecting recovery-end — keeps the
-// spam-gate a single scalar set beside `dodgeT`, while leaving `dodgeT` (i-frames +
-// replication) untouched. Outlives `dodgeT` by exactly `cooldown`.
+// The full re-dodge lockout, armed as `dodgeCdT` on the start tick. Anchoring it at
+// dodge start — rather than detecting recovery-end — keeps the spam-gate a single
+// scalar beside `dodgeT`, which it outlives by exactly `cooldown` (ADR 0017 §5).
 export const DODGE_LOCKOUT = DODGE_TOTAL + COMBAT.dodge.cooldown;
 
-// The phase of a Dodge for a given `dodgeT` (time remaining), or null when not
-// dodging. Pure; the single source of truth for the i-frame window.
 export function dodgePhase(dodgeT: number): AttackPhase | null {
 	if (dodgeT <= 0) return null;
 	return DODGE_TOTAL - dodgeT < COMBAT.dodge.active ? 'active' : 'recovery';
 }
 
-// Progress 0..1 through the CURRENT Dodge phase, for the client hop pose.
 export function dodgeProgress(dodgeT: number): number {
 	const phase = dodgePhase(dodgeT);
 	if (!phase) return 0;
@@ -160,18 +132,15 @@ export function dodgeProgress(dodgeT: number): number {
 	return recovery > 0 ? (elapsed - active) / recovery : 1;
 }
 
-// The i-frame window: a Dodge negates incoming hits ONLY during its `active`
-// phase (ADR 0017 §5). The `recovery` tail is vulnerable — the whole point of the
-// committal. Pure; the universal "can this Avatar be hit" gate folds this in.
+// A Dodge negates incoming hits only during its `active` phase; the `recovery` tail
+// is deliberately vulnerable — the cost of the committal (ADR 0017 §5).
 export function dodgeInvulnerable(e: Entity): boolean {
 	return dodgePhase(e.dodgeT ?? 0) === 'active';
 }
 
-// The TIMING half of the Dodge gate (ADR 0017 §5): the server-authoritative, tick-
-// stable preconditions — off cooldown (`dodgeCdT`, the spam-gate), not mid-Dodge, not
-// mid-swing, not Staggered. These survive the hop, so `resolveCombat` re-checks them
-// post-physics to load `dodgeT` (the i-frame window) without trusting the client on
-// cooldown. The movement half (grounded + moving) lives in `canStartDodge` only.
+// The TIMING half of the Dodge gate: the tick-stable preconditions that survive the
+// hop, so `resolveCombat` can re-check them post-physics without trusting the client
+// on cooldown. The movement half (grounded + moving) lives in `canStartDodge`.
 export function dodgeReady(e: Entity): boolean {
 	return (
 		(e.dodgeCdT ?? 0) <= 0 &&
@@ -181,41 +150,32 @@ export function dodgeReady(e: Entity): boolean {
 	);
 }
 
-// Whether an Avatar can START a fresh Dodge this tick (ADR 0017 §5): the full gate —
-// `dodgeReady` timing PLUS grounded while holding a direction (`moveX !== 0`). A Dodge
-// is an earned, committed reposition: no air-dodge, no standstill panic-hop. Evaluated
-// ONLY at the client/sim impulse site, BEFORE the hop's upward pop ungrounds the body —
-// the movement conditions cannot be re-derived post-physics, so the caller authors a
-// gated `dodge` intent that `resolveCombat` trusts (client-authoritative movement, ADR
-// 0001). The hop direction is `moveX`, so the same signal gates the move and aims it.
+// The full Dodge gate: `dodgeReady` timing plus grounded-while-holding-a-direction
+// (no air-dodge, no standstill panic-hop). Must be evaluated at the impulse site
+// BEFORE the hop's upward pop ungrounds the body — the movement conditions can't be
+// re-derived post-physics, so the caller bakes the result into a `dodge` intent that
+// `resolveCombat` trusts (client-authoritative movement, ADR 0001). The hop aims at
+// `moveX`, so one signal both gates and directs it.
 export function canStartDodge(e: Entity, moveX: number): boolean {
 	return dodgeReady(e) && e.onGround && moveX !== 0;
 }
 
-// The universal "can this Avatar take a hit this tick" gate (ADR 0017 §5): blocked
-// by either automatic i-frames (`hurtT`, set on a connect) or earned Dodge i-frames.
-// One predicate so every Avatar damage site — Monster melee, projectiles — honours a
-// Dodge identically.
+// One "can this Avatar take a hit this tick" gate, blocked by automatic i-frames
+// (`hurtT`) or earned Dodge i-frames, so every Avatar damage site honours a Dodge
+// identically.
 export function avatarHittable(a: Entity): boolean {
 	return a.hurtT <= 0 && !dodgeInvulnerable(a);
 }
 
-// The action-state `flags` bitfield (ADR 0017 §10): a compact set of reaction /
-// defense bits replicated for every entity so a client can render the state (a
-// staggered sprite, a guard stance, a dodge after-image). `staggered` is Hitstun in
-// flight; `guarding` is a raised Guard (ADR 0017 §5); `dodging` is the i-frame hop
-// (ADR 0017 §5). Round-trips as the action's u8; an airborne bit joins as later slices
-// land.
+// Reaction/defense bits replicated for every entity so a client can render the state
+// (staggered sprite, guard stance, dodge after-image). Round-trips as the action's u8
+// (ADR 0017 §10).
 export const ACTION_FLAG = {
 	staggered: 1,
 	guarding: 2,
 	dodging: 4,
 } as const;
 
-// The reaction/defense flags an entity broadcasts this tick: `staggered` (Hitstun in
-// flight), `guarding` (a raised Guard, derived from `guardT`), and `dodging` (an
-// i-frame hop in flight) — so Stagger, Guard, AND Dodge are visible to everyone (ADR
-// 0017 §3/§5/§10), for Avatars and Monsters alike. The bits OR together.
 export function actionFlags(e: Entity): number {
 	let flags = (e.stunT ?? 0) > 0 ? ACTION_FLAG.staggered : 0;
 	if (guardRaised(e.guardT ?? 0)) flags |= ACTION_FLAG.guarding;
@@ -223,7 +183,6 @@ export function actionFlags(e: Entity): number {
 	return flags;
 }
 
-// The action-state every entity replicates when idle: no move, no live hitbox.
 export const IDLE_ACTION: ActionState = {
 	move: 'idle',
 	phase: 'recovery',
@@ -235,24 +194,19 @@ export const IDLE_ACTION: ActionState = {
 
 // --- Poise + hit-reaction (ADR 0017 §2/§3) ----------------------------------
 //
-// Poise is an accumulating pool that regulates whether a hit Staggers at all. A
-// hit always deals HP damage but only Staggers on a Poise BREAK (the pool driven to
-// 0). The pool regenerates under no pressure, so weak sustained chip eventually
-// breaks a target while a single light hit never does. Pure; the server tracks the
-// pool on the Entity and the client never sees it (off-wire).
+// Poise is an accumulating pool: a hit always deals HP damage but only Staggers on a
+// pool break, and the pool regenerates under no pressure. Off-wire — the server tracks
+// it, the client never sees it.
 
-// Super-armor (ADR 0017 §3): while an attacker is in its own attack wind-up, a hit
-// chips its Poise but cannot break it — so a jab can't interrupt a committed heavy
-// swing. A pure function of the swing timer, symmetric for every entity.
+// While an attacker is in its own wind-up, a hit chips its Poise but cannot break it,
+// so a jab can't interrupt a committed heavy swing (ADR 0017 §3).
 export function superArmorActive(e: Entity): boolean {
 	return swingPhase(e.attackT) === 'windup';
 }
 
-// Apply a hit's poise damage to an entity, returning its new pool and whether the
-// hit BROKE it. A break refills the pool (the Stagger is the cost); Super-armor
-// (wind-up) suppresses a break, clamping the chipped pool at 0 so the next hit out
-// of wind-up breaks immediately. Pure — the caller folds `poise` back onto the
-// Entity and, on a break, applies Hitstun + the Knockback impulse.
+// Apply poise damage, returning the new pool and whether the hit BROKE it. A break
+// refills the pool (the Stagger is the cost). Super-armor suppresses a break, clamping
+// the chipped pool at 0 so the next hit out of wind-up breaks immediately.
 export function applyPoiseDamage(
 	e: Entity,
 	poiseDamage: number,
@@ -266,27 +220,24 @@ export function applyPoiseDamage(
 	return { poise: next, broke: false };
 }
 
-// Regenerate an entity's Poise toward full by one tick (ADR 0017 §3). Always-on
-// regen is the MVP of "regenerates under no pressure" — a hit depletes far faster
-// than this refills, preserving the chip-then-break rhythm. Pure.
+// Always-on regen is the MVP of "regenerates under no pressure": a hit depletes far
+// faster than this refills, preserving the chip-then-break rhythm (ADR 0017 §3).
 export function regenPoise(e: Entity, dt: number): number {
 	const max = e.poiseMax ?? COMBAT.poise.max;
 	return Math.min(max, (e.poise ?? max) + COMBAT.poise.regen * dt);
 }
 
-// The action-state to broadcast for an entity, derived from its swing timer
-// (`attackT`). In this slice only Avatars run the phase machine; the snapshot
-// builder calls this for Avatars and replicates IDLE_ACTION for Monsters (their
-// offense rework is a later slice). Pure — the wire field is computed, not stored.
+// The action-state to broadcast for an entity, derived from its swing timer. Only
+// Avatars run the phase machine so far; the snapshot builder replicates IDLE_ACTION
+// for Monsters (their offense rework is a later slice).
 export function actionStateOf(e: Entity): ActionState {
 	const flags = actionFlags(e);
-	// The active body emote rides every action-state (ADR 0020 §9), so an observer
-	// renders the same Pose the owner predicts. It is authoritative entity state here,
-	// not a derived value — the swing-derived move slot below carries it through.
+	// The active body emote rides every action-state so an observer renders the same
+	// Pose the owner predicts (ADR 0020 §9).
 	const emote = e.emoteId ?? null;
 	const emoteT = e.emoteT ?? 0;
-	// A Dodge takes precedence over the swing for the `move` slot (you cannot do both
-	// at once); its active/recovery phases reuse the AttackPhase names (ADR 0017 §5).
+	// A Dodge takes precedence over the swing for the `move` slot — you cannot do both
+	// at once — reusing the AttackPhase names.
 	const dPhase = dodgePhase(e.dodgeT ?? 0);
 	if (dPhase)
 		return {
@@ -309,38 +260,25 @@ export function actionStateOf(e: Entity): ActionState {
 	};
 }
 
-// --- Guard: Block (ADR 0017 §5, ADR 0024) -----------------------------------
-//
-// Guard is ONE held input, modeled — like the swing — by a single scalar, `guardT` on
-// the Entity: seconds the Guard has been held this raise, counting UP from 0. With
-// Parry removed (ADR 0024) the held duration no longer gates anything: any raised Guard
-// is a Block, a frontal brace that chips HP and drains Poise toward a guard-break. Pure
-// helpers; the owner predicts `guardT`, the server owns it authoritatively, and
-// observers read the derived `flags` off the wire.
-
-// Whether a Guard is raised for a given `guardT` (time held): any positive value is a
-// held Block. The single source of truth for "is this entity guarding", used for both
-// rendering and hit resolution.
+// Guard is one held scalar `guardT` (seconds held, counting UP). With Parry removed
+// (ADR 0024) the held duration no longer gates anything — any raised Guard is a Block.
 export function guardRaised(guardT: number): boolean {
 	return guardT > 0;
 }
 
-// Whether `defender` faces TOWARD an attacker at `attackerX` — the frontal arc a Guard
-// protects (ADR 0017 §5). A hit from behind (the defender facing away) ignores Guard,
-// rewarding positioning without precise directional block inputs. An attacker sharing
-// the defender's column is treated as frontal (ambiguous → the defender's favour).
+// A hit from behind (the defender facing away) ignores Guard, rewarding positioning
+// without precise directional block inputs. An attacker sharing the defender's column
+// is treated as frontal (ambiguous → the defender's favour). (ADR 0017 §5)
 export function facingToward(defender: Entity, attackerX: number): boolean {
 	const side = Math.sign(attackerX - defender.x);
 	return side === 0 || side === defender.facing;
 }
 
-// The outcome of resolving a frontal hit against a (possibly) guarding defender (ADR
-// 0017 §5). PURE — it reads the defender's guard state + Poise and the incoming HP
-// damage and returns what to apply, so `stepZone` (server) and any prediction share one
-// gate and can't disagree:
-//   - 'none'  : no Guard (or a rear hit) — full damage, the caller's normal path.
-//   - 'block' : a raised frontal Guard — chip `hpDamage`, drain the defender's Poise,
-//               and on a pool break flag a guard-break Stagger of the defender.
+// The outcome of resolving a frontal hit against a (possibly) guarding defender:
+//   - 'none'  : no Guard (or a rear hit) — full damage.
+//   - 'block' : a raised frontal Guard — chip `hpDamage`, drain Poise, and on a pool
+//               break flag a guard-break Stagger.
+// One gate so server and prediction can't disagree (ADR 0017 §5).
 export interface GuardOutcome {
 	result: 'none' | 'block';
 	hpDamage: number; // HP the defender takes (chip block / full none)
@@ -361,11 +299,9 @@ export function resolveGuard(
 		defenderPoise: pool,
 		guardBroke: false,
 	};
-	// Not guarding, or struck from behind → Guard does nothing.
 	if (!guardRaised(guardT) || !facingToward(defender, attackerX)) return none;
-	// Block: chip the HP and drain Poise toward a guard-break. Reuse applyPoiseDamage so
-	// the guard-break uses the same accumulating-pool break the rest of combat does — a
-	// blocked flurry empties the pool and Staggers the turtling defender.
+	// Reuse applyPoiseDamage so a guard-break uses the same accumulating-pool break the
+	// rest of combat does — a blocked flurry empties the pool and Staggers a turtle.
 	const { poise, broke } = applyPoiseDamage(defender, cfg.blockPoise);
 	return {
 		result: 'block',
@@ -375,39 +311,30 @@ export function resolveGuard(
 	};
 }
 
-// The world cell the guard-stance glyph occupies: just past the defender's leading
-// edge at mid-height, so the brace reads as held up in front. Pure geometry, the guard
-// twin of swingPoseCell.
+// Just past the defender's leading edge at mid-height, so the brace reads as held up
+// in front.
 export function guardPoseCell(e: Entity): { x: number; y: number } {
 	return { x: e.facing === 1 ? e.x + BOX.w : e.x - 1, y: e.y + 1 };
 }
 
-// The guard-stance glyph: a solid brace held up in front while Blocking. Symmetric
-// (facing is handled by the cell position) — the seam the renderer blits with its colour.
 export function guardPoseGlyph(): string {
 	return '┃';
 }
 
 // --- Slash-arc + per-phase pose realization data (ADR 0017 §13a/b) ----------
-//
-// Pure, framework-agnostic geometry/glyph data the client blits with its own
-// colour. Kept in @mmo/shared (alongside the phase machine it realizes) so the
-// pose↔phase mapping is deterministic and unit-tested, not buried in the renderer.
+// Pure geometry the client blits with its own colour, kept here so the pose↔phase
+// mapping is deterministic and unit-tested rather than buried in the renderer.
 
-// The weapon-tip pose glyph for a swing phase, oriented for `facing`: cocked-back
-// on wind-up, swept level on active, trailing-low on recovery. The diagonal flips
-// with facing; the level bar is symmetric. A minimal per-phase pose accent (a full
-// body re-pose system is deferred) — but it is a pure function of (phase, facing),
-// exactly the seam ADR 0017 §13a names.
+// The weapon-tip glyph oriented for `facing`: cocked-back on wind-up, level on active,
+// trailing-low on recovery.
 export function swingPoseGlyph(phase: AttackPhase, facing: Facing): string {
 	const right = phase === 'windup' ? '╲' : phase === 'active' ? '─' : '╱';
 	if (facing === 1) return right;
 	return right === '╲' ? '╱' : right === '╱' ? '╲' : right;
 }
 
-// The world cell the pose-accent glyph occupies for an entity mid-swing: just past
-// its leading edge, raised on wind-up, mid on active, low on recovery — so the
-// accent reads as the weapon arcing down through the swing. Pure geometry.
+// Just past the leading edge, raised on wind-up, mid on active, low on recovery — so
+// the accent reads as the weapon arcing down through the swing.
 export function swingPoseCell(
 	e: Entity,
 	phase: AttackPhase,
@@ -418,19 +345,13 @@ export function swingPoseCell(
 	return { x: lead, y: row };
 }
 
-// The Dodge after-image is a self-contained client visual effect spawned on the
-// dodge-start edge and ticked on the render clock (see client `dodge-echo.ts`,
-// ADR 0017 §13e) — decoupled from this timing, so the dodge needs no pure pose helper
-// here. `dodgePhase`/`dodgeProgress` above still feed the replicated action-state.
+// (The Dodge after-image is a self-contained client effect on the render clock — see
+// client `dodge-echo.ts`, ADR 0017 §13e — so it needs no pure pose helper here.)
 
-// The unarmed swing telegraph for a swing phase (ADR 0017 §13b): the ONE shared tip
-// glyph posed as the weapon tip, plus the slash-arc sweep glyph during the active
-// phase. A PURE function of (move, phase, facing) ONLY — no entity, no renderer
-// state — so the pose↔phase mapping is deterministic and unit-tested, and every
-// observer renders the same telegraph. Per-weapon glyphs are gone with the reduced
-// stat block (ADR 0024): a weaponED swing is its composited WeaponSprite instead, so
-// this only ever draws for the unarmed (a Monster's) swing. Returns null when the
-// move isn't a basic swing (idle / future moves draw no telegraph).
+// The unarmed swing telegraph: the shared tip glyph, plus a slash-arc sweep glyph
+// during the active phase. Only ever drawn for an unarmed (Monster) swing — a weaponed
+// swing is its composited WeaponSprite instead (ADR 0024). Null when `move` isn't a
+// basic swing.
 export interface SwingPose {
 	glyph: string; // swing-tip telegraph, already oriented for facing
 	arc: string | null; // slash-arc sweep glyph (active phase only), else null
@@ -446,12 +367,10 @@ export function swingPose(
 	return { glyph, arc };
 }
 
-// The WeaponSprite frame-set an Avatar shows this frame (ADR 0018 §4): a PURE
-// function of its action — `idle` (the always-visible hold pose) for any non-swing,
-// else the swing phase's own frame id (`windup`/`active`/`recovery`). Pure and
-// shared so the owner's prediction and every observer's render agree on the
-// appearance frame-for-frame, the same family as swingPhase / swingProgress. The
-// `active` phase is an ordered SWEEP, indexed by `sweepIndex(swingProgress, len)`.
+// The WeaponSprite frame-set an Avatar shows this frame: `idle` for any non-swing,
+// else the swing phase's own frame id. Shared so owner-prediction and every observer
+// agree frame-for-frame; the `active` phase is an ordered sweep, indexed by
+// `sweepIndex` (ADR 0018 §4).
 export function weaponFrame(
 	move: MoveId,
 	phase: AttackPhase | null,
@@ -460,53 +379,40 @@ export function weaponFrame(
 	return phase;
 }
 
-// The frame of an `active` sweep that plays at a given `swingProgress` (ADR 0018 §4):
-// the sweep is partitioned into `len` equal slices, first frame at progress 0, last at
-// progress 1. Monotonic non-decreasing in progress; clamped to [0, len-1] so a progress
-// at or past the active-phase boundary still resolves to a real frame. Pure + shared so
-// owner-prediction and observer-render land on the SAME sweep frame. `len <= 1` → 0.
+// The sweep is partitioned into `len` equal slices, clamped to [0, len-1] so a progress
+// at or past the active-phase boundary still resolves to a real frame (ADR 0018 §4).
 export function sweepIndex(progress: number, len: number): number {
 	if (len <= 1) return 0;
 	const p = progress < 0 ? 0 : progress > 1 ? 1 : progress;
 	return Math.min(len - 1, Math.floor(p * len));
 }
 
-// One cell of a blade-edge arc: a curve glyph at an offset (dx,dy) FROM THE GRIP, in
-// cells. The renderer blits it in the weapon's accent colour at the grip-anchored
-// position (ADR 0018 §5/§6).
+// One cell of a blade-edge arc: a curve glyph at an offset (dx,dy) FROM THE GRIP.
 export interface ArcCell {
 	dx: number;
 	dy: number;
 	glyph: string;
 }
 
-// The blade tip pivots around the grip from up-forward at the start of the active phase
-// down to down-forward at its end — a quarter-circle on the leading side. Radius and
-// angular span are fixed by the engine (heft comes from phase DURATIONS, ADR 0018 §4),
-// so every weapon traces the same readable arc.
+// The blade tip pivots around the grip from up-forward to down-forward — a
+// quarter-circle on the leading side. Radius and span are fixed for every weapon; heft
+// comes from phase durations instead (ADR 0018 §4).
 const ARC_RADIUS = 3;
 const ARC_FROM = -Math.PI / 3; // up-forward at progress 0 (~-60°)
 const ARC_TO = Math.PI / 4; // down-forward at progress 1 (~+45°)
 const ARC_SMEAR = 3; // current tip + trailing samples
 const ARC_STEP = 0.16; // progress between trailing samples
 
-// The curve glyph for an arc cell at vertical offset `dy` from the grip, oriented for
-// facing: a steep diagonal above the hand, a level bar level with it, the mirror
-// diagonal below — so the smear reads as a quarter-circle traced top→bottom.
 function arcGlyph(dy: number, facing: Facing): string {
 	if (dy < 0) return facing === 1 ? '╲' : '╱';
 	if (dy > 0) return facing === 1 ? '╱' : '╲';
 	return '─';
 }
 
-// The blade-edge arc for an active-phase swing (ADR 0018 §5): a short fading smear of
-// curve glyphs tracing the blade TIP through its arc around the grip, biased by facing.
-// The returned cells are the current tip plus a couple of trailing samples (newest
-// first), each an offset FROM THE GRIP — so the eye reads the swing's speed and
-// direction. A PURE function of (progress, facing) only — no entity, no colour, not a
-// hitbox fill — so the owner's prediction and every observer's render trace the same arc.
-// Duplicate cells (rounding collisions between samples) are dropped, keeping the smear's
-// newest position. Call only during the active phase; other phases draw no arc.
+// A short fading smear tracing the blade tip through its arc: the current tip plus a
+// couple of trailing samples (newest first). Call only during the active phase.
+// Duplicate cells (rounding collisions between samples) are dropped, keeping the
+// newest position (ADR 0018 §5).
 export function bladeEdgeArc(progress: number, facing: Facing): ArcCell[] {
 	const head = progress < 0 ? 0 : progress > 1 ? 1 : progress;
 	const cells: ArcCell[] = [];
@@ -525,53 +431,38 @@ export function bladeEdgeArc(progress: number, facing: Facing): ArcCell[] {
 	return cells;
 }
 
-// --- CombatEvent: combat resolves into events; Effects are their projection (ADR 0019) ---
+// --- CombatEvent: the semantic fact of a combat interaction (ADR 0019) ------
 //
-// A CombatEvent is the resolved, *semantic* fact of a combat interaction — "target T
-// was hit / poise-broke / died / swatted, at (x,y), facing →, intensity N." Distinct
-// from an Effect (the presentation descriptor, ADR 0013) and a Particle (the client
-// realization). Shared-internal: it never rides the wire — the server projects it to
-// Effects via `effectsOf` BEFORE building each recipient's snapshot.
+// Distinct from an Effect (the presentation descriptor). Never rides the wire — the
+// server projects it to Effects via `effectsOf` before building each snapshot.
 export type CombatEventKind = 'hit' | 'break' | 'death' | 'swat';
 
-// The fields every CombatEvent shares, whatever its kind. `targetId` is the struck
-// subject (an Entity for hit/break/death, a Projectile for swat); `intensity` is the
-// damage dealt and drives particle count / sound volume (the presentation scaling
-// itself lives in `effectsOf`, not here). The kind-specific fields hang off the union
-// members below.
 interface CombatEventBase {
-	targetId: number;
+	targetId: number; // an Entity for hit/break/death, a Projectile for swat
 	x: number;
 	y: number;
-	intensity: number;
+	intensity: number; // damage dealt; drives particle count / sound volume
 }
 
-// A CombatEvent is discriminated on `kind` so each kind carries ONLY the fields it can
-// meaningfully hold — illegal combinations (a tinted `hit`, a sourced `death`, a radial
-// `swat`) are unrepresentable rather than merely unused:
-//   - `source` rides a predicted `hit` alone — it keys originator-suppression so the
-//     server drops the chip blood back to the predicting attacker (ADR 0013 §3). The
-//     "big moments" (break/death/swat) are source-less and reach everyone.
-//   - `tint` rides a `death` alone — the dead entity's body colour, so `effectsOf`
-//     recolours the gore burst to what died (#139).
-//   - `dir` is typed to the biases each kind can actually resolve to: a `death` is
-//     ALWAYS radial (0); a `swat` is NEVER radial (it only lands facing the shot, so
-//     ±1); only a `hit` spans both — 0 when the source shares the victim's column.
-//     It widens to `Effect.dir`, not `Facing`, where a body's facing cannot go radial.
+// Discriminated on `kind` so each kind carries only the fields it can meaningfully hold
+// — illegal combinations (a tinted `hit`, a sourced `death`, a radial `swat`) are
+// unrepresentable:
+//   - `source` rides a predicted `hit` alone — it keys originator-suppression (ADR
+//     0013 §3); the "big moments" (break/death/swat) are source-less and reach everyone.
+//   - `tint` rides a `death` alone — the dead entity's body colour, recoloured onto the
+//     gore burst (#139).
+//   - `dir` is typed to the biases each kind can resolve to: `death` is always radial
+//     (0), `swat` never is (±1), only `hit` spans both.
 export type CombatEvent =
 	| (CombatEventBase & { kind: 'hit'; dir: -1 | 0 | 1; source?: number })
 	| (CombatEventBase & { kind: 'break'; dir: -1 | 0 | 1 })
 	| (CombatEventBase & { kind: 'swat'; dir: Facing })
 	| (CombatEventBase & { kind: 'death'; dir: 0; tint?: Tint });
 
-// A CombatEvent at the struck Entity's centre, biased along the blow (ADR 0019). The
-// shared constructor both the server resolution and the client prediction build their
-// entity-targeted events with, so the resolved fact — and thus its projected Effect —
-// is computed in exactly one place. Builds the entity-centred kinds only; `death` and
-// `swat` have their own constructors (`deathEvent` carries a tint, `swatEvent` resolves
-// against a Projectile). `intensity` is the damage dealt (the presentation scaling lives
-// in `effectsOf`, not here). `source` is honoured for a `hit` alone — it is dropped on a
-// break, which reaches everyone in range (ADR 0013 §3).
+// The shared constructor both server resolution and client prediction build their
+// entity-targeted events with, so the resolved fact is computed in one place. Builds
+// the entity-centred kinds only (`death`/`swat` have their own constructors). `source`
+// is honoured for a `hit` alone — dropped on a break, which reaches everyone (ADR 0013 §3).
 export function combatEventAt(
 	kind: 'hit' | 'break',
 	target: Entity,
@@ -591,11 +482,9 @@ export function combatEventAt(
 	return e;
 }
 
-// A `death` CombatEvent at the dying entity's centre (ADR 0013 §1 / #139, ADR 0019): a
-// radial (dir 0), high-intensity burst tinted to the entity's body colour, so a kill
-// sprays entity-coloured gore in every direction. Carries no `source` — it reaches
-// everyone in range, the killer included. The death-site twin of combatEventAt; its
-// projection through `effectsOf` is byte-identical to the retired inline deathGoreEffect.
+// A radial, high-intensity burst tinted to the entity's body colour, so a kill sprays
+// entity-coloured gore in every direction. Source-less — it reaches everyone in range,
+// the killer included (ADR 0013 §1 / #139).
 export function deathEvent(e: Entity): CombatEvent {
 	return {
 		kind: 'death',
@@ -608,11 +497,9 @@ export function deathEvent(e: Entity): CombatEvent {
 	};
 }
 
-// A `swat` CombatEvent at the shot itself (ADR 0017 §8, ADR 0019): a Player's melee
-// frame shattered a hostile Projectile. Unlike the entity-targeted constructors this
-// resolves against a Projectile, so it carries the SHOT's own position (not an entity-
-// box centre) and id, with the shot's `damage` as intensity. `dir` is the clink bias
-// (back along the swat). Source-less — the clink reaches everyone in range.
+// A Player's melee frame shattered a hostile Projectile. Resolves against the shot, so
+// it carries the SHOT's own position and id (not an entity-box centre). `dir` is the
+// clink bias, back along the swat. Source-less (ADR 0017 §8).
 export function swatEvent(pr: Projectile, dir: Facing): CombatEvent {
 	return {
 		kind: 'swat',
@@ -624,14 +511,10 @@ export function swatEvent(pr: Projectile, dir: Facing): CombatEvent {
 	};
 }
 
-// The presentation projection of a CombatEvent (ADR 0019): the single, shared, pure
-// home for the semantic→presentational mapping — `hit → blood`, `break → impact`,
-// `death → gore`, `swat → impact` — and for the per-kind look (intensity scaling, the
-// originator-suppression `source`). `hit` carries its `source` through so the server
-// suppresses the chip blood back to the predicting attacker; `break`/`death`/`swat`
-// drop it, so those "big moments" reach everyone in range (ADR 0017 §13c/d). A lethal
-// blow voices `death` (gore), not death+hit — the suppression is in choosing the kind
-// (ADR 0014 §2). Returns an array so a future kind can fan out to several Effects.
+// The single home for the semantic→presentational mapping (hit→blood, break→impact,
+// death→gore, swat→impact). A lethal blow voices `death` alone, not death+hit — the
+// suppression is in choosing the kind (ADR 0014 §2). Returns an array so a future kind
+// can fan out to several Effects.
 export function effectsOf(e: CombatEvent): Effect[] {
 	switch (e.kind) {
 		case 'hit': {
@@ -646,7 +529,8 @@ export function effectsOf(e: CombatEvent): Effect[] {
 			return [fx];
 		}
 		case 'break':
-			// Heavier + sharper than a chip of the same damage (ADR 0017 §13d).
+			// Heavier + sharper than a chip of the same damage: the poise.max bump makes a
+			// Stagger read visibly bigger (ADR 0017 §13d).
 			return [
 				{
 					kind: 'impact',
@@ -657,8 +541,6 @@ export function effectsOf(e: CombatEvent): Effect[] {
 				},
 			];
 		case 'death': {
-			// The gore recolours to the dead entity's body (#139): the tint rides the event,
-			// so it projects onto the burst. Omitted when the event carries none.
 			const fx: Effect = {
 				kind: 'gore',
 				x: e.x,
@@ -670,10 +552,8 @@ export function effectsOf(e: CombatEvent): Effect[] {
 			return [fx];
 		}
 		case 'swat':
-			// A Player's melee frame shattering a hostile shot (ADR 0017 §8, ADR 0019): a
-			// light clink, NOT a Poise break — so its impact reads at the shot's own damage
-			// with NO poise.max bump (the only `impact` projection that doesn't). Source-less,
-			// like every "big moment", so the clink + camera juice reaches everyone in range.
+			// A light clink, NOT a Poise break — so its impact reads at the shot's own damage
+			// with NO poise.max bump (the only `impact` projection that doesn't) (ADR 0017 §8).
 			return [
 				{ kind: 'impact', x: e.x, y: e.y, intensity: e.intensity, dir: e.dir },
 			];
@@ -696,12 +576,9 @@ export function aabbOverlap(a: Box, b: Box): boolean {
 	);
 }
 
-// The blood Effect a landed hit on a Monster emits (ADR 0013): one burst at the
-// Monster's centre, biased along the attacker's facing, scaled by the damage
-// dealt. Shared so the authoritative `stepZone` and the client's outgoing-hit
-// prediction produce identical Effects. `source` attributes the burst to the
-// attacking session for originator-suppression; the client predictor omits it
-// (predicted Effects are never reported upward).
+// The blood Effect a landed hit on a Monster emits, shared so `stepZone` and the
+// client's outgoing-hit prediction produce identical Effects. `source` keys
+// originator-suppression; the client predictor omits it (ADR 0013).
 export function bloodEffect(
 	m: Entity,
 	attackerFacing: Facing,
@@ -719,14 +596,10 @@ export function bloodEffect(
 	return e;
 }
 
-// The impact Effect a Poise-break emits (ADR 0017 §13d): a heavier, sharper burst
-// than a chip `blood`, biased along the attacker's facing and scaled up from the
-// damage dealt so a Stagger reads visibly bigger than a chip. It is the wire signal
-// the client realizes into the impact-spark particle burst AND keys hitstop +
-// camera-kick off (a break is the only "big moment" in this slice). Like the death
-// gore burst it carries NO `source` — it is delivered to everyone in range including
-// the attacker, who needs it to fire the camera-kick (the client predicts only chip
-// blood, so the spark never double-renders).
+// The impact Effect a Poise-break emits: the wire signal the client realizes into the
+// spark burst and keys hitstop + camera-kick off. Source-less — delivered to everyone
+// including the attacker, who needs it for the camera-kick (the client predicts only
+// chip blood, so the spark never double-renders) (ADR 0017 §13d).
 export function impactEffect(
 	m: Entity,
 	attackerFacing: Facing,
@@ -741,12 +614,9 @@ export function impactEffect(
 	};
 }
 
-// The blood Effect an Avatar taking damage emits (ADR 0013, #132): one burst at
-// the Avatar's centre, biased AWAY from the damage source (`dir` 0 = radial when
-// the direction is ambiguous), scaled by the damage taken. Unlike monster-hit
-// blood this is server-sourced only — never predicted — and carries NO `source`,
-// so the per-recipient snapshot filter delivers it to everyone in range including
-// the victim, landing in sync with the hurt-flash.
+// Server-sourced only (never predicted) and source-less, so the per-recipient snapshot
+// filter delivers it to everyone including the victim, in sync with the hurt-flash. `dir`
+// 0 = radial when the source direction is ambiguous (ADR 0013, #132).
 export function hurtBloodEffect(
 	a: Entity,
 	dir: -1 | 0 | 1,
@@ -762,12 +632,9 @@ export function hurtBloodEffect(
 }
 
 // Does this swing's `hitbox` NEWLY strike `target` — overlapping it and not yet in the
-// per-swing `swingHits` registry (ADR 0017 §2)? The single shared swing-hit gate both
-// the server's hit loop and the client's prediction consult, so authority and
-// prediction can no longer diverge on "who did this swing hit." A null hitbox (no live
-// swing this tick) never strikes. Pure; the caller folds the struck id into its
-// registry. This replaces the inert `m.hurtT <= 0` gate the client used to dedup with
-// (a player hit never sets a Monster's hurtT, so that gate never closed — ADR 0019).
+// per-swing `swingHits` registry? One shared gate for the server's hit loop and the
+// client's prediction, so they can't diverge on who a swing hit. A null hitbox never
+// strikes. The caller folds the struck id into its registry (ADR 0017 §2).
 export function swingHitsTarget(
 	hitbox: Box | null,
 	swingHits: ReadonlySet<number>,
@@ -780,15 +647,10 @@ export function swingHitsTarget(
 	);
 }
 
-// The optimistic `hit` CombatEvents the local Avatar's live swing produces this tick
-// (ADR 0019): each Monster its `hitbox` newly strikes — gated by the SAME per-swing
-// `swingHits` registry the server uses (not the inert hurtT check that spammed) —
-// becomes one `hit` event at the Monster's centre. The caller projects them through
-// `effectsOf` for zero-latency blood and folds each `targetId` into its `swingHits`,
-// so a multi-tick active window yields exactly one hit per target per swing. Carries
-// no `source` — predicted events are never reported upward. Pure; mutates nothing. No
-// rollback on mispredict: a stray splat on a swing the server scores as a miss is
-// acceptable. Replaces `predictHitEffects`.
+// The optimistic `hit` events the local Avatar's live swing produces this tick, gated
+// by the same `swingHits` registry the server uses. The caller projects them through
+// `effectsOf` for zero-latency blood. No rollback on mispredict: a stray splat on a
+// swing the server scores as a miss is acceptable (ADR 0019).
 export function predictHits(
 	hitbox: Box | null,
 	attackerFacing: Facing,
@@ -804,26 +666,20 @@ export function predictHits(
 	return events;
 }
 
-// The one shared, pure resolution of an Avatar's combat Intent for a tick: the
-// swing/skill/cooldown/hitbox/damage gate that both the authoritative server
-// step (`resolveAvatarIntent` in zone.ts) and the client's optimistic
-// prediction (the frame loop in client/src/index.ts) run, so the two can never
-// diverge. Owns the per-tick decay of `attackT` AND every skill cooldown (the
-// caller decays `hurtT` separately — that stays with vitals). Pure: inputs are
-// never mutated; the returned `cooldowns` is a fresh clone.
+// The one shared resolution of an Avatar's combat Intent for a tick, run by both the
+// authoritative server step and the client's optimistic prediction so the two can't
+// diverge. Owns the per-tick decay of `attackT` and every skill cooldown (the caller
+// decays `hurtT` separately — that stays with vitals).
 //
-// `dt` is in SECONDS, consistent with stepZone (which clamps dtMs/1000 before
-// calling) and the client (which passes its own clamped `dtSec`).
+// `dt` is in SECONDS, like stepZone and the client's clamped `dtSec`.
 export function resolveCombat(
 	avatar: Entity,
 	cooldowns: Record<string, number>,
 	level: number,
 	cls: PlayerClass,
-	// `dodge` is the caller's ALREADY-GATED decision (ADR 0017 §5): the impulse site
-	// runs the full `canStartDodge` (grounded + moving) before the hop ungrounds the
-	// body and passes the result here, so this only re-checks the tick-stable timing
-	// (`dodgeReady`) — it never re-derives the movement conditions post-physics. `guard`
-	// raises the held Guard this tick (ADR 0017 §5).
+	// `dodge` is the caller's ALREADY-GATED decision: the impulse site runs the full
+	// `canStartDodge` before the hop ungrounds the body, so this only re-checks the
+	// tick-stable `dodgeReady` timing and never re-derives movement post-physics.
 	intent: {
 		attack?: boolean;
 		skill?: number;
@@ -836,39 +692,25 @@ export function resolveCombat(
 	hitbox: Box | null;
 	damage: number;
 	attackT: number;
-	// Time remaining in the Dodge hop (ADR 0017 §5): the caller folds this back onto
-	// the Entity, and on `dodgeStarted` applies the hop impulse to its momentum body.
-	dodgeT: number;
-	// Time remaining in the post-recovery re-dodge lockout (the spam-gate); the caller
-	// folds it back onto the Entity as `dodgeCdT`. Outlives `dodgeT` by `cooldown`.
-	dodgeCdT: number;
+	dodgeT: number; // caller folds back onto the Entity; on `dodgeStarted` applies the hop impulse
+	dodgeCdT: number; // the re-dodge lockout spam-gate; outlives `dodgeT` by `cooldown`
 	dodgeStarted: boolean;
 	cooldowns: Record<string, number>;
 	skillFired?: Skill;
-	// True on the tick a fresh swing begins (ADR 0017 §2): the caller clears the
-	// per-swing hit list so the new swing can connect again, the rate-limiter that
-	// replaced automatic post-hit i-frames.
+	// True the tick a fresh swing begins: the caller clears the per-swing hit list so
+	// the new swing can connect again (ADR 0017 §2).
 	swingStarted: boolean;
-	// Seconds the Guard has been held this raise (ADR 0017 §5): accumulates while the
-	// guard intent is held and the entity is free to guard, resets to 0 otherwise. The
-	// caller folds it onto `guardT`; rendering + hit resolution derive the Block from it.
-	guardT: number;
+	guardT: number; // seconds the Guard has been held this raise; 0 when not guarding
 } {
 	const attackT = Math.max(0, avatar.attackT - dt);
 	const decayed: Record<string, number> = {};
 	for (const [id, cd] of Object.entries(cooldowns))
 		decayed[id] = Math.max(0, cd - dt);
 
-	// The Dodge (ADR 0017 §5) resolves first: it both gates and is gated by the swing
-	// (you cannot dodge mid-swing, nor swing on the tick a dodge starts). A fresh hop
-	// loads DODGE_TOTAL only when the Avatar is free (`canStartDodge`); otherwise the
-	// timer just decays. The hop IMPULSE is applied by the caller (it owns the
-	// client-authoritative momentum body, ADR 0001) — here we only track its timing
-	// for the i-frame window + replication.
-	// Dodge is the L4 rung of the capability ladder (ADR 0024 §5): the i-frame timer
-	// only loads once the verb is unlocked, so a below-L4 Avatar can never gain i-frames
-	// even if a stale/forged intent asks for a hop. The client mirror-gates the impulse
-	// at the call site on the same level, so prediction and authority agree.
+	// The Dodge resolves first: it both gates and is gated by the swing. The hop impulse
+	// is applied by the caller (which owns the momentum body, ADR 0001) — here we only
+	// track its timing. The i-frame timer only loads once the verb is unlocked, so a
+	// stale/forged intent can't buy a below-L4 Avatar i-frames (ADR 0024 §5).
 	const dodgeStarted =
 		(intent.dodge ?? false) &&
 		dodgeReady(avatar) &&
@@ -876,36 +718,21 @@ export function resolveCombat(
 	const dodgeT = dodgeStarted
 		? DODGE_TOTAL
 		: Math.max(0, (avatar.dodgeT ?? 0) - dt);
-	// The spam-gate lockout (ADR 0017 §5): armed to the full lockout on the start tick,
-	// otherwise just decays — so it lingers `cooldown` past `dodgeT` and bars the next
-	// hop. The caller folds this onto `avatar.dodgeCdT`; `canStartDodge` reads it back.
 	const dodgeCdT = dodgeStarted
 		? DODGE_LOCKOUT
 		: Math.max(0, (avatar.dodgeCdT ?? 0) - dt);
 
-	// The basic swing is now a wind-up → active → recovery phase machine (ADR 0017
-	// §1). A fresh swing starts only when idle (the prior swing has fully recovered),
-	// loading the full sequence into attackT; the resulting phase is wind-up, so the
-	// hitbox is NOT live on the start tick. The melee hitbox is projected on every
-	// tick the swing is in its `active` phase — a Monster's i-frame (hurtT) gates the
-	// multi-tick active window down to a single hit. A fired Skill still overrides the
-	// shared hitbox slot and keeps its instant cooldown behavior (active-skill rework
-	// is out of this slice's scope).
-	// The basic swing, Dodge, and Guard are mutually exclusive (ADR 0017 §5): a swing
-	// can't start while a Dodge is in flight (including the tick it begins) or while the
-	// Guard is held, and the Guard can't rise mid-swing, mid-Dodge, or while Staggered —
-	// so a hop, a raised brace, and an attack never coexist on one entity.
-	// Block is the L2 rung of the capability ladder (ADR 0024 §5): the Guard only rises
-	// once the verb is unlocked, so a level-1 Avatar cannot brace. Gating here (the one
-	// shared resolver) covers both hit resolution and the client's guard-stance render.
+	// Swing, Dodge, and Guard are mutually exclusive: a swing can't start mid-Dodge (even
+	// the tick it begins) or while guarding, and the Guard can't rise mid-swing, mid-Dodge,
+	// or while Staggered (ADR 0017 §5). A fresh swing only starts from idle, so its start
+	// tick is in wind-up and the hitbox is not yet live. Block only rises once the verb is
+	// unlocked, so a level-1 Avatar cannot brace (ADR 0024 §5).
 	const guarding = intent.guard === true && capabilityUnlocked('block', level);
 	const starting =
 		(intent.attack ?? false) && attackT <= 0 && dodgeT <= 0 && !guarding;
 	const nextAttackT = starting ? SWING_TOTAL : attackT;
-	// Accumulate the held-guard timer only when free to guard (not mid-swing, not
-	// mid-Dodge, not Staggered); any other tick resets it to 0 (a release drops the
-	// brace). Any positive value reads as a raised Block; clamped so an indefinite hold
-	// doesn't grow `guardT` unbounded.
+	// Clamped so an indefinite hold doesn't grow `guardT` unbounded; any other tick
+	// resets it to 0 (a release drops the brace).
 	const canGuard =
 		guarding && nextAttackT <= 0 && dodgeT <= 0 && (avatar.stunT ?? 0) <= 0;
 	const guardT = canGuard
@@ -941,23 +768,14 @@ export function resolveCombat(
 	};
 }
 
-// The guardless victim-resolution pass (ADR 0022 slice 2): apply player-faction
-// Strikes to the Monsters they newly strike, by the ONE uniform rule — overlapping +
-// hittable + opposing-Faction + not-already-hit. This is the Avatar-swing → Monster
-// direction lifted out of `stepZone`'s monster loop and off the positional
-// `hitboxes[]`/`damages[]` handoff slice 1 left. Guardless by design: Monsters have no
-// Guard hub (that is `resolveHitsOnAvatars`, slice 3), so this is poise / break / death
-// only. Monster strikes against Avatars and projectile contacts stay on their current
-// code path until slices 3/4.
+// Apply player-faction Strikes to the Monsters they newly strike. Guardless by design:
+// Monsters have no Guard hub (that is `resolveHitsOnAvatars`), so this is poise / break
+// / death only.
 //
-// `swingHits` is the per-swing dedup ledger as a keyed side-table (`attackerId → hit
-// victim ids`), READ AND WRITTEN here at the resolution site rather than carried on the
-// Strike (ADR 0022): a melee hitbox is live for multiple ticks and must hit each victim
-// once per swing, a property of the multi-contact attack instance, not of the Strike.
-// The first Strike to land on a given Monster deals the hit (strike order is today's
-// nearest-attacker-wins / lowest-array-index), recording the victim so the swing can't
-// double-hit it. Returns fresh Monsters (inputs unmutated) + the blood/impact Effects;
-// only the `swingHits` Map is mutated.
+// `swingHits` is the per-swing dedup ledger (`attackerId → hit victim ids`), kept at the
+// resolution site rather than on the Strike: a melee hitbox is live for multiple ticks
+// and must hit each victim once per swing — a property of the attack instance, not the
+// Strike. The first Strike to land on a Monster deals the hit (ADR 0022).
 export function resolveHitsOnMonsters(
 	monsters: Entity[],
 	strikes: Strike[],
@@ -967,8 +785,7 @@ export function resolveHitsOnMonsters(
 	const resolved = monsters.map((m0) => {
 		let m = m0;
 		for (const s of strikes) {
-			// Opposing-Faction only (ADR 0022): a `players` Strike resolves against Monsters;
-			// a `monsters` Strike never selects a Monster victim, so PvE holds by construction.
+			// Opposing-Faction only, so PvE holds by construction (ADR 0022).
 			if (s.faction !== 'players') continue;
 			const hits = swingHits.get(s.attackerId) ?? new Set<number>();
 			if (!swingHitsTarget(s.hitbox, hits, m)) continue;
@@ -988,26 +805,25 @@ export function resolveHitsOnMonsters(
 				contributors,
 			};
 			if (broke) {
-				// Poise break → Stagger: the SHARED Knockback impulse (Mass-scaled) + upward pop
-				// + Hitstun — no weapon reshapes the throw (ADR 0024). The break is a source-less
-				// "big moment" — its impact reaches everyone in range including the attacker, who
-				// needs it for the camera-kick (ADR 0017 §13d).
+				// Poise break → Stagger: knockback + upward pop + Hitstun (no weapon reshapes the
+				// throw, ADR 0024). Source-less, so the impact reaches everyone including the
+				// attacker, who needs it for the camera-kick.
 				m = applyImpulse(m, COMBAT.knockback * s.facing, -COMBAT.knockbackUp);
 				m = { ...m, stunT: COMBAT.hitstun };
 				effects.push(
 					...effectsOf(combatEventAt('break', m, s.facing, s.damage)),
 				);
 			} else {
-				// Chip: HP + Poise damage, no Stagger. `source` suppresses the blood back to the
-				// attacker, who already predicted it through the same projection (ADR 0013 §3).
+				// Chip: `source` suppresses the blood back to the attacker, who already predicted
+				// it through the same projection (ADR 0013 §3).
 				effects.push(
 					...effectsOf(
 						combatEventAt('hit', m, s.facing, s.damage, s.attackerId),
 					),
 				);
 			}
-			// First Strike to land deals the hit; a second attacker re-hits only via a NEW
-			// swing (its own ledger), exactly as the old monster-loop `break` did.
+			// First Strike to land deals the hit; a second attacker re-hits only via a new
+			// swing (its own ledger).
 			break;
 		}
 		return m;
@@ -1015,13 +831,6 @@ export function resolveHitsOnMonsters(
 	return { monsters: resolved, effects };
 }
 
-// Avatar-scoped inputs the per-Avatar combat fold reads this tick (ADR 0022): the
-// swing/skill/cooldown/Dodge/Guard gate has no view of the Monster set or an authority
-// flag — it is a deep, narrow-interface unit folding one Avatar's own state. `weapon`
-// is the resolved stat block (the caller does the `weaponById` lookup). Skill cooldowns
-// are NO LONGER passed here: slice 2 settled their home onto the Entity
-// (`avatar.skillCooldowns`), so the fold reads and folds them with the rest of the
-// Avatar's state and its return can collapse to `{ avatar, strikes }`.
 export interface AvatarCombatCtx {
 	level: number;
 	cls: PlayerClass;
@@ -1029,26 +838,13 @@ export interface AvatarCombatCtx {
 	dt: number; // SECONDS, like resolveCombat
 }
 
-// The one shared per-Avatar combat fold (ADR 0022 slice 1): runs the `resolveCombat`
-// gate and folds its delta back onto the Avatar — the swing/skill `attackT`, the Dodge
-// timers, the held-Guard timer, and the per-swing `swingHits` reset on a fresh swing
-// (ADR 0017 §2) — returning the projected `hitbox`/`damage` for the CALLER to apply.
-// Both authority paths run THIS function so they cannot diverge: the server's
-// `stepAvatars` maps it over its Avatar set, and the networked client calls it directly
-// for its own Avatar in prediction (replacing the inline fold that was never tested).
-//
-// It owns the fold ONLY: it never applies hits to Monsters (`resolveHitsOnMonsters` on
-// the server and the client's `predictHits` keep that asymmetric, authority-vs-
-// prediction path) and never touches `hurtT`/emote/log, which stay with each caller's
-// vitals advance. Pure: the input `avatar` is not mutated; the returned `avatar` (with
-// its fresh `skillCooldowns`) and `strikes` are fresh.
-//
-// The return is `{ avatar, strikes }` (ADR 0022): a swinging Avatar PROJECTS a `Strike`
-// (usually 0 or 1) for `resolveHitsOnMonsters` to apply, instead of the slice-1 bare
-// `hitbox`/`damage` pair. Skill cooldowns rode the slice-1 return because they had no
-// home on the Entity; slice 2 settled them onto `avatar.skillCooldowns`, so they fold
-// back through the returned avatar and the gate's `skillFired` is no longer surfaced —
-// the caller derives a skill-fire from the cooldown delta where it builds the log.
+// The one shared per-Avatar combat fold: runs the `resolveCombat` gate and folds its
+// delta back onto the Avatar, returning a projected `Strike` for the caller to apply.
+// Both authority paths run this so they can't diverge — the server maps it over its
+// Avatar set, the client calls it for its own Avatar in prediction. It owns the fold
+// only: it never applies hits to Monsters (that stays on the asymmetric
+// `resolveHitsOnMonsters` / `predictHits` paths) and never touches `hurtT`/emote/log,
+// which stay with each caller's vitals advance (ADR 0022).
 export function stepAvatarCombat(
 	avatar: Entity,
 	intent: {
@@ -1074,27 +870,17 @@ export function stepAvatarCombat(
 	const folded: Entity = {
 		...avatar,
 		attackT: r.attackT,
-		// The i-frame Dodge timer + its post-recovery cooldown, and the held-Guard timer
-		// (ADR 0017 §5): folded by the same gate on server and client so a hop or a raise
-		// can't disagree across the two.
 		dodgeT: r.dodgeT,
 		dodgeCdT: r.dodgeCdT,
 		guardT: r.guardT,
-		// Skill cooldowns now live on the Entity (ADR 0022 slice 2): the gate's decayed +
-		// freshly-armed timers fold back here, so the cooldown state rides the avatar rather
-		// than a return field. `resolveCombat` returned a fresh clone, so this is not shared.
 		skillCooldowns: r.cooldowns,
 		// A fresh swing clears the per-swing hit list so it can connect again; an in-flight
-		// swing keeps its list so it lands on each target only once (ADR 0017 §2). This is
-		// the verbatim `swingStarted ? [] : prev` reset that used to live in BOTH the server
-		// fold and the client prediction loop — now single-sourced here.
+		// swing keeps its list so it lands on each target only once (ADR 0017 §2).
 		swingHits: r.swingStarted ? [] : (avatar.swingHits ?? []),
 	};
-	// Project the swing/skill into a Strike (ADR 0022): a live hitbox this tick becomes one
-	// player-faction melee Strike; no live box → no Strike. `faction: 'players'` is carried
-	// from the start so PvE holds by construction even though only players→monsters resolves
-	// this slice. The per-swing dedup ledger is NOT on the Strike — it lives at the
-	// resolution site. A fired Skill already overrode `r.hitbox`/`r.damage` inside the gate.
+	// A live hitbox this tick becomes one player-faction melee Strike; no live box → no
+	// Strike. The per-swing dedup ledger is not on the Strike — it lives at the resolution
+	// site (ADR 0022).
 	const strikes: Strike[] =
 		r.hitbox !== null
 			? [

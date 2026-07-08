@@ -1,4 +1,3 @@
-// The Sprite class, art, and entity→sprite registry now live in @mmo/shared so
-// both the game and the forge preview render from one source. This barrel
-// keeps only the client-side art PALETTE (keyed colours are opentui RGBA).
+// The Sprite class, art, and registry live in @mmo/shared; this barrel re-exports
+// only the client-side art PALETTE.
 export { PALETTE } from './palette';

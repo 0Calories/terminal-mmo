@@ -115,10 +115,8 @@ describe('zone rename', () => {
 		writePair();
 		expect(run(['rename', 'town-01', 'hub'], deps())).toBe(0);
 
-		// the file moved…
 		expect(existsSync(join(root, 'town-01.zone'))).toBe(false);
 		expect(existsSync(join(root, 'hub.zone'))).toBe(true);
-		// …and the sibling Portal now points at the new id
 		const field = readFileSync(join(root, 'field-01.zone'), 'utf8');
 		expect(field).toContain('"target":"hub"');
 		expect(field).not.toContain('town-01');

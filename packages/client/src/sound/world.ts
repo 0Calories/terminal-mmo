@@ -1,33 +1,23 @@
-// The world-sound feed (ADR 0014): turns a tick's authoritative combat Effects
-// into spatialized SoundEffect cues. Pure and headlessly testable — the kind→sound
-// mapping, death-wins suppression, and pan/distance math all live here; the
-// SoundSystem just plays the cues this returns. Mirrors how `SPAWN_MAP` turns the
-// same Effects into particles (the audible twin of the visible burst), reusing the
-// authoritative `blood`/`gore` Effects already on the snapshot so the world feed
-// needs no new wire field, and another Avatar's combat is audible for free.
+// The world-sound feed (ADR 0014): turns a tick's combat Effects into spatialized cues.
+// Reuses the `blood`/`gore` Effects already on the snapshot (the audible twin of the
+// visible burst), so it needs no new wire field and another Avatar's combat is audible free.
 
 import type { Effect, EffectKind } from '@mmo/shared';
 import type { SoundKind } from './registry';
 
-// Effect kind → the SoundEffect it voices. `blood` (every landed/taken hit) → hit;
-// `gore` (the radial dir:0 death burst, Monster or Avatar) → death. The split is
-// driven by the explicit death-marker kind, never an intensity threshold on blood,
-// so audio stays decoupled from combat's damage scale. Death is the kill's voice:
-// a lethal blow emits both a directional `blood` and a coincident radial `gore`, and
-// `effectSoundCues` silences that blood so a kill plays death, not hit+death.
+// Effect kind → the SoundEffect it voices. The split is the explicit `gore` marker, not
+// an intensity threshold, so audio stays decoupled from the damage scale. A lethal blow
+// emits both `blood` and `gore`; `effectSoundCues` silences the blood so a kill plays death.
 export const EFFECT_SOUND_MAP: Record<EffectKind, SoundKind> = {
 	blood: 'hit',
 	gore: 'death',
-	// A Poise-break or a swat (ADR 0017) reuses the meaty `hit` voice — the heavier
-	// hitstop + camera-kick carry the "this one landed harder" weight; a dedicated break
-	// sound is deferred with the rest of the combat-audio pass.
+	// A break or swat reuses the `hit` voice — hitstop + camera-kick carry the extra weight;
+	// a dedicated break sound is deferred (ADR 0017).
 	impact: 'hit',
 };
 
-// Hard cutoff radius (world cells, horizontal): an Effect farther than this from
-// the camera centre is inaudible and skipped entirely — the audio analogue of
-// "off-camera Effects skipped" for particles, and a free auto-mix that fades a busy
-// Zone down to the action near the Player.
+// Hard cutoff radius (world cells, horizontal): an Effect farther than this from the
+// camera centre is skipped — a free auto-mix that fades a busy Zone to the nearby action.
 export const AUDIBLE_RADIUS = 60;
 
 export interface SpatialCue {
@@ -39,11 +29,9 @@ export interface SoundCue extends SpatialCue {
 	kind: SoundKind;
 }
 
-// Spatialize a world x against the camera centre: `pan` by horizontal offset
-// (saturating at the screen edge so anything off-screen is hard-panned, not beyond
-// ±1), `volume` by linear distance falloff to zero at the cutoff. Vertical position
-// is IGNORED — a sound above or below reads the same as one level with you. Returns
-// null past the cutoff radius (the caller skips it entirely).
+// Spatialize a world x against the camera centre: `pan` saturates at the screen edge,
+// `volume` falls off linearly to zero at the cutoff. Vertical position is IGNORED.
+// Returns null past the cutoff radius (the caller skips it).
 export function spatialize(
 	x: number,
 	centerX: number,
@@ -58,11 +46,9 @@ export function spatialize(
 	return { pan, volume };
 }
 
-// Turn one tick's combat Effects into the spatialized cues to play. Death wins:
-// each `gore` emits a death cue and suppresses any `blood` at the same site — the
-// lethal blow's directional blood and the death's radial gore share the dying
-// entity's exact centre in the same tick, so an exact (x,y) key match is reliable.
-// Out-of-range Effects are dropped; vertical position never affects pan/volume.
+// Turn a tick's combat Effects into cues. Death wins: each `gore` suppresses any `blood`
+// at the same site — both share the dying entity's exact centre that tick, so an exact
+// (x,y) key match is reliable. Out-of-range Effects are dropped.
 export function effectSoundCues(
 	effects: readonly Effect[],
 	centerX: number,
