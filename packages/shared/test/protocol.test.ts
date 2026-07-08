@@ -223,6 +223,28 @@ test('buy (client -> server) round-trips the catalog index (#273, ADR 0025)', ()
 	expect(decoded).toEqual(msg);
 });
 
+test('createAvatar (client -> server) round-trips the chosen Cosmetics (#302, ADR 0028)', () => {
+	const msg: ClientMessage = {
+		t: 'createAvatar',
+		cosmetics: { hue: 4, hat: 1, nameplate: 3, form: 0 },
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('createAvatar clamps an out-of-range cosmetic index on decode', () => {
+	// Cosmetics decode is defensive like `hello`: a garbled/forward-version index falls back
+	// to 0 per field so the renderer is never handed a stray index — the same trust boundary.
+	const encoded = encodeClientMessage({
+		t: 'createAvatar',
+		cosmetics: { hue: 2, hat: 250, nameplate: 1, form: 250 },
+	});
+	expect(decodeClientMessage(encoded)).toEqual({
+		t: 'createAvatar',
+		cosmetics: { hue: 2, hat: 0, nameplate: 1, form: 0 },
+	});
+});
+
 test('notice (server -> client) round-trips the sender-only system line', () => {
 	const msg: ServerMessage = {
 		t: 'notice',
@@ -232,16 +254,21 @@ test('notice (server -> client) round-trips the sender-only system line', () => 
 	expect(decoded).toEqual(msg);
 });
 
-test('welcome round-trips the assigned session, zone, tick rate, and durable handle', () => {
-	const msg: ServerMessage = {
+test('welcome round-trips the session, zone, tick rate, durable handle, and isNew verdict', () => {
+	const returning: ServerMessage = {
 		t: 'welcome',
 		sessionId: 7,
 		zoneId: 'field-01',
 		tickRate: 20,
 		handle: 'Trinity',
+		isNew: false,
 	};
-	const decoded = decodeServerMessage(encodeServerMessage(msg));
-	expect(decoded).toEqual(msg);
+	expect(decodeServerMessage(encodeServerMessage(returning))).toEqual(
+		returning,
+	);
+	// The new-account verdict (#302) round-trips as its own value, not folded into a default.
+	const fresh: ServerMessage = { ...returning, isNew: true };
+	expect(decodeServerMessage(encodeServerMessage(fresh))).toEqual(fresh);
 });
 
 test('a pre-auth welcome (no trailing handle) decodes handle as empty', () => {
@@ -254,10 +281,14 @@ test('a pre-auth welcome (no trailing handle) decodes handle as empty', () => {
 		zoneId: 'field-01',
 		tickRate: 20,
 		handle: 'Trinity',
+		isNew: true,
 	});
+	// Strip the trailing isNew byte (#302) AND the durable-handle field (u32 length prefix +
+	// bytes), leaving a pre-auth welcome: decode must not throw, the absent handle becomes ''
+	// and the absent isNew defaults to false (a returning account, so no creator shows).
 	const truncated = encoded.subarray(
 		0,
-		encoded.length - 4 - new TextEncoder().encode('Trinity').length,
+		encoded.length - 1 - 4 - new TextEncoder().encode('Trinity').length,
 	);
 	expect(decodeServerMessage(truncated)).toEqual({
 		t: 'welcome',
@@ -265,6 +296,7 @@ test('a pre-auth welcome (no trailing handle) decodes handle as empty', () => {
 		zoneId: 'field-01',
 		tickRate: 20,
 		handle: '',
+		isNew: false,
 	});
 });
 

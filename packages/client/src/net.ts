@@ -72,6 +72,10 @@ export class NetClient {
 		private onReject: (reason: string) => void = () => {},
 		cosmetics: Cosmetics = DEFAULT_COSMETICS,
 		weapon = 0,
+		// The server's new-vs-returning verdict, surfaced from `welcome` (#302, ADR 0028): the
+		// caller shows the Avatar creator over a neutral hold screen when `isNew`, else it plays
+		// straight into the restored World. Optional so headless/test callers can omit it.
+		private onWelcome: (isNew: boolean) => void = () => {},
 	) {
 		this.handle = handle;
 		this.ws = new WebSocket(url);
@@ -133,6 +137,10 @@ export class NetClient {
 				this.notice(`signed in as ${msg.handle}`);
 			}
 			this.ready = true;
+			// Hand the caller the server's verdict so it can gate the creator (#302): a new
+			// account customizes first, a returning one is already spawned. Fired once, after
+			// `ready` flips so a `createAvatar` sent from the callback passes the send() gate.
+			this.onWelcome(msg.isNew);
 			return;
 		}
 		if (msg.t === 'reject') {
