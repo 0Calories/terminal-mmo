@@ -44,10 +44,12 @@ test('reserved headroom is fixed, so the Sprite sits below the tallest hat', () 
 	expect(spriteTopOf(0)).toBe(VPAD + maxHatH);
 });
 
-// --- Player-typed Handle at Avatar creation (#304, ADR 0028) -----------------------
+// --- Focused "name" input at Avatar creation (#304, #315, ADR 0028) ----------------
 // These drive the retained-UI creator headlessly through @opentui/core/testing (the repo's
-// TTY-free path): construct it on a test renderer and feed key events, asserting the confirm
-// gate + inline-rejection behaviour (the interactive logic, not the pixels).
+// TTY-free path). Typing flows through the REAL focused InputRenderable — fed via `mockInput`
+// the same way the app's key pipeline delivers it — while ↑/↓/Enter go through `creator.key`,
+// the role index.ts's global keypress handler plays. Assertions are on the public surface
+// (confirmable, effectiveName, focusedRow, errorMessage), never private draft state.
 
 const key = (name: string, sequence = ''): CreatorKey => ({
 	name,
@@ -57,21 +59,45 @@ const key = (name: string, sequence = ''): CreatorKey => ({
 });
 
 async function mountCreator(placeholder = 'wanderer') {
-	const { renderer } = await createTestRenderer({ width: 80, height: 30 });
-	const cc = new CharacterCreator(renderer, placeholder, DEFAULT_COSMETICS);
-	cc.attach(renderer.root);
-	cc.show();
-	return cc;
+	const setup = await createTestRenderer({ width: 80, height: 30 });
+	const cc = new CharacterCreator(
+		setup.renderer,
+		placeholder,
+		DEFAULT_COSMETICS,
+	);
+	cc.attach(setup.renderer.root);
+	cc.show(); // creation opens with the name row focused
+	return {
+		cc,
+		type: (s: string) => setup.mockInput.typeText(s),
+		backspace: () => setup.mockInput.pressBackspace(),
+	};
 }
 
-test('confirm is blocked until the typed Handle passes the 2–16 rule, then returns it', async () => {
-	const cc = await mountCreator();
-	// A one-character draft is too short: the confirm key is disabled and Enter is a no-op.
-	expect(cc.key(key('a', 'a'))).toBeNull();
+test('creation opens with the name row focused', async () => {
+	const { cc } = await mountCreator();
+	expect(cc.focusedRow).toBe('name');
+});
+
+test('typing on the name row edits only the name; nothing else in the modal reacts', async () => {
+	const { cc, type } = await mountCreator();
+	await type('neo');
+	// The typed characters became the effective name; the cosmetics are untouched.
+	expect(cc.effectiveName).toBe('neo');
+	expect(cc.key(key('return'))).toEqual({
+		handle: 'neo',
+		cosmetics: DEFAULT_COSMETICS,
+	});
+});
+
+test('confirm is blocked until the typed name passes the 2–16 rule, then returns it', async () => {
+	const { cc, type } = await mountCreator();
+	// A one-character draft is too short: confirm is disabled and Enter is a no-op.
+	await type('a');
 	expect(cc.confirmable).toBe(false);
 	expect(cc.key(key('return'))).toBeNull();
-	// A second character makes it valid: Enter now yields the typed Handle + chosen Cosmetics.
-	expect(cc.key(key('b', 'b'))).toBeNull();
+	// A second character makes it valid: Enter now yields the typed name + chosen Cosmetics.
+	await type('b');
 	expect(cc.confirmable).toBe(true);
 	expect(cc.key(key('return'))).toEqual({
 		handle: 'ab',
@@ -79,8 +105,32 @@ test('confirm is blocked until the typed Handle passes the 2–16 rule, then ret
 	});
 });
 
+test('an illegal keystroke never lands in the name', async () => {
+	const { cc, type } = await mountCreator();
+	await type('ne');
+	await type(' '); // a space is not a legal Handle character
+	await type('!'); // nor is punctuation
+	expect(cc.effectiveName).toBe('ne'); // the draft is unchanged by the illegal keys
+	await type('o'); // a legal character still lands
+	expect(cc.effectiveName).toBe('neo');
+});
+
+test('backspace on the name row deletes from the draft and clears a standing rejection', async () => {
+	const { cc, type, backspace } = await mountCreator();
+	await type('neo');
+	// The focused field owns deletion; its INPUT event must sync the draft back to the creator.
+	await backspace();
+	expect(cc.effectiveName).toBe('ne');
+	// A backspace is also an edit, so it clears a standing server rejection.
+	cc.showRejection('taken');
+	expect(cc.errorMessage).toBe('that name is taken');
+	await backspace();
+	expect(cc.effectiveName).toBe('n');
+	expect(cc.errorMessage).toBe('');
+});
+
 test('confirming an empty field uses the auto-derived placeholder', async () => {
-	const cc = await mountCreator('wanderer');
+	const { cc } = await mountCreator('wanderer');
 	// No typing: the (valid) placeholder is used, so confirm is allowed immediately.
 	expect(cc.confirmable).toBe(true);
 	expect(cc.key(key('return'))).toEqual({
@@ -89,19 +139,39 @@ test('confirming an empty field uses the auto-derived placeholder', async () => 
 	});
 });
 
-test('a createRejected keeps the creator open with an inline error, cleared on the next edit', async () => {
-	const cc = await mountCreator();
-	cc.key(key('n', 'n'));
-	cc.key(key('e', 'e'));
-	cc.key(key('o', 'o'));
+test('↑/↓ move focus between the name row and the cosmetic rows', async () => {
+	const { cc } = await mountCreator();
+	expect(cc.focusedRow).toBe('name');
+	// Down leaves the name row for the first cosmetic; up returns to the name row.
+	cc.key(key('down'));
+	expect(cc.focusedRow).not.toBe('name');
+	const firstCosmetic = cc.focusedRow;
+	cc.key(key('up'));
+	expect(cc.focusedRow).toBe('name');
+	// Down again lands back on the same first cosmetic row (stable ladder order).
+	cc.key(key('down'));
+	expect(cc.focusedRow).toBe(firstCosmetic);
+});
+
+test('on a cosmetic row left/right cycle the cosmetic, not the text cursor', async () => {
+	const { cc } = await mountCreator();
+	cc.key(key('down')); // focus the first cosmetic row
+	cc.key(key('right')); // cycle it
+	const result = cc.key(key('return'));
+	// Confirm rode the cosmetic change, so the look differs from the default.
+	expect(result?.cosmetics).not.toEqual(DEFAULT_COSMETICS);
+});
+
+test('a createRejected surfaces a transient "name" error, cleared on the next edit', async () => {
+	const { cc, type } = await mountCreator();
+	await type('neo');
 	cc.setBusy(true); // frozen while the createAvatar is in flight
-	expect(cc.key(key('x', 'x'))).toBeNull(); // input ignored while busy
-	// The server refused the claim: the creator stays open, unfreezes, and shows why.
+	// The server refused the claim: the creator stays open, unfreezes, and shows why in "name" copy.
 	cc.showRejection('taken');
 	expect(cc.open).toBe(true);
-	expect(cc.errorMessage.length).toBeGreaterThan(0);
-	// Editing the Handle again clears the inline error so the retry reads clean.
-	cc.key(key('backspace'));
+	expect(cc.errorMessage).toBe('that name is taken');
+	// Editing the name again clears the transient error so the retry reads clean.
+	await type('x');
 	expect(cc.errorMessage).toBe('');
 });
 

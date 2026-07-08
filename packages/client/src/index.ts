@@ -346,10 +346,12 @@ async function runNetworked(url: string) {
 		play();
 	};
 
-	// The creator owns the keyboard while up (a new account only): keys type the Handle or drive
-	// the cosmetic picker, and a valid Enter sends `createAvatar{handle, cosmetics}`. The creator
-	// stays up (frozen) until the server confirms the spawn (`onSpawned`) or rejects the Handle
-	// (`onCreateRejected`). Inert once we are spawned (`started`) or before the creator opens.
+	// The creator is up (a new account only): this global handler dispatches BEFORE the creator's
+	// focused name input (chat's ordering), so `creator.key` gets first crack — it moves ladder
+	// focus on ↑/↓ and confirms on Enter (swallowing both), and leaves typing / left-right cursor
+	// for the focused field on the name row. A valid Enter sends `createAvatar{handle, cosmetics}`.
+	// The creator stays up (frozen) until the server confirms the spawn (`onSpawned`) or rejects
+	// the name (`onCreateRejected`). Inert once we are spawned (`started`) or before it opens.
 	renderer.keyInput.on('keypress', (k) => {
 		if (started) return;
 		// The blocking no-Kitty notice owns the keyboard while up: the first key press
@@ -365,8 +367,8 @@ async function runNetworked(url: string) {
 			return;
 		}
 		// UI blip on customize navigation / confirm (ADR 0014), the same menu click the shop
-		// uses. Only menu keys (arrows / enter) blip — typing the Handle is silent. 'q' now types
-		// into the Handle instead of quitting, so the creator can spell handles containing it.
+		// uses. Only menu keys (arrows / enter) blip — typing the name is silent. 'q' types into
+		// the focused name field instead of quitting, so the creator can spell names containing it.
 		if (isMenuBlipKey(k.name)) sound.play('ui');
 		const result = creator.key(k);
 		if (!result) return;

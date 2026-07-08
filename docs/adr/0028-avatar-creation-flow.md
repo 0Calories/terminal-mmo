@@ -26,6 +26,10 @@ finalise messages funnel through one shared validate/apply/rebroadcast path.
   Player-typed (with the auto-derived value as the field's placeholder) gives Players a
   real identity choice while keeping uniqueness enforcement — regex + case-insensitive
   claim — at the single finalise round-trip.
+- **"name" in the UI, Handle in the domain (#315).** The creator's field is *labelled*
+  "name" throughout its copy (prompt, footer, rejection messages) because "handle" is
+  jargon a new Player doesn't recognise; the domain term, the `Handle` type, the wire
+  protocol, and CONTEXT.md's glossary stay **Handle**. The relabel is presentation-only.
 
 ## Considered and rejected
 
