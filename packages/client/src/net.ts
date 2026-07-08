@@ -71,6 +71,11 @@ export class NetClient {
 	// is a no-op (starting the loop is idempotent).
 	onSpawned: () => void = () => {};
 	private spawnNotified = false;
+	// The server's new-vs-returning verdict from `welcome` (#302, ADR 0028), retained so the
+	// spawn path knows whether to fire the "signed in as" notice. A new account claims its
+	// typed Handle only at createAvatar, AFTER `welcome`, so the notice is deferred to spawn
+	// and reads the claimed name off the own Avatar snapshot (#317).
+	private isNewAccount = false;
 
 	constructor(
 		url: string,
@@ -139,12 +144,16 @@ export class NetClient {
 			this.sessionId = msg.sessionId;
 			this.zoneId = msg.zoneId;
 			this.tickRate = msg.tickRate;
+			this.isNewAccount = msg.isNew;
 			// '' only from a pre-#235 server; the requested handle stays then.
 			if (msg.handle) {
 				this.handle = msg.handle;
 				// Surface the durable identity — a returning key may resolve to a
-				// different Handle than the one this launch asked for (#235).
-				this.notice(`signed in as ${msg.handle}`);
+				// different Handle than the one this launch asked for (#235). For a NEW
+				// account, though, `welcome` precedes the Player typing + claiming their
+				// Handle, so `msg.handle` is still the auto-derived handshake name — suppress
+				// here and fire "signed in as <claimed name>" from the spawn path (#317).
+				if (!msg.isNew) this.signedInAs(msg.handle);
 			}
 			this.ready = true;
 			// Hand the caller the server's verdict so it can gate the creator (#302): a new
@@ -201,6 +210,14 @@ export class NetClient {
 		// new account (held at the creator until its createAvatar landed) can enter the World.
 		if (!this.spawnNotified) {
 			this.spawnNotified = true;
+			// A new account's "signed in as" notice was deferred from `welcome` until now (#317):
+			// the Handle is claimed only once the createAvatar lands, so read the durable, claimed
+			// name off the own Avatar snapshot rather than the pre-claim handshake name. Fires once
+			// (guarded by spawnNotified) and only for the new-account case.
+			if (this.isNewAccount) {
+				const claimed = this.ownAvatar()?.handle;
+				if (claimed) this.signedInAs(claimed);
+			}
 			this.onSpawned();
 		}
 	}
@@ -223,6 +240,14 @@ export class NetClient {
 	// like a server notice (#40) — no round-trip.
 	notice(text: string) {
 		this.pushChat(`* ${text}`);
+	}
+
+	// The login identity line, surfaced once per session (#235, #317). Fired from
+	// `welcome` for a returning account (durable name known up front) or from the
+	// spawn path for a new one (claimed name known only after createAvatar lands) —
+	// one copy of the wording for both paths.
+	private signedInAs(name: string) {
+		this.notice(`signed in as ${name}`);
 	}
 
 	// Age every Speech bubble by `dtSec` and drop the expired ones (#59). Called

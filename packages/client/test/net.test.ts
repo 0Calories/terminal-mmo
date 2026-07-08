@@ -434,6 +434,56 @@ test('NetClient.ingest applies the welcome handshake and tracks the latest snaps
 	net.close();
 });
 
+test('NetClient defers the "signed in as" notice to spawn for a new account, showing the claimed name (#317)', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'ash', FAKE_IDENTITY);
+	// A new account: `welcome` arrives BEFORE the Player types + claims their name, so its
+	// handle is the auto-derived handshake name ("ash"). No "signed in as" line yet.
+	net.ingest(
+		{
+			t: 'welcome',
+			sessionId: 1,
+			zoneId: 'field-01',
+			tickRate: 20,
+			handle: 'ash',
+			isNew: true,
+		},
+		0,
+	);
+	expect(net.chatLog).toEqual([]);
+	// The first snapshot carries the own Avatar's claimed handle ("Legolas") — distinct from
+	// the handshake name — and now the notice fires exactly once with the name they chose.
+	const spawn = snapshot(); // its lone avatar has sessionId 1, handle 'me'
+	spawn.avatars[0].handle = 'Legolas';
+	net.ingest(spawn, 1000);
+	expect(net.chatLog).toEqual(['* signed in as Legolas']);
+	// A later snapshot must NOT re-fire the notice.
+	net.ingest(snapAt(60), 1050);
+	expect(net.chatLog).toEqual(['* signed in as Legolas']);
+	net.close();
+});
+
+test('NetClient fires the "signed in as" notice on welcome for a returning account, with the durable name (#317)', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'ash', FAKE_IDENTITY);
+	// A returning key resolves to its durable Handle on `welcome` — which may differ from what
+	// this launch asked for — and the notice surfaces it immediately (unchanged pre-#317 behaviour).
+	net.ingest(
+		{
+			t: 'welcome',
+			sessionId: 1,
+			zoneId: 'field-01',
+			tickRate: 20,
+			handle: 'Aragorn',
+			isNew: false,
+		},
+		0,
+	);
+	expect(net.chatLog).toEqual(['* signed in as Aragorn']);
+	// Spawning does not add a second notice for a returning account.
+	net.ingest(snapAt(40), 1000);
+	expect(net.chatLog).toEqual(['* signed in as Aragorn']);
+	net.close();
+});
+
 test('NetClient hands a challenge nonce to the identity signer (#235)', async () => {
 	// The transport's half of challenge-response: a `challenge` frame routes its
 	// nonce to the SSH identity. (Domain separation lives inside the identity's
