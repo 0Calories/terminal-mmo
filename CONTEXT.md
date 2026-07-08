@@ -160,11 +160,22 @@ field-world (not the Dungeon), so that venturing deeper pays off climactically i
 same space the Player has been exploring.
 _Avoid_: Raid boss, elite, miniboss, dungeon boss
 
+**Identity Key**:
+The ed25519 public key that identifies an account (ADR 0004). Normally the
+Player's own external SSH key (via ssh-agent or `~/.ssh/id_ed25519`); when they
+have none, a game-generated key minted on first launch and kept in the config dir
+so the demo is playable without any SSH setup. A per-machine **anchor** records
+which key won last, so a returning Player always resolves to the same one — a
+momentarily-unreachable external key is refused with guidance, never silently
+replaced (which would orphan the Save).
+_Avoid_: SSH key (it may be generated), guest key, throwaway key
+
 **Handle**:
-The durable, unique username a Player claims on first launch, bound to their SSH
-public key (ADR 0004, #235 — revising the ephemeral per-connection label of ADR
-0006). Painted on the nameplate and attributed on each Chat message; a returning
-key always resolves to the same Handle, whatever name that launch asked for.
+The durable, unique username a Player claims on first launch, bound to their
+**Identity Key** (ADR 0004, #235 — revising the ephemeral per-connection label of
+ADR 0006). Painted on the nameplate and attributed on each Chat message; a
+returning key always resolves to the same Handle, whatever name that launch asked
+for.
 Unique case-insensitively (2–16 of `[A-Za-z0-9_-]`), so `/w <handle>` is
 unambiguous — but entities are still *addressed* by session id at runtime: the
 Handle names the account, not the connection.
@@ -172,7 +183,7 @@ _Avoid_: Username, nick, name, label
 
 **Save**:
 The durable per-account snapshot persisted across sessions (#236, bun:sqlite),
-keyed by the **Handle**'s public key (ADR 0004). It holds *only* progression and
+keyed by the account's **Identity Key** (ADR 0004). It holds *only* progression and
 identity state: the Avatar's level / XP / **Gold**, its inventory + equipped
 **Item**, its **Cosmetics** (**Form** / hue / hat / nameplate), the last safe
 **Town**, and a **boss-defeated flag** (the demo's terminal state — see **Boss**;

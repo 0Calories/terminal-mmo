@@ -26,7 +26,9 @@ import {
 	GROUND_TOP,
 	lootTableFor,
 	MONSTER,
+	RESPAWN,
 	removeAvatar,
+	resolveDeaths,
 	rollDrop,
 	SPAWN,
 	SWING_TOTAL,
@@ -1334,4 +1336,97 @@ test('a Poise break throws the body along the swing — the SHARED Knockback', (
 	);
 	expect(next.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0);
 	expect(next.zone.monsters[0].ivx ?? 0).toBeGreaterThan(0);
+});
+
+// --- resolveDeaths: the death-consequences pass (ADR 0022 slice 5) -----------
+// resolveDeaths is the distinct pass that consumes the death set and applies world-state
+// consequences — separated from the death *decision* (lethal damage, applied during combat
+// resolution, is what makes a contact a death). It preserves the monster-local /
+// avatar-escalates asymmetry: monsters pay out fully zone-local (XP + instanced-loot Drops +
+// respawn scheduling), avatars emit only the transient died-this-tick set + in-place respawn.
+// These unit tests exercise the pass directly, off already-decided death fixtures.
+const deadCtx = (zoneId = 'dungeon-01', nextDropId = 1) => ({
+	zoneId,
+	lootTable: lootTableFor(zoneId),
+	nextDropId,
+});
+
+test('resolveDeaths grants each dead Monster contributor shared XP and its own instanced loot', () => {
+	const killer = serverAvatar(7, 20);
+	const helper = serverAvatar(8, 300);
+	helper.rngState = 999; // a distinct loot seed, to prove instancing
+	const m = spawnMonster('chaser', 2, 20, y);
+	m.hp = 0; // already decided dead by combat resolution
+	m.contributors = [7, 8];
+	const out = resolveDeaths([killer, helper], [m], deadCtx());
+	// Shared, not split: each contributor earns the FULL kill XP.
+	expect(out.avatars[0].progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
+	expect(out.avatars[1].progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
+	// The dungeon table always drops: each contributor gets its OWN private Drop, at the
+	// kill site, owned by that session (instanced — no shared pile).
+	expect(out.drops.map((d) => d.owner).sort()).toEqual([7, 8]);
+	// Seeded per-Player: the helper's Drop is exactly the dungeon-table roll off its OWN
+	// seed, proving loot never crosses between contributors.
+	const expected = rollDrop(
+		999,
+		out.avatars[1].progress.level,
+		lootTableFor('dungeon-01'),
+	);
+	if (!expected.item) throw new Error('dungeon table must always drop');
+	const helperDrop = out.drops.find((d) => d.owner === 8);
+	expect(helperDrop?.item).toEqual({ ...expected.item, id: 1 });
+	// Drop ids advance from the passed cursor; it is returned for the caller to thread on.
+	expect(out.nextDropId).toBe(3);
+});
+
+test('resolveDeaths reports the died-this-tick set and defers the respawn to the caller', () => {
+	const dead = serverAvatar(7, 200);
+	dead.avatar.hp = 0; // combat resolution already brought it to 0
+	const alive = serverAvatar(8, 50);
+	const out = resolveDeaths([dead, alive], [], deadCtx());
+	// Only the dead session is reported; the survivor is untouched.
+	expect(out.deaths).toEqual([7]);
+	expect(out.avatars[1].avatar.hp).toBe(alive.avatar.maxHp);
+	expect(out.avatars[1].avatar.x).toBe(50);
+	// The pass REPORTS the death but does NOT respawn: the in-place safe-point respawn is the
+	// caller's job (it runs after loot collection), so the fallen Avatar is left unmoved here.
+	expect(out.avatars[0].avatar.x).toBe(200);
+	expect(out.avatars[0].avatar.hp).toBe(0);
+});
+
+test('resolveDeaths sprays a radial gore Effect at the fall site', () => {
+	const dead = serverAvatar(7, 200);
+	dead.avatar.hp = 0;
+	const out = resolveDeaths([dead], [], deadCtx());
+	const death = out.effects.find(
+		(fx) => fx.dir === 0 && fx.intensity === COMBAT.deathBurstIntensity,
+	);
+	expect(death?.kind).toBe('gore');
+	// at the fall spot (x ~200); the caller respawns to SPAWN.x afterwards.
+	expect(death?.x).toBeGreaterThanOrEqual(200);
+});
+
+test('resolveDeaths schedules a respawn for a dead Monster that has a spawn point', () => {
+	const m = spawnMonster('chaser', 2, 20, y, 3); // spawnIndex 3
+	m.hp = 0;
+	const out = resolveDeaths([], [m], deadCtx());
+	expect(out.respawns).toEqual([
+		{ spawnIndex: 3, remaining: RESPAWN.delaySec },
+	]);
+});
+
+test('resolveDeaths schedules no respawn for a Monster with no spawn point', () => {
+	const m = spawnMonster('chaser', 2, 20, y); // no spawnIndex (an ad-hoc spawn)
+	m.hp = 0;
+	const out = resolveDeaths([], [m], deadCtx());
+	expect(out.respawns).toEqual([]);
+});
+
+test('resolveDeaths pays out nothing for a Monster with no contributors', () => {
+	const bystander = serverAvatar(7, 20);
+	const m = spawnMonster('chaser', 2, 20, y); // never damaged — no contributors
+	m.hp = 0;
+	const out = resolveDeaths([bystander], [m], deadCtx());
+	expect(out.avatars[0].progress.xp).toBe(0);
+	expect(out.drops).toEqual([]);
 });

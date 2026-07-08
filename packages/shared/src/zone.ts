@@ -31,7 +31,7 @@ import {
 import { BOX, COMBAT, LOOT, PHYS, RESPAWN, SHOOTER, SPAWN } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
 import { emoteById, emoteInterrupted, initialEmoteT, stepEmote } from './emote';
-import { itemLabel, lootTableFor, rollDrop } from './loot';
+import { itemLabel, type LootTable, lootTableFor, rollDrop } from './loot';
 import type { RestoredAvatar } from './persistence';
 import { applyImpulse, stepEntity } from './physics';
 import { spawnAvatar } from './player';
@@ -536,10 +536,13 @@ export function stepZone(
 	const hitsOnMonsters = resolveHitsOnMonsters(advanced, strikes, swingHits);
 	effects.push(...hitsOnMonsters.effects);
 
-	// Death + consequences, still zone-local (the `resolveDeaths` split is a later
-	// slice): a Monster driven to 0 HP sprays tinted gore, pays out shared XP +
-	// instanced loot to each accumulated contributor (#37), and schedules its respawn.
+	// The death *decision* stays at the resolution site (ADR 0019/0022): applying lethal
+	// damage is what makes a contact a death. A Monster driven to 0 HP sprays tinted gore
+	// here and is collected into the death set; the world-state *consequences* (shared XP
+	// + instanced loot to each accumulated contributor, respawn scheduling, removal) defer
+	// to `resolveDeaths` below. Removal is implicit — only survivors re-enter `monsters`.
 	const monsters: Entity[] = [];
+	const deadMonsters: Entity[] = [];
 	for (const m of hitsOnMonsters.monsters) {
 		if (m.hp > 0) {
 			monsters.push(m);
@@ -550,30 +553,7 @@ export function stepZone(
 		// 0013 #139 / ADR 0019). No `source`, so every Player in range — including the
 		// killer — sees it.
 		effects.push(...effectsOf(deathEvent(m)));
-		// Every contributor earns full XP (shared, not split) and rolls its own private,
-		// per-Player-seeded loot — instanced, so there is no shared pile and no kill-
-		// stealing (#37). XP lands immediately; the loot roll, gated by the Zone's drop
-		// chance, leaves an in-world Drop at the kill site OWNED by that contributor for
-		// them to walk over (collected below). Each grant updates only that Avatar's state.
-		for (const sid of m.contributors ?? []) {
-			const idx = avatars.findIndex((a) => a.sessionId === sid);
-			if (idx < 0) continue;
-			let sa = grantXp(avatars[idx], m.type, zone.id);
-			const roll = rollDrop(sa.rngState, sa.progress.level, lootTable);
-			sa = { ...sa, rngState: roll.state };
-			if (roll.item) {
-				drops.push(
-					spawnDrop(nextDropId++, sid, m, { ...roll.item, id: sa.nextId }),
-				);
-				sa = { ...sa, nextId: sa.nextId + 1 };
-			}
-			avatars[idx] = sa;
-		}
-		if (m.spawnIndex !== undefined)
-			respawns.push({
-				spawnIndex: m.spawnIndex,
-				remaining: RESPAWN.delaySec,
-			});
+		deadMonsters.push(m);
 	}
 
 	// After the death loop, so timers added this tick wait a full tick.
@@ -670,21 +650,41 @@ export function stepZone(
 	}
 	projectiles.push(...fired);
 
+	// The death-consequences pass (ADR 0022 slice 5): consume the death set decided during
+	// combat resolution above. Monsters pay out fully zone-local (shared XP + instanced-loot
+	// Drops to their accumulated contributors, respawn scheduling); Avatars only report the
+	// transient died-this-tick set + the fall gore, and their in-place respawn is deferred to
+	// AFTER the collection pass below (so a dying contributor still grabs its loot), with the
+	// cross-zone Town relocation escalating to `stepServerWorld`. The fresh loot Drops append
+	// to this tick's `drops` so collection still hands a live contributor standing on the kill
+	// its Drop this tick (#238). Monster respawns join `respawns` AFTER the decrement loop
+	// above, so a freshly-scheduled timer waits a full tick.
+	const deathPass = resolveDeaths(avatars, deadMonsters, {
+		zoneId: zone.id,
+		lootTable,
+		nextDropId,
+	});
+	const resolved = deathPass.avatars;
+	respawns.push(...deathPass.respawns);
+	effects.push(...deathPass.effects);
+	drops.push(...deathPass.drops);
+	nextDropId = deathPass.nextDropId;
+
 	// Collect + age the in-world Drops (#238). A Drop is PRIVATE to its owner: it is
 	// picked up the moment the owner's body box overlaps it — appended to that Avatar's
 	// inventory with a pickup log line — and it fades once its ttl drains. Rarity reads by
 	// colour on the in-world Drop glyph/label the client paints (this log line is the plain
-	// textual record). Runs on the post-combat Avatar positions, before the death
-	// relocation below so a live Avatar grabs loot where it stands, not at the safe point
-	// it might respawn to.
+	// textual record). Runs on the post-combat Avatar positions, BEFORE the death respawn
+	// below, so an Avatar (including one that died this tick) grabs loot where it stands, not
+	// at the safe point it is about to respawn to.
 	const survivingDrops: Drop[] = [];
 	for (const d of drops) {
 		const ttl = d.ttl - dt;
 		if (ttl <= 0) continue; // faded — grab it before it vanishes
-		const idx = avatars.findIndex((a) => a.sessionId === d.owner);
-		if (idx >= 0 && aabbOverlap(entityBox(avatars[idx].avatar), d)) {
-			const sa = avatars[idx];
-			avatars[idx] = {
+		const idx = resolved.findIndex((a) => a.sessionId === d.owner);
+		if (idx >= 0 && aabbOverlap(entityBox(resolved[idx].avatar), d)) {
+			const sa = resolved[idx];
+			resolved[idx] = {
 				...sa,
 				inventory: [...sa.inventory, d.item],
 				log: [...sa.log, `Looted ${itemLabel(d.item)}.`],
@@ -694,43 +694,39 @@ export function stepZone(
 		survivingDrops.push({ ...d, ttl });
 	}
 
-	// Forgiving death: respawn at the safe point, full HP, brief i-frames. The
-	// session ids are reported so the world layer can relocate the respawn to Town.
-	const deaths: number[] = [];
-	for (let i = 0; i < avatars.length; i++) {
-		const a = avatars[i].avatar;
-		if (a.hp <= 0) {
-			deaths.push(avatars[i].sessionId);
-			// The fall resolves to a `death` CombatEvent → a radial gore burst tinted to the
-			// Avatar's cosmetic hue, via the shared `effectsOf` (ADR 0013 #139 / ADR 0019) —
-			// emitted before the teleport below moves them to the safe point.
-			effects.push(...effectsOf(deathEvent(a)));
-			avatars[i] = {
-				...avatars[i],
-				avatar: {
-					...a,
-					hp: a.maxHp,
-					x: SPAWN.x,
-					y: SPAWN.y,
-					vx: 0,
-					vy: 0,
-					hurtT: 1,
-				},
-				log: [...avatars[i].log, 'You fell. Respawned in safety.'],
-			};
-		}
+	// Forgiving respawn for the Avatars `resolveDeaths` reported dead: safe point, full HP,
+	// brief i-frames. Deferred to here — after loot collection — so a dying Avatar keeps what
+	// it fell on; the world layer then escalates this to a cross-zone Town move.
+	for (const sid of deathPass.deaths) {
+		const i = resolved.findIndex((a) => a.sessionId === sid);
+		if (i < 0) continue;
+		const a = resolved[i].avatar;
+		resolved[i] = {
+			...resolved[i],
+			avatar: {
+				...a,
+				hp: a.maxHp,
+				x: SPAWN.x,
+				y: SPAWN.y,
+				vx: 0,
+				vy: 0,
+				hurtT: 1,
+			},
+			log: [...resolved[i].log, 'You fell. Respawned in safety.'],
+		};
 	}
 
 	// Persist each Avatar's per-swing hit registry for the next tick (ADR 0017 §2): an
 	// in-flight swing keeps the ids it has already hit (read back from the keyed
 	// `swingHits` side-table `resolveHitsOnMonsters` wrote) so it can't double-hit them,
-	// and the fold clears the list when the next swing starts.
-	for (let i = 0; i < avatars.length; i++)
-		avatars[i] = {
-			...avatars[i],
+	// and the fold clears the list when the next swing starts. Keyed by Avatar id, so it
+	// survives `resolveDeaths` returning a fresh Avatar array.
+	for (let i = 0; i < resolved.length; i++)
+		resolved[i] = {
+			...resolved[i],
 			avatar: {
-				...avatars[i].avatar,
-				swingHits: [...(swingHits.get(avatars[i].avatar.id) ?? [])],
+				...resolved[i].avatar,
+				swingHits: [...(swingHits.get(resolved[i].avatar.id) ?? [])],
 			},
 		};
 
@@ -744,7 +740,90 @@ export function stepZone(
 		drops: survivingDrops,
 		nextDropId,
 	};
-	return { zone: newZone, avatars, tick: state.tick + 1, deaths, effects };
+	return {
+		zone: newZone,
+		avatars: resolved,
+		tick: state.tick + 1,
+		deaths: deathPass.deaths,
+		effects,
+	};
+}
+
+/**
+ * The death-consequences pass (ADR 0022 slice 5). Consumes the death set decided during
+ * combat resolution — `deadMonsters` already had their death CombatEvent → Effect emitted
+ * and `contributors` accumulated at the resolution site — and applies the world-state
+ * consequences, preserving the monster-local / avatar-escalates asymmetry:
+ *   - Monsters: shared XP + instanced loot to each accumulated contributor (#37), and
+ *     respawn scheduling — all zone-local. Removal is implicit (the caller only re-collects
+ *     survivors). The instanced-loot per-contributor split stays a separate concern; today's
+ *     per-Avatar seeded roll leaving an in-world Drop (#238) is wired through as-is.
+ *   - Avatars: emit ONLY the transient died-this-tick set (and the fall's death gore). The
+ *     forgiving in-place respawn at the safe point is left to the caller so it runs AFTER the
+ *     loot-collection pass — a contributor that dies standing on its own fresh Drop still
+ *     grabs it before the teleport. Cross-zone respawn into Town escalates a layer up in
+ *     `stepServerWorld`, so this pass never reaches across zones — the boundary stays intact.
+ * Mirrors the `swingHits` reset/add split: contributor *accumulation* (at the resolution
+ * site) is separated from contributor *payout* (here). Pure and headlessly testable; the
+ * fresh loot Drops are returned for the caller to fold into its collection pass.
+ */
+export function resolveDeaths(
+	avatars: ServerAvatar[],
+	deadMonsters: Entity[],
+	ctx: { zoneId: ZoneId; lootTable: LootTable; nextDropId: number },
+): {
+	avatars: ServerAvatar[];
+	drops: Drop[];
+	nextDropId: number;
+	respawns: PendingRespawn[];
+	deaths: number[];
+	effects: Effect[];
+} {
+	const next = avatars.slice();
+	const drops: Drop[] = [];
+	const respawns: PendingRespawn[] = [];
+	let nextDropId = ctx.nextDropId;
+	// Monster consequences: every contributor earns full XP (shared, not split) and rolls its
+	// own private, per-Player-seeded loot — instanced, so there is no shared pile and no
+	// kill-stealing (#37). XP lands immediately; the loot roll, gated by the Zone's drop
+	// chance, leaves an in-world Drop at the kill site OWNED by that contributor to walk over.
+	// Each grant updates only that Avatar's state.
+	for (const m of deadMonsters) {
+		for (const sid of m.contributors ?? []) {
+			const idx = next.findIndex((a) => a.sessionId === sid);
+			if (idx < 0) continue;
+			let sa = grantXp(next[idx], m.type, ctx.zoneId);
+			const roll = rollDrop(sa.rngState, sa.progress.level, ctx.lootTable);
+			sa = { ...sa, rngState: roll.state };
+			if (roll.item) {
+				drops.push(
+					spawnDrop(nextDropId++, sid, m, { ...roll.item, id: sa.nextId }),
+				);
+				sa = { ...sa, nextId: sa.nextId + 1 };
+			}
+			next[idx] = sa;
+		}
+		if (m.spawnIndex !== undefined)
+			respawns.push({ spawnIndex: m.spawnIndex, remaining: RESPAWN.delaySec });
+	}
+
+	// Avatar consequences: report the transient died-this-tick set and spray the fall's gore
+	// at the death site. The forgiving in-place respawn is left to the caller (it runs after
+	// loot collection), and the world layer escalates it to a cross-zone Town move — so this
+	// pass reports the death and stays inside the Zone.
+	const deaths: number[] = [];
+	const effects: Effect[] = [];
+	for (const sa of next) {
+		if (sa.avatar.hp <= 0) {
+			deaths.push(sa.sessionId);
+			// The fall resolves to a `death` CombatEvent → a radial gore burst tinted to the
+			// Avatar's cosmetic hue, via the shared `effectsOf` (ADR 0013 #139 / ADR 0019),
+			// at the fall site — the caller teleports them to the safe point afterwards.
+			effects.push(...effectsOf(deathEvent(sa.avatar)));
+		}
+	}
+
+	return { avatars: next, drops, nextDropId, respawns, deaths, effects };
 }
 
 // Award shared kill XP (+ any level-up HP bump) to one contributor. The grant scales with
