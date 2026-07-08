@@ -267,9 +267,10 @@ export class CharacterCreator {
 			this.refresh();
 		});
 		handleRow.add(this.handleInput);
-		// A transient line below the field: blank by default (its row reserved so nothing jumps),
-		// carrying a server rejection in warn colour only while one stands (#315). In re-customize
-		// mode it still notes the set-once Handle (#305; #318 owns removing that).
+		// A transient line below the name field: blank by default (its row reserved so nothing
+		// jumps), carrying a server rejection in warn colour only while one stands (#315). It
+		// belongs to the name field, so — like the field — it exists only in creation mode; the
+		// cosmetics-only re-customize modal mounts neither a name row nor this line (#318).
 		this.hint = new TextRenderable(ctx, {
 			content: ' ',
 			fg: COLORS.dim,
@@ -287,8 +288,14 @@ export class CharacterCreator {
 		});
 
 		panel.add(this.preview);
-		panel.add(handleRow);
-		panel.add(this.hint);
+		// The name row and its transient hint line exist only in creation mode. Re-customize is
+		// cosmetics-only (ADR 0028, #318): its ladder is the cosmetic rows alone (preview → rows →
+		// save/cancel footer), so the name row is absent from the modal entirely — not merely
+		// read-only. The preview above still renders the durable name (refresh reads the placeholder).
+		if (editableHandle) {
+			panel.add(handleRow);
+			panel.add(this.hint);
+		}
 		panel.add(this.rows);
 		panel.add(this.footer);
 		this.container.add(panel);
@@ -332,8 +339,10 @@ export class CharacterCreator {
 	}
 
 	// Reconcile the InputRenderable's OS-level focus with the ladder: the field owns the keyboard
-	// exactly while the name row is focused, so keystrokes reach it only then.
+	// exactly while the name row is focused, so keystrokes reach it only then. Re-customize mounts
+	// no name field (#318), so there is nothing to focus/blur there.
 	private syncFieldFocus(): void {
+		if (!this.editableHandle) return;
 		if (this.nameFocused) this.handleInput.focus();
 		else this.handleInput.blur();
 	}
@@ -463,35 +472,31 @@ export class CharacterCreator {
 			this.state.cosmetics,
 			effectiveHandle(this.handleText, this.placeholder),
 		);
-		// The focused input owns its own value in creation mode (typing flows through it), so the
-		// creator never overwrites it here. Re-customize's read-only field just shows the durable
-		// name verbatim.
-		if (!this.editableHandle) this.handleInput.value = this.placeholder;
 		// The name row is the focused ladder row when the field owns focus; while it does, no
-		// cosmetic row shows the caret. Creation labels the field "name" (#315); the read-only
-		// re-customize field keeps its "handle" label untouched (#318 owns that mode's copy).
+		// cosmetic row shows the caret. Only creation mounts the name row + its hint line, so their
+		// content is refreshed only there — re-customize is cosmetics-only (#318), and `nameFocused`
+		// is already false in that mode, so the cosmetic caret shows normally.
 		const focused = this.nameFocused;
-		const label = this.editableHandle ? 'name' : 'handle';
-		this.namePrompt.content = `${focused ? '▸' : ' '} ${label} ▸ `;
+		if (this.editableHandle) {
+			// The focused input owns its own value (typing flows through it), so the creator never
+			// overwrites it here. The field is labelled "name" though the domain term stays Handle.
+			this.namePrompt.content = `${focused ? '▸' : ' '} name ▸ `;
+			// The transient line carries a server rejection in warn colour while one stands; otherwise
+			// it is a blank reserved row (no persistent rule hint, #315). The footer gates the "enter
+			// the World" affordance on a valid draft.
+			if (this.errorText) {
+				this.hint.content = this.errorText;
+				this.hint.fg = COLORS.warn;
+			} else {
+				this.hint.content = ' '; // reserved blank row, no layout jump
+				this.hint.fg = COLORS.dim;
+			}
+		}
 		const lines = customizeRows(this.state).map((r) => {
 			const caret = r.focused && !focused ? '▸' : ' ';
 			return `${caret} ${r.label.padEnd(10)} ◂ ${r.value} ▸`;
 		});
 		this.rows.content = `\n${lines.join('\n')}\n`;
-		// The transient line carries a server rejection in warn colour while one stands; otherwise
-		// it is a blank reserved row (creation — no persistent rule hint, #315) or the set-once note
-		// (re-customize, #305; #318 owns removing it). The footer gates the "enter the World"
-		// affordance on a valid draft.
-		if (this.errorText) {
-			this.hint.content = this.errorText;
-			this.hint.fg = COLORS.warn;
-		} else if (!this.editableHandle) {
-			this.hint.content = 'handle is set for life';
-			this.hint.fg = COLORS.dim;
-		} else {
-			this.hint.content = ' '; // reserved blank row, no layout jump
-			this.hint.fg = COLORS.dim;
-		}
 		this.footer.content = this.busy
 			? this.editableHandle
 				? 'creating…'

@@ -10,6 +10,7 @@ import {
 	previewAvatar,
 	VPAD,
 } from '../src/character-creator';
+import { CUSTOMIZE_FIELDS } from '../src/customize';
 
 // The resolved Sprite top row, undoing previewAvatar's inverse of drawEntitySprite's
 // placement (entity.y is offset up by BOX.h - PLAYER.h so the Sprite lands at this row).
@@ -216,4 +217,54 @@ test('reopen re-seeds the picker to the latest cosmetics for the next [c] press'
 	// A previous session tweaked the look; the next open must start from the CURRENT cosmetics.
 	cc.reopen(SEED);
 	expect(cc.key(key('return'))).toEqual({ handle: 'Neo', cosmetics: SEED });
+});
+
+// --- Re-customize is cosmetics-only: no name row (#318, ADR 0028) -------------------
+// The name row is dropped from the ladder ENTIRELY in re-customize — not merely read-only or
+// skipped on focus. Asserting on the public focus surface: focus opens on the first cosmetic
+// row and no amount of ladder navigation ever lands on a name row.
+
+test('re-customize opens on the first cosmetic row, with no name row in the ladder', async () => {
+	const cc = await mountRecustomize();
+	// Focus opens directly on the first cosmetic — never the name row (#318).
+	expect(cc.focusedRow).not.toBe('name');
+	expect(cc.focusedRow).toBe(CUSTOMIZE_FIELDS[0].key);
+});
+
+test('re-customize ladder navigation never reaches a name row', async () => {
+	const cc = await mountRecustomize();
+	// Walk the whole ladder in both directions; it is cosmetic rows only, so 'name' never appears
+	// and every visited row is a cosmetic key.
+	const seen = new Set<string>();
+	for (let i = 0; i < CUSTOMIZE_FIELDS.length + 1; i++) {
+		seen.add(cc.focusedRow);
+		cc.key(key('down'));
+	}
+	for (let i = 0; i < CUSTOMIZE_FIELDS.length + 1; i++) {
+		seen.add(cc.focusedRow);
+		cc.key(key('up'));
+	}
+	expect(seen.has('name')).toBe(false);
+	expect(seen).toEqual(new Set(CUSTOMIZE_FIELDS.map((f) => f.key)));
+});
+
+test('creation, by contrast, keeps the name row in the ladder (no regression)', async () => {
+	const { cc } = await mountCreator();
+	// The name row is present and reachable: opens focused, down leaves it, up returns to it.
+	expect(cc.focusedRow).toBe('name');
+	cc.key(key('down'));
+	expect(cc.focusedRow).not.toBe('name');
+	cc.key(key('up'));
+	expect(cc.focusedRow).toBe('name');
+});
+
+test('re-customize confirm (save) is always allowed and returns the chosen cosmetics', async () => {
+	const cc = await mountRecustomize('Neo', DEFAULT_COSMETICS);
+	// No name to validate, so save is allowed immediately and hands back the durable Handle +
+	// current cosmetics — even before any cosmetic change.
+	expect(cc.confirmable).toBe(true);
+	expect(cc.key(key('return'))).toEqual({
+		handle: 'Neo',
+		cosmetics: DEFAULT_COSMETICS,
+	});
 });
