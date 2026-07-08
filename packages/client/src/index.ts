@@ -418,6 +418,30 @@ async function runNetworked(url: string) {
 		// from the server's Gold.
 		const shop = new Shop(renderer);
 		shop.attach(renderer.root);
+		// In-game Avatar re-customization (#305, ADR 0028): `[c]` in a Town reopens the creator
+		// in cosmetics-only mode (Handle read-only, set-once). Lazily built on first use and
+		// reused across presses — each open re-seeds it to the Avatar's CURRENT look off the
+		// snapshot, so it always starts from what the Player looks like now. Confirm sends
+		// `setCosmetics`; Escape cancels without applying (both handled in the keypress router).
+		let recustomize: CharacterCreator | null = null;
+		const openRecustomize = (): void => {
+			const own = net.ownAvatar();
+			const cos = own?.cosmetics ?? DEFAULT_COSMETICS;
+			if (!recustomize) {
+				// Seed the read-only Handle from the snapshot's own Avatar (`AvatarSnapshot.handle`
+				// carries the server's durable, claimed Handle), NOT `net.handle`: for an account
+				// created THIS session the latter still holds the pre-claim auto-derived handshake
+				// name, so it would misdisplay a Player-typed Handle until the next reconnect. The
+				// Handle is set-once, so caching it on first open is correct.
+				const durableHandle = own?.handle ?? net.handle;
+				recustomize = new CharacterCreator(renderer, durableHandle, cos, false);
+				recustomize.attach(renderer.root);
+			} else {
+				recustomize.reopen(cos);
+			}
+			input.clear(); // drop held movement so a key at the switch can't stick under the modal
+			recustomize.show();
+		};
 		// The Gold + inventory the Merchant renders, sourced from the latest snapshot. Empty
 		// until the first snapshot arrives.
 		const shopView = (): ShopView => ({
@@ -547,12 +571,36 @@ async function runNetworked(url: string) {
 				handleShopKey(k.name);
 				return;
 			}
+			// The re-customize creator owns the keyboard while open (#305): Escape cancels with no
+			// change, Enter confirms → `setCosmetics`, every other key drives the cosmetic picker.
+			// Swallow all keys so none reaches the sim (consistent with the other in-play overlays).
+			if (recustomize?.open) {
+				if (isMenuBlipKey(k.name)) sound.play('ui');
+				if (k.name === 'escape') {
+					recustomize.hide();
+					return;
+				}
+				const result = recustomize.key(k);
+				if (result) {
+					net.send({ t: 'setCosmetics', cosmetics: result.cosmetics });
+					recustomize.hide();
+				}
+				return;
+			}
 			if (isHelpKey(k)) {
 				controls.show(net.latest?.progress.level ?? 1, SCHEME);
 				return;
 			}
 			if (k.name === 'o') {
 				options.show();
+				return;
+			}
+			// `c` reopens the creator to re-customize the Avatar (#305, ADR 0028) — Town-only, the
+			// thematic "show off your avatar in the hub" rule (the server re-checks it too). Outside
+			// a Town it just drops a hint and does nothing; the change itself is server-authoritative.
+			if (k.name === 'c') {
+				if (zone.type === 'town') openRecustomize();
+				else net.notice('Re-customize in Town.');
 				return;
 			}
 			if (k.name === 'return') {
@@ -595,6 +643,7 @@ async function runNetworked(url: string) {
 				controls.open ||
 				shop.open ||
 				options.open ||
+				(recustomize?.open ?? false) ||
 				noKittyNotice.open;
 			const inp = modalActive ? IDLE_INPUT : input.poll(performance.now());
 

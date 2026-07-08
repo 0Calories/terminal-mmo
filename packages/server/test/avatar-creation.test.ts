@@ -19,6 +19,7 @@ import {
 	encodePublicKeyLine,
 	encodeSignatureBlob,
 	type ServerWorld,
+	worldSnapshotFor,
 	zoneOf,
 	zoneStateOf,
 } from '@mmo/shared';
@@ -251,6 +252,83 @@ test('an invalid Handle is rejected with createRejected{invalid} and does not sp
 	);
 	expect(lastSent(w)).toEqual({ t: 'createRejected', reason: 'invalid' });
 	expect(zoneOf(currentWorld(), 30)).toBeUndefined();
+});
+
+// --- In-game re-customization: setCosmetics (#305, ADR 0028) ------------------------
+// Drives the real `onMessage` setCosmetics handler with fake sockets: a Town re-customize
+// applies to the live entity, persists to the Save (proven by drop+reconnect restoring it),
+// and rebroadcasts to a co-located session; a request from a session with no live Avatar is a
+// silent no-op. (The Field/Dungeon Town-gate itself is proven purely in serverWorld.test.ts,
+// where a session can be placed off-Town without driving the tick loop.)
+
+test('setCosmetics in a Town persists to the Save and rebroadcasts to others in the Zone (#305)', () => {
+	// Two accounts, both created into the starting Town — funnelled into one shared sim, so they
+	// co-locate and each rides the other's snapshot.
+	const a = makeIdentity();
+	const wa = fakeWs(50);
+	handshake(wa, a, 'morpheus', 0);
+	onMessage(
+		ws(wa),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'Morpheus',
+			cosmetics: DEFAULT_COSMETICS,
+		}),
+	);
+	const b = makeIdentity();
+	const wb = fakeWs(51);
+	handshake(wb, b, 'switch', 0);
+	onMessage(
+		ws(wb),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'Switch',
+			cosmetics: DEFAULT_COSMETICS,
+		}),
+	);
+	expect(zoneOf(currentWorld(), 50)).toBe('town-01');
+	expect(zoneOf(currentWorld(), 51)).toBe('town-01');
+
+	// Session 50 re-customizes while standing in the Town.
+	const next: Cosmetics = { hue: 3, hat: 1, nameplate: 2, form: 0 };
+	onMessage(
+		ws(wa),
+		encodeClientMessage({ t: 'setCosmetics', cosmetics: next }),
+	);
+
+	// AC (rebroadcast): the new look rides the shared Zone, so session 51's snapshot shows it.
+	const seen = worldSnapshotFor(currentWorld(), 51).avatars.find(
+		(x) => x.sessionId === 50,
+	);
+	expect(seen?.cosmetics).toEqual(next);
+	// And the live entity itself carries it.
+	expect(avatarOf(currentWorld(), 50)?.cosmetics).toEqual(next);
+
+	// AC (persist): drop + reconnect the SAME identity; the Save restores the new look, proving
+	// setCosmetics flushed it durably (not just to the live entity).
+	dropSession(50);
+	const again = fakeWs(52);
+	handshake(again, a, 'morpheus', 0);
+	expect(zoneOf(currentWorld(), 52)).toBe('town-01');
+	expect(avatarOf(currentWorld(), 52)?.cosmetics).toEqual(next);
+});
+
+test('setCosmetics from a session with no live Avatar is a silent no-op (#305)', () => {
+	// A session held at the creator (authenticated but unspawned) has no live Avatar: a stray
+	// setCosmetics must neither crash nor send anything back.
+	const id = makeIdentity();
+	const w = fakeWs(60);
+	handshake(w, id, 'oracle', 0); // new account: held, not yet spawned
+	const before = w.sent.length;
+	onMessage(
+		ws(w),
+		encodeClientMessage({
+			t: 'setCosmetics',
+			cosmetics: { hue: 2, hat: 1, nameplate: 1, form: 0 },
+		}),
+	);
+	expect(zoneOf(currentWorld(), 60)).toBeUndefined();
+	expect(w.sent.length).toBe(before); // nothing sent back
 });
 
 test('confirming an empty Handle field uses the auto-derived placeholder, still uniqueness-checked', () => {

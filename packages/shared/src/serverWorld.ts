@@ -28,6 +28,7 @@ import {
 	type ServerAvatar,
 	snapshotFor,
 	stepZone,
+	withCosmetics,
 	type ZoneState,
 } from './zone';
 
@@ -317,6 +318,28 @@ export function applyBuy(
 		log: [...a.log.slice(-5), `Bought ${good.base} (−${good.price}g).`],
 	}));
 	return { world: next, bought: true };
+}
+
+// Apply an in-game re-customization for a session (#305, ADR 0028). Cosmetics-only — the
+// Handle is set-once at creation and never touched here. Town-only, mirroring the "Towns are
+// where you show off avatars" rule: a request from a Field/Dungeon is a silent no-op
+// (`changed: false`, World unchanged), so it can never change a look mid-combat. On success
+// the new Cosmetics are stamped onto the live Avatar through the SAME `withCosmetics` path a
+// fresh spawn uses (one apply mechanism, two entry points) — the next snapshot rebroadcasts
+// the appearance to the Zone and the caller persists it (a significant durable event). Pure —
+// the whole rule is one testable function; the caller owns store + broadcast.
+export function applyCosmetics(
+	world: ServerWorld,
+	sessionId: number,
+	cosmetics: Cosmetics,
+): { world: ServerWorld; changed: boolean } {
+	const zs = zoneStateOf(world, sessionId);
+	if (zs === undefined) return { world, changed: false }; // unplaced / pre-spawn
+	if (zs.zone.type !== 'town') return { world, changed: false }; // Town-only (#305)
+	const sa = zs.avatars.find((a) => a.sessionId === sessionId);
+	if (sa === undefined) return { world, changed: false };
+	const next = withAvatar(world, sessionId, (a) => withCosmetics(a, cosmetics));
+	return { world: next, changed: true };
 }
 
 // Spawn a joining session's Avatar and record its membership. A fresh account spawns in
