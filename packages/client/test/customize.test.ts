@@ -4,11 +4,11 @@ import {
 	CUSTOMIZE_FIELDS,
 	customizeRows,
 	effectiveHandle,
+	filterHandleDraft,
 	HANDLE_MAX_LEN,
 	handleConfirmable,
 	initCustomize,
 	reduceCustomize,
-	typeHandleChar,
 } from '../src/customize';
 
 test('right cycles the focused field forward', () => {
@@ -84,22 +84,23 @@ test('a key with no binding is a no-op and never confirms', () => {
 	expect(state).toEqual(s);
 });
 
-// --- Player-typed Handle (#304, ADR 0028) -----------------------------------------
+// --- Player-typed Handle / "name" field (#304, #315, ADR 0028) --------------------
 
-test('typeHandleChar appends only legal characters, up to the cap', () => {
-	expect(typeHandleChar('ne', 'o')).toBe('neo');
-	expect(typeHandleChar('neo', '_')).toBe('neo_');
-	expect(typeHandleChar('neo', '-')).toBe('neo-');
-	expect(typeHandleChar('neo', 'X')).toBe('neoX');
-	expect(typeHandleChar('neo', '7')).toBe('neo7');
-	// Illegal characters (spaces, punctuation, multi-char sequences) are ignored.
-	expect(typeHandleChar('neo', ' ')).toBe('neo');
-	expect(typeHandleChar('neo', '!')).toBe('neo');
-	expect(typeHandleChar('neo', 'ab')).toBe('neo');
-	// The cap (matching the shared 2–16 rule) is enforced.
+test('filterHandleDraft keeps only legal characters and caps at the max length', () => {
+	// Legal characters (letters, digits, - and _) survive verbatim.
+	expect(filterHandleDraft('neo')).toBe('neo');
+	expect(filterHandleDraft('Ne0-_')).toBe('Ne0-_');
+	// Illegal characters (spaces, punctuation) are stripped wherever they appear, so an
+	// illegal keystroke never lands in the draft.
+	expect(filterHandleDraft('ne o')).toBe('neo');
+	expect(filterHandleDraft('n!e@o#')).toBe('neo');
+	expect(filterHandleDraft('  n e o  ')).toBe('neo');
+	// The cap (matching the shared 2–16 rule) truncates an over-long value.
 	const full = 'a'.repeat(HANDLE_MAX_LEN);
 	expect(full.length).toBe(HANDLE_MAX_LEN);
-	expect(typeHandleChar(full, 'b')).toBe(full);
+	expect(filterHandleDraft(`${full}bcd`)).toBe(full);
+	// Length is measured after filtering: illegal characters don't count toward the cap.
+	expect(filterHandleDraft(`${'a'.repeat(HANDLE_MAX_LEN)}   `)).toBe(full);
 });
 
 test('effectiveHandle falls back to the placeholder only when the draft is empty', () => {

@@ -16,21 +16,24 @@ import {
 	validHandle,
 } from '@mmo/shared';
 
-// --- Player-typed Handle (#304, ADR 0028) -----------------------------------------
-// The pure, tested rules behind the creator's editable Handle field. The retained-UI
-// shell (character-creator.ts) drives these from key events and mirrors the result into
-// an OpenTUI InputRenderable; the validation itself stays here so it's unit-testable
-// without a renderer. The Handle RULE — legal characters, length bounds — is owned by
-// @mmo/shared (HANDLE_CHAR_RE / HANDLE_MAX_LEN / validHandle), so the client's typing gate
-// and the server's claim can never diverge (CLAUDE.md). Re-exported for the creator + tests.
+// --- Player-typed Handle (#304, #315, ADR 0028) -----------------------------------
+// The pure, tested rules behind the creator's editable name field (labelled "name" in the
+// UI; the domain term stays Handle — #315). The retained-UI shell (character-creator.ts)
+// hands the real focused InputRenderable's whole value to these on each keystroke; the
+// validation itself stays here so it's unit-testable without a renderer. The Handle RULE —
+// legal characters, length bounds — is owned by @mmo/shared (HANDLE_CHAR_RE / HANDLE_MAX_LEN
+// / validHandle), so the client's typing gate and the server's claim can never diverge
+// (CLAUDE.md). Re-exported for the creator + tests.
 export { HANDLE_MAX_LEN } from '@mmo/shared';
 
-// Fold one typed character into the Handle draft: append a legal char up to the cap, ignore
-// anything else (arrows, punctuation, an over-cap keystroke). Pure, so the editing rule is
-// unit-tested. Backspace is the caller's business (it's a key name, not a character).
-export function typeHandleChar(draft: string, char: string): string {
-	if (char.length !== 1 || !HANDLE_CHAR_RE.test(char)) return draft;
-	return draft.length >= HANDLE_MAX_LEN ? draft : draft + char;
+// Live-filter a raw input value to a legal Handle draft: keep only characters in the shared
+// [A-Za-z0-9_-] class and cap the result at HANDLE_MAX_LEN, so illegal input never survives a
+// keystroke. This is the per-keystroke typing gate (formerly the one-char-at-a-time
+// `typeHandleChar`) relocated onto the real focused InputRenderable, which hands us its whole
+// value on each edit. Pure, so the filter is unit-tested without a renderer.
+export function filterHandleDraft(raw: string): string {
+	const kept = Array.from(raw).filter((ch) => HANDLE_CHAR_RE.test(ch));
+	return kept.slice(0, HANDLE_MAX_LEN).join('');
 }
 
 // The Handle that will actually be submitted: the typed draft, or the auto-derived placeholder

@@ -63,8 +63,10 @@ test('cycling the nameplate colour re-tints the preview nameplate in real time',
 	const before = nameplateSpan(captureSpans());
 	expect(before).toBeDefined();
 
-	// Focus the Nameplate field (Form is hidden, so the picker rows are hue, hat,
-	// nameplate) and cycle its colour one step.
+	// Focus the Nameplate field and cycle its colour one step. The ladder is now
+	// [name, hue, hat, nameplate] (the name field is row 0 — #315; Form is hidden), so
+	// reaching the nameplate row from the initial name-row focus takes three downs.
+	creator.key(menuKey('down'));
 	creator.key(menuKey('down'));
 	creator.key(menuKey('down'));
 	creator.key(menuKey('right'));
