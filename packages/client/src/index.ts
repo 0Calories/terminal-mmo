@@ -34,7 +34,7 @@ import { Controls } from './controls';
 import { Hud } from './hud';
 import { InputState } from './input';
 import { NetClient, snapshotToGame } from './net';
-import { NoKittyNotice, shouldWarnNoKitty } from './no-kitty';
+import { NoKittyNotice, NoticeGate, shouldWarnNoKitty } from './no-kitty';
 import { PlayfieldRenderable } from './playfield';
 import { resolveServerUrl } from './server-url';
 import { Shop, type ShopView } from './shop';
@@ -119,22 +119,73 @@ hud.attach(renderer.root);
 
 // Non-Kitty input notice (#228, ADR 0024 §1–§4). Detection is PROACTIVE and fail-open:
 // we read the terminal's resolved Kitty-keyboard capability, not the reactive
-// releaseCapable flag. The capability probe resolves asynchronously (it is `null` until
-// then), so we wait for the `capabilities` event rather than reading synchronously at
-// boot; on a CONFIRMED no-Kitty terminal we raise a blocking, press-any-key overlay. It
-// is re-evaluated fresh every launch (self-clears on a capable terminal) with no
+// releaseCapable flag. On a CONFIRMED no-Kitty terminal we raise a blocking, press-any-key
+// overlay. It is re-evaluated fresh every launch (self-clears on a capable terminal) with no
 // persistence and no opt-out — the keypress handlers below dismiss it on the first key.
+//
+// The Kitty-keyboard capability is NOT a null-until-resolved tri-state in OpenTUI: the native
+// struct field is a plain boolean that DEFAULTS to false and only flips true once the async
+// `ESC[?u` probe response is parsed (which fires a fresh `capabilities` event). So
+// `renderer.capabilities` is already NON-null with `kitty_keyboard === false` the instant
+// `createCliRenderer` resolves — reading it synchronously (or acting on the first, still-
+// unresolved `capabilities` event) mistakes "not answered yet" for "confirmed absent" and
+// wrongly warns on capable terminals like Ghostty. To honour ADR 0024 §2 ("warn only once
+// RESOLVED") without a dedicated OpenTUI signal we: (a) treat a `kitty_keyboard === true` event
+// as positive confirmation that cancels/retracts any warning, and (b) only warn once the probe
+// response burst has gone quiet for the settle window with the flag still false. A terminal that
+// answers nothing at all stays fail-open silent (ADR §2, the high-latency-SSH case).
 const noKittyNotice = new NoKittyNotice(renderer);
 noKittyNotice.attach(renderer.root);
-function evaluateKittyNotice(capabilities: TerminalCapabilities | null): void {
-	if (shouldWarnNoKitty(capabilities)) noKittyNotice.show();
+// The notice is a STRICT sequential pre-gate (#301): while it is up it owns the screen and
+// keyboard, and anything else that would appear at launch (the Avatar creator) is queued
+// behind it via this gate rather than drawn under it. reconcile() runs whenever the notice
+// opens or is dismissed so a late-resolving probe still holds — then releases — the queue.
+const gate = new NoticeGate(noKittyNotice);
+const KITTY_PROBE_SETTLE_MS = 500;
+let kittyConfirmed = false;
+let kittySettleTimer: ReturnType<typeof setTimeout> | null = null;
+function warnNoKittyNow(): void {
+	kittySettleTimer = null;
+	if (kittyConfirmed || noKittyNotice.open) return;
+	if (shouldWarnNoKitty(renderer.capabilities)) {
+		noKittyNotice.show();
+		gate.reconcile(); // hold anything already queued behind the freshly-raised notice
+	}
+}
+function onKittyCapabilities(capabilities: TerminalCapabilities | null): void {
+	if (capabilities?.kitty_keyboard === true) {
+		// Confirmed capable — cancel a pending evaluation and retract a notice we may have
+		// raised from an earlier, still-unresolved (false-default) reading; releasing the gate
+		// so any UI queued behind the notice appears now.
+		kittyConfirmed = true;
+		if (kittySettleTimer) {
+			clearTimeout(kittySettleTimer);
+			kittySettleTimer = null;
+		}
+		if (noKittyNotice.open) {
+			noKittyNotice.hide();
+			gate.reconcile();
+		}
+		return;
+	}
+	// A still-false reading: (re)start the quiet timer. Each further probe response pushes it
+	// back, so we evaluate only after the burst settles — then warn if it is still false.
+	if (kittyConfirmed) return;
+	if (kittySettleTimer) clearTimeout(kittySettleTimer);
+	kittySettleTimer = setTimeout(warnNoKittyNow, KITTY_PROBE_SETTLE_MS);
+}
+// Dismiss the notice on the first key and release the gate so the queued UI appears now.
+function dismissNoKittyNotice(): void {
+	noKittyNotice.hide();
+	gate.reconcile();
 }
 renderer.on('capabilities', (capabilities: TerminalCapabilities) =>
-	evaluateKittyNotice(capabilities),
+	onKittyCapabilities(capabilities),
 );
-// Guard the rare case the probe already resolved before this listener attached; if it is
-// still null (the common case at boot) this no-ops and the event handler runs later.
-if (renderer.capabilities) evaluateKittyNotice(renderer.capabilities);
+// If the probe somehow already resolved before this listener attached, act on a POSITIVE only —
+// never treat the synchronous, pre-probe default of `false` as authoritative (that is the bug
+// this replaces). A false/undefined here just waits for the `capabilities` events above.
+if (renderer.capabilities?.kitty_keyboard === true) kittyConfirmed = true;
 
 // Best-effort, always-optional audio (ADR 0014). Init is attempted once here,
 // gated inside the facade on an interactive TTY, so a headless/piped launch
@@ -269,7 +320,10 @@ async function runNetworked(url: string) {
 			if (isNew) {
 				creating = true;
 				creator.attach(renderer.root);
-				creator.show();
+				// Queue the creator strictly behind the no-Kitty notice (#301): the gate shows it
+				// now if the notice isn't up, or holds it hidden and un-interactive until the
+				// notice is dismissed — so the creator never paints over or steals input from it.
+				gate.request(creator);
 			} else {
 				play();
 			}
@@ -286,7 +340,8 @@ async function runNetworked(url: string) {
 	net.onSpawned = () => {
 		if (creating) {
 			creating = false;
-			creator.hide();
+			// #301: done with the gate — hides the creator and stops the gate ever re-showing it.
+			gate.release(creator);
 		}
 		play();
 	};
@@ -298,9 +353,10 @@ async function runNetworked(url: string) {
 	renderer.keyInput.on('keypress', (k) => {
 		if (started) return;
 		// The blocking no-Kitty notice owns the keyboard while up: the first key press
-		// dismisses it and is swallowed so it doesn't also drive customization (#228).
+		// dismisses it and is swallowed so it doesn't also drive customization (#228,
+		// #301). Dismissal releases the gate, which then reveals the queued creator.
 		if (noKittyNotice.open) {
-			noKittyNotice.hide();
+			dismissNoKittyNotice();
 			return;
 		}
 		if (!creating) {
@@ -316,6 +372,8 @@ async function runNetworked(url: string) {
 		if (!result) return;
 		// A valid Handle was confirmed: freeze the creator and finalise. The World starts only
 		// when the server's spawn snapshot arrives (onSpawned), so a rejection re-opens the field.
+		// The gate is released later, in onSpawned — the creator stays visible (frozen) during
+		// the server round-trip rather than being hidden the instant Enter is pressed.
 		creator.setBusy(true);
 		net.send({
 			t: 'createAvatar',
@@ -451,9 +509,9 @@ async function runNetworked(url: string) {
 		renderer.keyInput.on('keypress', (k) => {
 			// The blocking no-Kitty notice owns the keyboard first (it can resolve a beat
 			// into play on a slow probe): the first key dismisses it and is swallowed so it
-			// can't also drive movement / combat (#228).
+			// can't also drive movement / combat (#228, #301).
 			if (noKittyNotice.open) {
-				noKittyNotice.hide();
+				dismissNoKittyNotice();
 				return;
 			}
 			// While typing, chat OWNS the keyboard: the focused InputRenderable edits the
