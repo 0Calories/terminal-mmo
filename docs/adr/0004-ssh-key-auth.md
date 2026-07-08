@@ -50,3 +50,42 @@ authenticate players by SSH-key challenge-response rather than passwords or
 - **Client signing order:** ssh-agent first (works with passphrase-protected
   keys), then an unencrypted `~/.ssh/id_ed25519` directly. No passphrase prompt
   — a protected key without an agent is refused with guidance.
+
+## Amendment (2026-07-07): auto-generated fallback identity — nobody locked out
+
+The original ADR's load-bearing assumption ("players must have an SSH key — a
+safe assumption for this audience") is *false* for the frozen demo: a keyless
+playtester hit "No usable SSH key found" and could not play at all. For a demo
+handed to strangers, a locked front door is the worst failure. So a keyless
+launch no longer refuses — it mints its own identity.
+
+- **Fallback identity.** When discovery finds no usable external ed25519 key, the
+  client generates an ed25519 keypair, stores the private key as PKCS8 PEM at
+  `~/.config/terminal-mmo/id_ed25519` (mode `0600`, ADR 0015's config dir — *not*
+  `~/.ssh`, to avoid colliding with the real `ssh`), and plays with it. This one
+  fallback covers *every* cause of a failed discovery at once (no key, RSA-only,
+  encrypted-file-without-agent, non-standard path), so we do **not** broaden the
+  verifier to RSA/ecdsa or scan extra paths.
+- **Identity anchor — the Save-safety guard.** Saves key off the public key, so a
+  machine that resolves to a *different* key on a later launch silently loses
+  progress. To prevent that, each successful login records an anchor in
+  `config.json` (`identity.anchor = { publicKey, source: 'external' | 'generated' }`).
+  Discovery resolves the anchored key *specifically*: a `generated` key is always
+  available (we own the file); an `external` key that is momentarily unreachable
+  (flaky agent + protected file) yields a **non-destructive refusal** — "run
+  `ssh-add` and relaunch" — never a freshly minted key. Generation only happens
+  when there is **no** anchor, i.e. for a machine that has never had an identity
+  and therefore has no Save to lose.
+- **Ordering:** anchored key → ssh-agent → `~/.ssh/id_ed25519` → generate. Real
+  SSH keys still win on a first launch (developers keep their cross-machine
+  identity), but once a key is generated it is sticky.
+- **Transparency & degradation.** The generating launch prints one non-blocking
+  line ("created a local game identity … keep this file to keep your character").
+  If even the write fails (read-only home), we fall back to an *ephemeral*
+  in-memory key and warn that progress won't persist — mirroring ADR 0015's
+  "failed write degrades to in-memory for the session" rather than locking anyone
+  out.
+- **Consequence:** the old keyless refusal (`NO_KEY_HINT`) is retired — the only
+  remaining client-side refusal is an anchored external key that is temporarily
+  unreachable. We keep ADR 0004's "no passphrase prompt": a protected key without
+  an agent is a recoverable relaunch, not a reason to decrypt the file ourselves.

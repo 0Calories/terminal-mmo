@@ -14,6 +14,18 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+// The identity area's persisted shape (ADR 0004 amendment, #297): the per-machine
+// **anchor** that pins which Identity Key won last, so a returning Player always
+// resolves to the same account. `source` records whether that key is the Player's
+// own external SSH key or a game-generated one (kept as PKCS8 PEM beside this file).
+// The anchor is the Save-safety guard: discovery only ever mints a new key when
+// there is NO anchor, so an anchored machine can never silently flip keys and orphan
+// its Save.
+export interface IdentityAnchor {
+	publicKey: string; // OpenSSH one-line form of the anchored Identity Key
+	source: 'external' | 'generated';
+}
+
 // The audio area's persisted shape (ADR 0014/0015). `muted` is the master mute;
 // `buses` holds the per-bus volumes the mixer exposes (combat / movement / ui —
 // `ambient` has no voices yet, so it isn't persisted). Volumes are 0..1.
@@ -98,6 +110,37 @@ export function writeAudioPrefs(raw: Raw, audio: AudioPrefs): Raw {
 	};
 }
 
+// Extract the identity anchor from a raw config, validating it strictly: a missing
+// `identity.anchor`, a non-string / empty `publicKey`, or an unknown `source` all
+// resolve to `null` (treated as "no anchor"). Being strict here is deliberate — a
+// malformed anchor must read as absent so discovery falls through to a fresh mint
+// rather than refusing a launch on garbage it can never satisfy.
+export function readIdentityAnchor(raw: Raw): IdentityAnchor | null {
+	const identity = isObject(raw.identity) ? raw.identity : {};
+	const a = isObject(identity.anchor) ? identity.anchor : null;
+	if (!a) return null;
+	const publicKey = a.publicKey;
+	const source = a.source;
+	if (typeof publicKey !== 'string' || publicKey.length === 0) return null;
+	if (source !== 'external' && source !== 'generated') return null;
+	return { publicKey, source };
+}
+
+// Merge an identity anchor into a raw config, returning a new object. Unknown
+// top-level keys AND unknown keys inside `identity` are preserved (spread first,
+// then overwritten), mirroring writeAudioPrefs so a setting a newer client wrote
+// survives an older client's rewrite.
+export function writeIdentityAnchor(raw: Raw, anchor: IdentityAnchor): Raw {
+	const prevIdentity = isObject(raw.identity) ? raw.identity : {};
+	return {
+		...raw,
+		identity: {
+			...prevIdentity,
+			anchor: { publicKey: anchor.publicKey, source: anchor.source },
+		},
+	};
+}
+
 // The fs shell: holds the raw config in memory (preserving unknown keys) and reads/
 // writes it at `path`. Every operation is tolerant — load never throws (missing /
 // unreadable / corrupt → defaults), and saveAudio is best-effort (a failed write
@@ -123,8 +166,20 @@ export class ConfigStore {
 		return this;
 	}
 
+	// The generated Identity Key's on-disk home (ADR 0004 amendment, #297): a sibling
+	// of config.json in the same XDG config dir (`.../terminal-mmo/id_ed25519`), NOT
+	// `~/.ssh`, so it can't collide with the real `ssh`. Only generated players write
+	// it; ssh-auth owns its PKCS8 read/write, this is just the resolved path.
+	get identityKeyPath(): string {
+		return join(dirname(this.path), 'id_ed25519');
+	}
+
 	audio(): AudioPrefs {
 		return readAudioPrefs(this.raw);
+	}
+
+	identityAnchor(): IdentityAnchor | null {
+		return readIdentityAnchor(this.raw);
 	}
 
 	// Merge audio prefs into the in-memory config and best-effort persist to disk.
@@ -132,6 +187,20 @@ export class ConfigStore {
 	// memory for the rest of the session.
 	saveAudio(audio: AudioPrefs): boolean {
 		this.raw = writeAudioPrefs(this.raw, audio);
+		return this.persist();
+	}
+
+	// Merge the identity anchor into the in-memory config and best-effort persist.
+	// Same tolerance as saveAudio: a failed write keeps the anchor in memory for the
+	// session and returns false, never throws.
+	saveIdentityAnchor(anchor: IdentityAnchor): boolean {
+		this.raw = writeIdentityAnchor(this.raw, anchor);
+		return this.persist();
+	}
+
+	// Serialize the in-memory config to disk (creating the dir), returning whether the
+	// write landed. Shared by every save* so they degrade to in-memory identically.
+	private persist(): boolean {
 		try {
 			mkdirSync(dirname(this.path), { recursive: true });
 			writeFileSync(this.path, `${JSON.stringify(this.raw, null, 2)}\n`);
