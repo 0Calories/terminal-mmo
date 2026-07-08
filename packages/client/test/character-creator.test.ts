@@ -1,6 +1,9 @@
 import { expect, test } from 'bun:test';
-import { BOX, HATS } from '@mmo/shared';
+import { BOX, DEFAULT_COSMETICS, HATS } from '@mmo/shared';
+import { createTestRenderer } from '@opentui/core/testing';
 import {
+	CharacterCreator,
+	type CreatorKey,
 	NAMEPLATE_H,
 	PLAYER,
 	PREVIEW_H,
@@ -39,4 +42,65 @@ test('reserved headroom is fixed, so the Sprite sits below the tallest hat', () 
 	// reserves headroom — it sits below the Avatar now (#103).
 	const maxHatH = Math.max(0, ...HATS.map((h) => h.sprite?.h ?? 0));
 	expect(spriteTopOf(0)).toBe(VPAD + maxHatH);
+});
+
+// --- Player-typed Handle at Avatar creation (#304, ADR 0028) -----------------------
+// These drive the retained-UI creator headlessly through @opentui/core/testing (the repo's
+// TTY-free path): construct it on a test renderer and feed key events, asserting the confirm
+// gate + inline-rejection behaviour (the interactive logic, not the pixels).
+
+const key = (name: string, sequence = ''): CreatorKey => ({
+	name,
+	sequence,
+	ctrl: false,
+	meta: false,
+});
+
+async function mountCreator(placeholder = 'wanderer') {
+	const { renderer } = await createTestRenderer({ width: 80, height: 30 });
+	const cc = new CharacterCreator(renderer, placeholder, DEFAULT_COSMETICS);
+	cc.attach(renderer.root);
+	cc.show();
+	return cc;
+}
+
+test('confirm is blocked until the typed Handle passes the 2–16 rule, then returns it', async () => {
+	const cc = await mountCreator();
+	// A one-character draft is too short: the confirm key is disabled and Enter is a no-op.
+	expect(cc.key(key('a', 'a'))).toBeNull();
+	expect(cc.confirmable).toBe(false);
+	expect(cc.key(key('return'))).toBeNull();
+	// A second character makes it valid: Enter now yields the typed Handle + chosen Cosmetics.
+	expect(cc.key(key('b', 'b'))).toBeNull();
+	expect(cc.confirmable).toBe(true);
+	expect(cc.key(key('return'))).toEqual({
+		handle: 'ab',
+		cosmetics: DEFAULT_COSMETICS,
+	});
+});
+
+test('confirming an empty field uses the auto-derived placeholder', async () => {
+	const cc = await mountCreator('wanderer');
+	// No typing: the (valid) placeholder is used, so confirm is allowed immediately.
+	expect(cc.confirmable).toBe(true);
+	expect(cc.key(key('return'))).toEqual({
+		handle: 'wanderer',
+		cosmetics: DEFAULT_COSMETICS,
+	});
+});
+
+test('a createRejected keeps the creator open with an inline error, cleared on the next edit', async () => {
+	const cc = await mountCreator();
+	cc.key(key('n', 'n'));
+	cc.key(key('e', 'e'));
+	cc.key(key('o', 'o'));
+	cc.setBusy(true); // frozen while the createAvatar is in flight
+	expect(cc.key(key('x', 'x'))).toBeNull(); // input ignored while busy
+	// The server refused the claim: the creator stays open, unfreezes, and shows why.
+	cc.showRejection('taken');
+	expect(cc.open).toBe(true);
+	expect(cc.errorMessage.length).toBeGreaterThan(0);
+	// Editing the Handle again clears the inline error so the retry reads clean.
+	cc.key(key('backspace'));
+	expect(cc.errorMessage).toBe('');
 });

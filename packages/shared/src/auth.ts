@@ -230,9 +230,21 @@ export function createAccountRegistry(): AccountRegistry {
 	return { handleByKey: {}, keyByHandle: {} };
 }
 
-// 2–16 chars of [A-Za-z0-9_-]: fits the nameplate, unambiguous in `/w <handle>`,
-// and never needs escaping in chat attribution.
-export const HANDLE_RE = /^[A-Za-z0-9_-]{2,16}$/;
+// The one source of the Handle rule (#235): the allowed character class and the length bounds.
+// Both the whole-string validator (validHandle / HANDLE_RE) AND the client creator's per-
+// keystroke typing gate derive from these, so the two can never drift — the divergence CLAUDE.md
+// forbids by keeping every rule in @mmo/shared.
+export const HANDLE_MIN_LEN = 2;
+export const HANDLE_MAX_LEN = 16;
+const HANDLE_CHAR_CLASS = 'A-Za-z0-9_-';
+// Matches ONE allowed Handle character — the client's typing gate admits exactly the characters
+// a claim will accept.
+export const HANDLE_CHAR_RE = new RegExp(`^[${HANDLE_CHAR_CLASS}]$`);
+// 2–16 chars of [A-Za-z0-9_-]: fits the nameplate, unambiguous in `/w <handle>`, and never
+// needs escaping in chat attribution.
+export const HANDLE_RE = new RegExp(
+	`^[${HANDLE_CHAR_CLASS}]{${HANDLE_MIN_LEN},${HANDLE_MAX_LEN}}$`,
+);
 export function validHandle(handle: string): boolean {
 	return HANDLE_RE.test(handle);
 }
@@ -286,10 +298,16 @@ export type AuthResult =
 
 /**
  * The server-side auth decision for one connection, as one pure function:
- * verify the challenge signature, then resolve the key to its durable Handle
- * — an already-registered key gets its registered Handle (whatever it asked
- * for); an unknown key claims `desiredHandle`. `reason` strings are
- * player-facing — the client prints them verbatim on reject.
+ * verify the challenge signature, then resolve the key WITHOUT claiming a Handle.
+ * A returning key (already registered) resolves to its durable Handle; a brand-new
+ * key is admitted UNCLAIMED, carrying `desiredHandle` only as the provisional
+ * auto-derived value the creator pre-fills.
+ *
+ * The Handle claim moved out of the handshake to the `createAvatar` finalise step for
+ * new accounts (#304, ADR 0028), where the server validates + claims the Player-typed
+ * Handle via `claimHandle`; so this seam no longer rejects on `taken`/`invalid`. Which of
+ * the two cases a key is gets decided downstream by the Save lookup (store.load) — the
+ * ADR's single authority — never here. `reason` strings are player-facing (printed verbatim).
  */
 export function resolveAuth(
 	reg: AccountRegistry,
@@ -310,16 +328,6 @@ export function resolveAuth(
 			reason:
 				'SSH signature verification failed — the key that signed does not match the public key offered.',
 		};
-	const claim = claimHandle(reg, publicKeyLine, desiredHandle.trim());
-	if (claim.ok)
-		return { ok: true, registry: claim.registry, handle: claim.handle };
-	if (claim.reason === 'taken')
-		return {
-			ok: false,
-			reason: `The handle "${desiredHandle.trim()}" is already claimed by another key — relaunch with MMO_HANDLE=<other-name> to pick a different one.`,
-		};
-	return {
-		ok: false,
-		reason: `"${desiredHandle.trim()}" is not a valid handle — use 2–16 letters, digits, - or _ (relaunch with MMO_HANDLE=<name>).`,
-	};
+	const existing = handleForKey(reg, publicKeyLine);
+	return { ok: true, registry: reg, handle: existing ?? desiredHandle.trim() };
 }

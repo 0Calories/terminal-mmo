@@ -61,6 +61,16 @@ export class NetClient {
 	// Set when the server refuses the connection: a Version mismatch (ADR 0012) or a
 	// connection cap (ADR 0009). The caller surfaces this and exits.
 	rejected: string | null = null;
+	// The server refused a `createAvatar` finalise because the typed Handle was taken/invalid
+	// (#304, ADR 0028). Unlike `onReject` this does NOT close the connection — the caller keeps
+	// the creator open, shows the reason inline, and lets the Player retry with another Handle.
+	onCreateRejected: (reason: 'taken' | 'invalid') => void = () => {};
+	// Fired once, when the FIRST snapshot arrives (i.e. the server has placed this Avatar in the
+	// World). A new account uses it to know its `createAvatar` succeeded — hide the creator and
+	// start the live loop; a returning account has already started on `welcome`, so its handler
+	// is a no-op (starting the loop is idempotent).
+	onSpawned: () => void = () => {};
+	private spawnNotified = false;
 
 	constructor(
 		url: string,
@@ -173,6 +183,12 @@ export class NetClient {
 			this.notice(msg.text);
 			return;
 		}
+		// The typed Handle was refused at the createAvatar finalise (#304): keep the creator up
+		// and let the caller surface the reason inline for a retry (the connection stays open).
+		if (msg.t === 'createRejected') {
+			this.onCreateRejected(msg.reason);
+			return;
+		}
 		// snapshot: on a Zone change, drop the prior Zone's frames — interpolating
 		// across the boundary would ease an Avatar between two unrelated coord spaces.
 		if (msg.zoneId !== this.zoneId) {
@@ -181,6 +197,12 @@ export class NetClient {
 		}
 		this.latest = msg;
 		this.buffer.push(msg, recvTimeMs);
+		// The first snapshot means the server has spawned this Avatar — tell the caller once so a
+		// new account (held at the creator until its createAvatar landed) can enter the World.
+		if (!this.spawnNotified) {
+			this.spawnNotified = true;
+			this.onSpawned();
+		}
 	}
 
 	// The Zone view to render at local time `nowMs`: co-present entities are eased

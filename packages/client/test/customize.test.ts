@@ -3,8 +3,12 @@ import { DEFAULT_COSMETICS, FORM_COUNT, HUE_COUNT } from '@mmo/shared';
 import {
 	CUSTOMIZE_FIELDS,
 	customizeRows,
+	effectiveHandle,
+	HANDLE_MAX_LEN,
+	handleConfirmable,
 	initCustomize,
 	reduceCustomize,
+	typeHandleChar,
 } from '../src/customize';
 
 test('right cycles the focused field forward', () => {
@@ -78,4 +82,38 @@ test('a key with no binding is a no-op and never confirms', () => {
 	const { state, confirm } = reduceCustomize(s, 'x');
 	expect(confirm).toBe(false);
 	expect(state).toEqual(s);
+});
+
+// --- Player-typed Handle (#304, ADR 0028) -----------------------------------------
+
+test('typeHandleChar appends only legal characters, up to the cap', () => {
+	expect(typeHandleChar('ne', 'o')).toBe('neo');
+	expect(typeHandleChar('neo', '_')).toBe('neo_');
+	expect(typeHandleChar('neo', '-')).toBe('neo-');
+	expect(typeHandleChar('neo', 'X')).toBe('neoX');
+	expect(typeHandleChar('neo', '7')).toBe('neo7');
+	// Illegal characters (spaces, punctuation, multi-char sequences) are ignored.
+	expect(typeHandleChar('neo', ' ')).toBe('neo');
+	expect(typeHandleChar('neo', '!')).toBe('neo');
+	expect(typeHandleChar('neo', 'ab')).toBe('neo');
+	// The cap (matching the shared 2–16 rule) is enforced.
+	const full = 'a'.repeat(HANDLE_MAX_LEN);
+	expect(full.length).toBe(HANDLE_MAX_LEN);
+	expect(typeHandleChar(full, 'b')).toBe(full);
+});
+
+test('effectiveHandle falls back to the placeholder only when the draft is empty', () => {
+	expect(effectiveHandle('', 'wanderer')).toBe('wanderer');
+	expect(effectiveHandle('   ', 'wanderer')).toBe('wanderer');
+	expect(effectiveHandle('neo', 'wanderer')).toBe('neo');
+});
+
+test('handleConfirmable gates confirm on the shared 2–16 [A-Za-z0-9_-] rule', () => {
+	// An empty draft uses the (valid) auto-derived placeholder, so confirm is allowed.
+	expect(handleConfirmable('', 'wanderer')).toBe(true);
+	// A one-character draft is too short: confirm is blocked until it becomes valid.
+	expect(handleConfirmable('a', 'wanderer')).toBe(false);
+	expect(handleConfirmable('ab', 'wanderer')).toBe(true);
+	// The cap is respected; a 16-char handle is still valid.
+	expect(handleConfirmable('a'.repeat(HANDLE_MAX_LEN), 'wanderer')).toBe(true);
 });

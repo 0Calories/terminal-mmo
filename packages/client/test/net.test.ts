@@ -259,6 +259,30 @@ test('NetClient drops the interpolation buffer (and tracks the Zone) on a Zone c
 	net.close();
 });
 
+test('NetClient surfaces a createRejected to the caller without closing (the creator can retry, #304)', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
+	const reasons: Array<'taken' | 'invalid'> = [];
+	net.onCreateRejected = (reason) => reasons.push(reason);
+	net.ingest({ t: 'createRejected', reason: 'taken' }, 1000);
+	net.ingest({ t: 'createRejected', reason: 'invalid' }, 1010);
+	// The reasons reach the caller and the connection is NOT torn down (`rejected` stays null,
+	// unlike a hard `reject`) so the Player can type another Handle and resend.
+	expect(reasons).toEqual(['taken', 'invalid']);
+	expect(net.rejected).toBe(null);
+	net.close();
+});
+
+test('NetClient fires onSpawned once, on the first snapshot (the createAvatar landed, #304)', () => {
+	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
+	let spawns = 0;
+	net.onSpawned = () => spawns++;
+	net.ingest(snapAt(40), 1000);
+	net.ingest(snapAt(60), 1050);
+	// Only the FIRST snapshot signals the spawn — later frames don't re-fire it.
+	expect(spawns).toBe(1);
+	net.close();
+});
+
 test('NetClient.ingest collects chat lines attributed to the sender handle', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest(

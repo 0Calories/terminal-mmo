@@ -227,11 +227,13 @@ export type ClientMessage =
 	| { t: 'buy'; index: number }
 	// Finalise brand-new Avatar creation (#302, ADR 0028). Sent once, only after the
 	// server's `welcome` reported `isNew` and the client showed the creator over a neutral
-	// hold screen: it hands the server the chosen Cosmetics so it mints the durable Save and
-	// spawns the Avatar into the starting Town. A returning account never sends this — its
-	// look is restored from its Save. #304 threads a typed Handle through this message; #305
+	// hold screen: it hands the server the Player-typed Handle plus the chosen Cosmetics so it
+	// validates + claims the Handle, mints the durable Save, and spawns the Avatar into the
+	// starting Town. A returning account never sends this — its Handle + look are restored from
+	// its Save. `handle` is the Player-typed Handle (#304); an empty string means "use the
+	// auto-derived placeholder", which the server re-applies before the uniqueness check. #305
 	// adds a sibling `setCosmetics` for in-game re-customization, sharing the apply path.
-	| { t: 'createAvatar'; cosmetics: Cosmetics };
+	| { t: 'createAvatar'; handle: string; cosmetics: Cosmetics };
 
 // Cosmetics are four small catalog indices (#35, ADR 0020): one u8 each — hue, hat,
 // nameplate, then `form`. Decode clamps to a valid index so a forward-version / garbled
@@ -324,6 +326,10 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 		case 'createAvatar':
 			w.u8(CLIENT_TAG.createAvatar);
 			writeCosmetics(w, msg.cosmetics);
+			// The Player-typed Handle (#304) trails the cosmetics, append-only: a #302-era
+			// client that omitted it still decodes (the server then falls back to the
+			// auto-derived placeholder). '' encodes as "use the placeholder".
+			w.str(msg.handle);
 			break;
 	}
 	return w.finish();
@@ -396,8 +402,13 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			return { t: 'sell', itemId: r.u32() };
 		case CLIENT_TAG.buy:
 			return { t: 'buy', index: r.u32() };
-		case CLIENT_TAG.createAvatar:
-			return { t: 'createAvatar', cosmetics: readCosmetics(r) };
+		case CLIENT_TAG.createAvatar: {
+			const cosmetics = readCosmetics(r);
+			// Typed Handle (#304) trails; absent (a #302-era frame) decodes as '' — the server
+			// falls back to the auto-derived placeholder and still runs the uniqueness check.
+			const handle = r.remaining() >= 4 ? r.str() : '';
+			return { t: 'createAvatar', handle, cosmetics };
+		}
 		default:
 			throw new Error(`unknown client message tag ${tag}`);
 	}
@@ -509,7 +520,13 @@ export type ServerMessage =
 	// The server is refusing the connection and will close it (ADR 0009): a
 	// protocol-version mismatch, or a connection cap (global / per-IP). `reason` is
 	// a human-readable line the client surfaces before exiting.
-	| { t: 'reject'; reason: string };
+	| { t: 'reject'; reason: string }
+	// The server refused a `createAvatar` finalise (#304, ADR 0028) — the Handle claim failed:
+	// `taken` (another key holds it, case-insensitively) or `invalid` (fails the 2–16
+	// [A-Za-z0-9_-] rule). Unlike `reject` this does NOT close the connection: the session stays
+	// held authenticated-but-unspawned, so the client keeps the creator open, shows an inline
+	// error, and lets the Player retry with another Handle.
+	| { t: 'createRejected'; reason: 'taken' | 'invalid' };
 
 const SERVER_TAG = {
 	welcome: 1,
@@ -519,7 +536,12 @@ const SERVER_TAG = {
 	whisper: 5,
 	notice: 6,
 	challenge: 7,
+	createRejected: 8,
 } as const;
+
+// The `createRejected` reasons on the wire (#304): a u8 index, append-only. A forward-version
+// index clamps to 'invalid' on decode so a newer server can never crash an older client.
+const CREATE_REJECT_REASONS = ['taken', 'invalid'] as const;
 
 const ENTITY_TYPES: readonly EntityType[] = [
 	'player',
@@ -831,6 +853,10 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			w.u8(SERVER_TAG.reject);
 			w.str(msg.reason);
 			break;
+		case 'createRejected':
+			w.u8(SERVER_TAG.createRejected);
+			w.u8(CREATE_REJECT_REASONS.indexOf(msg.reason));
+			break;
 	}
 	return w.finish();
 }
@@ -903,6 +929,11 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			return { t: 'notice', text: r.str() };
 		case SERVER_TAG.reject:
 			return { t: 'reject', reason: r.str() };
+		case SERVER_TAG.createRejected:
+			return {
+				t: 'createRejected',
+				reason: CREATE_REJECT_REASONS[r.u8()] ?? 'invalid',
+			};
 		default:
 			throw new Error(`unknown server message tag ${tag}`);
 	}

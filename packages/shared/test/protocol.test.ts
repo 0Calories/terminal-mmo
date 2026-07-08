@@ -223,13 +223,25 @@ test('buy (client -> server) round-trips the catalog index (#273, ADR 0025)', ()
 	expect(decoded).toEqual(msg);
 });
 
-test('createAvatar (client -> server) round-trips the chosen Cosmetics (#302, ADR 0028)', () => {
+test('createAvatar (client -> server) round-trips the typed Handle + chosen Cosmetics (#302, #304)', () => {
 	const msg: ClientMessage = {
 		t: 'createAvatar',
+		handle: 'Neo',
 		cosmetics: { hue: 4, hat: 1, nameplate: 3, form: 0 },
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
+});
+
+test('createAvatar carries an empty typed Handle (server falls back to the placeholder)', () => {
+	// The empty-field case (#304): the client sends '' when the Player leaves the field blank;
+	// it must round-trip as '' so the server re-applies the auto-derived placeholder.
+	const msg: ClientMessage = {
+		t: 'createAvatar',
+		handle: '',
+		cosmetics: { hue: 1, hat: 0, nameplate: 2, form: 0 },
+	};
+	expect(decodeClientMessage(encodeClientMessage(msg))).toEqual(msg);
 });
 
 test('createAvatar clamps an out-of-range cosmetic index on decode', () => {
@@ -237,11 +249,49 @@ test('createAvatar clamps an out-of-range cosmetic index on decode', () => {
 	// to 0 per field so the renderer is never handed a stray index — the same trust boundary.
 	const encoded = encodeClientMessage({
 		t: 'createAvatar',
+		handle: 'Neo',
 		cosmetics: { hue: 2, hat: 250, nameplate: 1, form: 250 },
 	});
 	expect(decodeClientMessage(encoded)).toEqual({
 		t: 'createAvatar',
+		handle: 'Neo',
 		cosmetics: { hue: 2, hat: 0, nameplate: 1, form: 0 },
+	});
+});
+
+test('a #302-era createAvatar (no trailing handle) decodes handle as empty', () => {
+	// The typed Handle (#304) is append-only after the cosmetics, so a frame that predates it
+	// (just tag + 4 cosmetic bytes) must decode without throwing and yield handle: '' — the
+	// server then falls back to the auto-derived placeholder.
+	const full = encodeClientMessage({
+		t: 'createAvatar',
+		handle: 'Neo',
+		cosmetics: { hue: 2, hat: 1, nameplate: 3, form: 0 },
+	});
+	// Drop the trailing handle field (u32 length prefix + 3 bytes for "Neo").
+	const legacy = full.subarray(0, full.length - 4 - 3);
+	expect(decodeClientMessage(legacy)).toEqual({
+		t: 'createAvatar',
+		handle: '',
+		cosmetics: { hue: 2, hat: 1, nameplate: 3, form: 0 },
+	});
+});
+
+test('createRejected (server -> client) round-trips its reason (#304)', () => {
+	for (const reason of ['taken', 'invalid'] as const) {
+		const msg: ServerMessage = { t: 'createRejected', reason };
+		expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
+	}
+});
+
+test('createRejected clamps a forward-version reason to invalid on decode', () => {
+	// The reason is a u8 index, append-only; an unknown index (a newer server) must decode to
+	// 'invalid' so an older client can never crash on it.
+	const encoded = encodeServerMessage({ t: 'createRejected', reason: 'taken' });
+	encoded[1] = 200; // corrupt the reason index to a forward-version value
+	expect(decodeServerMessage(encoded)).toEqual({
+		t: 'createRejected',
+		reason: 'invalid',
 	});
 });
 

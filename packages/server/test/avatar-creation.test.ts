@@ -123,16 +123,23 @@ test('a new account is held authenticated-but-unspawned until createAvatar, then
 	expect(zoneOf(currentWorld(), 1)).toBeUndefined();
 	expect(avatarOf(currentWorld(), 1)).toBeUndefined();
 
-	// Finalise creation: the chosen Cosmetics arrive now (not on the handshake).
+	// Finalise creation: the Player-typed Handle + chosen Cosmetics arrive now (not on the
+	// handshake). The typed Handle is claimed HERE (#304).
 	const chosen: Cosmetics = { hue: 5, hat: 1, nameplate: 2, form: 0 };
 	onMessage(
 		ws(w),
-		encodeClientMessage({ t: 'createAvatar', cosmetics: chosen }),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'Neo',
+			cosmetics: chosen,
+		}),
 	);
 
-	// AC: createAvatar spawns the Avatar into the starting Town with the chosen look + Weapon.
+	// AC: createAvatar spawns the Avatar into the starting Town with the typed Handle, chosen
+	// look + Weapon.
 	expect(zoneOf(currentWorld(), 1)).toBe('town-01');
 	const sa = avatarOf(currentWorld(), 1);
+	expect(sa?.handle).toBe('Neo');
 	expect(sa?.cosmetics).toEqual(chosen);
 	expect(sa?.avatar.weapon).toBe(3);
 });
@@ -141,22 +148,31 @@ test('a returning account restores straight away with isNew=false and its saved 
 	const id = makeIdentity();
 	const chosen: Cosmetics = { hue: 4, hat: 2, nameplate: 1, form: 0 };
 
-	// First login: create + spawn, which mints and persists the Save, then disconnect.
+	// First login: create + spawn, which claims the Handle, mints + persists the Save, then
+	// disconnect.
 	const first = fakeWs(10);
 	expect(handshake(first, id, 'trinity', 1).isNew).toBe(true);
 	onMessage(
 		ws(first),
-		encodeClientMessage({ t: 'createAvatar', cosmetics: chosen }),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'Trinity',
+			cosmetics: chosen,
+		}),
 	);
 	dropSession(10); // releases the identity presence so the same key can reconnect
 
 	// Second login of the SAME identity: the Save now exists, so the server restores it.
 	const second = fakeWs(11);
-	const welcome = handshake(second, id, 'trinity', 0);
+	const welcome = handshake(second, id, 'whatever-it-asks', 0);
 	// AC: a returning Identity Key never sees the creator...
 	expect(welcome.isNew).toBe(false);
-	// ...and is spawned into its last Town with its saved Cosmetics (the minted Save's).
+	// ...and resolves its durable Handle (the claimed casing), whatever it asked for at the
+	// handshake — the claim relocation to createAvatar (#304) doesn't regress the returning path.
+	expect(welcome.handle).toBe('Trinity');
+	// ...and is spawned into its last Town with its saved Handle + Cosmetics (the minted Save's).
 	expect(zoneOf(currentWorld(), 11)).toBe('town-01');
+	expect(avatarOf(currentWorld(), 11)?.handle).toBe('Trinity');
 	expect(avatarOf(currentWorld(), 11)?.cosmetics).toEqual(chosen);
 });
 
@@ -164,9 +180,94 @@ test('createAvatar from a session the server is not holding is a silent no-op', 
 	const w = fakeWs(99);
 	onMessage(
 		ws(w),
-		encodeClientMessage({ t: 'createAvatar', cosmetics: DEFAULT_COSMETICS }),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'nobody',
+			cosmetics: DEFAULT_COSMETICS,
+		}),
 	);
 	// No pending-spawn hold ⇒ nothing spawned and nothing sent back.
 	expect(zoneOf(currentWorld(), 99)).toBeUndefined();
 	expect(w.sent.length).toBe(0);
+});
+
+test('a taken Handle is rejected with createRejected and does not spawn; the session stays held for a retry', () => {
+	// Fresh Handles: the server module's registry is shared across tests, so these must not
+	// collide with any other test's claim. First account claims "Zion" and spawns.
+	const a = makeIdentity();
+	const wa = fakeWs(20);
+	handshake(wa, a, 'zion', 0);
+	onMessage(
+		ws(wa),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'Zion',
+			cosmetics: DEFAULT_COSMETICS,
+		}),
+	);
+	expect(avatarOf(currentWorld(), 20)?.handle).toBe('Zion');
+
+	// A DIFFERENT key tries to claim the same Handle, case-insensitively.
+	const b = makeIdentity();
+	const wb = fakeWs(21);
+	handshake(wb, b, 'placeholder-b', 0);
+	onMessage(
+		ws(wb),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'ZION',
+			cosmetics: DEFAULT_COSMETICS,
+		}),
+	);
+	// AC: a taken Handle yields createRejected{taken} and NO spawn.
+	const rejected = lastSent(wb);
+	expect(rejected).toEqual({ t: 'createRejected', reason: 'taken' });
+	expect(zoneOf(currentWorld(), 21)).toBeUndefined();
+
+	// The session stays held: a retry with a free Handle now succeeds (no re-handshake).
+	onMessage(
+		ws(wb),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'Cypher',
+			cosmetics: DEFAULT_COSMETICS,
+		}),
+	);
+	expect(avatarOf(currentWorld(), 21)?.handle).toBe('Cypher');
+});
+
+test('an invalid Handle is rejected with createRejected{invalid} and does not spawn', () => {
+	const id = makeIdentity();
+	const w = fakeWs(30);
+	handshake(w, id, 'valid-placeholder', 0);
+	// "a" is too short for the 2–16 rule.
+	onMessage(
+		ws(w),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'a',
+			cosmetics: DEFAULT_COSMETICS,
+		}),
+	);
+	expect(lastSent(w)).toEqual({ t: 'createRejected', reason: 'invalid' });
+	expect(zoneOf(currentWorld(), 30)).toBeUndefined();
+});
+
+test('confirming an empty Handle field uses the auto-derived placeholder, still uniqueness-checked', () => {
+	const id = makeIdentity();
+	const w = fakeWs(40);
+	// The handshake handle is the auto-derived placeholder the client pre-fills the field with.
+	handshake(w, id, 'wanderer', 0);
+	// Empty typed field ⇒ the server falls back to the placeholder and claims THAT.
+	onMessage(
+		ws(w),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: '',
+			cosmetics: DEFAULT_COSMETICS,
+		}),
+	);
+	// AC: an empty field spawns with the placeholder Handle (run through the same claim).
+	expect(zoneOf(currentWorld(), 40)).toBe('town-01');
+	expect(avatarOf(currentWorld(), 40)?.handle).toBe('wanderer');
 });
