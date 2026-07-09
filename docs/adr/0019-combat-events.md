@@ -4,6 +4,12 @@ status: accepted
 
 # CombatEvent: combat resolves into events; effects are their projection
 
+> **Amendment (ADR 0029):** decision (B) below — projecting *before* the wire and
+> broadcasting the lean `Effect` — is superseded. `effectsOf` now runs client-side and
+> the wire carries `CombatEvent`, not `Effect`; the on-wire `Effect` is retired in
+> favour of the client-only `VisualEffect`. The CombatEvent concept and the
+> single-projection discipline (A) introduced here are unchanged.
+
 ADR 0013 gave us authoritative **Effects** and client-realized **Particles**, and
 said Effects are "emitted in `stepZone()`, exactly at the damage-application sites"
 (§1). That rule quietly grew two problems as combat got faster (ADR 0017):

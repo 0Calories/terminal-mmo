@@ -231,54 +231,57 @@ _Avoid_: Emoji, reaction, gesture (one word — an emote is a body pose, not a p
 **CombatEvent**:
 The resolved, *semantic* fact of a combat interaction — "target T was **hit** /
 **broke** (poise) / **died** / **swatted**, at (x,y), facing →, intensity
-N." It is what Combat resolution produces; an **Effect** is its presentation projection
-(via the shared `effectsOf`), and a **Particle** is the Effect's realization. The
-authority *produces* a CombatEvent by applying damage/poise (the poise result is
-what makes a contact a hit vs a break vs a death); the local Player *predicts* only
-the optimistic `hit` event from its own outgoing swing, for zero-latency feedback.
+N." It is what Combat resolution produces; a **VisualEffect** is its client-side
+presentation projection (via `effectsOf`), and a **Particle** is that VisualEffect's
+realization. The authority *produces* a CombatEvent by applying damage/poise (the poise
+result is what makes a contact a hit vs a break vs a death); the local Player *predicts*
+only the optimistic `hit` event from its own outgoing swing, for zero-latency feedback.
 `break`/`death`/`swat` are authority-only, and so is *incoming* hurt — an
-Avatar-target `hit` is never predicted (ADR 0013 §3). Every combat Effect in a snapshot
-is `effectsOf(CombatEvent)` — no site emits an Effect inline (the migration completed in
-#194). The kinds map `hit → blood`, `break → impact` (heavier), `death → gore` (tinted),
-`swat → impact` (a light clink — a melee frame shattering a shot, ADR 0017 §8 — at the
-shot's own damage, no poise bump). Distinct from Effect: a CombatEvent's
-`kind` is the game fact (`hit`), an Effect's `kind` is the look (`blood`). Shared-internal,
-never on the wire — it is projected to Effects before the snapshot is built (see ADR 0019).
-Modeled as a discriminated union on `kind`, so each kind carries only the fields it can
-mean — `source` on a predicted `hit`, `tint` (the dead body's colour) on a `death`.
-_Avoid_: Effect (that's the projection), HitEvent, Outcome
+Avatar-target `hit` is never predicted (ADR 0013 §3). The kinds map `hit → blood`,
+`break → impact` (heavier), `death → gore` (tinted), `swat → impact` (a light clink — a
+melee frame shattering a shot, ADR 0017 §8 — at the shot's own damage, no poise bump).
+It **is** the wire payload (ADR 0029, superseding ADR 0019 §B): the server broadcasts
+CombatEvents and each client runs `effectsOf` locally to project them to
+VisualEffects/SoundEffects — no site emits presentation inline, and the server holds no
+presentation knowledge. The originator is suppressed from its own broadcast (it already
+predicted its `hit`). Modeled as a discriminated union on `kind`, so each kind carries
+only the fields it can mean — `source` on a predicted `hit`, `tint` (the dead body's
+colour) on a `death`.
+_Avoid_: Effect (retired — see VisualEffect), HitEvent, Outcome
 
-**Effect**:
-A small, authoritative descriptor of a momentary world event worth showing —
-e.g. "a blood-hit landed at (x,y), facing →, intensity N." The **presentation
-projection of a CombatEvent** (`effectsOf`), produced deterministically in shared
-logic the moment Combat resolves, and broadcast to every session in the Zone (like
-a Chat message) *except* the session that caused it (which predicts it locally). An Effect
-says *what it looks/sounds like*; the CombatEvent it came from says *what happened*.
-Its visual realization is the client's business (see Particle). The local Player
-predicts their own Effects client-side for zero-latency feedback; the server derives
-the same Effects independently and authoritatively.
-_Avoid_: Event (too generic — see CombatEvent), FX, animation, particle (that's the realization)
+**VisualEffect**:
+The client-side *visual* realization of a **CombatEvent** (later: other event kinds) —
+e.g. "a blood-hit at (x,y), facing →, intensity N." Produced by the client-side
+projection `effectsOf` the moment a CombatEvent arrives from the wire *or* is predicted
+locally; it is **not** authoritative and **never on the wire** (ADR 0029 — the shared,
+authoritative thing is the CombatEvent). One VisualEffect realizes into **Particle**s
+(via **ParticleType**), plus **Camera-kick** and **Hitstop**; its audio twin is the
+**SoundEffect**. The visual half of presentation, owned entirely by the client — the
+server has no concept of it. Replaces the retired on-wire **Effect** (ADR 0013/0019, now
+0029).
+_Avoid_: Effect (retired — collided with the effect-ts library and with combat
+internals; the on-wire descriptor is now the CombatEvent), FX, animation, particle
+(that's the realization)
 
 **Particle**:
 A single client-side visual speck — one cell with a sub-cell position,
 velocity, and lifetime — simulated locally at render framerate. A client turns
-one Effect into many Particles using local randomness, so the exact specks
-differ harmlessly between clients; only the Effect is shared. Each Particle's
-motion and look (gravity, bounce, whether it rests, glyphs, color-over-life) come
-from its **ParticleType**, not from hardcoded blood behavior. Purely decorative
-and client-side, like a Sprite.
-_Avoid_: Effect, sprite, pixel (ambiguous), FX
+one VisualEffect into many Particles using local randomness, so the exact specks
+differ harmlessly between clients; only the CombatEvent (and thus the VisualEffect it
+projects to) is shared. Each Particle's motion and look (gravity, bounce, whether it
+rests, glyphs, color-over-life) come from its **ParticleType**, not from hardcoded
+blood behavior. Purely decorative and client-side, like a Sprite.
+_Avoid_: VisualEffect (that's the descriptor a Particle realizes), sprite, pixel (ambiguous), FX
 
 **ParticleType**:
 The visual profile a Particle belongs to (`blood`, later `dust`, `sparkle`,
 `spark`…) — a declarative data entry defining its whole behavior: gravity,
 bounce, terrain collision, rest and fade durations, glyph sets, color-over-life,
 z-layer. One generic client simulator reads the profile, so a new look is a new
-data entry, not new code. Distinct from `Effect.kind`: an Effect.kind is the
-*semantic game event* ("blood hit"), mapped client-side to one or more
-ParticleTypes — the indirection that lets one event spawn several looks.
-_Avoid_: Effect.kind, ParticleKind, sprite
+data entry, not new code. Distinct from a **CombatEvent**'s `kind`: that is the
+*semantic game event* (`hit`), mapped client-side (via a **VisualEffect**) to one or
+more ParticleTypes — the indirection that lets one event spawn several looks.
+_Avoid_: CombatEvent.kind, ParticleKind, sprite
 
 **Hitstop**:
 A client-side, render-only freeze of a few dozen milliseconds on a meaty hit (a
@@ -293,20 +296,22 @@ A small, decaying viewport offset (≤2 cells, gone in <150ms) the client adds o
 "big moment" — a Poise break in the foundation — layered on top of the follow
 camera as a single directional punch (not a rumble; micro-shake reads as jank at
 cell granularity). View-only and non-authoritative; keyed off the `impact`
-**Effect**, so it fires for everyone who sees the break, attacker included.
+**VisualEffect** (from a break CombatEvent), so it fires for everyone who sees the
+break, attacker included.
 _Avoid_: screenshake, rumble, camera shake (it's a single decaying pop)
 
 **SoundEffect**:
 The client-side *audible* realization of a moment — the audio twin of a Particle.
 Where a Particle answers *what it looks like*, a SoundEffect answers *what it
-sounds like*. Two sources feed it: an authoritative **Effect** / death (so a
-nearby Avatar's hit or death is heard, spatialized by position) and a purely
-local interaction (your own jump, a menu blip — never on the wire). Always
+sounds like*. Two sources feed it: an authoritative **CombatEvent** (so a
+nearby Avatar's hit or death is heard, spatialized by position — realized by the same
+client `effectsOf` that produces VisualEffects) and a purely local interaction (your
+own jump, a menu blip — never on the wire). Always
 best-effort and non-authoritative: if there is no audio device, every SoundEffect
 is a silent no-op and the World behaves identically. The shared sim never
 references one — like a Sprite or Particle, it is the client's business alone.
-_Avoid_: Cue, sound, audio (reserve for the engine/files), Effect (that's the
-authoritative trigger, not the audible result), FX
+_Avoid_: Cue, sound, audio (reserve for the engine/files), CombatEvent (that's the
+authoritative trigger, not the audible result), VisualEffect (that's its visual twin), FX
 
 **Monster**:
 A hostile, server-controlled entity that Players fight for XP and loot. Lives in
