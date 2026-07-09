@@ -22,10 +22,7 @@ import {
 	swingProgress,
 } from '@mmo/shared';
 import { type OptimizedBuffer, RGBA } from '@opentui/core';
-import type { DodgeEcho } from '../effects/dodge-echo';
-import { drawDodgeEchoes } from '../effects/dodge-echo';
-import { drawParticles } from '../effects/draw-particles';
-import type { ParticleSystem } from '../effects/particles';
+import type { VisualEffects } from '../effects';
 import { COLORS as C, RARITY_RGBA } from '../theme';
 import { drawSpeechBubble } from '../ui/speech-bubble';
 
@@ -115,8 +112,7 @@ export function drawPlayfield(
 	buf: OptimizedBuffer,
 	game: GameState,
 	cam: { x: number; y: number },
-	particles: ParticleSystem,
-	dodgeEchoes: readonly DodgeEcho[],
+	visuals: VisualEffects,
 ) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
@@ -141,15 +137,7 @@ export function drawPlayfield(
 	);
 
 	// Resting/fading blood behind the Sprites (airborne blood is drawn in front, below).
-	drawParticles(
-		buf,
-		particles,
-		cam,
-		zone.terrain,
-		sw,
-		sh,
-		(p) => p.stage !== 'airborne',
-	);
+	visuals.draw(buf, cam, 'settled');
 
 	const onPortal = zone.portals.find((pr) => aabbOverlap(entityBox(p), pr));
 	if (onPortal) {
@@ -223,7 +211,7 @@ export function drawPlayfield(
 		}
 	}
 
-	drawDodgeEchoes(buf, dodgeEchoes, cam, sw, sh);
+	visuals.draw(buf, cam, 'echoes');
 
 	// The local Avatar drawn last, on top of everyone.
 	drawEntitySprite(buf, p, cam, STYLE, zone.terrain);
@@ -231,15 +219,7 @@ export function drawPlayfield(
 	drawGuard(buf, p, cam, sw, sh);
 
 	// Airborne blood in front of the Sprites, still below the over-head bubbles so chat stays legible.
-	drawParticles(
-		buf,
-		particles,
-		cam,
-		zone.terrain,
-		sw,
-		sh,
-		(pt) => pt.stage === 'airborne',
-	);
+	visuals.draw(buf, cam, 'airborne');
 
 	drawNameplates(buf, others, cam, zone.terrain, STYLE);
 
