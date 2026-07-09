@@ -29,7 +29,7 @@ export class PlayfieldRenderable extends Renderable {
 	sound: SoundSink | null = null;
 
 	private camState: CameraState = initCameraState();
-	private readonly fx: VisualEffects;
+	private readonly visuals: VisualEffects;
 	private lastParticleTick = -1;
 	private lastZoneId: string | null = null;
 	private lastTime = 0;
@@ -43,7 +43,7 @@ export class PlayfieldRenderable extends Renderable {
 	levelUpBurst(): void {
 		if (!this.game) return;
 		const a = this.game.player.avatar;
-		this.fx.levelUpBurst(a.x + BOX.w / 2, a.y + BOX.h / 2);
+		this.visuals.levelUpBurst(a.x + BOX.w / 2, a.y + BOX.h / 2);
 	}
 
 	// Reset on any zone change: a new zone's tick can collide with the last consumed, wedging the gate.
@@ -65,7 +65,7 @@ export class PlayfieldRenderable extends Renderable {
 		const { now, rng, ...renderable } = options;
 		super(ctx, { width: '100%', height: '100%', live: true, ...renderable });
 		this.now = now ?? (() => performance.now());
-		this.fx = new VisualEffects(rng ?? Math.random);
+		this.visuals = new VisualEffects(rng ?? Math.random);
 	}
 
 	protected renderSelf(buffer: OptimizedBuffer): void {
@@ -75,8 +75,8 @@ export class PlayfieldRenderable extends Renderable {
 		this.lastTime = now;
 
 		// Render-only freeze: hold the last drawn frame; the sim keeps advancing in game/loop.ts.
-		if (this.fx.holding()) {
-			this.fx.hold(dt);
+		if (this.visuals.holding()) {
+			this.visuals.hold(dt);
 			return;
 		}
 
@@ -107,13 +107,13 @@ export class PlayfieldRenderable extends Renderable {
 			: snapshotEffects;
 		this.predicted = [];
 
-		this.fx.step(dt, {
+		this.visuals.step(dt, {
 			effects: fresh,
 			entities: [a, ...(this.game.others ?? [])],
 			terrain: zone.terrain,
 			view: { ...baseCam, w: buffer.width, h: buffer.height },
 		});
-		const offset = this.fx.viewOffset();
+		const offset = this.visuals.viewOffset();
 		const cam = { x: baseCam.x + offset.x, y: baseCam.y + offset.y };
 
 		if (this.sound && fresh.length) {
@@ -123,6 +123,6 @@ export class PlayfieldRenderable extends Renderable {
 				this.sound.play(cue.kind, { volume: cue.volume, pan: cue.pan });
 		}
 
-		drawPlayfield(buffer, this.game, cam, this.fx);
+		drawPlayfield(buffer, this.game, cam, this.visuals);
 	}
 }
