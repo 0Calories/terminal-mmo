@@ -23,7 +23,7 @@ bun run forge zone play <id>                     # boot the Zone into the offlin
 `forge zone check` (also `bun run zones:check`, part of `bun run ci`) is the invariant:
 portal round-trips resolve, arrivals land on walkable ground, spawns/NPCs rest on
 ground, catalog refs resolve. The authored set is also asserted clean in
-`packages/shared/test/zoneContent.test.ts`, so a broken build fails `bun test`.
+`packages/core/test/zoneContent.test.ts`, so a broken build fails `bun test`.
 
 ### Geometry that has to line up
 
@@ -47,14 +47,17 @@ dump the glyph frame. The renderer is generic over `CellBuffer<C>`, so no opentu
 TTY is involved:
 
 Put the script at the **repo root** (e.g. `view.ts`, untracked) and import the
-shared entry by path — the `@mmo/core` workspace alias only resolves *inside* a
-package that depends on it, not from a standalone scratch file:
+package entries by path — the `@mmo/core`/`@mmo/render` workspace aliases only
+resolve *inside* a package that depends on them, not from a standalone scratch
+file. The sim (`createGame`) lives in `@mmo/core`; the drawing (`buildSceneStyle`,
+`renderZoneScene`, `drawEntitySprite`, `CellBuffer`) lives in `@mmo/render`:
 
 ```ts
+import { createGame } from './packages/core/src';
 import {
-  buildSceneStyle, createGame, drawEntitySprite, renderZoneScene,
+  buildSceneStyle, drawEntitySprite, renderZoneScene,
   type CellBuffer,
-} from './packages/shared/src';
+} from './packages/render/src';
 
 class TextBuffer implements CellBuffer<string> {
   width: number; height: number; grid: string[][];

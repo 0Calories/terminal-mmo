@@ -22,6 +22,6 @@ export {
 } from './render';
 export { buildSceneStyle, type ColorFactory } from './scene-style';
 export { mirrorGlyph, SENTINEL, Sprite } from './sprite';
+export { weaponSpriteById } from './weapon-registry';
 export { WEAPON_ACCENT_KEY, type WeaponSprite } from './weapon-sprite';
-export { weaponSpriteById } from './weapons';
 export { sword } from './weapons/sword';

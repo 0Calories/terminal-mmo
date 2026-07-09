@@ -22,8 +22,8 @@ import { formById, formFrame } from './body-sprite';
 import { HATS } from './hats';
 import { spriteFor, spriteForNpc } from './registry';
 import type { Sprite } from './sprite';
+import { weaponSpriteById } from './weapon-registry';
 import { WEAPON_ACCENT_KEY, type WeaponSprite } from './weapon-sprite';
-import { weaponSpriteById } from './weapons';
 
 export interface CellBuffer<C> {
 	readonly width: number;
