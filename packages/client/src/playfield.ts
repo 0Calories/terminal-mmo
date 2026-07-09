@@ -81,6 +81,13 @@ export interface SoundSink {
 	play(kind: SoundKind, opts?: { volume?: number; pan?: number }): void;
 }
 
+// The wall clock and Math.random are a frame's only two non-determinisms; injecting both
+// is what lets the golden-frame test assert a byte-identical buffer.
+export interface PlayfieldOptions extends RenderableOptions {
+	now?: () => number;
+	rng?: () => number;
+}
+
 const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 	RGBA.fromInts(r, g, b, a),
 );
@@ -455,6 +462,8 @@ export class PlayfieldRenderable extends Renderable {
 	private dodgeEchoes: DodgeEcho[] = [];
 	private dodgeTrack = new Map<number, DodgeTrack>();
 	private predicted: Effect[] = [];
+	private readonly now: () => number;
+	private readonly rng: () => number;
 
 	emitPredicted(effects: Effect[]): void {
 		if (effects.length) this.predicted.push(...effects);
@@ -466,7 +475,7 @@ export class PlayfieldRenderable extends Renderable {
 		const cx = a.x + BOX.w / 2;
 		const cy = a.y + BOX.h / 2;
 		for (let i = 0; i < LEVELUP_SPECKS; i++)
-			this.particles.spawn(LEVELUP, cx, cy, 0, Math.random);
+			this.particles.spawn(LEVELUP, cx, cy, 0, this.rng);
 	}
 
 	// Reset on any zone change: a new zone's tick can collide with the last consumed, wedging the gate.
@@ -484,13 +493,16 @@ export class PlayfieldRenderable extends Renderable {
 		return fresh;
 	}
 
-	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
-		super(ctx, { width: '100%', height: '100%', live: true, ...options });
+	constructor(ctx: RenderContext, options: PlayfieldOptions = {}) {
+		const { now, rng, ...renderable } = options;
+		super(ctx, { width: '100%', height: '100%', live: true, ...renderable });
+		this.now = now ?? (() => performance.now());
+		this.rng = rng ?? Math.random;
 	}
 
 	protected renderSelf(buffer: OptimizedBuffer): void {
 		if (!this.game) return;
-		const now = performance.now();
+		const now = this.now();
 		const dt = this.lastTime ? now - this.lastTime : 0;
 		this.lastTime = now;
 
@@ -535,7 +547,7 @@ export class PlayfieldRenderable extends Renderable {
 		this.kick = stepKick(this.kick, dt);
 		const cam = { x: baseCam.x + this.kick.x, y: baseCam.y + this.kick.y };
 
-		stepParticles(this.particles, fresh, dt, zone.terrain, Math.random, {
+		stepParticles(this.particles, fresh, dt, zone.terrain, this.rng, {
 			x: cam.x,
 			y: cam.y,
 			w: buffer.width,
