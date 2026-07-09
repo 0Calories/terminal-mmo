@@ -397,11 +397,27 @@ export type DiscoveredIdentity =
 	| { ok: true; identity: SshIdentity; notice?: string }
 	| { ok: false; refusal: string };
 
+const GUEST_NOTICE =
+	'MMO_GUEST: playing as a throwaway guest identity — this character will not be saved.';
+
 export async function discoverSshIdentity(
 	config: ConfigStore = new ConfigStore().load(),
 	env: Record<string, string | undefined> = process.env,
 	sshDir: string = join(homedir(), '.ssh'),
 ): Promise<DiscoveredIdentity> {
+	// Escape hatch for running a second local client alongside a real session
+	// (e.g. to observer-watch your own avatar): mint a fresh, never-persisted
+	// identity every launch. The anchor/agent/file flow below is skipped
+	// entirely, so the server's one-session-per-key rule stays intact — a
+	// guest is always a brand-new key, never the developer's real one.
+	if (env.MMO_GUEST && env.MMO_GUEST !== '0') {
+		const { privateKey } = generateKeyPairSync('ed25519');
+		const pem = privateKey.export({ format: 'pem', type: 'pkcs8' }) as string;
+		// A freshly generated key always parses, so identityFromPkcs8 can't be null here.
+		const identity = identityFromPkcs8(pem) as SshIdentity;
+		return { ok: true, identity, notice: GUEST_NOTICE };
+	}
+
 	const anchor = config.identityAnchor();
 	const keyPath = config.identityKeyPath;
 

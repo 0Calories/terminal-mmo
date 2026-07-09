@@ -171,6 +171,74 @@ test('a read-only home degrades to an ephemeral in-memory key with a warning, no
 	expect(existsSync(config.identityKeyPath)).toBe(false);
 });
 
+test('MMO_GUEST=1 yields an ok identity with a notice and never writes the config anchor', async () => {
+	const config = tmpConfig();
+	const res = await discoverSshIdentity(
+		config,
+		{ MMO_GUEST: '1' },
+		emptySshDir(),
+	);
+	expect(res.ok).toBe(true);
+	if (!res.ok) throw new Error('unreachable');
+	expect(res.notice).toContain('throwaway guest identity');
+	expect(config.identityAnchor()).toBeNull();
+	expect(existsSync(config.identityKeyPath)).toBe(false);
+});
+
+test('MMO_GUEST mints a different key on every launch', async () => {
+	const a = await discoverSshIdentity(
+		tmpConfig(),
+		{ MMO_GUEST: '1' },
+		emptySshDir(),
+	);
+	const b = await discoverSshIdentity(
+		tmpConfig(),
+		{ MMO_GUEST: '1' },
+		emptySshDir(),
+	);
+	if (!a.ok || !b.ok) throw new Error('unreachable');
+	expect(a.identity.publicKey).not.toBe(b.identity.publicKey);
+});
+
+test('MMO_GUEST bypasses an anchored-but-unavailable external key that would otherwise refuse', async () => {
+	const config = tmpConfig();
+	const { pub } = freshKey();
+	config.saveIdentityAnchor({
+		publicKey: encodePublicKeyLine(pub),
+		source: 'external',
+	});
+	const res = await discoverSshIdentity(
+		config,
+		{ MMO_GUEST: '1' },
+		emptySshDir(),
+	);
+	expect(res.ok).toBe(true);
+});
+
+test('MMO_GUEST identity can sign a verifiable challenge', async () => {
+	const res = await discoverSshIdentity(
+		tmpConfig(),
+		{ MMO_GUEST: '1' },
+		emptySshDir(),
+	);
+	if (!res.ok) throw new Error('unreachable');
+	const nonce = new Uint8Array(32).fill(5);
+	const sig = await res.identity.signChallenge(nonce);
+	expect(verifyChallenge(res.identity.publicKey, nonce, sig)).toBe(true);
+});
+
+test('MMO_GUEST unset follows the normal path and mints/anchors a generated identity', async () => {
+	const config = tmpConfig();
+	const res = await discoverSshIdentity(config, {}, emptySshDir());
+	expect(res.ok).toBe(true);
+	if (!res.ok) throw new Error('unreachable');
+	expect(res.notice).toContain('created a local game identity');
+	expect(config.identityAnchor()).toEqual({
+		publicKey: res.identity.publicKey,
+		source: 'generated',
+	});
+});
+
 test('planIdentity: no anchor + an external key uses it and anchors it', () => {
 	const ext = fakeIdentity('ssh-ed25519 AAAA');
 	expect(planIdentity(null, ext, null)).toEqual({
