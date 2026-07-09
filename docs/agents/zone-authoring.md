@@ -47,7 +47,7 @@ dump the glyph frame. The renderer is generic over `CellBuffer<C>`, so no opentu
 TTY is involved:
 
 Put the script at the **repo root** (e.g. `view.ts`, untracked) and import the
-shared entry by path — the `@mmo/shared` workspace alias only resolves *inside* a
+shared entry by path — the `@mmo/core` workspace alias only resolves *inside* a
 package that depends on it, not from a standalone scratch file:
 
 ```ts

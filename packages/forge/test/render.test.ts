@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import type { Catalogs } from '@mmo/shared';
-import { parseZone } from '@mmo/shared';
+import type { Catalogs } from '@mmo/core';
+import { parseZone } from '@mmo/core';
 import { renderZone } from '../src/render';
 
 const catalogs: Catalogs = {

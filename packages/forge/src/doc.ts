@@ -1,4 +1,4 @@
-import type { ZoneType } from '@mmo/shared';
+import type { ZoneType } from '@mmo/core';
 
 export interface EditorDoc {
 	header: Record<string, unknown>;

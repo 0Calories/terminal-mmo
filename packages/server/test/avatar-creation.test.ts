@@ -12,7 +12,7 @@ import {
 	worldSnapshotFor,
 	zoneOf,
 	zoneStateOf,
-} from '@mmo/shared';
+} from '@mmo/core';
 
 process.env.MMO_DB_PATH = ':memory:';
 delete process.env.MMO_VERSION;

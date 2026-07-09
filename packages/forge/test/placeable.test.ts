@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type Catalogs, findOrphanGlyphs, parseZone } from '@mmo/shared';
+import { type Catalogs, findOrphanGlyphs, parseZone } from '@mmo/core';
 import { cellAt, type EditorDoc, serializeDoc } from '../src/doc';
 import { buildPalette, erase, place } from '../src/placeable';
 

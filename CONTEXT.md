@@ -639,7 +639,7 @@ client (#267, ADR 0025). A client sends only an *intent* — e.g. "sell item #7"
 server re-derives the price (`saleValue`), verifies the Item is in that Player's own
 inventory, and gates the transaction on the Player standing at the relevant NPC; an
 unowned/unknown id or a request from afar is a silent no-op. The whole rule lives in a
-pure `@mmo/shared` function so the (removed) offline loop and the live server can't
+pure `@mmo/core` function so the (removed) offline loop and the live server can't
 diverge, and the authoritative Gold/inventory ride the **snapshot** back — the client
 never mutates its own balance optimistically. Successful transactions are durable
 (persisted as a significant event).

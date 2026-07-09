@@ -32,7 +32,7 @@ import {
 	worldSnapshotFor,
 	zoneOf,
 	zoneStateOf,
-} from '@mmo/shared';
+} from '@mmo/core';
 import type { ServerWebSocket } from 'bun';
 import { foldPendingEdges } from './intents';
 import { installShutdownHooks } from './shutdown';

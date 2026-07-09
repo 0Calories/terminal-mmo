@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseZone } from '@mmo/shared';
+import { parseZone } from '@mmo/core';
 import { clampPreviewCam, sceneOf } from '../src/preview';
 
 const CATALOGS = {

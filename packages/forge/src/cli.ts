@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import type { Diagnostic, ZoneType } from '@mmo/shared';
-import { findOrphanGlyphs, validateZone, validateZoneSet } from '@mmo/shared';
+import type { Diagnostic, ZoneType } from '@mmo/core';
+import { findOrphanGlyphs, validateZone, validateZoneSet } from '@mmo/core';
 import { formatDiagnostics } from './diagnostics';
 import {
 	listZoneIds,

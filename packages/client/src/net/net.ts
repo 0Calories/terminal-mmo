@@ -12,7 +12,7 @@ import {
 	type PlayerState,
 	type ServerMessage,
 	type Zone,
-} from '@mmo/shared';
+} from '@mmo/core';
 import type { SshIdentity } from '../ssh-auth';
 import { bubbleTtl } from '../ui/bubble';
 import { CLIENT_VERSION } from '../version';

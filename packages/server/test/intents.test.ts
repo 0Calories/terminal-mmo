@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { AvatarIntent } from '@mmo/shared';
+import type { AvatarIntent } from '@mmo/core';
 import { foldPendingEdges } from '../src/intents';
 
 function held(sessionId: number): AvatarIntent {

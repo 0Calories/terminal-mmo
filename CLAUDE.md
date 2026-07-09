@@ -8,7 +8,7 @@ A persistent PvE side-scrolling MMORPG played entirely in the terminal —
 > [`docs/PRD.md`](./docs/PRD.md) (problem/scope/milestones) ·
 > [`docs/adr/`](./docs/adr/) (architecture decisions).
 
-All game logic lives in `@mmo/shared` as pure, deterministic functions so the
+All game logic lives in `@mmo/core` as pure, deterministic functions so the
 client and (M2) server can never diverge. Run interactive TUI checks in a real
 terminal; use `@opentui/core/testing` for headless/automated checks.
 

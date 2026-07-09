@@ -1,4 +1,4 @@
-import { SCENE_PALETTE } from '@mmo/shared';
+import { SCENE_PALETTE } from '@mmo/core';
 import { RGBA } from '@opentui/core';
 
 export const PALETTE: Record<string, RGBA> = Object.fromEntries(

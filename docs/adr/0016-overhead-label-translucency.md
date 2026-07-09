@@ -73,7 +73,7 @@ panel that wants terrain to *read through* its frosted body.
   glyph shows**, floating on whatever is behind — so on the Avatar-creation panel (which
   passes an all-empty terrain) the chip degrades to just the coloured name, no box.
 
-  Because `@mmo/shared` is generic over the colour type `C` and holds only opaque
+  Because `@mmo/core` is generic over the colour type `C` and holds only opaque
   resolved colours, it cannot derive a low-alpha variant at draw time. `buildSceneStyle`
   therefore prebuilds a parallel `cosmetics.nameplateWashes` catalog (each
   `NAMEPLATE_COLORS` entry at `NAMEPLATE_WASH_ALPHA`) plus a default `nameplateWash`.

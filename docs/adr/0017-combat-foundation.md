@@ -217,7 +217,7 @@ commits the attacker.** Every other decision hangs off that.
 
 ## Consequences
 
-- **Major shared-sim rework in `@mmo/shared`.** `stepZone()` gains the attack phase
+- **Major shared-sim rework in `@mmo/core`.** `stepZone()` gains the attack phase
   state machine, poise/hitstun/knockback bookkeeping, the unified momentum body
   (mass + impulses + airborne Monsters), cancel/combo-decay rules, and telegraphed
   Monster attack AI replacing contact damage. All of it stays **pure and

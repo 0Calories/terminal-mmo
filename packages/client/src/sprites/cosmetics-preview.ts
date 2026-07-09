@@ -10,7 +10,7 @@ import {
 	type RenderStyle,
 	renderZoneScene,
 	SCENE_PALETTE,
-} from '@mmo/shared';
+} from '@mmo/core';
 
 class TextBuffer implements CellBuffer<string> {
 	readonly width: number;

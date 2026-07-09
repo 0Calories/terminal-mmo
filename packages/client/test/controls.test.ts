@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { CAPABILITY_UNLOCK } from '@mmo/shared';
+import { CAPABILITY_UNLOCK } from '@mmo/core';
 import { CONTROL_ROWS, controlRowText, keysFor } from '../src/ui/controls';
 
 test('the controls listing covers every required input', () => {

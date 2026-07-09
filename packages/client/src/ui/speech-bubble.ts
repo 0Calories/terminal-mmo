@@ -1,5 +1,5 @@
-import type { Entity, Terrain } from '@mmo/shared';
-import { BOX, isSolid, spriteFor } from '@mmo/shared';
+import type { Entity, Terrain } from '@mmo/core';
+import { BOX, isSolid, spriteFor } from '@mmo/core';
 import type { OptimizedBuffer, RGBA } from '@opentui/core';
 import { COLORS as C } from '../theme';
 import { layoutBubble } from './bubble';

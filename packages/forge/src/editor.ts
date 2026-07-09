@@ -17,7 +17,7 @@ import {
 	validateZone,
 	ZONE_MAX,
 	type Zone,
-} from '@mmo/shared';
+} from '@mmo/core';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import {

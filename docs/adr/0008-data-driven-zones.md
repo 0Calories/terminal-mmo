@@ -27,7 +27,7 @@ by-reference entity model so every downstream issue references one source of tru
 
 ## Decisions
 
-- **Zones are serialized data, loaded by a pure parser in `@mmo/shared`.** A new
+- **Zones are serialized data, loaded by a pure parser in `@mmo/core`.** A new
   `parseZone(text, catalogs): Zone` sits beside `parseTerrain` (`terrain.ts`):
   pure, deterministic, framework-free, no file or socket I/O. It sets the authored
   fields, resolves catalog references, and initializes runtime state (Monsters from
@@ -110,14 +110,14 @@ by-reference entity model so every downstream issue references one source of tru
 
 ## Consequences
 
-- `@mmo/shared` gains `parseZone` (+ catalog schemas) beside `parseTerrain`, and
+- `@mmo/core` gains `parseZone` (+ catalog schemas) beside `parseTerrain`, and
   loses `makeFieldZone` / `makeTownZone` / `makeStarterField`. `createWorld` (and
   any test relying on the factories) is rewired to load parsed Zones; the runtime
   reads `.zone` + catalog files from a repo-root `zones/` directory.
 - A two-tier validator follows: per-file structural / placement / walkability /
   type-rule checks, plus a whole-set pass resolving the Portal graph and catalog
   references. Type rules + walkability are errors; a one-way Portal is a warning.
-- A new `packages/forge` CLI (depends on `@mmo/shared`) exposes
+- A new `packages/forge` CLI (depends on `@mmo/core`) exposes
   `render` / `check` / `new` (renderer-free, the agent/CI path) and, later,
   `preview` (a human live-reload visual reusing the real `playfield.ts` renderer)
   and `play` (playable test-play). These are the downstream slices this gate

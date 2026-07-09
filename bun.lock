@@ -22,16 +22,20 @@
       },
       "devDependencies": {
         "@mmo/client": "workspace:*",
-        "@mmo/shared": "workspace:*",
+        "@mmo/core": "workspace:*",
       },
     },
     "packages/client": {
       "name": "@mmo/client",
       "version": "0.0.0",
       "dependencies": {
-        "@mmo/shared": "workspace:*",
+        "@mmo/core": "workspace:*",
         "@opentui/core": "^0.4.1",
       },
+    },
+    "packages/core": {
+      "name": "@mmo/core",
+      "version": "0.0.0",
     },
     "packages/forge": {
       "name": "@mmo/forge",
@@ -40,7 +44,7 @@
         "forge": "bin/forge.ts",
       },
       "dependencies": {
-        "@mmo/shared": "workspace:*",
+        "@mmo/core": "workspace:*",
         "@opentui/core": "^0.4.1",
       },
     },
@@ -48,12 +52,8 @@
       "name": "@mmo/server",
       "version": "0.0.0",
       "dependencies": {
-        "@mmo/shared": "workspace:*",
+        "@mmo/core": "workspace:*",
       },
-    },
-    "packages/shared": {
-      "name": "@mmo/shared",
-      "version": "0.0.0",
     },
   },
   "packages": {
@@ -77,11 +77,11 @@
 
     "@mmo/client": ["@mmo/client@workspace:packages/client"],
 
+    "@mmo/core": ["@mmo/core@workspace:packages/core"],
+
     "@mmo/forge": ["@mmo/forge@workspace:packages/forge"],
 
     "@mmo/server": ["@mmo/server@workspace:packages/server"],
-
-    "@mmo/shared": ["@mmo/shared@workspace:packages/shared"],
 
     "@opentui/core": ["@opentui/core@0.4.1", "", { "dependencies": { "bun-ffi-structs": "0.2.3", "diff": "9.0.0", "marked": "17.0.1", "string-width": "7.2.0", "strip-ansi": "7.1.2" }, "optionalDependencies": { "@opentui/core-darwin-arm64": "0.4.1", "@opentui/core-darwin-x64": "0.4.1", "@opentui/core-linux-arm64": "0.4.1", "@opentui/core-linux-arm64-musl": "0.4.1", "@opentui/core-linux-x64": "0.4.1", "@opentui/core-linux-x64-musl": "0.4.1", "@opentui/core-win32-arm64": "0.4.1", "@opentui/core-win32-x64": "0.4.1" }, "peerDependencies": { "web-tree-sitter": "0.25.10" } }, "sha512-ejlunoFCGLcghYGdfamI/DlWHsgCTLbuoL2JeOmFuLsN+DM5phje3CQbGR4tpl24cadCgHJQFomjoQ9Htvin+Q=="],
 

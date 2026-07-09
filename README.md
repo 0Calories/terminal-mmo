@@ -38,7 +38,7 @@ volume). These prefs persist to `~/.config/terminal-mmo/config.json` (honoring
 
 ```
 packages/
-  shared/     @mmo/shared — deterministic game logic + wire protocol (single source of truth)
+  shared/     @mmo/core — deterministic game logic + wire protocol (single source of truth)
   client/     @mmo/client — OpenTUI terminal client (rendering + input + netcode)
   server/     @mmo/server — authoritative Bun WebSocket world (M2)
   cli/        terminal-mmo — the published bundle for `bunx` (ADR 0009)

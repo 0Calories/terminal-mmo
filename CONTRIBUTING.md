@@ -63,7 +63,7 @@ override the target.
 
 ## Conventions
 
-- Game logic is pure/deterministic in `@mmo/shared` so client and server can't
+- Game logic is pure/deterministic in `@mmo/core` so client and server can't
   diverge. Test behavior there, not rendering.
 - Design docs are the source of truth: [`CONTEXT.md`](./CONTEXT.md) (glossary),
   [`docs/PRD.md`](./docs/PRD.md), [`docs/adr/`](./docs/adr/).

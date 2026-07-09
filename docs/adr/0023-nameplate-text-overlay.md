@@ -65,7 +65,7 @@ which the planted-feet world made fragile, and replace it with a simpler model.
   `buildSceneStyle`. They are replaced by a parallel `cosmetics.nameplateBgs` catalog
   (each `NAMEPLATE_COLORS` entry passed through a new `darken()` helper) plus a
   default `nameplateBg`. The opaque ink catalog `cosmetics.nameplates` is unchanged.
-  As with the washes, these are prebuilt in `buildSceneStyle` because `@mmo/shared` is
+  As with the washes, these are prebuilt in `buildSceneStyle` because `@mmo/core` is
   generic over the colour type `C` and can't derive a darker variant from an opaque
   `C` at draw time.
 

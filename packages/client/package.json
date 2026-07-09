@@ -8,7 +8,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@mmo/shared": "workspace:*",
+		"@mmo/core": "workspace:*",
 		"@opentui/core": "^0.4.1"
 	}
 }

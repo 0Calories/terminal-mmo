@@ -1,4 +1,4 @@
-import type { Effect, Entity, Terrain } from '@mmo/shared';
+import type { Effect, Entity, Terrain } from '@mmo/core';
 import type { OptimizedBuffer } from '@opentui/core';
 import {
 	applyKick,

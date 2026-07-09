@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { Effect } from '@mmo/shared';
+import type { Effect } from '@mmo/core';
 import {
 	AUDIBLE_RADIUS,
 	EFFECT_SOUND_MAP,

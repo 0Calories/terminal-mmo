@@ -1,4 +1,4 @@
-import type { Cosmetics, Entity, RenderStyle } from '@mmo/shared';
+import type { Cosmetics, Entity, RenderStyle } from '@mmo/core';
 import {
 	BOX,
 	buildSceneStyle,
@@ -7,7 +7,7 @@ import {
 	maxHpForLevel,
 	renderZoneScene,
 	spriteFor,
-} from '@mmo/shared';
+} from '@mmo/core';
 import {
 	BoxRenderable,
 	InputRenderable,

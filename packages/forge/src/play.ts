@@ -8,7 +8,7 @@ import {
 	renderZoneScene,
 	step,
 	type ZoneScene,
-} from '@mmo/shared';
+} from '@mmo/core';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import { loadCatalogs, loadZoneSet } from './io';

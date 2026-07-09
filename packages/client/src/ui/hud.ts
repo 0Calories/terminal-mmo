@@ -1,11 +1,11 @@
-import type { GameState } from '@mmo/shared';
+import type { GameState } from '@mmo/core';
 import {
 	activeZone,
 	filledCells,
 	skillForSlot,
 	skillUnlocked,
 	xpProgress,
-} from '@mmo/shared';
+} from '@mmo/core';
 import {
 	BoxRenderable,
 	type Renderable,

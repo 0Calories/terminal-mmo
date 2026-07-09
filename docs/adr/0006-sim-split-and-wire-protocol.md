@@ -15,7 +15,7 @@ gate the downstream M2 slices build on.
 
 ## Decisions
 
-- **Split the sim into two pure functions in `@mmo/shared`** (`zone.ts`), both
+- **Split the sim into two pure functions in `@mmo/core`** (`zone.ts`), both
   deterministic and framework-free so client and server run identical logic:
   - **`stepZone(state, intents, dt)`** — the server-authoritative Zone step.
     Advances Monsters + Projectiles and owns every consequence for **N** reported
@@ -81,7 +81,7 @@ gate the downstream M2 slices build on.
 
 ## Consequences
 
-- `@mmo/shared` gains `protocol.ts` (wire codec) and `zone.ts` (`stepZone`,
+- `@mmo/core` gains `protocol.ts` (wire codec) and `zone.ts` (`stepZone`,
   `clientStepAvatar`, session helpers `addAvatar` / `removeAvatar`, and
   `snapshotFor`). `sim.ts`'s `step` is now a composition over them.
 - The server (`packages/server`) is a thin IO shell: a Bun WebSocket endpoint, a

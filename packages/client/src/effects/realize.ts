@@ -1,4 +1,4 @@
-import type { Effect, EffectKind } from '@mmo/shared';
+import type { Effect, EffectKind } from '@mmo/core';
 import type { ParticleSystem, ParticleType } from './particles';
 
 /**

@@ -1,4 +1,4 @@
-import type { Catalogs } from '@mmo/shared';
+import type { Catalogs } from '@mmo/core';
 import { cellAt, type EditorDoc, setCell } from './doc';
 
 export type Placeable =

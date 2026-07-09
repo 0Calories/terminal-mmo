@@ -1,4 +1,4 @@
-import type { ClientMessage } from '@mmo/shared';
+import type { ClientMessage } from '@mmo/core';
 import { parseChatCommand } from '../input/chat';
 
 export interface ChatSink {

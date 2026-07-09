@@ -137,7 +137,7 @@ jobs:
           # Baked into the bundle by build.ts (prepublishOnly) as the client's Version.
           MMO_VERSION: ${{ env.VERSION }}
         run: |
-          # Drop the workspace-only devDependencies (@mmo/client, @mmo/shared,
+          # Drop the workspace-only devDependencies (@mmo/client, @mmo/core,
           # `workspace:*`): npm can't parse that protocol, and they're build-time
           # only — the bundle inlines them, so nothing ships them. bun resolves the
           # build from the root workspace node_modules regardless. Do this FIRST so

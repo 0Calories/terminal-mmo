@@ -6,8 +6,8 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import type { Catalogs, Zone } from '@mmo/shared';
-import { parseZone } from '@mmo/shared';
+import type { Catalogs, Zone } from '@mmo/core';
+import { parseZone } from '@mmo/core';
 
 const ZONE_EXT = '.zone';
 const CATALOGS_FILE = 'catalogs.json';

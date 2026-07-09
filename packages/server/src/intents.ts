@@ -1,4 +1,4 @@
-import type { AvatarIntent } from '@mmo/shared';
+import type { AvatarIntent } from '@mmo/core';
 
 // Consumes (mutates) the pending collections so each edge fires exactly once.
 export function foldPendingEdges(

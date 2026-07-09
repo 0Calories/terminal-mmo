@@ -58,11 +58,11 @@ not gated behind accounts and a database.
   mis-decode frames.
 
 - **Published artifact: one bundled public package, `terminal-mmo`.** `bun build`
-  inlines our first-party code — the client **and** `@mmo/shared` — into a single
+  inlines our first-party code — the client **and** `@mmo/core` — into a single
   file, sidestepping the `workspace:*` protocol that does not survive publishing.
   `@opentui/core` stays an external `dependency` because it ships its native
   renderer as platform-specific `optionalDependencies` (resolved per OS/arch at
-  install). `@mmo/shared` and `@mmo/server` stay private and never reach npm. The
+  install). `@mmo/core` and `@mmo/server` stay private and never reach npm. The
   package is `{ "bin": { "terminal-mmo": "./dist/cli.js" }, "dependencies": {
   "@opentui/core": "0.4.1" } }`.
 
@@ -74,7 +74,7 @@ not gated behind accounts and a database.
   (offline when `MMO_SERVER` is unset). Changing hosts later means a re-publish —
   acceptable, since every protocol change already forces one.
 
-- **Protocol-version gate.** A `PROTOCOL_VERSION` constant in `@mmo/shared`,
+- **Protocol-version gate.** A `PROTOCOL_VERSION` constant in `@mmo/core`,
   hand-bumped on every wire-format change, is carried on `hello`. On mismatch the
   server sends a new `reject` message (human reason) and closes; the client prints
   "Your client is out of date — run `bunx terminal-mmo@latest`" and exits. Because
@@ -119,7 +119,7 @@ not gated behind accounts and a database.
   prerequisites, but no auto-update: stale binaries would silently fail against a
   churning binary protocol. A post-alpha nicety once the protocol stabilizes.
 
-- **Publishing `@mmo/shared` as its own public package.** Forces a versioned
+- **Publishing `@mmo/core` as its own public package.** Forces a versioned
   double-publish on every protocol change for no benefit — `shared` is internal
   plumbing, not a public API. Bundling keeps client and shared in sync from one
   commit and ships one artifact.
@@ -131,7 +131,7 @@ not gated behind accounts and a database.
 
 ## Consequences
 
-- `@mmo/shared` gains `PROTOCOL_VERSION` and a `reject` server message; `hello`
+- `@mmo/core` gains `PROTOCOL_VERSION` and a `reject` server message; `hello`
   grows a `protocol` field. The version constant must be bumped with every
   wire-format change (alongside the published package version).
 - `packages/server/src/index.ts` changes: read `process.env.PORT`, serve a `200`

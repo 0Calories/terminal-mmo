@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { Effect, Entity } from '@mmo/shared';
+import type { Effect, Entity } from '@mmo/core';
 import type { OptimizedBuffer } from '@opentui/core';
 import { type EffectFrame, VisualEffects } from '../src/effects';
 import { HITSTOP_MS } from '../src/effects/hitstop';

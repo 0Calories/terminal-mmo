@@ -8,6 +8,6 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@mmo/shared": "workspace:*"
+		"@mmo/core": "workspace:*"
 	}
 }

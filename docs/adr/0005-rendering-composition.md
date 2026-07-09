@@ -47,7 +47,7 @@ layout and ready-made widgets, (3) the `@opentui/react` reconciler
   updated each tick via a ref; React re-renders HUD/menus only when
   level/HP/inventory/etc. change.
 - **No React game-engine library, and the simulation never enters a render
-  cycle.** All sim logic stays in `@mmo/shared` as pure deterministic functions
+  cycle.** All sim logic stays in `@mmo/core` as pure deterministic functions
   (per ADR 0002); rendering/UI is the only thing OpenTUI's tiers touch.
 
 ## Considered and rejected

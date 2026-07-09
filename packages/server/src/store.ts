@@ -1,5 +1,5 @@
 import { Database } from 'bun:sqlite';
-import type { PlayerSave, PlayerStore } from '@mmo/shared';
+import type { PlayerSave, PlayerStore } from '@mmo/core';
 
 interface Row {
 	key: string;

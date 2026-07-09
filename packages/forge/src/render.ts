@@ -1,4 +1,4 @@
-import { cellGlyph, type EntityType, type Zone } from '@mmo/shared';
+import { cellGlyph, type EntityType, type Zone } from '@mmo/core';
 
 const SPAWN_GLYPH: Partial<Record<EntityType, string>> = {
 	chaser: 'c',
