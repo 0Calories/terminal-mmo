@@ -1,7 +1,7 @@
 import type {
 	AvatarSnapshot,
 	ClientMessage,
-	Effect,
+	CombatEvent,
 	Entity,
 	GameState,
 	Input,
@@ -15,7 +15,7 @@ import { jumpStarted, landed, leveledUp } from '../sound/triggers';
 import {
 	applyEmote,
 	arriveInZone,
-	predictSwingEffects,
+	predictSwingEvents,
 	reconcileHealth,
 	spawnPredicted,
 	stepPrediction,
@@ -53,7 +53,7 @@ interface NetView {
 
 interface PlayfieldView {
 	game: GameState | null;
-	emitPredicted(effects: Effect[]): void;
+	emitPredicted(events: CombatEvent[]): void;
 	levelUpBurst(): void;
 }
 
@@ -200,7 +200,7 @@ export class GameLoop {
 		if (step.hitbox) {
 			const monsters = activeZone(game.world, game.player.zoneId).monsters;
 			playfield.emitPredicted(
-				predictSwingEffects(
+				predictSwingEvents(
 					this.predicted,
 					step.hitbox,
 					step.hitDamage,

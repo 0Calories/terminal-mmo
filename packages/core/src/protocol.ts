@@ -1,3 +1,4 @@
+import type { CombatEvent, CombatEventKind } from './combat';
 import { SHOOTER } from './constants';
 import { clampCosmetics, DEFAULT_COSMETICS } from './cosmetics';
 import { EMOTES } from './emote';
@@ -6,8 +7,6 @@ import type {
 	AttackPhase,
 	Cosmetics,
 	Drop,
-	Effect,
-	EffectKind,
 	EntityType,
 	Facing,
 	Item,
@@ -389,7 +388,7 @@ export type ServerMessage =
 			avatars: AvatarSnapshot[];
 			monsters: MonsterSnapshot[];
 			projectiles: Projectile[];
-			effects: Effect[];
+			events: CombatEvent[];
 			drops: Drop[];
 			progress: PlayerProgress;
 			inventory: Item[];
@@ -427,7 +426,12 @@ const ENTITY_TYPES: readonly EntityType[] = [
 	'brute',
 ];
 // Append-only: array position is the wire encoding, so reordering silently remaps values.
-const EFFECT_KINDS: readonly EffectKind[] = ['blood', 'gore', 'impact'];
+const COMBAT_EVENT_KINDS: readonly CombatEventKind[] = [
+	'hit',
+	'break',
+	'death',
+	'swat',
+];
 const MOVE_IDS: readonly MoveId[] = ['idle', 'basic', 'dodge'];
 const ATTACK_PHASES: readonly AttackPhase[] = ['windup', 'active', 'recovery'];
 const EMOTE_IDS: readonly string[] = EMOTES.map((e) => e.id);
@@ -568,30 +572,41 @@ function readProjectile(r: Reader): Projectile {
 	};
 }
 
-function writeEffect(w: Writer, e: Effect) {
-	w.u8(EFFECT_KINDS.indexOf(e.kind));
+function writeCombatEvent(w: Writer, e: CombatEvent) {
+	w.u8(COMBAT_EVENT_KINDS.indexOf(e.kind));
+	w.u32(e.targetId);
 	w.f64(e.x);
 	w.f64(e.y);
 	w.f64(e.intensity);
 	w.i8(e.dir);
-	w.bool(e.tint !== undefined);
-	if (e.tint !== undefined) {
-		w.u8(e.tint.r);
-		w.u8(e.tint.g);
-		w.u8(e.tint.b);
+	const tint = e.kind === 'death' ? e.tint : undefined;
+	w.bool(tint !== undefined);
+	if (tint !== undefined) {
+		w.u8(tint.r);
+		w.u8(tint.g);
+		w.u8(tint.b);
 	}
 }
 
-function readEffect(r: Reader): Effect {
-	const e: Effect = {
-		kind: EFFECT_KINDS[r.u8()] ?? 'blood',
-		x: r.f64(),
-		y: r.f64(),
-		intensity: r.f64(),
-		dir: r.i8() as -1 | 0 | 1,
-	};
-	if (r.bool()) e.tint = { r: r.u8(), g: r.u8(), b: r.u8() };
-	return e;
+function readCombatEvent(r: Reader): CombatEvent {
+	const kind = COMBAT_EVENT_KINDS[r.u8()] ?? 'hit';
+	const targetId = r.u32();
+	const x = r.f64();
+	const y = r.f64();
+	const intensity = r.f64();
+	const rawDir = r.i8();
+	const hasTint = r.bool();
+	const tint = hasTint ? { r: r.u8(), g: r.u8(), b: r.u8() } : undefined;
+	switch (kind) {
+		case 'hit':
+			return { kind, targetId, x, y, intensity, dir: rawDir as -1 | 0 | 1 };
+		case 'break':
+			return { kind, targetId, x, y, intensity, dir: rawDir as -1 | 0 | 1 };
+		case 'swat':
+			return { kind, targetId, x, y, intensity, dir: (rawDir || 1) as Facing };
+		case 'death':
+			return { kind, targetId, x, y, intensity, dir: 0, tint };
+	}
 }
 
 function writeItem(w: Writer, it: Item) {
@@ -666,8 +681,8 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			for (const m of msg.monsters) writeMonster(w, m);
 			w.u32(msg.projectiles.length);
 			for (const p of msg.projectiles) writeProjectile(w, p);
-			w.u32(msg.effects.length);
-			for (const e of msg.effects) writeEffect(w, e);
+			w.u32(msg.events.length);
+			for (const e of msg.events) writeCombatEvent(w, e);
 			w.u32(msg.drops.length);
 			for (const d of msg.drops) writeDrop(w, d);
 			w.u32(msg.progress.level);
@@ -730,8 +745,8 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			for (let i = r.u32(); i > 0; i--) monsters.push(readMonster(r));
 			const projectiles: Projectile[] = [];
 			for (let i = r.u32(); i > 0; i--) projectiles.push(readProjectile(r));
-			const effects: Effect[] = [];
-			for (let i = r.u32(); i > 0; i--) effects.push(readEffect(r));
+			const events: CombatEvent[] = [];
+			for (let i = r.u32(); i > 0; i--) events.push(readCombatEvent(r));
 			const drops: Drop[] = [];
 			for (let i = r.u32(); i > 0; i--) drops.push(readDrop(r));
 			const progress: PlayerProgress = {
@@ -750,7 +765,7 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 				avatars,
 				monsters,
 				projectiles,
-				effects,
+				events,
 				drops,
 				progress,
 				inventory,

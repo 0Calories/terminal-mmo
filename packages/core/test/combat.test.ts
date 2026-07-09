@@ -9,7 +9,6 @@ import {
 	BRUTE,
 	bladeEdgeArc,
 	COMBAT,
-	type CombatEvent,
 	canStartDodge,
 	combatEventAt,
 	DODGE_LOCKOUT,
@@ -19,9 +18,7 @@ import {
 	dodgePhase,
 	dodgeProgress,
 	dodgeReady,
-	type Effect,
 	type Entity,
-	effectsOf,
 	entityBox,
 	entityTint,
 	facingToward,
@@ -195,35 +192,33 @@ describe('meleeProfileOf', () => {
 });
 
 describe('deathEvent', () => {
-	test('projects to a radial (dir 0) gore at the entity centre, high intensity, entity-tinted', () => {
+	test('is a radial (dir 0) death event at the entity centre, high intensity, entity-tinted', () => {
 		const m = monster(10, 4, { type: 'chaser' });
-		expect(effectsOf(deathEvent(m))).toEqual([
-			{
-				kind: 'gore',
-				x: 10 + BOX.w / 2,
-				y: 4 + BOX.h / 2,
-				intensity: COMBAT.deathBurstIntensity,
-				dir: 0,
-				tint: { r: 220, g: 90, b: 90 },
-			},
-		]);
+		expect(deathEvent(m)).toEqual({
+			kind: 'death',
+			targetId: m.id,
+			x: 10 + BOX.w / 2,
+			y: 4 + BOX.h / 2,
+			dir: 0,
+			intensity: COMBAT.deathBurstIntensity,
+			tint: { r: 220, g: 90, b: 90 },
+		});
 	});
 
-	test('an Avatar death recolours the gore to its cosmetic hue, not a body colour', () => {
+	test('an Avatar death recolours the tint to its cosmetic hue, not a body colour', () => {
 		const a = monster(10, 4, {
 			type: 'player',
 			cosmetics: { hue: 3, hat: 0, nameplate: 0, form: 0 },
 		});
-		expect(effectsOf(deathEvent(a))).toEqual([
-			{
-				kind: 'gore',
-				x: 10 + BOX.w / 2,
-				y: 4 + BOX.h / 2,
-				intensity: COMBAT.deathBurstIntensity,
-				dir: 0,
-				tint: { r: 90, g: 170, b: 255 },
-			},
-		]);
+		expect(deathEvent(a)).toEqual({
+			kind: 'death',
+			targetId: a.id,
+			x: 10 + BOX.w / 2,
+			y: 4 + BOX.h / 2,
+			dir: 0,
+			intensity: COMBAT.deathBurstIntensity,
+			tint: { r: 90, g: 170, b: 255 },
+		});
 	});
 
 	test('reads visibly bigger than a chip hit — intensity above melee damage', () => {
@@ -280,66 +275,68 @@ describe('resolveHitsOnMonsters', () => {
 	test('a player Strike damages an overlapping monster and records the victim', () => {
 		const m = monster(10, 0, { id: 1, hp: 20 });
 		const swingHits = ledger();
-		const { monsters, effects } = resolveHitsOnMonsters(
+		const { monsters, events } = resolveHitsOnMonsters(
 			[m],
 			[strikeAt(entityBox(m))],
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(12);
 		expect(swingHits.get(7)?.has(1)).toBe(true);
-		expect(effects.length).toBeGreaterThan(0);
+		expect(events.length).toBeGreaterThan(0);
+		expect(events[0].kind).toBe('hit');
+		expect(events[0].kind === 'hit' && events[0].source).toBe(7);
 	});
 
 	test('a non-overlapping monster is a no-op', () => {
 		const m = monster(500, 0, { id: 1, hp: 20 });
 		const swingHits = ledger();
-		const { monsters, effects } = resolveHitsOnMonsters(
+		const { monsters, events } = resolveHitsOnMonsters(
 			[m],
 			[strikeAt({ x: 0, y: 0, w: BOX.w, h: BOX.h })],
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(20);
 		expect(swingHits.get(7)?.size).toBe(0);
-		expect(effects).toEqual([]);
+		expect(events).toEqual([]);
 	});
 
 	test('an already-hit monster (in the swing ledger) is a no-op — one hit per swing', () => {
 		const m = monster(10, 0, { id: 1, hp: 20 });
 		const swingHits = new Map<number, Set<number>>([[7, new Set([1])]]);
-		const { monsters, effects } = resolveHitsOnMonsters(
+		const { monsters, events } = resolveHitsOnMonsters(
 			[m],
 			[strikeAt(entityBox(m))],
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(20);
-		expect(effects).toEqual([]);
+		expect(events).toEqual([]);
 	});
 
 	test('a same-faction (monsters) Strike never selects a Monster victim — PvE by faction', () => {
 		const m = monster(10, 0, { id: 1, hp: 20 });
 		const swingHits = ledger();
-		const { monsters, effects } = resolveHitsOnMonsters(
+		const { monsters, events } = resolveHitsOnMonsters(
 			[m],
 			[strikeAt(entityBox(m), { faction: 'monsters' })],
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(20);
 		expect(swingHits.get(7)?.size).toBe(0);
-		expect(effects).toEqual([]);
+		expect(events).toEqual([]);
 	});
 
-	test('a Poise break Staggers + knocks back the monster and emits an impact', () => {
+	test('a Poise break Staggers + knocks back the monster and emits a break event', () => {
 		// poise 5 < the 6 poiseDamage, so this hit empties the pool and breaks it.
 		const m = monster(10, 0, { id: 1, hp: 20, poise: 5 });
 		const swingHits = ledger();
-		const { monsters, effects } = resolveHitsOnMonsters(
+		const { monsters, events } = resolveHitsOnMonsters(
 			[m],
 			[strikeAt(entityBox(m))],
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(12);
 		expect(monsters[0].stunT).toBeGreaterThan(0);
-		expect(effects.some((e) => e.kind === 'impact')).toBe(true);
+		expect(events.some((e) => e.kind === 'break')).toBe(true);
 	});
 });
 
@@ -378,14 +375,13 @@ describe('predictHits', () => {
 		expect(predictHits(hb, 1, 8, swingHits, [target])).toHaveLength(1);
 	});
 
-	test('predicted hits project to source-less blood Effects via effectsOf', () => {
+	test('predicted hits are source-less hit CombatEvents at the target centre', () => {
 		const target = monster(hb.x, hb.y, { id: 7 });
-		const effects: Effect[] = predictHits(hb, 1, 8, new Set(), [
-			target,
-		]).flatMap(effectsOf);
-		expect(effects).toEqual([
+		const events = predictHits(hb, 1, 8, new Set(), [target]);
+		expect(events).toEqual([
 			{
-				kind: 'blood',
+				kind: 'hit',
+				targetId: 7,
 				x: target.x + BOX.w / 2,
 				y: target.y + BOX.h / 2,
 				intensity: 8,
@@ -710,23 +706,6 @@ describe('actionFlags', () => {
 		);
 		const swinging = monster(0, 0, { attackT: SWING_TOTAL, stunT: 0.2 });
 		expect(actionStateOf(swinging).flags).toBe(ACTION_FLAG.staggered);
-	});
-});
-
-describe('a break projects through effectsOf to a heavier impact', () => {
-	test('bursts at the victim centre, biased along facing, bigger than a chip, no source', () => {
-		const m = monster(10, 4);
-		expect(effectsOf(combatEventAt('break', m, 1, COMBAT.meleeDamage))).toEqual(
-			[
-				{
-					kind: 'impact',
-					x: 10 + BOX.w / 2,
-					y: 4 + BOX.h / 2,
-					intensity: COMBAT.meleeDamage + COMBAT.poise.max,
-					dir: 1,
-				},
-			],
-		);
 	});
 });
 
@@ -1329,73 +1308,8 @@ describe('resolveCombat threads the held Guard (ADR 0017 §5)', () => {
 	});
 });
 
-describe('effectsOf', () => {
-	test('a hit projects to a single blood Effect, source passed through', () => {
-		const e: CombatEvent = {
-			kind: 'hit',
-			targetId: 1,
-			x: 12,
-			y: 5,
-			dir: 1,
-			intensity: 8,
-			source: 42,
-		};
-		expect(effectsOf(e)).toEqual([
-			{ kind: 'blood', x: 12, y: 5, intensity: 8, dir: 1, source: 42 },
-		]);
-	});
-
-	test('a break projects to a sourceless impact, heavier than the chip damage', () => {
-		const e: CombatEvent = {
-			kind: 'break',
-			targetId: 1,
-			x: 12,
-			y: 5,
-			dir: -1,
-			intensity: 8,
-		};
-		expect(effectsOf(e)).toEqual([
-			{
-				kind: 'impact',
-				x: 12,
-				y: 5,
-				intensity: 8 + COMBAT.poise.max,
-				dir: -1,
-			},
-		]);
-	});
-
-	test('death projects to a radial gore burst', () => {
-		const at = { targetId: 1, x: 3, y: 4, intensity: 9 };
-		expect(effectsOf({ kind: 'death', dir: 0, ...at })).toEqual([
-			{ kind: 'gore', x: 3, y: 4, intensity: 9, dir: 0 },
-		]);
-	});
-
-	test('a death carries its entity tint through to the gore burst', () => {
-		const tint = { r: 1, g: 2, b: 3 };
-		const e: CombatEvent = {
-			kind: 'death',
-			targetId: 1,
-			x: 3,
-			y: 4,
-			dir: 0,
-			intensity: COMBAT.deathBurstIntensity,
-			tint,
-		};
-		expect(effectsOf(e)).toEqual([
-			{
-				kind: 'gore',
-				x: 3,
-				y: 4,
-				intensity: COMBAT.deathBurstIntensity,
-				dir: 0,
-				tint,
-			},
-		]);
-	});
-
-	test('swatEvent builds a swat at the shot itself (its position + id), keyed to its damage', () => {
+describe('swatEvent', () => {
+	test('builds a swat at the shot itself (its position + id), keyed to its damage', () => {
 		const pr = projectile({ id: 42, x: 27, y: 6, damage: 7 });
 		const e = swatEvent(pr, -1);
 		expect(e).toEqual({
@@ -1407,19 +1321,5 @@ describe('effectsOf', () => {
 			intensity: 7,
 		});
 		expect(e).not.toHaveProperty('source');
-	});
-
-	test('a swat projects to a sourceless impact at the shot, NOT heavier than its damage', () => {
-		const e: CombatEvent = {
-			kind: 'swat',
-			targetId: 9,
-			x: 27,
-			y: 6,
-			dir: -1,
-			intensity: 7,
-		};
-		expect(effectsOf(e)).toEqual([
-			{ kind: 'impact', x: 27, y: 6, intensity: 7, dir: -1 },
-		]);
 	});
 });

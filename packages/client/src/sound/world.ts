@@ -1,7 +1,7 @@
-import type { Effect, EffectKind } from '@mmo/core';
+import type { VisualEffect, VisualEffectKind } from '../effects/project';
 import type { SoundKind } from './registry';
 
-export const EFFECT_SOUND_MAP: Record<EffectKind, SoundKind> = {
+export const EFFECT_SOUND_MAP: Record<VisualEffectKind, SoundKind> = {
 	blood: 'hit',
 	gore: 'death',
 	impact: 'hit',
@@ -33,7 +33,7 @@ export function spatialize(
 }
 
 export function effectSoundCues(
-	effects: readonly Effect[],
+	effects: readonly VisualEffect[],
 	centerX: number,
 	halfWidth: number,
 	radius = AUDIBLE_RADIUS,
