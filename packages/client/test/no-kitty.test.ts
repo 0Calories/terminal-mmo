@@ -75,7 +75,7 @@ test('the caveat names a multiplexer and carries no URL', () => {
 const NOTICE_BODY = 'Press any key to continue';
 const CREATOR_BODY = 'Nameplate';
 
-const STARTER_LOOK = { hue: 0, hat: 0, nameplate: 0, form: 0 } as const;
+const STARTER_LOOK = { hue: 0, hat: '', nameplate: 0, form: 0 } as const;
 
 test('the notice draws ABOVE the Avatar creator (top layer), matching the real attach order', async () => {
 	const { renderer, renderOnce, captureCharFrame } = await createTestRenderer({

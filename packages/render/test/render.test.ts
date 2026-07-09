@@ -16,7 +16,7 @@ import {
 	drawNameplates,
 	FORMS,
 	formFrame,
-	HATS,
+	hatById,
 	type RenderStyle,
 	renderZoneScene,
 	Sprite,
@@ -383,7 +383,7 @@ test('drawNameplates draws the Handle one row below the planted feet', () => {
 });
 
 test('the Handle position is independent of hat height', () => {
-	const render = (hat: number) => {
+	const render = (hat: string) => {
 		const buf = new FakeBuffer(20, 16);
 		const e = makeEntity({
 			type: 'player',
@@ -398,8 +398,8 @@ test('the Handle position is independent of hat height', () => {
 	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'a' });
 	const row = handleRow(e);
 	const left = handleLeft(e);
-	expect(render(0).at(left, row)?.ch).toBe('a');
-	expect(render(3).at(left, row)?.ch).toBe('a');
+	expect(render('').at(left, row)?.ch).toBe('a');
+	expect(render('wizard').at(left, row)?.ch).toBe('a');
 });
 
 test('each Handle letter is the cosmetic ink on a darkened same-hue backing', () => {
@@ -409,7 +409,7 @@ test('each Handle letter is the cosmetic ink on a darkened same-hue backing', ()
 		x: 8,
 		y: 7,
 		name: 'neo',
-		cosmetics: { hue: 0, hat: 3, nameplate: 4, form: 0 },
+		cosmetics: { hue: 0, hat: 'wizard', nameplate: 4, form: 0 },
 	});
 
 	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
@@ -512,7 +512,7 @@ test('each Avatar Form renders its own idle body through the shared render path 
 				x: 8,
 				y: 7,
 				facing,
-				cosmetics: { hue: 0, hat: 0, nameplate: 0, form },
+				cosmetics: { hue: 0, hat: '', nameplate: 0, form },
 			});
 			renderZoneScene(
 				buf,
@@ -590,7 +590,7 @@ test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouch
 		type: 'player',
 		x: 8,
 		y: 7,
-		cosmetics: { hue: 2, hat: 0, nameplate: 0, form: 0 },
+		cosmetics: { hue: 2, hat: '', nameplate: 0, form: 0 },
 	});
 
 	renderZoneScene(
@@ -608,12 +608,12 @@ test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouch
 
 test('a cosmetic hat is overlaid directly above the head', () => {
 	const buf = new FakeBuffer(20, 16);
-	const hatIdx = 1;
+	const hatId = 'cap';
 	const e = makeEntity({
 		type: 'player',
 		x: 8,
 		y: 7,
-		cosmetics: { hue: 0, hat: hatIdx, nameplate: 0, form: 0 },
+		cosmetics: { hue: 0, hat: hatId, nameplate: 0, form: 0 },
 	});
 
 	renderZoneScene(
@@ -623,7 +623,7 @@ test('a cosmetic hat is overlaid directly above the head', () => {
 		STYLE,
 	);
 
-	const hat = HATS[hatIdx].sprite;
+	const hat = hatById(hatId);
 	if (!hat) throw new Error('expected a hat sprite');
 	const { sprite, ax, ay } = avatarTopLeft(e);
 	const hx = ax + Math.round((sprite.w - hat.w) / 2);
@@ -1002,7 +1002,7 @@ test('a cosmetic-hue Avatar keeps its recoloured body fg on the planted foot ink
 		type: 'player',
 		x: 8,
 		y: 7,
-		cosmetics: { hue: 2, hat: 0, nameplate: 0, form: 0 },
+		cosmetics: { hue: 2, hat: '', nameplate: 0, form: 0 },
 	});
 	renderZoneScene(
 		buf,

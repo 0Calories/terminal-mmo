@@ -5,7 +5,6 @@
 export {
 	DEFAULT_FORM,
 	FORM_COUNT,
-	HAT_COUNT,
 	type SpriteMeta,
 	spriteMetaFor,
 } from './meta';

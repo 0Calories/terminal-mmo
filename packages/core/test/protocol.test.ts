@@ -11,11 +11,29 @@ import {
 	IDLE_ACTION,
 } from '../src';
 
+// Helper to byte-craft a legacy (pre-#348) frame: tag + fields, with the hat
+// carried as a raw u8 LEGACY_HAT_IDS index and NO trailing hat-id string.
+function craftBytes(...parts: (number | string)[]): Uint8Array {
+	const bytes: number[] = [];
+	const enc = new TextEncoder();
+	for (const p of parts) {
+		if (typeof p === 'number') {
+			bytes.push(p);
+		} else {
+			const b = enc.encode(p);
+			const len = new Uint8Array(4);
+			new DataView(len.buffer).setUint32(0, b.length);
+			bytes.push(...len, ...b);
+		}
+	}
+	return new Uint8Array(bytes);
+}
+
 test('hello round-trips the handle + release version + cosmetics + weapon + public key', () => {
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'neo',
-		cosmetics: { hue: 3, hat: 2, nameplate: 5, form: 0 },
+		cosmetics: { hue: 3, hat: 'top-hat', nameplate: 5, form: 0 },
 		version: '0.3.0',
 		weapon: 2,
 		publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForWire',
@@ -24,20 +42,77 @@ test('hello round-trips the handle + release version + cosmetics + weapon + publ
 	expect(decoded).toEqual(msg);
 });
 
-test('a pre-auth hello (no trailing public key) decodes publicKey as empty', () => {
+test('hello round-trips a non-legacy hat id (survives via the appended full-fidelity field)', () => {
+	const msg: ClientMessage = {
+		t: 'hello',
+		handle: 'neo',
+		cosmetics: { hue: 3, hat: 'halo', nameplate: 5, form: 0 },
+		version: '0.3.0',
+		weapon: 2,
+		publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForWire',
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('hello round-trips the empty (no-hat) cosmetic id', () => {
+	const msg: ClientMessage = {
+		t: 'hello',
+		handle: 'neo',
+		cosmetics: { hue: 0, hat: '', nameplate: 0, form: 0 },
+		version: '0.3.0',
+		weapon: 0,
+		publicKey: '',
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('hello round-trips a legacy hat id ("cap")', () => {
+	const msg: ClientMessage = {
+		t: 'hello',
+		handle: 'neo',
+		cosmetics: { hue: 0, hat: 'cap', nameplate: 0, form: 0 },
+		version: '0.3.0',
+		weapon: 0,
+		publicKey: '',
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('a pre-auth hello (no trailing public key or hat id) decodes publicKey empty and hat quad-derived', () => {
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'legacy',
 		version: '0.3.0',
-		cosmetics: { hue: 1, hat: 0, nameplate: 2, form: 0 },
+		cosmetics: { hue: 1, hat: '', nameplate: 2, form: 0 },
 		weapon: 1,
 		publicKey: 'trailing-key-to-strip',
 	};
 	const encoded = encodeClientMessage(msg);
-	// strip trailing publicKey field: u32 length prefix + bytes
+	// strip trailing hat-id field (u32 length prefix + 0 bytes, since hat is '')
+	// and the publicKey field (u32 length prefix + bytes)
 	const keyLen = new TextEncoder().encode(msg.publicKey).length;
-	const truncated = encoded.subarray(0, encoded.length - 4 - keyLen);
+	const hatLen = new TextEncoder().encode(msg.cosmetics.hat).length;
+	const truncated = encoded.subarray(
+		0,
+		encoded.length - 4 - hatLen - 4 - keyLen,
+	);
 	expect(decodeClientMessage(truncated)).toEqual({ ...msg, publicKey: '' });
+});
+
+test('a legacy (pre-#348) hello frame — quad only, no trailing hat id — decodes cleanly', () => {
+	// tag, handle, version, then the raw legacy quad (hue, hat=3 -> 'wizard', nameplate, form)
+	const buf = craftBytes(1, 'forward', '0.2.0', 1, 3, 1, 0);
+	expect(decodeClientMessage(buf)).toEqual({
+		t: 'hello',
+		handle: 'forward',
+		version: '0.2.0',
+		cosmetics: { hue: 1, hat: 'wizard', nameplate: 1, form: 0 },
+		weapon: DEFAULT_WEAPON,
+		publicKey: '',
+	});
 });
 
 test('proof (client -> server) round-trips the signature bytes', () => {
@@ -54,12 +129,8 @@ test('challenge (server -> client) round-trips the nonce bytes', () => {
 	expect(decoded).toEqual(msg);
 });
 
-test('a truncated hello (no version field) decodes to empty version + default cosmetics + weapon', () => {
-	const handle = new TextEncoder().encode('legacy');
-	const buf = new Uint8Array(1 + 4 + handle.length);
-	buf[0] = 1; // CLIENT_TAG.hello
-	new DataView(buf.buffer).setUint32(1, handle.length);
-	buf.set(handle, 5);
+test('a truncated hello (no version/quad/weapon/key/hat fields) decodes with defaults, not garbage', () => {
+	const buf = craftBytes(1, 'legacy'); // tag, handle only
 	expect(decodeClientMessage(buf)).toEqual({
 		t: 'hello',
 		handle: 'legacy',
@@ -75,7 +146,7 @@ test('hello clamps an out-of-range cosmetic index to the default on decode', () 
 		t: 'hello',
 		handle: 'forward',
 		version: '0.3.0',
-		cosmetics: { hue: 2, hat: 250, nameplate: 1, form: 250 },
+		cosmetics: { hue: 2, hat: '', nameplate: 1, form: 250 },
 		weapon: 1,
 		publicKey: '',
 	});
@@ -83,7 +154,7 @@ test('hello clamps an out-of-range cosmetic index to the default on decode', () 
 		t: 'hello',
 		handle: 'forward',
 		version: '0.3.0',
-		cosmetics: { hue: 2, hat: 0, nameplate: 1, form: 0 },
+		cosmetics: { hue: 2, hat: '', nameplate: 1, form: 0 },
 		weapon: 1,
 		publicKey: '',
 	});
@@ -212,17 +283,37 @@ test('createAvatar (client -> server) round-trips the typed Handle + chosen Cosm
 	const msg: ClientMessage = {
 		t: 'createAvatar',
 		handle: 'Neo',
-		cosmetics: { hue: 4, hat: 1, nameplate: 3, form: 0 },
+		cosmetics: { hue: 4, hat: 'top-hat', nameplate: 3, form: 0 },
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
+});
+
+test('createAvatar round-trips a non-legacy hat id (survives via the appended full-fidelity field)', () => {
+	const msg: ClientMessage = {
+		t: 'createAvatar',
+		handle: 'Neo',
+		cosmetics: { hue: 4, hat: 'halo', nameplate: 3, form: 0 },
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('a legacy (pre-#348) createAvatar frame — quad only, no trailing hat id — decodes cleanly', () => {
+	// tag, quad (hue, hat=3 -> 'wizard', nameplate, form), then trailing handle
+	const buf = craftBytes(9, 1, 3, 1, 0, 'Neo'); // 9 = CLIENT_TAG.createAvatar
+	expect(decodeClientMessage(buf)).toEqual({
+		t: 'createAvatar',
+		handle: 'Neo',
+		cosmetics: { hue: 1, hat: 'wizard', nameplate: 1, form: 0 },
+	});
 });
 
 test('createAvatar carries an empty typed Handle (server falls back to the placeholder)', () => {
 	const msg: ClientMessage = {
 		t: 'createAvatar',
 		handle: '',
-		cosmetics: { hue: 1, hat: 0, nameplate: 2, form: 0 },
+		cosmetics: { hue: 1, hat: '', nameplate: 2, form: 0 },
 	};
 	expect(decodeClientMessage(encodeClientMessage(msg))).toEqual(msg);
 });
@@ -231,47 +322,66 @@ test('createAvatar clamps an out-of-range cosmetic index on decode', () => {
 	const encoded = encodeClientMessage({
 		t: 'createAvatar',
 		handle: 'Neo',
-		cosmetics: { hue: 2, hat: 250, nameplate: 1, form: 250 },
+		cosmetics: { hue: 2, hat: '', nameplate: 1, form: 250 },
 	});
 	expect(decodeClientMessage(encoded)).toEqual({
 		t: 'createAvatar',
 		handle: 'Neo',
-		cosmetics: { hue: 2, hat: 0, nameplate: 1, form: 0 },
+		cosmetics: { hue: 2, hat: '', nameplate: 1, form: 0 },
 	});
 });
 
 test('setCosmetics (client -> server) round-trips the chosen Cosmetics (#305)', () => {
 	const msg: ClientMessage = {
 		t: 'setCosmetics',
-		cosmetics: { hue: 3, hat: 2, nameplate: 1, form: 0 },
+		cosmetics: { hue: 3, hat: 'crown', nameplate: 1, form: 0 },
 	};
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
 });
 
-test('setCosmetics clamps an out-of-range cosmetic index on decode (#305)', () => {
-	const encoded = encodeClientMessage({
+test('setCosmetics round-trips a non-legacy hat id (survives via the appended full-fidelity field)', () => {
+	const msg: ClientMessage = {
 		t: 'setCosmetics',
-		cosmetics: { hue: 4, hat: 250, nameplate: 2, form: 250 },
-	});
-	expect(decodeClientMessage(encoded)).toEqual({
+		cosmetics: { hue: 3, hat: 'halo', nameplate: 1, form: 0 },
+	};
+	const decoded = decodeClientMessage(encodeClientMessage(msg));
+	expect(decoded).toEqual(msg);
+});
+
+test('a legacy (pre-#348) setCosmetics frame — quad only, no trailing hat id — decodes cleanly', () => {
+	// tag, quad (hue, hat=3 -> 'wizard', nameplate, form) with no trailing field
+	const buf = craftBytes(10, 1, 3, 1, 0); // 10 = CLIENT_TAG.setCosmetics
+	expect(decodeClientMessage(buf)).toEqual({
 		t: 'setCosmetics',
-		cosmetics: { hue: 4, hat: 0, nameplate: 2, form: 0 },
+		cosmetics: { hue: 1, hat: 'wizard', nameplate: 1, form: 0 },
 	});
 });
 
-test('a #302-era createAvatar (no trailing handle) decodes handle as empty', () => {
+test('setCosmetics clamps an out-of-range cosmetic index on decode (#305)', () => {
+	const encoded = encodeClientMessage({
+		t: 'setCosmetics',
+		cosmetics: { hue: 4, hat: '', nameplate: 2, form: 250 },
+	});
+	expect(decodeClientMessage(encoded)).toEqual({
+		t: 'setCosmetics',
+		cosmetics: { hue: 4, hat: '', nameplate: 2, form: 0 },
+	});
+});
+
+test('a #302-era createAvatar (no trailing handle or hat id) decodes handle as empty', () => {
 	const full = encodeClientMessage({
 		t: 'createAvatar',
 		handle: 'Neo',
-		cosmetics: { hue: 2, hat: 1, nameplate: 3, form: 0 },
+		cosmetics: { hue: 2, hat: 'cap', nameplate: 3, form: 0 },
 	});
-	// Drop the trailing handle field (u32 length prefix + 3 bytes for "Neo").
-	const legacy = full.subarray(0, full.length - 4 - 3);
+	// Drop the trailing hat-id field (u32 length prefix + 3 bytes for "cap")
+	// and the trailing handle field (u32 length prefix + 3 bytes for "Neo").
+	const legacy = full.subarray(0, full.length - 4 - 3 - 4 - 3);
 	expect(decodeClientMessage(legacy)).toEqual({
 		t: 'createAvatar',
 		handle: '',
-		cosmetics: { hue: 2, hat: 1, nameplate: 3, form: 0 },
+		cosmetics: { hue: 2, hat: 'cap', nameplate: 3, form: 0 },
 	});
 });
 
@@ -360,7 +470,7 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 			{
 				sessionId: 7,
 				handle: 'neo',
-				cosmetics: { hue: 1, hat: 4, nameplate: 3, form: 0 },
+				cosmetics: { hue: 1, hat: 'party-hat', nameplate: 3, form: 0 },
 				x: 12.5,
 				y: 31.25,
 				vx: -22,
@@ -449,6 +559,39 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 	};
 	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
+});
+
+test('snapshot round-trips a non-legacy hat id on each of two avatars (per-record appended field, CONTRIBUTING §wire)', () => {
+	const avatar = (sessionId: number, hat: string) => ({
+		sessionId,
+		handle: `h${sessionId}`,
+		cosmetics: { hue: 0, hat, nameplate: 0, form: 0 },
+		x: 0,
+		y: 0,
+		vx: 0,
+		vy: 0,
+		facing: 1 as const,
+		onGround: true,
+		hp: 1,
+		maxHp: 1,
+		hurtT: 0,
+		weapon: DEFAULT_WEAPON,
+		action: IDLE_ACTION,
+	});
+	const msg: ServerMessage = {
+		t: 'snapshot',
+		tick: 1,
+		zoneId: 'field-01',
+		avatars: [avatar(1, 'halo'), avatar(2, 'cap')],
+		monsters: [],
+		projectiles: [],
+		events: [],
+		progress: { level: 1, xp: 0, gold: 0 },
+		drops: [],
+		inventory: [],
+		log: [],
+	};
+	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
 });
 
 test('snapshot round-trips the per-entity action-state across every phase (ADR 0017)', () => {

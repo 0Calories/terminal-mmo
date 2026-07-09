@@ -7,6 +7,7 @@ import {
 	emptySave,
 	type Item,
 	loadZones,
+	migrateSaveCosmetics,
 	type PlayerSave,
 	registryFromSaves,
 	restoredFromSave,
@@ -52,10 +53,62 @@ test('a fresh Avatar seeds lastTown to its spawn Town, not the flush fallback', 
 test('restoredFromSave clamps out-of-range cosmetics at the trust boundary', () => {
 	const save: PlayerSave = {
 		...emptySave('Neo', 'town-01'),
-		cosmetics: { hue: 999, hat: -1, nameplate: 4.5, form: 0 },
+		cosmetics: {
+			hue: 999,
+			hat: -1 as unknown as string,
+			nameplate: 4.5,
+			form: 0,
+		},
 	};
 	const restored = restoredFromSave(save);
 	expect(restored.cosmetics).toEqual(DEFAULT_COSMETICS);
+});
+
+test('migrateSaveCosmetics maps a legacy numeric hat index through LEGACY_HAT_IDS', () => {
+	const base = { hue: 0, nameplate: 0, form: 0 };
+	expect(migrateSaveCosmetics({ ...base, hat: 1 })).toEqual({
+		...base,
+		hat: 'cap',
+	});
+	expect(migrateSaveCosmetics({ ...base, hat: 5 })).toEqual({
+		...base,
+		hat: 'party-hat',
+	});
+	expect(migrateSaveCosmetics({ ...base, hat: 0 })).toEqual({
+		...base,
+		hat: '',
+	});
+});
+
+test('migrateSaveCosmetics maps an out-of-range legacy hat index to the empty (no-hat) id', () => {
+	const base = { hue: 0, nameplate: 0, form: 0 };
+	expect(migrateSaveCosmetics({ ...base, hat: 250 })).toEqual({
+		...base,
+		hat: '',
+	});
+	expect(migrateSaveCosmetics({ ...base, hat: -1 })).toEqual({
+		...base,
+		hat: '',
+	});
+});
+
+test('migrateSaveCosmetics is a no-op for an already-migrated string hat', () => {
+	const c = { hue: 0, hat: 'cap', nameplate: 0, form: 0 };
+	expect(migrateSaveCosmetics(c)).toEqual(c);
+});
+
+test('restoredFromSave migrates a numeric-hat Save written before ADR 0031', () => {
+	const save = {
+		...emptySave('Neo', 'town-01'),
+		cosmetics: { hue: 2, hat: 3, nameplate: 1, form: 0 },
+	} as unknown as PlayerSave;
+	const restored = restoredFromSave(save);
+	expect(restored.cosmetics).toEqual({
+		hue: 2,
+		hat: 'wizard',
+		nameplate: 1,
+		form: 0,
+	});
 });
 
 test('a restored inventory keeps saved Items and mints fresh ids past the highest', () => {

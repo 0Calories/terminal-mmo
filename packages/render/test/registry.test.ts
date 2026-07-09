@@ -1,12 +1,6 @@
 import { expect, test } from 'bun:test';
-import {
-	type EntityType,
-	FORM_COUNT,
-	HAT_COUNT,
-	spriteMetaFor,
-	WEAPONS,
-} from '@mmo/core';
-import { FORMS, HATS, spriteFor, weaponSpriteById } from '../src';
+import { type EntityType, FORM_COUNT, spriteMetaFor, WEAPONS } from '@mmo/core';
+import { FORMS, HAT_IDS, hatById, spriteFor, weaponSpriteById } from '../src';
 
 // The @mmo/core registry counts are the metadata source of truth; the art registries
 // here must stay index-aligned with them (a stray art entry can't drift the count the
@@ -15,13 +9,16 @@ test('the Form art registry matches the @mmo/core FORM_COUNT', () => {
 	expect(FORMS.length).toBe(FORM_COUNT);
 });
 
-test('the hat art registry matches the @mmo/core HAT_COUNT', () => {
-	expect(HATS.length).toBe(HAT_COUNT);
+// Hats are discovered by directory scan (ADR 0031) — the five known
+// `.sprite` files under sprites/hats/ are the whole catalog.
+test('HAT_IDS is the five known hats, sorted lexicographically', () => {
+	expect(HAT_IDS).toEqual(['cap', 'crown', 'party-hat', 'top-hat', 'wizard']);
 });
 
-test('the default hat (slot 0) is bareheaded; every other hat has art', () => {
-	expect(HATS[0].sprite).toBeNull();
-	for (let i = 1; i < HATS.length; i++) expect(HATS[i].sprite).not.toBeNull();
+test('every hat id resolves to art; an unknown/empty id is bareheaded', () => {
+	for (const id of HAT_IDS) expect(hatById(id)).not.toBeNull();
+	expect(hatById('')).toBeNull();
+	expect(hatById('nope')).toBeNull();
 });
 
 // entityTint (authoritative combat's death tint) resolves each entity's default

@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { DEFAULT_COSMETICS, FORM_COUNT, HUE_COUNT } from '@mmo/core';
+import { HAT_IDS } from '@mmo/render';
 import {
 	CUSTOMIZE_FIELDS,
 	customizeRows,
@@ -16,7 +17,7 @@ test('right cycles the focused field forward', () => {
 	const { state } = reduceCustomize(s, 'right');
 	expect(state.cosmetics.hue).toBe(1);
 	expect(state.cosmetics.form).toBe(0);
-	expect(state.cosmetics.hat).toBe(0);
+	expect(state.cosmetics.hat).toBe('');
 	expect(state.cosmetics.nameplate).toBe(0);
 });
 
@@ -31,7 +32,7 @@ test('down moves focus to the next field, so right then cycles that field', () =
 	s = reduceCustomize(s, 'down').state;
 	expect(s.field).toBe(1);
 	const { state } = reduceCustomize(s, 'right');
-	expect(state.cosmetics.hat).toBe(1);
+	expect(state.cosmetics.hat).toBe(HAT_IDS[0]);
 	expect(state.cosmetics.hue).toBe(0);
 });
 
@@ -46,7 +47,7 @@ test('return confirms with the chosen cosmetics, leaving them unchanged', () => 
 	s = reduceCustomize(s, 'right').state;
 	const { state, confirm } = reduceCustomize(s, 'return');
 	expect(confirm).toBe(true);
-	expect(state.cosmetics).toEqual({ hue: 1, hat: 0, nameplate: 0, form: 0 });
+	expect(state.cosmetics).toEqual({ hue: 1, hat: '', nameplate: 0, form: 0 });
 });
 
 test('the single-option Form is hidden from the picker but still confirms as form 0', () => {
@@ -67,6 +68,27 @@ test('customizeRows yields one focused-marked row per field, hat named from cata
 	expect(rows[0]).toMatchObject({ label: 'Body hue', focused: false });
 	expect(rows[1]).toMatchObject({ label: 'Hat', value: 'None', focused: true });
 	expect(rows[0].value).toBe(`1/${HUE_COUNT}`);
+});
+
+test('hat cycles through the sorted scanned ids, None first, wrapping back to None', () => {
+	let s = initCustomize(DEFAULT_COSMETICS);
+	s = reduceCustomize(s, 'down').state; // focus the Hat field
+	expect(customizeRows(s)[1]).toMatchObject({ value: 'None' });
+
+	for (const id of HAT_IDS) {
+		s = reduceCustomize(s, 'right').state;
+		expect(s.cosmetics.hat).toBe(id);
+		expect(customizeRows(s)[1]).toMatchObject({ value: id });
+	}
+
+	// One more step past the last id wraps back to None.
+	s = reduceCustomize(s, 'right').state;
+	expect(s.cosmetics.hat).toBe('');
+	expect(customizeRows(s)[1]).toMatchObject({ value: 'None' });
+
+	// Cycling left from None wraps to the last scanned id.
+	const { state: back } = reduceCustomize(s, 'left');
+	expect(back.cosmetics.hat).toBe(HAT_IDS[HAT_IDS.length - 1]);
 });
 
 test('a key with no binding is a no-op and never confirms', () => {

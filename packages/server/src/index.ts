@@ -6,6 +6,7 @@ import {
 	applyCosmetics,
 	applySell,
 	CHAT_MAX_LEN,
+	type ClientMessage,
 	type Cosmetics,
 	canonicalPublicKey,
 	claimHandle,
@@ -23,6 +24,7 @@ import {
 	resolveAuth,
 	restoredFromSave,
 	type ServerWorld,
+	sanitizeHatId,
 	saveFromAvatar,
 	sessionByHandle,
 	sessionsInZone,
@@ -36,6 +38,7 @@ import {
 import type { ServerWebSocket } from 'bun';
 import { foldPendingEdges } from './intents';
 import { installShutdownHooks } from './shutdown';
+import { scanHatIds } from './sprites';
 import { openPlayerStore } from './store';
 
 const PORT = Number(process.env.PORT) || Number(process.env.MMO_PORT) || 8080;
@@ -69,6 +72,14 @@ function reject(ws: ServerWebSocket<WsData>, reason: string) {
 		ws.send(encodeServerMessage({ t: 'reject', reason }));
 	} catch {}
 	ws.close();
+}
+
+// Set-membership validation is the server's job (core only shapes the type);
+// computed once at startup by scanning sprites/hats/*.sprite.
+const validHatIds: ReadonlySet<string> = scanHatIds();
+
+function withValidHat(c: Cosmetics): Cosmetics {
+	return { ...c, hat: sanitizeHatId(c.hat, validHatIds) };
 }
 
 const START_ZONE = 'town-01';
@@ -113,7 +124,13 @@ const clamp = (v: number, hi: number) =>
 	Number.isFinite(v) ? Math.max(0, Math.min(v, hi)) : 0;
 
 function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
-	const msg = decodeClientMessage(raw);
+	let msg: ClientMessage;
+	try {
+		msg = decodeClientMessage(raw);
+	} catch (err) {
+		console.error('bad frame from session', ws.data.sessionId, err);
+		return;
+	}
 	const { sessionId } = ws.data;
 	if (msg.t === 'hello') {
 		if (isReleaseVersion(SERVER_VERSION) && msg.version !== SERVER_VERSION) {
@@ -137,7 +154,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			publicKey: msg.publicKey,
 			key: canonicalPublicKey(pub),
 			handle: msg.handle,
-			cosmetics: msg.cosmetics,
+			cosmetics: withValidHat(msg.cosmetics),
 			weapon: msg.weapon,
 		});
 		ws.send(encodeServerMessage({ t: 'challenge', nonce }));
@@ -172,13 +189,17 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		// The Save lookup — never a client flag — is the sole authority on new-vs-returning.
 		const saved = store.load(key);
 		if (saved) {
+			const restored = restoredFromSave(saved);
 			world = addSession(
 				world,
 				sessionId,
 				auth.handle,
 				pending.cosmetics,
 				pending.weapon,
-				restoredFromSave(saved),
+				{
+					...restored,
+					cosmetics: withValidHat(restored.cosmetics),
+				},
 			);
 			sockets.set(sessionId, ws);
 			const zoneId = zoneOf(world, sessionId) ?? START_ZONE;
@@ -237,7 +258,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			world,
 			sessionId,
 			claim.handle,
-			msg.cosmetics,
+			withValidHat(msg.cosmetics),
 			pending.weapon,
 			TOWN_ZONE,
 		);
@@ -250,7 +271,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		return;
 	}
 	if (msg.t === 'setCosmetics') {
-		const res = applyCosmetics(world, sessionId, msg.cosmetics);
+		const res = applyCosmetics(world, sessionId, withValidHat(msg.cosmetics));
 		if (res.changed) {
 			world = res.world;
 			flushSession(sessionId);

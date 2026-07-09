@@ -1,61 +1,32 @@
-import { Sprite } from './sprite';
+// Hat art registry (ADR 0031): hats live as `.sprite` files under
+// repo-root `sprites/hats/`, discovered by `loadSpriteSources` and compiled
+// here. A hat is pickable because its file exists on disk — there is no
+// hand-authored TS art or catalog of hat definitions any more. 'None' is the
+// absence of an id (`cosmetics.hat === ''`).
 
-export interface HatDef {
-	name: string;
-	sprite: Sprite | null;
+import type { Sprite } from './sprite';
+import { spriteFromDoc } from './sprite-compile';
+import { parseSpriteFile } from './sprite-file';
+import { loadSpriteSources, type SpriteSource } from './sprite-sources';
+
+export function buildHatRegistry(
+	sources: Iterable<SpriteSource>,
+): ReadonlyMap<string, Sprite> {
+	const registry = new Map<string, Sprite>();
+	for (const source of sources) {
+		if (source.role !== 'hats') continue;
+		const { doc, diagnostics } = parseSpriteFile(source.text, source.id);
+		if (doc === null) continue;
+		if (diagnostics.some((d) => d.severity === 'error')) continue;
+		registry.set(source.id, spriteFromDoc(doc));
+	}
+	return registry;
 }
 
-const cap = new Sprite(`▄█████▄`, { defaultKey: 'o' });
+const registry = buildHatRegistry(loadSpriteSources().values());
 
-const crown = new Sprite(`█▄█▄█`, { defaultKey: 'y' });
+export const HAT_IDS: readonly string[] = [...registry.keys()].sort();
 
-const wizard = new Sprite(
-	`
-··▟█▙··
-·▟███▙·
-███████`,
-	{
-		defaultKey: 'c',
-		colors: `
-··ccc··
-·ccccc·
-·ooooo·`,
-	},
-);
-
-const topHat = new Sprite(
-	`
-·█████·
-·█████·
-▄█████▄`,
-	{
-		defaultKey: 'k',
-		colors: `
-·kkkkk·
-·mmmmm·
-kkkkkk`,
-	},
-);
-
-const partyHat = new Sprite(
-	`
-··▲··
-·▟█▙·
-▄███▄`,
-	{
-		defaultKey: 'c',
-		colors: `
-··y··
-·ccc·
-·mmm·`,
-	},
-);
-
-export const HATS: readonly HatDef[] = [
-	{ name: 'None', sprite: null },
-	{ name: 'Cap', sprite: cap },
-	{ name: 'Crown', sprite: crown },
-	{ name: 'Wizard', sprite: wizard },
-	{ name: 'Top Hat', sprite: topHat },
-	{ name: 'Party Hat', sprite: partyHat },
-];
+export function hatById(id: string): Sprite | null {
+	return registry.get(id) ?? null;
+}

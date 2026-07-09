@@ -212,7 +212,7 @@ exports[`golden: npc sprites: signpost 1`] = `
 }
 `;
 
-exports[`golden: hat sprites: hat: Cap 1`] = `
+exports[`golden: hat sprites: hat: cap 1`] = `
 {
   "baseline": 0,
   "h": 1,
@@ -232,7 +232,7 @@ exports[`golden: hat sprites: hat: Cap 1`] = `
 }
 `;
 
-exports[`golden: hat sprites: hat: Crown 1`] = `
+exports[`golden: hat sprites: hat: crown 1`] = `
 {
   "baseline": 0,
   "h": 1,
@@ -252,35 +252,35 @@ exports[`golden: hat sprites: hat: Crown 1`] = `
 }
 `;
 
-exports[`golden: hat sprites: hat: Wizard 1`] = `
+exports[`golden: hat sprites: hat: party-hat 1`] = `
 {
   "baseline": 0,
   "h": 3,
   "keysLeft": [
-    "ccccccc",
-    "ccccccc",
-    "coooooc",
+    "ccycc",
+    "ccccc",
+    "cmmmc",
   ],
   "keysRight": [
-    "ccccccc",
-    "ccccccc",
-    "coooooc",
+    "ccycc",
+    "ccccc",
+    "cmmmc",
   ],
   "left": [
-    "  ▟█▙  ",
-    " ▟███▙ ",
-    "███████",
+    "  ▲  ",
+    " ▟█▙ ",
+    "▄███▄",
   ],
   "right": [
-    "  ▟█▙  ",
-    " ▟███▙ ",
-    "███████",
+    "  ▲  ",
+    " ▟█▙ ",
+    "▄███▄",
   ],
-  "w": 7,
+  "w": 5,
 }
 `;
 
-exports[`golden: hat sprites: hat: Top Hat 1`] = `
+exports[`golden: hat sprites: hat: top-hat 1`] = `
 {
   "baseline": 0,
   "h": 3,
@@ -308,31 +308,31 @@ exports[`golden: hat sprites: hat: Top Hat 1`] = `
 }
 `;
 
-exports[`golden: hat sprites: hat: Party Hat 1`] = `
+exports[`golden: hat sprites: hat: wizard 1`] = `
 {
   "baseline": 0,
   "h": 3,
   "keysLeft": [
-    "ccycc",
-    "ccccc",
-    "cmmmc",
+    "ccccccc",
+    "ccccccc",
+    "coooooc",
   ],
   "keysRight": [
-    "ccycc",
-    "ccccc",
-    "cmmmc",
+    "ccccccc",
+    "ccccccc",
+    "coooooc",
   ],
   "left": [
-    "  ▲  ",
-    " ▟█▙ ",
-    "▄███▄",
+    "  ▟█▙  ",
+    " ▟███▙ ",
+    "███████",
   ],
   "right": [
-    "  ▲  ",
-    " ▟█▙ ",
-    "▄███▄",
+    "  ▟█▙  ",
+    " ▟███▙ ",
+    "███████",
   ],
-  "w": 5,
+  "w": 7,
 }
 `;
 

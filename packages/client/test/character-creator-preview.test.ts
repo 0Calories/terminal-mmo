@@ -17,7 +17,7 @@ async function mountCreator(nameplate: number) {
 	const creator = new CharacterCreator(t.renderer, HANDLE, {
 		form: 0,
 		hue: 0,
-		hat: 0,
+		hat: '',
 		nameplate,
 	});
 	creator.attach(t.renderer.root);

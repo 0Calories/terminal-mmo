@@ -8,7 +8,7 @@ export {
 	formById,
 	formFrame,
 } from './body-sprite';
-export { HATS, type HatDef } from './hats';
+export { buildHatRegistry, HAT_IDS, hatById } from './hats';
 export {
 	glyphFromQuadrants,
 	QUADRANT_GLYPHS,
@@ -27,6 +27,7 @@ export {
 } from './render';
 export { buildSceneStyle, type ColorFactory } from './scene-style';
 export { mirrorGlyph, SENTINEL, Sprite } from './sprite';
+export { spriteFromDoc } from './sprite-compile';
 export {
 	parseSpriteFile,
 	type SpriteAnchor,
@@ -36,6 +37,12 @@ export {
 	type SpriteSeverity,
 	serializeSpriteFile,
 } from './sprite-file';
+export {
+	loadSpriteSources,
+	readSpriteSourcesFromDir,
+	type SpriteSource,
+	spriteSourcesFromEntries,
+} from './sprite-sources';
 export { weaponSpriteById } from './weapon-registry';
 export { WEAPON_ACCENT_KEY, type WeaponSprite } from './weapon-sprite';
 export { sword } from './weapons/sword';
