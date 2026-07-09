@@ -19,12 +19,13 @@ import {
 	HATS,
 	type RenderStyle,
 	renderZoneScene,
-	type Sprite,
+	Sprite,
 	spriteFor,
 	spriteForNpc,
 	WEAPON_ACCENT_KEY,
 	weaponSpriteById,
 } from '../src';
+import { blitSprite } from '../src/render';
 
 interface Cell {
 	ch: string;
@@ -1061,4 +1062,69 @@ test('combat telegraphs are exempt from planting: the blade-edge arc keeps its o
 		expect(cell?.bg).not.toBe('TFG');
 		expect(cell?.blended).toBe(true);
 	}
+});
+
+// ADR 0031: two-color cells (fg + bg both keyed) render through the same
+// hurt/recolor/ghost pipeline as fg-only cells, applied to both channels.
+const twoTone = new Sprite('▀█', { defaultKey: 'p', colors: 'ps', bg: 'k·' });
+
+test('a two-color cell blits opaque with both fg and bg from the palette; a single-color cell stays alpha-blended', () => {
+	const buf = new FakeBuffer(4, 4);
+	blitSprite(buf, twoTone, 0, 0, 1, false, STYLE);
+
+	expect(buf.at(0, 0)).toEqual({ ch: '▀', fg: 'cP', bg: 'cK' });
+	expect(buf.at(1, 0)).toEqual({ ch: '█', fg: 'cS', bg: 'TR', blended: true });
+});
+
+test('hurt flashes both channels of a two-color cell; a single-color cell keeps its unchanged fg-only flash', () => {
+	const buf = new FakeBuffer(4, 4);
+	blitSprite(buf, twoTone, 0, 0, 1, true, STYLE);
+
+	expect(buf.at(0, 0)).toEqual({ ch: '▀', fg: 'HURT', bg: 'HURT' });
+	expect(buf.at(1, 0)).toEqual({
+		ch: '█',
+		fg: 'HURT',
+		bg: 'TR',
+		blended: true,
+	});
+});
+
+test('recolor resolves both channels of a two-color cell independently by key', () => {
+	const buf = new FakeBuffer(4, 4);
+	blitSprite(buf, twoTone, 0, 0, 1, false, STYLE, { p: 'HUE', k: 'KREC' });
+
+	expect(buf.at(0, 0)).toEqual({ ch: '▀', fg: 'HUE', bg: 'KREC' });
+});
+
+test('ghost fades both channels of a two-color cell; a single-color cell keeps the ghost tint bg', () => {
+	const buf = new FakeBuffer(4, 4);
+	const fade = (fg: string) => `F(${fg})`;
+	blitSprite(buf, twoTone, 0, 0, 1, false, STYLE, undefined, {
+		bg: 'TINT',
+		fade,
+	});
+
+	expect(buf.at(0, 0)).toEqual({ ch: '▀', fg: 'F(cP)', bg: 'F(cK)' });
+	expect(buf.at(1, 0)).toEqual({ ch: '█', fg: 'F(cS)', bg: 'TINT' });
+});
+
+test('planting an entity over solid terrain keeps the authored bg on a two-color cell but overrides the single-color cell', () => {
+	const buf = new FakeBuffer(4, 4);
+	const terrain = parseTerrain(['##', '##']);
+	blitSprite(buf, twoTone, 0, 0, 1, false, STYLE, undefined, undefined, {
+		terrain,
+		camX: 0,
+		camY: 0,
+	});
+
+	expect(buf.at(0, 0)).toEqual({ ch: '▀', fg: 'cP', bg: 'cK' });
+	expect(buf.at(1, 0)).toEqual({ ch: '█', fg: 'cS', bg: 'TFG' });
+});
+
+test('facing -1 mirrors the bg key positionally along with the glyph', () => {
+	const buf = new FakeBuffer(4, 4);
+	blitSprite(buf, twoTone, 0, 0, -1, false, STYLE);
+
+	expect(buf.at(1, 0)).toEqual({ ch: '▀', fg: 'cP', bg: 'cK' });
+	expect(buf.at(0, 0)).toEqual({ ch: '█', fg: 'cS', bg: 'TR', blended: true });
 });

@@ -63,6 +63,9 @@ function reverseRows(rows: readonly string[]): string[] {
 export interface SpriteOptions {
 	defaultKey: string;
 	colors?: string;
+	// Per-cell bg key (ADR 0031). A cell is either one color + transparency
+	// (the `colors` channel) or two colors fully opaque — never both.
+	bg?: string;
 	grip?: { x: number; y: number };
 	baseline?: number;
 }
@@ -77,6 +80,8 @@ export class Sprite {
 	private readonly glyphLeft: readonly string[];
 	private readonly colorRight: readonly string[];
 	private readonly colorLeft: readonly string[];
+	private readonly bgRight: readonly string[];
+	private readonly bgLeft: readonly string[];
 
 	constructor(glyph: string, opts: SpriteOptions) {
 		const { defaultKey } = opts;
@@ -111,10 +116,33 @@ export class Sprite {
 			);
 		}
 
+		let bgRows: string[];
+		if (opts.bg === undefined) {
+			bgRows = glyphRows.map((r) => ' '.repeat(r.length));
+		} else {
+			const parsed = splitTrimPad(opts.bg);
+			const bw = parsed.length > 0 ? parsed[0].length : 0;
+			if (parsed.length !== this.h || bw !== this.w)
+				throw new Error(
+					`Sprite bg grid (${bw}x${parsed.length}) must match glyph grid (${this.w}x${this.h})`,
+				);
+			bgRows = parsed.map((r) =>
+				Array.from(r, (c) => (c === SENTINEL || c === ' ' ? ' ' : c)).join(''),
+			);
+			for (let y = 0; y < bgRows.length; y++) {
+				for (let x = 0; x < bgRows[y].length; x++) {
+					if (bgRows[y][x] !== ' ' && glyphRows[y][x] === ' ')
+						throw new Error(`Sprite bg key on transparent cell at (${x},${y})`);
+				}
+			}
+		}
+
 		this.glyphRight = glyphRows;
 		this.glyphLeft = mirrorGlyphs(glyphRows);
 		this.colorRight = colorRows;
 		this.colorLeft = reverseRows(colorRows);
+		this.bgRight = bgRows;
+		this.bgLeft = reverseRows(bgRows);
 	}
 
 	rows(facing: Facing = 1): readonly string[] {
@@ -123,5 +151,9 @@ export class Sprite {
 
 	colorKeys(facing: Facing = 1): readonly string[] {
 		return facing === 1 ? this.colorRight : this.colorLeft;
+	}
+
+	bgKeys(facing: Facing = 1): readonly string[] {
+		return facing === 1 ? this.bgRight : this.bgLeft;
 	}
 }

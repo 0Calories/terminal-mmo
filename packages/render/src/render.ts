@@ -75,7 +75,18 @@ interface PlantContext {
 	camY: number;
 }
 
-function blitSprite<C>(
+function resolveColor<C>(
+	key: string,
+	hurt: boolean,
+	style: RenderStyle<C>,
+	recolor?: Readonly<Record<string, C>>,
+): C {
+	return hurt
+		? style.hurt
+		: (recolor?.[key] ?? style.palette[key] ?? style.paletteDefault);
+}
+
+export function blitSprite<C>(
 	buf: CellBuffer<C>,
 	sprite: Sprite,
 	sx: number,
@@ -91,11 +102,13 @@ function blitSprite<C>(
 	const sh = buf.height;
 	const glyphs = sprite.rows(facing);
 	const keys = sprite.colorKeys(facing);
+	const bgKeys = sprite.bgKeys(facing);
 	for (let ry = 0; ry < sprite.h; ry++) {
 		const py = sy + ry;
 		if (py < 0 || py >= sh) continue;
 		const row = glyphs[ry];
 		const krow = keys[ry];
+		const brow = bgKeys[ry];
 		for (let rx = 0; rx < sprite.w; rx++) {
 			const px = sx + rx;
 			if (px < 0 || px >= sw) continue;
@@ -105,9 +118,14 @@ function blitSprite<C>(
 				continue;
 			}
 			const key = krow[rx];
-			const fg = hurt
-				? style.hurt
-				: (recolor?.[key] ?? style.palette[key] ?? style.paletteDefault);
+			const fg = resolveColor(key, hurt, style, recolor);
+			const bgKey = brow[rx];
+			if (bgKey !== ' ') {
+				const bgC = resolveColor(bgKey, hurt, style, recolor);
+				if (ghost) buf.setCell(px, py, ch, ghost.fade(fg), ghost.fade(bgC));
+				else buf.setCell(px, py, ch, fg, bgC);
+				continue;
+			}
 			if (ghost) buf.setCell(px, py, ch, ghost.fade(fg), ghost.bg);
 			else if (
 				plant &&
