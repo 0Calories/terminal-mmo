@@ -31,7 +31,7 @@ the shared humanoid body plan (build, silhouette, physical quirks); players are 
 humanoid, never a different creature. Purely visual: a Form changes only the **Body
 sprite**, never the logical collision box, stats, or combat numbers, so every Avatar
 plays identically whatever its Form (ADR 0020). Forms live in a registry selected by a
-`cosmetics.form` index, alongside hue/hat/nameplate. Not a gameplay class.
+`cosmetics.form` id, alongside hue/hat/nameplate. Not a gameplay class.
 _Avoid_: Race, species, class, skin (a Form is the body, not a recolor)
 
 **Sprite**:
@@ -534,7 +534,7 @@ rolled **Affixes**, and its visuals — the **Weapon sprite** and that sprite's
 sword-and-shield **Moveset** with the one shared animation set (phase durations,
 arc/reach, **Poise** damage, and **Knockback** are shared COMBAT constants), so a
 weapon can never change playstyle — loot variety is stats and looks. The weapon's
-catalog index joins the Avatar's replicated appearance, so others see your weapon.
+catalog id joins the Avatar's replicated appearance, so others see your weapon.
 _Avoid_: Weapon type, weapon class (reserve **Class** for the Avatar archetype);
 per-weapon feel / phase-speed / arc (removed with the demo scope freeze)
 
@@ -734,3 +734,67 @@ The interaction verb bound to the pointer/cursor in the modal editor — what a
 click or drag *does*. The active Tool plus the active Palette selection together
 determine each edit.
 _Avoid_: Mode, brush (reserve "brush" for the specific paint Tool)
+
+## Sprite authoring
+
+Vocabulary for authoring sprite art (the `sprite edit` TUI and the `.sprite`
+asset file). Like Zone authoring, these are authoring concepts, distinct from
+the game-world language above.
+
+**Sprite file**:
+The `.sprite` asset file that *is* a sprite's source of truth — human-readable
+art (glyph grids you can see in a text editor, zone-style) plus its metadata:
+named Pose frames, **Anchor**s, colors, per-pose animation speed. One format
+covers every sprite shape (a hat is the degenerate single-frame case; a Form and
+a Weapon are richer profiles of the same format). Identity is the filename
+(cf. Zone id), and the containing directory names its **Sprite role**. Consumed
+at runtime — the file, not code, is where art lives.
+_Avoid_: Asset (too generic), art file, sprite sheet (there is no atlas)
+
+**Sprite role**:
+What a Sprite file is *for* — form, hat, weapon, monster — named by the
+directory it lives in, and driving which validation profile applies (a form must
+author `idle`/`walkA`/`walkB` and `grip`/`head`; a weapon its phase frames and
+grip). Cosmetic roles (form, hat) are registered by scan — the file existing is
+what makes it pickable; combat-entity roles (weapon, monster) are the *art half*
+of a catalog entry that references the Sprite file by id.
+_Avoid_: Type, kind, category
+
+**Sprite editor**:
+The interactive forge TUI (`sprite edit`) for drawing sprite art in **Pixel**s —
+the author paints sub-cell pixel art and the editor compiles it to half-block
+glyph grids, so nobody hand-XORs quadrant glyphs. WYSIWYG against the shared
+renderer: mirrored facing, animation playback, and the **Composited preview**
+are part of drawing, not a separate check. An **inexpressible cell** (more
+colors than a terminal cell can carry) is blocked at paint time — unrepresentable,
+not merely validated (cf. Placeable).
+_Avoid_: Paint program, pixel editor (it edits Sprite files, pixels are the means)
+
+**Pixel**:
+The Sprite editor's atomic unit — one quadrant sub-cell, four per terminal cell
+(2×2), each either a color or transparent. What the artist paints; the glyph is
+derived. A cell carries at most two colors (fg + bg), which is the medium's
+grain, not an editor limit.
+_Avoid_: Cell (that's the 2×2 group), dot, subpixel
+
+**Glyph stamp**:
+The secondary Sprite-editor Tool that places one arbitrary character into a cell
+(`▲`, `╱`, `·`) for art the pixel model cannot express. A stamped cell is
+glyph-authored and immune to pixel painting until cleared.
+_Avoid_: Text tool, character brush
+
+**Anchor**:
+A named cell a Sprite file declares for attaching overlays — `grip` hangs the
+Weapon sprite, `head` seats the hat; names are open, so new overlay kinds are
+new names, not a format change. Declared per file with optional per-frame
+overrides (a Pose that raises the arm carries the weapon with it). Mirrors with
+facing. Generalizes the **Grip anchor**.
+_Avoid_: Mount point, slot, hardpoint
+
+**Composited preview**:
+The Sprite editor's in-context render: the work-in-progress sprite shown as the
+game will actually draw it — a hat seated on a body, a weapon in the hand across
+its swing, a Form wearing hat and weapon — against the game's real background,
+through the shared renderer. The forge analogue of the Zone editor's "faithful
+render" promise.
+_Avoid_: Mannequin, dress-up view, test render
