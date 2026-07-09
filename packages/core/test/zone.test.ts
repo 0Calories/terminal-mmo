@@ -156,7 +156,7 @@ test('a skill intent damages a Monster and the server folds its cooldown + log',
 	expect(me.log.at(-1)).toBe('Power Strike!');
 });
 
-test('a Monster hit emits one blood Effect at the Monster, intensity scaled by damage, dir = attacker facing', () => {
+test('a Monster hit emits one hit CombatEvent at the Monster, intensity scaled by damage, dir = attacker facing', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	const av = primeSwing(serverAvatar(7, 20));
 	av.avatar.facing = 1;
@@ -164,18 +164,18 @@ test('a Monster hit emits one blood Effect at the Monster, intensity scaled by d
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
-	expect(next.effects?.length).toBe(1);
-	const fx = next.effects?.[0];
-	expect(fx?.kind).toBe('blood');
-	expect(fx?.dir).toBe(1);
-	expect(fx?.intensity).toBe(8);
-	expect(fx?.x).toBeGreaterThanOrEqual(m.x);
-	expect(fx?.x).toBeLessThanOrEqual(m.x + BOX.w);
-	expect(fx?.y).toBeGreaterThanOrEqual(m.y);
-	expect(fx?.y).toBeLessThanOrEqual(m.y + BOX.h);
+	expect(next.events?.length).toBe(1);
+	const ev = next.events?.[0];
+	expect(ev?.kind).toBe('hit');
+	expect(ev?.dir).toBe(1);
+	expect(ev?.intensity).toBe(8);
+	expect(ev?.x).toBeGreaterThanOrEqual(m.x);
+	expect(ev?.x).toBeLessThanOrEqual(m.x + BOX.w);
+	expect(ev?.y).toBeGreaterThanOrEqual(m.y);
+	expect(ev?.y).toBeLessThanOrEqual(m.y + BOX.h);
 });
 
-test('no Effect is emitted when the hit lands on an i-framed Monster', () => {
+test('no CombatEvent is emitted when the hit lands on an i-framed Monster', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hurtT = 0.5; // still invulnerable
 	const av = serverAvatar(7, 20);
@@ -184,15 +184,15 @@ test('no Effect is emitted when the hit lands on an i-framed Monster', () => {
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
 	expect(next.zone.monsters[0].hp).toBe(MONSTER.chaserHp);
-	expect(next.effects ?? []).toEqual([]);
+	expect(next.events ?? []).toEqual([]);
 });
 
-test('a tick with no combat emits no Effects', () => {
+test('a tick with no combat emits no CombatEvents', () => {
 	const m = spawnMonster('chaser', 2, 80, y);
 	const av = serverAvatar(7, 20);
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
-	expect(next.effects ?? []).toEqual([]);
+	expect(next.events ?? []).toEqual([]);
 });
 
 test('the Avatar landing the killing blow earns the XP and, standing on the kill, collects its instanced loot', () => {
@@ -245,7 +245,7 @@ test('a far contributor leaves its instanced Drop resting, then collects it on t
 	expect((state.zone.drops ?? []).some((x) => x.owner === 8)).toBe(false);
 });
 
-test('a Monster dying emits a radial, high-intensity gore Effect at the Monster, tinted by its body', () => {
+test('a Monster dying emits a radial, high-intensity death CombatEvent at the Monster, tinted by its body', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4;
 	const av = primeSwing(serverAvatar(7, 20));
@@ -254,13 +254,13 @@ test('a Monster dying emits a radial, high-intensity gore Effect at the Monster,
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
 	expect(next.zone.monsters.length).toBe(0);
-	const death = next.effects?.find((fx) => fx.dir === 0);
-	expect(death?.kind).toBe('gore');
-	expect(death?.tint).toEqual(entityTint(m));
+	const death = next.events?.find((ev) => ev.dir === 0);
+	expect(death?.kind).toBe('death');
+	expect(death?.kind === 'death' && death.tint).toEqual(entityTint(m));
 	expect(death?.intensity).toBe(COMBAT.deathBurstIntensity);
 	expect(death?.x).toBeGreaterThanOrEqual(m.x);
 	expect(death?.x).toBeLessThanOrEqual(m.x + BOX.w);
-	const chip = next.effects?.find((fx) => fx.dir !== 0);
+	const chip = next.events?.find((ev) => ev.dir !== 0);
 	expect(death?.intensity).toBeGreaterThan(chip?.intensity ?? 0);
 });
 
@@ -358,7 +358,7 @@ test('a committer in its active phase can Stagger a poise-broken Avatar (full hi
 	}
 	expect(staggered).toBe(true);
 	expect(state.avatars[0].avatar.ivx ?? 0).not.toBe(0);
-	expect(state.effects?.some((e) => e.kind === 'impact')).toBe(true);
+	expect(state.events?.some((e) => e.kind === 'break')).toBe(true);
 });
 
 test('the heavy brute commits a telegraphed swing and damages ONLY in its active phase, for its heavy hit', () => {
@@ -452,7 +452,7 @@ test('a Dodge negates a Monster strike during its i-frame active window', () => 
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
 	expect(next.avatars[0].avatar.hp).toBe(before);
 	expect(next.avatars[0].avatar.hurtT).toBe(0);
-	expect(next.effects ?? []).toEqual([]);
+	expect(next.events ?? []).toEqual([]);
 });
 
 test('a Dodge in its recovery window does NOT grant i-frames — the hit connects', () => {
@@ -518,18 +518,18 @@ test('Block: a frontal committer strike is chipped, not full, and drains Poise',
 	expect(hpBefore - out.hp).toBeLessThan(MONSTER.meleeDamage);
 	expect(out.poise ?? COMBAT.poise.max).toBeLessThan(poiseBefore);
 	expect(out.stunT ?? 0).toBe(0);
-	expect(next.effects?.some((e) => e.kind === 'blood')).toBeFalsy();
+	expect(next.events?.some((e) => e.kind === 'hit')).toBeFalsy();
 });
 
-test('an unguarded committer chip emits source-less hurt-blood biased away from the Monster', () => {
-	// Blood is biased away from the committer at x=16, so dir +1.
+test('an unguarded committer chip emits a source-less hit event biased away from the Monster', () => {
+	// The hit is biased away from the committer at x=16, so dir +1.
 	const m = strikingCommitterAt20();
 	const av = serverAvatar(7, 20);
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
-	const blood = next.effects?.find((e) => e.kind === 'blood');
-	expect(blood?.dir).toBe(1);
-	expect(blood?.source).toBeUndefined();
+	const hit = next.events?.find((e) => e.kind === 'hit');
+	expect(hit?.dir).toBe(1);
+	expect(hit?.kind === 'hit' && hit.source).toBeUndefined();
 	expect(next.avatars[0].avatar.stunT ?? 0).toBe(0);
 });
 
@@ -544,7 +544,7 @@ test('Block to a Poise break is a guard-break Stagger', () => {
 	const out = next.avatars[0].avatar;
 	expect(out.stunT ?? 0).toBeGreaterThan(0);
 	expect(out.ivx ?? 0).not.toBe(0);
-	expect(next.effects?.some((e) => e.kind === 'impact')).toBe(true);
+	expect(next.events?.some((e) => e.kind === 'break')).toBe(true);
 });
 
 test('Guard only protects the frontal arc — a rear strike ignores it', () => {
@@ -754,17 +754,17 @@ test('an Avatar reduced to 0 HP respawns at the safe point at full HP', () => {
 	expect(a.y).toBe(SPAWN.y);
 });
 
-test('an Avatar dying emits a radial gore Effect at the death position, before respawn', () => {
+test('an Avatar dying emits a radial death CombatEvent at the death position, before respawn', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.hp = 1;
 	const m = strikingCommitterAt20();
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
-	// The killing contact also emits a hurt burst; the death burst is the radial one.
-	const death = next.effects?.find(
-		(fx) => fx.dir === 0 && fx.intensity === COMBAT.deathBurstIntensity,
+	// The killing contact also emits a hit event; the death burst is the radial one.
+	const death = next.events?.find(
+		(ev) => ev.dir === 0 && ev.intensity === COMBAT.deathBurstIntensity,
 	);
-	expect(death?.kind).toBe('gore');
+	expect(death?.kind).toBe('death');
 	// at the death spot (~x 20), NOT the respawn point (SPAWN.x = 10)
 	expect(death?.x).toBeGreaterThanOrEqual(20);
 	expect(next.avatars[0].avatar.x).toBe(SPAWN.x);
@@ -832,7 +832,7 @@ test('clientStepAvatar predicts platformer movement and decays the hurt timer', 
 	expect(predicted.attackT).toBe(0.3);
 });
 
-test('projectile damage emits one blood Effect at the Avatar, dir = projectile travel, intensity = projectile damage', () => {
+test('projectile damage emits one hit CombatEvent at the Avatar, dir = projectile travel, intensity = projectile damage', () => {
 	const av = serverAvatar(7, 20);
 	const pr = makeProjectile({
 		x: 22,
@@ -845,15 +845,15 @@ test('projectile damage emits one blood Effect at the Avatar, dir = projectile t
 	const state: ZoneState = { zone, avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
 	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp - 7);
-	expect(next.effects?.length).toBe(1);
-	const fx = next.effects?.[0];
-	expect(fx?.kind).toBe('blood');
-	expect(fx?.dir).toBe(-1);
-	expect(fx?.intensity).toBe(7);
-	expect(fx?.source).toBeUndefined();
+	expect(next.events?.length).toBe(1);
+	const ev = next.events?.[0];
+	expect(ev?.kind).toBe('hit');
+	expect(ev?.dir).toBe(-1);
+	expect(ev?.intensity).toBe(7);
+	expect(ev?.kind === 'hit' && ev.source).toBeUndefined();
 });
 
-test('an i-framed Avatar struck by a projectile bleeds no blood', () => {
+test('an i-framed Avatar struck by a projectile emits no hit event', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.hurtT = 0.5; // still invulnerable
 	const pr = makeProjectile({
@@ -866,7 +866,7 @@ test('an i-framed Avatar struck by a projectile bleeds no blood', () => {
 	const zone: Zone = { ...zoneWith([]), projectiles: [pr] };
 	const state: ZoneState = { zone, avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
-	expect(next.effects ?? []).toEqual([]);
+	expect(next.events ?? []).toEqual([]);
 });
 
 test('a ranged poker telegraphs through stepZone: it commits a swing and fires only on the active frame', () => {
@@ -951,10 +951,11 @@ test('Swat: a live active melee frame DESTROYS a hostile shot', () => {
 	const next = stepZone(state, [{ ...holdAt(7, av.avatar), attack: true }], 16);
 	expect(next.zone.projectiles.length).toBe(0);
 	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp);
-	// A LIGHT impact clink: intensity = the shot's own damage, source-less.
-	const clink = next.effects?.find((e) => e.kind === 'impact');
+	// A LIGHT swat clink: intensity = the shot's own damage, targeting the projectile, source-less.
+	const clink = next.events?.find((e) => e.kind === 'swat');
 	expect(clink?.intensity).toBe(7);
-	expect(clink?.source).toBeUndefined();
+	expect(clink?.targetId).toBe(pr.id);
+	expect(clink).not.toHaveProperty('source');
 });
 
 test('snapshotFor carries the zone state + the recipient private fields', () => {
@@ -973,42 +974,53 @@ test('snapshotFor carries the zone state + the recipient private fields', () => 
 	expect(snap.zoneId).toBe('field-01');
 });
 
-test('a Monster hit attributes the Effect to the attacking session via source', () => {
+test('a Monster hit attributes the CombatEvent to the attacking session via source', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	const av = primeSwing(serverAvatar(7, 20));
 	av.avatar.facing = 1;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [{ ...holdAt(7, av.avatar), attack: true }], 16);
-	expect(next.effects?.[0]?.source).toBe(7);
+	expect(next.events?.[0]?.kind).toBe('hit');
+	expect(next.events?.[0]?.kind === 'hit' && next.events[0].source).toBe(7);
 });
 
-test('snapshotFor suppresses Effects back to their originator and strips source', () => {
+test('snapshotFor suppresses hit CombatEvents back to their originator and strips source', () => {
 	const a = serverAvatar(7, 20, 'morpheus');
 	const b = serverAvatar(8, 60, 'trinity');
 	const state: ZoneState = {
 		zone: zoneWith([]),
 		avatars: [a, b],
 		tick: 3,
-		effects: [
-			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1, source: 7 },
-			{ kind: 'blood', x: 2, y: 2, intensity: 5, dir: -1, source: 8 },
+		events: [
+			{ kind: 'hit', targetId: 1, x: 1, y: 1, intensity: 8, dir: 1, source: 7 },
+			{
+				kind: 'hit',
+				targetId: 2,
+				x: 2,
+				y: 2,
+				intensity: 5,
+				dir: -1,
+				source: 8,
+			},
 		],
 	};
 	// 7 caused the first burst → it is suppressed back to 7; 7 still sees 8's.
 	const forA = snapshotFor(state, 7);
-	expect(forA.effects).toEqual([
-		{ kind: 'blood', x: 2, y: 2, intensity: 5, dir: -1 },
+	expect(forA.events).toEqual([
+		{ kind: 'hit', targetId: 2, x: 2, y: 2, intensity: 5, dir: -1 },
 	]);
+	expect(forA.events[0]).not.toHaveProperty('source');
 	const forB = snapshotFor(state, 8);
-	expect(forB.effects).toEqual([
-		{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 },
+	expect(forB.events).toEqual([
+		{ kind: 'hit', targetId: 1, x: 1, y: 1, intensity: 8, dir: 1 },
 	]);
+	expect(forB.events[0]).not.toHaveProperty('source');
 });
 
-test('snapshotFor carries an empty Effects list when none were emitted', () => {
+test('snapshotFor carries an empty CombatEvent list when none were emitted', () => {
 	const a = serverAvatar(7, 20);
 	const state: ZoneState = { zone: zoneWith([]), avatars: [a], tick: 0 };
-	expect(snapshotFor(state, 7).effects).toEqual([]);
+	expect(snapshotFor(state, 7).events).toEqual([]);
 });
 
 function attackRight(av: ServerAvatar): AvatarIntent {
@@ -1030,11 +1042,11 @@ test('a single chip hit deals HP + Poise damage but does NOT Stagger a full-Pois
 	expect(mon.poise).toBe(COMBAT.poise.max - COMBAT.poiseDamage);
 	expect(mon.stunT ?? 0).toBe(0);
 	expect(mon.ivx ?? 0).toBe(0);
-	expect(next.effects?.some((e) => e.kind === 'impact')).toBe(false);
-	expect(next.effects?.some((e) => e.kind === 'blood')).toBe(true);
+	expect(next.events?.some((e) => e.kind === 'break')).toBe(false);
+	expect(next.events?.some((e) => e.kind === 'hit')).toBe(true);
 });
 
-test('a Poise break Staggers: Hitstun + a Knockback impulse + an impact Effect', () => {
+test('a Poise break Staggers: Hitstun + a Knockback impulse + a break CombatEvent', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.poise = 1;
 	const av = primeSwing(serverAvatar(7, 20));
@@ -1047,9 +1059,9 @@ test('a Poise break Staggers: Hitstun + a Knockback impulse + an impact Effect',
 	expect(mon.hp).toBe(MONSTER.chaserHp - COMBAT.meleeDamage);
 	expect(mon.stunT ?? 0).toBeGreaterThan(0);
 	expect(mon.ivx ?? 0).toBeGreaterThan(0);
-	const impact = next.effects?.find((e) => e.kind === 'impact');
-	expect(impact?.dir).toBe(1);
-	expect(next.effects?.some((e) => e.kind === 'blood')).toBe(false);
+	const brk = next.events?.find((e) => e.kind === 'break');
+	expect(brk?.dir).toBe(1);
+	expect(next.events?.some((e) => e.kind === 'hit')).toBe(false);
 });
 
 test('Knockback is scaled by Mass — a lighter body is thrown farther by the same break', () => {
@@ -1256,14 +1268,14 @@ test('resolveDeaths reports the died-this-tick set and defers the respawn to the
 	expect(out.avatars[0].avatar.hp).toBe(0);
 });
 
-test('resolveDeaths sprays a radial gore Effect at the fall site', () => {
+test('resolveDeaths sprays a radial death CombatEvent at the fall site', () => {
 	const dead = serverAvatar(7, 200);
 	dead.avatar.hp = 0;
 	const out = resolveDeaths([dead], [], deadCtx());
-	const death = out.effects.find(
-		(fx) => fx.dir === 0 && fx.intensity === COMBAT.deathBurstIntensity,
+	const death = out.events.find(
+		(ev) => ev.dir === 0 && ev.intensity === COMBAT.deathBurstIntensity,
 	);
-	expect(death?.kind).toBe('gore');
+	expect(death?.kind).toBe('death');
 	// at the fall spot (x ~200); the caller respawns to SPAWN.x afterwards.
 	expect(death?.x).toBeGreaterThanOrEqual(200);
 });

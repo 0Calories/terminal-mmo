@@ -1,4 +1,4 @@
-import type { Effect, Entity, Terrain } from '@mmo/core';
+import type { Entity, Terrain } from '@mmo/core';
 import type { OptimizedBuffer } from '@opentui/core';
 import {
 	applyKick,
@@ -17,6 +17,7 @@ import {
 	triggerHitstop,
 } from './hitstop';
 import { advanceParticles, ParticleSystem } from './particles';
+import type { VisualEffect } from './project';
 import { LEVELUP, LEVELUP_SPECKS, REALIZE, spawnEffects } from './realize';
 
 // Where in the scene's paint order a draw call sits: settled blood behind the
@@ -24,8 +25,9 @@ import { LEVELUP, LEVELUP_SPECKS, REALIZE, spawnEffects } from './realize';
 export type EffectLayer = 'settled' | 'echoes' | 'airborne';
 
 export interface EffectFrame {
-	// The frame's fresh Effects — snapshot-gated plus locally predicted, each seen once.
-	effects: readonly Effect[];
+	// The frame's fresh VisualEffects — already projected (see effects/project.ts,
+	// ADR 0029) from snapshot-gated plus locally predicted CombatEvents, each seen once.
+	effects: readonly VisualEffect[];
 	// Everyone visible this frame, for dodge-echo tracking.
 	entities: readonly Entity[];
 	terrain: Terrain;

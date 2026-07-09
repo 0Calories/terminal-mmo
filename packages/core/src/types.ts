@@ -79,23 +79,10 @@ export interface Entity {
 	action?: ActionState;
 }
 
-export type EffectKind = 'blood' | 'gore' | 'impact';
-
 export interface Tint {
 	r: number;
 	g: number;
 	b: number;
-}
-
-export interface Effect {
-	kind: EffectKind;
-	x: number;
-	y: number;
-	intensity: number;
-	dir: -1 | 0 | 1;
-	tint?: Tint;
-	// Server-internal, never on the wire: suppresses echoing an Effect to its originator.
-	source?: number;
 }
 
 export interface SpawnPoint {

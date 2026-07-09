@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test';
-import type { CombatEvent, Effect } from '@mmo/core';
+import type { CombatEvent } from '@mmo/core';
 import {
 	combatEventAt,
 	deathEvent,
 	decodeServerMessage,
-	effectsOf,
 	encodeServerMessage,
 	swatEvent,
 } from '@mmo/core';
 import { applyKick, CAMERA_KICK, NO_KICK } from '../src/effects/camera-kick';
 import { isFrozen, NO_HITSTOP, triggerHitstop } from '../src/effects/hitstop';
 import { advanceParticles, ParticleSystem } from '../src/effects/particles';
+import { effectsOf, type VisualEffect } from '../src/effects/project';
 import { REALIZE, spawnEffects } from '../src/effects/realize';
 import { effectSoundCues } from '../src/sound/world';
 import { entity, flatTerrain, makeProjectile, seededRng } from './helpers';
@@ -29,11 +29,11 @@ const EVENTS: Record<string, CombatEvent> = {
  * The owner predicts locally: `effectsOf` runs on the CombatEvent it just minted.
  * An observer receives the server's projection of the same event over the wire.
  */
-function ownerProjection(event: CombatEvent): Effect[] {
+function ownerProjection(event: CombatEvent): VisualEffect[] {
 	return effectsOf(event);
 }
 
-function observerProjection(event: CombatEvent): Effect[] {
+function observerProjection(event: CombatEvent): VisualEffect[] {
 	const wire = encodeServerMessage({
 		t: 'snapshot',
 		tick: 1,
@@ -41,7 +41,7 @@ function observerProjection(event: CombatEvent): Effect[] {
 		avatars: [],
 		monsters: [],
 		projectiles: [],
-		effects: effectsOf(event),
+		events: [event],
 		drops: [],
 		progress: { level: 1, xp: 0, gold: 0 },
 		inventory: [],
@@ -49,11 +49,11 @@ function observerProjection(event: CombatEvent): Effect[] {
 	});
 	const msg = decodeServerMessage(wire);
 	if (msg.t !== 'snapshot') throw new Error('expected a snapshot');
-	return msg.effects;
+	return msg.events.flatMap(effectsOf);
 }
 
 /** The realized VisualEffect: the particles a projection spawns, plus the view shake it drives. */
-function realize(effects: Effect[]) {
+function realize(effects: VisualEffect[]) {
 	const sys = new ParticleSystem(64);
 	spawnEffects(sys, effects, seededRng(SEED));
 	advanceParticles(sys, 16, flatTerrain(64, 24));
@@ -81,8 +81,9 @@ describe('a CombatEvent projects to the same VisualEffect for its owner and an o
 			const owner = ownerProjection(event);
 			const observer = observerProjection(event);
 
-			// `source` is server-internal — it suppresses the echo and never crosses the wire.
-			expect(owner.map(({ source, ...fx }) => fx)).toEqual(observer);
+			// `source` is server-internal — it suppresses the echo and never crosses the wire,
+			// and effectsOf already drops it when projecting to a VisualEffect.
+			expect(owner).toEqual(observer);
 			expect(realize(owner)).toEqual(realize(observer));
 		});
 	}

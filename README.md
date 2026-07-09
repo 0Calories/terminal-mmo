@@ -57,6 +57,7 @@ bun install            # install workspace deps
 bun test               # run the shared simulation test suite
 bun run typecheck      # typecheck all packages
 bun run dev:client     # play the client against a server (run in a REAL terminal)
+MMO_GUEST=1 bun run dev:client   # second local client with a throwaway identity (nothing saved)
 bun run lint           # lint with Biome
 bun run format         # format in place with Biome
 bun run check          # lint + format + organize imports, write fixes (Biome)

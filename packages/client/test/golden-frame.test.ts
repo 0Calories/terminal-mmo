@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { CombatEvent, Effect, GameState } from '@mmo/core';
-import { combatEventAt, deathEvent, effectsOf } from '@mmo/core';
+import type { CombatEvent, GameState } from '@mmo/core';
+import { combatEventAt, deathEvent } from '@mmo/core';
 import { createTestRenderer } from '@opentui/core/testing';
 import { PlayfieldRenderable } from '../src/render/playfield';
 import { GOLDEN_VIEW, goldenGame, manualClock, seededRng } from './helpers';
@@ -18,7 +18,7 @@ const HITSTOP_FRAMES = 5;
 
 // Render frames outrun snapshots, so `tick` only moves when a new snapshot lands.
 interface FrameOpts {
-	effects?: Effect[];
+	events?: CombatEvent[];
 	tick?: number;
 	zoneId?: string;
 }
@@ -44,10 +44,10 @@ async function mountPlayfield() {
 	const game = goldenGame();
 	playfield.game = game;
 
-	const frame = async ({ effects = [], tick, zoneId }: FrameOpts = {}) => {
+	const frame = async ({ events = [], tick, zoneId }: FrameOpts = {}) => {
 		if (tick !== undefined) game.world.tick = tick;
 		if (zoneId) game.player.zoneId = zoneId;
-		game.effects = effects;
+		game.events = events;
 		await t.renderOnce();
 		clock.tick();
 	};
@@ -64,7 +64,7 @@ async function renderGoldenFrame(): Promise<string> {
 	const { frame, frames, game, captureCharFrame } = await mountPlayfield();
 
 	await frame({ tick: 1 });
-	await frame({ tick: 2, effects: scriptedEvents(game).flatMap(effectsOf) });
+	await frame({ tick: 2, events: scriptedEvents(game) });
 	// Long enough for the hitstop to lapse and the surviving specks to fly and settle.
 	await frames(14);
 
@@ -91,30 +91,30 @@ test('the scripted effects are visible — a quiet scene renders a different fra
 
 test('a re-sent snapshot spawns its effects once, not once per frame', async () => {
 	const { frame, frames, game, captureCharFrame } = await mountPlayfield();
-	const effects = scriptedEvents(game).flatMap(effectsOf);
+	const events = scriptedEvents(game);
 
 	await frame({ tick: 1 });
-	await frame({ tick: 2, effects });
+	await frame({ tick: 2, events });
 	// The repeat must land after the hitstop, or the frozen frame swallows it before the gate.
 	await frames(HITSTOP_FRAMES);
-	await frame({ effects });
+	await frame({ events });
 	await frames(8);
 
 	expect(captureCharFrame()).toBe(await renderGoldenFrame());
 });
 
 test('a zone change resets the gate, so entry effects fire even on a colliding tick', async () => {
-	const enter = async (effects: Effect[]) => {
+	const enter = async (events: CombatEvent[]) => {
 		const { frame, frames, game, captureCharFrame } = await mountPlayfield();
 		await frame({ tick: 1 });
-		await frame({ tick: 2, effects: scriptedEvents(game).flatMap(effectsOf) });
+		await frame({ tick: 2, events: scriptedEvents(game) });
 		await frames(HITSTOP_FRAMES);
 		// The dungeon's first snapshot reuses tick 2; without the reset its effects are swallowed.
-		await frame({ effects, zoneId: 'dungeon' });
+		await frame({ events, zoneId: 'dungeon' });
 		await frames(8);
 		return captureCharFrame();
 	};
 
-	const arrival = scriptedEvents(goldenGame()).flatMap(effectsOf);
+	const arrival = scriptedEvents(goldenGame());
 	expect(await enter(arrival)).not.toBe(await enter([]));
 });

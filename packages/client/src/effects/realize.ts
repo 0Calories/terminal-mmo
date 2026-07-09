@@ -1,11 +1,11 @@
-import type { Effect, EffectKind } from '@mmo/core';
 import type { ParticleSystem, ParticleType } from './particles';
+import type { VisualEffect, VisualEffectKind } from './project';
 
 /**
- * The realization adapter — the one place that knows what an Effect kind *looks
- * like*: which ParticleType profiles it bursts into, and whether it punches the
- * camera or freezes the view for a beat. A new look is a new data entry here,
- * never new code in the engine or a special case in render.
+ * The realization adapter — the one place that knows what a VisualEffect kind
+ * *looks like*: which ParticleType profiles it bursts into, and whether it
+ * punches the camera or freezes the view for a beat. A new look is a new data
+ * entry here, never new code in the engine or a special case in render.
  */
 export interface Realization {
 	particles: ParticleType[];
@@ -81,7 +81,7 @@ export const IMPACT: ParticleType = {
 	z: 0,
 };
 
-// Client-only cosmetic, off the wire and sim — spawned by intent, not by an Effect.
+// Client-only cosmetic, off the wire and sim — spawned by intent, not by a VisualEffect.
 export const LEVELUP: ParticleType = {
 	gravity: 22,
 	restitution: 0,
@@ -106,7 +106,7 @@ export const LEVELUP: ParticleType = {
 
 export const LEVELUP_SPECKS = 28;
 
-export const REALIZE: Record<EffectKind, Realization> = {
+export const REALIZE: Record<VisualEffectKind, Realization> = {
 	blood: { particles: [BLOOD], kick: false, hitstop: false },
 	gore: { particles: [GORE], kick: false, hitstop: false },
 	impact: { particles: [IMPACT], kick: true, hitstop: true },
@@ -141,10 +141,10 @@ function onCamera(cam: Camera, x: number, y: number): boolean {
 
 export function spawnEffects(
 	sys: ParticleSystem,
-	effects: readonly Effect[],
+	effects: readonly VisualEffect[],
 	rng: () => number,
 	cam?: Camera,
-	realize: Record<EffectKind, Realization> = REALIZE,
+	realize: Record<VisualEffectKind, Realization> = REALIZE,
 ): void {
 	for (const fx of effects) {
 		if (cam && !onCamera(cam, fx.x, fx.y)) continue;

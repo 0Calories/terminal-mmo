@@ -4,9 +4,9 @@ import {
 	actionStateOf,
 	applyPoiseDamage,
 	avatarHittable,
+	type CombatEvent,
 	combatEventAt,
 	deathEvent,
-	effectsOf,
 	entityBox,
 	IDLE_ACTION,
 	meleeActive,
@@ -44,7 +44,6 @@ import type {
 	Control,
 	Cosmetics,
 	Drop,
-	Effect,
 	Entity,
 	EntityType,
 	Facing,
@@ -79,7 +78,7 @@ export interface ZoneState {
 	avatars: ServerAvatar[];
 	tick: number;
 	deaths?: number[];
-	effects?: Effect[];
+	events?: CombatEvent[];
 }
 
 export interface AvatarIntent {
@@ -231,7 +230,7 @@ export function stepZone(
 		avatars.map((a) => [a.avatar.id, new Set(a.avatar.swingHits ?? [])]),
 	);
 
-	const effects: Effect[] = [];
+	const events: CombatEvent[] = [];
 	const fired: Projectile[] = [];
 	let nextProjectileId = zone.nextProjectileId;
 	let nextMonsterId = zone.nextMonsterId;
@@ -324,13 +323,9 @@ export function stepZone(
 						-COMBAT.knockbackUp,
 					);
 					na = { ...na, stunT: COMBAT.hitstun };
-					effects.push(
-						...effectsOf(combatEventAt('break', a, m.facing, melee.damage)),
-					);
+					events.push(combatEventAt('break', a, m.facing, melee.damage));
 				} else if (g.result !== 'block') {
-					effects.push(
-						...effectsOf(combatEventAt('hit', a, away, melee.damage)),
-					);
+					events.push(combatEventAt('hit', a, away, melee.damage));
 				}
 				avatars[i] = { ...avatars[i], avatar: na };
 			}
@@ -340,7 +335,7 @@ export function stepZone(
 	}
 
 	const hitsOnMonsters = resolveHitsOnMonsters(advanced, strikes, swingHits);
-	effects.push(...hitsOnMonsters.effects);
+	events.push(...hitsOnMonsters.events);
 
 	const monsters: Entity[] = [];
 	const deadMonsters: Entity[] = [];
@@ -349,7 +344,7 @@ export function stepZone(
 			monsters.push(m);
 			continue;
 		}
-		effects.push(...effectsOf(deathEvent(m)));
+		events.push(deathEvent(m));
 		deadMonsters.push(m);
 	}
 
@@ -374,7 +369,7 @@ export function stepZone(
 		let consumed = false;
 		for (const s of strikes) {
 			if (aabbOverlap(s.hitbox, projectileBox(pr))) {
-				effects.push(...effectsOf(swatEvent(pr, (-travel || 1) as Facing)));
+				events.push(swatEvent(pr, (-travel || 1) as Facing));
 				consumed = true;
 				break;
 			}
@@ -400,11 +395,9 @@ export function stepZone(
 			if (broke) {
 				na = applyImpulse(na, pr.knockback * travel, -pr.knockbackUp);
 				na = { ...na, stunT: COMBAT.hitstun };
-				effects.push(
-					...effectsOf(combatEventAt('break', a, travel || 1, pr.damage)),
-				);
+				events.push(combatEventAt('break', a, travel || 1, pr.damage));
 			} else if (g.result !== 'block') {
-				effects.push(...effectsOf(combatEventAt('hit', a, travel, pr.damage)));
+				events.push(combatEventAt('hit', a, travel, pr.damage));
 			}
 			avatars[i] = { ...avatars[i], avatar: na };
 			consumed = true;
@@ -421,7 +414,7 @@ export function stepZone(
 	});
 	const resolved = deathPass.avatars;
 	respawns.push(...deathPass.respawns);
-	effects.push(...deathPass.effects);
+	events.push(...deathPass.events);
 	drops.push(...deathPass.drops);
 	nextDropId = deathPass.nextDropId;
 
@@ -485,7 +478,7 @@ export function stepZone(
 		avatars: resolved,
 		tick: state.tick + 1,
 		deaths: deathPass.deaths,
-		effects,
+		events,
 	};
 }
 
@@ -499,7 +492,7 @@ export function resolveDeaths(
 	nextDropId: number;
 	respawns: PendingRespawn[];
 	deaths: number[];
-	effects: Effect[];
+	events: CombatEvent[];
 } {
 	const next = avatars.slice();
 	const drops: Drop[] = [];
@@ -525,15 +518,15 @@ export function resolveDeaths(
 	}
 
 	const deaths: number[] = [];
-	const effects: Effect[] = [];
+	const events: CombatEvent[] = [];
 	for (const sa of next) {
 		if (sa.avatar.hp <= 0) {
 			deaths.push(sa.sessionId);
-			effects.push(...effectsOf(deathEvent(sa.avatar)));
+			events.push(deathEvent(sa.avatar));
 		}
 	}
 
-	return { avatars: next, drops, nextDropId, respawns, deaths, effects };
+	return { avatars: next, drops, nextDropId, respawns, deaths, events };
 }
 
 function grantXp(
@@ -556,6 +549,14 @@ function grantXp(
 			log.push(`Unlocked: ${skill.name} [${skill.key}]!`);
 	}
 	return { ...sa, avatar, progress: ap.progress, log };
+}
+
+// `source` is server-internal (used to filter out an avatar's own hit events
+// above) and never crosses the wire — strip it before it reaches the client.
+function stripSource(e: CombatEvent): CombatEvent {
+	if (e.kind !== 'hit') return e;
+	const { source: _source, ...rest } = e;
+	return rest;
 }
 
 function spawnDrop(id: number, owner: number, m: Entity, item: Item): Drop {
@@ -609,9 +610,9 @@ export function snapshotFor(
 				? actionStateOf(m)
 				: { ...IDLE_ACTION, flags: actionFlags(m) },
 	}));
-	const effects: Effect[] = (state.effects ?? [])
-		.filter((e) => e.source !== sessionId)
-		.map(({ source: _source, ...e }) => e);
+	const events: CombatEvent[] = (state.events ?? [])
+		.filter((e) => !(e.kind === 'hit' && e.source === sessionId))
+		.map(stripSource);
 	const drops: Drop[] = (state.zone.drops ?? []).filter(
 		(d) => d.owner === sessionId,
 	);
@@ -622,7 +623,7 @@ export function snapshotFor(
 		avatars,
 		monsters,
 		projectiles: state.zone.projectiles,
-		effects,
+		events,
 		drops,
 		progress: me?.progress ?? { level: 1, xp: 0, gold: 0 },
 		inventory: me?.inventory ?? [],

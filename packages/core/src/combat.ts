@@ -14,7 +14,6 @@ import type {
 	ActionState,
 	AttackPhase,
 	Box,
-	Effect,
 	Entity,
 	EntityType,
 	Facing,
@@ -392,47 +391,6 @@ export function swatEvent(pr: Projectile, dir: Facing): CombatEvent {
 	};
 }
 
-export function effectsOf(e: CombatEvent): Effect[] {
-	switch (e.kind) {
-		case 'hit': {
-			const fx: Effect = {
-				kind: 'blood',
-				x: e.x,
-				y: e.y,
-				intensity: e.intensity,
-				dir: e.dir,
-			};
-			if (e.source !== undefined) fx.source = e.source;
-			return [fx];
-		}
-		case 'break':
-			return [
-				{
-					kind: 'impact',
-					x: e.x,
-					y: e.y,
-					intensity: e.intensity + COMBAT.poise.max,
-					dir: e.dir,
-				},
-			];
-		case 'death': {
-			const fx: Effect = {
-				kind: 'gore',
-				x: e.x,
-				y: e.y,
-				intensity: e.intensity,
-				dir: e.dir,
-			};
-			if (e.tint !== undefined) fx.tint = e.tint;
-			return [fx];
-		}
-		case 'swat':
-			return [
-				{ kind: 'impact', x: e.x, y: e.y, intensity: e.intensity, dir: e.dir },
-			];
-	}
-}
-
 export function meleeHitbox(p: Entity): Box {
 	const w = COMBAT.meleeReach;
 	return {
@@ -447,51 +405,6 @@ export function aabbOverlap(a: Box, b: Box): boolean {
 	return (
 		a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 	);
-}
-
-export function bloodEffect(
-	m: Entity,
-	attackerFacing: Facing,
-	damage: number,
-	source?: number,
-): Effect {
-	const e: Effect = {
-		kind: 'blood',
-		x: m.x + BOX.w / 2,
-		y: m.y + BOX.h / 2,
-		intensity: damage,
-		dir: attackerFacing,
-	};
-	if (source !== undefined) e.source = source;
-	return e;
-}
-
-export function impactEffect(
-	m: Entity,
-	attackerFacing: Facing,
-	damage: number,
-): Effect {
-	return {
-		kind: 'impact',
-		x: m.x + BOX.w / 2,
-		y: m.y + BOX.h / 2,
-		intensity: damage + COMBAT.poise.max,
-		dir: attackerFacing,
-	};
-}
-
-export function hurtBloodEffect(
-	a: Entity,
-	dir: -1 | 0 | 1,
-	damage: number,
-): Effect {
-	return {
-		kind: 'blood',
-		x: a.x + BOX.w / 2,
-		y: a.y + BOX.h / 2,
-		intensity: damage,
-		dir,
-	};
 }
 
 export function swingHitsTarget(
@@ -605,8 +518,8 @@ export function resolveHitsOnMonsters(
 	monsters: Entity[],
 	strikes: Strike[],
 	swingHits: Map<number, Set<number>>,
-): { monsters: Entity[]; effects: Effect[] } {
-	const effects: Effect[] = [];
+): { monsters: Entity[]; events: CombatEvent[] } {
+	const events: CombatEvent[] = [];
 	const resolved = monsters.map((m0) => {
 		let m = m0;
 		for (const s of strikes) {
@@ -629,21 +542,15 @@ export function resolveHitsOnMonsters(
 			if (broke) {
 				m = applyImpulse(m, COMBAT.knockback * s.facing, -COMBAT.knockbackUp);
 				m = { ...m, stunT: COMBAT.hitstun };
-				effects.push(
-					...effectsOf(combatEventAt('break', m, s.facing, s.damage)),
-				);
+				events.push(combatEventAt('break', m, s.facing, s.damage));
 			} else {
-				effects.push(
-					...effectsOf(
-						combatEventAt('hit', m, s.facing, s.damage, s.attackerId),
-					),
-				);
+				events.push(combatEventAt('hit', m, s.facing, s.damage, s.attackerId));
 			}
 			break;
 		}
 		return m;
 	});
-	return { monsters: resolved, effects };
+	return { monsters: resolved, events };
 }
 
 export interface AvatarCombatCtx {

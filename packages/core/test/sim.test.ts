@@ -116,19 +116,19 @@ test('attacking damages an adjacent monster', () => {
 	expect(zone.monsters[0].hp).toBe(MONSTER.chaserHp - 8);
 });
 
-test('step surfaces the tick Effects so the offline loop can feed the particle system', () => {
+test('step surfaces the tick CombatEvents so the offline loop can feed the particle system', () => {
 	const game = primeSwing(adjacentGame());
 	game.player.avatar.hurtT = 1; // i-framed, so the chaser's contact draws no blood
 	const g = step(game, { moveX: 0, jump: false, attack: true }, 16);
-	expect(g.effects?.length).toBe(1);
-	expect(g.effects?.[0].kind).toBe('blood');
+	expect(g.events?.length).toBe(1);
+	expect(g.events?.[0].kind).toBe('hit');
 });
 
-test('a step with no combat surfaces no Effects', () => {
+test('a step with no combat surfaces no CombatEvents', () => {
 	const game = adjacentGame();
 	game.player.avatar.hurtT = 1; // i-framed, so the chaser's contact draws no blood
 	const g = step(game, IDLE, 16);
-	expect(g.effects ?? []).toEqual([]);
+	expect(g.events ?? []).toEqual([]);
 });
 
 test('killing a monster grants XP and, standing on the kill, collects its instanced loot Drop', () => {
