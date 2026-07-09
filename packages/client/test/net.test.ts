@@ -78,7 +78,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 				knockbackUp: 10,
 			},
 		],
-		effects: [],
+		events: [],
 		drops: [],
 		progress: { level: 4, xp: 30, gold: 11 },
 		inventory: [],
@@ -178,20 +178,20 @@ test('snapshotToGame renders snapshot monsters/projectiles with the predicted ow
 	expect(game.others).toEqual([]);
 });
 
-test('snapshotToGame carries snapshot Effects through for the particle system (#130)', () => {
+test('snapshotToGame carries snapshot CombatEvents through for the particle system (#130)', () => {
 	const field = loadField();
 	const s = snapshot();
-	s.effects = [{ kind: 'blood', x: 60, y, intensity: 8, dir: -1 }];
+	s.events = [{ kind: 'hit', targetId: 5, x: 60, y, intensity: 8, dir: -1 }];
 	const game = snapshotToGame(field, spawnAvatar(33, y), 1, s, {});
-	expect(game.effects).toEqual([
-		{ kind: 'blood', x: 60, y, intensity: 8, dir: -1 },
+	expect(game.events).toEqual([
+		{ kind: 'hit', targetId: 5, x: 60, y, intensity: 8, dir: -1 },
 	]);
 });
 
-test('snapshotToGame has no Effects before the first snapshot', () => {
+test('snapshotToGame has no CombatEvents before the first snapshot', () => {
 	const field = loadField();
 	const game = snapshotToGame(field, spawnAvatar(10, y), 1, null, {});
-	expect(game.effects ?? []).toEqual([]);
+	expect(game.events ?? []).toEqual([]);
 });
 
 test('snapshotToGame degrades gracefully before the first snapshot', () => {

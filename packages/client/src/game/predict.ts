@@ -1,11 +1,10 @@
-import type { Box, Effect, Entity, Input, Terrain } from '@mmo/core';
+import type { Box, CombatEvent, Entity, Input, Terrain } from '@mmo/core';
 import {
 	applyImpulse,
 	COMBAT,
 	canStartDodge,
 	capabilityUnlocked,
 	clientStepAvatar,
-	effectsOf,
 	emoteById,
 	initialEmoteT,
 	PHYS,
@@ -110,13 +109,15 @@ export function reconcileHealth(
 /**
  * Show this swing's hits immediately rather than waiting a round trip. Records the
  * targets on `predicted.swingHits` so one swing can't hit the same monster twice.
+ * Returns the optimistic `hit` CombatEvents; projection into VisualEffects happens
+ * where they're consumed (see effects/project.ts, ADR 0029).
  */
-export function predictSwingEffects(
+export function predictSwingEvents(
 	predicted: Entity,
 	hitbox: Box,
 	hitDamage: number,
 	monsters: Entity[],
-): Effect[] {
+): CombatEvent[] {
 	const swung = new Set(predicted.swingHits ?? []);
 	const events = predictHits(
 		hitbox,
@@ -127,7 +128,7 @@ export function predictSwingEffects(
 	);
 	for (const e of events) swung.add(e.targetId);
 	predicted.swingHits = [...swung];
-	return events.flatMap(effectsOf);
+	return events;
 }
 
 export function applyEmote(predicted: Entity, emote: string): Entity {

@@ -285,6 +285,6 @@ export function snapshotToGame(
 		player,
 		world: { zones: { [field.id]: zone }, tick: snapshot?.tick ?? 0 },
 		others,
-		effects: snapshot?.effects ?? [],
+		events: snapshot?.events ?? [],
 	};
 }

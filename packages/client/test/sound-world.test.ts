@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { Effect } from '@mmo/core';
+import type { VisualEffect } from '../src/effects/project';
 import {
 	AUDIBLE_RADIUS,
 	EFFECT_SOUND_MAP,
@@ -7,14 +7,14 @@ import {
 	spatialize,
 } from '../src/sound/world';
 
-const blood = (x: number, y = 0): Effect => ({
+const blood = (x: number, y = 0): VisualEffect => ({
 	kind: 'blood',
 	x,
 	y,
 	intensity: 5,
 	dir: 1,
 });
-const gore = (x: number, y = 0): Effect => ({
+const gore = (x: number, y = 0): VisualEffect => ({
 	kind: 'gore',
 	x,
 	y,

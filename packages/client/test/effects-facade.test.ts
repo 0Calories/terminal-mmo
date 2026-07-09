@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test';
-import type { Effect, Entity } from '@mmo/core';
+import type { Entity } from '@mmo/core';
 import type { OptimizedBuffer } from '@opentui/core';
 import { type EffectFrame, VisualEffects } from '../src/effects';
 import { HITSTOP_MS } from '../src/effects/hitstop';
+import type { VisualEffect } from '../src/effects/project';
 import { entity, flatTerrain, seededRng } from './helpers';
 
 const SEED = 0xfacade;
@@ -33,11 +34,11 @@ function frame(over: Partial<EffectFrame> = {}): EffectFrame {
 	};
 }
 
-function bloodAt(x: number, y: number): Effect {
+function bloodAt(x: number, y: number): VisualEffect {
 	return { kind: 'blood', x, y, intensity: 8, dir: 1 };
 }
 
-const IMPACT_EFFECT: Effect = {
+const IMPACT_EFFECT: VisualEffect = {
 	kind: 'impact',
 	x: 20,
 	y: 8,

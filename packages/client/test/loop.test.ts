@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test';
-import type { ClientMessage, Effect, GameState, Input, Zone } from '@mmo/core';
+import type {
+	ClientMessage,
+	CombatEvent,
+	GameState,
+	Input,
+	Zone,
+} from '@mmo/core';
 import { DEFAULT_WEAPON, EMOTES } from '@mmo/core';
 import { GameLoop, type GameLoopDeps } from '../src/game/loop';
 import { flatTerrain } from './helpers';
@@ -39,7 +45,7 @@ interface Rig {
 	loop: GameLoop;
 	sent: ClientMessage[];
 	sounds: string[];
-	emitted: Effect[][];
+	emitted: CombatEvent[][];
 	bursts: number;
 	games: GameState[];
 	syncs: number;
@@ -63,7 +69,7 @@ interface Rig {
 function rig(over: Partial<GameLoopDeps> = {}): Rig {
 	const sent: ClientMessage[] = [];
 	const sounds: string[] = [];
-	const emitted: Effect[][] = [];
+	const emitted: CombatEvent[][] = [];
 	const games: GameState[] = [];
 
 	const t: Rig = {
@@ -213,7 +219,7 @@ test('a first snapshot at a high level cannot false-trigger a level-up', () => {
 	expect(t.bursts).toBe(0);
 });
 
-test('a swing emits predicted effects into the playfield', () => {
+test('a swing emits predicted CombatEvents into the playfield', () => {
 	const t = rig();
 	t.input = { ...IDLE, attack: true };
 	t.run(20);

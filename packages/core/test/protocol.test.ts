@@ -411,7 +411,9 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 				knockbackUp: 10,
 			},
 		],
-		effects: [{ kind: 'blood', x: 52.5, y: 34.5, intensity: 8, dir: 1 }],
+		events: [
+			{ kind: 'hit', targetId: 3, x: 52.5, y: 34.5, intensity: 8, dir: 1 },
+		],
 		drops: [
 			{
 				id: 4,
@@ -483,7 +485,7 @@ test('snapshot round-trips the per-entity action-state across every phase (ADR 0
 		],
 		monsters: [],
 		projectiles: [],
-		effects: [],
+		events: [],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
 		inventory: [],
@@ -492,7 +494,7 @@ test('snapshot round-trips the per-entity action-state across every phase (ADR 0
 	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
 });
 
-test('snapshot round-trips a multi-Effect list across every dir (ADR 0013)', () => {
+test('snapshot round-trips a multi-hit CombatEvent list across every dir (ADR 0013)', () => {
 	const msg: ServerMessage = {
 		t: 'snapshot',
 		tick: 5,
@@ -500,10 +502,10 @@ test('snapshot round-trips a multi-Effect list across every dir (ADR 0013)', () 
 		avatars: [],
 		monsters: [],
 		projectiles: [],
-		effects: [
-			{ kind: 'blood', x: 1.5, y: 2.5, intensity: 8, dir: 1 },
-			{ kind: 'blood', x: 3.25, y: 4.75, intensity: 24, dir: -1 },
-			{ kind: 'blood', x: 9, y: 9, intensity: 12, dir: 0 },
+		events: [
+			{ kind: 'hit', targetId: 1, x: 1.5, y: 2.5, intensity: 8, dir: 1 },
+			{ kind: 'hit', targetId: 2, x: 3.25, y: 4.75, intensity: 24, dir: -1 },
+			{ kind: 'hit', targetId: 3, x: 9, y: 9, intensity: 12, dir: 0 },
 		],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
@@ -513,7 +515,7 @@ test('snapshot round-trips a multi-Effect list across every dir (ADR 0013)', () 
 	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
 });
 
-test('snapshot round-trips the impact Poise-break Effect kind (ADR 0017)', () => {
+test('snapshot round-trips a break + swat + hit CombatEvent mix (ADR 0017/0029)', () => {
 	const msg: ServerMessage = {
 		t: 'snapshot',
 		tick: 8,
@@ -521,10 +523,10 @@ test('snapshot round-trips the impact Poise-break Effect kind (ADR 0017)', () =>
 		avatars: [],
 		monsters: [],
 		projectiles: [],
-		effects: [
-			{ kind: 'impact', x: 12.5, y: 7.5, intensity: 32, dir: 1 },
-			{ kind: 'impact', x: 4, y: 4, intensity: 32, dir: -1 },
-			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 },
+		events: [
+			{ kind: 'break', targetId: 1, x: 12.5, y: 7.5, intensity: 32, dir: 1 },
+			{ kind: 'swat', targetId: 9, x: 4, y: 4, intensity: 7, dir: -1 },
+			{ kind: 'hit', targetId: 2, x: 1, y: 1, intensity: 8, dir: 1 },
 		],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
@@ -533,7 +535,11 @@ test('snapshot round-trips the impact Poise-break Effect kind (ADR 0017)', () =>
 	};
 	const decoded = decodeServerMessage(encodeServerMessage(msg));
 	expect(decoded).toEqual(msg);
-	if (decoded.t === 'snapshot') expect(decoded.effects[0].kind).toBe('impact');
+	if (decoded.t === 'snapshot') {
+		expect(decoded.events[0].kind).toBe('break');
+		expect(decoded.events[1].kind).toBe('swat');
+		expect(decoded.events[2].kind).toBe('hit');
+	}
 });
 
 test('snapshot round-trips a Monster carrying the staggered action-flag (ADR 0017)', () => {
@@ -559,7 +565,7 @@ test('snapshot round-trips a Monster carrying the staggered action-flag (ADR 001
 			},
 		],
 		projectiles: [],
-		effects: [],
+		events: [],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
 		inventory: [],
@@ -603,7 +609,7 @@ test('snapshot round-trips the brute entity type across the wire (CONTRIBUTING Â
 			},
 		],
 		projectiles: [],
-		effects: [],
+		events: [],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
 		inventory: [],
@@ -614,7 +620,7 @@ test('snapshot round-trips the brute entity type across the wire (CONTRIBUTING Â
 	if (decoded.t === 'snapshot') expect(decoded.monsters[0].type).toBe('brute');
 });
 
-test('snapshot round-trips a tinted gore death Effect (#139)', () => {
+test('snapshot round-trips a tinted death CombatEvent next to a hit (#139)', () => {
 	const msg: ServerMessage = {
 		t: 'snapshot',
 		tick: 7,
@@ -622,16 +628,17 @@ test('snapshot round-trips a tinted gore death Effect (#139)', () => {
 		avatars: [],
 		monsters: [],
 		projectiles: [],
-		effects: [
+		events: [
 			{
-				kind: 'gore',
+				kind: 'death',
+				targetId: 1,
 				x: 5.5,
 				y: 6.5,
 				intensity: 30,
 				dir: 0,
 				tint: { r: 220, g: 90, b: 90 },
 			},
-			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 },
+			{ kind: 'hit', targetId: 2, x: 1, y: 1, intensity: 8, dir: 1 },
 		],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
@@ -641,7 +648,7 @@ test('snapshot round-trips a tinted gore death Effect (#139)', () => {
 	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
 });
 
-test('snapshot round-trips an empty Effects list', () => {
+test('snapshot round-trips an empty CombatEvent list', () => {
 	const msg: ServerMessage = {
 		t: 'snapshot',
 		tick: 0,
@@ -649,13 +656,42 @@ test('snapshot round-trips an empty Effects list', () => {
 		avatars: [],
 		monsters: [],
 		projectiles: [],
-		effects: [],
+		events: [],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
 		inventory: [],
 		log: [],
 	};
 	expect(decodeServerMessage(encodeServerMessage(msg))).toEqual(msg);
+});
+
+test('a hit CombatEvent carrying a server-internal source does NOT survive encode -> decode', () => {
+	const msg: ServerMessage = {
+		t: 'snapshot',
+		tick: 0,
+		zoneId: 'field-01',
+		avatars: [],
+		monsters: [],
+		projectiles: [],
+		events: [
+			{ kind: 'hit', targetId: 1, x: 1, y: 1, intensity: 8, dir: 1, source: 7 },
+		],
+		progress: { level: 1, xp: 0, gold: 0 },
+		drops: [],
+		inventory: [],
+		log: [],
+	};
+	const decoded = decodeServerMessage(encodeServerMessage(msg));
+	if (decoded.t !== 'snapshot') throw new Error('expected a snapshot message');
+	expect(decoded.events[0]).not.toHaveProperty('source');
+	expect(decoded.events[0]).toEqual({
+		kind: 'hit',
+		targetId: 1,
+		x: 1,
+		y: 1,
+		intensity: 8,
+		dir: 1,
+	});
 });
 
 test('reject round-trips the human-readable reason', () => {
@@ -675,7 +711,7 @@ test('snapshot round-trips when the zone is empty', () => {
 		avatars: [],
 		monsters: [],
 		projectiles: [],
-		effects: [],
+		events: [],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
 		inventory: [],

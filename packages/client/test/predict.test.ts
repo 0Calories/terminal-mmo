@@ -4,7 +4,7 @@ import { COMBAT, DEFAULT_WEAPON, EMOTES, SPAWN } from '@mmo/core';
 import {
 	applyEmote,
 	arriveInZone,
-	predictSwingEffects,
+	predictSwingEvents,
 	reconcileHealth,
 	spawnPredicted,
 	stepPrediction,
@@ -130,13 +130,11 @@ test('a swing hits a monster once, and the same swing cannot hit it again', () =
 	});
 	const predicted = { ...r.avatar };
 
-	const first = predictSwingEffects(predicted, r.hitbox, r.hitDamage, [
-		monster,
-	]);
+	const first = predictSwingEvents(predicted, r.hitbox, r.hitDamage, [monster]);
 	expect(first.length).toBeGreaterThan(0);
 	expect(predicted.swingHits).toContain(99);
 
-	const second = predictSwingEffects(predicted, r.hitbox, r.hitDamage, [
+	const second = predictSwingEvents(predicted, r.hitbox, r.hitDamage, [
 		monster,
 	]);
 	expect(second).toEqual([]);

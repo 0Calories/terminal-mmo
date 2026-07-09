@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { Effect, EffectKind, Terrain } from '@mmo/core';
+import type { Terrain } from '@mmo/core';
 import { isSolid, parseTerrain } from '@mmo/core';
 import {
 	advanceParticles,
@@ -9,6 +9,7 @@ import {
 	particleColor,
 	particleDrawRow,
 } from '../src/effects/particles';
+import type { VisualEffect, VisualEffectKind } from '../src/effects/project';
 import {
 	BLOOD,
 	type Camera,
@@ -25,12 +26,12 @@ import {
 // The adapter spawn + engine advance the facade composes each frame.
 function stepParticles(
 	sys: ParticleSystem,
-	effects: readonly Effect[],
+	effects: readonly VisualEffect[],
 	dtMs: number,
 	terrain: Terrain,
 	rng: () => number,
 	cam?: Camera,
-	realize?: Record<EffectKind, Realization>,
+	realize?: Record<VisualEffectKind, Realization>,
 ): void {
 	spawnEffects(sys, effects, rng, cam, realize);
 	advanceParticles(sys, dtMs, terrain);
@@ -66,11 +67,11 @@ function bloodAt(
 	y: number,
 	intensity = 8,
 	dir: -1 | 0 | 1 = 1,
-): Effect {
+): VisualEffect {
 	return { kind: 'blood', x, y, intensity, dir };
 }
 
-test('a blood Effect expands into a burst of specks', () => {
+test('a blood VisualEffect expands into a burst of specks', () => {
 	const sys = new ParticleSystem();
 	stepParticles(sys, [bloodAt(5, 5)], 16, floorTerrain(), seededRng(1));
 	expect(sys.activeCount).toBeGreaterThan(0);
@@ -155,11 +156,11 @@ test('a non-colliding spark fades smoothly to transparent over its life, not a p
 	expect(p.active).toBe(false);
 });
 
-test('the Effect.kind → ParticleType map routes blood to the blood profile', () => {
+test('the VisualEffect.kind → ParticleType map routes blood to the blood profile', () => {
 	expect(REALIZE.blood.particles).toContain(BLOOD);
 });
 
-test('the Effect.kind → ParticleType map routes gore (death) to the gore profile', () => {
+test('the VisualEffect.kind → ParticleType map routes gore (death) to the gore profile', () => {
 	expect(REALIZE.gore.particles).toContain(GORE);
 });
 
@@ -173,7 +174,7 @@ test('gore is a meatier, chunkier profile — distinct glyphs, flies out further
 test('a gore burst spawns fewer chunks than a blood spray of the same intensity', () => {
 	const gore = new ParticleSystem();
 	const blood = new ParticleSystem();
-	const at = (kind: EffectKind): Effect => ({
+	const at = (kind: VisualEffectKind): VisualEffect => ({
 		kind,
 		x: 5,
 		y: 5,
@@ -185,10 +186,10 @@ test('a gore burst spawns fewer chunks than a blood spray of the same intensity'
 	expect(gore.activeCount).toBeLessThan(blood.activeCount);
 });
 
-test('a tinted gore Effect colours its specks by the tint, not the maroon blood palette (#139)', () => {
+test('a tinted gore VisualEffect colours its specks by the tint, not the maroon blood palette (#139)', () => {
 	const terrain = floorTerrain();
 	const sys = new ParticleSystem();
-	const fx: Effect = {
+	const fx: VisualEffect = {
 		kind: 'gore',
 		x: 10,
 		y: 16,
@@ -207,7 +208,7 @@ test('a tinted gore Effect colours its specks by the tint, not the maroon blood 
 test('a tinted speck keeps its hue but darkens with age', () => {
 	const terrain = floorTerrain();
 	const sys = new ParticleSystem();
-	const fx: Effect = {
+	const fx: VisualEffect = {
 		kind: 'gore',
 		x: 10,
 		y: 16,
@@ -410,7 +411,7 @@ test('a profile with no gravity and no terrain collision never settles (profile-
 		kick: false,
 		hitstop: false,
 	};
-	const map: Record<EffectKind, Realization> = {
+	const map: Record<VisualEffectKind, Realization> = {
 		blood: float,
 		gore: float,
 		impact: float,
@@ -433,7 +434,7 @@ test('a profile with no gravity and no terrain collision never settles (profile-
 	expect(p.bounced).toBe(false);
 });
 
-test('an off-camera Effect is skipped entirely — neither spawned nor simulated', () => {
+test('an off-camera VisualEffect is skipped entirely — neither spawned nor simulated', () => {
 	const sys = new ParticleSystem();
 	const cam = { x: 0, y: 0, w: 80, h: 24 };
 	stepParticles(
@@ -447,14 +448,14 @@ test('an off-camera Effect is skipped entirely — neither spawned nor simulated
 	expect(sys.activeCount).toBe(0);
 });
 
-test('an on-camera Effect still spawns when a camera is supplied', () => {
+test('an on-camera VisualEffect still spawns when a camera is supplied', () => {
 	const sys = new ParticleSystem();
 	const cam = { x: 0, y: 0, w: 80, h: 24 };
 	stepParticles(sys, [bloodAt(10, 10)], 16, floorTerrain(), seededRng(1), cam);
 	expect(sys.activeCount).toBeGreaterThan(0);
 });
 
-test('the burst size tracks the Effect intensity', () => {
+test('the burst size tracks the VisualEffect intensity', () => {
 	const big = new ParticleSystem();
 	const small = new ParticleSystem();
 	stepParticles(big, [bloodAt(5, 5, 24)], 16, floorTerrain(), seededRng(1));

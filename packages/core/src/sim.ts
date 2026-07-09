@@ -1,10 +1,15 @@
-import { aabbOverlap, canStartDodge, entityBox } from './combat';
+import {
+	aabbOverlap,
+	type CombatEvent,
+	canStartDodge,
+	entityBox,
+} from './combat';
 import { COMBAT, PHYS, SPAWN } from './constants';
 import { DEFAULT_COSMETICS } from './cosmetics';
 import { applyImpulse, stepEntity } from './physics';
 import { type PlayerState, spawnPlayerState } from './player';
 import { capabilityUnlocked } from './progression';
-import type { Effect, Entity, Input } from './types';
+import type { Entity, Input } from './types';
 import type { World, Zone } from './world';
 import { type AvatarIntent, type ServerAvatar, stepZone } from './zone';
 import { loadZones } from './zoneContent';
@@ -13,7 +18,7 @@ export interface GameState {
 	player: PlayerState;
 	world: World;
 	others?: Entity[];
-	effects?: Effect[];
+	events?: CombatEvent[];
 }
 
 export function createGameFromZones(
@@ -134,5 +139,5 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		zones: { ...game.world.zones, [zone.id]: next.zone },
 		tick: next.tick,
 	};
-	return { player, world, effects: next.effects ?? [] };
+	return { player, world, events: next.events ?? [] };
 }
