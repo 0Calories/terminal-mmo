@@ -9,6 +9,11 @@ export {
 	formFrame,
 } from './body-sprite';
 export { HATS, type HatDef } from './hats';
+export {
+	glyphFromQuadrants,
+	QUADRANT_GLYPHS,
+	quadrantsFromGlyph,
+} from './quadrant';
 export { spriteFor, spriteForNpc } from './registry';
 export {
 	type CellBuffer,
@@ -22,6 +27,15 @@ export {
 } from './render';
 export { buildSceneStyle, type ColorFactory } from './scene-style';
 export { mirrorGlyph, SENTINEL, Sprite } from './sprite';
+export {
+	parseSpriteFile,
+	type SpriteAnchor,
+	type SpriteDiagnostic,
+	type SpriteDoc,
+	type SpriteFrameDoc,
+	type SpriteSeverity,
+	serializeSpriteFile,
+} from './sprite-file';
 export { weaponSpriteById } from './weapon-registry';
 export { WEAPON_ACCENT_KEY, type WeaponSprite } from './weapon-sprite';
 export { sword } from './weapons/sword';

@@ -1,0 +1,160 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { runSprite } from '../src/sprite-cli';
+
+let root: string;
+let lines: string[];
+const deps = () => ({ root, log: (s: string) => lines.push(s) });
+const output = () => lines.join('\n');
+
+beforeEach(() => {
+	root = mkdtempSync(join(tmpdir(), 'forge-sprite-'));
+	lines = [];
+});
+afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+const VALID = `--- idle
+AB
+CD
+--- wave
+·A
+B·
+@bg
+·s
+··
+`;
+
+const RESERVED_KEY_ERROR = `{"colors": {"p": [1,2,3,255]}}
+--- idle
+AB
+CD
+`;
+
+const BAD_JSON = `{ this is not json
+--- idle
+AB
+`;
+
+const CUSTOM_COLORS = `{"key": "e", "colors": {"q": [10,20,30,255]}}
+--- idle
+AB
+CD
+--- wave
+·A
+B·
+@colors
+·q
+e·
+@bg
+·s
+··
+`;
+
+const DEFAULT_COLORS = `{"key": "e"}
+--- idle
+AB
+CD
+@colors
+ee
+ee
+`;
+
+describe('sprite CLI', () => {
+	test('render: happy path prints summary, frames, art, @bg, and no-issues', () => {
+		writeFileSync(join(root, 'buddy.sprite'), VALID);
+		expect(runSprite(['render', 'buddy'], deps())).toBe(0);
+		const out = output();
+		expect(out).toContain('buddy');
+		expect(out).toContain('2 frame(s)');
+		expect(out).toContain('--- idle  2×2');
+		expect(out).toContain('--- wave  2×2');
+		expect(out).toContain('·A');
+		expect(out).toContain('B·');
+		expect(out).toContain('@bg');
+		expect(out).toContain('·s');
+		expect(out).toContain('✓ no issues');
+	});
+
+	test('render: finds sprite in nested role dir via recursive scan', () => {
+		mkdirSync(join(root, 'hats'), { recursive: true });
+		writeFileSync(join(root, 'hats', 'cap.sprite'), VALID);
+		expect(runSprite(['render', 'cap'], deps())).toBe(0);
+		expect(output()).toContain('cap');
+	});
+
+	test('render: direct path works even with root pointing elsewhere', () => {
+		mkdirSync(join(root, 'hats'), { recursive: true });
+		const path = join(root, 'hats', 'cap.sprite');
+		writeFileSync(path, VALID);
+		const otherRoot = join(root, 'elsewhere');
+		expect(
+			runSprite(['render', path], {
+				root: otherRoot,
+				log: (s) => lines.push(s),
+			}),
+		).toBe(0);
+		expect(output()).toContain('cap');
+	});
+
+	test('render: error diagnostics reported, exit 1, but frames still print', () => {
+		writeFileSync(join(root, 'bad.sprite'), RESERVED_KEY_ERROR);
+		expect(runSprite(['render', 'bad'], deps())).toBe(1);
+		const out = output();
+		expect(out).toContain("reserved recolor key 'p'");
+		expect(out).toContain('--- idle  2×2');
+	});
+
+	test('render: frame with a non-default @colors grid prints @colors', () => {
+		writeFileSync(join(root, 'recolor.sprite'), CUSTOM_COLORS);
+		expect(runSprite(['render', 'recolor'], deps())).toBe(0);
+		const out = output();
+		expect(out).toContain('@colors');
+		expect(out).toContain('·q');
+		expect(out).toContain('e·');
+	});
+
+	test('render: frame whose @colors grid is all default key omits @colors', () => {
+		writeFileSync(join(root, 'plain.sprite'), DEFAULT_COLORS);
+		expect(runSprite(['render', 'plain'], deps())).toBe(0);
+		expect(output()).not.toContain('@colors');
+	});
+
+	test('render: unparseable header -> no frames printed, exit 1', () => {
+		writeFileSync(join(root, 'broken.sprite'), BAD_JSON);
+		expect(runSprite(['render', 'broken'], deps())).toBe(1);
+		const out = output();
+		expect(out).toContain('invalid header JSON');
+		expect(out).not.toContain('---');
+	});
+
+	test('render: missing id fails with a message', () => {
+		expect(runSprite(['render'], deps())).toBe(1);
+	});
+
+	test('render: missing sprite id fails with a clear message', () => {
+		expect(runSprite(['render', 'nope'], deps())).toBe(1);
+		expect(output().toLowerCase()).toContain('nope');
+	});
+
+	test('render: missing sprites dir entirely fails cleanly, not a throw', () => {
+		const missingRoot = join(root, 'nope-dir');
+		expect(
+			runSprite(['render', 'anything'], {
+				root: missingRoot,
+				log: (s) => lines.push(s),
+			}),
+		).toBe(1);
+	});
+
+	test('bare command prints usage and exits 0', () => {
+		expect(runSprite([], deps())).toBe(0);
+		expect(output().toLowerCase()).toContain('usage');
+	});
+
+	test('unknown command prints usage and exits 1', () => {
+		expect(runSprite(['bogus'], deps())).toBe(1);
+		expect(output().toLowerCase()).toContain('usage');
+	});
+});

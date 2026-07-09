@@ -7,4 +7,5 @@ export * from './placeable';
 export * from './play';
 export * from './preview';
 export * from './render';
+export * from './sprite-cli';
 export * from './template';
