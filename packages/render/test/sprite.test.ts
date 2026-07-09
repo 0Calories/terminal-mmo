@@ -67,3 +67,41 @@ test('every entity type resolves to a sprite', () => {
 test('shooter has its own sprite, distinct from the chaser (#4)', () => {
 	expect(spriteFor('shooter')).not.toBe(spriteFor('chaser'));
 });
+
+test('no bg option: bgKeys are all-space rows matching w x h (ADR 0031)', () => {
+	const s = new Sprite('\nAB\nCD\n', { defaultKey: 'x' });
+	expect(s.bgKeys(1)).toEqual(['  ', '  ']);
+	expect(s.bgKeys(-1)).toEqual(['  ', '  ']);
+});
+
+test('bg grid: explicit keys kept on inked cells, sentinel/space map to space', () => {
+	const s = new Sprite('\nAB\n', { bg: '·b\n', defaultKey: 'p' });
+	expect(s.bgKeys(1)).toEqual([' b']);
+});
+
+test('bg grid mirrors positionally (reverse only, no key swap)', () => {
+	const s = new Sprite('\nAB\n', { bg: 'ab\n', defaultKey: 'x' });
+	expect(s.bgKeys(-1)).toEqual(['ba']);
+});
+
+test('throws when bg grid dimensions do not match the glyph grid', () => {
+	expect(
+		() => new Sprite('\nABC\n', { bg: 'bb\n', defaultKey: 'x' }),
+	).toThrow();
+});
+
+test('throws when bg key sits on a transparent glyph cell, naming coordinates', () => {
+	expect(() => new Sprite('\n·A\n', { bg: 'bb\n', defaultKey: 'x' })).toThrow(
+		/\(0,0\)/,
+	);
+});
+
+test('two-color cell: colors and bg channels coexist independently', () => {
+	const s = new Sprite('\nAB\n', {
+		colors: 'pe\n',
+		bg: '·b\n',
+		defaultKey: 'x',
+	});
+	expect(s.colorKeys(1)).toEqual(['pe']);
+	expect(s.bgKeys(1)).toEqual([' b']);
+});
