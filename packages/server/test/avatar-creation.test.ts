@@ -104,7 +104,7 @@ test('a new account is held authenticated-but-unspawned until createAvatar, then
 	expect(zoneOf(currentWorld(), 1)).toBeUndefined();
 	expect(avatarOf(currentWorld(), 1)).toBeUndefined();
 
-	const chosen: Cosmetics = { hue: 5, hat: 1, nameplate: 2, form: 0 };
+	const chosen: Cosmetics = { hue: 5, hat: '', nameplate: 2, form: 0 };
 	onMessage(
 		ws(w),
 		encodeClientMessage({
@@ -123,7 +123,7 @@ test('a new account is held authenticated-but-unspawned until createAvatar, then
 
 test('a returning account restores straight away with isNew=false and its saved Cosmetics (no creator)', () => {
 	const id = makeIdentity();
-	const chosen: Cosmetics = { hue: 4, hat: 2, nameplate: 1, form: 0 };
+	const chosen: Cosmetics = { hue: 4, hat: '', nameplate: 1, form: 0 };
 
 	const first = fakeWs(10);
 	expect(handshake(first, id, 'trinity', 1).isNew).toBe(true);
@@ -244,7 +244,7 @@ test('setCosmetics in a Town persists to the Save and rebroadcasts to others in 
 	expect(zoneOf(currentWorld(), 50)).toBe('town-01');
 	expect(zoneOf(currentWorld(), 51)).toBe('town-01');
 
-	const next: Cosmetics = { hue: 3, hat: 1, nameplate: 2, form: 0 };
+	const next: Cosmetics = { hue: 3, hat: '', nameplate: 2, form: 0 };
 	onMessage(
 		ws(wa),
 		encodeClientMessage({ t: 'setCosmetics', cosmetics: next }),
@@ -272,7 +272,7 @@ test('setCosmetics from a session with no live Avatar is a silent no-op (#305)',
 		ws(w),
 		encodeClientMessage({
 			t: 'setCosmetics',
-			cosmetics: { hue: 2, hat: 1, nameplate: 1, form: 0 },
+			cosmetics: { hue: 2, hat: '', nameplate: 1, form: 0 },
 		}),
 	);
 	expect(zoneOf(currentWorld(), 60)).toBeUndefined();
@@ -293,4 +293,51 @@ test('confirming an empty Handle field uses the auto-derived placeholder, still 
 	);
 	expect(zoneOf(currentWorld(), 40)).toBe('town-01');
 	expect(avatarOf(currentWorld(), 40)?.handle).toBe('wanderer');
+});
+
+// validHatIds is the real scanned set (ADR 0031: cap, crown, party-hat,
+// top-hat, wizard) — 'no-such-hat' is dangling regardless, so it must fall
+// back to ''.
+test('createAvatar with a dangling hat id stores it as no-hat', () => {
+	const id = makeIdentity();
+	const w = fakeWs(70);
+	handshake(w, id, 'dangling-create', 0);
+	onMessage(
+		ws(w),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'DanglingCreate',
+			cosmetics: { hue: 1, hat: 'no-such-hat', nameplate: 0, form: 0 },
+		}),
+	);
+	expect(avatarOf(currentWorld(), 70)?.cosmetics.hat).toBe('');
+});
+
+test('setCosmetics with a dangling hat id stores it as no-hat', () => {
+	const id = makeIdentity();
+	const w = fakeWs(71);
+	handshake(w, id, 'dangling-set', 0);
+	onMessage(
+		ws(w),
+		encodeClientMessage({
+			t: 'createAvatar',
+			handle: 'DanglingSet',
+			cosmetics: DEFAULT_COSMETICS,
+		}),
+	);
+	onMessage(
+		ws(w),
+		encodeClientMessage({
+			t: 'setCosmetics',
+			cosmetics: { hue: 1, hat: 'no-such-hat', nameplate: 0, form: 0 },
+		}),
+	);
+	expect(avatarOf(currentWorld(), 71)?.cosmetics.hat).toBe('');
+});
+
+test('malformed bytes are dropped without throwing or crashing the server', () => {
+	const w = fakeWs(90);
+	const garbage = new Uint8Array([255, 255, 255, 255, 255, 255, 255, 255]);
+	expect(() => onMessage(ws(w), garbage)).not.toThrow();
+	expect(w.sent.length).toBe(0);
 });

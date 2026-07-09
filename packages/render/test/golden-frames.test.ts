@@ -17,7 +17,8 @@ import {
 	DRAFTED_FORMS,
 	drawEntitySprite,
 	FORMS,
-	HATS,
+	HAT_IDS,
+	hatById,
 	type RenderStyle,
 	renderZoneScene,
 	type Sprite,
@@ -182,9 +183,10 @@ test('golden: npc sprites', () => {
 });
 
 test('golden: hat sprites', () => {
-	for (const hat of HATS) {
-		if (hat.sprite === null) continue;
-		expect(spriteGrid(hat.sprite)).toMatchSnapshot(`hat: ${hat.name}`);
+	for (const id of HAT_IDS) {
+		const hat = hatById(id);
+		if (hat === null) continue;
+		expect(spriteGrid(hat)).toMatchSnapshot(`hat: ${id}`);
 	}
 });
 
@@ -239,7 +241,7 @@ test('golden scene: full avatar facing right', () => {
 		y: 7,
 		facing: 1,
 		weapon: 0,
-		cosmetics: { hue: 2, hat: 3, nameplate: 0, form: 0 },
+		cosmetics: { hue: 2, hat: 'wizard', nameplate: 0, form: 0 },
 	});
 	renderZoneScene(
 		buf,
@@ -258,7 +260,7 @@ test('golden scene: full avatar facing left', () => {
 		y: 7,
 		facing: -1,
 		weapon: 0,
-		cosmetics: { hue: 2, hat: 3, nameplate: 0, form: 0 },
+		cosmetics: { hue: 2, hat: 'wizard', nameplate: 0, form: 0 },
 	});
 	renderZoneScene(
 		buf,

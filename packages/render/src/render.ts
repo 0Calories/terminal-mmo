@@ -19,7 +19,7 @@ import {
 	weaponFrame,
 } from '@mmo/core';
 import { formById, formFrame } from './body-sprite';
-import { HATS } from './hats';
+import { hatById } from './hats';
 import { spriteFor, spriteForNpc } from './registry';
 import type { Sprite } from './sprite';
 import { weaponSpriteById } from './weapon-registry';
@@ -144,7 +144,7 @@ function baselineFor(e: Entity): number {
 }
 
 function hatFor(e: Entity): Sprite | null {
-	return e.cosmetics ? (HATS[e.cosmetics.hat]?.sprite ?? null) : null;
+	return e.cosmetics ? hatById(e.cosmetics.hat) : null;
 }
 
 function weaponSpriteFor(e: Entity): WeaponSprite | null {

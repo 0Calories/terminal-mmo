@@ -1,6 +1,6 @@
 import type { CombatEvent, CombatEventKind } from './combat';
 import { SHOOTER } from './constants';
-import { clampCosmetics, DEFAULT_COSMETICS } from './cosmetics';
+import { clampCosmetics, DEFAULT_COSMETICS, LEGACY_HAT_IDS } from './cosmetics';
 import { EMOTES } from './emote';
 import type {
 	ActionState,
@@ -180,9 +180,17 @@ export type ClientMessage =
 	| { t: 'createAvatar'; handle: string; cosmetics: Cosmetics }
 	| { t: 'setCosmetics'; cosmetics: Cosmetics };
 
+// Legacy (pre-#348) 4×u8 quad, BYTE-IDENTICAL to what a released client
+// sends/expects — the hat byte carries a LEGACY_HAT_IDS index, best-effort
+// only. The full-fidelity string hat id rides as a separate trailing field
+// on each message (see CONTRIBUTING "Wire protocol changes"), appended after
+// this quad and read behind a `remaining()` guard so it overrides the
+// quad-derived hat when present, and legacy frames still decode cleanly
+// without it.
 function writeCosmetics(w: Writer, c: Cosmetics) {
 	w.u8(c.hue);
-	w.u8(c.hat);
+	const hatIdx = LEGACY_HAT_IDS.indexOf(c.hat);
+	w.u8(hatIdx >= 0 ? hatIdx : 0);
 	w.u8(c.nameplate);
 	w.u8(c.form);
 }
@@ -190,10 +198,16 @@ function writeCosmetics(w: Writer, c: Cosmetics) {
 function readCosmetics(r: Reader): Cosmetics {
 	return clampCosmetics({
 		hue: r.u8(),
-		hat: r.u8(),
+		hat: LEGACY_HAT_IDS[r.u8()] ?? '',
 		nameplate: r.u8(),
 		form: r.u8(),
 	});
+}
+
+// Reads the appended full-fidelity hat id, if present, else falls back to the
+// quad-derived hat (a legacy peer's best-effort mapping).
+function readTrailingHat(r: Reader, fallback: string): string {
+	return r.remaining() >= 4 ? r.str() : fallback;
 }
 
 const CLIENT_TAG = {
@@ -219,6 +233,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			writeCosmetics(w, msg.cosmetics);
 			w.u8(msg.weapon);
 			w.str(msg.publicKey);
+			w.str(msg.cosmetics.hat); // append-only: full-fidelity hat id (CONTRIBUTING §wire)
 			break;
 		case 'proof':
 			w.u8(CLIENT_TAG.proof);
@@ -263,10 +278,12 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.u8(CLIENT_TAG.createAvatar);
 			writeCosmetics(w, msg.cosmetics);
 			w.str(msg.handle);
+			w.str(msg.cosmetics.hat); // append-only: full-fidelity hat id (CONTRIBUTING §wire)
 			break;
 		case 'setCosmetics':
 			w.u8(CLIENT_TAG.setCosmetics);
 			writeCosmetics(w, msg.cosmetics);
+			w.str(msg.cosmetics.hat); // append-only: full-fidelity hat id (CONTRIBUTING §wire)
 			break;
 	}
 	return w.finish();
@@ -279,11 +296,19 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 		case CLIENT_TAG.hello: {
 			const handle = r.str();
 			const version = r.remaining() >= 4 ? r.str() : '';
-			const cosmetics =
-				r.remaining() >= 4 ? readCosmetics(r) : DEFAULT_COSMETICS;
+			// legacy quad: hue(1) + hat(1) + nameplate(1) + form(1) = 4 bytes
+			const quad = r.remaining() >= 4 ? readCosmetics(r) : DEFAULT_COSMETICS;
 			const weapon = r.remaining() >= 1 ? r.u8() : DEFAULT_WEAPON;
 			const publicKey = r.remaining() >= 4 ? r.str() : '';
-			return { t: 'hello', handle, version, cosmetics, weapon, publicKey };
+			const hat = readTrailingHat(r, quad.hat);
+			return {
+				t: 'hello',
+				handle,
+				version,
+				cosmetics: hat === quad.hat ? quad : { ...quad, hat },
+				weapon,
+				publicKey,
+			};
 		}
 		case CLIENT_TAG.proof:
 			return { t: 'proof', signature: r.bytes() };
@@ -326,13 +351,22 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 		case CLIENT_TAG.buy:
 			return { t: 'buy', index: r.u32() };
 		case CLIENT_TAG.createAvatar: {
-			const cosmetics = readCosmetics(r);
+			const quad = readCosmetics(r);
 			const handle = r.remaining() >= 4 ? r.str() : '';
-			return { t: 'createAvatar', handle, cosmetics };
+			const hat = readTrailingHat(r, quad.hat);
+			return {
+				t: 'createAvatar',
+				handle,
+				cosmetics: hat === quad.hat ? quad : { ...quad, hat },
+			};
 		}
 		case CLIENT_TAG.setCosmetics: {
-			const cosmetics = readCosmetics(r);
-			return { t: 'setCosmetics', cosmetics };
+			const quad = readCosmetics(r);
+			const hat = readTrailingHat(r, quad.hat);
+			return {
+				t: 'setCosmetics',
+				cosmetics: hat === quad.hat ? quad : { ...quad, hat },
+			};
 		}
 		default:
 			throw new Error(`unknown client message tag ${tag}`);
@@ -481,24 +515,46 @@ function writeAvatar(w: Writer, a: AvatarSnapshot) {
 	w.f64(a.hurtT);
 	w.u8(a.weapon);
 	writeAction(w, a.action);
+	// Append-only: full-fidelity hat id at the END of the record. A per-record
+	// trailing field shifts subsequent records for a stale reader, but
+	// snapshots only ever flow between gate-matched peers (a release client
+	// talking to its matching release server) or same-source peers (dev), so
+	// record-level append is safe here — the quad still carries a
+	// legacy-best-effort hat for any peer that doesn't read this far.
+	w.str(a.cosmetics.hat);
 }
 
 function readAvatar(r: Reader): AvatarSnapshot {
+	const sessionId = r.u32();
+	const handle = r.str();
+	const quad = readCosmetics(r);
+	const x = r.f64();
+	const y = r.f64();
+	const vx = r.f64();
+	const vy = r.f64();
+	const facing = r.i8() as Facing;
+	const onGround = r.bool();
+	const hp = r.f64();
+	const maxHp = r.f64();
+	const hurtT = r.f64();
+	const weapon = r.u8();
+	const action = readAction(r);
+	const hat = readTrailingHat(r, quad.hat);
 	return {
-		sessionId: r.u32(),
-		handle: r.str(),
-		cosmetics: readCosmetics(r),
-		x: r.f64(),
-		y: r.f64(),
-		vx: r.f64(),
-		vy: r.f64(),
-		facing: r.i8() as Facing,
-		onGround: r.bool(),
-		hp: r.f64(),
-		maxHp: r.f64(),
-		hurtT: r.f64(),
-		weapon: r.u8(),
-		action: readAction(r),
+		sessionId,
+		handle,
+		cosmetics: hat === quad.hat ? quad : { ...quad, hat },
+		x,
+		y,
+		vx,
+		vy,
+		facing,
+		onGround,
+		hp,
+		maxHp,
+		hurtT,
+		weapon,
+		action,
 	};
 }
 

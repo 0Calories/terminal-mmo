@@ -3,7 +3,8 @@ import { BOX, maxHpForLevel } from '@mmo/core';
 import {
 	buildSceneStyle,
 	drawNameplates,
-	HATS,
+	HAT_IDS,
+	hatById,
 	type RenderStyle,
 	renderZoneScene,
 	spriteFor,
@@ -52,7 +53,7 @@ const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 
 export const PLAYER = spriteFor('player');
 export const NAMEPLATE_H = 2;
-const MAX_HAT_H = Math.max(0, ...HATS.map((h) => h.sprite?.h ?? 0));
+const MAX_HAT_H = Math.max(0, ...HAT_IDS.map((id) => hatById(id)?.h ?? 0));
 export const VPAD = 1;
 const PREVIEW_W = PLAYER.w + 12;
 export const PREVIEW_H = MAX_HAT_H + PLAYER.h + NAMEPLATE_H + 2 * VPAD;
@@ -81,7 +82,10 @@ export function previewAvatar(cosmetics: Cosmetics, name: string): Entity {
 }
 
 class PreviewRenderable extends Renderable {
-	avatar: Entity = previewAvatar({ hue: 0, hat: 0, nameplate: 0, form: 0 }, '');
+	avatar: Entity = previewAvatar(
+		{ hue: 0, hat: '', nameplate: 0, form: 0 },
+		'',
+	);
 
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
 		// buffered: own frame buffer, else renderZoneScene's clear wipes the root buffer.

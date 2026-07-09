@@ -150,7 +150,7 @@ describe('entityTint', () => {
 	test('an Avatar takes its cosmetic hue, not the default body colour', () => {
 		const a = monster(0, 0, {
 			type: 'player',
-			cosmetics: { hue: 3, hat: 0, nameplate: 0, form: 0 },
+			cosmetics: { hue: 3, hat: '', nameplate: 0, form: 0 },
 		});
 		expect(entityTint(a)).toEqual({ r: 90, g: 170, b: 255 });
 	});
@@ -158,7 +158,7 @@ describe('entityTint', () => {
 	test('a stray cosmetic hue falls back to the default amber body', () => {
 		const a = monster(0, 0, {
 			type: 'player',
-			cosmetics: { hue: 999, hat: 0, nameplate: 0, form: 0 },
+			cosmetics: { hue: 999, hat: '', nameplate: 0, form: 0 },
 		});
 		expect(entityTint(a)).toEqual({ r: 255, g: 150, b: 40 });
 	});
@@ -208,7 +208,7 @@ describe('deathEvent', () => {
 	test('an Avatar death recolours the tint to its cosmetic hue, not a body colour', () => {
 		const a = monster(10, 4, {
 			type: 'player',
-			cosmetics: { hue: 3, hat: 0, nameplate: 0, form: 0 },
+			cosmetics: { hue: 3, hat: '', nameplate: 0, form: 0 },
 		});
 		expect(deathEvent(a)).toEqual({
 			kind: 'death',

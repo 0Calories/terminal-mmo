@@ -88,7 +88,10 @@ editor couldn't touch the art most needing iteration.
 ## Consequences
 
 - The wire and Save formats change (numeric cosmetic/weapon indices → string
-  ids); needs the one-time Save migration and a protocol version bump.
+  ids); needs the one-time Save migration. On the wire the id ships as an
+  APPENDED trailing field (the legacy index byte stays in place, best-effort),
+  gated by ADR 0012's release Version check — never a hand-bumped protocol
+  integer, per CONTRIBUTING's wire rules.
 - `@mmo/render` (ADR 0030) owns the parser and art; `@mmo/core` sees only
   sprite ids and the metadata crumbs authoritative combat reads. The server
   reads `sprites/` ids from disk for validation, never the art.

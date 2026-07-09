@@ -4,12 +4,11 @@ import {
 	FORM_COUNT,
 	HANDLE_CHAR_RE,
 	HANDLE_MAX_LEN,
-	HAT_COUNT,
 	HUE_COUNT,
 	NAMEPLATE_COUNT,
 	validHandle,
 } from '@mmo/core';
-import { HATS } from '@mmo/render';
+import { HAT_IDS } from '@mmo/render';
 
 export { HANDLE_MAX_LEN } from '@mmo/core';
 
@@ -32,12 +31,23 @@ export interface CustomizeFieldDef {
 	key: CustomizeFieldKey;
 	label: string;
 	count: number;
+	// Present for id-cycled fields (hat): the field's value is a string id, and
+	// this is the ordered pool of ids it cycles through, position by position.
+	options?: readonly string[];
 }
+
+// '' ("None") always leads, then the scanned ids in sorted order.
+const HAT_OPTIONS: readonly string[] = ['', ...HAT_IDS];
 
 const ALL_CUSTOMIZE_FIELDS: readonly CustomizeFieldDef[] = [
 	{ key: 'form', label: 'Form', count: FORM_COUNT },
 	{ key: 'hue', label: 'Body hue', count: HUE_COUNT },
-	{ key: 'hat', label: 'Hat', count: HAT_COUNT },
+	{
+		key: 'hat',
+		label: 'Hat',
+		count: HAT_OPTIONS.length,
+		options: HAT_OPTIONS,
+	},
 	{ key: 'nameplate', label: 'Nameplate', count: NAMEPLATE_COUNT },
 ];
 
@@ -66,15 +76,24 @@ export interface CustomizeRow {
 
 export function customizeRows(s: CustomizeState): CustomizeRow[] {
 	return CUSTOMIZE_FIELDS.map((f, i) => {
-		const idx = s.cosmetics[f.key];
-		const value = f.key === 'hat' ? HATS[idx].name : `${idx + 1}/${f.count}`;
+		const raw = s.cosmetics[f.key];
+		const value = f.options
+			? raw === ''
+				? 'None'
+				: String(raw)
+			: `${(raw as number) + 1}/${f.count}`;
 		return { label: f.label, value, focused: i === s.field };
 	});
 }
 
 function cycle(s: CustomizeState, delta: number): CustomizeState {
 	const f = CUSTOMIZE_FIELDS[s.field];
-	const next = wrap(s.cosmetics[f.key] + delta, f.count);
+	if (f.options) {
+		const cur = f.options.indexOf(s.cosmetics[f.key] as string);
+		const idx = wrap((cur < 0 ? 0 : cur) + delta, f.options.length);
+		return { ...s, cosmetics: { ...s.cosmetics, [f.key]: f.options[idx] } };
+	}
+	const next = wrap((s.cosmetics[f.key] as number) + delta, f.count);
 	return { ...s, cosmetics: { ...s.cosmetics, [f.key]: next } };
 }
 

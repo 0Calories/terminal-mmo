@@ -1,5 +1,5 @@
 import type { AccountRegistry } from './auth';
-import { clampCosmetics, DEFAULT_COSMETICS } from './cosmetics';
+import { clampCosmetics, DEFAULT_COSMETICS, LEGACY_HAT_IDS } from './cosmetics';
 import type { Cosmetics, Item, PlayerProgress } from './types';
 import { DEFAULT_WEAPON } from './weapons';
 import type { ZoneId } from './world';
@@ -71,12 +71,24 @@ export function registryFromSaves(
 	return { handleByKey, keyByHandle };
 }
 
+// Pre-ADR-0031 Saves stored `hat` as a numeric index into the render-side HATS
+// array. Map it through the frozen LEGACY_HAT_IDS order into a sprite id;
+// strings (post-migration Saves) pass through unchanged.
+export function migrateSaveCosmetics(
+	c: Cosmetics | (Omit<Cosmetics, 'hat'> & { hat: number }),
+): Cosmetics {
+	if (typeof c.hat === 'number') {
+		return { ...c, hat: LEGACY_HAT_IDS[c.hat] ?? '' };
+	}
+	return c as Cosmetics;
+}
+
 export function restoredFromSave(save: PlayerSave): RestoredAvatar {
 	return {
 		progress: save.progress,
 		inventory: save.inventory,
 		equippedWeapon: save.equippedWeapon,
-		cosmetics: clampCosmetics(save.cosmetics),
+		cosmetics: clampCosmetics(migrateSaveCosmetics(save.cosmetics)),
 		lastTown: save.lastTown,
 		bossDefeated: save.bossDefeated,
 	};

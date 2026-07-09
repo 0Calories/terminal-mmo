@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { BOX, type Cosmetics, DEFAULT_COSMETICS } from '@mmo/core';
-import { HATS } from '@mmo/render';
+import { HAT_IDS, hatById } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
 import {
 	CharacterCreator,
@@ -14,19 +14,21 @@ import {
 import { CUSTOMIZE_FIELDS } from '../src/ui/customize';
 
 // undo previewAvatar's inverse of drawEntitySprite's placement (offset up by BOX.h - PLAYER.h)
-const spriteTopOf = (hat: number) =>
+const spriteTopOf = (hat: string) =>
 	previewAvatar({ hue: 0, hat, nameplate: 0, form: 0 }, 'name').y +
 	(BOX.h - PLAYER.h);
 
+const ALL_HATS = ['', ...HAT_IDS];
+
 test('cycling the hat keeps the Sprite anchored at a fixed vertical position', () => {
-	const tops = HATS.map((_, hat) => spriteTopOf(hat));
+	const tops = ALL_HATS.map((hat) => spriteTopOf(hat));
 	expect(new Set(tops).size).toBe(1);
 });
 
 test('no hat selection clips the stack at the top or bottom of the preview', () => {
-	for (let hat = 0; hat < HATS.length; hat++) {
+	for (const hat of ALL_HATS) {
 		const spriteTop = spriteTopOf(hat);
-		const hatH = HATS[hat]?.sprite?.h ?? 0;
+		const hatH = hatById(hat)?.h ?? 0;
 		const hatTop = spriteTop - hatH;
 		const nameplateBottom = spriteTop + PLAYER.h + NAMEPLATE_H;
 		expect(hatTop).toBeGreaterThanOrEqual(0);
@@ -35,8 +37,8 @@ test('no hat selection clips the stack at the top or bottom of the preview', () 
 });
 
 test('reserved headroom is fixed, so the Sprite sits below the tallest hat', () => {
-	const maxHatH = Math.max(0, ...HATS.map((h) => h.sprite?.h ?? 0));
-	expect(spriteTopOf(0)).toBe(VPAD + maxHatH);
+	const maxHatH = Math.max(0, ...HAT_IDS.map((id) => hatById(id)?.h ?? 0));
+	expect(spriteTopOf('')).toBe(VPAD + maxHatH);
 });
 
 const key = (name: string, sequence = ''): CreatorKey => ({
@@ -152,7 +154,7 @@ test('a createRejected surfaces a transient "name" error, cleared on the next ed
 	expect(cc.errorMessage).toBe('');
 });
 
-const SEED: Cosmetics = { hue: 2, hat: 1, nameplate: 3, form: 0 };
+const SEED: Cosmetics = { hue: 2, hat: 'cap', nameplate: 3, form: 0 };
 
 async function mountRecustomize(handle = 'Neo', cosmetics = SEED) {
 	const { renderer } = await createTestRenderer({ width: 80, height: 30 });

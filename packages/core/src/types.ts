@@ -36,7 +36,8 @@ export interface ActionState {
 
 export interface Cosmetics {
 	hue: number;
-	hat: number;
+	/** Sprite id from sprites/hats/*.sprite (scanned by the server); '' = no hat. */
+	hat: string;
 	nameplate: number;
 	form: number;
 }
