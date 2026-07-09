@@ -1,8 +1,3 @@
-// View + selection state only — never the transaction. The networked path issues a
-// `sell`/`buy` intent and the SERVER owns the Gold/inventory change (#267/#273, ADR 0025);
-// this class only renders and tracks the cursor. The Merchant has two tabs — Sell (your
-// loot) and Buy (the Town's starter goods) — switched with ←/→ (#242). The optional
-// `sellOnly` mode collapses it to just the Sell tab (tab-switching inert).
 import type { GameState } from '@mmo/shared';
 import { STARTER_GOODS, saleValue } from '@mmo/shared';
 import {
@@ -18,8 +13,6 @@ const SLOT_PAD = 9; // width of 'accessory', the widest Slot word
 
 export type ShopMode = 'sell' | 'buy';
 
-// The Gold + inventory the Merchant view reads. The networked path passes a view
-// assembled from the server snapshot (which owns Gold + inventory) — it satisfies this Pick.
 export type ShopView = Pick<GameState['player'], 'inventory' | 'progress'>;
 
 export class Shop {
@@ -95,7 +88,6 @@ export class Shop {
 		return this.container.visible;
 	}
 
-	// The number of rows the active tab offers, so the caller can clamp selection.
 	count(player: ShopView): number {
 		return this.mode === 'buy' ? STARTER_GOODS.length : player.inventory.length;
 	}
@@ -110,8 +102,6 @@ export class Shop {
 		this.container.visible = false;
 	}
 
-	// Flip between the Sell and Buy tabs, resetting the cursor to the top of the new list.
-	// Inert in `sellOnly` mode — there is no Buy tab to flip to (#267).
 	switchTab(): void {
 		if (this.sellOnly) return;
 		this.mode = this.mode === 'sell' ? 'buy' : 'sell';
@@ -129,7 +119,6 @@ export class Shop {
 	update(player: ShopView): void {
 		const count = this.count(player);
 		if (this.selected > count - 1) this.selected = Math.max(0, count - 1);
-		// A sell-only Merchant hides the tab strip entirely — there is no Buy to advertise.
 		this.tabs.content = this.sellOnly
 			? ''
 			: this.mode === 'sell'

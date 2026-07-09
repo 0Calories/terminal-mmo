@@ -12,14 +12,12 @@ import {
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false };
 
-/** The authored Town, freshly parsed (ADR 0008). */
 function loadTown(): Zone {
 	const town = loadZones().find((z) => z.id === 'town-01');
 	if (!town) throw new Error('town-01 missing from authored zones/');
 	return town;
 }
 
-/** A Player standing in the Town, attacking into thin air. */
 function townGame(): GameState {
 	const town = loadTown();
 	return {
@@ -56,7 +54,7 @@ test('the Town stays Monster-free and combat-free across many ticks', () => {
 		expect(zone.monsters.length).toBe(0);
 		expect(zone.projectiles.length).toBe(0);
 	}
-	expect(g.player.avatar.hp).toBe(startHp); // no Monsters means no damage ever dealt
+	expect(g.player.avatar.hp).toBe(startHp);
 });
 
 test('createGame registers a Town alongside the starter Field', () => {

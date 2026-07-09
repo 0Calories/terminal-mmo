@@ -16,8 +16,6 @@ test('an explicit MMO_SERVER override wins regardless of version', () => {
 });
 
 test('a dev-versioned client with no override targets the LOCAL dev server', () => {
-	// A `dev` client is rejected by any deployed server, so defaulting it to prod is a
-	// guaranteed-failure footgun; it should hit the local dev server instead.
 	expect(resolveServerUrl(undefined, DEV_VERSION)).toBe(LOCAL_SERVER_URL);
 	expect(resolveServerUrl('', DEV_VERSION)).toBe(LOCAL_SERVER_URL);
 });

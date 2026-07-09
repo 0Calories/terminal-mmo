@@ -74,7 +74,6 @@ describe('filterCandidates', () => {
 			'field-01',
 			'town-01',
 		]);
-		// '0' prefixes nothing, so the id-sorted order is kept among substring hits.
 		expect(filterCandidates(cands, 'field').map((c) => c.id)).toEqual([
 			'field-01',
 			'field-02',

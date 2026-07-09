@@ -1,34 +1,18 @@
-// SSH-key challenge-response auth (ADR 0004, #235). Everything here is pure and
-// socket-free: SSH wire-format parsing, the ed25519 signature verifier, and the
-// username-claim registry that makes the Handle a durable identity (one public
-// key ↔ one unique username). The server wires these to its WebSocket handshake;
-// the client reuses the format helpers to talk to ssh-agent. Only ssh-ed25519 is
-// supported — the key type ADR 0004 names, and the modern default — so a Player
-// with only an RSA key gets a clear refusal, not a protocol error.
-//
-// node:crypto is used for the ed25519 verify only: deterministic and IO-free, so
-// the shared package's purity contract holds (both runtimes are Bun).
 import { createPublicKey, verify } from 'node:crypto';
 
 export const SSH_ED25519 = 'ssh-ed25519';
 const ED25519_KEY_LEN = 32;
 const ED25519_SIG_LEN = 64;
-// ASN.1 SPKI header for an ed25519 public key: appending the raw 32 key bytes
-// yields the DER document node:crypto imports. Fixed by RFC 8410, so it is a
-// constant rather than an ASN.1 dependency.
+// ASN.1 SPKI prefix for an ed25519 key (RFC 8410); prepend to the raw 32 key bytes for DER.
 const ED25519_SPKI_PREFIX = Uint8Array.from(
 	Buffer.from('302a300506032b6570032100', 'hex'),
 );
 
 export interface SshPublicKey {
 	algo: typeof SSH_ED25519;
-	key: Uint8Array; // the raw 32-byte ed25519 public key
+	key: Uint8Array;
 	comment?: string;
 }
-
-// --- SSH wire blobs (RFC 4251: u32 big-endian ints, length-prefixed strings) ---
-// Exported because the client's ssh-agent conversation (and its id_ed25519
-// parser) speak the exact same primitive encoding.
 
 export class SshBlobWriter {
 	private chunks: Uint8Array[] = [];
@@ -62,8 +46,6 @@ export class SshBlobWriter {
 	}
 }
 
-// Every read returns null on a short / malformed buffer rather than throwing —
-// both sides feed these untrusted input.
 export class SshBlobReader {
 	private pos = 0;
 	constructor(private buf: Uint8Array) {}
@@ -96,10 +78,6 @@ export class SshBlobReader {
 
 const utf8 = (b: Uint8Array) => new TextDecoder().decode(b);
 
-// --- public keys ---------------------------------------------------------------
-
-// The base64 payload of an OpenSSH public-key line is itself a blob:
-// { string algo, string key }. Null for anything but a well-formed ssh-ed25519.
 export function parsePublicKeyBlob(blob: Uint8Array): SshPublicKey | null {
 	const r = new SshBlobReader(blob);
 	const algo = r.string();
@@ -109,9 +87,6 @@ export function parsePublicKeyBlob(blob: Uint8Array): SshPublicKey | null {
 	return { algo: SSH_ED25519, key };
 }
 
-// Parse an OpenSSH one-line public key — `ssh-ed25519 <base64> [comment]`, the
-// format of `~/.ssh/id_ed25519.pub` — into its raw key. Null (never a throw) for
-// any other key type or malformed line: the server feeds this untrusted input.
 export function parsePublicKeyLine(line: string): SshPublicKey | null {
 	const parts = line.trim().split(/\s+/);
 	if (parts.length < 2 || parts[0] !== SSH_ED25519) return null;
@@ -121,8 +96,7 @@ export function parsePublicKeyLine(line: string): SshPublicKey | null {
 	} catch {
 		return null;
 	}
-	// Buffer.from('!!!', 'base64') silently drops bad chars; require the decode to
-	// round-trip so a garbled field can't alias a shorter valid blob.
+	// Buffer.from base64 silently drops bad chars; round-trip so garbage can't alias a valid blob.
 	if (
 		blob.toString('base64').replace(/=+$/, '') !== parts[1].replace(/=+$/, '')
 	)
@@ -133,9 +107,6 @@ export function parsePublicKeyLine(line: string): SshPublicKey | null {
 	return comment ? { ...parsed, comment } : parsed;
 }
 
-// The canonical registry key for a public key: algo + base64 blob, comment
-// stripped — so the same key registered from different machines (different
-// comments) is one identity.
 export function canonicalPublicKey(k: SshPublicKey): string {
 	const w = new SshBlobWriter();
 	w.string(SSH_ED25519);
@@ -143,18 +114,11 @@ export function canonicalPublicKey(k: SshPublicKey): string {
 	return `${SSH_ED25519} ${Buffer.from(w.finish()).toString('base64')}`;
 }
 
-// Build the one-line OpenSSH form from a raw 32-byte ed25519 key — the client's
-// side of the handshake, and test scaffolding.
 export function encodePublicKeyLine(raw: Uint8Array, comment?: string): string {
 	const line = canonicalPublicKey({ algo: SSH_ED25519, key: raw });
 	return comment ? `${line} ${comment}` : line;
 }
 
-// --- signatures -----------------------------------------------------------------
-
-// Wrap a raw 64-byte ed25519 signature in the SSH signature blob ssh-agent
-// produces: { string algo, string signature } — so the direct-key fallback path
-// puts the exact same bytes on the wire as the agent path.
 export function encodeSignatureBlob(rawSig: Uint8Array): Uint8Array {
 	const w = new SshBlobWriter();
 	w.string(SSH_ED25519);
@@ -171,10 +135,6 @@ function parseSignatureBlob(blob: Uint8Array): Uint8Array | null {
 	return sig;
 }
 
-// --- the challenge --------------------------------------------------------------
-
-// Domain-separate what the client signs so a signature can never be replayed
-// from (or into) another protocol that signs raw bytes with the same key.
 export const AUTH_CONTEXT = 'terminal-mmo-auth-v1';
 export const NONCE_LEN = 32;
 
@@ -186,9 +146,6 @@ export function challengePayload(nonce: Uint8Array): Uint8Array {
 	return out;
 }
 
-// The pure verifier (the issue's seam): does `signatureBlob` prove control of
-// `publicKeyLine`'s private key over this nonce? False — never a throw — for a
-// bad key, tampered payload, or garbage blob.
 export function verifyChallenge(
 	publicKeyLine: string,
 	nonce: Uint8Array,
@@ -213,16 +170,8 @@ export function verifyChallenge(
 	}
 }
 
-// --- Handle claim registry ---------------------------------------------------------
-
-// The durable account store (revises ADR 0006's ephemeral handle): one public
-// key owns one Handle, and Handles are unique case-insensitively. Pure data
-// + pure transitions; the server holds the live copy in memory and #236 makes it
-// persistent (bun:sqlite) behind these same functions.
 export interface AccountRegistry {
-	// canonical public key -> the Handle's canonical casing
 	handleByKey: Record<string, string>;
-	// lowercased Handle -> the canonical public key that owns it
 	keyByHandle: Record<string, string>;
 }
 
@@ -230,18 +179,10 @@ export function createAccountRegistry(): AccountRegistry {
 	return { handleByKey: {}, keyByHandle: {} };
 }
 
-// The one source of the Handle rule (#235): the allowed character class and the length bounds.
-// Both the whole-string validator (validHandle / HANDLE_RE) AND the client creator's per-
-// keystroke typing gate derive from these, so the two can never drift — the divergence CLAUDE.md
-// forbids by keeping every rule in @mmo/shared.
 export const HANDLE_MIN_LEN = 2;
 export const HANDLE_MAX_LEN = 16;
 const HANDLE_CHAR_CLASS = 'A-Za-z0-9_-';
-// Matches ONE allowed Handle character — the client's typing gate admits exactly the characters
-// a claim will accept.
 export const HANDLE_CHAR_RE = new RegExp(`^[${HANDLE_CHAR_CLASS}]$`);
-// 2–16 chars of [A-Za-z0-9_-]: fits the nameplate, unambiguous in `/w <handle>`, and never
-// needs escaping in chat attribution.
 export const HANDLE_RE = new RegExp(
 	`^[${HANDLE_CHAR_CLASS}]{${HANDLE_MIN_LEN},${HANDLE_MAX_LEN}}$`,
 );
@@ -262,9 +203,6 @@ export type ClaimResult =
 	| { ok: true; registry: AccountRegistry; handle: string }
 	| { ok: false; reason: 'invalid' | 'taken' };
 
-// First launch claims: bind `handle` to the key. A key that already owns a
-// Handle keeps it (identity is durable — the desired one is ignored), and a
-// Handle owned by a *different* key is refused, case-insensitively.
 export function claimHandle(
 	reg: AccountRegistry,
 	publicKeyLine: string,
@@ -290,25 +228,10 @@ export function claimHandle(
 	};
 }
 
-// --- resolveAuth: the whole handshake decision, sockets excluded -------------------
-
 export type AuthResult =
 	| { ok: true; registry: AccountRegistry; handle: string }
 	| { ok: false; reason: string };
 
-/**
- * The server-side auth decision for one connection, as one pure function:
- * verify the challenge signature, then resolve the key WITHOUT claiming a Handle.
- * A returning key (already registered) resolves to its durable Handle; a brand-new
- * key is admitted UNCLAIMED, carrying `desiredHandle` only as the provisional
- * auto-derived value the creator pre-fills.
- *
- * The Handle claim moved out of the handshake to the `createAvatar` finalise step for
- * new accounts (#304, ADR 0028), where the server validates + claims the Player-typed
- * Handle via `claimHandle`; so this seam no longer rejects on `taken`/`invalid`. Which of
- * the two cases a key is gets decided downstream by the Save lookup (store.load) — the
- * ADR's single authority — never here. `reason` strings are player-facing (printed verbatim).
- */
 export function resolveAuth(
 	reg: AccountRegistry,
 	publicKeyLine: string,

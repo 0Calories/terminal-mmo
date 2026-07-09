@@ -6,10 +6,6 @@ import type { Catalogs } from './zoneFormat';
 
 export type Severity = 'error' | 'warning';
 
-/**
- * One validation finding. `zoneId` + `cell` make a message actionable (the CLI,
- * #54, renders these). `zoneId` is `(catalogs)` for catalog-level findings.
- */
 export interface Diagnostic {
 	severity: Severity;
 	message: string;
@@ -21,7 +17,6 @@ function inBounds(b: Box, t: Terrain): boolean {
 	return b.x >= 0 && b.y >= 0 && b.x + b.w <= t.w && b.y + b.h <= t.h;
 }
 
-/** Any in-grid cell under the box footprint is solid (a wall OR a platform). */
 function clipsSolid(b: Box, t: Terrain): boolean {
 	for (let y = b.y; y < b.y + b.h; y++)
 		for (let x = b.x; x < b.x + b.w; x++)
@@ -30,17 +25,12 @@ function clipsSolid(b: Box, t: Terrain): boolean {
 	return false;
 }
 
-/** Some cell directly below the box bottom is solid (incl. the world floor). */
 function restsOnGround(b: Box, t: Terrain): boolean {
 	const below = b.y + b.h;
 	for (let x = b.x; x < b.x + b.w; x++) if (isSolid(t, x, below)) return true;
 	return false;
 }
 
-/**
- * Push placement findings for one entity box. `needsGround` adds the walkability
- * rule (spawns + NPCs must rest on ground; portals only need to fit + not clip).
- */
 function checkPlacement(
 	out: Diagnostic[],
 	zoneId: string,
@@ -57,7 +47,7 @@ function checkPlacement(
 			cell,
 			message: `${label} box at (${b.x},${b.y}) extends outside the ${t.w}×${t.h} grid`,
 		});
-		return; // further checks index out of range
+		return;
 	}
 	if (clipsSolid(b, t))
 		out.push({
@@ -100,7 +90,6 @@ function catalogIntegrity(catalogs: Catalogs): Diagnostic[] {
 	return out;
 }
 
-/** Per-file placement / walkability / zone-type rules for one parsed Zone. */
 function perFile(zone: Zone): Diagnostic[] {
 	const out: Diagnostic[] = [];
 	const t = zone.terrain;
@@ -111,7 +100,6 @@ function perFile(zone: Zone): Diagnostic[] {
 			zoneId: zone.id,
 			message: `town Zone '${zone.id}' must have no monster spawns (found ${zone.spawns.length})`,
 		});
-	// A combat Zone (Field or the instanced Dungeon) is pointless without Monsters.
 	if (zone.type !== 'town' && zone.spawns.length === 0)
 		out.push({
 			severity: 'error',
@@ -150,15 +138,6 @@ function perFile(zone: Zone): Diagnostic[] {
 	return out;
 }
 
-/**
- * Orphan-key check (#50, ADR 0008): a header glyph declared under spawns/npcs/
- * portals but never placed in the grid body. This is the one validator that reads
- * the RAW `.zone` text rather than a parsed Zone — parseZone silently drops keys
- * whose glyph it never encounters, so the information is gone by the time we have a
- * Zone. A malformed file (no `---` delimiter / unparseable header) yields nothing
- * here; parseZone reports those failures, and we only flag orphans in a file that
- * otherwise parses. Errors, per the format's "orphan keys are validation errors".
- */
 export function findOrphanGlyphs(text: string, id = '(zone)'): Diagnostic[] {
 	const lines = text.split('\n');
 	const di = lines.findIndex((l) => l.trim() === '---');
@@ -177,8 +156,6 @@ export function findOrphanGlyphs(text: string, id = '(zone)'): Diagnostic[] {
 	const used = new Set<string>();
 	for (const line of lines.slice(di + 1)) for (const ch of line) used.add(ch);
 
-	// A Zone's identity is its filename (ADR 0011); the caller passes it so a
-	// finding names the file, not a (now-removed) header field.
 	const zoneId = id;
 	const out: Diagnostic[] = [];
 	const scan = (kind: string, map?: Record<string, unknown>) => {
@@ -196,16 +173,10 @@ export function findOrphanGlyphs(text: string, id = '(zone)'): Diagnostic[] {
 	return out;
 }
 
-/** Validate one parsed Zone + its catalogs (per-file tier). Pure. */
 export function validateZone(zone: Zone, catalogs: Catalogs): Diagnostic[] {
 	return [...perFile(zone), ...catalogIntegrity(catalogs)];
 }
 
-/**
- * Validate a whole Zone set + catalogs (per-file tier for each, plus integrity:
- * portal targets resolve, arrivals land on walkable ground, one-way portals warn).
- * Pure.
- */
 export function validateZoneSet(
 	zones: Zone[],
 	catalogs: Catalogs,

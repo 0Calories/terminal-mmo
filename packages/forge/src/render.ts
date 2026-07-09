@@ -1,6 +1,5 @@
 import { cellGlyph, type EntityType, type Zone } from '@mmo/shared';
 
-/** Display glyph for each entity kind, overlaid on the terrain at its anchor. */
 const SPAWN_GLYPH: Partial<Record<EntityType, string>> = {
 	chaser: 'c',
 	shooter: 's',
@@ -19,15 +18,8 @@ const LEGEND: Record<string, string> = {
 	P: 'portal',
 };
 
-/**
- * Renderer-free ASCII dump of a parsed Zone: the normalized terrain grid with
- * entity glyphs overlaid at their anchor cells, plus a legend of every glyph
- * present. This is what an agent reads to "see" a Zone — no opentui. Pure.
- */
 export function renderZone(zone: Zone): string {
 	const { w, h, cells } = zone.terrain;
-	// Seed the legend with whichever terrain glyphs actually appear, so a Zone with no
-	// platforms doesn't advertise `=` (and vice-versa).
 	const present = new Set<string>();
 	const grid: string[][] = [];
 	for (let y = 0; y < h; y++) {

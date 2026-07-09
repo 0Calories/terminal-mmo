@@ -14,7 +14,6 @@ test('parseChatCommand parses /w <handle> <message> into a whisper (#40)', () =>
 		to: 'Trinity',
 		text: 'follow the rabbit',
 	});
-	// The long form and surrounding whitespace work too.
 	expect(parseChatCommand('  /whisper  neo   hey there  ')).toEqual({
 		kind: 'whisper',
 		to: 'neo',
@@ -32,7 +31,6 @@ test('parseChatCommand parses /em <name> into a body-emote trigger (ADR 0020 §9
 		kind: 'emote',
 		emote: 'wave',
 	});
-	// The long form and surrounding whitespace work too.
 	expect(parseChatCommand('  /emote   wave  ')).toEqual({
 		kind: 'emote',
 		emote: 'wave',
@@ -42,15 +40,13 @@ test('parseChatCommand parses /em <name> into a body-emote trigger (ADR 0020 §9
 test('parseChatCommand rejects an unknown or missing emote name with the usage hint (#38)', () => {
 	const bad = parseChatCommand('/em bogus');
 	expect(bad.kind).toBe('error');
-	// The hint names the available set, so a typo teaches the right name.
 	if (bad.kind === 'error') expect(bad.message).toContain('wave');
 	expect(parseChatCommand('/em').kind).toBe('error');
 });
 
 test('parseChatCommand lists the available emotes for /emotes (ADR 0020 §9)', () => {
 	const cmd = parseChatCommand('/emotes');
-	expect(cmd.kind).toBe('error'); // a local listing, surfaced as a notice (no round-trip)
+	expect(cmd.kind).toBe('error'); // a local listing surfaced as a notice, not a wire round-trip
 	if (cmd.kind === 'error') expect(cmd.message).toContain('wave');
-	// `/emotes` is its own command — NOT a malformed `/em` trigger.
 	expect(cmd.kind).not.toBe('emote');
 });

@@ -6,10 +6,6 @@ export function projectileBox(p: Projectile): Box {
 	return { x: p.x, y: p.y, w: PROJECTILE.w, h: PROJECTILE.h };
 }
 
-// Spawn a shooter's telegraphed pebble (ADR 0017 §8): launched ahead of the owner in
-// `dir`, carrying the full SHOOTER hit-reaction payload (damage + Poise + Knockback) so
-// it resolves through the same gate a melee hit does. Always a hostile shot threatening
-// Avatars — countered by Dodge, Block, or a melee swat (Reflect removed, ADR 0024).
 export function spawnProjectile(
 	id: number,
 	owner: Entity,
@@ -29,7 +25,6 @@ export function spawnProjectile(
 	};
 }
 
-// Returns null on despawn (lifetime expired or entered solid Terrain).
 export function stepProjectile(
 	t: Terrain,
 	p: Projectile,

@@ -14,16 +14,11 @@ import { NetClient, snapshotToGame } from '../src/net';
 
 const y = GROUND_TOP - BOX.h;
 
-// A stub SSH identity (#235): NetClient only needs a key to offer and a signer
-// for the challenge — no real crypto in these transport tests (the verifier has
-// its own seam tests in @mmo/shared).
 const FAKE_IDENTITY = {
 	publicKey: 'ssh-ed25519 AAAATEST',
 	signChallenge: async () => Uint8Array.of(1, 2, 3),
 };
 
-// The authored Field, parsed (ADR 0008) — snapshotToGame needs a Zone's local
-// geometry; the snapshot supplies the live entities.
 function loadField(): Zone {
 	const field = loadZones().find((z) => z.id === 'field-01');
 	if (!field) throw new Error('field-01 missing from authored zones/');
@@ -91,7 +86,6 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 	};
 }
 
-// A second co-present Avatar (sessionId 2) sharing the Zone with the own one.
 function withOther(): Extract<ServerMessage, { t: 'snapshot' }> {
 	const s = snapshot();
 	s.avatars.push({
@@ -120,7 +114,7 @@ test('snapshotToGame carries co-present Avatars into others, excluding own', () 
 	expect(game.others?.length).toBe(1);
 	const other = game.others?.[0];
 	expect(other?.type).toBe('player');
-	expect(other?.name).toBe('rival'); // handle threaded through for the nameplate
+	expect(other?.name).toBe('rival');
 	expect(other?.x).toBe(70);
 	expect(other?.facing).toBe(-1);
 	expect(other?.hp).toBe(30);
@@ -131,15 +125,12 @@ test('snapshotToGame threads cosmetics onto co-present Avatars and the own Avata
 	const field = loadField();
 	const predicted = spawnAvatar(33, y);
 	const game = snapshotToGame(field, predicted, 1, withOther(), {});
-	// The co-present rival carries the cosmetics from its snapshot.
 	expect(game.others?.[0]?.cosmetics).toEqual({
 		hue: 5,
 		hat: 3,
 		nameplate: 6,
 		form: 0,
 	});
-	// The own (locally-predicted) Avatar is stamped with its own snapshot cosmetics,
-	// so the local view matches what every other client renders.
 	expect(game.player.avatar.cosmetics).toEqual({
 		hue: 2,
 		hat: 1,
@@ -152,17 +143,13 @@ test('snapshotToGame threads the replicated weapon onto co-present + own Avatars
 	const field = loadField();
 	const predicted = spawnAvatar(33, y);
 	const game = snapshotToGame(field, predicted, 1, withOther(), {});
-	// The co-present rival's weapon comes from its snapshot, so we render ITS weapon.
 	expect(game.others?.[0]?.weapon).toBe(2);
-	// The own (predicted) Avatar is stamped with its own snapshot weapon, so the local
-	// view composites the same weapon every other client sees.
 	expect(game.player.avatar.weapon).toBe(0);
 });
 
 test('snapshotToGame threads a co-present Avatar Guard stance onto its entity action (ADR 0017 §5/§10)', () => {
 	const field = loadField();
 	const s = withOther();
-	// The rival is mid-block: guarding.
 	s.avatars[1].action = {
 		move: 'idle',
 		phase: 'recovery',
@@ -173,8 +160,6 @@ test('snapshotToGame threads a co-present Avatar Guard stance onto its entity ac
 	};
 	const game = snapshotToGame(field, spawnAvatar(33, y), 1, s, {});
 	const other = game.others?.[0];
-	// The replicated `flags` ride onto the rebuilt entity's action — the exact seam the
-	// playfield's drawGuard reads to render another Player's brace.
 	expect(other?.action?.flags).toBe(ACTION_FLAG.guarding);
 });
 
@@ -183,16 +168,13 @@ test('snapshotToGame renders snapshot monsters/projectiles with the predicted ow
 	const predicted = { ...spawnAvatar(33, y), facing: -1 as const };
 	const game = snapshotToGame(field, predicted, 1, snapshot(), {});
 	const zone = game.world.zones['field-01'];
-	// own Avatar position comes from local prediction, not the snapshot
 	expect(game.player.avatar.x).toBe(33);
 	expect(game.player.avatar.facing).toBe(-1);
-	// progress/log/zone entities come from the server snapshot
 	expect(game.player.progress).toEqual({ level: 4, xp: 30, gold: 11 });
 	expect(zone.monsters.length).toBe(1);
 	expect(zone.monsters[0].type).toBe('chaser');
 	expect(zone.projectiles.length).toBe(1);
 	expect(game.world.tick).toBe(12);
-	// the lone avatar in the snapshot is our own, so no co-present others
 	expect(game.others).toEqual([]);
 });
 
@@ -220,7 +202,6 @@ test('snapshotToGame degrades gracefully before the first snapshot', () => {
 	expect(game.others).toEqual([]);
 });
 
-// The same snapshot with avatar 1 placed at a given x, for interpolation tests.
 function snapAt(x: number): Extract<ServerMessage, { t: 'snapshot' }> {
 	const s = snapshot();
 	s.avatars[0].x = x;
@@ -229,11 +210,9 @@ function snapAt(x: number): Extract<ServerMessage, { t: 'snapshot' }> {
 
 test('NetClient samples co-present motion interpolated INTERP_DELAY_MS in the past', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
-	// Two 20Hz frames, avatar 1 sliding 40 -> 60 over 50 ms.
 	net.ingest(snapAt(40), 1000);
 	net.ingest(snapAt(60), 1050);
-	// Rendering at now=1125 looks back INTERP_DELAY_MS (100) to t=1025 — halfway
-	// between the two frames — so the avatar is eased to the midpoint.
+	// sampling looks back INTERP_DELAY_MS to t=1025, midway between the 40 and 60 frames
 	const view = net.sample(1025 + INTERP_DELAY_MS);
 	expect(view?.avatars[0].x).toBe(50);
 	net.close();
@@ -247,12 +226,12 @@ test('NetClient.sample is null until the first snapshot arrives', () => {
 
 test('NetClient drops the interpolation buffer (and tracks the Zone) on a Zone change', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
-	net.ingest(snapAt(40), 1000); // field-01, avatar at x=40
+	net.ingest(snapAt(40), 1000);
 	const town = snapAt(12);
-	town.zoneId = 'town-01'; // arrived in a new Zone
+	town.zoneId = 'town-01';
 	net.ingest(town, 1050);
 	expect(net.zoneId).toBe('town-01');
-	// No cross-Zone interpolation: sampling midway yields only the new Zone's frame.
+	// no cross-zone interpolation: sampling midway yields only the new zone's frame
 	const view = net.sample(1025 + INTERP_DELAY_MS);
 	expect(view?.zoneId).toBe('town-01');
 	expect(view?.avatars[0].x).toBe(12);
@@ -265,8 +244,6 @@ test('NetClient surfaces a createRejected to the caller without closing (the cre
 	net.onCreateRejected = (reason) => reasons.push(reason);
 	net.ingest({ t: 'createRejected', reason: 'taken' }, 1000);
 	net.ingest({ t: 'createRejected', reason: 'invalid' }, 1010);
-	// The reasons reach the caller and the connection is NOT torn down (`rejected` stays null,
-	// unlike a hard `reject`) so the Player can type another Handle and resend.
 	expect(reasons).toEqual(['taken', 'invalid']);
 	expect(net.rejected).toBe(null);
 	net.close();
@@ -278,7 +255,6 @@ test('NetClient fires onSpawned once, on the first snapshot (the createAvatar la
 	net.onSpawned = () => spawns++;
 	net.ingest(snapAt(40), 1000);
 	net.ingest(snapAt(60), 1050);
-	// Only the FIRST snapshot signals the spawn — later frames don't re-fire it.
 	expect(spawns).toBe(1);
 	net.close();
 });
@@ -302,20 +278,17 @@ test('NetClient.chatLog is bounded so it cannot grow without limit', () => {
 			1000 + i,
 		);
 	expect(net.chatLog.length).toBeLessThanOrEqual(100);
-	// the most recent line is retained
 	expect(net.chatLog.at(-1)).toBe('spammer: msg 199');
 	net.close();
 });
 
 test('NetClient.ingest renders a whisper distinctly by direction (#40)', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
-	net.sessionId = 7; // this client
-	// Incoming: another session whispered us.
+	net.sessionId = 7;
 	net.ingest(
 		{ t: 'whisper', fromSessionId: 9, from: 'neo', to: 'tester', text: 'hi' },
 		1000,
 	);
-	// Outgoing echo: our own whisper, returned by the server.
 	net.ingest(
 		{ t: 'whisper', fromSessionId: 7, from: 'tester', to: 'neo', text: 'yo' },
 		1010,
@@ -331,7 +304,7 @@ test('NetClient.ingest does NOT open a Speech bubble for a private whisper', () 
 		{ t: 'whisper', fromSessionId: 9, from: 'neo', to: 'tester', text: 'psst' },
 		1000,
 	);
-	expect(net.bubbles.size).toBe(0); // whispers are private — no over-head bubble
+	expect(net.bubbles.size).toBe(0);
 	net.close();
 });
 
@@ -353,7 +326,6 @@ test('NetClient.ingest opens a Speech bubble keyed to the sender, replacing the 
 	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest({ t: 'chat', sessionId: 2, handle: 'rival', text: 'hi' }, 1000);
 	expect(net.bubbles.get(2)?.text).toBe('hi');
-	// A new message from the same sender replaces the text (one bubble per sender).
 	net.ingest({ t: 'chat', sessionId: 2, handle: 'rival', text: 'bye' }, 1100);
 	expect(net.bubbles.get(2)?.text).toBe('bye');
 	expect(net.bubbles.size).toBe(1);
@@ -363,17 +335,15 @@ test('NetClient.ingest opens a Speech bubble keyed to the sender, replacing the 
 test('NetClient.decayBubbles expires a bubble after its length-scaled ttl', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest({ t: 'chat', sessionId: 5, handle: 'neo', text: 'gg' }, 1000);
-	net.decayBubbles(2); // 2s elapsed, ttl floor is 3s -> still alive
+	// ttl floor is 3s: alive at 2s, expired at 4s
+	net.decayBubbles(2);
 	expect(net.bubbles.has(5)).toBe(true);
-	net.decayBubbles(2); // 4s total -> expired
+	net.decayBubbles(2);
 	expect(net.bubbles.has(5)).toBe(false);
 	net.close();
 });
 
 test('snapshotToGame threads a co-present Avatar body emote through its action (ADR 0020 §9)', () => {
-	// The emote is no longer a separate over-head relay — it rides the replicated action-
-	// state, so an observer who arrives mid-emote still sees the pose. snapshotToGame just
-	// carries the action onto the rebuilt entity; the renderer reads `action.emote` from it.
 	const field = loadField();
 	const s = withOther();
 	s.avatars[1].action = {
@@ -390,8 +360,6 @@ test('snapshotToGame threads a co-present Avatar body emote through its action (
 });
 
 test('snapshotToGame preserves the own predicted Avatar emote state (ADR 0020 §9)', () => {
-	// The local Avatar predicts its own emote (no `action`), so its `emoteId`/`emoteT`
-	// must survive the rebuild for the renderer to pose the wave with zero lag.
 	const field = loadField();
 	const predicted = { ...spawnAvatar(33, y), emoteId: 'wave', emoteT: 1.2 };
 	const game = snapshotToGame(field, predicted, 1, withOther(), {});
@@ -426,8 +394,7 @@ test('NetClient.ingest applies the welcome handshake and tracks the latest snaps
 	);
 	expect(net.sessionId).toBe(7);
 	expect(net.ready).toBe(true);
-	// The durable Handle the server resolved this key to (#235) — may differ from
-	// the requested one; the client adopts it.
+	// server may resolve the key to a different durable Handle; the client adopts it
 	expect(net.handle).toBe('Tester');
 	net.ingest(snapAt(42), 1000);
 	expect(net.latest?.avatars[0].x).toBe(42);
@@ -436,8 +403,6 @@ test('NetClient.ingest applies the welcome handshake and tracks the latest snaps
 
 test('NetClient defers the "signed in as" notice to spawn for a new account, showing the claimed name (#317)', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'ash', FAKE_IDENTITY);
-	// A new account: `welcome` arrives BEFORE the Player types + claims their name, so its
-	// handle is the auto-derived handshake name ("ash"). No "signed in as" line yet.
 	net.ingest(
 		{
 			t: 'welcome',
@@ -450,13 +415,10 @@ test('NetClient defers the "signed in as" notice to spawn for a new account, sho
 		0,
 	);
 	expect(net.chatLog).toEqual([]);
-	// The first snapshot carries the own Avatar's claimed handle ("Legolas") — distinct from
-	// the handshake name — and now the notice fires exactly once with the name they chose.
-	const spawn = snapshot(); // its lone avatar has sessionId 1, handle 'me'
+	const spawn = snapshot();
 	spawn.avatars[0].handle = 'Legolas';
 	net.ingest(spawn, 1000);
 	expect(net.chatLog).toEqual(['* signed in as Legolas']);
-	// A later snapshot must NOT re-fire the notice.
 	net.ingest(snapAt(60), 1050);
 	expect(net.chatLog).toEqual(['* signed in as Legolas']);
 	net.close();
@@ -464,8 +426,6 @@ test('NetClient defers the "signed in as" notice to spawn for a new account, sho
 
 test('NetClient fires the "signed in as" notice on welcome for a returning account, with the durable name (#317)', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'ash', FAKE_IDENTITY);
-	// A returning key resolves to its durable Handle on `welcome` — which may differ from what
-	// this launch asked for — and the notice surfaces it immediately (unchanged pre-#317 behaviour).
 	net.ingest(
 		{
 			t: 'welcome',
@@ -478,17 +438,12 @@ test('NetClient fires the "signed in as" notice on welcome for a returning accou
 		0,
 	);
 	expect(net.chatLog).toEqual(['* signed in as Aragorn']);
-	// Spawning does not add a second notice for a returning account.
 	net.ingest(snapAt(40), 1000);
 	expect(net.chatLog).toEqual(['* signed in as Aragorn']);
 	net.close();
 });
 
 test('NetClient hands a challenge nonce to the identity signer (#235)', async () => {
-	// The transport's half of challenge-response: a `challenge` frame routes its
-	// nonce to the SSH identity. (Domain separation lives inside the identity's
-	// signChallenge; the resulting proof send needs an open socket, exercised in
-	// the end-to-end run.)
 	const saw: { nonce: Uint8Array | null } = { nonce: null };
 	const identity = {
 		publicKey: 'ssh-ed25519 AAAATEST',
@@ -500,7 +455,7 @@ test('NetClient hands a challenge nonce to the identity signer (#235)', async ()
 	const net = new NetClient('ws://127.0.0.1:1', 'tester', identity);
 	const nonce = Uint8Array.of(4, 5, 6);
 	net.ingest({ t: 'challenge', nonce }, 0);
-	await Promise.resolve(); // let the async signer settle
+	await Promise.resolve();
 	expect(saw.nonce).toEqual(nonce);
 	net.close();
 });
@@ -517,7 +472,7 @@ test('NetClient surfaces a signer failure as a rejection (#235)', async () => {
 		saw.reason = r;
 	});
 	net.ingest({ t: 'challenge', nonce: Uint8Array.of(1) }, 0);
-	// Two microtask hops: the rejected sign promise, then the failure handler.
+	// two microtask hops: the rejected sign promise, then the failure handler
 	await Promise.resolve();
 	await Promise.resolve();
 	expect(saw.reason).toBe('ssh-agent refused to sign');

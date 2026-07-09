@@ -1,8 +1,3 @@
-// SSH-key challenge-response auth (ADR 0004, #235): the pure verifier and the
-// username-claim registry. Everything here is socket-free — keys are generated
-// in-process and signatures produced with node:crypto, exactly the bytes an
-// ssh-agent would hand the client (the agent signs the raw payload and wraps
-// the result in the same {algo, sig} blob `encodeSignatureBlob` builds).
 import { expect, test } from 'bun:test';
 import { generateKeyPairSync, type KeyObject, sign } from 'node:crypto';
 import {
@@ -18,8 +13,6 @@ import {
 	verifyChallenge,
 } from '../src';
 
-// A throwaway ed25519 identity: the OpenSSH one-line public key plus a signer
-// producing the agent-style signature blob over a challenge nonce.
 function makeIdentity(comment?: string) {
 	const { publicKey, privateKey } = generateKeyPairSync('ed25519');
 	const jwk = publicKey.export({ format: 'jwk' });
@@ -37,8 +30,6 @@ function signBlob(privateKey: KeyObject, payload: Uint8Array): Uint8Array {
 
 const NONCE = new Uint8Array(32).fill(7);
 
-// --- public-key line parsing -------------------------------------------------
-
 test('parsePublicKeyLine reads an ssh-ed25519 line, with or without a comment', () => {
 	const bare = makeIdentity().line;
 	const parsed = parsePublicKeyLine(bare);
@@ -52,13 +43,10 @@ test('parsePublicKeyLine reads an ssh-ed25519 line, with or without a comment', 
 });
 
 test('parsePublicKeyLine rejects other key types and garbage', () => {
-	// An RSA line (algo mismatch inside the blob too) and assorted junk must all
-	// come back null rather than throw — the server feeds it untrusted input.
 	expect(parsePublicKeyLine('ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAAB')).toBeNull();
 	expect(parsePublicKeyLine('')).toBeNull();
 	expect(parsePublicKeyLine('ssh-ed25519')).toBeNull();
 	expect(parsePublicKeyLine('ssh-ed25519 !!!not-base64!!!')).toBeNull();
-	// Valid base64 but the inner blob names a different algorithm than the label.
 	expect(
 		parsePublicKeyLine(
 			`ssh-ed25519 ${Buffer.from('garbage blob').toString('base64')}`,
@@ -71,8 +59,6 @@ test('encodePublicKeyLine → parsePublicKeyLine round-trips the raw key', () =>
 	const parsed = parsePublicKeyLine(encodePublicKeyLine(raw));
 	expect(parsed?.key).toEqual(raw);
 });
-
-// --- the pure verifier ---------------------------------------------------------
 
 test('verifyChallenge accepts a valid signature', () => {
 	const id = makeIdentity();
@@ -103,11 +89,8 @@ test('verifyChallenge rejects a tampered / garbage signature blob without throwi
 	expect(verifyChallenge(id.line, NONCE, tampered)).toBe(false);
 	expect(verifyChallenge(id.line, NONCE, new Uint8Array(0))).toBe(false);
 	expect(verifyChallenge(id.line, NONCE, new Uint8Array(64))).toBe(false);
-	// An unparseable public key also verifies false rather than throwing.
 	expect(verifyChallenge('not a key', NONCE, good)).toBe(false);
 });
-
-// --- username claim registry ---------------------------------------------------
 
 test('a first claim binds the username to the key; the key resolves to it after', () => {
 	const id = makeIdentity();
@@ -132,8 +115,6 @@ test('a key that already owns a username keeps it — re-claiming returns the or
 	const id = makeIdentity();
 	const first = claimHandle(createAccountRegistry(), id.line, 'Neo');
 	if (!first.ok) throw new Error('first claim should succeed');
-	// Same key, different desired name: identity is durable, so the registered
-	// username wins and the registry is unchanged.
 	const again = claimHandle(first.registry, id.line, 'Morpheus');
 	if (!again.ok) throw new Error('re-claim should resolve, not fail');
 	expect(again.handle).toBe('Neo');
@@ -144,10 +125,10 @@ test('validHandle enforces the allowed shape', () => {
 	expect(validHandle('neo')).toBe(true);
 	expect(validHandle('Neo_42')).toBe(true);
 	expect(validHandle('a-b')).toBe(true);
-	expect(validHandle('x')).toBe(false); // too short
-	expect(validHandle('a'.repeat(17))).toBe(false); // too long
-	expect(validHandle('bad name')).toBe(false); // whitespace
-	expect(validHandle('naïve')).toBe(false); // non-ascii
+	expect(validHandle('x')).toBe(false);
+	expect(validHandle('a'.repeat(17))).toBe(false);
+	expect(validHandle('bad name')).toBe(false);
+	expect(validHandle('naïve')).toBe(false);
 	expect(validHandle('')).toBe(false);
 });
 
@@ -162,8 +143,6 @@ test('claimHandle rejects an invalid username', () => {
 	expect(res.reason).toBe('invalid');
 });
 
-// --- resolveAuth: the whole server-side decision, sockets excluded ---------------
-
 test('resolveAuth: a brand-new key is admitted UNCLAIMED — the Handle is claimed later at createAvatar', () => {
 	const id = makeIdentity();
 	const res = resolveAuth(
@@ -174,15 +153,12 @@ test('resolveAuth: a brand-new key is admitted UNCLAIMED — the Handle is claim
 		'Trinity',
 	);
 	if (!res.ok) throw new Error(`expected success, got: ${res.reason}`);
-	// The desired (auto-derived) Handle rides through as the provisional value the creator
-	// pre-fills, but resolveAuth no longer CLAIMS it (#304, ADR 0028) — the registry is untouched.
 	expect(res.handle).toBe('Trinity');
 	expect(handleForKey(res.registry, id.line)).toBeUndefined();
 });
 
 test('resolveAuth: a returning key resolves its durable Handle, whatever handle it asks for', () => {
 	const id = makeIdentity();
-	// Seed the durable claim the way createAvatar does — via claimHandle, not the handshake.
 	const seeded = claimHandle(createAccountRegistry(), id.line, 'Trinity');
 	if (!seeded.ok) throw new Error('seed claim should succeed');
 	const nonce2 = new Uint8Array(32).fill(3);
@@ -200,7 +176,6 @@ test('resolveAuth: a returning key resolves its durable Handle, whatever handle 
 test('resolveAuth rejects a bad signature before resolving any Handle', () => {
 	const a = makeIdentity();
 	const b = makeIdentity();
-	// Wrong key's signature: refused with a human-readable reason.
 	const badSig = resolveAuth(
 		createAccountRegistry(),
 		b.line,

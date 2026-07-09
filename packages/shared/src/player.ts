@@ -10,13 +10,12 @@ export interface PlayerState {
 	inventory: Item[];
 	zoneId: ZoneId;
 	log: string[];
-	nextId: number; // id source for looted Items
+	nextId: number;
 	rngState: number;
-	class?: PlayerClass; // sim treats absent as 'warrior'
-	skillCooldowns?: Record<string, number>; // seconds per Skill id; absent/0 == ready
+	class?: PlayerClass;
+	skillCooldowns?: Record<string, number>;
 }
 
-// the Avatar is always entity id 1
 export function spawnAvatar(x: number, y: number): Entity {
 	return {
 		id: 1,

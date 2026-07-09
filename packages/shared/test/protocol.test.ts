@@ -15,8 +15,6 @@ test('hello round-trips the handle + release version + cosmetics + weapon + publ
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'neo',
-		// `form` rides the handshake (ADR 0020). Form 2 (wisp) is drafted out, so 0 is the only
-		// valid Form for now; a persisted higher index clamps to 0 (covered by clampCosmetics).
 		cosmetics: { hue: 3, hat: 2, nameplate: 5, form: 0 },
 		version: '0.3.0',
 		weapon: 2,
@@ -27,9 +25,6 @@ test('hello round-trips the handle + release version + cosmetics + weapon + publ
 });
 
 test('a pre-auth hello (no trailing public key) decodes publicKey as empty', () => {
-	// Built by hand at the pre-#235 layout (through the weapon byte): decode must
-	// not throw, and the absent key becomes '' — which the server refuses with its
-	// human-readable auth reason rather than a frame error.
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'legacy',
@@ -39,7 +34,7 @@ test('a pre-auth hello (no trailing public key) decodes publicKey as empty', () 
 		publicKey: 'trailing-key-to-strip',
 	};
 	const encoded = encodeClientMessage(msg);
-	// Strip the trailing publicKey field (u32 length prefix + bytes).
+	// strip trailing publicKey field: u32 length prefix + bytes
 	const keyLen = new TextEncoder().encode(msg.publicKey).length;
 	const truncated = encoded.subarray(0, encoded.length - 4 - keyLen);
 	expect(decodeClientMessage(truncated)).toEqual({ ...msg, publicKey: '' });
@@ -60,9 +55,6 @@ test('challenge (server -> client) round-trips the nonce bytes', () => {
 });
 
 test('a truncated hello (no version field) decodes to empty version + default cosmetics + weapon', () => {
-	// Hand-roll a hello with only tag(1) + u32 length-prefixed handle and nothing
-	// after: decode must not throw, and the absent Version becomes '' — which fails
-	// the server's equality gate cleanly.
 	const handle = new TextEncoder().encode('legacy');
 	const buf = new Uint8Array(1 + 4 + handle.length);
 	buf[0] = 1; // CLIENT_TAG.hello
@@ -79,15 +71,10 @@ test('a truncated hello (no version field) decodes to empty version + default co
 });
 
 test('hello clamps an out-of-range cosmetic index to the default on decode', () => {
-	// A hello whose hat id is past the catalog: decode must not throw and the bad
-	// field falls back to 0 (the renderer is never handed a stray index). Built via
-	// the encoder so the (length-prefixed) Version field stays in sync with the wire.
 	const encoded = encodeClientMessage({
 		t: 'hello',
 		handle: 'forward',
 		version: '0.3.0',
-		// Both the hat and the (now-on-the-wire) form ids are past their catalogs; each
-		// must fall back to 0 on decode so the renderer is never handed a stray index.
 		cosmetics: { hue: 2, hat: 250, nameplate: 1, form: 250 },
 		weapon: 1,
 		publicKey: '',
@@ -204,8 +191,6 @@ test('whisper (server -> client) round-trips sender session + both handles + tex
 });
 
 test('emote (client -> server) round-trips the trigger id (#38, ADR 0020 §9)', () => {
-	// The client->server `/em` trigger is retained; the server->client relay is gone —
-	// the active emote now rides the snapshot action-state instead (see the snapshot test).
 	const msg: ClientMessage = { t: 'emote', emote: 'wave' };
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
@@ -234,8 +219,6 @@ test('createAvatar (client -> server) round-trips the typed Handle + chosen Cosm
 });
 
 test('createAvatar carries an empty typed Handle (server falls back to the placeholder)', () => {
-	// The empty-field case (#304): the client sends '' when the Player leaves the field blank;
-	// it must round-trip as '' so the server re-applies the auto-derived placeholder.
 	const msg: ClientMessage = {
 		t: 'createAvatar',
 		handle: '',
@@ -245,8 +228,6 @@ test('createAvatar carries an empty typed Handle (server falls back to the place
 });
 
 test('createAvatar clamps an out-of-range cosmetic index on decode', () => {
-	// Cosmetics decode is defensive like `hello`: a garbled/forward-version index falls back
-	// to 0 per field so the renderer is never handed a stray index — the same trust boundary.
 	const encoded = encodeClientMessage({
 		t: 'createAvatar',
 		handle: 'Neo',
@@ -269,8 +250,6 @@ test('setCosmetics (client -> server) round-trips the chosen Cosmetics (#305)', 
 });
 
 test('setCosmetics clamps an out-of-range cosmetic index on decode (#305)', () => {
-	// Cosmetics decode is defensive at the trust boundary: a garbled/forward-version index falls
-	// back to 0 per field, so the server never applies a stray index to the live Avatar.
 	const encoded = encodeClientMessage({
 		t: 'setCosmetics',
 		cosmetics: { hue: 4, hat: 250, nameplate: 2, form: 250 },
@@ -282,9 +261,6 @@ test('setCosmetics clamps an out-of-range cosmetic index on decode (#305)', () =
 });
 
 test('a #302-era createAvatar (no trailing handle) decodes handle as empty', () => {
-	// The typed Handle (#304) is append-only after the cosmetics, so a frame that predates it
-	// (just tag + 4 cosmetic bytes) must decode without throwing and yield handle: '' — the
-	// server then falls back to the auto-derived placeholder.
 	const full = encodeClientMessage({
 		t: 'createAvatar',
 		handle: 'Neo',
@@ -307,10 +283,8 @@ test('createRejected (server -> client) round-trips its reason (#304)', () => {
 });
 
 test('createRejected clamps a forward-version reason to invalid on decode', () => {
-	// The reason is a u8 index, append-only; an unknown index (a newer server) must decode to
-	// 'invalid' so an older client can never crash on it.
 	const encoded = encodeServerMessage({ t: 'createRejected', reason: 'taken' });
-	encoded[1] = 200; // corrupt the reason index to a forward-version value
+	encoded[1] = 200;
 	expect(decodeServerMessage(encoded)).toEqual({
 		t: 'createRejected',
 		reason: 'invalid',
@@ -338,15 +312,11 @@ test('welcome round-trips the session, zone, tick rate, durable handle, and isNe
 	expect(decodeServerMessage(encodeServerMessage(returning))).toEqual(
 		returning,
 	);
-	// The new-account verdict (#302) round-trips as its own value, not folded into a default.
 	const fresh: ServerMessage = { ...returning, isNew: true };
 	expect(decodeServerMessage(encodeServerMessage(fresh))).toEqual(fresh);
 });
 
 test('a pre-auth welcome (no trailing handle) decodes handle as empty', () => {
-	// Strip the trailing durable-handle field (u32 length prefix + bytes): decode
-	// must not throw, and the absent handle becomes '' (caller falls back to its
-	// requested handle).
 	const encoded = encodeServerMessage({
 		t: 'welcome',
 		sessionId: 7,
@@ -355,9 +325,7 @@ test('a pre-auth welcome (no trailing handle) decodes handle as empty', () => {
 		handle: 'Trinity',
 		isNew: true,
 	});
-	// Strip the trailing isNew byte (#302) AND the durable-handle field (u32 length prefix +
-	// bytes), leaving a pre-auth welcome: decode must not throw, the absent handle becomes ''
-	// and the absent isNew defaults to false (a returning account, so no creator shows).
+	// strip trailing isNew byte + durable-handle field (u32 length prefix + bytes)
 	const truncated = encoded.subarray(
 		0,
 		encoded.length - 1 - 4 - new TextEncoder().encode('Trinity').length,
@@ -392,8 +360,6 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 			{
 				sessionId: 7,
 				handle: 'neo',
-				// `form` replicates in the snapshot so every observer sees the chosen Avatar Form
-				// (ADR 0020). Form 2 (wisp) is drafted out, so 0 is the only valid Form for now.
 				cosmetics: { hue: 1, hat: 4, nameplate: 3, form: 0 },
 				x: 12.5,
 				y: 31.25,
@@ -404,10 +370,7 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 				hp: 80,
 				maxHp: 92,
 				hurtT: 0.3,
-				// Equipped Weapon index joins the broadcast appearance (ADR 0017 §14).
 				weapon: 2,
-				// Mid-swing action-state (ADR 0017 §10) carrying an active body emote (ADR
-				// 0020 §9) — exercises a non-idle, emoting round-trip.
 				action: {
 					move: 'basic',
 					phase: 'active',
@@ -449,7 +412,6 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 			},
 		],
 		effects: [{ kind: 'blood', x: 52.5, y: 34.5, intensity: 8, dir: 1 }],
-		// An in-world, owner-private loot Drop (#238) resting in the Zone.
 		drops: [
 			{
 				id: 4,
@@ -488,8 +450,6 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 });
 
 test('snapshot round-trips the per-entity action-state across every phase (ADR 0017)', () => {
-	// Each Avatar carries a different swing phase + progress, and a Monster carries
-	// idle — encode/decode must preserve the move/phase/progress/flags exactly.
 	const action = (over: Partial<typeof IDLE_ACTION>): typeof IDLE_ACTION => ({
 		...IDLE_ACTION,
 		move: 'basic',
@@ -543,7 +503,7 @@ test('snapshot round-trips a multi-Effect list across every dir (ADR 0013)', () 
 		effects: [
 			{ kind: 'blood', x: 1.5, y: 2.5, intensity: 8, dir: 1 },
 			{ kind: 'blood', x: 3.25, y: 4.75, intensity: 24, dir: -1 },
-			{ kind: 'blood', x: 9, y: 9, intensity: 12, dir: 0 }, // radial (death)
+			{ kind: 'blood', x: 9, y: 9, intensity: 12, dir: 0 },
 		],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
@@ -564,7 +524,7 @@ test('snapshot round-trips the impact Poise-break Effect kind (ADR 0017)', () =>
 		effects: [
 			{ kind: 'impact', x: 12.5, y: 7.5, intensity: 32, dir: 1 },
 			{ kind: 'impact', x: 4, y: 4, intensity: 32, dir: -1 },
-			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 }, // the existing kinds still round-trip
+			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 },
 		],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
@@ -614,8 +574,6 @@ test('snapshot round-trips a Monster carrying the staggered action-flag (ADR 001
 });
 
 test('snapshot round-trips the brute entity type across the wire (CONTRIBUTING §wire, #237)', () => {
-	// The brute joins the END of ENTITY_TYPES (append-only, CONTRIBUTING §2); prove its
-	// type index encodes and decodes so a mid-swing brute replicates without mis-decoding.
 	const msg: ServerMessage = {
 		t: 'snapshot',
 		tick: 42,
@@ -673,7 +631,7 @@ test('snapshot round-trips a tinted gore death Effect (#139)', () => {
 				dir: 0,
 				tint: { r: 220, g: 90, b: 90 },
 			},
-			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 }, // untinted blood still round-trips
+			{ kind: 'blood', x: 1, y: 1, intensity: 8, dir: 1 },
 		],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],

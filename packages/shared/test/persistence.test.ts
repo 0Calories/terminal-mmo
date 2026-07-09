@@ -1,7 +1,3 @@
-// Pure persistence-transform tests (#236): the storage-free half of the seam —
-// emptySave, saveFromAvatar/restoredFromSave, and registryFromSaves. The sqlite
-// round-trip lives in @mmo/server's store.test.ts; this pins the pure edges.
-
 import { expect, test } from 'bun:test';
 import {
 	addSession,
@@ -47,8 +43,6 @@ test('emptySave is a level-1 blank slate returning to the given Town', () => {
 });
 
 test('a fresh Avatar seeds lastTown to its spawn Town, not the flush fallback', () => {
-	// Pass a deliberately-wrong fallback: the save must still carry the spawn Town, proving
-	// a fresh account records the Town it stood in rather than defaulting on first flush.
 	const save = saveFromAvatar(freshAvatar(), 'some-other-town');
 	expect(save.lastTown).toBe('town-01');
 	expect(save.bossDefeated).toBe(false);
@@ -61,7 +55,7 @@ test('restoredFromSave clamps out-of-range cosmetics at the trust boundary', () 
 		cosmetics: { hue: 999, hat: -1, nameplate: 4.5, form: 0 },
 	};
 	const restored = restoredFromSave(save);
-	expect(restored.cosmetics).toEqual(DEFAULT_COSMETICS); // every bad field → default
+	expect(restored.cosmetics).toEqual(DEFAULT_COSMETICS);
 });
 
 test('a restored inventory keeps saved Items and mints fresh ids past the highest', () => {
@@ -84,7 +78,7 @@ test('a restored inventory keeps saved Items and mints fresh ids past the highes
 	);
 	const sa = zoneStateOf(w, 1)?.avatars.find((a) => a.sessionId === 1);
 	expect(sa?.inventory).toEqual(items);
-	expect(sa?.nextId).toBe(10); // one past the highest saved id, so fresh loot never collides
+	expect(sa?.nextId).toBe(10);
 });
 
 test('registryFromSaves is case-insensitive on the reverse Handle index', () => {

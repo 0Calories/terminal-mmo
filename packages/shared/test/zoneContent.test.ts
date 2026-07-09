@@ -38,10 +38,10 @@ test('hub-and-spoke: Town portals to all three Fields, each returns to Town (D3,
 	const zones = loadZones();
 	const town = zones.find((z) => z.id === 'town-01');
 	for (const id of ['field-01', 'field-02', 'field-03']) {
-		expect(town?.portals.some((p) => p.target === id)).toBe(true); // spoke out
+		expect(town?.portals.some((p) => p.target === id)).toBe(true);
 		const field = zones.find((z) => z.id === id);
 		expect(field?.type).toBe('field');
-		expect(field?.portals.some((p) => p.target === 'town-01')).toBe(true); // return
+		expect(field?.portals.some((p) => p.target === 'town-01')).toBe(true);
 	}
 });
 
@@ -53,12 +53,9 @@ test('difficulty rises with distance: pokers only Field 2+, Brute only in Field 
 				?.spawns.map((s) => s.type),
 		);
 
-	// Field 1 is the warm-up: chasers only — no ranged pokers, no Brute.
 	expect(behaviors('field-01')).toEqual(new Set(['chaser']));
-	// Field 2 introduces the ranged poker (shooter) alongside chasers; still no Brute.
 	expect(behaviors('field-02').has('shooter')).toBe(true);
 	expect(behaviors('field-02').has('brute')).toBe(false);
-	// Field 3 (deep) carries the Brute plus chasers and pokers.
 	expect(behaviors('field-03').has('brute')).toBe(true);
 	expect(behaviors('field-03').has('shooter')).toBe(true);
 });
@@ -68,11 +65,9 @@ test('the Dungeon is authored: a combat Zone entered from Town, round-tripping (
 	const dungeon = zones.find((z) => z.id === 'dungeon-01');
 	const town = zones.find((z) => z.id === 'town-01');
 
-	// Fixed-difficulty, repeatable combat faucet: the instanced kind, with Monsters.
 	expect(dungeon?.type).toBe('dungeon');
 	expect(dungeon?.spawns.length).toBeGreaterThan(0);
 	expect(dungeon?.monsters.length).toBe(dungeon?.spawns.length);
-	// Entered from Town, and returns to it (round-trip).
 	expect(town?.portals.some((p) => p.target === 'dungeon-01')).toBe(true);
 	expect(dungeon?.portals.some((p) => p.target === 'town-01')).toBe(true);
 });
@@ -82,13 +77,10 @@ test('Town has 2-3 signpost NPCs with directional dialogue (D3, #239)', () => {
 	const signs = (town?.npcs ?? []).filter((n) => n.kind === 'signpost');
 	expect(signs.length).toBeGreaterThanOrEqual(2);
 	expect(signs.length).toBeLessThanOrEqual(3);
-	// Every signpost carries at least one line of nudge text.
 	for (const s of signs) expect((s.lines ?? []).length).toBeGreaterThan(0);
 });
 
 test('the shared Player spawn point lands on walkable ground in the start Town', () => {
-	// createGame drops the Player at SPAWN in the first Zone (the Town); that cell
-	// must be clear and rest on solid ground or the game opens mid-air / in a wall.
 	const town = loadZones()[0];
 	expect(town.id).toBe('town-01');
 	const t = town.terrain;

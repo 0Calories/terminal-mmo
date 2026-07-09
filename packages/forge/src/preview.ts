@@ -6,24 +6,15 @@ import {
 	type Zone,
 	type ZoneScene,
 } from '@mmo/shared';
-// Type-only import is erased at compile time, so it never loads opentui's
-// runtime — the pure helpers above stay testable without a terminal.
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import { loadCatalogs, loadZone } from './io';
-
-// --- Pure helpers (unit-tested; the opentui shell below is manual per PRD) ----
 
 export interface Cam {
 	x: number;
 	y: number;
 }
 
-/**
- * Clamp the pan camera so it can't scroll past the Zone grid. Caps at
- * `gridDim - view` (0 when the grid is smaller than the viewport), so the far
- * edge of a ~240-wide Zone is reachable but blank space never scrolls in.
- */
 export function clampPreviewCam(
 	cam: Cam,
 	gridW: number,
@@ -37,11 +28,6 @@ export function clampPreviewCam(
 	};
 }
 
-/**
- * The static (no avatar, no simulation) scene for a parsed Zone: terrain,
- * portals, NPCs, and the Monsters at their spawn points — the same `ZoneScene`
- * the game feeds the shared renderer, so the preview is faithful (#56).
- */
 export function sceneOf(zone: Zone): ZoneScene {
 	return {
 		terrain: zone.terrain,
@@ -51,22 +37,12 @@ export function sceneOf(zone: Zone): ZoneScene {
 	};
 }
 
-/** A one-line status header: id, dimensions, and the pan/quit key hints. */
 export function statusLine(zone: Zone): string {
 	return `zone ${zone.id}  ${zone.terrain.w}x${zone.terrain.h}  arrows/hjkl pan · q quit`;
 }
 
-// --- Interactive shell (opentui; not unit-tested, validated by eye) -----------
-
-// opentui is imported dynamically so this module's pure helpers can be unit-
-// tested without loading a terminal renderer.
 const PAN_STEP = 4;
 
-/**
- * `zone preview <id>`: mount the shared renderer over a parsed Zone, pan with the
- * arrow keys / hjkl, and re-render on save. Long-lived — opentui owns the process
- * lifecycle (ctrl-c / q exit), so this never returns under normal use.
- */
 export async function runPreview(args: string[], deps: CliDeps): Promise<void> {
 	const id = args[0];
 	if (!id) {
@@ -106,11 +82,7 @@ export async function runPreview(args: string[], deps: CliDeps): Promise<void> {
 			cam.x = next.x;
 			cam.y = next.y;
 			renderZoneScene(buf, scene, cam, style);
-			// Names are a caller-composited top layer now (ADR 0023): the preview runs the
-			// pass right after the scene so authored named entities still render, on top.
 			drawNameplates(buf, scene.entities, cam, scene.terrain, style);
-			// Status header on row 0 (sky in most Zones), so live dimensions and
-			// reload/parse state are visible without hiding terrain.
 			for (let x = 0; x < buf.width; x++)
 				buf.setCell(x, 0, ' ', style.paletteDefault, style.terrainBg);
 			for (let i = 0; i < status.length && i < buf.width; i++)
@@ -149,9 +121,7 @@ export async function runPreview(args: string[], deps: CliDeps): Promise<void> {
 		}
 	});
 
-	// Watch the dir (not the file): editors save atomically via rename, which
-	// breaks a direct file watch once the inode changes. Re-parse on each event;
-	// a failed parse keeps the last good scene and surfaces the error in the bar.
+	// Watch the dir, not the file: atomic rename saves break a direct file watch.
 	watch(deps.root, (_event, fname) => {
 		if (fname && fname !== `${id}.zone`) return;
 		const next = loadZone(deps.root, id, catalogs);

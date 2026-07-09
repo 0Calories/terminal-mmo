@@ -20,7 +20,7 @@ describe('newZoneTemplate', () => {
 			catalogs,
 			'town-99',
 		);
-		expect(zone.name).toBe('town-99'); // a sensible, editable default label
+		expect(zone.name).toBe('town-99');
 	});
 
 	test('a field template parses; its only error is the missing spawn', () => {
@@ -30,7 +30,6 @@ describe('newZoneTemplate', () => {
 		const errors = validateZone(zone, catalogs).filter(
 			(d) => d.severity === 'error',
 		);
-		// the one expected, documented next-edit: a field needs at least one spawn
 		expect(errors).toHaveLength(1);
 		expect(errors[0].message).toContain('at least one monster spawn');
 	});

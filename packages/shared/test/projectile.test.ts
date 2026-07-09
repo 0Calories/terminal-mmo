@@ -15,7 +15,7 @@ test('a projectile travels in its velocity direction over a step', () => {
 test('a projectile despawns when it enters solid Terrain', () => {
 	const walled = parseTerrain(['   #  ', '   #  ', '   #  ']);
 	const p = makeProjectile({ x: 1, y: 1, vx: 25, damage: 5 });
-	expect(stepProjectile(walled, p, 0.1)).toBeNull(); // x → 3.5, column 3 is solid
+	expect(stepProjectile(walled, p, 0.1)).toBeNull();
 });
 
 test('a projectile despawns when its lifetime runs out', () => {
@@ -65,7 +65,6 @@ test('a spawned shot carries the full hit-reaction payload as a hostile shot', (
 		attackT: 0,
 	};
 	const p = spawnProjectile(7, shooter, 1);
-	// First-class hit (ADR 0017 §8): not just `damage` — a Poise bite + Knockback too.
 	expect(p.poiseDamage).toBeGreaterThan(0);
 	expect(p.knockback).toBeGreaterThan(0);
 	expect(p.knockbackUp).toBeGreaterThan(0);

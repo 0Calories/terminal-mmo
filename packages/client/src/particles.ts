@@ -1,13 +1,3 @@
-// The client-side particle system (ADR 0013): a generic, data-driven simulator
-// that realizes authoritative combat Effects into clouds of gravity-driven
-// pixel Particles. The shared layer owns *what happened* (an Effect); this module
-// owns *what it looks like*. Every Particle's motion and look come from its
-// declarative ParticleType profile, so a new effect is a new data entry — never
-// new simulator code. The simulator is a pure function over
-// (particles, effects, dt, terrain, rng) and is unit-tested headlessly for its
-// invariants (pool cap + evict-oldest, lifecycle transitions, off-camera skip,
-// profile-driven behavior), never exact pixels.
-
 import {
 	type Effect,
 	type EffectKind,
@@ -16,12 +6,8 @@ import {
 	type Tint,
 } from '@mmo/shared';
 
-// A Particle's life runs airborne → (one bounce) → rest → fade → cull. `bounced`
-// records the single permitted bounce so the second ground contact settles.
 export type Stage = 'airborne' | 'rest' | 'fade';
 
-// One point on a colour-over-life curve, keyed by life fraction (0 = born,
-// 1 = fully aged). The simulator interpolates between adjacent stops.
 export interface ColorStop {
 	t: number;
 	r: number;
@@ -29,26 +15,21 @@ export interface ColorStop {
 	b: number;
 }
 
-// The declarative profile that fully defines a Particle's look and lifecycle.
-// One generic simulator reads this — no kind-specific branching — so adding a
-// `dust`/`sparkle`/`spark` look is a new ParticleType, not new code.
 export interface ParticleType {
-	gravity: number; // cells/s^2 pulling the speck down
-	restitution: number; // velocity retained across the one bounce (0..1)
-	collide: boolean; // whether the speck lands on solid terrain
-	restMs: number; // how long a settled speck rests before fading
-	fadeMs: number; // fade-out duration after rest
-	maxLifeMs: number; // hard lifetime cap (safety net)
-	launchSpeed: number; // base outward speed at spawn (cells/s)
-	launchSpread: number; // random ± added to speed and angle
-	countScale: number; // multiplies the intensity-derived speck count (1 = default)
-	glyphs: { airborne: string[]; rest: string[] }; // per-stage glyph sets
-	colors: ColorStop[]; // colour-over-life curve, bright → dark
-	z: number; // render layer hint
+	gravity: number;
+	restitution: number;
+	collide: boolean;
+	restMs: number;
+	fadeMs: number;
+	maxLifeMs: number;
+	launchSpeed: number;
+	launchSpread: number;
+	countScale: number;
+	glyphs: { airborne: string[]; rest: string[] };
+	colors: ColorStop[];
+	z: number;
 }
 
-// One pooled speck. Mutated in place (no per-frame allocation); `active` gates
-// it, `born` orders evict-oldest, `seed` indexes glyphs deterministically.
 export interface Particle {
 	active: boolean;
 	type: ParticleType;
@@ -58,18 +39,13 @@ export interface Particle {
 	vy: number;
 	stage: Stage;
 	bounced: boolean;
-	ageMs: number; // total time alive, for evict-oldest + maxLife cull
-	stageMs: number; // time spent in the current stage
-	born: number; // spawn order (monotonic); smallest = oldest
-	seed: number; // [0,1) chosen at spawn, picks a glyph
-	// Optional per-speck RGB recolour from the spawning Effect (#139): a gore burst
-	// carries the dead entity's body colour. When set, the colour-over-life curve is
-	// derived from this tint instead of the profile's fixed `colors` palette.
+	ageMs: number;
+	stageMs: number;
+	born: number;
+	seed: number;
 	tint?: Tint;
 }
 
-// The `blood` profile (the MVP look): bright red erupting outward, falling under
-// gravity, one small bounce, resting ~2.5s on the ground, then fading ~0.75s.
 export const BLOOD: ParticleType = {
 	gravity: 60,
 	restitution: 0.4,
@@ -80,64 +56,48 @@ export const BLOOD: ParticleType = {
 	launchSpeed: 14,
 	launchSpread: 10,
 	countScale: 1,
-	// Block "pixels" matching the game's pixel-art sprites (not ASCII punctuation):
-	// airborne specks are sub-cell quadrant droplets; settled specks use
-	// lower-anchored blocks so the pool reads as resting on the floor.
 	glyphs: {
 		airborne: ['▄', '▖', '▗', '▘', '▝'],
 		rest: ['▄', '▃', '▖', '▗'],
 	},
 	colors: [
-		{ t: 0, r: 220, g: 40, b: 40 }, // bright arterial red
+		{ t: 0, r: 220, g: 40, b: 40 },
 		{ t: 0.5, r: 150, g: 25, b: 25 },
-		{ t: 1, r: 90, g: 15, b: 15 }, // settled maroon
+		{ t: 1, r: 90, g: 15, b: 15 },
 	],
 	z: 0,
 };
 
-// The `gore` profile (the death-burst look, #139): fewer, chunkier specks than the
-// fine `blood` mist — fat meaty chunks that fly OUT hard and far (lighter gravity,
-// faster launch than blood) before settling into thick splats. `countScale` thins
-// the burst so it reads as a handful of gobs, not a cloud. Its `colors` are a
-// deep-red fallback; a death Effect carries a `tint` (the dead entity's body
-// colour) that overrides this curve per-speck.
 export const GORE: ParticleType = {
-	gravity: 50, // lighter — chunks hang and fly rather than drop
+	gravity: 50,
 	restitution: 0.3,
 	collide: true,
 	restMs: 3000,
 	fadeMs: 900,
 	maxLifeMs: 7000,
-	launchSpeed: 18, // flies out further than blood's 14
+	launchSpeed: 18,
 	launchSpread: 12,
-	countScale: 0.5, // ~half the specks — fat chunks, not a dense mist
-	// Chunky blocks (gobs of gore) vs blood's thin quadrant droplets, but lighter
-	// than solid █ so a handful doesn't read as a heavy black mass.
+	countScale: 0.5,
 	glyphs: {
 		airborne: ['▆', '▅', '▄', '▓', '▃'],
 		rest: ['▅', '▄', '▓', '▃'],
 	},
 	colors: [
-		{ t: 0, r: 200, g: 30, b: 30 }, // deep red (fallback when untinted)
+		{ t: 0, r: 200, g: 30, b: 30 },
 		{ t: 0.5, r: 120, g: 18, b: 18 },
 		{ t: 1, r: 70, g: 10, b: 10 },
 	],
 	z: 0,
 };
 
-// The `impact` profile (the Poise-break look, ADR 0017 §13d): a sharp, bright spark
-// that bursts OUT fast and far and fades quickly — a percussive flash, not the
-// lingering wet specks of blood. High launch + low gravity + a short fade make it
-// read as a hard CLACK at the break site, the visual twin of the Stagger (paired
-// with hitstop + camera-kick). Untinted: a fixed hot white→amber spark curve.
 export const IMPACT: ParticleType = {
-	gravity: 30, // light — sparks fly straight out rather than dropping
+	gravity: 30,
 	restitution: 0.2,
-	collide: false, // sparks wink out in the air; they don't pool on the floor
+	collide: false,
 	restMs: 0,
-	fadeMs: 220, // quick percussive fade
+	fadeMs: 220,
 	maxLifeMs: 360,
-	launchSpeed: 26, // bursts out hard and far — the meatiest of the three kinds
+	launchSpeed: 26,
 	launchSpread: 16,
 	countScale: 0.8,
 	glyphs: {
@@ -145,26 +105,21 @@ export const IMPACT: ParticleType = {
 		rest: ['·'],
 	},
 	colors: [
-		{ t: 0, r: 255, g: 244, b: 200 }, // hot near-white flash
-		{ t: 0.5, r: 255, g: 200, b: 90 }, // amber spark
-		{ t: 1, r: 200, g: 120, b: 40 }, // fading ember
+		{ t: 0, r: 255, g: 244, b: 200 },
+		{ t: 0.5, r: 255, g: 200, b: 90 },
+		{ t: 1, r: 200, g: 120, b: 40 },
 	],
 	z: 0,
 };
 
-// The `levelup` profile (#271): a celebratory fountain fired at the Player on a level-up.
-// Unlike the combat looks it is NOT driven by a wire Effect — the playfield spawns it
-// directly (client-only cosmetic), so it never touches progression. Bright gold sparks
-// erupt radially and mostly UP (a low gravity lets them hang like a firework), never
-// collide (they wink out in the air), and fade over ~1s so the burst reads as a quick
-// flourish that clears fast. A hot-gold → warm-amber curve, kin to the vendor gold.
+// Client-only cosmetic, off the wire and sim — spawned directly by the playfield.
 export const LEVELUP: ParticleType = {
-	gravity: 22, // light — sparks rise and hang like a firework rather than dropping
+	gravity: 22,
 	restitution: 0,
-	collide: false, // pure air burst; never pools on the floor
+	collide: false,
 	restMs: 0,
 	fadeMs: 500,
-	maxLifeMs: 1000, // ~1s flourish, matched to the HUD banner
+	maxLifeMs: 1000,
 	launchSpeed: 16,
 	launchSpread: 12,
 	countScale: 1,
@@ -173,32 +128,23 @@ export const LEVELUP: ParticleType = {
 		rest: ['·'],
 	},
 	colors: [
-		{ t: 0, r: 255, g: 240, b: 180 }, // hot gold flash
-		{ t: 0.5, r: 255, g: 205, b: 90 }, // warm amber (kin to the vendor gold)
-		{ t: 1, r: 220, g: 150, b: 60 }, // fading ember
+		{ t: 0, r: 255, g: 240, b: 180 },
+		{ t: 0.5, r: 255, g: 205, b: 90 },
+		{ t: 1, r: 220, g: 150, b: 60 },
 	],
 	z: 0,
 };
 
-// The speck count for the level-up fountain (#271): a fixed, generous burst — no combat
-// intensity drives it, so it always reads as a full celebratory pop.
 export const LEVELUP_SPECKS = 28;
 
-// The client-side map from a semantic game event to the look(s) it spawns. 1:1
-// today; the indirection lets a future event fan out into several ParticleTypes
-// (e.g. death → blood + gib) with no wire change.
 export const SPAWN_MAP: Record<EffectKind, ParticleType[]> = {
 	blood: [BLOOD],
 	gore: [GORE],
 	impact: [IMPACT],
 };
 
-// Fixed, preallocated pool — newest action always renders (evict-oldest), and the
-// per-frame cost is bounded regardless of combat volume.
 export const POOL_SIZE = 2000;
 
-// Per-Effect speck count: a small base plus a damage-scaled term, clamped so a
-// chip hit still sprays something and a huge hit never floods the pool.
 const COUNT_BASE = 2;
 const COUNT_SCALE = 0.8;
 const COUNT_MAX = 24;
@@ -208,7 +154,6 @@ export function speckCount(intensity: number): number {
 	return Math.max(1, Math.min(COUNT_MAX, n));
 }
 
-// The on-screen region; an Effect outside it (plus a margin) is skipped entirely.
 export interface Camera {
 	x: number;
 	y: number;
@@ -227,10 +172,6 @@ function onCamera(cam: Camera, x: number, y: number): boolean {
 	);
 }
 
-// A speck's current colour (rgb) and opacity (a, 0..255), derived purely from its
-// profile + age so the renderer stays a thin blitter. Colour darkens along the
-// profile's colour-over-life curve; alpha holds full until the fade stage, then
-// ramps to zero — so overlapping specks read denser and spent blood dissolves.
 export interface Rgba {
 	r: number;
 	g: number;
@@ -238,9 +179,6 @@ export interface Rgba {
 	a: number;
 }
 
-// A colour-over-life curve derived from a single tint (#139): the entity's body
-// colour at birth, darkening to a deep ~40%-luminance gore as the speck ages — so
-// a death burst reads as the dead entity's colour, then dries dark like blood.
 function tintStops(tint: Tint): ColorStop[] {
 	const dim = (v: number) => Math.round(v * 0.4);
 	return [
@@ -249,9 +187,6 @@ function tintStops(tint: Tint): ColorStop[] {
 	];
 }
 
-// Opacity along a fade ramp: full (255) at `elapsedMs <= 0`, ramping linearly to 0
-// at `elapsedMs >= fadeMs`. Shared by both fade drivers below — a colliding speck
-// times its ramp off the `fade` stage, a spark off its age (see `particleColor`).
 function fadeRamp(elapsedMs: number, fadeMs: number): number {
 	return Math.round(255 * Math.max(0, Math.min(1, 1 - elapsedMs / fadeMs)));
 }
@@ -271,11 +206,7 @@ export function particleColor(p: Particle): Rgba {
 	const span = hi.t - lo.t || 1;
 	const f = Math.max(0, Math.min(1, (t - lo.t) / span));
 	const lerp = (a: number, b: number) => Math.round(a + (b - a) * f);
-	// Opacity: a colliding speck holds full until it reaches the `fade` stage (after
-	// resting), then ramps to zero over `fadeMs`. A non-colliding spark never bounces
-	// or rests, so it never reaches that stage — drive its alpha off AGE instead,
-	// entering the fade ramp at `maxLifeMs - fadeMs`, so it winks out smoothly in the
-	// air rather than holding full opacity and popping at end of life (#264).
+	// Colliding specks fade off the rest→fade stage; non-colliding sparks never rest, so fade off age instead.
 	const a = p.type.collide
 		? p.stage === 'fade'
 			? fadeRamp(p.stageMs, p.type.fadeMs)
@@ -284,19 +215,12 @@ export function particleColor(p: Particle): Rgba {
 	return { r: lerp(lo.r, hi.r), g: lerp(lo.g, hi.g), b: lerp(lo.b, hi.b), a };
 }
 
-// The glyph for a speck this frame: an airborne speck reads as a flying mote, a
-// settled one as a small splat, picked from the profile's per-stage glyph set by
-// the speck's stable seed.
 export function particleGlyph(p: Particle): string {
 	const set =
 		p.stage === 'airborne' ? p.type.glyphs.airborne : p.type.glyphs.rest;
 	return set[Math.min(set.length - 1, Math.floor(p.seed * set.length))];
 }
 
-// The world row a speck should DRAW into, given the rounded cell the projection
-// picked. The physics keeps `floor(p.y)` empty (a speck never rests inside or below
-// solid), so the drawn row reconciles that physics cell with what the terrain layer
-// actually paints. A no-op for a non-colliding profile, which passes through terrain.
 export function particleDrawRow(
 	p: Particle,
 	terrain: Terrain,
@@ -304,29 +228,18 @@ export function particleDrawRow(
 	row: number,
 ): number {
 	if (!p.type.collide) return row;
-	// A SETTLED speck (rest/fade) parks physically in the empty cell directly ABOVE
-	// the surface, but a top-surface solid cell renders as a lower-half `▄` block
-	// (render.ts), dropping the visible ground line to that cell's vertical middle. So
-	// a lower-anchored rest glyph drawn in the empty cell floats a half-cell above the
-	// line. Bias the draw DOWN into the `▄` surface cell so the speck sits flush on the
-	// visible ground rather than hovering over it (#264) — only when the current cell
-	// is open air with solid directly beneath, so it can never bury into interior rock.
+	// Bias a settled speck down into the ▄ surface cell so it sits flush on the visible ground, not a half-cell above.
 	if (p.stage !== 'airborne') {
 		return !isSolid(terrain, col, row) && isSolid(terrain, col, row + 1)
 			? row + 1
 			: row;
 	}
-	// An AIRBORNE near-surface speck can round DOWN into the solid surface for one
-	// frame — a flicker reading as blood sunk into the ground (#134). Bias the draw UP
-	// to the nearest empty row (never down, so it can only float a hair high, never
-	// tunnel), so in-flight blood is never painted inside the terrain.
+	// Bias an airborne near-surface speck up out of solid so in-flight blood is never painted inside terrain.
 	let r = row;
 	while (r > 0 && isSolid(terrain, col, r)) r--;
 	return r;
 }
 
-// A fixed pool of Particles plus its spawn cursor. The simulator mutates the
-// particles in place; nothing here allocates per frame after construction.
 export class ParticleSystem {
 	readonly particles: Particle[];
 	private bornCounter = 0;
@@ -356,8 +269,6 @@ export class ParticleSystem {
 		return n;
 	}
 
-	// Claim a slot for a new speck: an inactive one if any, else evict the oldest
-	// (smallest `born`) so the most recent action is never visually dropped.
 	private claim(): Particle {
 		let slot: Particle | null = null;
 		let oldest: Particle = this.particles[0];
@@ -382,13 +293,11 @@ export class ParticleSystem {
 		tint?: Tint,
 	): void {
 		const p = this.claim();
-		// dir 0 = radial (full circle); ±1 = a cone biased that way and upward.
-		const spread = (rng() - 0.5) * 2; // [-1,1)
+		const spread = (rng() - 0.5) * 2;
 		const speed = type.launchSpeed + rng() * type.launchSpread;
 		let angle: number;
 		if (dir === 0) angle = rng() * Math.PI * 2;
 		else {
-			// centre on up-and-out (−45°-ish toward `dir`), widened by spread
 			const base = dir === 1 ? -Math.PI / 4 : (-Math.PI * 3) / 4;
 			angle = base + spread * (Math.PI / 4);
 		}
@@ -407,10 +316,6 @@ export class ParticleSystem {
 	}
 }
 
-// Advance the whole system one frame: expand fresh Effects into specks, then move
-// every active speck through its lifecycle. Pure given the injected `rng`; mutates
-// `sys` in place. Off-camera Effects (when `cam` is supplied) are skipped entirely
-// — neither spawned nor simulated.
 export function stepParticles(
 	sys: ParticleSystem,
 	effects: readonly Effect[],
@@ -439,17 +344,14 @@ export function stepParticles(
 	}
 }
 
-// The row of the topmost solid cell a downward-moving speck crosses between `fromY`
-// and `toY` in column `col`, or -1 if it crosses none (or isn't descending). A
-// swept check over every crossed cell, so a fast speck collides with the surface
-// instead of tunneling through it.
+// Swept over every crossed cell so a fast speck can't tunnel through the surface.
 function surfaceHit(
 	terrain: Terrain,
 	col: number,
 	fromY: number,
 	toY: number,
 ): number {
-	if (toY <= fromY) return -1; // not descending (rising / horizontal)
+	if (toY <= fromY) return -1;
 	const start = Math.floor(fromY) + 1;
 	const end = Math.floor(toY);
 	for (let row = Math.max(0, start); row <= end; row++)
@@ -457,8 +359,6 @@ function surfaceHit(
 	return -1;
 }
 
-// Move one active speck forward by `dt` seconds. Lifecycle:
-// airborne (gravity + one bounce + land) → rest → fade → cull.
 function advance(
 	p: Particle,
 	dt: number,
@@ -472,8 +372,6 @@ function advance(
 		p.vy += type.gravity * dt;
 		let nx = p.x + p.vx * dt;
 		const ny = p.y + p.vy * dt;
-		// Horizontal collision: stop a speck moving sideways into a solid cell (a
-		// wall or the world edge) at the boundary so it can't embed in the terrain.
 		if (
 			type.collide &&
 			Math.floor(nx) !== Math.floor(p.x) &&
@@ -483,18 +381,13 @@ function advance(
 			nx = p.x;
 			p.vx = 0;
 		}
-		// Vertical collision: a swept check down the (possibly clamped) column.
 		const surface = type.collide
 			? surfaceHit(terrain, Math.floor(nx), p.y, ny)
 			: -1;
 		if (surface >= 0) {
-			// Land on the surface: the empty cell directly ABOVE the topmost solid
-			// row the speck crossed this frame (a swept check, so a fast speck can't
-			// tunnel into or below the platform before colliding).
 			p.x = nx;
 			p.y = surface - 1;
 			if (!p.bounced) {
-				// The single permitted bounce: reflect and damp.
 				p.vy = -Math.abs(p.vy) * type.restitution;
 				p.vx *= type.restitution;
 				p.bounced = true;
@@ -515,7 +408,6 @@ function advance(
 			p.stageMs = 0;
 		}
 	} else {
-		// fade
 		p.stageMs += dtMs;
 		if (p.stageMs >= type.fadeMs) p.active = false;
 	}

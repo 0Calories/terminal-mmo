@@ -35,8 +35,8 @@ test('spatialize: a sound at the camera centre is centred and full volume', () =
 });
 
 test('spatialize: pan follows horizontal offset (right positive, left negative)', () => {
-	expect(spatialize(70, 50, 40)?.pan).toBeGreaterThan(0); // to the right
-	expect(spatialize(30, 50, 40)?.pan).toBeLessThan(0); // to the left
+	expect(spatialize(70, 50, 40)?.pan).toBeGreaterThan(0);
+	expect(spatialize(30, 50, 40)?.pan).toBeLessThan(0);
 });
 
 test('spatialize: off-screen sources hard-pan, never beyond ±1', () => {
@@ -45,15 +45,13 @@ test('spatialize: off-screen sources hard-pan, never beyond ±1', () => {
 });
 
 test('spatialize: volume attenuates with distance and cuts off past the radius', () => {
-	const near = spatialize(60, 50, 40, 100); // 10 away
-	const far = spatialize(140, 50, 40, 100); // 90 away
+	const near = spatialize(60, 50, 40, 100);
+	const far = spatialize(140, 50, 40, 100);
 	expect(near?.volume).toBeGreaterThan(far?.volume ?? 1);
-	expect(spatialize(300, 50, 40, 100)).toBeNull(); // 250 > 100
+	expect(spatialize(300, 50, 40, 100)).toBeNull();
 });
 
 test('spatialize: vertical position is ignored (no y parameter)', () => {
-	// y never enters the calculation — same x yields the same cue regardless of y,
-	// which the signature guarantees by construction.
 	expect(spatialize(70, 50, 40)).toEqual(spatialize(70, 50, 40));
 });
 
@@ -67,7 +65,6 @@ test('a lone hit and a lone death each produce one cue of their kind', () => {
 });
 
 test('a kill plays death, not hit+death: coincident blood is suppressed', () => {
-	// The lethal blow emits a directional blood and a radial gore at the same centre.
 	const cues = effectSoundCues([blood(50), gore(50)], 50, 40);
 	expect(cues.map((c) => c.kind)).toEqual(['death']);
 });

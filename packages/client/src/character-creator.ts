@@ -1,12 +1,3 @@
-// The pre-spawn character-customization screen (#36, PRD story 7; ADR 0005). Shown
-// once at launch before the networked connect: the Player cycles body hue / hat /
-// nameplate colour and watches a live Avatar Sprite preview, then confirms to enter
-// the World with that look (it rides the connect handshake, #35).
-//
-// This is the RETAINED-UI shell (Yoga-laid-out box + text, no hand-painted x/y) plus
-// one small imperative preview node — the same imperative-inside-renderSelf seam the
-// playfield uses (ADR 0005). The picker LOGIC is the pure, tested customize.ts; this
-// file is rendering only and is validated by eye (rendering isn't unit-tested, PRD).
 import type { Cosmetics, Entity, RenderStyle } from '@mmo/shared';
 import {
 	BOX,
@@ -42,12 +33,6 @@ import {
 } from './customize';
 import { COLORS } from './theme';
 
-// The subset of an OpenTUI key event the creator reads: the key `name` (arrows / return /
-// backspace) plus the modifier flags, and `preventDefault` to swallow a key so the focused
-// name input doesn't ALSO see it (↑/↓ move focus, ↵ confirms — neither should reach the field).
-// Typed structurally so this module doesn't depend on an un-exported opentui key type; the
-// real KeyEvent index.ts feeds in satisfies it. `sequence` is retained for callers that build
-// keys structurally (tests) even though typing now flows through the focused input itself.
 export interface CreatorKey {
 	name: string;
 	sequence: string;
@@ -56,40 +41,23 @@ export interface CreatorKey {
 	preventDefault?: () => void;
 }
 
-// The finalised creator choice handed back on confirm (#304): the Player-typed (or placeholder)
-// Handle plus the chosen Cosmetics. index.ts sends both in `createAvatar`.
 export interface CreatorResult {
 	handle: string;
 	cosmetics: Cosmetics;
 }
 
-// Same colour binding the playfield uses, so the preview Avatar renders identically
-// to how it ships in-world (one shared source, can't drift — #56).
 const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 	RGBA.fromInts(r, g, b, a),
 );
 
-// Preview geometry, derived from the real Sprite / hat catalog so it always frames
-// the whole Avatar. Top to bottom the drawn stack is hat (0–MAX_HAT_H rows) + Sprite
-// + nameplate (NAMEPLATE_H rows below the feet — #103), with a row of padding above
-// and below; the canvas is sized for the tallest possible stack so no selection ever
-// clips.
 export const PLAYER = spriteFor('player');
-// The nameplate is a single row of the handle below the feet (drawNameplates, ADR 0023),
-// with one extra row of slack for a form's baseline offset so it never clips.
 export const NAMEPLATE_H = 2;
 const MAX_HAT_H = Math.max(0, ...HATS.map((h) => h.sprite?.h ?? 0));
 export const VPAD = 1;
-const PREVIEW_W = PLAYER.w + 12; // Sprite plus room for a short handle either side
+const PREVIEW_W = PLAYER.w + 12;
 export const PREVIEW_H = MAX_HAT_H + PLAYER.h + NAMEPLATE_H + 2 * VPAD;
 
-// A still Avatar for the preview: facing right, full health (no hurt flash), carrying
-// the in-progress cosmetics + handle so the body hue, hat, AND nameplate colour all
-// preview. The Sprite is ANCHORED at a fixed vertical position — VPAD plus reserved
-// headroom for the tallest possible hat — so cycling hats only moves the headwear
-// above the head, never the body/feet (#104). Room is reserved below for the
-// nameplate (#103). x/y are the inverse of drawEntitySprite's placement, so the
-// resolved Sprite lands where intended.
+// Anchor the Sprite at a fixed y (headroom for the tallest hat) so cycling hats never shifts the body.
 export function previewAvatar(cosmetics: Cosmetics, name: string): Entity {
 	const spriteTop = VPAD + MAX_HAT_H;
 	const spriteLeft = Math.round((PREVIEW_W - PLAYER.w) / 2);
@@ -112,18 +80,11 @@ export function previewAvatar(cosmetics: Cosmetics, name: string): Entity {
 	};
 }
 
-// A live node that draws the preview Avatar through the shared renderer's full path
-// (renderZoneScene -> Sprite + hat, then the drawNameplates top layer -> handle), so
-// the preview is exactly what ships in-world. `live` so it redraws every frame;
-// `avatar` is swapped on each picker change.
 class PreviewRenderable extends Renderable {
 	avatar: Entity = previewAvatar({ hue: 0, hat: 0, nameplate: 0, form: 0 }, '');
 
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
-		// `buffered` gives this node its OWN frame buffer: renderSelf draws into it at
-		// local 0,0 and opentui composites it at the node's laid-out position inside the
-		// panel. Without it, renderSelf would draw onto the root buffer at absolute 0,0
-		// (top-left of the screen) and renderZoneScene's clear would wipe everything.
+		// buffered: own frame buffer, else renderZoneScene's clear wipes the root buffer.
 		super(ctx, { live: true, buffered: true, ...options });
 	}
 
@@ -139,17 +100,10 @@ class PreviewRenderable extends Renderable {
 			{ x: 0, y: 0 },
 			STYLE,
 		);
-		// Nameplates are a caller-composited top layer now (ADR 0023), so renderZoneScene
-		// no longer draws them; add the pass here so the chosen handle previews above the
-		// Avatar. Unlike the playfield this SHOWS the self plate, since it's a preview.
 		drawNameplates(buffer, [this.avatar], { x: 0, y: 0 }, terrain, STYLE);
 	}
 }
 
-// The customization screen. Mirrors the Shop's structure (a full-screen container +
-// a centred bordered panel) and key-routing contract: index.ts feeds keys to `key()`,
-// which returns the chosen Cosmetics on Enter (and otherwise null), refreshing the
-// preview + rows itself.
 export class CharacterCreator {
 	private readonly container: BoxRenderable;
 	private readonly preview: PreviewRenderable;
@@ -159,27 +113,11 @@ export class CharacterCreator {
 	private readonly footer: TextRenderable;
 	private readonly rows: TextRenderable;
 	private state: CustomizeState;
-	// The auto-derived Handle (from $USER / MMO_HANDLE): shown as the field placeholder and used
-	// verbatim when the Player leaves the field empty (#304).
 	private readonly placeholder: string;
-	// The Player-typed name draft, kept in sync with the focused InputRenderable's value via its
-	// per-keystroke INPUT event (the input owns the text now; the creator no longer hand-drives
-	// it — #315). Empty ⇒ the placeholder is used on confirm.
 	private handleText = '';
-	// Whether the name row (row 0 of the ladder) currently owns focus, in editable/creation mode.
-	// When true the InputRenderable is `.focus()`'d and owns typing + left/right cursor; ↑/↓ move
-	// focus off it onto a cosmetic row. Meaningless in re-customize mode (no name row — #315).
 	private nameRowFocused = false;
-	// A server-side `createRejected` message (taken / invalid), surfaced in a transient warn line;
-	// cleared as soon as the Player edits the name again.
 	private errorText = '';
-	// True between sending `createAvatar` and the server's verdict: input is frozen so the draft
-	// can't change mid round-trip. Cleared on a rejection so the Player can retry.
 	private busy = false;
-	// Whether the Handle field is editable. Creation mode (#304) lets the Player type it; the
-	// in-game re-customize mode (#305, [c] in Town — ADR 0028) reopens the SAME creator with the
-	// Handle set-once and read-only, editing Cosmetics only. When false the field shows the
-	// durable Handle verbatim, typing/backspace are inert, and confirm is always allowed.
 	private readonly editableHandle: boolean;
 
 	constructor(
@@ -191,8 +129,6 @@ export class CharacterCreator {
 		this.placeholder = handle;
 		this.editableHandle = editableHandle;
 		this.state = initCustomize(start);
-		// Creation opens with the name row (row 0 of the ladder) focused; re-customize has no name
-		// row and opens on the first cosmetic row (#315). The actual `.focus()` fires in show().
 		this.nameRowFocused = editableHandle;
 
 		this.container = new BoxRenderable(ctx, {
@@ -203,7 +139,7 @@ export class CharacterCreator {
 			bottom: 0,
 			justifyContent: 'center',
 			alignItems: 'center',
-			zIndex: 30, // above HUD (z10) and Shop (z20)
+			zIndex: 30,
 			visible: false,
 		});
 
@@ -224,12 +160,6 @@ export class CharacterCreator {
 			width: PREVIEW_W,
 			height: PREVIEW_H,
 		});
-		// The name field: a `name ▸` prompt (a leading caret marks it as the focused ladder row)
-		// beside the shared InputRenderable — the same widget the chat line wraps. On the name row
-		// this input is genuinely `.focus()`'d and owns typing + left/right cursor (#315); the
-		// creator no longer hand-drives its value. Labelled "name" though the domain term stays
-		// Handle. maxLength mirrors the Handle rule; live charset filtering happens in the INPUT
-		// listener below.
 		const handleRow = new BoxRenderable(ctx, {
 			flexDirection: 'row',
 			alignItems: 'center',
@@ -252,12 +182,6 @@ export class CharacterCreator {
 			placeholder: this.placeholder,
 			placeholderColor: COLORS.dim,
 		});
-		// Live-filter + live preview on every keystroke into the focused field: the input hands us
-		// its whole value, we strip anything outside the shared Handle charset (length is already
-		// capped by maxLength), clear any standing server rejection, and refresh so the preview
-		// nameplate tracks what's typed. Re-assigning `value` when the filter changed it re-fires
-		// INPUT, but the next pass is already clean so it settles at once. Read-only mode never
-		// focuses the field, so this is inert there.
 		this.handleInput.on(InputRenderableEvents.INPUT, (raw: string) => {
 			if (!this.editableHandle) return;
 			const filtered = filterHandleDraft(raw);
@@ -267,10 +191,6 @@ export class CharacterCreator {
 			this.refresh();
 		});
 		handleRow.add(this.handleInput);
-		// A transient line below the name field: blank by default (its row reserved so nothing
-		// jumps), carrying a server rejection in warn colour only while one stands (#315). It
-		// belongs to the name field, so — like the field — it exists only in creation mode; the
-		// cosmetics-only re-customize modal mounts neither a name row nor this line (#318).
 		this.hint = new TextRenderable(ctx, {
 			content: ' ',
 			fg: COLORS.dim,
@@ -288,10 +208,6 @@ export class CharacterCreator {
 		});
 
 		panel.add(this.preview);
-		// The name row and its transient hint line exist only in creation mode. Re-customize is
-		// cosmetics-only (ADR 0028, #318): its ladder is the cosmetic rows alone (preview → rows →
-		// save/cancel footer), so the name row is absent from the modal entirely — not merely
-		// read-only. The preview above still renders the durable name (refresh reads the placeholder).
 		if (editableHandle) {
 			panel.add(handleRow);
 			panel.add(this.hint);
@@ -310,56 +226,35 @@ export class CharacterCreator {
 		return this.container.visible;
 	}
 
-	// The current inline error text ('' when none) — exposed so a test can assert a
-	// `createRejected` surfaced without a renderer.
 	get errorMessage(): string {
 		return this.errorText;
 	}
 
-	// Which ladder row currently has focus: 'name' when the name field owns typing, else the
-	// focused cosmetic's key ('hue' / 'hat' / 'nameplate'). Exposed so a headless test can assert
-	// ↑/↓ ladder navigation on the public surface rather than reaching into private focus state.
 	get focusedRow(): string {
 		if (this.nameFocused) return 'name';
 		return CUSTOMIZE_FIELDS[this.state.field]?.key ?? '';
 	}
 
-	// The name that would actually be submitted right now (the typed draft, or the placeholder when
-	// empty). Exposed so a test can assert that an illegal keystroke left the effective name
-	// unchanged without inspecting the raw input value.
 	get effectiveName(): string {
 		return effectiveHandle(this.handleText, this.placeholder);
 	}
 
-	// True while the name field (row 0 of the ladder) is the focused row and thus owns typing — the
-	// one predicate the focus/caret logic keys off. Only meaningful in editable/creation mode; the
-	// read-only re-customize field is never a focusable ladder row.
 	private get nameFocused(): boolean {
 		return this.editableHandle && this.nameRowFocused;
 	}
 
-	// Reconcile the InputRenderable's OS-level focus with the ladder: the field owns the keyboard
-	// exactly while the name row is focused, so keystrokes reach it only then. Re-customize mounts
-	// no name field (#318), so there is nothing to focus/blur there.
 	private syncFieldFocus(): void {
 		if (!this.editableHandle) return;
 		if (this.nameFocused) this.handleInput.focus();
 		else this.handleInput.blur();
 	}
 
-	// Whether the confirm key is currently accepted. Creation gates on a valid effective Handle;
-	// re-customize (read-only Handle) is always confirmable — the durable Handle is already valid
-	// and only Cosmetics change.
 	get confirmable(): boolean {
 		return this.editableHandle
 			? handleConfirmable(this.handleText, this.placeholder)
 			: true;
 	}
 
-	// Re-seed the re-customize creator to the Avatar's CURRENT Cosmetics before reopening it
-	// (#305): each `[c]` press must start from what the Player looks like NOW, which may have
-	// changed since the last edit. Clears any transient busy/error and refreshes the preview.
-	// Only meaningful in read-only-Handle mode (the durable Handle never changes).
 	reopen(cosmetics: Cosmetics): void {
 		this.state = initCustomize(cosmetics);
 		this.errorText = '';
@@ -369,8 +264,6 @@ export class CharacterCreator {
 
 	show(): void {
 		this.container.visible = true;
-		// Creation opens with the name row focused so the Player can type immediately; re-customize
-		// has no name row and leaves the field blurred, starting on the first cosmetic (#315).
 		this.syncFieldFocus();
 	}
 
@@ -378,9 +271,7 @@ export class CharacterCreator {
 		this.container.visible = false;
 	}
 
-	// Freeze/unfreeze input while a `createAvatar` is in flight, so the draft can't change between
-	// send and the server's verdict. Blur the field while frozen so a stray keystroke can't reach
-	// the focused input directly (it bypasses the busy guard in key()); restore focus on unfreeze.
+	// Blur while frozen: a keystroke on the focused input would bypass key()'s busy guard.
 	setBusy(busy: boolean): void {
 		this.busy = busy;
 		if (busy) this.handleInput.blur();
@@ -388,9 +279,6 @@ export class CharacterCreator {
 		this.refresh();
 	}
 
-	// Surface a server `createRejected` in the transient warn line and re-open the field for another
-	// try (#304): the creator stays visible, shows why in "name" copy (#315), unfreezes, and returns
-	// focus to the name row so the Player can edit + resend at once.
 	showRejection(reason: 'taken' | 'invalid'): void {
 		this.busy = false;
 		this.errorText =
@@ -402,61 +290,40 @@ export class CharacterCreator {
 		this.refresh();
 	}
 
-	// Feed one key from the app's global keypress handler (which dispatches BEFORE the focused
-	// input's own subscription — chat's ordering, message-log.ts). Returns the confirmed
-	// { handle, cosmetics } on a valid Enter, else null:
-	// - ↑/↓ move focus through the ladder (name → cosmetics), swallowed so the focused field never
-	//   sees them;
-	// - Enter confirms ONLY when the effective name is valid (swallowed so the field can't also
-	//   submit); otherwise it's a no-op;
-	// - on the name row every other key (printable / backspace / left / right) is LEFT for the
-	//   focused InputRenderable to handle — the creator no longer hand-drives the value (#315);
-	// - on a cosmetic row (or in read-only re-customize mode) left/right cycle the focused cosmetic.
+	// Dispatched before the focused input; swallowed keys never also reach the field.
 	key(k: CreatorKey): CreatorResult | null {
 		if (this.busy) return null;
 		const { name } = k;
-		// ↑/↓ move focus through the ladder. Intercept + swallow them so they escape the field
-		// (they'd otherwise be inert single-line-input keys) and reposition focus instead.
 		if (name === 'up' || name === 'down') {
 			this.moveFocus(name === 'down' ? 1 : -1);
 			k.preventDefault?.();
 			return null;
 		}
 		if (name === 'return') {
-			if (!this.confirmable) return null; // confirm stays blocked; no-op
-			k.preventDefault?.(); // don't let the focused field also fire its own submit
+			if (!this.confirmable) return null;
+			k.preventDefault?.();
 			return {
-				// A read-only name confirms with the durable value (the placeholder holds it), so
-				// re-customize never mutates the Handle — only `cosmetics` is acted on downstream.
 				handle: this.editableHandle
 					? effectiveHandle(this.handleText, this.placeholder)
 					: this.placeholder,
 				cosmetics: this.state.cosmetics,
 			};
 		}
-		// On the name row the focused InputRenderable owns typing, backspace, and left/right cursor
-		// movement — do nothing here (and don't swallow the key) so it reaches the field, whose
-		// INPUT event syncs the draft + live preview.
+		// On the name row, leave the key for the focused input (don't swallow).
 		if (this.nameFocused) return null;
-		// A cosmetic row (or re-customize's read-only-name mode): left/right cycle the focused
-		// cosmetic; anything else is a no-op.
 		const { state } = reduceCustomize(this.state, name);
 		this.state = state;
 		this.refresh();
 		return null;
 	}
 
-	// Step focus by ±1 through the ladder and reconcile the field's focus with it. In editable mode
-	// the ladder is [name, ...cosmetics], wrapping end-to-end; landing on row 0 focuses the name
-	// input, any other row blurs it and focuses that cosmetic. In read-only re-customize mode there
-	// is no name row, so this is just the cosmetic picker's up/down (unchanged #305 behaviour).
 	private moveFocus(delta: number): void {
 		if (!this.editableHandle) {
 			this.state = reduceCustomize(this.state, delta > 0 ? 'down' : 'up').state;
 			this.refresh();
 			return;
 		}
-		const ladderLen = CUSTOMIZE_FIELDS.length + 1; // the name row + each cosmetic row
+		const ladderLen = CUSTOMIZE_FIELDS.length + 1;
 		const pos = this.nameRowFocused ? 0 : this.state.field + 1;
 		const next = (((pos + delta) % ladderLen) + ladderLen) % ladderLen;
 		this.nameRowFocused = next === 0;
@@ -466,29 +333,18 @@ export class CharacterCreator {
 	}
 
 	private refresh(): void {
-		// The nameplate previews the effective name live, so the Player sees exactly what will
-		// float under their Avatar in-world.
 		this.preview.avatar = previewAvatar(
 			this.state.cosmetics,
 			effectiveHandle(this.handleText, this.placeholder),
 		);
-		// The name row is the focused ladder row when the field owns focus; while it does, no
-		// cosmetic row shows the caret. Only creation mounts the name row + its hint line, so their
-		// content is refreshed only there — re-customize is cosmetics-only (#318), and `nameFocused`
-		// is already false in that mode, so the cosmetic caret shows normally.
 		const focused = this.nameFocused;
 		if (this.editableHandle) {
-			// The focused input owns its own value (typing flows through it), so the creator never
-			// overwrites it here. The field is labelled "name" though the domain term stays Handle.
 			this.namePrompt.content = `${focused ? '▸' : ' '} name ▸ `;
-			// The transient line carries a server rejection in warn colour while one stands; otherwise
-			// it is a blank reserved row (no persistent rule hint, #315). The footer gates the "enter
-			// the World" affordance on a valid draft.
 			if (this.errorText) {
 				this.hint.content = this.errorText;
 				this.hint.fg = COLORS.warn;
 			} else {
-				this.hint.content = ' '; // reserved blank row, no layout jump
+				this.hint.content = ' ';
 				this.hint.fg = COLORS.dim;
 			}
 		}

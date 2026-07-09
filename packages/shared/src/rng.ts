@@ -1,8 +1,7 @@
-// mulberry32. State is threaded explicitly (each call returns value AND next
-// state) so loot and spawns stay deterministic / reproducible.
+// mulberry32; state threaded explicitly (value + next state) for determinism.
 
 export interface Rng {
-	value: number; // in [0, 1)
+	value: number;
 	state: number;
 }
 

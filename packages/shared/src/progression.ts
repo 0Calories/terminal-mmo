@@ -2,30 +2,15 @@ import { fillRatio } from './bars';
 import { MONSTER_XP, PROGRESSION, ZONE_XP_MULT } from './constants';
 import type { EntityType, PlayerProgress } from './types';
 
-// EXP to advance from `level` to the next — a GEOMETRIC ramp (`xpBase * xpGrowth^(L-1)`),
-// doubling each rung (60 / 120 / 240 / 480, 900 total to the cap) so the ask accelerates
-// and the last level is by far the biggest, making the cap feel earned rather than the
-// old ~20-kill sprint (#266, ADR 0024 §5, amendment §3). Infinity at the cap, so the
-// level-up loop can never advance past it.
 export function xpToNext(level: number): number {
 	if (level >= PROGRESSION.levelCap) return Infinity;
 	return PROGRESSION.xpBase * PROGRESSION.xpGrowth ** (level - 1);
 }
 
-// XP a single kill awards each contributor (#266, ADR 0024 amendment §3): the Monster's base worth
-// (MONSTER_XP by archetype) scaled by the Zone's depth multiplier (ZONE_XP_MULT), floored
-// to a whole number. This is the ONE XP faucet the offline sim and the server both run
-// through (grantXp), so a Slime in Field 1 is a trickle (5) while a Golem in the deepest
-// Field (28) — or any Dungeon kill — advances you meaningfully. An unknown Monster or Zone
-// falls back to 0 base / ×1 depth rather than crashing the faucet.
 export function xpForKill(monster: EntityType, zoneId: string): number {
 	return Math.floor((MONSTER_XP[monster] ?? 0) * (ZONE_XP_MULT[zoneId] ?? 1));
 }
 
-// Per-level max HP: survivability is the level's baseline reward, rising linearly off a
-// level-1 base and doubling by the cap. Raw attack power is NOT scaled here — it arrives
-// as the level-gated verbs (see the capability ladder below), keeping the Weapon the one
-// damage stat (ADR 0024 §8).
 export function maxHpForLevel(level: number): number {
 	return PROGRESSION.baseHp + (level - 1) * PROGRESSION.hpPerLevel;
 }
@@ -46,13 +31,10 @@ export function applyXp(
 	return { progress: { level, xp, gold: p.gold }, leveled };
 }
 
-// The XP bar's state for the HUD (#243): how far the Avatar is toward its next level,
-// as raw counts and a [0,1] fill ratio. At the cap there is no next level, so `needed` is
-// 0 and the bar reads full (`ratio: 1`) — "maxed", never a divide-by-Infinity gap.
 export interface XpProgress {
-	current: number; // XP banked toward the next level
-	needed: number; // XP required to reach it (0 at the cap)
-	ratio: number; // fill fraction [0,1]; 1 at the cap
+	current: number;
+	needed: number;
+	ratio: number;
 	atCap: boolean;
 }
 
@@ -65,12 +47,7 @@ export function xpProgress(level: number, xp: number): XpProgress {
 	return { current, needed, ratio: fillRatio(xp, needed), atCap: false };
 }
 
-// --- Capability ladder (ADR 0024 §5) ----------------------------------------
-
-// Each level hands the Player exactly one new verb, paced to arrive just before the
-// world demands it. This map is the single source of truth for level-gating: the
-// Warrior skills read their unlock level from it, and combat gates block/dodge on it —
-// so the ladder can never drift between the two subsystems.
+// Combat gates and Warrior skills both read unlock levels from here — keep in sync.
 export type Capability =
 	| 'attack'
 	| 'block'

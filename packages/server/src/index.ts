@@ -1,10 +1,3 @@
-// @mmo/server — the M2 authoritative server (ADR 0006). One Bun WebSocket
-// endpoint runs the shared multi-Zone world: a Field and a Town, each ticking its
-// own simulation at ~20 Hz over binary frames. The server owns every consequence
-// (Monster AI/HP, hit resolution, Avatar HP / death / respawn, loot, XP) and which
-// Zone each session occupies (#33), but never simulates Avatar physics from input
-// — it trusts the client-reported position (loose bounds clamp only), per ADR 0001.
-
 import { randomBytes } from 'node:crypto';
 import {
 	type AvatarIntent,
@@ -45,49 +38,32 @@ import { foldPendingEdges } from './intents';
 import { installShutdownHooks } from './shutdown';
 import { openPlayerStore } from './store';
 
-// Railway injects PORT; MMO_PORT stays as a local-dev override (ADR 0009).
 const PORT = Number(process.env.PORT) || Number(process.env.MMO_PORT) || 8080;
 
-// This server's release Version (ADR 0012). The release pipeline sets MMO_VERSION
-// on the Railway deploy; unset means a dev server, which skips the version gate
-// (`isReleaseVersion` is false) and admits any client. Reported at `/health` so the
-// pipeline can assert the right build went live before it publishes the client.
 const SERVER_VERSION = process.env.MMO_VERSION ?? 'dev';
-const TICK_RATE = 20; // Hz (ADR 0002 / PRD cadence)
+const TICK_RATE = 20;
 const MS_PER_TICK = 1000 / TICK_RATE;
 
-// Connection caps (ADR 0009). The global cap protects the single-threaded event
-// loop from exhaustion; the per-IP cap blunts single-actor multi-connect floods
-// while staying generous enough not to bounce shared NAT / CGNAT (many real
-// developers behind one IP). Both are SOFT — `X-Forwarded-For` is spoofable;
-// real per-identity limits await the auth branch.
+// Both caps are SOFT: X-Forwarded-For is spoofable.
 const MAX_CONNECTIONS = Number(process.env.MMO_MAX_CONN) || 200;
 const MAX_PER_IP = Number(process.env.MMO_MAX_PER_IP) || 10;
 
 interface WsData {
 	sessionId: number;
 	ip: string;
-	// True once this socket has been counted toward the caps, so `close` only
-	// decrements connections it actually admitted (a capped/rejected socket isn't).
 	counted: boolean;
 }
 
-// Live socket accounting for the caps, by the open WebSocket — not the joined
-// sessions in `sockets`, which only populate on `hello` (a socket can sit open
-// pre-handshake). Decremented in `close`.
+// Socket accounting for the caps, not the joined `sockets` (a socket can sit open pre-handshake).
 let openConnections = 0;
 const perIp = new Map<string, number>();
 
-// The client's apparent IP behind Railway's proxy: the first hop of
-// `X-Forwarded-For` (the proxy hides the socket peer). Spoofable, hence soft.
 function clientIp(req: Request, srv: Bun.Server<WsData>): string {
 	const xff = req.headers.get('x-forwarded-for');
 	if (xff) return xff.split(',')[0].trim();
 	return srv.requestIP(req)?.address ?? 'unknown';
 }
 
-// Refuse a socket with a human reason the client surfaces, then close it (ADR
-// 0009). Used for both cap rejections and the protocol-version gate.
 function reject(ws: ServerWebSocket<WsData>, reason: string) {
 	try {
 		ws.send(encodeServerMessage({ t: 'reject', reason }));
@@ -95,52 +71,33 @@ function reject(ws: ServerWebSocket<WsData>, reason: string) {
 	ws.close();
 }
 
-const START_ZONE = 'town-01'; // Players spawn into the safe hub, then portal out
+const START_ZONE = 'town-01';
 const TOWN_ZONE = 'town-01';
 let world: ServerWorld = createServerWorld({
-	zones: loadZones(), // authored `.zone` content off disk (ADR 0008)
+	zones: loadZones(),
 	start: START_ZONE,
 	town: TOWN_ZONE,
 });
 
 let nextSessionId = 1;
-const sockets = new Map<number, ServerWebSocket<WsData>>(); // joined sessions
-const intents = new Map<number, AvatarIntent>(); // latest reported intent
+const sockets = new Map<number, ServerWebSocket<WsData>>();
+const intents = new Map<number, AvatarIntent>();
 
-// Durable persistence (#236, ADR 0004 identity keys it): player state — level/XP/Gold,
-// inventory + equipped Weapon, cosmetics, last Town, boss-defeated flag — lives in
-// bun:sqlite behind the pure `PlayerStore` seam. The account registry (public key ↔
-// durable Handle) is rebuilt from those saved rows on startup, so identities survive a
-// restart; the pure `resolveAuth` seam is unchanged by that swap.
 const store = openPlayerStore(process.env.MMO_DB_PATH ?? 'mmo-state.sqlite');
 let accounts = registryFromSaves(store.all());
-// How often to flush every online Avatar's durable state (never per-tick, ADR 0009 —
-// significant events + this periodic sweep). Overridable for tests / tuning.
 const FLUSH_MS = Number(process.env.MMO_FLUSH_MS) || 30_000;
-// Connections that said hello and were issued a nonce, awaiting their `proof`.
 interface PendingAuth {
 	nonce: Uint8Array;
 	publicKey: string;
-	key: string; // canonicalPublicKey(publicKey), the identity/presence index
+	key: string;
 	handle: string;
 	cosmetics: Cosmetics;
 	weapon: number;
 }
 const pendingAuth = new Map<number, PendingAuth>();
-// One presence per identity: the canonical public key of each ONLINE session
-// (both directions, so `close` can release the key and a second login of the
-// same key is refused while the first is connected).
 const onlineKeyBySession = new Map<number, string>();
 const onlineSessionByKey = new Map<string, number>();
-// New accounts that authenticated but are NOT yet spawned (#302, ADR 0028): a Save lookup
-// found nothing, so the server holds them authenticated-but-unplaced (no Avatar in any
-// Zone, never broadcast) while the client shows the creator over a neutral hold screen.
-// `createAvatar` consumes this to claim the typed Handle, mint the Save, and spawn the Avatar;
-// `close` drops it if they disconnect at the creator. The retained `weapon` (declared at
-// `hello`) and `key` (the durable identity) are the fields the spawn still needs; `publicKey`
-// (the offered one-line key) is what `claimHandle` re-parses to bind the typed Handle to this
-// account (#304); `handle` is the auto-derived placeholder used when the Player leaves the
-// field empty. Cosmetics + the Player-typed Handle arrive later, on `createAvatar`.
+// New accounts authenticated but not yet spawned: held unplaced until `createAvatar`.
 interface PendingSpawn {
 	key: string;
 	publicKey: string;
@@ -148,16 +105,8 @@ interface PendingSpawn {
 	weapon: number;
 }
 const pendingSpawn = new Map<number, PendingSpawn>();
-// Body emotes triggered since the last tick (ADR 0020 §9), keyed by session. Consumed
-// in `tick` by folding onto that session's intent as a one-shot edge — so the emote arms
-// once instead of re-firing every input tick the way a sticky intent flag would.
 const pendingEmotes = new Map<number, string>();
-// Portal/interact presses received since the last tick (ADR 0027), the same one-shot
-// edge idiom as `pendingEmotes`. `interact` is NOT kept on the sticky per-session intent
-// (which is reused every tick): a held/duplicated flag would re-fire the Portal each tick
-// or be missed entirely when the 20 Hz tick fails to sample the ~33 ms it sat on the
-// wire. Set when an input frame reports the edge, folded onto that session's intent once
-// in `tick`, and consumed there — so one press transfers the Avatar exactly once.
+// One-shot edge, not a sticky flag: a held flag would re-fire the Portal every tick, or be missed by the 20 Hz sampling.
 const pendingInteract = new Set<number>();
 
 const clamp = (v: number, hi: number) =>
@@ -167,11 +116,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 	const msg = decodeClientMessage(raw);
 	const { sessionId } = ws.data;
 	if (msg.t === 'hello') {
-		// Version gate (ADR 0012): a deployed server admits a client only at its exact
-		// release Version, so a stale `bunx` client (cached against a newer server) is
-		// refused loudly rather than left to mis-decode frames. A dev server
-		// (MMO_VERSION unset) skips the gate and admits anyone, so local dev is never
-		// rejected.
 		if (isReleaseVersion(SERVER_VERSION) && msg.version !== SERVER_VERSION) {
 			reject(
 				ws,
@@ -179,8 +123,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			);
 			return;
 		}
-		// SSH-key auth (ADR 0004, #235): a parseable ed25519 key must be offered up
-		// front, then the connection proves control of it before it joins the World.
 		const pub = parsePublicKeyLine(msg.publicKey);
 		if (!pub) {
 			reject(
@@ -203,7 +145,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 	}
 	if (msg.t === 'proof') {
 		const pending = pendingAuth.get(sessionId);
-		if (!pending) return; // proof before hello (or a duplicate); ignore
+		if (!pending) return;
 		pendingAuth.delete(sessionId);
 		const auth = resolveAuth(
 			accounts,
@@ -216,8 +158,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			reject(ws, auth.reason);
 			return;
 		}
-		// One presence per identity: the same key connecting twice would put one
-		// durable Handle in the World twice, so the newcomer is refused.
 		const key = pending.key;
 		if (onlineSessionByKey.has(key)) {
 			reject(
@@ -229,10 +169,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		accounts = auth.registry;
 		onlineKeyBySession.set(sessionId, key);
 		onlineSessionByKey.set(key, sessionId);
-		// The server is the sole authority on new-vs-returning (#302, ADR 0028): the Save
-		// lookup keyed by this account decides it, never a client flag. A returning account
-		// (Save present) is restored and spawned straight away into its last Town with its
-		// saved level/XP/Gold, inventory, equipped Weapon, cosmetics, and boss-defeated flag.
+		// The Save lookup — never a client flag — is the sole authority on new-vs-returning.
 		const saved = store.load(key);
 		if (saved) {
 			world = addSession(
@@ -258,11 +195,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			console.log(`session ${sessionId} (${auth.handle}) joined ${zoneId}`);
 			return;
 		}
-		// A brand-new account (no Save): hold it authenticated but UNSPAWNED — no Avatar in
-		// any Zone, so it is never broadcast to others and `tick` never streams it a snapshot
-		// (it is deliberately kept out of `sockets` until `createAvatar` places it). The
-		// `welcome` reports `isNew` so the client shows the creator over a neutral hold
-		// screen; `zoneId` names where it WILL spawn. The Save is minted only on finalise.
 		pendingSpawn.set(sessionId, {
 			key,
 			publicKey: pending.publicKey,
@@ -285,17 +217,8 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		return;
 	}
 	if (msg.t === 'createAvatar') {
-		// Finalise a new account's creation (#302, ADR 0028; #304 threads the typed Handle):
-		// valid only for a session the server is holding unspawned (a returning or already-
-		// spawned session has no pending entry, so a stray/duplicate createAvatar is a silent
-		// no-op).
 		const pending = pendingSpawn.get(sessionId);
 		if (!pending) return;
-		// The Handle is claimed HERE, not at the handshake (#304). An empty typed field falls
-		// back to the auto-derived placeholder (the client already does this; re-applied here so
-		// an empty field is never claimed literally). Validate the shape, then claim it case-
-		// insensitively. On either failure the session stays HELD (pendingSpawn kept) and a
-		// `createRejected` lets the client keep the creator open and retry with another Handle.
 		const desired = msg.handle.trim() || pending.handle;
 		if (!validHandle(desired)) {
 			ws.send(encodeServerMessage({ t: 'createRejected', reason: 'invalid' }));
@@ -303,8 +226,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		}
 		const claim = claimHandle(accounts, pending.publicKey, desired);
 		if (!claim.ok) {
-			// The key owns no Handle yet and `desired` already passed `validHandle`, so the only
-			// failure left is `taken`; surface it and keep the hold for a retry.
 			ws.send(
 				encodeServerMessage({ t: 'createRejected', reason: claim.reason }),
 			);
@@ -312,10 +233,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		}
 		accounts = claim.registry;
 		pendingSpawn.delete(sessionId);
-		// Mint the Save from the claimed Handle + chosen Cosmetics and spawn into the starting
-		// Town through the shared `spawnNewAvatar` seam, persist the Save immediately (a
-		// significant durable event — the Handle claim must survive a restart), then join it to
-		// `sockets` so the next tick broadcasts the freshly placed Avatar.
 		const { world: next, save } = spawnNewAvatar(
 			world,
 			sessionId,
@@ -333,12 +250,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		return;
 	}
 	if (msg.t === 'setCosmetics') {
-		// In-game re-customization (#305, ADR 0028): change the live Avatar's look through the
-		// SAME apply path a fresh spawn uses (`applyCosmetics` → `withCosmetics`), gated on the
-		// Player standing in a Town. A request from a Field/Dungeon (or a pre-spawn session) is a
-		// silent no-op — the next snapshot re-affirms the unchanged look. On success persist
-		// immediately (a significant durable event — the new look must survive a restart) and let
-		// the next snapshot rebroadcast the appearance to everyone in the sender's Zone.
 		const res = applyCosmetics(world, sessionId, msg.cosmetics);
 		if (res.changed) {
 			world = res.world;
@@ -347,16 +258,12 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		return;
 	}
 	if (msg.t === 'chat') {
-		// Relay a Zone-local line to every session in the sender's Zone (#34),
-		// attributed to the sender's handshake handle. The sender is in its own
-		// Zone, so it sees its own message echoed back.
 		const text = msg.text.trim().slice(0, CHAT_MAX_LEN);
-		if (!text) return; // drop empty / whitespace-only lines
+		if (!text) return;
 		const me = zoneStateOf(world, sessionId)?.avatars.find(
 			(a) => a.sessionId === sessionId,
 		);
-		if (me === undefined) return; // chat before hello; ignore
-		// `sessionId` keys the bubble to the sender's sprite client-side (#59).
+		if (me === undefined) return;
 		const frame = encodeServerMessage({
 			t: 'chat',
 			sessionId,
@@ -368,15 +275,12 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		return;
 	}
 	if (msg.t === 'whisper') {
-		// A private, directed message routed world-wide to one online handle (#40) —
-		// unlike chat, it crosses Zones. Both sender and recipient see it.
 		const text = msg.text.trim().slice(0, CHAT_MAX_LEN);
-		if (!text) return; // drop empty / whitespace-only whispers
+		if (!text) return;
 		const from = handleOf(world, sessionId);
-		if (from === undefined) return; // whisper before hello; ignore
+		if (from === undefined) return;
 		const target = sessionByHandle(world, msg.to);
 		if (target === undefined) {
-			// Graceful, sender-only feedback for an unknown / offline handle.
 			ws.send(
 				encodeServerMessage({
 					t: 'notice',
@@ -385,7 +289,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			);
 			return;
 		}
-		// Echo the recipient's canonical handle (its real casing) back to the sender.
 		const to = handleOf(world, target) ?? msg.to;
 		const frame = encodeServerMessage({
 			t: 'whisper',
@@ -395,29 +298,16 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			text,
 		});
 		sockets.get(target)?.send(frame);
-		// The sender always gets its own echo, even when whispering itself (target
-		// === sessionId sends one frame, which is the desired single echo).
 		if (target !== sessionId) sockets.get(sessionId)?.send(frame);
 		return;
 	}
 	if (msg.t === 'emote') {
-		// A body-emote trigger (ADR 0020 §9): no longer relayed as a fire-and-forget
-		// event — it arms authoritative state on the Avatar that rides the next snapshot's
-		// action-state, so a late arrival still sees a held/looping pose. Validate the id
-		// and queue it; `tick` folds it into this session's intent (a one-shot edge, so it
-		// fires once rather than every tick). An unknown id is dropped.
 		if (!emoteById(msg.emote)) return;
-		if (zoneStateOf(world, sessionId) === undefined) return; // emote before hello
+		if (zoneStateOf(world, sessionId) === undefined) return;
 		pendingEmotes.set(sessionId, msg.emote);
 		return;
 	}
 	if (msg.t === 'sell') {
-		// Server-authoritative economy (#267, ADR 0025): the whole rule is the pure
-		// `applySell` — the seller must be at a Merchant, own the `itemId`, and the price is
-		// re-derived server-side. A rejected sell (unowned id / not at a Merchant) is a
-		// silent no-op; the next snapshot simply re-affirms the unchanged bag. A successful
-		// sell is a significant durable event (Gold moved), so flush it immediately (#236)
-		// instead of waiting for the periodic sweep.
 		const res = applySell(world, sessionId, msg.itemId);
 		if (res.sold) {
 			world = res.world;
@@ -426,13 +316,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		return;
 	}
 	if (msg.t === 'buy') {
-		// Server-authoritative economy (#273, ADR 0025): the whole rule is the pure
-		// `applyBuy` — the buyer must be at a Merchant, the `index` must name a real
-		// starter good, the price is re-derived server-side, and it's refused when the
-		// Player can't afford it. A rejected buy (bad index / unaffordable / not at a
-		// Merchant) is a silent no-op; the next snapshot re-affirms the unchanged bag. A
-		// successful buy is a significant durable event (Gold moved), so flush immediately
-		// (#236) instead of waiting for the periodic sweep.
 		const res = applyBuy(world, sessionId, msg.index);
 		if (res.bought) {
 			world = res.world;
@@ -440,10 +323,9 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		}
 		return;
 	}
-	// input: trust the reported position with only a loose bounds clamp (against the
-	// session's current Zone) — the server never re-simulates Avatar physics.
+	// input: the server trusts the reported position with only a loose bounds clamp — it never re-simulates physics.
 	const zs = zoneStateOf(world, sessionId);
-	if (zs === undefined) return; // input before hello; ignore
+	if (zs === undefined) return;
 	const terrain = zs.zone.terrain;
 	intents.set(sessionId, {
 		sessionId,
@@ -455,9 +337,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		onGround: msg.onGround,
 		attack: msg.attack,
 		guard: msg.guard,
-		// `interact` rides a one-shot edge queue, NOT this sticky intent (ADR 0027): the
-		// client latches each press and sends it true on exactly one frame, which we
-		// register here for `tick` to fold in once and consume.
 		interact: false,
 		dodge: msg.dodge,
 		skill: msg.skill,
@@ -465,10 +344,6 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 	if (msg.interact) pendingInteract.add(sessionId);
 }
 
-// Persist one online Avatar's durable state (#236): lift its ServerAvatar to a PlayerSave
-// and upsert it keyed by the account's canonical public key. Called on significant events
-// (logout) and the periodic flush — never per-tick. A session with no account key (never
-// happens post-auth) or no placed Avatar is skipped.
 function flushSession(sessionId: number) {
 	const key = onlineKeyBySession.get(sessionId);
 	if (key === undefined) return;
@@ -479,23 +354,17 @@ function flushSession(sessionId: number) {
 	store.save(key, saveFromAvatar(sa, TOWN_ZONE));
 }
 
-// Periodic durable flush of every online Avatar (ADR 0009 cadence — not per-tick).
 function flushAll() {
 	for (const sessionId of sockets.keys()) flushSession(sessionId);
 }
 
 function tick() {
-	// Fold any queued body emote (ADR 0020 §9) and interact edge (ADR 0027) onto this
-	// tick's intent, consuming each so it fires exactly once. A queued edge with no input
-	// this cycle waits (input flows continuously at ~30 Hz), so it isn't dropped.
 	const tickIntents = foldPendingEdges(
 		intents.values(),
 		pendingEmotes,
 		pendingInteract,
 	);
-	// Snapshot each session's Zone before the step so we can detect a transition INTO a
-	// Town this tick — reaching safety is a significant event (#236), a natural save point,
-	// so we flush just those sessions. This fires only on a Zone change, never per-tick.
+	// Snapshot each Zone before the step to detect a transition INTO a Town this tick (a save point).
 	const zoneBefore = new Map<number, string>();
 	for (const sessionId of sockets.keys()) {
 		const z = zoneOf(world, sessionId);
@@ -515,12 +384,7 @@ function tick() {
 		ws.send(encodeServerMessage(worldSnapshotFor(world, sessionId)));
 }
 
-// Tear down a departed session's server-side state (#236, #302): flush its durable Avatar
-// (a significant event — logout must not lose progress), drop it from every per-session map
-// (including a `pendingSpawn` hold if it left at the creator, authenticated but unspawned),
-// release its identity presence so the key can log in again (#235), and remove its Avatar
-// from the World. Extracted from the socket `close` handler so the lifecycle is exercised
-// under test, not only over a live socket. Idempotent for an unknown session.
+// Idempotent for an unknown session.
 function dropSession(sessionId: number) {
 	flushSession(sessionId);
 	sockets.delete(sessionId);
@@ -528,10 +392,7 @@ function dropSession(sessionId: number) {
 	pendingEmotes.delete(sessionId);
 	pendingInteract.delete(sessionId);
 	pendingAuth.delete(sessionId);
-	// A new account that disconnected at the creator (authenticated but never spawned): drop
-	// its hold so a reconnect starts clean. Its presence slot is released just below.
 	pendingSpawn.delete(sessionId);
-	// Release this identity's presence so the key can log in again (#235).
 	const key = onlineKeyBySession.get(sessionId);
 	if (key !== undefined) {
 		onlineKeyBySession.delete(sessionId);
@@ -540,18 +401,10 @@ function dropSession(sessionId: number) {
 	world = removeSession(world, sessionId);
 }
 
-// A read-only window onto the live World for tests (the module keeps `world` private, and
-// ES export bindings would expose the reassignment but not read cleanly): #302's server
-// tests drive `onMessage` with fake sockets and assert new accounts stay unspawned until
-// `createAvatar`.
 function currentWorld(): ServerWorld {
 	return world;
 }
 
-// The server bootstrap runs only when this module is the entrypoint (production / dev).
-// Under test the module is imported for its pure `onMessage`/`dropSession` seam, so the
-// listener, tick loop, and shutdown hooks stay dormant (#302 server tests drive the
-// handshake directly with fake sockets).
 if (import.meta.main) {
 	const server = Bun.serve<WsData>({
 		port: PORT,
@@ -564,17 +417,12 @@ if (import.meta.main) {
 				},
 			});
 			if (upgraded) return;
-			// Any plain HTTP GET answers 200 so Railway's healthcheck passes (ADR 0009).
-			// `/health` also reports this server's release Version (ADR 0012): the release
-			// pipeline polls it after deploy and refuses to publish the client unless the
-			// reported version matches the tag it just shipped.
 			const path = new URL(req.url).pathname;
 			if (path === '/health')
 				return Response.json({ status: 'ok', version: SERVER_VERSION });
 			return new Response('terminal-mmo server — connect over WebSocket');
 		},
 		websocket: {
-			// Enforce the connection caps at the socket level, before any handshake.
 			open(ws) {
 				const { ip } = ws.data;
 				const ipCount = perIp.get(ip) ?? 0;
@@ -603,17 +451,12 @@ if (import.meta.main) {
 			},
 			close(ws) {
 				const { sessionId, ip, counted } = ws.data;
-				// Release the cap slot only if this socket was admitted (a rejected one
-				// never incremented the counters).
 				if (counted) {
 					openConnections--;
 					const n = (perIp.get(ip) ?? 1) - 1;
 					if (n <= 0) perIp.delete(ip);
 					else perIp.set(ip, n);
 				}
-				// Logout is a significant event (#236): flush this Avatar's durable state and
-				// release its presence before it leaves the World, so nothing since the last
-				// periodic flush is lost and the key can reconnect.
 				dropSession(sessionId);
 				console.log(`session ${sessionId} left`);
 			},
@@ -623,10 +466,6 @@ if (import.meta.main) {
 	setInterval(tick, MS_PER_TICK);
 	setInterval(flushAll, FLUSH_MS);
 
-	// Clean shutdown (#269): on SIGTERM (Railway redeploy) or SIGINT (Ctrl-C) flush every online
-	// Avatar's dirty state and close the store before exit, so nothing since the last periodic
-	// flush — or the per-event flushes from logout / Town-entry / a sell (#267) — is lost. The
-	// hook is idempotent, so a repeated / racing signal never double-closes the store.
 	installShutdownHooks({ flushAll, close: () => store.close() });
 
 	console.log(
@@ -634,7 +473,4 @@ if (import.meta.main) {
 	);
 }
 
-// Test surface (#302): the message handler, the session teardown, and a read-only World
-// window, so a headless test can prove a new account is held unspawned until `createAvatar`
-// and a returning one is restored with no creator. Not part of the wire/runtime contract.
 export { currentWorld, dropSession, onMessage };

@@ -1,8 +1,3 @@
-// Headless render checks for the Avatar creator preview (#303). The pure geometry of
-// previewAvatar is covered in character-creator.test.ts; here we render the whole
-// CharacterCreator through the shared renderer (via @opentui/core/testing) and assert
-// the Nameplate — whose text IS the Handle (CONTEXT.md) — shows below the Avatar and
-// re-tints live as the colour is cycled.
 import { expect, test } from 'bun:test';
 import type { CapturedFrame, CapturedSpan } from '@opentui/core';
 import { createTestRenderer } from '@opentui/core/testing';
@@ -10,8 +5,6 @@ import { CharacterCreator, type CreatorKey } from '../src/character-creator';
 
 const HANDLE = 'Neo';
 
-// A menu keypress for the creator (#304 changed `key()` to take a structural CreatorKey rather
-// than a bare name): navigation keys carry no printable sequence.
 const menuKey = (name: string): CreatorKey => ({
 	name,
 	sequence: '',
@@ -33,9 +26,6 @@ async function mountCreator(nameplate: number) {
 	return { ...t, creator };
 }
 
-// The Nameplate is drawn as bare Handle glyphs on their own tinted backing, so the
-// whole Handle lands in a single captured span (its cells share one ink/bg, distinct
-// from the surrounding scene). Return it so a test can read its tint.
 function nameplateSpan(frame: CapturedFrame): CapturedSpan | undefined {
 	for (const line of frame.lines) {
 		for (const span of line.spans) {
@@ -48,10 +38,8 @@ function nameplateSpan(frame: CapturedFrame): CapturedSpan | undefined {
 test('the creator preview shows the Handle as a nameplate below the Avatar', async () => {
 	const { captureCharFrame, captureSpans } = await mountCreator(0);
 
-	// The Handle text is present in the rendered preview...
 	expect(captureCharFrame()).toContain(HANDLE);
 
-	// ...as a real nameplate span, tinted (a non-transparent ink over its backing).
 	const span = nameplateSpan(captureSpans());
 	expect(span).toBeDefined();
 	expect(span?.fg.a).toBeGreaterThan(0);
@@ -63,9 +51,7 @@ test('cycling the nameplate colour re-tints the preview nameplate in real time',
 	const before = nameplateSpan(captureSpans());
 	expect(before).toBeDefined();
 
-	// Focus the Nameplate field and cycle its colour one step. The ladder is now
-	// [name, hue, hat, nameplate] (the name field is row 0 — #315; Form is hidden), so
-	// reaching the nameplate row from the initial name-row focus takes three downs.
+	// ladder is [name, hue, hat, nameplate], so three downs reach Nameplate
 	creator.key(menuKey('down'));
 	creator.key(menuKey('down'));
 	creator.key(menuKey('down'));
@@ -74,7 +60,6 @@ test('cycling the nameplate colour re-tints the preview nameplate in real time',
 
 	const after = nameplateSpan(captureSpans());
 	expect(after).toBeDefined();
-	// Same Handle text, a visibly different tint — the whole point of the fix.
 	expect(after?.text).toBe(before?.text);
 	const changed =
 		after?.fg.r !== before?.fg.r ||

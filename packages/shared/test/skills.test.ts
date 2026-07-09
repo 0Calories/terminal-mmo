@@ -18,7 +18,6 @@ import {
 } from '../src';
 import { flatTerrain } from './helpers';
 
-// Player at x=20 facing right, one chaser directly in front on flat ground.
 function skillGame(level: number): GameState {
 	const y = GROUND_TOP - BOX.h;
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
@@ -48,12 +47,11 @@ function skillGame(level: number): GameState {
 	return { player, world: { zones: { [zone.id]: zone }, tick: 0 } };
 }
 
-// Player at x=20 facing right, flanked by a chaser on each side, both within the
-// AoE reach. Lets a both-sides Ground Pound be observed hitting front AND back.
+// The Avatar flanked by a chaser each side, both in AoE reach.
 function flankedGame(level: number): GameState {
 	const y = GROUND_TOP - BOX.h;
-	const front = spawnMonster('chaser', 2, 20 + BOX.w, y); // body to the right
-	const back = spawnMonster('chaser', 3, 20 - BOX.w, y); // body to the left
+	const front = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	const back = spawnMonster('chaser', 3, 20 - BOX.w, y);
 	const zone: Zone = {
 		id: 'field-01',
 		type: 'field',
@@ -85,8 +83,6 @@ const POWER: Input = { moveX: 0, jump: false, attack: false, skill: 1 };
 const POUND: Input = { moveX: 0, jump: false, attack: false, skill: 2 };
 
 test('the Active skills unlock on their capability-ladder rungs (Power Strike L3, Ground Pound L5)', () => {
-	// The skills read their unlock from the single capability table (ADR 0024 §5), so the
-	// ladder can never drift between the skill data and the progression module.
 	expect(POWER_STRIKE.unlockLevel).toBe(3);
 	expect(POWER_STRIKE.unlockLevel).toBe(CAPABILITY_UNLOCK['power-strike']);
 	expect(GROUND_POUND.unlockLevel).toBe(5);
@@ -107,22 +103,18 @@ test('Ground Pound is an AoE Warrior skill with an unlock level and a cooldown',
 });
 
 test('each Active skill carries its default key (u/i), matching the slot order', () => {
-	// The key is part of the skill data so the unlock line + HUD readout name one source.
 	expect(POWER_STRIKE.key).toBe('u');
 	expect(GROUND_POUND.key).toBe('i');
 });
 
 test('skillsUnlockedBetween surfaces only the rung(s) a level-up crossed', () => {
-	// Power Strike (L3): fired by 2→3, not by 1→2 (below) or 3→4 (already had it).
 	expect(skillsUnlockedBetween('warrior', 2, 3)).toEqual([POWER_STRIKE]);
 	expect(skillsUnlockedBetween('warrior', 1, 2)).toEqual([]);
 	expect(skillsUnlockedBetween('warrior', 3, 4)).toEqual([]);
-	// Ground Pound (L5): fired by 4→5.
 	expect(skillsUnlockedBetween('warrior', 4, 5)).toEqual([GROUND_POUND]);
 });
 
 test('skillsUnlockedBetween lists every rung crossed on a multi-level jump, in ladder order', () => {
-	// A 1→5 leap hands over BOTH Active skills, Power Strike (L3) before Ground Pound (L5).
 	expect(skillsUnlockedBetween('warrior', 1, 5)).toEqual([
 		POWER_STRIKE,
 		GROUND_POUND,
@@ -142,7 +134,7 @@ test('skillUnlocked gates on the unlock level', () => {
 test('skillHitbox is a forgiving frontal arc widened by the skill reach', () => {
 	const e = spawnAvatar(20, GROUND_TOP - BOX.h);
 	const hb = skillHitbox(e, POWER_STRIKE);
-	expect(hb.x).toBe(e.x + BOX.w); // in front, facing right
+	expect(hb.x).toBe(e.x + BOX.w);
 	expect(hb.w).toBe(POWER_STRIKE.reach);
 	expect(POWER_STRIKE.reach).toBeGreaterThan(BOX.w);
 });
@@ -150,9 +142,7 @@ test('skillHitbox is a forgiving frontal arc widened by the skill reach', () => 
 test('Ground Pound hitbox is centred on the Avatar, reaching equally to both sides', () => {
 	const e = spawnAvatar(20, GROUND_TOP - BOX.h);
 	const hb = skillHitbox(e, GROUND_POUND);
-	// reaches GROUND_POUND.reach to the left of the body...
 	expect(hb.x).toBe(e.x - GROUND_POUND.reach);
-	// ...and the same distance past the right edge of the body (symmetric)
 	expect(hb.x + hb.w).toBe(e.x + BOX.w + GROUND_POUND.reach);
 	expect(hb.w).toBe(BOX.w + 2 * GROUND_POUND.reach);
 });
@@ -180,7 +170,7 @@ test('Power Strike fires at its unlock level, hitting harder than a basic swing'
 	expect(activeZone(g.world, g.player.zoneId).monsters[0].hp).toBe(
 		MONSTER.chaserHp - POWER_STRIKE.damage,
 	);
-	expect(POWER_STRIKE.damage).toBeGreaterThan(8); // > basic melee
+	expect(POWER_STRIKE.damage).toBeGreaterThan(8);
 	expect(g.player.skillCooldowns?.[POWER_STRIKE.id]).toBe(
 		POWER_STRIKE.cooldown,
 	);
@@ -188,9 +178,8 @@ test('Power Strike fires at its unlock level, hitting harder than a basic swing'
 
 test('Power Strike cannot re-fire while on cooldown', () => {
 	let g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16);
-	g = step(g, POWER, 16); // pressed again while on cooldown
+	g = step(g, POWER, 16);
 	const cd = g.player.skillCooldowns?.[POWER_STRIKE.id] ?? 0;
-	// cooldown ticked down rather than reset to full — proves it did not re-fire
 	expect(cd).toBeGreaterThan(0);
 	expect(cd).toBeLessThan(POWER_STRIKE.cooldown);
 });
@@ -200,7 +189,7 @@ test('Power Strike re-fires once its cooldown elapses', () => {
 	// idle long enough for the cooldown to expire (dt clamped to 0.05s/tick)
 	for (let i = 0; i < 80; i++) g = step(g, IDLE, 50);
 	expect(g.player.skillCooldowns?.[POWER_STRIKE.id] ?? 0).toBe(0);
-	g = step(g, POWER, 16); // fires again → cooldown reset to full
+	g = step(g, POWER, 16);
 	expect(g.player.skillCooldowns?.[POWER_STRIKE.id]).toBe(
 		POWER_STRIKE.cooldown,
 	);
@@ -216,7 +205,6 @@ test('Ground Pound is locked below its unlock level — no effect, no cooldown',
 
 test('Ground Pound damages monsters on BOTH sides of the Avatar at once', () => {
 	const g = step(flankedGame(GROUND_POUND.unlockLevel), POUND, 16);
-	// one pound clears both flanking chasers (front + back) — crowd control
 	expect(activeZone(g.world, g.player.zoneId).monsters.length).toBe(0);
 	expect(g.player.skillCooldowns?.[GROUND_POUND.id]).toBe(
 		GROUND_POUND.cooldown,
@@ -224,8 +212,6 @@ test('Ground Pound damages monsters on BOTH sides of the Avatar at once', () => 
 });
 
 test('a frontal skill leaves the monster behind the Avatar untouched (contrast)', () => {
-	// Power Strike at the same flanked layout — only the front chaser is hit, the
-	// one behind keeps full HP, isolating Ground Pound's both-sides reach.
 	const g = step(flankedGame(POWER_STRIKE.unlockLevel), POWER, 16);
 	const back = activeZone(g.world, g.player.zoneId).monsters.find(
 		(m) => m.id === 3,
@@ -235,7 +221,7 @@ test('a frontal skill leaves the monster behind the Avatar untouched (contrast)'
 
 test('Ground Pound cannot re-fire while on cooldown', () => {
 	let g = step(flankedGame(GROUND_POUND.unlockLevel), POUND, 16);
-	g = step(g, POUND, 16); // pressed again while on cooldown
+	g = step(g, POUND, 16);
 	const cd = g.player.skillCooldowns?.[GROUND_POUND.id] ?? 0;
 	expect(cd).toBeGreaterThan(0);
 	expect(cd).toBeLessThan(GROUND_POUND.cooldown);
