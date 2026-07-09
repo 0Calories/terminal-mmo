@@ -20,7 +20,6 @@ const ZONE_TEXT = `{"type":"field","spawns":{"c":"slime"},"portals":{"P":{"targe
 
 describe('clampPreviewCam', () => {
 	it('clamps the camera within [0, gridDim - view]', () => {
-		// Grid 100x40, viewport 30x20 → max scroll (70, 20).
 		expect(clampPreviewCam({ x: -5, y: -5 }, 100, 40, 30, 20)).toEqual({
 			x: 0,
 			y: 0,

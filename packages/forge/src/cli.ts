@@ -16,7 +16,6 @@ import {
 import { renderZone } from './render';
 import { newZoneTemplate } from './template';
 
-/** Side-effect seam: where files live + how to emit output. Injected for tests. */
 export interface CliDeps {
 	root: string;
 	log: (line: string) => void;
@@ -33,7 +32,6 @@ const USAGE = [
 	'  forge zone rename <old> <new>     rename a Zone + rewrite every referencing Portal',
 ].join('\n');
 
-/** Run the `zone` CLI. Returns a process exit code (0 = clean). */
 export function run(argv: string[], deps: CliDeps): number {
 	const [cmd, ...rest] = argv;
 	switch (cmd) {
@@ -54,7 +52,6 @@ export function run(argv: string[], deps: CliDeps): number {
 const hasError = (diags: Diagnostic[]) =>
 	diags.some((d) => d.severity === 'error');
 
-/** Print diagnostics, or a clean bill of health when there are none. */
 function reportDiagnostics(diags: Diagnostic[], deps: CliDeps): void {
 	if (diags.length === 0) deps.log('✓ no issues');
 	else deps.log(formatDiagnostics(diags));
@@ -99,7 +96,6 @@ function cmdCheck(args: string[], deps: CliDeps): number {
 			message: `parse failed: ${l.parseError}`,
 		}));
 	const zones = loaded.flatMap((l) => (l.zone ? [l.zone] : []));
-	// Orphan glyphs need the raw source, which the parsed Zone has discarded.
 	const orphans = loaded.flatMap((l) =>
 		l.text ? findOrphanGlyphs(l.text, l.id) : [],
 	);
@@ -134,11 +130,6 @@ function cmdNew(args: string[], deps: CliDeps): number {
 	return 0;
 }
 
-/**
- * Rename a Zone: its id is its filename (ADR 0011), so this moves `<old>.zone` →
- * `<new>.zone` AND rewrites every Portal `target` that referenced the old id. The
- * in-editor name edit (#99) is the decorative display label; identity is renamed here.
- */
 function cmdRename(args: string[], deps: CliDeps): number {
 	const [oldId, newId] = args.filter((a) => !a.startsWith('-'));
 	if (!oldId || !newId) {
@@ -158,8 +149,7 @@ function cmdRename(args: string[], deps: CliDeps): number {
 		return 1;
 	}
 
-	// Rewrite referencing Portals first (while the old file still exists), then move
-	// the file. A Zone's own self-referencing Portal, if any, is rewritten too.
+	// Rewrite portals before moving the file (the old file must still exist).
 	let rewritten = 0;
 	for (const id of listZoneIds(deps.root)) {
 		const path = zonePath(deps.root, id);

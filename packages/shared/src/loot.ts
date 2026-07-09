@@ -29,9 +29,6 @@ export const RARITIES: RarityDef[] = [
 
 export const AFFIXES = ['str', 'dex', 'int', 'hp', 'crit', 'haste'];
 
-// Rarity → colour, the one shared source both the in-world Drop glyph and the on-pickup
-// readout paint from, so a tier reads identically everywhere. RGB (0–255) to feed both the
-// shared renderer and the client theme.
 export const RARITY_COLOR: Record<Rarity, { r: number; g: number; b: number }> =
 	{
 		common: { r: 176, g: 184, b: 196 },
@@ -41,24 +38,17 @@ export const RARITY_COLOR: Record<Rarity, { r: number; g: number; b: number }> =
 		legendary: { r: 255, g: 178, b: 68 },
 	};
 
-// The drop rules for one Zone (ADR 0024 §2/§8). `bases` is the base-type names this Zone
-// can drop (a subset/reorder of BASES); `dropChance` is P(a kill drops anything);
-// `rarities` optionally re-weights the tiers (defaults to RARITIES).
 export interface LootTable {
 	bases: string[];
 	dropChance: number;
 	rarities?: RarityDef[];
 }
 
-// The fallback table: full base list, every kill drops, default rarity weights — for a
-// Zone with no authored table.
 export const DEFAULT_LOOT_TABLE: LootTable = {
 	bases: BASES.map((b) => b.name),
 	dropChance: 1,
 };
 
-// Deeper Zones tilt the odds toward the higher tiers (still long-tailed) — a Field 3 or
-// Dungeon drop is worth more than a Field 1 one without ever guaranteeing a jackpot.
 const RICH_RARITIES: RarityDef[] = [
 	{ name: 'common', weight: 40, affixes: 1 },
 	{ name: 'uncommon', weight: 30, affixes: 2 },
@@ -67,9 +57,6 @@ const RICH_RARITIES: RarityDef[] = [
 	{ name: 'legendary', weight: 3, affixes: 5 },
 ];
 
-// The shipped per-Zone Loot tables (ADR 0024 §2/§3): Fields drop occasionally (never
-// pointless, just not efficient), the Dungeon is the reliable faucet (every kill, full
-// pool, boosted odds). Fields deepen with distance: wider pools, richer tiers.
 export const LOOT_TABLES: Record<string, LootTable> = {
 	'field-01': {
 		bases: ['Rusty Sword', 'Leather Vest', 'Copper Ring'],
@@ -91,26 +78,19 @@ export const LOOT_TABLES: Record<string, LootTable> = {
 	},
 };
 
-// Fail loudly at load if a table names a base that doesn't exist, so a typo can't silently
-// collapse to the first base at roll time.
 for (const [id, table] of Object.entries(LOOT_TABLES))
 	for (const name of table.bases)
 		if (!BASES.some((b) => b.name === name))
 			throw new Error(`loot table '${id}' references unknown base '${name}'`);
 
-/** The Loot table for a Zone id, falling back to the default table (ADR 0024 §2). */
 export function lootTableFor(zoneId: string): LootTable {
 	return LOOT_TABLES[zoneId] ?? DEFAULT_LOOT_TABLE;
 }
 
-/** The rarity + base label ("rare Iron Sword"), the one source both the Drop label and
- * the pickup log line read. */
 export function itemLabel(item: Pick<Item, 'rarity' | 'base'>): string {
 	return `${item.rarity} ${item.base}`;
 }
 
-/** Rolls a base + rarity + affixes from the table, threading RNG state. Returned item.id
- * is 0; callers assign a real id. */
 export function rollItem(
 	state: number,
 	level: number,
@@ -159,11 +139,6 @@ export function rollItem(
 	};
 }
 
-/**
- * Roll a Zone's drop for one kill: gate on `dropChance`, then roll the item on a hit.
- * Threads RNG state on BOTH paths, so a no-drop still advances the seed and the next kill
- * can't repeat the roll. `item` is null when nothing dropped.
- */
 export function rollDrop(
 	state: number,
 	level: number,
@@ -175,8 +150,6 @@ export function rollDrop(
 	return rollItem(state, level, table);
 }
 
-// Resolve a base-type name to its entry, falling back to the first base for an unknown
-// name so a malformed table can't crash a roll.
 function baseByName(name: string): BaseType {
 	return BASES.find((b) => b.name === name) ?? BASES[0];
 }

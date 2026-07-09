@@ -14,8 +14,6 @@ import {
 	STRIDE,
 } from '../src';
 
-// A neutral body state; each test perturbs the one signal it exercises so the
-// precedence ladder is isolated.
 const REST: BodyState = {
 	move: 'idle',
 	phase: null,
@@ -43,15 +41,12 @@ describe('FORMS registry', () => {
 	});
 
 	test('the demo ships a single shippable Form (Form 2 drafted out pending art rework)', () => {
-		// Form 2 (wisp) is drafted out of FORMS pending art rework; re-adding it restores the 2nd.
 		expect(FORMS.length).toBe(1);
 		for (let i = 0; i < FORMS.length; i++) expect(formById(i)).toBe(FORMS[i]);
 	});
 });
 
 describe('every Form honours the authoring contract (ADR 0020 §5)', () => {
-	// The extra Forms beyond the buddy, including the drafted-out one so its art stays
-	// valid and re-enabling is a one-line change.
 	const extraForms = [...FORMS.slice(1), ...DRAFTED_FORMS];
 
 	for (let i = 0; i < extraForms.length; i++) {
@@ -62,7 +57,6 @@ describe('every Form honours the authoring contract (ADR 0020 §5)', () => {
 				const walkA = formFrame(form, 'walkA');
 				const walkB = formFrame(form, 'walkB');
 				expect(idle).toBeInstanceOf(Sprite);
-				// walkA/walkB differ so the stride visibly alternates the feet.
 				expect(walkA).not.toBe(idle);
 				expect(walkB).not.toBe(idle);
 				expect(walkA.rows(1)).not.toEqual(walkB.rows(1));
@@ -82,7 +76,6 @@ describe('every Form honours the authoring contract (ADR 0020 §5)', () => {
 					expect(grid.w).toBe(idle.w);
 					expect(grid.h).toBe(idle.h);
 				}
-				// Same 9×3 footprint as the launch buddy, so world-scale is unchanged (ADR 0020).
 				expect(idle.w).toBe(formFrame(FORMS[0], 'idle').w);
 				expect(idle.h).toBe(formFrame(FORMS[0], 'idle').h);
 			});
@@ -99,16 +92,12 @@ describe('every Form honours the authoring contract (ADR 0020 §5)', () => {
 
 describe('a Form is purely cosmetic — zero combat effect (ADR 0020 §3)', () => {
 	test('a Form carries only art + anchors, never stats or combat numbers', () => {
-		// No HP/damage/mass/speed field exists, so picking a Form can never touch
-		// combat or platforming (ADR 0020 §3).
 		const allowed = new Set(['frames', 'grip', 'head', 'baseline']);
 		for (const form of FORMS)
 			for (const key of Object.keys(form)) expect(allowed.has(key)).toBe(true);
 	});
 
 	test('the logical collision box is one shared constant, independent of Form', () => {
-		// The Form only swaps decorative art; every Avatar collides through the same BOX
-		// so all Forms platform and fight identically (ADR 0020 §3).
 		expect(BOX).toEqual({ w: 5, h: 5 });
 	});
 });
@@ -119,7 +108,6 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 	});
 
 	test('the launch Form authors the required walk core as distinct grids (ADR 0020 §5)', () => {
-		// The two walk Poses differ from each other and from idle so the stride alternates.
 		const idle = formFrame(FORMS[0], 'idle');
 		const walkA = formFrame(FORMS[0], 'walkA');
 		const walkB = formFrame(FORMS[0], 'walkB');
@@ -128,7 +116,6 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 		expect(walkA).not.toBe(idle);
 		expect(walkB).not.toBe(idle);
 		expect(walkA.rows(1)).not.toEqual(walkB.rows(1));
-		// Same footprint as idle (9×3), so the body anchor is stable across the cycle.
 		expect(walkA.w).toBe(idle.w);
 		expect(walkA.h).toBe(idle.h);
 		expect(walkB.w).toBe(idle.w);
@@ -136,7 +123,6 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 	});
 
 	test('an unauthored Pose still falls back to idle (ADR 0020 §5)', () => {
-		// The combat leans / hurt aren't authored yet, so they resolve to idle for now.
 		const idle = formFrame(FORMS[0], 'idle');
 		for (const pose of ['windup', 'active', 'recovery', 'hurt'] as const)
 			expect(formFrame(FORMS[0], pose)).toBe(idle);
@@ -144,15 +130,13 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 
 	test('the launch Form authors the dance loop and the sit hold (ADR 0020 §8/§9)', () => {
 		const idle = formFrame(FORMS[0], 'idle');
-		// `dance` is a two-frame loop, distinct from idle and each other so the body cycles.
 		const d0 = formFrame(FORMS[0], 'emote:dance', 0);
 		const d1 = formFrame(FORMS[0], 'emote:dance', 1);
 		expect(d0).not.toBe(idle);
 		expect(d1.rows(1)).not.toEqual(d0.rows(1));
-		expect(formFrame(FORMS[0], 'emote:dance', 2).rows(1)).toEqual(d0.rows(1)); // wraps
+		expect(formFrame(FORMS[0], 'emote:dance', 2).rows(1)).toEqual(d0.rows(1));
 		expect(d0.w).toBe(idle.w);
 		expect(d0.h).toBe(idle.h);
-		// `sit` is a single sustained Pose: any frameIndex resolves to the one grid.
 		const s0 = formFrame(FORMS[0], 'emote:sit', 0);
 		expect(s0).not.toBe(idle);
 		expect(formFrame(FORMS[0], 'emote:sit', 1)).toBe(s0);
@@ -168,14 +152,12 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 		expect(f0).not.toBe(idle);
 		expect(f0.rows(1)).not.toEqual(idle.rows(1));
 		expect(f1.rows(1)).not.toEqual(f0.rows(1));
-		// frameIndex wraps into range, so an out-of-bounds sample is safe.
 		expect(formFrame(FORMS[0], 'emote:wave', 2).rows(1)).toEqual(f0.rows(1));
 		expect(f0.w).toBe(idle.w);
 		expect(f0.h).toBe(idle.h);
 	});
 
 	test('the launch Form authors a distinct jump Pose for airborne (ADR 0020 §6)', () => {
-		// The jump differs from idle and the walk cycle so being airborne is legible.
 		const idle = formFrame(FORMS[0], 'idle');
 		const jump = formFrame(FORMS[0], 'jump');
 		expect(jump).toBeInstanceOf(Sprite);
@@ -183,20 +165,17 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 		expect(jump.rows(1)).not.toEqual(idle.rows(1));
 		expect(jump.rows(1)).not.toEqual(formFrame(FORMS[0], 'walkA').rows(1));
 		expect(jump.rows(1)).not.toEqual(formFrame(FORMS[0], 'walkB').rows(1));
-		// Same 9×3 footprint as idle, so the grip/head anchors and logical box are stable.
 		expect(jump.w).toBe(idle.w);
 		expect(jump.h).toBe(idle.h);
 	});
 
 	test('the jump Pose mirrors left/right by facing (ADR 0020)', () => {
 		const jump = formFrame(FORMS[0], 'jump');
-		// Authored right-facing; facing left reflects the asymmetric pose, same width.
 		expect(jump.rows(-1)).not.toEqual(jump.rows(1));
 		expect(jump.rows(-1)[0].length).toBe(jump.w);
 	});
 
 	test('a Form without an authored jump Pose falls back to idle (ADR 0020 §5)', () => {
-		// The airborne rung shares the idle fallback, so a core-only Form still renders.
 		const idle = new Sprite('x', { defaultKey: 'p' });
 		const minimal: BodySprite = {
 			frames: { idle },
@@ -209,7 +188,6 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 	test('the walk Poses mirror left/right by facing (ADR 0020)', () => {
 		for (const pose of ['walkA', 'walkB'] as const) {
 			const grid = formFrame(FORMS[0], pose);
-			// Authored right-facing; facing left reflects the asymmetric stride, same width.
 			expect(grid.rows(-1)).not.toEqual(grid.rows(1));
 			expect(grid.rows(-1)[0].length).toBe(grid.w);
 		}
@@ -217,7 +195,6 @@ describe('formFrame (Pose resolution + idle fallback)', () => {
 
 	test('the body Pose mirrors left/right (the body grid carries the free mirror)', () => {
 		const idle = formFrame(FORMS[0], 'idle');
-		// Authored right-facing; facing left reflects the asymmetric body, same width.
 		expect(idle.rows(-1)).not.toEqual(idle.rows(1));
 		expect(idle.rows(-1)[0].length).toBe(idle.w);
 	});
@@ -242,7 +219,6 @@ describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
 
 	test('airborne selects jump, below combat but above walk', () => {
 		expect(bodyFrame({ ...REST, airborne: true }).poseId).toBe('jump');
-		// A swing in the air still poses the swing, not the jump.
 		expect(
 			bodyFrame({ ...REST, airborne: true, move: 'basic', phase: 'windup' })
 				.poseId,
@@ -262,7 +238,6 @@ describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
 		expect(
 			bodyFrame({ ...REST, moving: true, distanceX: 2 * STRIDE }).poseId,
 		).toBe('walkA');
-		// Gait derives from |Δx|, so it is direction-agnostic.
 		expect(
 			bodyFrame({ ...REST, moving: true, distanceX: -STRIDE }).poseId,
 		).toBe('walkB');
@@ -273,7 +248,6 @@ describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
 		expect(
 			bodyFrame({ ...REST, emote: 'wave', moving: true, distanceX: 0 }).poseId,
 		).toBe('walkA');
-		// Combat (and stagger) also outrank the emote — they sit higher on the ladder.
 		expect(
 			bodyFrame({ ...REST, emote: 'wave', move: 'basic', phase: 'active' })
 				.poseId,
@@ -281,7 +255,6 @@ describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
 	});
 
 	test('an emote frame is sampled from emoteT so the sweep animates (ADR 0020 §9)', () => {
-		// frameIndex = floor(emoteT * EMOTE_FPS), so the Pose advances as its timer runs.
 		expect(bodyFrame({ ...REST, emote: 'wave', emoteT: 0 }).frameIndex).toBe(0);
 		expect(
 			bodyFrame({ ...REST, emote: 'wave', emoteT: 1 / EMOTE_FPS }).frameIndex,
@@ -292,14 +265,12 @@ describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
 	});
 
 	test('a loop emote advances its frame by elapsed emoteT, a hold freezes on frame 0 (ADR 0020 §9)', () => {
-		// `dance` (loop) advances by elapsed emoteT, the deterministic clock every observer shares.
 		expect(bodyFrame({ ...REST, emote: 'dance', emoteT: 0 }).frameIndex).toBe(
 			0,
 		);
 		expect(
 			bodyFrame({ ...REST, emote: 'dance', emoteT: 3 / EMOTE_FPS }).frameIndex,
 		).toBe(3);
-		// `sit` (hold) is pinned to frame 0 no matter how long it has been held.
 		expect(bodyFrame({ ...REST, emote: 'sit', emoteT: 0 }).frameIndex).toBe(0);
 		expect(bodyFrame({ ...REST, emote: 'sit', emoteT: 99 }).frameIndex).toBe(0);
 	});

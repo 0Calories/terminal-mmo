@@ -1,7 +1,3 @@
-// Retained-UI shell for the audio options modal (ADR 0014/0015, #150). Holds only
-// selection state; mixer state is the SoundSystem's, so adjustments call through its
-// setters (which clamp and persist via onChange). Pure row/key logic is in audio-options.ts.
-
 import {
 	BoxRenderable,
 	type Renderable,
@@ -27,7 +23,6 @@ export class AudioOptions {
 		ctx: RenderContext,
 		private readonly sound: SoundSystem,
 	) {
-		// zIndex 20: above the HUD (z10), same layer as the Shop modal.
 		this.container = new BoxRenderable(ctx, {
 			position: 'absolute',
 			top: 0,
@@ -90,8 +85,6 @@ export class AudioOptions {
 		this.container.visible = false;
 	}
 
-	// Adjustments and mute route through the live SoundSystem (persists via onChange);
-	// selection is local.
 	key(name: string): void {
 		const action = audioKeyAction(name);
 		switch (action.kind) {

@@ -9,19 +9,12 @@ import {
 	step,
 	type ZoneScene,
 } from '@mmo/shared';
-// Type-only import is erased at compile time, so it never loads opentui's
-// runtime — the pure helpers below stay testable without a terminal.
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import { loadCatalogs, loadZoneSet } from './io';
 import { type Cam, clampPreviewCam } from './preview';
 
-// --- Pure helpers (unit-tested; the opentui shell below is manual per PRD) ----
-
-/**
- * The active Zone as a renderable scene. The Player Avatar is drawn on top by the
- * shell (ADR 0003), so it is NOT in `entities` here.
- */
+// Avatar is drawn on top by the shell, so it's not in `entities` here.
 export function playSceneOf(game: GameState): ZoneScene {
 	const zone = game.world.zones[game.player.zoneId];
 	return {
@@ -32,10 +25,6 @@ export function playSceneOf(game: GameState): ZoneScene {
 	};
 }
 
-/**
- * Centre the camera on a world point, clamped to the grid so blank space never scrolls
- * in past an edge. Kept as a float — the renderer rounds at draw time.
- */
 export function followCam(
 	cx: number,
 	cy: number,
@@ -53,7 +42,6 @@ export function followCam(
 	);
 }
 
-/** A one-line status header: active Zone, Player vitals, and the control hints. */
 export function playStatusLine(game: GameState): string {
 	const z = game.world.zones[game.player.zoneId];
 	const a = game.player.avatar;
@@ -61,10 +49,7 @@ export function playStatusLine(game: GameState): string {
 	return `zone ${z.id}  hp ${Math.ceil(a.hp)}/${a.maxHp}  lv ${p.level}  gold ${p.gold}  ·  arrows/ad move · up/space jump · j attack · e portal · q quit`;
 }
 
-// --- Interactive shell (opentui; not unit-tested, validated by eye) -----------
-
-// Fallback timeout for terminals without Kitty key-release reporting: without
-// release events a held key would stick, so it's dropped after this idle.
+// Terminals without Kitty release events: a held key sticks, so drop it after this idle.
 const HELD_MS = 220;
 
 type Action = 'left' | 'right' | 'jump' | 'attack' | 'interact';
@@ -90,8 +75,6 @@ function actionFor(name: string): Action | null {
 	}
 }
 
-// A minimal held-key tracker mapping the keyboard to the sim's `Input` — view-layer
-// glue, not physics or combat, which stay in the shared `step`.
 class PlayInput {
 	private held = new Set<Action>();
 	private seen = new Map<Action, number>();
@@ -126,11 +109,6 @@ class PlayInput {
 	}
 }
 
-/**
- * `zone play <id>`: boot the authored Zone set into the offline sim and drop a
- * controllable Avatar into `<id>`. Reuses the shared renderer (#56) and `step`, so no
- * physics/combat is duplicated. Long-lived: opentui owns the lifecycle (ctrl-c / q).
- */
 export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 	const id = args[0];
 	if (!id) {
@@ -139,8 +117,6 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 		return;
 	}
 
-	// Load the whole set so portal travel between Zones works; a broken file is
-	// skipped (with a warning) rather than aborting the playtest.
 	const catalogs = loadCatalogs(deps.root);
 	const loaded = loadZoneSet(deps.root, catalogs);
 	for (const l of loaded)
@@ -177,10 +153,7 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 			);
 			const scene = playSceneOf(game);
 			renderZoneScene(buf, scene, cam, style);
-			// The local Avatar is drawn on top of the z-sorted scene (ADR 0003), planting
-			// onto the same terrain renderZoneScene drew (ADR 0021).
 			drawEntitySprite(buf, a, cam, style, scene.terrain);
-			// Status header on row 0 (sky in most Zones), so it doesn't hide terrain.
 			const status = playStatusLine(game);
 			for (let x = 0; x < buf.width; x++)
 				buf.setCell(x, 0, ' ', style.paletteDefault, style.terrainBg);
@@ -193,7 +166,6 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 		targetFps: 60,
 		exitOnCtrlC: true,
 		backgroundColor: '#10121a',
-		// Report RELEASE events for continuous held movement.
 		useKittyKeyboard: { events: true },
 	});
 	renderer.root.add(new PlayRenderable(renderer));

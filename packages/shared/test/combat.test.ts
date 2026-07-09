@@ -119,8 +119,6 @@ describe('combatEventAt', () => {
 	});
 
 	test('a `break` is source-less even if a source is passed — it reaches everyone', () => {
-		// Only a predicted `hit` is suppressed back to its attacker; the big moments are
-		// source-less by construction, so the field never attaches (ADR 0013 §3).
 		expect(combatEventAt('break', monster(0, 0), 1, 6)).not.toHaveProperty(
 			'source',
 		);
@@ -157,7 +155,7 @@ describe('entityTint', () => {
 			type: 'player',
 			cosmetics: { hue: 3, hat: 0, nameplate: 0, form: 0 },
 		});
-		expect(entityTint(a)).toEqual({ r: 90, g: 170, b: 255 }); // HUES[3] = blue
+		expect(entityTint(a)).toEqual({ r: 90, g: 170, b: 255 });
 	});
 
 	test('a stray cosmetic hue falls back to the default amber body', () => {
@@ -165,7 +163,7 @@ describe('entityTint', () => {
 			type: 'player',
 			cosmetics: { hue: 999, hat: 0, nameplate: 0, form: 0 },
 		});
-		expect(entityTint(a)).toEqual({ r: 255, g: 150, b: 40 }); // HUES[0]
+		expect(entityTint(a)).toEqual({ r: 255, g: 150, b: 40 });
 	});
 });
 
@@ -175,7 +173,7 @@ describe('meleeProfileOf', () => {
 		expect(p).not.toBeNull();
 		expect(p?.damage).toBe(MONSTER.meleeDamage);
 		expect(p?.range).toBe(MONSTER.meleeRange);
-		expect(p?.commitCd).toBe(0); // the chaser re-commits the moment it recovers
+		expect(p?.commitCd).toBe(0);
 	});
 
 	test('the brute is a melee committer whose profile is heavier and slower than the chaser', () => {
@@ -185,7 +183,6 @@ describe('meleeProfileOf', () => {
 		expect(b?.damage).toBe(BRUTE.meleeDamage);
 		expect(b?.poise).toBe(BRUTE.meleePoise);
 		expect(b?.range).toBe(BRUTE.meleeRange);
-		// Distinct from the chaser: it hits harder and pauses between swings.
 		expect(b?.damage).toBeGreaterThan(c?.damage ?? 0);
 		expect(b?.poise).toBeGreaterThan(c?.poise ?? 0);
 		expect(b?.commitCd).toBeGreaterThan(0);
@@ -199,8 +196,6 @@ describe('meleeProfileOf', () => {
 
 describe('deathEvent', () => {
 	test('projects to a radial (dir 0) gore at the entity centre, high intensity, entity-tinted', () => {
-		// A `death` projects to a chunkier, entity-coloured burst: same centre, radial dir,
-		// high intensity, the Monster's body tint (ADR 0019, #139).
 		const m = monster(10, 4, { type: 'chaser' });
 		expect(effectsOf(deathEvent(m))).toEqual([
 			{
@@ -226,7 +221,7 @@ describe('deathEvent', () => {
 				y: 4 + BOX.h / 2,
 				intensity: COMBAT.deathBurstIntensity,
 				dir: 0,
-				tint: { r: 90, g: 170, b: 255 }, // HUES[3] = blue
+				tint: { r: 90, g: 170, b: 255 },
 			},
 		]);
 	});
@@ -255,8 +250,6 @@ describe('swingHitsTarget', () => {
 	});
 
 	test('the registry, NOT hurtT, is the gate — an i-framed target still strikes', () => {
-		// The bug ADR 0019 fixes: a player hit never sets a Monster's hurtT, so a hurtT gate
-		// never closed and predicted blood sprayed every frame. The registry is the gate.
 		const target = monster(hb.x, hb.y, { id: 7, hurtT: 0.3 });
 		expect(swingHitsTarget(hb, new Set(), target)).toBe(true);
 	});
@@ -269,7 +262,6 @@ describe('swingHitsTarget', () => {
 });
 
 describe('resolveHitsOnMonsters', () => {
-	// A player-faction melee Strike whose active box is `hitbox`.
 	const strikeAt = (
 		hitbox: ReturnType<typeof entityBox>,
 		over: Partial<Strike> = {},
@@ -293,9 +285,9 @@ describe('resolveHitsOnMonsters', () => {
 			[strikeAt(entityBox(m))],
 			swingHits,
 		);
-		expect(monsters[0].hp).toBe(12); // 20 - 8 damage
-		expect(swingHits.get(7)?.has(1)).toBe(true); // recorded in the keyed side-table
-		expect(effects.length).toBeGreaterThan(0); // a blood Effect at the hit
+		expect(monsters[0].hp).toBe(12);
+		expect(swingHits.get(7)?.has(1)).toBe(true);
+		expect(effects.length).toBeGreaterThan(0);
 	});
 
 	test('a non-overlapping monster is a no-op', () => {
@@ -337,7 +329,7 @@ describe('resolveHitsOnMonsters', () => {
 	});
 
 	test('a Poise break Staggers + knocks back the monster and emits an impact', () => {
-		// Drain the pool to the brink so this hit breaks it (poiseDamage 6 > 5 remaining).
+		// poise 5 < the 6 poiseDamage, so this hit empties the pool and breaks it.
 		const m = monster(10, 0, { id: 1, hp: 20, poise: 5 });
 		const swingHits = ledger();
 		const { monsters, effects } = resolveHitsOnMonsters(
@@ -346,7 +338,7 @@ describe('resolveHitsOnMonsters', () => {
 			swingHits,
 		);
 		expect(monsters[0].hp).toBe(12);
-		expect(monsters[0].stunT).toBeGreaterThan(0); // Hitstun from the break
+		expect(monsters[0].stunT).toBeGreaterThan(0);
 		expect(effects.some((e) => e.kind === 'impact')).toBe(true);
 	});
 });
@@ -372,11 +364,9 @@ describe('predictHits', () => {
 		expect(events[0]).not.toHaveProperty('source');
 	});
 
-	// The headline fix: a swing's active window spans many frames, but the per-swing
-	// registry yields exactly ONE predicted hit per target — no rapid-fire spray (ADR 0019).
 	test('a multi-tick active window yields exactly one hit per target per swing', () => {
 		const target = monster(hb.x, hb.y, { id: 7 });
-		const swingHits = new Set<number>(); // cleared on swingStarted; persists across active ticks
+		const swingHits = new Set<number>();
 		let total = 0;
 		for (let tick = 0; tick < 14; tick++) {
 			const events = predictHits(hb, 1, 8, swingHits, [target]);
@@ -384,7 +374,6 @@ describe('predictHits', () => {
 			for (const e of events) swingHits.add(e.targetId);
 		}
 		expect(total).toBe(1);
-		// A fresh swing clears the registry → the SAME target can be hit again.
 		swingHits.clear();
 		expect(predictHits(hb, 1, 8, swingHits, [target])).toHaveLength(1);
 	});
@@ -407,15 +396,12 @@ describe('predictHits', () => {
 });
 
 describe('resolveCombat', () => {
-	// An Avatar-shaped Entity (the monster() factory makes a generic Entity).
 	const avatar = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, ...over });
 
 	test('starting a basic swing loads the full phase sequence and is in wind-up (no hitbox yet)', () => {
 		const a = avatar({ attackT: 0 });
 		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.016);
-		// The swing commits but the hitbox is NOT live during wind-up — it goes live later,
-		// in the active phase (ADR 0017 §1).
 		expect(r.attackT).toBe(SWING_TOTAL);
 		expect(swingPhase(r.attackT)).toBe('windup');
 		expect(r.hitbox).toBeNull();
@@ -424,7 +410,6 @@ describe('resolveCombat', () => {
 
 	test('the melee hitbox is live ONLY during the active phase', () => {
 		const { windup, active } = COMBAT.swing;
-		// Mid-active: attackT positioned so elapsed lands inside the active window.
 		const inActive = SWING_TOTAL - (windup + active / 2);
 		const r1 = resolveCombat(
 			avatar({ attackT: inActive }),
@@ -438,7 +423,6 @@ describe('resolveCombat', () => {
 		expect(r1.hitbox).toEqual(meleeHitbox(avatar()));
 		expect(r1.damage).toBe(COMBAT.meleeDamage);
 
-		// Mid-recovery: past the active window — exposed, no hitbox.
 		const inRecovery = SWING_TOTAL - (windup + active + 0.01);
 		const r2 = resolveCombat(
 			avatar({ attackT: inRecovery }),
@@ -453,12 +437,10 @@ describe('resolveCombat', () => {
 	});
 
 	test('a fresh attack press mid-swing does not restart the swing (stays committed)', () => {
-		// Holding attack mid-recovery must not re-trigger — the machine runs to completion
-		// first.
 		const a = avatar({ attackT: 0.1 });
 		const before = a.attackT;
 		const r = resolveCombat(a, {}, 1, 'warrior', { attack: true }, 0.02);
-		expect(r.attackT).toBeCloseTo(before - 0.02, 5); // just decayed, not reset
+		expect(r.attackT).toBeCloseTo(before - 0.02, 5);
 		expect(r.attackT).toBeLessThan(SWING_TOTAL);
 	});
 
@@ -470,7 +452,6 @@ describe('resolveCombat', () => {
 
 	test('a skill is gated when level < unlockLevel', () => {
 		const a = avatar({ attackT: 0 });
-		// GROUND_POUND unlocks at level 5; slot 2 = GROUND_POUND.
 		const r = resolveCombat(
 			a,
 			{},
@@ -496,7 +477,6 @@ describe('resolveCombat', () => {
 		);
 		expect(r.skillFired).toBeUndefined();
 		expect(r.hitbox).toBeNull();
-		// the on-cooldown timer still decays
 		expect(r.cooldowns[POWER_STRIKE.id]).toBeCloseTo(0.9, 5);
 	});
 
@@ -542,8 +522,8 @@ describe('resolveCombat', () => {
 			0.2,
 		);
 		expect(r.hitbox).toBeNull();
-		expect(r.attackT).toBe(0); // clamped at 0
-		expect(r.cooldowns[POWER_STRIKE.id]).toBe(0); // clamped at 0
+		expect(r.attackT).toBe(0);
+		expect(r.cooldowns[POWER_STRIKE.id]).toBe(0);
 	});
 
 	test('is pure — does not mutate the input cooldowns map', () => {
@@ -561,29 +541,29 @@ describe('swing phase machine', () => {
 	test('attackT walks wind-up → active → recovery → idle as it counts down', () => {
 		const { windup, active, recovery } = COMBAT.swing;
 		// attackT = time REMAINING; elapsed = SWING_TOTAL - attackT.
-		expect(swingPhase(SWING_TOTAL)).toBe('windup'); // elapsed 0
+		expect(swingPhase(SWING_TOTAL)).toBe('windup');
 		expect(swingPhase(SWING_TOTAL - windup / 2)).toBe('windup');
 		expect(swingPhase(SWING_TOTAL - windup - active / 2)).toBe('active');
 		expect(swingPhase(SWING_TOTAL - windup - active - recovery / 2)).toBe(
 			'recovery',
 		);
-		expect(swingPhase(0)).toBeNull(); // idle
+		expect(swingPhase(0)).toBeNull();
 		expect(swingPhase(-1)).toBeNull();
 	});
 
 	test('meleeActive is true exactly when the phase is active', () => {
 		const { windup, active } = COMBAT.swing;
-		expect(meleeActive(SWING_TOTAL)).toBe(false); // wind-up
-		expect(meleeActive(SWING_TOTAL - windup - active / 2)).toBe(true); // active
-		expect(meleeActive(0.001)).toBe(false); // recovery tail
-		expect(meleeActive(0)).toBe(false); // idle
+		expect(meleeActive(SWING_TOTAL)).toBe(false);
+		expect(meleeActive(SWING_TOTAL - windup - active / 2)).toBe(true);
+		expect(meleeActive(0.001)).toBe(false);
+		expect(meleeActive(0)).toBe(false);
 	});
 
 	test('swingProgress runs 0→1 within each phase and is 0 when idle', () => {
 		const { windup } = COMBAT.swing;
-		expect(swingProgress(SWING_TOTAL)).toBeCloseTo(0, 5); // start of wind-up
+		expect(swingProgress(SWING_TOTAL)).toBeCloseTo(0, 5);
 		expect(swingProgress(SWING_TOTAL - windup / 2)).toBeCloseTo(0.5, 5);
-		expect(swingProgress(0)).toBe(0); // idle
+		expect(swingProgress(0)).toBe(0);
 	});
 
 	test('actionStateOf derives an idle action for a non-swinging entity', () => {
@@ -605,10 +585,10 @@ describe('swing phase machine', () => {
 describe('swing pose realization', () => {
 	test('swingPoseGlyph mirrors the diagonal with facing and keeps the level bar', () => {
 		expect(swingPoseGlyph('windup', 1)).toBe('╲');
-		expect(swingPoseGlyph('windup', -1)).toBe('╱'); // mirrored
+		expect(swingPoseGlyph('windup', -1)).toBe('╱');
 		expect(swingPoseGlyph('recovery', 1)).toBe('╱');
-		expect(swingPoseGlyph('recovery', -1)).toBe('╲'); // mirrored
-		expect(swingPoseGlyph('active', 1)).toBe('─'); // symmetric
+		expect(swingPoseGlyph('recovery', -1)).toBe('╲');
+		expect(swingPoseGlyph('active', 1)).toBe('─');
 		expect(swingPoseGlyph('active', -1)).toBe('─');
 	});
 
@@ -620,13 +600,10 @@ describe('swing pose realization', () => {
 			x: 20 + BOX.w,
 			y: 4 + BOX.h - 1,
 		});
-		// Facing left places the accent on the other side.
 		const left = monster(20, 4, { type: 'player', facing: -1 });
 		expect(swingPoseCell(left, 'windup')).toEqual({ x: 19, y: 4 });
 	});
 });
-
-// --- Poise + hit-reaction (ADR 0017 §2/§3) ----------------------------------
 
 describe('applyPoiseDamage', () => {
 	test('chips the pool without breaking when the hit does not empty it', () => {
@@ -637,8 +614,6 @@ describe('applyPoiseDamage', () => {
 	});
 
 	test('accumulates across hits and breaks only when the pool empties', () => {
-		// Pure accumulation (no regen between hits): the pool depletes by poiseDamage each
-		// connect and breaks when it empties.
 		const hitsToBreak = Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage);
 		let poise: number = COMBAT.poise.max;
 		let brokeAt = -1;
@@ -647,12 +622,11 @@ describe('applyPoiseDamage', () => {
 			if (r.broke && brokeAt < 0) brokeAt = i;
 			poise = r.poise;
 		}
-		expect(brokeAt).toBe(hitsToBreak); // earlier hits chip; only the last one breaks
+		expect(brokeAt).toBe(hitsToBreak);
 		expect(poise).toBe(COMBAT.poise.max); // a break refilled the pool
 	});
 
 	test('a low-poise-damage attacker never breaks a high-poise target', () => {
-		// A trivial 1-poise chip against a full pool: many hits, never a break.
 		let poise: number = COMBAT.poise.max;
 		for (let i = 0; i < 10; i++) {
 			const r = applyPoiseDamage(monster(0, 0, { poise }), 1);
@@ -668,15 +642,11 @@ describe('applyPoiseDamage', () => {
 	});
 
 	test('a high-poise entity refills to its OWN poiseMax on a break, not the default', () => {
-		// The brute's big pool makes it the poise-tank: a hit that would break a default
-		// entity only chips it, and a break refills to ITS ceiling.
 		const brute = monster(0, 0, { type: 'brute', poiseMax: BRUTE.poiseMax });
 		expect(BRUTE.poiseMax).toBeGreaterThan(COMBAT.poise.max);
-		// An absent pool starts full at the entity's own max.
 		const chip = applyPoiseDamage(brute, COMBAT.poiseDamage);
 		expect(chip.broke).toBe(false);
 		expect(chip.poise).toBe(BRUTE.poiseMax - COMBAT.poiseDamage);
-		// A hit that empties the pool breaks and refills to the entity's own ceiling.
 		const broken = applyPoiseDamage(
 			monster(0, 0, { type: 'brute', poiseMax: BRUTE.poiseMax, poise: 1 }),
 			COMBAT.poiseDamage,
@@ -691,19 +661,16 @@ describe('superArmorActive', () => {
 		expect(superArmorActive(monster(0, 0, { attackT: SWING_TOTAL }))).toBe(
 			true,
 		);
-		// Mid-active (past wind-up) and idle both lack super-armor.
 		const active = SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
 		expect(superArmorActive(monster(0, 0, { attackT: active }))).toBe(false);
 		expect(superArmorActive(monster(0, 0, { attackT: 0 }))).toBe(false);
 	});
 
 	test('wind-up super-armor chips poise but suppresses the break (heavy swing not interrupted)', () => {
-		// A nearly-empty pool that WOULD break, but the entity is mid-wind-up: the hit
-		// chips it to 0 without staggering, so the committed heavy swing survives.
 		const heavy = monster(0, 0, { poise: 4, attackT: SWING_TOTAL });
 		const r = applyPoiseDamage(heavy, COMBAT.poiseDamage);
 		expect(r.broke).toBe(false);
-		expect(r.poise).toBe(0); // chipped to empty, not refilled — next hit out of wind-up breaks
+		expect(r.poise).toBe(0); // chipped to empty, not refilled — break suppressed
 	});
 });
 
@@ -712,7 +679,6 @@ describe('regenPoise', () => {
 		expect(regenPoise(monster(0, 0, { poise: 10 }), 0.1)).toBeCloseTo(
 			10 + COMBAT.poise.regen * 0.1,
 		);
-		// Already full stays full; a large dt cannot overshoot the cap.
 		expect(regenPoise(monster(0, 0, { poise: COMBAT.poise.max }), 10)).toBe(
 			COMBAT.poise.max,
 		);
@@ -720,11 +686,9 @@ describe('regenPoise', () => {
 
 	test('a high-poise entity regenerates and clamps to its OWN max, above the default', () => {
 		const brute = { type: 'brute' as const, poiseMax: BRUTE.poiseMax };
-		// It refills past the default cap toward its own larger ceiling…
 		expect(
 			regenPoise(monster(0, 0, { ...brute, poise: BRUTE.poiseMax - 1 }), 10),
 		).toBe(BRUTE.poiseMax);
-		// …and a pool above the default does not get clamped down to it.
 		expect(
 			regenPoise(monster(0, 0, { ...brute, poise: COMBAT.poise.max + 4 }), 0),
 		).toBe(COMBAT.poise.max + 4);
@@ -758,7 +722,6 @@ describe('a break projects through effectsOf to a heavier impact', () => {
 					kind: 'impact',
 					x: 10 + BOX.w / 2,
 					y: 4 + BOX.h / 2,
-					// meatier than a chip blood of the same damage — the Poise-break bump.
 					intensity: COMBAT.meleeDamage + COMBAT.poise.max,
 					dir: 1,
 				},
@@ -779,21 +742,15 @@ describe('resolveCombat swingStarted', () => {
 			0.016,
 		);
 		expect(fresh.swingStarted).toBe(true);
-		// Still mid-swing on the next tick: holding attack does not restart it.
 		const mid = monster(20, 0, { type: 'player', attackT: fresh.attackT });
 		const cont = resolveCombat(mid, {}, 1, 'warrior', { attack: true }, 0.016);
 		expect(cont.swingStarted).toBe(false);
 	});
 });
 
-// The shared per-Avatar combat fold both the server and the client's prediction run, so
-// the previously-untested client fold path is covered here. Assert external behaviour,
-// not internal assignment order (ADR 0022).
 describe('stepAvatarCombat', () => {
 	const avatar = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, ...over });
-	// Default to a cap-level Avatar so every verb is unlocked; individual cases override
-	// `level` to test the gating (ADR 0024 §5).
 	const ctx = (over: Partial<Parameters<typeof stepAvatarCombat>[2]> = {}) => ({
 		level: PROGRESSION.levelCap,
 		cls: 'warrior' as const,
@@ -803,8 +760,6 @@ describe('stepAvatarCombat', () => {
 	});
 
 	test('a fresh swing loads the phase sequence and RESETS swingHits', () => {
-		// Stale hit ids from a prior swing: a fresh swing must drop them so it can connect
-		// again (ADR 0017 §2).
 		const a = avatar({ attackT: 0, swingHits: [7, 9] });
 		const r = stepAvatarCombat(a, { attack: true }, ctx());
 		expect(r.avatar.attackT).toBe(SWING_TOTAL);
@@ -813,8 +768,6 @@ describe('stepAvatarCombat', () => {
 	});
 
 	test('an in-flight swing KEEPS its swingHits so it lands once per target', () => {
-		// Mid-swing: holding attack does not restart it, so the already-struck registry
-		// persists.
 		const a = avatar({ attackT: 0.1, swingHits: [7, 9] });
 		const r = stepAvatarCombat(a, { attack: true }, ctx({ dt: 0.02 }));
 		expect(r.avatar.swingHits).toEqual([7, 9]);
@@ -822,7 +775,6 @@ describe('stepAvatarCombat', () => {
 
 	test('a live active swing projects ONE player-faction melee Strike; recovery projects none', () => {
 		const { windup, active } = COMBAT.swing;
-		// Mid-active: dt 0 keeps attackT inside the active window.
 		const inActive = SWING_TOTAL - (windup + active / 2);
 		const live = stepAvatarCombat(
 			avatar({ id: 42, attackT: inActive }),
@@ -840,7 +792,6 @@ describe('stepAvatarCombat', () => {
 		expect(s.facing).toBe(1);
 		expect(s.poiseDamage).toBe(COMBAT.poiseDamage);
 
-		// Mid-recovery: past the active window, no live box → no Strike.
 		const inRecovery = SWING_TOTAL - (windup + active + 0.01);
 		const dead = stepAvatarCombat(
 			avatar({ attackT: inRecovery }),
@@ -852,8 +803,6 @@ describe('stepAvatarCombat', () => {
 	});
 
 	test('the Dodge i-frame + cooldown timers fold deterministically on a fresh hop', () => {
-		// Grounded + moving, off cooldown: the gate arms both timers to full (the hop
-		// impulse is the caller's; this only folds the timing).
 		const r = stepAvatarCombat(
 			avatar({ onGround: true, dodgeT: 0, dodgeCdT: 0 }),
 			{ dodge: true },
@@ -870,8 +819,6 @@ describe('stepAvatarCombat', () => {
 	});
 
 	test('skill cooldowns fold onto the Avatar: a fired skill arms its cooldown, others decay', () => {
-		// Cooldowns live on the Entity: seed them there, read them back off the folded
-		// avatar (ADR 0022 slice 2).
 		const a = avatar({
 			attackT: 0,
 			skillCooldowns: { [GROUND_POUND.id]: 2.0 },
@@ -892,18 +839,14 @@ describe('stepAvatarCombat', () => {
 			skillCooldowns: cds,
 		});
 		const r = stepAvatarCombat(a, { attack: true, skill: 1 }, ctx());
-		// Inputs untouched...
 		expect(a.attackT).toBe(0);
 		expect(a.swingHits).toEqual([3]);
 		expect(cds[POWER_STRIKE.id]).toBe(0.5);
-		// ...and the returned Avatar is a distinct object carrying the fold.
 		expect(r.avatar).not.toBe(a);
 		expect(r.avatar.attackT).toBe(SWING_TOTAL);
 		expect(r.avatar.skillCooldowns).not.toBe(cds);
 	});
 });
-
-// --- Dodge (ADR 0017 §5) ----------------------------------------------------
 
 describe('dodge phase machine', () => {
 	const { active, recovery } = COMBAT.dodge;
@@ -915,11 +858,11 @@ describe('dodge phase machine', () => {
 	});
 
 	test('dodgePhase walks active → recovery → null by time remaining', () => {
-		expect(dodgePhase(0)).toBeNull(); // not dodging
-		expect(dodgePhase(DODGE_TOTAL)).toBe('active'); // just started
-		expect(dodgePhase(DODGE_TOTAL - active + 0.001)).toBe('active'); // end of i-frames
-		expect(dodgePhase(DODGE_TOTAL - active - 0.001)).toBe('recovery'); // exposed tail
-		expect(dodgePhase(0.0001)).toBe('recovery'); // last sliver is recovery
+		expect(dodgePhase(0)).toBeNull();
+		expect(dodgePhase(DODGE_TOTAL)).toBe('active');
+		expect(dodgePhase(DODGE_TOTAL - active + 0.001)).toBe('active');
+		expect(dodgePhase(DODGE_TOTAL - active - 0.001)).toBe('recovery');
+		expect(dodgePhase(0.0001)).toBe('recovery');
 	});
 
 	test('dodgeInvulnerable is true ONLY during the active window', () => {
@@ -929,16 +872,16 @@ describe('dodge phase machine', () => {
 	});
 
 	test('dodgeProgress runs 0→1 within each phase', () => {
-		expect(dodgeProgress(DODGE_TOTAL)).toBeCloseTo(0, 5); // start of active
-		expect(dodgeProgress(recovery)).toBeCloseTo(0, 5); // start of recovery
-		expect(dodgeProgress(0.0001)).toBeGreaterThan(0.9); // end of recovery
+		expect(dodgeProgress(DODGE_TOTAL)).toBeCloseTo(0, 5);
+		expect(dodgeProgress(recovery)).toBeCloseTo(0, 5);
+		expect(dodgeProgress(0.0001)).toBeGreaterThan(0.9);
 	});
 
 	test('avatarHittable folds both i-frame sources (hurtT OR active Dodge)', () => {
 		expect(avatarHittable(player({ hurtT: 0, dodgeT: 0 }))).toBe(true);
-		expect(avatarHittable(player({ hurtT: 0.5 }))).toBe(false); // connect i-frames
-		expect(avatarHittable(player({ dodgeT: DODGE_TOTAL }))).toBe(false); // dodge i-frames
-		expect(avatarHittable(player({ dodgeT: recovery * 0.5 }))).toBe(true); // recovery exposed
+		expect(avatarHittable(player({ hurtT: 0.5 }))).toBe(false);
+		expect(avatarHittable(player({ dodgeT: DODGE_TOTAL }))).toBe(false);
+		expect(avatarHittable(player({ dodgeT: recovery * 0.5 }))).toBe(true);
 	});
 });
 
@@ -962,8 +905,6 @@ describe('canStartDodge', () => {
 	});
 
 	test('cannot dodge while the post-recovery cooldown is still draining', () => {
-		// dodgeCdT outlives dodgeT: the spam-gate that keeps a fresh hop from starting the
-		// instant the i-frame timer hits 0 (ADR 0017 §5).
 		expect(canStartDodge(player({ dodgeT: 0, dodgeCdT: 0.5 }), 1)).toBe(false);
 	});
 
@@ -972,11 +913,9 @@ describe('canStartDodge', () => {
 	});
 
 	test('dodgeReady is the timing half only — ignores grounded + moving', () => {
-		// Airborne and standstill still read "ready" by timing alone; the movement gate
-		// lives in canStartDodge, not the server-side timing re-check.
 		expect(dodgeReady(player({ onGround: false }))).toBe(true);
-		expect(dodgeReady(player({ dodgeCdT: 0.3 }))).toBe(false); // cooldown blocks
-		expect(dodgeReady(player({ attackT: 0.1 }))).toBe(false); // mid-swing blocks
+		expect(dodgeReady(player({ dodgeCdT: 0.3 }))).toBe(false);
+		expect(dodgeReady(player({ attackT: 0.1 }))).toBe(false);
 	});
 });
 
@@ -984,8 +923,6 @@ describe('resolveCombat dodge', () => {
 	const player = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, attackT: 0, ...over });
 
-	// resolveCombat receives the caller's ALREADY-GATED `dodge` decision; here it only
-	// re-checks the tick-stable timing (`dodgeReady`) and loads the timers.
 	test('a gated dodge intent loads the full hop, arms the cooldown, flags dodgeStarted', () => {
 		const r = resolveCombat(
 			player(),
@@ -997,8 +934,8 @@ describe('resolveCombat dodge', () => {
 		);
 		expect(r.dodgeStarted).toBe(true);
 		expect(r.dodgeT).toBe(DODGE_TOTAL);
-		expect(dodgePhase(r.dodgeT)).toBe('active'); // i-frames live on the start tick
-		expect(r.dodgeCdT).toBeCloseTo(DODGE_LOCKOUT, 9); // full lockout armed at start
+		expect(dodgePhase(r.dodgeT)).toBe('active');
+		expect(r.dodgeCdT).toBeCloseTo(DODGE_LOCKOUT, 9);
 	});
 
 	test('a dodge intent is refused while the cooldown is still draining', () => {
@@ -1010,7 +947,7 @@ describe('resolveCombat dodge', () => {
 			{ dodge: true },
 			0.016,
 		);
-		expect(r.dodgeStarted).toBe(false); // spam-gate holds even with dodgeT at 0
+		expect(r.dodgeStarted).toBe(false);
 		expect(r.dodgeT).toBe(0);
 	});
 
@@ -1037,7 +974,7 @@ describe('resolveCombat dodge', () => {
 			0.02,
 		);
 		expect(r.dodgeStarted).toBe(false);
-		expect(r.dodgeT).toBeCloseTo(0.18, 5); // just decayed
+		expect(r.dodgeT).toBeCloseTo(0.18, 5);
 	});
 
 	test('a swing cannot start on the tick a Dodge begins (mutually exclusive)', () => {
@@ -1050,7 +987,7 @@ describe('resolveCombat dodge', () => {
 			0.016,
 		);
 		expect(r.dodgeStarted).toBe(true);
-		expect(r.swingStarted).toBe(false); // the Dodge wins the tick
+		expect(r.swingStarted).toBe(false);
 		expect(r.attackT).toBe(0);
 	});
 
@@ -1080,8 +1017,6 @@ describe('dodge action-state + pose', () => {
 	});
 
 	test('a Dodge takes the move slot over a concurrent swing timer', () => {
-		// Both timers nonzero (shouldn't happen via resolveCombat, but actionStateOf must
-		// still pick one move): dodge wins.
 		const a = actionStateOf(player({ dodgeT: DODGE_TOTAL, attackT: 0.1 }));
 		expect(a.move).toBe('dodge');
 	});
@@ -1096,8 +1031,6 @@ describe('dodge action-state + pose', () => {
 describe('resolveCombat with an equipped weapon (ADR 0024 — damage only)', () => {
 	const avatar = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, ...over });
-	// A hypothetical heavy hitter: whatever its damage, it can never reshape the
-	// swing's timing or arc — those belong to the one shared moveset.
 	const heavy: Weapon = { name: 'Test Cleaver', damage: 16 };
 
 	test('a fresh swing loads the ONE shared phase total, whatever the weapon', () => {
@@ -1138,7 +1071,6 @@ describe('swingPose — the unarmed swing telegraph (pure fn of move, phase, fac
 
 	test('the tip glyph is the one shared telegraph, oriented by facing', () => {
 		expect(swingPose('basic', 'windup', 1)?.glyph).toBe('╱');
-		// facing -1 mirrors the diagonal (╱ → ╲)
 		expect(swingPose('basic', 'windup', -1)?.glyph).toBe('╲');
 	});
 
@@ -1151,9 +1083,7 @@ describe('swingPose — the unarmed swing telegraph (pure fn of move, phase, fac
 
 describe('weaponFrame — WeaponSprite frame selector (pure fn of move, phase)', () => {
 	test('a non-attacking Avatar shows the idle hold frame', () => {
-		// At rest there is no swing phase, so the always-visible hold pose is selected.
 		expect(weaponFrame('idle', null)).toBe('idle');
-		// An idle move keeps the idle frame even with a residual phase (e.g. IDLE_ACTION).
 		expect(weaponFrame('idle', 'recovery')).toBe('idle');
 	});
 
@@ -1166,12 +1096,11 @@ describe('weaponFrame — WeaponSprite frame selector (pure fn of move, phase)',
 
 describe('sweepIndex — active-sweep frame for a swingProgress (ADR 0018 §4)', () => {
 	test('the boundary frames: first at progress 0, last at progress 1', () => {
-		expect(sweepIndex(0, 3)).toBe(0); // first frame at the start of the active phase
-		expect(sweepIndex(1, 3)).toBe(2); // last frame at the end (len-1, not out of range)
+		expect(sweepIndex(0, 3)).toBe(0);
+		expect(sweepIndex(1, 3)).toBe(2);
 	});
 
 	test('progress is partitioned into len equal slices', () => {
-		// 3 frames: [0,1/3)→0, [1/3,2/3)→1, [2/3,1]→2.
 		expect(sweepIndex(0.2, 3)).toBe(0);
 		expect(sweepIndex(0.5, 3)).toBe(1);
 		expect(sweepIndex(0.8, 3)).toBe(2);
@@ -1182,40 +1111,37 @@ describe('sweepIndex — active-sweep frame for a swingProgress (ADR 0018 §4)',
 		for (let p = 0; p <= 1.0001; p += 0.05) {
 			const i = sweepIndex(p, 4);
 			expect(i).toBeGreaterThanOrEqual(prev);
-			expect(i).toBeLessThanOrEqual(3); // never past the last frame
+			expect(i).toBeLessThanOrEqual(3);
 			prev = i;
 		}
 	});
 
 	test('out-of-range progress clamps into the sweep, and a single/empty sweep is index 0', () => {
-		expect(sweepIndex(-0.5, 3)).toBe(0); // clamps below
-		expect(sweepIndex(1.5, 3)).toBe(2); // clamps above to the last frame
-		expect(sweepIndex(0.5, 1)).toBe(0); // a single-frame sweep
-		expect(sweepIndex(0.5, 0)).toBe(0); // an empty sweep never indexes out of range
+		expect(sweepIndex(-0.5, 3)).toBe(0);
+		expect(sweepIndex(1.5, 3)).toBe(2);
+		expect(sweepIndex(0.5, 1)).toBe(0);
+		expect(sweepIndex(0.5, 0)).toBe(0);
 	});
 });
 
 describe('bladeEdgeArc — blade-edge arc smear (ADR 0018 §5)', () => {
 	test('returns a smear of curve cells that traces the tip top→bottom through the swing', () => {
-		// The tip starts up-forward (negative dy) and ends down-forward (positive dy).
 		const start = bladeEdgeArc(0, 1);
 		const end = bladeEdgeArc(1, 1);
 		expect(start.length).toBeGreaterThan(0);
 		expect(end.length).toBeGreaterThan(0);
-		expect(start[0].dy).toBeLessThan(0); // up-forward at the strike's start
-		expect(end[0].dy).toBeGreaterThan(0); // down-forward at its end
-		// Every cell is a curve glyph (never a hitbox fill char).
+		expect(start[0].dy).toBeLessThan(0);
+		expect(end[0].dy).toBeGreaterThan(0);
 		for (const c of bladeEdgeArc(0.5, 1))
 			expect(['╲', '╱', '─']).toContain(c.glyph);
 	});
 
 	test('the tip advances forward and downward as the swing progresses', () => {
-		// The leading sample (index 0 = current tip) sweeps monotonically downward.
 		let prevDy = Number.NEGATIVE_INFINITY;
 		for (let p = 0; p <= 1.0001; p += 0.1) {
 			const head = bladeEdgeArc(Math.min(1, p), 1)[0];
 			expect(head.dy).toBeGreaterThanOrEqual(prevDy);
-			expect(head.dx).toBeGreaterThan(0); // forward of the grip when facing right
+			expect(head.dx).toBeGreaterThan(0);
 			prevDy = head.dy;
 		}
 	});
@@ -1225,8 +1151,8 @@ describe('bladeEdgeArc — blade-edge arc smear (ADR 0018 §5)', () => {
 		const left = bladeEdgeArc(0.5, -1);
 		expect(left.length).toBe(right.length);
 		for (let i = 0; i < right.length; i++) {
-			expect(left[i].dx).toBe(-right[i].dx); // mirrored across the grip column
-			expect(left[i].dy).toBe(right[i].dy); // same height
+			expect(left[i].dx).toBe(-right[i].dx);
+			expect(left[i].dy).toBe(right[i].dy);
 			const flip: Record<string, string> = { '╲': '╱', '╱': '╲', '─': '─' };
 			expect(left[i].glyph).toBe(flip[right[i].glyph]);
 		}
@@ -1238,15 +1164,13 @@ describe('bladeEdgeArc — blade-edge arc smear (ADR 0018 §5)', () => {
 	});
 });
 
-// --- Guard: Block (ADR 0017 §5, ADR 0024) -----------------------------------
-
 describe('guardRaised', () => {
 	test('not guarding (guardT 0) is false', () => {
 		expect(guardRaised(0)).toBe(false);
 	});
 	test('any positive guardT is a raised Block', () => {
 		expect(guardRaised(0.001)).toBe(true);
-		expect(guardRaised(5)).toBe(true); // still blocking after holding indefinitely
+		expect(guardRaised(5)).toBe(true);
 	});
 });
 
@@ -1254,11 +1178,11 @@ describe('facingToward (frontal arc, ADR 0017 §5)', () => {
 	const a = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', ...over });
 	test('an attacker on the side the defender faces is frontal', () => {
-		expect(facingToward(a({ facing: 1 }), 30)).toBe(true); // facing right, attacker right
-		expect(facingToward(a({ facing: -1 }), 10)).toBe(true); // facing left, attacker left
+		expect(facingToward(a({ facing: 1 }), 30)).toBe(true);
+		expect(facingToward(a({ facing: -1 }), 10)).toBe(true);
 	});
 	test('an attacker behind the defender is NOT frontal', () => {
-		expect(facingToward(a({ facing: 1 }), 10)).toBe(false); // facing right, attacker left
+		expect(facingToward(a({ facing: 1 }), 10)).toBe(false);
 		expect(facingToward(a({ facing: -1 }), 30)).toBe(false);
 	});
 	test('an attacker sharing the column is treated as frontal (defender favour)', () => {
@@ -1268,7 +1192,6 @@ describe('facingToward (frontal arc, ADR 0017 §5)', () => {
 
 describe('resolveGuard', () => {
 	const { blockChip, blockPoise } = COMBAT.guard;
-	// A defender facing right (+1) with an attacker to the right (frontal).
 	const defender = (over: Partial<Entity> = {}) =>
 		monster(20, 4, {
 			type: 'player',
@@ -1285,7 +1208,6 @@ describe('resolveGuard', () => {
 	});
 
 	test('a rear hit ignores Guard even mid-block (frontal-arc gating)', () => {
-		// Guard up and blocking, but the attacker is BEHIND (to the left of a right-facer).
 		const g = resolveGuard(defender({ guardT: 0.5 }), 10, 8);
 		expect(g.result).toBe('none');
 		expect(g.hpDamage).toBe(8);
@@ -1300,7 +1222,6 @@ describe('resolveGuard', () => {
 	});
 
 	test('Block to a Poise break is a guard-break Stagger', () => {
-		// A nearly-empty pool: one block drains it past 0 → break.
 		const g = resolveGuard(
 			defender({ guardT: 0.5, poise: blockPoise - 1 }),
 			attackerX,
@@ -1376,7 +1297,6 @@ describe('resolveCombat threads the held Guard (ADR 0017 §5)', () => {
 	});
 
 	test('Guard and the basic swing are mutually exclusive', () => {
-		// Pressing attack + guard the same tick raises Guard, no swing starts.
 		const r = resolveCombat(
 			avatar({ attackT: 0 }),
 			{},
@@ -1388,9 +1308,9 @@ describe('resolveCombat threads the held Guard (ADR 0017 §5)', () => {
 			},
 			0.016,
 		);
-		expect(r.attackT).toBe(0); // no swing
+		expect(r.attackT).toBe(0);
 		expect(r.hitbox).toBeNull();
-		expect(r.guardT).toBeGreaterThan(0); // guard raised instead
+		expect(r.guardT).toBeGreaterThan(0);
 	});
 
 	test('Guard cannot rise mid-swing — guardT stays 0 until the swing recovers', () => {
@@ -1447,15 +1367,12 @@ describe('effectsOf', () => {
 
 	test('death projects to a radial gore burst', () => {
 		const at = { targetId: 1, x: 3, y: 4, intensity: 9 };
-		// A death is always radial (dir 0).
 		expect(effectsOf({ kind: 'death', dir: 0, ...at })).toEqual([
 			{ kind: 'gore', x: 3, y: 4, intensity: 9, dir: 0 },
 		]);
 	});
 
 	test('a death carries its entity tint through to the gore burst', () => {
-		// The tint rides the CombatEvent and `effectsOf` projects it onto the burst —
-		// absent on a tintless event (#139).
 		const tint = { r: 1, g: 2, b: 3 };
 		const e: CombatEvent = {
 			kind: 'death',
@@ -1479,9 +1396,6 @@ describe('effectsOf', () => {
 	});
 
 	test('swatEvent builds a swat at the shot itself (its position + id), keyed to its damage', () => {
-		// A swat resolves against a Projectile, so it carries the shot's own position (not
-		// an entity-box centre) and id, the shot's damage as intensity, and the clink-bias
-		// dir. No source (ADR 0019).
 		const pr = projectile({ id: 42, x: 27, y: 6, damage: 7 });
 		const e = swatEvent(pr, -1);
 		expect(e).toEqual({
@@ -1496,8 +1410,6 @@ describe('effectsOf', () => {
 	});
 
 	test('a swat projects to a sourceless impact at the shot, NOT heavier than its damage', () => {
-		// A light clink, not a Poise break — so unlike `break` it carries NO poise.max bump,
-		// just the shot's own damage as intensity. Source-less, reaching everyone (ADR 0019).
 		const e: CombatEvent = {
 			kind: 'swat',
 			targetId: 9,

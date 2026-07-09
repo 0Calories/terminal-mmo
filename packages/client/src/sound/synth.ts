@@ -1,23 +1,18 @@
-// Renders a SynthSpec into an in-memory PCM16 mono WAV buffer (ADR 0014). Just
-// math over samples — no I/O, no audio engine — so it's fully unit-testable headlessly.
-
 export type Wave = 'square' | 'triangle' | 'sine' | 'noise';
 
 export interface SynthSpec {
 	wave: Wave;
-	freq: number; // start frequency in Hz (ignored for `noise`)
-	freqEnd?: number; // sweep target; defaults to `freq` (no sweep)
+	freq: number;
+	freqEnd?: number;
 	durationMs: number;
-	attackMs?: number; // linear fade-in (default 2ms, declick)
-	releaseMs?: number; // linear fade-out (default 40ms)
-	volume?: number; // peak amplitude 0..1 (default 0.6)
+	attackMs?: number;
+	releaseMs?: number;
+	volume?: number;
 }
 
 export const SAMPLE_RATE = 44100;
 const WAV_HEADER_BYTES = 44;
 
-// Deterministic value noise keyed by sample index, so a noise render is byte-stable
-// (reproducible builds + golden tests). Math.imul keeps the hash in 32-bit lanes.
 function noiseAt(i: number): number {
 	let x = Math.imul(i + 1, 2654435761);
 	x ^= x << 13;
@@ -26,7 +21,6 @@ function noiseAt(i: number): number {
 	return ((x >>> 0) / 0xffffffff) * 2 - 1;
 }
 
-// One oscillator cycle sampled at phase ∈ [0,1), output in [-1, 1].
 function oscillator(wave: Exclude<Wave, 'noise'>, phase: number): number {
 	switch (wave) {
 		case 'square':
@@ -52,13 +46,13 @@ function writeHeader(view: DataView, sampleCount: number): void {
 	view.setUint32(4, 36 + dataBytes, true);
 	writeAscii(view, 8, 'WAVE');
 	writeAscii(view, 12, 'fmt ');
-	view.setUint32(16, 16, true); // PCM fmt chunk size
-	view.setUint16(20, 1, true); // audioFormat = PCM
-	view.setUint16(22, 1, true); // mono
+	view.setUint32(16, 16, true);
+	view.setUint16(20, 1, true);
+	view.setUint16(22, 1, true);
 	view.setUint32(24, SAMPLE_RATE, true);
 	view.setUint32(28, byteRate, true);
-	view.setUint16(32, 2, true); // blockAlign = channels * bytes/sample
-	view.setUint16(34, 16, true); // bitsPerSample
+	view.setUint16(32, 2, true);
+	view.setUint16(34, 16, true);
 	writeAscii(view, 36, 'data');
 	view.setUint32(40, dataBytes, true);
 }

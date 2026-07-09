@@ -12,20 +12,10 @@ import { loadZones } from './zoneContent';
 export interface GameState {
 	player: PlayerState;
 	world: World;
-	// Co-present Avatars to draw alongside — networked render only, absent offline; ADR
-	// 0003 z-orders them with Monsters, local Avatar on top.
 	others?: Entity[];
-	// Combat Effects from the most recent `step` (transient, ADR 0013): the offline loop
-	// reads them straight off the result, no wire, identical to networked play.
 	effects?: Effect[];
 }
 
-/**
- * Seed a playable World from a set of Zones, spawning the Player in `startId` (falling back
- * to the first Zone for an unknown id). The seam `zone play` uses to boot the offline sim
- * from `.zone` files under edit, sharing `createGame`'s code path so playtest and game
- * never diverge.
- */
 export function createGameFromZones(
 	zones: Zone[],
 	startId: string,
@@ -39,28 +29,19 @@ export function createGameFromZones(
 }
 
 export function createGame(seed = 1): GameState {
-	// Data-driven World (ADR 0008): zones loaded from authored `.zone` files. loadZones()
-	// returns the start Zone (the Town) first, where the Player spawns.
+	// loadZones() returns the start Zone (the Town) first, where the Player spawns.
 	const loaded = loadZones();
 	return createGameFromZones(loaded, loaded[0].id, seed);
 }
 
 // TODO(M1): portal connecting the Field and Town (#3).
 
-/**
- * Advance the active Zone + the Player one tick. Deterministic given inputs.
- *
- * Single-player is the M2 client/server split applied to one local Avatar: client-local
- * physics prediction feeds a one-Avatar server-authoritative `stepZone`, so the offline
- * loop and the networked server can't diverge (ADR 0006).
- */
 export function step(game: GameState, input: Input, dtMs: number): GameState {
 	const dt = Math.min(dtMs / 1000, PHYS.maxDt);
 	const zone = game.world.zones[game.player.zoneId];
 	const t = zone.terrain;
 
-	// A client-local Zone transition, handled before movement/combat so the transition
-	// tick runs neither.
+	// Handled before movement/combat so the transition tick runs neither.
 	if (input.interact) {
 		const here = entityBox(game.player.avatar);
 		const portal = zone.portals.find((p) => aabbOverlap(here, p));
@@ -85,13 +66,8 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		}
 	}
 
-	// The Dodge hop impulse, applied BEFORE physics so stepEntity integrates it this tick.
-	// The full gate is evaluated HERE, pre-hop, before the upward pop ungrounds the body,
-	// and the same decision passes to stepZone as the `dodge` intent so resolveCombat loads
-	// `dodgeT` iff the hop fired (ADR 0017 §5). Direction = moveX.
+	// Gate evaluated pre-hop (before the pop ungrounds the body); same decision feeds stepZone's dodge intent.
 	let body = game.player.avatar;
-	// Also gated by the Dodge capability (L4, ADR 0024 §5), matching resolveCombat's i-frame
-	// gate so the two agree.
 	const dodging =
 		(input.dodge ?? false) &&
 		canStartDodge(body, input.moveX) &&
@@ -103,8 +79,6 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 			-COMBAT.dodge.up,
 		);
 
-	// Predict this Avatar's own platformer physics, then let the Zone resolve every
-	// consequence under server authority.
 	const predicted = stepEntity(
 		t,
 		body,
@@ -113,8 +87,8 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 	).e;
 	const sa: ServerAvatar = {
 		sessionId: game.player.avatar.id,
-		handle: '', // offline single-player has no broadcast handle
-		cosmetics: DEFAULT_COSMETICS, // unused offline (no broadcast)
+		handle: '',
+		cosmetics: DEFAULT_COSMETICS,
 		avatar: game.player.avatar,
 		progress: game.player.progress,
 		inventory: game.player.inventory,
@@ -130,14 +104,11 @@ export function step(game: GameState, input: Input, dtMs: number): GameState {
 		y: predicted.y,
 		vx: predicted.vx,
 		vy: predicted.vy,
-		// Carry the integrated impulse residual so the hop persists across ticks — the
-		// returned avatar is rebuilt from this intent (ADR 0001).
+		// The returned avatar is rebuilt from this intent, so the hop persists across ticks.
 		ivx: predicted.ivx,
 		facing: predicted.facing,
 		onGround: predicted.onGround,
 		attack: input.attack,
-		// True only if the hop actually fired, so resolveCombat loads the i-frame timer in
-		// lockstep with the impulse above (ADR 0017 §5).
 		dodge: dodging,
 		guard: input.guard,
 		skill: input.skill,

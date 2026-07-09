@@ -1,8 +1,6 @@
-// Candidate sprite designs, NOT wired into the entity REGISTRY. Preview with:
-//     bun packages/client/src/sprites/preview.ts
+// Candidate sprite designs, not wired into the registry. Preview: bun packages/client/src/sprites/preview.ts
 import { Sprite, spriteFor, spriteForNpc } from '@mmo/shared';
 
-// Live art pulled through the registry lookup so the gallery and game can't drift.
 const player = spriteFor('player');
 const merchant = spriteForNpc('vendor');
 const golem = spriteFor('brute');
@@ -14,8 +12,7 @@ export interface GalleryEntry {
 	sprite: Sprite;
 }
 
-// Humanoid eyes are negative space (the gap in a `▛`/`▜` pair) — painting an
-// explicit dark eye cell double-eyes the face.
+// Humanoid eyes are negative space — an explicit dark eye cell double-eyes the face.
 const sprout = new Sprite(
 	`
 ··▌▐··

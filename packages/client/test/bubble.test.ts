@@ -3,10 +3,10 @@ import { CHAT_MAX_LEN } from '@mmo/shared';
 import { BUBBLE_COLS, bubbleTtl, layoutBubble } from '../src/bubble';
 
 test('bubbleTtl scales with length, clamped to [3, 7] seconds', () => {
-	expect(bubbleTtl(0)).toBe(3); // 2 + 0 -> floored to 3
-	expect(bubbleTtl(20)).toBe(3); // 2 + 1.0 = 3
-	expect(bubbleTtl(60)).toBe(5); // 2 + 3.0 = 5
-	expect(bubbleTtl(CHAT_MAX_LEN)).toBe(7); // 2 + 6.0 = 8 -> capped to 7
+	expect(bubbleTtl(0)).toBe(3);
+	expect(bubbleTtl(20)).toBe(3);
+	expect(bubbleTtl(60)).toBe(5);
+	expect(bubbleTtl(CHAT_MAX_LEN)).toBe(7);
 });
 
 test('layoutBubble word-wraps within the column width', () => {
@@ -27,6 +27,5 @@ test('layoutBubble always returns at least one line', () => {
 
 test('a full-length message wraps to a bounded number of lines', () => {
 	const lines = layoutBubble('a'.repeat(CHAT_MAX_LEN), BUBBLE_COLS);
-	// 120 chars / 22 cols rounds up to 6 lines — short enough to fit above a head.
 	expect(lines.length).toBeLessThanOrEqual(6);
 });

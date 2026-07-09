@@ -1,10 +1,3 @@
-// Server-gated Avatar creation + deferred spawn (#302, ADR 0028). Drives the real
-// `onMessage` handshake with fake sockets to prove the server — not a client flag —
-// decides new-vs-returning from its Save lookup: a new account is held unspawned until
-// `createAvatar`; a returning one restores straight away with its saved Cosmetics.
-//
-// The store opens at module load, so the env must be set BEFORE evaluation — hence the
-// dynamic import.
 import { expect, test } from 'bun:test';
 import { generateKeyPairSync, type KeyObject, sign } from 'node:crypto';
 import {
@@ -22,12 +15,10 @@ import {
 } from '@mmo/shared';
 
 process.env.MMO_DB_PATH = ':memory:';
-delete process.env.MMO_VERSION; // dev server: skip the release version gate
+delete process.env.MMO_VERSION;
 
 const { onMessage, dropSession, currentWorld } = await import('../src/index');
 
-// A throwaway ed25519 identity (mirrors auth.test): the OpenSSH public-key line + a signer
-// producing the signature blob the server verifies over a nonce.
 function makeIdentity() {
 	const { publicKey, privateKey } = generateKeyPairSync('ed25519');
 	const jwk = publicKey.export({ format: 'jwk' });
@@ -42,8 +33,6 @@ function signBlob(privateKey: KeyObject, payload: Uint8Array): Uint8Array {
 	return encodeSignatureBlob(new Uint8Array(sign(null, payload, privateKey)));
 }
 
-// A stand-in for the Bun ServerWebSocket: records the frames the server sends (so the test
-// can read them back) and stubs `close`. `data.sessionId` is what the handlers key off.
 type Sent = {
 	data: { sessionId: number; ip: string; counted: boolean };
 	sent: Uint8Array[];
@@ -59,8 +48,6 @@ function fakeWs(sessionId: number): Sent {
 	};
 	return w;
 }
-// Type-safe cast to whatever ServerWebSocket shape `onMessage` expects, without pulling in
-// the module's private WsData.
 type WsArg = Parameters<typeof onMessage>[0];
 const ws = (w: Sent) => w as unknown as WsArg;
 
@@ -86,7 +73,7 @@ function handshake(
 		encodeClientMessage({
 			t: 'hello',
 			handle,
-			version: '', // dev server: the version gate is off, so any value is admitted
+			version: '',
 			cosmetics: DEFAULT_COSMETICS,
 			weapon,
 			publicKey: id.line,
@@ -113,14 +100,10 @@ test('a new account is held authenticated-but-unspawned until createAvatar, then
 	const w = fakeWs(1);
 
 	const welcome = handshake(w, id, 'neo', 3);
-	// The server's verdict comes from its Save lookup (no Save ⇒ new), not any client flag.
 	expect(welcome.isNew).toBe(true);
-	// Not in any Zone before createAvatar — no entity is broadcast to others.
 	expect(zoneOf(currentWorld(), 1)).toBeUndefined();
 	expect(avatarOf(currentWorld(), 1)).toBeUndefined();
 
-	// The typed Handle + chosen Cosmetics arrive at createAvatar, not the handshake; the
-	// Handle is claimed here (#304).
 	const chosen: Cosmetics = { hue: 5, hat: 1, nameplate: 2, form: 0 };
 	onMessage(
 		ws(w),
@@ -152,15 +135,11 @@ test('a returning account restores straight away with isNew=false and its saved 
 			cosmetics: chosen,
 		}),
 	);
-	dropSession(10); // releases the identity presence so the same key can reconnect
+	dropSession(10);
 
-	// Second login of the SAME identity: the Save now exists, so the server restores it.
 	const second = fakeWs(11);
 	const welcome = handshake(second, id, 'whatever-it-asks', 0);
-	// A returning key never sees the creator...
 	expect(welcome.isNew).toBe(false);
-	// ...and resolves its durable Handle (claimed casing) whatever it asked for — the #304
-	// claim relocation must not regress the returning path.
 	expect(welcome.handle).toBe('Trinity');
 	expect(zoneOf(currentWorld(), 11)).toBe('town-01');
 	expect(avatarOf(currentWorld(), 11)?.handle).toBe('Trinity');
@@ -177,14 +156,12 @@ test('createAvatar from a session the server is not holding is a silent no-op', 
 			cosmetics: DEFAULT_COSMETICS,
 		}),
 	);
-	// No pending-spawn hold ⇒ nothing spawned and nothing sent back.
 	expect(zoneOf(currentWorld(), 99)).toBeUndefined();
 	expect(w.sent.length).toBe(0);
 });
 
 test('a taken Handle is rejected with createRejected and does not spawn; the session stays held for a retry', () => {
-	// The server module's Handle registry is shared across tests, so these Handles must not
-	// collide with another test's claim. First account claims "Zion".
+	// Handles must be unique — the server's Handle registry is shared across tests.
 	const a = makeIdentity();
 	const wa = fakeWs(20);
 	handshake(wa, a, 'zion', 0);
@@ -198,7 +175,6 @@ test('a taken Handle is rejected with createRejected and does not spawn; the ses
 	);
 	expect(avatarOf(currentWorld(), 20)?.handle).toBe('Zion');
 
-	// A DIFFERENT key tries to claim the same Handle, case-insensitively.
 	const b = makeIdentity();
 	const wb = fakeWs(21);
 	handshake(wb, b, 'placeholder-b', 0);
@@ -214,7 +190,6 @@ test('a taken Handle is rejected with createRejected and does not spawn; the ses
 	expect(rejected).toEqual({ t: 'createRejected', reason: 'taken' });
 	expect(zoneOf(currentWorld(), 21)).toBeUndefined();
 
-	// The session stays held: a retry with a free Handle now succeeds (no re-handshake).
 	onMessage(
 		ws(wb),
 		encodeClientMessage({
@@ -243,13 +218,7 @@ test('an invalid Handle is rejected with createRejected{invalid} and does not sp
 	expect(zoneOf(currentWorld(), 30)).toBeUndefined();
 });
 
-// --- In-game re-customization: setCosmetics (#305, ADR 0028) ------------------------
-// The Field/Dungeon Town-gate itself lives in serverWorld.test.ts (a session can be placed
-// off-Town there without driving the tick loop); here we drive the real handler.
-
 test('setCosmetics in a Town persists to the Save and rebroadcasts to others in the Zone (#305)', () => {
-	// Two accounts in the starting Town — one shared sim, so they co-locate and each rides the
-	// other's snapshot.
 	const a = makeIdentity();
 	const wa = fakeWs(50);
 	handshake(wa, a, 'morpheus', 0);
@@ -281,15 +250,12 @@ test('setCosmetics in a Town persists to the Save and rebroadcasts to others in 
 		encodeClientMessage({ t: 'setCosmetics', cosmetics: next }),
 	);
 
-	// Rebroadcast: the new look rides the shared Zone, so session 51's snapshot shows it.
 	const seen = worldSnapshotFor(currentWorld(), 51).avatars.find(
 		(x) => x.sessionId === 50,
 	);
 	expect(seen?.cosmetics).toEqual(next);
 	expect(avatarOf(currentWorld(), 50)?.cosmetics).toEqual(next);
 
-	// Persist: drop + reconnect the same identity; the Save restores the new look, proving
-	// setCosmetics flushed durably (not just to the live entity).
 	dropSession(50);
 	const again = fakeWs(52);
 	handshake(again, a, 'morpheus', 0);
@@ -298,8 +264,6 @@ test('setCosmetics in a Town persists to the Save and rebroadcasts to others in 
 });
 
 test('setCosmetics from a session with no live Avatar is a silent no-op (#305)', () => {
-	// A session held at the creator (unspawned) has no live Avatar: a stray setCosmetics must
-	// neither crash nor send anything back.
 	const id = makeIdentity();
 	const w = fakeWs(60);
 	handshake(w, id, 'oracle', 0);
@@ -318,9 +282,7 @@ test('setCosmetics from a session with no live Avatar is a silent no-op (#305)',
 test('confirming an empty Handle field uses the auto-derived placeholder, still uniqueness-checked', () => {
 	const id = makeIdentity();
 	const w = fakeWs(40);
-	// The handshake handle is the auto-derived placeholder the client pre-fills the field with.
 	handshake(w, id, 'wanderer', 0);
-	// Empty typed field ⇒ the server falls back to the placeholder and claims THAT.
 	onMessage(
 		ws(w),
 		encodeClientMessage({

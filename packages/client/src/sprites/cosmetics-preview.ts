@@ -1,5 +1,3 @@
-// Headless preview of the Avatar cosmetic catalog (#35), rendered through the SAME shared
-// renderer the game uses — so hat anchoring, recolour, and nameplates match what ships.
 // Run: bun packages/client/src/sprites/cosmetics-preview.ts
 import {
 	type CellBuffer,
@@ -14,8 +12,6 @@ import {
 	SCENE_PALETTE,
 } from '@mmo/shared';
 
-// Records glyphs into a grid to print; colours are dropped (a terminal dump is
-// glyph-only) and shown separately as a legend.
 class TextBuffer implements CellBuffer<string> {
 	readonly width: number;
 	readonly height: number;
@@ -42,7 +38,6 @@ class TextBuffer implements CellBuffer<string> {
 	}
 }
 
-// A glyph-only style: every palette key maps to itself (irrelevant for a glyph dump).
 const STYLE: RenderStyle<string> = {
 	bg: 'bg',
 	terrainFg: 't',
@@ -91,8 +86,6 @@ function frame(title: string, cosmetics: Cosmetics): string {
 		{ x: 0, y: 0 },
 		STYLE,
 	);
-	// Nameplates are a caller-composited top layer (ADR 0023), so the preview runs the
-	// pass itself right after the scene to match the live look.
 	drawNameplates(buf, entities, { x: 0, y: 0 }, terrain, STYLE);
 	return `${title}\n${buf.toString()}`;
 }

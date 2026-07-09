@@ -61,7 +61,7 @@ describe('placing a Placeable declares + stamps it', () => {
 			arrival: [4, 9],
 		});
 		const text = serializeDoc(doc);
-		expect(findOrphanGlyphs(text)).toEqual([]); // the glyph is declared, not orphaned
+		expect(findOrphanGlyphs(text)).toEqual([]);
 		const zone = parseZone(text, CATALOGS, 'z');
 		expect(zone.portals).toHaveLength(1);
 		expect(zone.portals[0]).toMatchObject({
@@ -98,12 +98,12 @@ describe('glyph allocation: one per type, reused across instances', () => {
 			kind: 'portal',
 			target: 'town-01',
 			arrival: [1, 2],
-		}); // same config → reuse
+		});
 		doc = place(doc, 2, 0, {
 			kind: 'portal',
 			target: 'field-02',
 			arrival: [1, 2],
-		}); // different target → new glyph
+		});
 		expect(glyphAt(doc, 0, 0)).toBe(glyphAt(doc, 1, 0));
 		expect(glyphAt(doc, 0, 0)).not.toBe(glyphAt(doc, 2, 0));
 		expect(Object.keys(doc.header.portals as object)).toHaveLength(2);
@@ -115,14 +115,14 @@ describe('erasing garbage-collects the header entry', () => {
 		let doc = place(blank(), 1, 1, { kind: 'monster', id: 'chaser' });
 		doc = erase(doc, 1, 1);
 		expect(glyphAt(doc, 1, 1)).toBe('.');
-		expect(doc.header.spawns).toEqual({}); // GC'd — no orphan declaration
+		expect(doc.header.spawns).toEqual({});
 	});
 
 	test('erasing one of two instances keeps the header entry', () => {
 		let doc = place(blank(), 1, 1, { kind: 'monster', id: 'chaser' });
 		doc = place(doc, 3, 1, { kind: 'monster', id: 'chaser' });
 		doc = erase(doc, 1, 1);
-		expect(glyphAt(doc, 3, 1)).not.toBe('.'); // survivor still stamped
+		expect(glyphAt(doc, 3, 1)).not.toBe('.');
 		expect(Object.keys(doc.header.spawns as object)).toHaveLength(1);
 	});
 
@@ -145,7 +145,7 @@ describe('orphan/undeclared glyph states are unreachable through the editor', ()
 			target: 'town-01',
 			arrival: [2, 2],
 		});
-		doc = erase(doc, 2, 1); // remove the only shooter → its header entry GCs
+		doc = erase(doc, 2, 1);
 		const text = serializeDoc(doc);
 		expect(findOrphanGlyphs(text)).toEqual([]);
 		expect(() => parseZone(text, CATALOGS, 'z')).not.toThrow();
@@ -153,7 +153,7 @@ describe('orphan/undeclared glyph states are unreachable through the editor', ()
 
 	test('placing out of grid is a no-op and allocates no header entry', () => {
 		const doc = place(blank(), 0, 9, { kind: 'monster', id: 'chaser' });
-		expect(doc.header.spawns).toEqual({}); // no orphan from a failed stamp
+		expect(doc.header.spawns).toEqual({});
 	});
 });
 

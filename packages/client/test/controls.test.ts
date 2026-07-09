@@ -2,7 +2,6 @@ import { expect, test } from 'bun:test';
 import { CAPABILITY_UNLOCK } from '@mmo/shared';
 import { CONTROL_ROWS, controlRowText, keysFor } from '../src/controls';
 
-// Every input the AC lists must appear on the cheat-sheet — none silently drops (#242).
 test('the controls listing covers every required input', () => {
 	const labels = CONTROL_ROWS.map((r) => r.label);
 	for (const required of [
@@ -28,7 +27,7 @@ test('every level-gated row maps to a real capability in the ladder', () => {
 test('a gated verb shows its unlock level when locked and hides it once earned', () => {
 	const dodge = CONTROL_ROWS.find((r) => r.capability === 'dodge');
 	if (!dodge) throw new Error('expected a Dodge row');
-	const unlock = CAPABILITY_UNLOCK.dodge; // 4
+	const unlock = CAPABILITY_UNLOCK.dodge;
 	expect(controlRowText(dodge, 1, 'keyboard')).toContain(
 		`unlocks at L${unlock}`,
 	);
@@ -45,11 +44,9 @@ test('an ungated verb never shows an unlock note at any level', () => {
 test('the mouse scheme shows the rebound keys, not the keyboard ones', () => {
 	const attack = CONTROL_ROWS.find((r) => r.label === 'Attack');
 	if (!attack) throw new Error('expected an Attack row');
-	// Attack moves to the left mouse button under MMO_SCHEME=mouse (input.ts).
 	expect(keysFor(attack, 'keyboard')).toContain('j');
 	expect(keysFor(attack, 'mouse')).toContain('click');
 	expect(keysFor(attack, 'mouse')).not.toContain('j');
-	// A row with no mouse override falls back to its keyboard keys.
 	const jump = CONTROL_ROWS.find((r) => r.label === 'Jump');
 	if (!jump) throw new Error('expected a Jump row');
 	expect(keysFor(jump, 'mouse')).toBe(keysFor(jump, 'keyboard'));

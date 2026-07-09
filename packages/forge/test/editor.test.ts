@@ -75,8 +75,6 @@ describe('growToInclude', () => {
 
 describe('trimDoc', () => {
 	test('strips trailing empty cells per row and trailing empty rows', () => {
-		// Erasing the far edge leaves redundant trailing dots and blank rows that
-		// `parseZone` would treat as empty anyway — trimming shrinks the extent.
 		const doc: EditorDoc = {
 			header: { type: 'field' },
 			rows: ['##...', '.....', '#####', '.....', ''],
@@ -97,7 +95,6 @@ describe('trimDoc', () => {
 
 describe('clampRoam', () => {
 	test('lets the cursor roam content plus a margin of virgin space', () => {
-		// Extent is 5×3; a margin of 4 lets the cursor sit 4 cells beyond content.
 		expect(clampRoam(blank(), 100, 100, 4)).toEqual({ x: 9, y: 7 });
 	});
 
@@ -112,7 +109,6 @@ describe('clampRoam', () => {
 });
 
 describe('scrollAxis', () => {
-	// viewLen 20, scrolloff 3: the comfortable band is [cam+3, cam+16].
 	test('holds still while the cursor stays inside the scrolloff band', () => {
 		expect(scrollAxis(0, 10, 20, 3)).toBe(0);
 	});
@@ -137,7 +133,6 @@ describe('scrollViewport', () => {
 });
 
 describe('cursorEdge', () => {
-	// A 20×10 viewport at the origin; the cursor is visible inside [0,20)×[0,10).
 	test('reports no edge when the cursor is on screen', () => {
 		expect(cursorEdge({ x: 5, y: 5 }, { x: 0, y: 0 }, 20, 10)).toEqual({
 			dx: 0,
@@ -159,7 +154,6 @@ describe('cursorEdge', () => {
 
 describe('docDiagnostics', () => {
 	test('a clean doc has no findings', () => {
-		// A town needs no spawns, so a bare floored grid validates clean.
 		const town: EditorDoc = {
 			header: { type: 'town' },
 			rows: ['.....', '.....', '#####'],
@@ -168,7 +162,6 @@ describe('docDiagnostics', () => {
 	});
 
 	test('surfaces the same orphan-glyph error that `zone check` would', () => {
-		// `c` is declared in the header but never placed in the grid.
 		const doc: EditorDoc = {
 			header: { type: 'field', spawns: { c: 'chaser' } },
 			rows: ['.....', '#####'],
@@ -179,7 +172,6 @@ describe('docDiagnostics', () => {
 	});
 
 	test('reports a single parse error for an unparseable doc', () => {
-		// An all-empty grid fails `parseZone` (no cells).
 		const doc: EditorDoc = { header: { type: 'field' }, rows: [] };
 		const diags = docDiagnostics(doc, CATALOGS, 'z');
 		expect(diags).toHaveLength(1);
@@ -199,8 +191,8 @@ describe('editorStatusLine', () => {
 		expect(line).toContain('Brush');
 		expect(line).toContain('Solid');
 		expect(line).toContain('(3,7)');
-		expect(line).toContain('*'); // unsaved marker
-		expect(line).toContain('✗1'); // one error
+		expect(line).toContain('*');
+		expect(line).toContain('✗1');
 	});
 
 	test('shows a clean checkmark and no dirty marker when saved and healthy', () => {
@@ -215,8 +207,6 @@ describe('editorStatusLine', () => {
 		expect(line).not.toContain('*');
 	});
 });
-
-// --- Diagnostics panel (#100) -------------------------------------------------
 
 describe('diagJumpTarget', () => {
 	test('returns the offending cell for a placement finding', () => {
@@ -291,8 +281,6 @@ describe('diagPanelSummary', () => {
 		expect(s).toContain('1 warning');
 	});
 });
-
-// --- Modal tools (#95) --------------------------------------------------------
 
 const key = (c: { x: number; y: number }) => `${c.x},${c.y}`;
 const setOf = (cs: { x: number; y: number }[]) => new Set(cs.map(key));
@@ -391,7 +379,7 @@ describe('paintCells', () => {
 			rectCells({ x: 0, y: 0 }, { x: 1, y: 4 }),
 			{ kind: 'terrain' },
 		);
-		expect(doc.rows.length).toBe(5); // grew to include y=4
+		expect(doc.rows.length).toBe(5);
 		for (const c of rectCells({ x: 0, y: 0 }, { x: 1, y: 4 }))
 			expect(cellAt(doc, c.x, c.y)).toBe('#');
 	});
@@ -466,7 +454,6 @@ describe('copyRegion / pasteClip', () => {
 		const clip = copyRegion(src, { x: 0, y: 0 }, { x: 2, y: 0 });
 		expect(clip.w).toBe(3);
 		expect(clip.h).toBe(1);
-		// `a` and `#` captured, the trailing `.` skipped.
 		expect(clip.cells).toHaveLength(2);
 	});
 
@@ -475,7 +462,6 @@ describe('copyRegion / pasteClip', () => {
 		const doc = pasteClip(src, clip, 3, 1);
 		expect(placeableAt(doc, 3, 1)).toEqual({ kind: 'monster', id: 'chaser' });
 		expect(cellAt(doc, 4, 1)).toBe('#');
-		// The same monster id reuses its single header glyph — no duplicate, no orphan.
 		expect(Object.keys(doc.header.spawns as object)).toHaveLength(1);
 		expect(findOrphanGlyphs(serializeDoc(doc))).toEqual([]);
 	});
@@ -539,7 +525,6 @@ describe('ghostEntity (#118)', () => {
 		const g = ghostEntity(cats, { kind: 'monster', id: 'chaser' }, 3, 2);
 		expect(g?.kind).toBe('entity');
 		if (g?.kind !== 'entity') throw new Error('expected entity');
-		// behaviour-typed sprite, placed at the glyph anchor — no drift from spawn.
 		expect(g.entity.type).toBe('chaser');
 		expect(g.entity.x).toBe(3);
 		expect(g.entity.y).toBe(2);
@@ -578,7 +563,6 @@ describe('placementState (#96)', () => {
 			'##########',
 		],
 	};
-	// Taller: floor only on the last row, so a box up top floats above it.
 	const tall: EditorDoc = {
 		header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 		rows: [
@@ -594,14 +578,12 @@ describe('placementState (#96)', () => {
 	};
 
 	test('green: a monster resting on the floor is grounded', () => {
-		// Box rows 0-4, the cell below (row 5) is solid terrain.
 		expect(
 			placementState(grounded, { kind: 'monster', id: 'chaser' }, 2, 0),
 		).toBe('grounded');
 	});
 
 	test('blue: a monster with no solid beneath its feet is airborne', () => {
-		// Box rows 0-4, row 5 is empty and in-grid → floating, not invalid.
 		expect(placementState(tall, { kind: 'monster', id: 'chaser' }, 0, 0)).toBe(
 			'airborne',
 		);
@@ -612,14 +594,12 @@ describe('placementState (#96)', () => {
 			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 			rows: ['..........', '..........', '##########', '##########'],
 		};
-		// Box rows 1-5 overlaps the solid rows 2-3.
 		expect(
 			placementState(clipsFloor, { kind: 'monster', id: 'chaser' }, 0, 1),
 		).toBe('invalid');
 	});
 
 	test('red: a footprint extending past the canvas edge is invalid', () => {
-		// x 8 + width 5 = 13 > the 10-wide grid.
 		expect(
 			placementState(grounded, { kind: 'monster', id: 'chaser' }, 8, 0),
 		).toBe('invalid');
@@ -636,7 +616,6 @@ describe('placementState (#96)', () => {
 				'..........',
 			],
 		};
-		// Box rows 0-4 fill the whole grid; the cell below (row 5) is the world floor.
 		expect(placementState(flat, { kind: 'monster', id: 'chaser' }, 0, 0)).toBe(
 			'grounded',
 		);
@@ -674,7 +653,6 @@ describe('groundSnap (#96)', () => {
 	};
 
 	test('seats a floating monster so its feet rest on the nearest solid below', () => {
-		// Floor is row 7; a 5-tall box must anchor at row 2 (rows 2-6, below = row 7).
 		expect(groundSnap(tall, { kind: 'monster', id: 'chaser' }, 0, 0)).toEqual({
 			x: 0,
 			y: 2,
@@ -693,7 +671,6 @@ describe('groundSnap (#96)', () => {
 			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 			rows: Array(8).fill('..........'),
 		};
-		// Floor is the implicit cell below row 7 (== height 8) → anchor row 3.
 		expect(groundSnap(empty, { kind: 'monster', id: 'chaser' }, 0, 0)).toEqual({
 			x: 0,
 			y: 3,
@@ -705,9 +682,6 @@ describe('groundSnap (#96)', () => {
 	});
 
 	test('a cursor far above any surface stays put rather than falling to it (#117)', () => {
-		// 5-tall box at row 0 → feet at row 4; the only ground is the canvas floor
-		// far below (row 16). That drop is well past the snap cap, so the box keeps
-		// the author's feet anchor (airborne) instead of teleporting to the floor.
 		const skyHigh: EditorDoc = {
 			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 			rows: Array(16).fill('..........'),
@@ -721,7 +695,6 @@ describe('groundSnap (#96)', () => {
 	});
 
 	test('still snaps when a surface is within the cap distance (#117)', () => {
-		// Feet at row 4, floor at row 8 → a 3-cell drop (within the cap) snaps.
 		const near: EditorDoc = {
 			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 			rows: Array(8).fill('..........'),
@@ -750,18 +723,14 @@ describe('cursorToAnchor (#114)', () => {
 	const monster = { kind: 'monster', id: 'chaser' } as const;
 
 	test('x is always the cursor minus half the box width', () => {
-		// 5-wide box → floor(5/2) = 2, so the cursor sits at the box centre column.
 		expect(cursorToAnchor(field, monster, 5, 5, true).x).toBe(3);
 	});
 
 	test('free-place centres the box on the cursor (no snap)', () => {
-		// 5×5 box → anchor = cursor - (2,2), mid-air, untouched by ground.
 		expect(cursorToAnchor(field, monster, 5, 5, true)).toEqual({ x: 3, y: 3 });
 	});
 
 	test('ground-snap seats the box feet at the cursor, then drops to the surface', () => {
-		// Feet anchor y = 5 - (5-1) = 1 (box rows 1-5); the floor is row 7, so the
-		// box drops until its bottom rests above it → anchor row 2 (rows 2-6).
 		expect(cursorToAnchor(field, monster, 5, 5, false)).toEqual({ x: 3, y: 2 });
 	});
 
@@ -784,7 +753,6 @@ describe('entityAt (#114)', () => {
 				'..........',
 			],
 		};
-		// Monster origin is (0,0); its 5×5 footprint covers (3,3).
 		expect(entityAt(doc, 3, 3)).toEqual({
 			originX: 0,
 			originY: 0,
@@ -815,8 +783,6 @@ describe('entityAt (#114)', () => {
 	});
 
 	test('on overlap the renderer-topmost (monster over npc) wins', () => {
-		// Monster 'c' at (0,0) [cols 0-4] and NPC 'm' at (2,0) [cols 2-5] both cover
-		// (3,3); the monster draws on top, so it is the one erased.
 		const doc: EditorDoc = {
 			header: {
 				id: 'z',
@@ -839,8 +805,6 @@ describe('entityAt (#114)', () => {
 	});
 
 	test('among same-layer entities the lower one (larger anchor y) wins', () => {
-		// Two monsters whose 5×5 footprints overlap at (2,4); the one anchored lower
-		// (origin y 2) is drawn later → on top.
 		const doc: EditorDoc = {
 			header: { id: 'z', type: 'field', spawns: { c: 'chaser' }, npcs: {} },
 			rows: [

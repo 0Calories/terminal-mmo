@@ -1,9 +1,3 @@
-// The non-Kitty input notice (#228, ADR 0024 §3/§4). On a terminal confirmed NOT to
-// implement the Kitty keyboard protocol, hold-to-move degrades to OS auto-repeat and
-// direction+action can't combine. We can't fix that on a legacy terminal, so we NUDGE:
-// a blocking, press-any-key overlay every launch (no opt-out, no persistence). Detection
-// is fail-open — silent unless we are CONFIDENT the protocol is absent.
-
 import {
 	BoxRenderable,
 	type Renderable,
@@ -13,18 +7,13 @@ import {
 } from '@opentui/core';
 import { COLORS } from './theme';
 
-// Fail-open: warn ONLY once the probe has RESOLVED (`capabilities` non-null) AND reports
-// the protocol absent. Null (unresolved / timed-out / high-latency SSH) returns false.
-// Strict `=== false`, so any non-boolean also stays silent (ADR 0024 §2).
+// Fail-open: warn only when the probe resolved and reports absent; strict === false keeps non-booleans silent.
 export function shouldWarnNoKitty(
 	capabilities: TerminalCapabilities | null | undefined,
 ): boolean {
 	return capabilities != null && capabilities.kitty_keyboard === false;
 }
 
-// Terminals implementing the Kitty keyboard protocol (source: the protocol spec's
-// support list). Kept short on purpose: it ships with the binary and goes stale, so
-// re-verify each release (ADR 0024 §4).
 export const KITTY_TERMINALS: readonly string[] = [
 	'Kitty',
 	'Ghostty',
@@ -34,8 +23,6 @@ export const KITTY_TERMINALS: readonly string[] = [
 	'iTerm2',
 ];
 
-// A supported terminal can still fail the probe if tmux/screen strips the protocol
-// (ADR 0024 §4).
 export const MULTIPLEXER_CAVEAT =
 	'Inside tmux or screen? The multiplexer can strip the protocol — try a bare terminal.';
 
@@ -50,10 +37,6 @@ const BODY = [
 	MULTIPLEXER_CAVEAT,
 ].join('\n');
 
-// The blocking, press-any-key notice (ADR 0024 §3; #301). Absolute centered panel on a
-// STRICT pre-gate layer (zIndex 40 — above the creator's z30 and every z20 modal): it must
-// win visually, not just behaviourally, so the Player can read it. Shown fresh each launch
-// when detection confirms no-Kitty, dismissed by the first key press, never persisted.
 export class NoKittyNotice {
 	private readonly container: BoxRenderable;
 
@@ -66,7 +49,7 @@ export class NoKittyNotice {
 			bottom: 0,
 			justifyContent: 'center',
 			alignItems: 'center',
-			zIndex: 40,
+			zIndex: 40, // above the creator (z30) and every z20 modal
 			visible: false,
 		});
 
@@ -113,40 +96,27 @@ export class NoKittyNotice {
 	}
 }
 
-// A modal the pre-gate can hold behind the notice: enough surface to read its visibility
-// and toggle it.
 export interface Gateable {
 	readonly open: boolean;
 	show(): void;
 	hide(): void;
 }
 
-// The strict sequential pre-gate (#301). A modal that wants to appear at launch (the Avatar
-// creator today, post-connect UI later) is REQUESTED here and shown only while the gate is
-// CLEAR — the notice was never raised, or it was and the Player dismissed it. Tracking intent
-// separately from the notice state lets a LATE-resolving probe (a slow / high-latency SSH
-// probe) still win: reconcile() hides a modal already on screen and re-shows it on dismissal.
-// A never-resolving probe is fail-open, so requested modals appear immediately.
 export class NoticeGate {
 	private readonly wanted = new Set<Gateable>();
 
 	constructor(private readonly notice: { readonly open: boolean }) {}
 
-	// Register a modal as wanting the screen and reconcile now.
 	request(modal: Gateable): void {
 		this.wanted.add(modal);
 		this.reconcile();
 	}
 
-	// The modal is done with the gate: stop tracking it so reconcile() can't re-show it,
-	// and hide it now.
 	release(modal: Gateable): void {
 		this.wanted.delete(modal);
 		if (modal.open) modal.hide();
 	}
 
-	// Re-derive every tracked modal's visibility from the notice. Call after the notice
-	// opens or is dismissed.
 	reconcile(): void {
 		const blocked = this.notice.open;
 		for (const modal of this.wanted) {

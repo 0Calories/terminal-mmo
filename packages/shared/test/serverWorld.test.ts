@@ -37,7 +37,6 @@ function zoneOrThrow(w: ServerWorld, zone: string) {
 	return zs;
 }
 
-// One shared instance of every Zone, no Channels (ADR 0024).
 function makeWorld(): ServerWorld {
 	return createServerWorld({
 		zones: loadZones(),
@@ -72,7 +71,7 @@ test('stepServerWorld advances every Zone each tick', () => {
 	let w = addSession(makeWorld(), 7, 'neo');
 	w = stepServerWorld(w, [holdAt(7, 20)], 16);
 	expect(zoneOrThrow(w, 'field-01').tick).toBe(1);
-	expect(zoneOrThrow(w, 'town-01').tick).toBe(1); // empty Zones still run their own loop
+	expect(zoneOrThrow(w, 'town-01').tick).toBe(1);
 });
 
 test('entering a Portal transfers the session to the target Zone at the arrival point', () => {
@@ -90,9 +89,6 @@ test('entering a Portal transfers the session to the target Zone at the arrival 
 });
 
 test('one interact EDGE transfers exactly once and does not ping-pong on the overlapping arrival (ADR 0027)', () => {
-	// The Field→Town arrival sits ON the Town's return Portal (#90), so a sustained
-	// interact would bounce every tick — safety rests entirely on interact being a
-	// one-shot edge (client latch + server edge queue): true for one tick, then false.
 	let w = addSession(makeWorld(), 7, 'neo');
 	const fieldPortal = zoneOrThrow(w, 'field-01').zone.portals[0];
 	w = stepServerWorld(w, [holdAt(7, fieldPortal.x, true)], 16);
@@ -141,8 +137,6 @@ test('a forgiving death respawns the Avatar in Town with full HP and no loss', (
 	av.inventory = [
 		{ id: 1, base: 'sword', slot: 'weapon', rarity: 'rare', affixes: [] },
 	];
-	// Contact damage is gone (ADR 0017 §9): the kill needs a chaser's telegraphed
-	// swing to reach its active strike, so stand just inside melee reach and let it land.
 	const m = zoneOrThrow(w, 'field-01').zone.monsters.find((mm) => mm.y === y);
 	if (!m) throw new Error('expected a ground-level Monster in field-01');
 	for (let i = 0; i < 20 && zoneOf(w, 7) !== 'town-01'; i++)
@@ -179,14 +173,11 @@ test('removeSession drops a disconnected session from its Zone and the map', () 
 	w = removeSession(w, 7);
 	expect(zoneOf(w, 7)).toBeUndefined();
 	expect(zoneOrThrow(w, 'field-01').avatars.length).toBe(0);
-	expect(removeSession(w, 99)).toBe(w); // unknown session is a no-op
+	expect(removeSession(w, 99)).toBe(w);
 });
-
-// --- New-account creation seam (#302, ADR 0028) -------------------------------
 
 test('spawnNewAvatar spawns into the starting Town with the chosen look, and mints a matching Save', () => {
 	const chosen: Cosmetics = { hue: 5, hat: 1, nameplate: 2, form: 0 };
-	// Authenticated-but-unspawned: the account is held out of every Zone until createAvatar.
 	const before = townWorld();
 	expect(zoneOf(before, 7)).toBeUndefined();
 
@@ -218,8 +209,6 @@ test('spawnNewAvatar is pure — it never mutates the world passed in', () => {
 	expect(zoneOf(before, 7)).toBeUndefined();
 });
 
-// --- Funnel: one shared instance per Zone, no Channels (ADR 0024, #234) -------
-
 test('every entrant to a Zone joins its single shared instance — no channel split', () => {
 	let w = makeWorld();
 	w = addSession(w, 1, 'a');
@@ -230,8 +219,7 @@ test('every entrant to a Zone joins its single shared instance — no channel sp
 	expect(zoneOf(w, 2)).toBe('field-01');
 	expect(zoneOf(w, 3)).toBe('field-01');
 
-	// One shared ZoneState per non-Dungeon Zone; the instanced Dungeon (#240) has no
-	// shared instance, so it is absent from `zones`.
+	// The instanced Dungeon has no shared instance, so it is absent from zones.
 	expect(Object.keys(w.zones).sort()).toEqual(
 		loadZones()
 			.filter((z) => z.type !== 'dungeon')
@@ -326,8 +314,6 @@ test('handleOf returns a placed session handle, undefined otherwise', () => {
 	expect(handleOf(w, 99)).toBeUndefined();
 });
 
-// --- Dungeon: private, instanced entry from Town (#240) -----------------------
-
 function townWorld(): ServerWorld {
 	return createServerWorld({
 		zones: loadZones(),
@@ -361,7 +347,6 @@ test('the authored Dungeon exists, is instanced, and has no shared instance', ()
 	const dungeon = w.templates['dungeon-01'];
 	expect(dungeon?.type).toBe('dungeon');
 	expect(dungeon.spawns.length).toBeGreaterThan(0);
-	// Instanced and repeatable: no shared ZoneState is ever created for it.
 	expect(zoneInstance(w, 'dungeon-01')).toBeUndefined();
 	expect(w.zones['dungeon-01']).toBeUndefined();
 	expect(dungeon.portals.some((p) => p.target === 'town-01')).toBe(true);
@@ -486,12 +471,9 @@ test('a re-entered Dungeon is a fresh instance (repeatable faucet)', () => {
 	w = enterDungeon(w, 1);
 	expect(zoneOf(w, 1)).toBe('dungeon-01');
 	expect(Object.keys(w.instances).length).toBe(1);
-	// Same solo key (keyed by owner), but a freshly-created ZoneState (tick reset).
 	expect(w.instanceOf[1]).toBe(first);
 	expect(w.instances[w.instanceOf[1]].tick).toBe(0);
 });
-
-// --- Server-authoritative sell (#267, ADR 0025) ----------------------------
 
 const sellable = (over: Partial<Item> = {}): Item => ({
 	id: 1,
@@ -502,8 +484,6 @@ const sellable = (over: Partial<Item> = {}): Item => ({
 	...over,
 });
 
-// Place session 1 in Town with a seeded inventory, standing on the Merchant by default
-// so it passes the proximity gate (positions are client-trusted, ADR 0001).
 function sellWorld(
 	inventory: Item[],
 	gold: number,
@@ -567,13 +547,13 @@ test('applySell removes the Item and credits its re-derived sale value to Gold',
 	expect(res.sold).toBe(true);
 	const sa = avatarOf(res.world, 1);
 	expect(sa?.inventory.map((i) => i.id)).toEqual([8]);
-	expect(sa?.progress.gold).toBe(100 + saleValue(item)); // price is server-derived
+	expect(sa?.progress.gold).toBe(100 + saleValue(item));
 	expect(sa?.log.at(-1)).toContain('Sold');
 });
 
 test('selling an unowned id is a no-op — Gold and inventory unchanged', () => {
 	const { w } = sellWorld([sellable({ id: 7 })], 100);
-	const res = applySell(w, 1, 999); // 999 not held
+	const res = applySell(w, 1, 999);
 	expect(res.sold).toBe(false);
 	const sa = avatarOf(res.world, 1);
 	expect(sa?.inventory.map((i) => i.id)).toEqual([7]);
@@ -604,15 +584,13 @@ test('applySell for an unplaced session is a no-op', () => {
 	expect(res.sold).toBe(false);
 });
 
-// --- Server-authoritative buy (#273, ADR 0025) -----------------------------
-
 test('applyBuy deducts the re-derived price, appends the good, and logs it', () => {
 	const good = STARTER_GOODS[0];
 	const { w } = sellWorld([], 100);
 	const res = applyBuy(w, 1, 0);
 	expect(res.bought).toBe(true);
 	const sa = avatarOf(res.world, 1);
-	expect(sa?.progress.gold).toBe(100 - good.price); // price is server-derived
+	expect(sa?.progress.gold).toBe(100 - good.price);
 	const added = sa?.inventory.at(-1);
 	expect(added?.base).toBe(good.base);
 	expect(added?.slot).toBe(good.slot);
@@ -674,8 +652,6 @@ test('round-trip buy then sell is always a net Gold loss', () => {
 	}
 });
 
-// --- In-game re-customization: applyCosmetics (#305, ADR 0028) ----------------------
-
 test('applyCosmetics in a Town stamps the new look on the live Avatar (rebroadcast + persist path) (#305)', () => {
 	const { world } = spawnNewAvatar(
 		makeWorld(),
@@ -689,7 +665,6 @@ test('applyCosmetics in a Town stamps the new look on the live Avatar (rebroadca
 	const next: Cosmetics = { hue: 3, hat: 1, nameplate: 2, form: 0 };
 	const res = applyCosmetics(world, 7, next);
 	expect(res.changed).toBe(true);
-	// The new look is on the live Avatar, so the next snapshot rebroadcasts it Zone-wide.
 	const seen = worldSnapshotFor(res.world, 7).avatars.find(
 		(a) => a.sessionId === 7,
 	);

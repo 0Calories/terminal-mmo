@@ -12,20 +12,13 @@ import { parseZone } from '@mmo/shared';
 const ZONE_EXT = '.zone';
 const CATALOGS_FILE = 'catalogs.json';
 
-/** One `.zone` file off disk: parsed, or a parse-error message if malformed. */
 export interface LoadedZone {
 	id: string;
 	zone?: Zone;
 	parseError?: string;
-	// Raw file text, kept so the CLI can run checks that need the original source
-	// (e.g. orphan header glyphs, which parseZone discards). Absent if unreadable.
 	text?: string;
 }
 
-/**
- * Load the shared catalog file. Absent file → empty catalogs (a town/blank template
- * needs none), so the CLI still works on a bare dir.
- */
 export function loadCatalogs(root: string): Catalogs {
 	const path = join(root, CATALOGS_FILE);
 	if (!existsSync(path)) return { monsters: [], npcs: [] };
@@ -33,7 +26,6 @@ export function loadCatalogs(root: string): Catalogs {
 	return { monsters: parsed.monsters ?? [], npcs: parsed.npcs ?? [] };
 }
 
-/** Parse one Zone by id; returns the parse error rather than throwing. */
 export function loadZone(
 	root: string,
 	id: string,
@@ -49,7 +41,6 @@ export function loadZone(
 	}
 }
 
-/** Every `.zone` id in the dir (sorted), without parsing — the bare identity list. */
 export function listZoneIds(root: string): string[] {
 	if (!existsSync(root)) return [];
 	return readdirSync(root)
@@ -58,7 +49,6 @@ export function listZoneIds(root: string): string[] {
 		.sort();
 }
 
-/** Every `.zone` in the dir, parsed (id-sorted for deterministic output). */
 export function loadZoneSet(root: string, catalogs: Catalogs): LoadedZone[] {
 	return listZoneIds(root).map((id) => loadZone(root, id, catalogs));
 }
@@ -71,9 +61,7 @@ export function zoneExists(root: string, id: string): boolean {
 	return existsSync(zonePath(root, id));
 }
 
-/** Write raw `.zone` text atomically (#98): the bytes land in a sibling temp file,
- *  then one `rename` swaps it over the target — so a crash mid-write can't leave a
- *  half-written `.zone`. We lean on git for history (no `.bak`). */
+// Atomic write: temp file + rename, so a crash mid-write can't leave a half-written file.
 export function writeZone(root: string, id: string, text: string): void {
 	const target = zonePath(root, id);
 	const tmp = `${target}.tmp`;
@@ -81,8 +69,6 @@ export function writeZone(root: string, id: string, text: string): void {
 	renameSync(tmp, target);
 }
 
-/** Move `<root>/<old>.zone` → `<root>/<new>.zone`. The id is the filename
- *  (ADR 0011), so renaming a Zone is renaming its file. */
 export function renameZoneFile(
 	root: string,
 	oldId: string,
@@ -91,11 +77,6 @@ export function renameZoneFile(
 	renameSync(zonePath(root, oldId), zonePath(root, newId));
 }
 
-/**
- * Rewrite every Portal `target` referencing `oldId` in one file's header, so a rename
- * keeps cross-zone links intact (ADR 0011). Surgical: only whole-value `"target":
- * "<oldId>"` matches in the HEADER are touched, so the rest of the file is byte-stable.
- */
 export function rewritePortalTarget(
 	text: string,
 	oldId: string,

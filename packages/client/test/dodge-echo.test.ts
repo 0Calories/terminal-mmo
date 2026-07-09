@@ -45,7 +45,6 @@ test('dodgeStarted fires only on the rising edge, not while the hop continues', 
 	const idle = avatar({ dodgeT: 0 });
 	const hopping = avatar({ dodgeT: DODGE_TOTAL });
 	expect(dodgeStarted(idle, hopping)).toBe(true);
-	// Already dodging → still dodging is NOT a fresh start (no double-spawn).
 	expect(dodgeStarted(hopping, avatar({ dodgeT: DODGE_TOTAL * 0.5 }))).toBe(
 		false,
 	);
@@ -57,11 +56,9 @@ test('an echo ages on the render clock and is culled once spent', () => {
 	spawnDodgeEcho(echoes, { x: 42, y: 7, facing: 1, type: 'player' });
 	expect(echoes).toHaveLength(1);
 
-	// Just shy of its full life it survives...
 	const live = stepDodgeEchoes(echoes, DODGE_ECHO_LIFE_MS - 1);
 	expect(live).toHaveLength(1);
 
-	// ...and one more frame past the lifetime culls it.
 	const dead = stepDodgeEchoes(live, 1);
 	expect(dead).toHaveLength(0);
 });

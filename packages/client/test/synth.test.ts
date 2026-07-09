@@ -20,20 +20,20 @@ test('renders a well-formed PCM16 mono WAV header', () => {
 	expect(ascii(wav, 36, 4)).toBe('data');
 
 	const view = new DataView(wav.buffer);
-	expect(view.getUint16(20, true)).toBe(1); // PCM
-	expect(view.getUint16(22, true)).toBe(1); // mono
+	expect(view.getUint16(20, true)).toBe(1);
+	expect(view.getUint16(22, true)).toBe(1);
 	expect(view.getUint32(24, true)).toBe(SAMPLE_RATE);
-	expect(view.getUint16(34, true)).toBe(16); // bits/sample
+	expect(view.getUint16(34, true)).toBe(16);
 });
 
 test('sample count matches the requested duration', () => {
 	const wav = renderWav({ ...JUMP, durationMs: 100 });
 	const expectedSamples = Math.round((100 / 1000) * SAMPLE_RATE);
-	// 44-byte header + 2 bytes per mono PCM16 sample.
+	// 44-byte header + 2 bytes per PCM16 sample
 	expect(wav.length).toBe(44 + expectedSamples * 2);
 
 	const view = new DataView(wav.buffer);
-	expect(view.getUint32(40, true)).toBe(expectedSamples * 2); // data chunk size
+	expect(view.getUint32(40, true)).toBe(expectedSamples * 2);
 });
 
 test('render is deterministic — identical spec yields identical bytes', () => {

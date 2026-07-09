@@ -1,10 +1,5 @@
-// Chat command parsing (#34, ADR 0005): pure classification of a submitted line,
-// unit-tested without a renderer or socket. The typing surface lives in message-log.ts.
-
 import { EMOTES, emoteById } from '@mmo/shared';
 
-// A submitted line resolved to intent: say, whisper (#40), emote (#38), or a usage
-// error surfaced locally (no round-trip).
 export type ChatCommand =
 	| { kind: 'say'; text: string }
 	| { kind: 'whisper'; to: string; text: string }
@@ -12,12 +7,11 @@ export type ChatCommand =
 	| { kind: 'error'; message: string };
 
 const WHISPER_USAGE = 'Usage: /w <handle> <message>';
-// Doubles as the `/emotes` listing and the hint for a bad `/em` (ADR 0020 §9).
 const EMOTE_USAGE = `Emotes: ${EMOTES.map((e) => e.id).join(', ')} — use /em <name>`;
 
 export function parseChatCommand(line: string): ChatCommand {
 	const trimmed = line.trim();
-	// Checked before `/em` (whose `\b` won't match the trailing `s`) so the two stay distinct.
+	// Must precede /em, whose \b won't match the trailing 's'.
 	if (/^\/emotes\b/.test(trimmed))
 		return { kind: 'error', message: EMOTE_USAGE };
 	const em = /^\/(?:em|emote)\b\s*(.*)$/s.exec(trimmed);

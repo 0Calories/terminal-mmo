@@ -1,7 +1,3 @@
-// Persistence seam tests (#236) against an in-memory bun:sqlite — the same store the
-// server runs. Durable fields survive save→load, transient state does not, and a
-// returning login lands back in its last safe Town.
-
 import { expect, test } from 'bun:test';
 import {
 	addSession,
@@ -37,7 +33,6 @@ const gear: Item = {
 	affixes: [{ stat: 'atk', value: 5 }],
 };
 
-// A well-progressed save with every persisted field set to a non-default value.
 function richSave(): PlayerSave {
 	return {
 		handle: 'Trinity',
@@ -65,7 +60,7 @@ test('an unseen key loads undefined; a re-save upserts in place', () => {
 	store.save(KEY, richSave());
 	store.save(KEY, { ...richSave(), progress: { level: 7, xp: 420, gold: 5 } });
 	expect(store.load(KEY)?.progress.gold).toBe(5);
-	expect(store.all().length).toBe(1); // upsert, not a second row
+	expect(store.all().length).toBe(1);
 	store.close();
 });
 
@@ -113,13 +108,11 @@ test('a live Avatar round-trips durable state but not transient position/HP', ()
 	);
 	const back = avatarOf(w, 2);
 
-	// Durable state restored...
 	expect(back.progress).toEqual({ level: 7, xp: 420, gold: 999 });
 	expect(back.inventory).toEqual([gear]);
 	expect(back.avatar.weapon).toBe(2);
 	expect(back.cosmetics).toEqual({ hue: 1, hat: 1, nameplate: 1, form: 0 });
 	expect(back.bossDefeated).toBe(true);
-	// ...transient state is NOT: position resets to the safe spawn, HP is full for level.
 	expect(back.avatar.x).not.toBe(123);
 	expect(back.avatar.hp).toBe(back.avatar.maxHp);
 	expect(back.avatar.hp).toBeGreaterThan(3);
@@ -154,13 +147,12 @@ test('login returns the Avatar to its last safe Town', () => {
 	const store = openPlayerStore(':memory:');
 	const world = createServerWorld({
 		zones: loadZones(),
-		start: 'field-01', // spawn out in the Field
+		start: 'field-01',
 		town: 'town-01',
 	});
 	let w = addSession(world, 1, 'Trinity');
 	expect(zoneOf(w, 1)).toBe('field-01');
 
-	// Walk onto the Field's Town portal and interact — relocating into town-01.
 	const portal = w.zones['field-01'].zone.portals.find(
 		(p) => p.target === 'town-01',
 	);

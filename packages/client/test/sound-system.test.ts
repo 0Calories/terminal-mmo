@@ -1,8 +1,6 @@
 import { expect, test } from 'bun:test';
 import { SoundSystem } from '../src/sound/system';
 
-// With no interactive TTY the facade never touches the native audio engine, so
-// headless zone-judging and CI runs stay silent.
 test('without a TTY the system stays disabled and never touches audio', () => {
 	const sound = new SoundSystem({ isTTY: false });
 	expect(sound.enabled).toBe(false);
@@ -16,7 +14,6 @@ test('play() and dispose() are safe no-ops when disabled', () => {
 	expect(sound.enabled).toBe(false);
 });
 
-// Defaults unmuted so the feature announces itself (ADR 0014, #149).
 test('master mute defaults off and toggles instantly', () => {
 	const sound = new SoundSystem({ isTTY: false });
 	expect(sound.muted).toBe(false);
@@ -53,8 +50,6 @@ test('mixer setters never throw when disabled', () => {
 	}).not.toThrow();
 });
 
-// applyAudioPrefs is a load, not a user change, so it restores state but must NOT
-// fire onChange and trigger a redundant write (#150, ADR 0015).
 test('applyAudioPrefs restores saved state and round-trips through audioPrefs', () => {
 	const sound = new SoundSystem({ isTTY: false });
 	const saved = {
@@ -81,15 +76,12 @@ test('applyAudioPrefs clamps stored values and does not fire onChange', () => {
 	expect(sound.masterVolume).toBe(1);
 	expect(sound.busVolume('combat')).toBe(0);
 	expect(sound.busVolume('ui')).toBe(1);
-	expect(changes).toBe(0); // a load, not a user edit
+	expect(changes).toBe(0);
 });
 
-// #268: an engine error used to flip enabled=false on the first hiccup, silently
-// killing audio for the session. Transient errors must be tolerated; only a
-// sustained burst degrades to silence.
 test('a single transient engine error does not permanently disable audio', () => {
 	const sound = new SoundSystem({ isTTY: false });
-	sound.enabled = true; // simulate a live engine
+	sound.enabled = true;
 	let degraded = 0;
 	sound.onDegraded = () => degraded++;
 	(sound as unknown as { handleEngineError(e: Error): void }).handleEngineError(
@@ -110,8 +102,6 @@ test('audio degrades to silence and surfaces once after a sustained burst of eng
 	for (let i = 0; i < 8; i++) fire(new Error('glitch'));
 	expect(sound.enabled).toBe(true);
 	expect(degraded).toBe(0);
-	// A sustained fault past the limit degrades to silence, surfacing one warning on
-	// the enabled→disabled edge.
 	fire(new Error('glitch'));
 	expect(sound.enabled).toBe(false);
 	expect(degraded).toBe(1);

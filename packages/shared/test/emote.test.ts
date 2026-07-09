@@ -15,7 +15,6 @@ test('EMOTES is a non-empty fixed set of distinct ids with a known lifetime', ()
 	for (const e of EMOTES) {
 		expect(e.id.length).toBeGreaterThan(0);
 		expect(['oneshot', 'loop', 'hold']).toContain(e.lifetime);
-		// A oneshot needs a positive duration to play; a persistent loop/hold ignores it.
 		if (e.lifetime === 'oneshot') expect(e.duration).toBeGreaterThan(0);
 	}
 });
@@ -43,7 +42,6 @@ test('emoteById resolves a known id and is undefined for an unknown one', () => 
 	expect(emoteById('definitely-not-an-emote')).toBeUndefined();
 });
 
-// The pure emote-state machine the owner predicts and the server runs identically (ADR 0020 §9).
 test('stepEmote counts a oneshot down while the Avatar stands still', () => {
 	const r = stepEmote('wave', 1.0, false, 0.25);
 	expect(r.emoteId).toBe('wave');
@@ -51,26 +49,20 @@ test('stepEmote counts a oneshot down while the Avatar stands still', () => {
 });
 
 test('stepEmote returns to idle once the oneshot timer elapses (ADR 0020 §8)', () => {
-	const r = stepEmote('wave', 0.1, false, 0.25); // dt overshoots the remaining time
+	const r = stepEmote('wave', 0.1, false, 0.25);
 	expect(r.emoteId).toBeNull();
 	expect(r.emoteT).toBe(0);
 });
 
 test('stepEmote accumulates a loop/hold elapsed clock and never times out', () => {
-	// A loop/hold's emoteT counts UP as elapsed sim-time (the opposite of a oneshot's
-	// countdown) and never auto-clears, even far past any oneshot duration.
 	let s = { emoteId: 'dance' as string | null, emoteT: 0 };
 	for (let i = 0; i < 100; i++) s = stepEmote(s.emoteId, s.emoteT, false, 0.1);
 	expect(s.emoteId).toBe('dance');
-	expect(s.emoteT).toBeCloseTo(10); // 100 × 0.1s of elapsed time, no auto-clear
-	// hold behaves identically in the state machine (the frame freeze is in bodyFrame).
+	expect(s.emoteT).toBeCloseTo(10);
 	expect(stepEmote('sit', 5, false, 0.1).emoteId).toBe('sit');
 });
 
 test('a loop emote frame is a deterministic function of elapsed sim-time — owner and observers agree (ADR 0020 §9)', () => {
-	// The loop frame is a pure function of the replicated emoteT, so an owner who stepped
-	// the clock by uneven dt and an observer who only received the snapshot compute the
-	// same frame for any FPS.
 	const frame = (t: number) => Math.floor(Math.max(0, t) * EMOTE_FPS);
 	let owner = { emoteId: 'dance' as string | null, emoteT: 0 };
 	for (const dt of [0.07, 0.13, 0.05])
@@ -87,8 +79,6 @@ test('stepEmote drops an unknown (forward-version) emote id rather than posing i
 });
 
 test('stepEmote cancels the emote the instant the Avatar acts (ADR 0020 §6/§9)', () => {
-	// `acting` clears the emote even with time to spare, and it does not resume — the
-	// cleared id is what the next tick steps from.
 	const r = stepEmote('wave', 1.0, true, 0.05);
 	expect(r.emoteId).toBeNull();
 	expect(r.emoteT).toBe(0);
@@ -104,9 +94,9 @@ test('stepEmote is a no-op when there is no active emote', () => {
 test('emoteInterrupted: moving or any combat / reaction state outranks an emote', () => {
 	const REST = { vx: 0, attackT: 0 };
 	expect(emoteInterrupted(REST)).toBe(false);
-	expect(emoteInterrupted({ ...REST, vx: -3 })).toBe(true); // moving (either direction)
-	expect(emoteInterrupted({ ...REST, attackT: 0.2 })).toBe(true); // mid-swing
-	expect(emoteInterrupted({ ...REST, dodgeT: 0.2 })).toBe(true); // dodging
-	expect(emoteInterrupted({ ...REST, guardT: 0.2 })).toBe(true); // guarding
-	expect(emoteInterrupted({ ...REST, stunT: 0.2 })).toBe(true); // Staggered
+	expect(emoteInterrupted({ ...REST, vx: -3 })).toBe(true);
+	expect(emoteInterrupted({ ...REST, attackT: 0.2 })).toBe(true);
+	expect(emoteInterrupted({ ...REST, dodgeT: 0.2 })).toBe(true);
+	expect(emoteInterrupted({ ...REST, guardT: 0.2 })).toBe(true);
+	expect(emoteInterrupted({ ...REST, stunT: 0.2 })).toBe(true);
 });

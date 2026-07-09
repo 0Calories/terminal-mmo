@@ -40,7 +40,6 @@ describe('zone CLI', () => {
 	});
 
 	test('check exits non-zero and reports a broken Zone in the set', () => {
-		// a field template has no spawn yet — the documented next-edit error
 		run(['new', 'field-7', '--type', 'field'], deps());
 		lines = [];
 		expect(run(['check'], deps())).not.toBe(0);
@@ -59,8 +58,6 @@ describe('zone CLI', () => {
 		expect(output().toLowerCase()).toContain('nope');
 	});
 
-	// An otherwise-valid Zone that declares a header glyph it never places: parseZone
-	// loads it fine (it ignores unplaced keys), so only the raw-text orphan pass catches it.
 	test('check flags an orphan header glyph (declared but unused)', () => {
 		writeFileSync(
 			join(root, 'catalogs.json'),
@@ -94,8 +91,6 @@ describe('zone CLI', () => {
 });
 
 describe('zone rename', () => {
-	// A two-Zone set that portals into each other, so a rename must rewrite the
-	// other file's Portal target as well as move the file.
 	const writePair = () => {
 		writeFileSync(
 			join(root, 'catalogs.json'),
@@ -121,7 +116,6 @@ describe('zone rename', () => {
 		expect(field).toContain('"target":"hub"');
 		expect(field).not.toContain('town-01');
 
-		// no Portal is left dangling at the vanished id (the rename's whole point)
 		lines = [];
 		run(['check'], deps());
 		expect(output()).not.toContain("unknown Zone 'town-01'");
@@ -129,7 +123,6 @@ describe('zone rename', () => {
 
 	test('without the rewrite, the sibling Portal would dangle (load-bearing)', () => {
 		writePair();
-		// Sanity: before any rename, both targets resolve.
 		run(['check'], deps());
 		expect(output()).not.toContain('unknown Zone');
 	});

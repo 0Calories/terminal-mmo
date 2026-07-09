@@ -15,9 +15,7 @@ export function saleValue(item: Item): number {
 	return RARITY_VALUE[item.rarity] + AFFIX_VALUE * affixTotal;
 }
 
-// The fixed shortlist a Town Merchant stocks (#242): affix-free `common` goods, one per
-// Slot. Every price sits above the common `saleValue` (5), so buy-then-resell is always a
-// loss — the shop can't be farmed for Gold.
+// Every price sits above the common saleValue (5), so buy-then-resell can't farm Gold.
 export interface StarterGood {
 	base: string;
 	slot: Slot;
@@ -29,8 +27,6 @@ export const STARTER_GOODS: readonly StarterGood[] = [
 	{ base: 'Copper Ring', slot: 'accessory', price: 20 },
 ];
 
-/** Selling an id not held is a no-op, so a caller can't conjure Gold from an
- * item it doesn't own. */
 export function sellItem(
 	progress: PlayerProgress,
 	inventory: Item[],
@@ -44,10 +40,6 @@ export function sellItem(
 	};
 }
 
-/** Refused (`bought: false`, both unchanged) when the Player can't afford it, so a caller
- * can't go into Gold debt or conjure an Item free. On success the price is deducted and a
- * fresh `common` Item minted with the caller-supplied `itemId` — the vendor never
- * allocates ids. */
 export function buyItem(
 	progress: PlayerProgress,
 	inventory: Item[],

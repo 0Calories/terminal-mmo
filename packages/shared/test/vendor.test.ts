@@ -30,7 +30,7 @@ describe('sellItem', () => {
 		const res = sellItem(progress(100), [sword, ring], 7);
 		expect(res.inventory).toEqual([ring]);
 		expect(res.progress.gold).toBe(100 + saleValue(sword));
-		expect(res.progress.level).toBe(3); // other progress untouched
+		expect(res.progress.level).toBe(3);
 	});
 
 	test('cannot sell an Item not held — Gold and inventory unchanged', () => {
@@ -42,13 +42,13 @@ describe('sellItem', () => {
 });
 
 describe('buyItem', () => {
-	const good = STARTER_GOODS[0]; // Rusty Sword, price 15
+	const good = STARTER_GOODS[0];
 
 	test('deducts the price and appends the bought Item with the given id', () => {
 		const res = buyItem(progress(100), [], good, 42);
 		expect(res.bought).toBe(true);
 		expect(res.progress.gold).toBe(100 - good.price);
-		expect(res.progress.level).toBe(3); // other progress untouched
+		expect(res.progress.level).toBe(3);
 		expect(res.inventory).toHaveLength(1);
 		expect(res.inventory[0]).toEqual({
 			id: 42,
@@ -77,7 +77,7 @@ describe('buyItem', () => {
 		const bought = buyItem(progress(50), [], good, 1);
 		const sold = sellItem(bought.progress, bought.inventory, 1);
 		expect(sold.inventory).toEqual([]);
-		expect(sold.progress.gold).toBeLessThan(50); // price > sale value
+		expect(sold.progress.gold).toBeLessThan(50);
 	});
 
 	test('every starter good is a common, affix-free base priced above its sale value', () => {
@@ -96,6 +96,6 @@ describe('vendor NPC placement', () => {
 		const town = zones.find((z) => z.id === 'town-01');
 		const field = zones.find((z) => z.id === 'field-01');
 		expect(town?.npcs?.some((n) => n.kind === 'vendor')).toBe(true);
-		expect(field?.npcs ?? []).toEqual([]); // combat Field is vendor-free
+		expect(field?.npcs ?? []).toEqual([]);
 	});
 });

@@ -15,7 +15,6 @@ test('hello round-trips the handle + release version + cosmetics + weapon + publ
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'neo',
-		// `form` rides the handshake (ADR 0020); Form 2 (wisp) is drafted out, so 0 is the only valid one.
 		cosmetics: { hue: 3, hat: 2, nameplate: 5, form: 0 },
 		version: '0.3.0',
 		weapon: 2,
@@ -26,8 +25,6 @@ test('hello round-trips the handle + release version + cosmetics + weapon + publ
 });
 
 test('a pre-auth hello (no trailing public key) decodes publicKey as empty', () => {
-	// Pre-#235 layout (through the weapon byte): decode must not throw, and the absent
-	// key becomes '' — refused later with an auth reason, not a frame error.
 	const msg: ClientMessage = {
 		t: 'hello',
 		handle: 'legacy',
@@ -37,7 +34,7 @@ test('a pre-auth hello (no trailing public key) decodes publicKey as empty', () 
 		publicKey: 'trailing-key-to-strip',
 	};
 	const encoded = encodeClientMessage(msg);
-	// Strip the trailing publicKey field (u32 length prefix + bytes).
+	// strip trailing publicKey field: u32 length prefix + bytes
 	const keyLen = new TextEncoder().encode(msg.publicKey).length;
 	const truncated = encoded.subarray(0, encoded.length - 4 - keyLen);
 	expect(decodeClientMessage(truncated)).toEqual({ ...msg, publicKey: '' });
@@ -58,8 +55,6 @@ test('challenge (server -> client) round-trips the nonce bytes', () => {
 });
 
 test('a truncated hello (no version field) decodes to empty version + default cosmetics + weapon', () => {
-	// Only tag(1) + length-prefixed handle, nothing after: decode must not throw, and
-	// the absent Version becomes '' — which fails the server's equality gate cleanly.
 	const handle = new TextEncoder().encode('legacy');
 	const buf = new Uint8Array(1 + 4 + handle.length);
 	buf[0] = 1; // CLIENT_TAG.hello
@@ -76,8 +71,6 @@ test('a truncated hello (no version field) decodes to empty version + default co
 });
 
 test('hello clamps an out-of-range cosmetic index to the default on decode', () => {
-	// Both the hat and form ids are past their catalogs: decode must not throw, and each
-	// falls back to 0 so the renderer is never handed a stray index.
 	const encoded = encodeClientMessage({
 		t: 'hello',
 		handle: 'forward',
@@ -198,8 +191,6 @@ test('whisper (server -> client) round-trips sender session + both handles + tex
 });
 
 test('emote (client -> server) round-trips the trigger id (#38, ADR 0020 §9)', () => {
-	// Only the client->server trigger remains; the active emote now rides the snapshot
-	// action-state instead of a server->client relay.
 	const msg: ClientMessage = { t: 'emote', emote: 'wave' };
 	const decoded = decodeClientMessage(encodeClientMessage(msg));
 	expect(decoded).toEqual(msg);
@@ -228,8 +219,6 @@ test('createAvatar (client -> server) round-trips the typed Handle + chosen Cosm
 });
 
 test('createAvatar carries an empty typed Handle (server falls back to the placeholder)', () => {
-	// An empty typed Handle (#304) must round-trip as '' so the server re-applies the
-	// auto-derived placeholder.
 	const msg: ClientMessage = {
 		t: 'createAvatar',
 		handle: '',
@@ -239,7 +228,6 @@ test('createAvatar carries an empty typed Handle (server falls back to the place
 });
 
 test('createAvatar clamps an out-of-range cosmetic index on decode', () => {
-	// Cosmetics decode is defensive at the trust boundary: a stray index falls back to 0 per field.
 	const encoded = encodeClientMessage({
 		t: 'createAvatar',
 		handle: 'Neo',
@@ -262,7 +250,6 @@ test('setCosmetics (client -> server) round-trips the chosen Cosmetics (#305)', 
 });
 
 test('setCosmetics clamps an out-of-range cosmetic index on decode (#305)', () => {
-	// Cosmetics decode is defensive at the trust boundary: a stray index falls back to 0 per field.
 	const encoded = encodeClientMessage({
 		t: 'setCosmetics',
 		cosmetics: { hue: 4, hat: 250, nameplate: 2, form: 250 },
@@ -274,8 +261,6 @@ test('setCosmetics clamps an out-of-range cosmetic index on decode (#305)', () =
 });
 
 test('a #302-era createAvatar (no trailing handle) decodes handle as empty', () => {
-	// The typed Handle (#304) is append-only after the cosmetics, so a predating frame
-	// (tag + 4 cosmetic bytes) must decode without throwing and yield handle: ''.
 	const full = encodeClientMessage({
 		t: 'createAvatar',
 		handle: 'Neo',
@@ -298,10 +283,8 @@ test('createRejected (server -> client) round-trips its reason (#304)', () => {
 });
 
 test('createRejected clamps a forward-version reason to invalid on decode', () => {
-	// The reason is a u8 index; an unknown (forward-version) index must decode to 'invalid'
-	// so an older client can never crash on it.
 	const encoded = encodeServerMessage({ t: 'createRejected', reason: 'taken' });
-	encoded[1] = 200; // a forward-version reason index
+	encoded[1] = 200;
 	expect(decodeServerMessage(encoded)).toEqual({
 		t: 'createRejected',
 		reason: 'invalid',
@@ -329,7 +312,6 @@ test('welcome round-trips the session, zone, tick rate, durable handle, and isNe
 	expect(decodeServerMessage(encodeServerMessage(returning))).toEqual(
 		returning,
 	);
-	// The new-account verdict (#302) round-trips as its own value, not folded into a default.
 	const fresh: ServerMessage = { ...returning, isNew: true };
 	expect(decodeServerMessage(encodeServerMessage(fresh))).toEqual(fresh);
 });
@@ -343,9 +325,7 @@ test('a pre-auth welcome (no trailing handle) decodes handle as empty', () => {
 		handle: 'Trinity',
 		isNew: true,
 	});
-	// Strip the trailing isNew byte (#302) and the durable-handle field, leaving a pre-auth
-	// welcome: the absent handle decodes to '' and the absent isNew defaults to false (a
-	// returning account, so no creator shows).
+	// strip trailing isNew byte + durable-handle field (u32 length prefix + bytes)
 	const truncated = encoded.subarray(
 		0,
 		encoded.length - 1 - 4 - new TextEncoder().encode('Trinity').length,
@@ -380,7 +360,6 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 			{
 				sessionId: 7,
 				handle: 'neo',
-				// `form` replicates so every observer sees the chosen Form (ADR 0020).
 				cosmetics: { hue: 1, hat: 4, nameplate: 3, form: 0 },
 				x: 12.5,
 				y: 31.25,
@@ -391,10 +370,7 @@ test('snapshot round-trips authoritative zone state + owner-private fields', () 
 				hp: 80,
 				maxHp: 92,
 				hurtT: 0.3,
-				// Equipped Weapon index joins the broadcast appearance (ADR 0017 §14).
 				weapon: 2,
-				// Mid-swing action-state (ADR 0017 §10) carrying an active body emote (ADR
-				// 0020 §9): a non-idle, emoting round-trip.
 				action: {
 					move: 'basic',
 					phase: 'active',
@@ -527,7 +503,7 @@ test('snapshot round-trips a multi-Effect list across every dir (ADR 0013)', () 
 		effects: [
 			{ kind: 'blood', x: 1.5, y: 2.5, intensity: 8, dir: 1 },
 			{ kind: 'blood', x: 3.25, y: 4.75, intensity: 24, dir: -1 },
-			{ kind: 'blood', x: 9, y: 9, intensity: 12, dir: 0 }, // radial (death)
+			{ kind: 'blood', x: 9, y: 9, intensity: 12, dir: 0 },
 		],
 		progress: { level: 1, xp: 0, gold: 0 },
 		drops: [],
@@ -598,8 +574,6 @@ test('snapshot round-trips a Monster carrying the staggered action-flag (ADR 001
 });
 
 test('snapshot round-trips the brute entity type across the wire (CONTRIBUTING §wire, #237)', () => {
-	// The brute is appended to ENTITY_TYPES (CONTRIBUTING §2), so its type index must
-	// round-trip or a mid-swing brute would mis-decode.
 	const msg: ServerMessage = {
 		t: 'snapshot',
 		tick: 42,

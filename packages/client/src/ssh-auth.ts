@@ -1,19 +1,3 @@
-// The client half of SSH-key auth (ADR 0004, #235; amendment #297): resolve the Player's
-// ed25519 Identity Key and sign the server's challenge with it. Nobody is ever locked out —
-// a keyless machine mints its own game identity. Sources, tried in order:
-//
-//  1. The anchored key (config `identity.anchor`): a returning machine resolves the SAME key
-//     it used last, so its public-key-keyed Save can't be orphaned. An unreachable external
-//     anchor yields a NON-destructive refusal, never a fresh mint.
-//  2. ssh-agent (SSH_AUTH_SOCK): works with passphrase-protected and hardware-backed keys,
-//     and the private key never touches this process.
-//  3. ~/.ssh/id_ed25519 directly, in-process. A passphrase-protected file is skipped — that
-//     is what the agent is for.
-//  4. Generated fallback (first launch, no anchor): mint an ed25519 keypair, store it PKCS8
-//     PEM (mode 0600); a read-only home degrades to an ephemeral in-memory key.
-//
-// Only ssh-ed25519 (ADR 0004); the SSH wire parsing/encoding is shared with the server's pure
-// verifier (@mmo/shared).
 import {
 	createHash,
 	createPrivateKey,
@@ -35,20 +19,14 @@ import {
 } from '@mmo/shared';
 import { ConfigStore, type IdentityAnchor } from './config';
 
-// The public key to offer in `hello`, plus a signer that answers the server's nonce with an
-// agent-format signature blob.
 export interface SshIdentity {
-	publicKey: string; // OpenSSH one-line form
+	publicKey: string;
 	signChallenge(nonce: Uint8Array): Promise<Uint8Array>;
 }
 
-// Two raw ed25519 keys are the same identity iff their 32 bytes match — used to select and
-// guard the anchored key.
 function sameRaw(a: Uint8Array, b: Uint8Array): boolean {
 	return a.length === b.length && a.every((byte, i) => byte === b[i]);
 }
-
-// --- ssh-agent (RFC 4251 framing over the unix socket) -----------------------
 
 const AGENTC_REQUEST_IDENTITIES = 11;
 const AGENT_IDENTITIES_ANSWER = 12;
@@ -56,9 +34,7 @@ const AGENTC_SIGN_REQUEST = 13;
 const AGENT_SIGN_RESPONSE = 14;
 const AGENT_TIMEOUT_MS = 3000;
 
-// One request/response round-trip with the agent; null on any failure. Bun.connect (not
-// node:net) because its connection failure is a clean promise rejection, where node:net's
-// unix-socket ENOENT escapes as an uncaught error under Bun.
+// Bun.connect, not node:net: node:net's unix-socket ENOENT escapes as an uncaught error under Bun.
 function agentRoundTrip(
 	sockPath: string,
 	body: Uint8Array,
@@ -97,11 +73,11 @@ function agentRoundTrip(
 			(s) => {
 				sock = s;
 				if (done) {
-					s.end(); // lost the race against the timeout
+					s.end();
 					return;
 				}
 				const frame = new SshBlobWriter();
-				frame.string(body); // u32 length prefix + body
+				frame.string(body);
 				s.write(frame.finish());
 			},
 			() => finish(null),
@@ -110,13 +86,11 @@ function agentRoundTrip(
 }
 
 interface AgentKey {
-	blob: Uint8Array; // the raw public-key blob (what sign requests are keyed by)
-	raw: Uint8Array; // the 32 ed25519 key bytes inside it
+	blob: Uint8Array;
+	raw: Uint8Array;
 	comment: string;
 }
 
-// The agent's ed25519 identities, in its order. Null if the agent is unreachable, empty if it
-// answered with no usable key.
 async function agentEd25519Keys(sockPath: string): Promise<AgentKey[] | null> {
 	const reply = await agentRoundTrip(
 		sockPath,
@@ -131,7 +105,7 @@ async function agentEd25519Keys(sockPath: string): Promise<AgentKey[] | null> {
 	for (let i = 0; i < n; i++) {
 		const blob = r.string();
 		const comment = r.string();
-		if (blob === null || comment === null) return keys; // short frame; keep what parsed
+		if (blob === null || comment === null) return keys;
 		const pub = parsePublicKeyBlob(blob);
 		if (pub)
 			keys.push({
@@ -143,8 +117,6 @@ async function agentEd25519Keys(sockPath: string): Promise<AgentKey[] | null> {
 	return keys;
 }
 
-// Ask the agent to sign `payload` with the key `blob` identifies. The reply's signature field
-// is already the {algo, sig} blob the server verifies.
 async function agentSign(
 	sockPath: string,
 	blob: Uint8Array,
@@ -154,7 +126,7 @@ async function agentSign(
 	w.u8(AGENTC_SIGN_REQUEST);
 	w.string(blob);
 	w.string(payload);
-	w.u32(0); // flags: none (ed25519 has no rsa-sha2-style variants)
+	w.u32(0); // flags: none
 	const reply = await agentRoundTrip(sockPath, w.finish());
 	if (!reply) throw new Error('ssh-agent did not answer the sign request');
 	const r = new SshBlobReader(reply);
@@ -167,8 +139,6 @@ async function agentSign(
 	return sig;
 }
 
-// The raw key bytes of `~/.ssh/id_ed25519.pub`, used to prefer that identity among the agent's
-// keys. Null when missing/unreadable/not ed25519.
 function defaultPubKeyRaw(sshDir: string): Uint8Array | null {
 	try {
 		const line = readFileSync(join(sshDir, 'id_ed25519.pub'), 'utf8');
@@ -178,9 +148,7 @@ function defaultPubKeyRaw(sshDir: string): Uint8Array | null {
 	}
 }
 
-// `wantRaw` pins the selection to a specific key (an anchored external identity): when set,
-// ONLY that exact key is returned, so a different loaded key can't silently take over the Save.
-// Without it, the key matching `~/.ssh/id_ed25519.pub` is preferred, else the first.
+// wantRaw pins selection to one key so a different loaded key can't silently take over the Save.
 async function agentIdentity(
 	sockPath: string,
 	sshDir: string,
@@ -206,17 +174,12 @@ async function agentIdentity(
 	};
 }
 
-// --- ~/.ssh/id_ed25519 (unencrypted openssh-key-v1) --------------------------
-
-// ASN.1 PKCS8 header for an ed25519 private key (RFC 8410): appending the raw
-// 32-byte seed yields the DER document node:crypto imports.
+// PKCS8 header for ed25519 (RFC 8410); append the 32-byte seed to get the DER node:crypto imports.
 const ED25519_PKCS8_PREFIX = Uint8Array.from(
 	Buffer.from('302e020100300506032b657004220420', 'hex'),
 );
 const OPENSSH_MAGIC = 'openssh-key-v1\0';
 
-// `wantRaw`, when set, requires the file to hold that exact key (else null) — the
-// anchored-external guard, so a swapped-out `~/.ssh/id_ed25519` can't take over a Save.
 function fileIdentity(
 	sshDir: string,
 	wantRaw?: Uint8Array | null,
@@ -247,7 +210,7 @@ function fileIdentity(
 	);
 	const cipher = r.string();
 	const kdf = r.string();
-	r.string(); // kdf options
+	r.string();
 	const nkeys = r.u32();
 	const pubBlob = r.string();
 	const privBlock = r.string();
@@ -259,18 +222,17 @@ function fileIdentity(
 		privBlock === null
 	)
 		return null;
-	// A passphrase-protected file is skipped, not decrypted: the agent path is
-	// the supported way to use a protected key.
+	// Passphrase-protected file is skipped, not decrypted — use the agent for those.
 	if (new TextDecoder().decode(cipher) !== 'none') return null;
 	const pub = parsePublicKeyBlob(pubBlob);
-	if (!pub) return null; // not an ed25519 key
-	if (wantRaw && !sameRaw(pub.key, wantRaw)) return null; // not the anchored key
+	if (!pub) return null;
+	if (wantRaw && !sameRaw(pub.key, wantRaw)) return null;
 
 	const pr = new SshBlobReader(privBlock);
-	pr.u32(); // check bytes (equal pair; unencrypted, so no need to compare)
+	pr.u32();
 	pr.u32();
 	const algo = pr.string();
-	pr.string(); // public key again
+	pr.string();
 	const priv = pr.string(); // 64 bytes: seed || public
 	if (
 		algo === null ||
@@ -296,8 +258,6 @@ function fileIdentity(
 	};
 }
 
-// The Player's external SSH identity: ssh-agent first (works with protected keys), then the
-// plain `~/.ssh/id_ed25519` file. `wantRaw` pins both sources to a specific anchored key.
 async function externalIdentity(
 	env: Record<string, string | undefined>,
 	sshDir: string,
@@ -307,9 +267,7 @@ async function externalIdentity(
 		try {
 			const viaAgent = await agentIdentity(env.SSH_AUTH_SOCK, sshDir, wantRaw);
 			if (viaAgent) return viaAgent;
-		} catch {
-			// fall through to the key file
-		}
+		} catch {}
 	}
 	try {
 		return fileIdentity(sshDir, wantRaw);
@@ -318,11 +276,6 @@ async function externalIdentity(
 	}
 }
 
-// --- generated fallback identity (ADR 0004 amendment, #297) -------------------
-
-// An in-process signer from a PKCS8 PEM ed25519 key — the generated key's storage form (NOT an
-// openssh-key-v1 file). Null (never a throw) for an unreadable / non-ed25519 PEM, so a corrupt
-// file reads as "no generated key" rather than crashing the launch.
 function identityFromPkcs8(pem: string): SshIdentity | null {
 	let priv: ReturnType<typeof createPrivateKey>;
 	try {
@@ -331,8 +284,7 @@ function identityFromPkcs8(pem: string): SshIdentity | null {
 		return null;
 	}
 	if (priv.asymmetricKeyType !== 'ed25519') return null;
-	// The Ed25519 private JWK carries the public bytes in `x` (RFC 8037), so the raw
-	// public key comes straight off the private key — no separate public KeyObject.
+	// Ed25519 private JWK carries the public bytes in x (RFC 8037).
 	const jwk = priv.export({ format: 'jwk' }) as { x?: string };
 	if (!jwk.x) return null;
 	const raw = new Uint8Array(Buffer.from(jwk.x, 'base64url'));
@@ -346,8 +298,6 @@ function identityFromPkcs8(pem: string): SshIdentity | null {
 	};
 }
 
-// Read the generated Identity Key back from its PKCS8 PEM file; null when missing / unreadable
-// / not ed25519.
 function readGeneratedIdentity(keyPath: string): SshIdentity | null {
 	let pem: string;
 	try {
@@ -358,9 +308,6 @@ function readGeneratedIdentity(keyPath: string): SshIdentity | null {
 	return identityFromPkcs8(pem);
 }
 
-// Mint a fresh ed25519 identity and try to persist it as PKCS8 PEM (mode 0600). `persisted` is
-// false when the write fails (a read-only home): the caller plays with the in-memory key for
-// this session only — never a lockout (ADR 0015).
 function mintGeneratedIdentity(keyPath: string): {
 	identity: SshIdentity;
 	persisted: boolean;
@@ -373,43 +320,25 @@ function mintGeneratedIdentity(keyPath: string): {
 	try {
 		mkdirSync(dirname(keyPath), { recursive: true });
 		writeFileSync(keyPath, pem, { mode: 0o600 });
-		chmodSync(keyPath, 0o600); // enforce 0600 even if the file pre-existed / umask
+		chmodSync(keyPath, 0o600); // enforce 0600 even if the file pre-existed
 		persisted = true;
-	} catch {
-		// read-only home / no perms — fall back to the ephemeral in-memory key.
-	}
+	} catch {}
 	return { identity, persisted };
 }
 
-// --- the discovery decision (pure) -------------------------------------------
-
-// What discovery decided to do, separated from the fs/agent IO so the ordering + Save-safety
-// logic is unit-testable.
 export type IdentityPlan =
-	| { kind: 'external'; writeAnchor: boolean } // use the external key (anchor it iff first launch)
-	| { kind: 'generated' } // use the anchored generated key from its file
-	| { kind: 'mint' } // first launch, no external key — generate one
+	| { kind: 'external'; writeAnchor: boolean }
+	| { kind: 'generated' }
+	| { kind: 'mint' }
 	| { kind: 'refuse'; reason: 'external-unreachable' | 'generated-missing' };
 
-// Two OpenSSH public-key lines name the same identity iff their raw key bytes match — comment
-// ignored, the account is the key, not the label.
 function sameKey(a: string, b: string): boolean {
 	const ka = parsePublicKeyLine(a);
 	const kb = parsePublicKeyLine(b);
 	return !!ka && !!kb && sameRaw(ka.key, kb.key);
 }
 
-/**
- * The discovery ordering + Save-safety decision, pure over the anchor and the resolved
- * candidates. The whole invariant lives here:
- *
- *  - An anchored generated key resolves from its file; if it's gone we REFUSE (its Save is
- *    keyed to that public key — minting would orphan it).
- *  - An anchored external key must re-appear as the SAME key; unreachable → REFUSE, never a
- *    fresh mint.
- *  - Only a machine with NO anchor (no Save to lose) mints: a real external key wins and is
- *    anchored, else a generated key is minted.
- */
+// Save-safety: an anchored key must reappear or we REFUSE — only an unanchored machine mints.
 export function planIdentity(
 	anchor: IdentityAnchor | null,
 	external: SshIdentity | null,
@@ -420,20 +349,14 @@ export function planIdentity(
 			return generated
 				? { kind: 'generated' }
 				: { kind: 'refuse', reason: 'generated-missing' };
-		// external anchor: the same key must be back, or we refuse (Save-safety).
 		if (external && sameKey(external.publicKey, anchor.publicKey))
 			return { kind: 'external', writeAnchor: false };
 		return { kind: 'refuse', reason: 'external-unreachable' };
 	}
-	// No anchor — genuine first launch. A real key wins and gets anchored; else mint.
 	if (external) return { kind: 'external', writeAnchor: true };
 	return { kind: 'mint' };
 }
 
-// --- user-facing messages ----------------------------------------------------
-
-// The SSH SHA256 fingerprint of a public-key line, the shape `ssh-add -l` prints — so the
-// recovery refusal names the exact key to load.
 function fingerprint(publicKey: string): string {
 	const parsed = parsePublicKeyLine(publicKey);
 	if (!parsed) return '(unknown key)';
@@ -447,18 +370,14 @@ function fingerprint(publicKey: string): string {
 	return `SHA256:${digest}`;
 }
 
-// Non-blocking notice on a generating launch (the only launch that mints a key).
 function generatedNotice(keyPath: string): string {
 	return `No SSH key found — created a local game identity at ${keyPath}. Keep this file to keep your character.`;
 }
 
-// Warning when even the write failed (read-only home): we still play, ephemerally.
 const EPHEMERAL_WARNING =
 	"Couldn't save a local game identity (is your home directory writable?). " +
 	"Playing this session with a temporary key — this character's progress won't be saved.";
 
-// Recovery refusal for an anchored external key that isn't currently loadable. The
-// Save is untouched — loading the key and relaunching recovers the same character.
 function externalUnreachableRefusal(anchor: IdentityAnchor): string {
 	return (
 		`This machine last played with SSH key ${fingerprint(anchor.publicKey)}, but it isn't available right now.\n` +
@@ -467,8 +386,6 @@ function externalUnreachableRefusal(anchor: IdentityAnchor): string {
 	);
 }
 
-// Refusal for an anchored generated key whose file has gone missing. Again
-// non-destructive — restoring the file recovers the character.
 function generatedMissingRefusal(keyPath: string): string {
 	return (
 		`This machine's local game identity file (${keyPath}) is missing, so it can't sign in as your character.\n` +
@@ -476,20 +393,10 @@ function generatedMissingRefusal(keyPath: string): string {
 	);
 }
 
-// --- discovery -----------------------------------------------------------------
-
-// The result of resolving the Identity Key: `ok` carries the identity plus an optional notice
-// for the caller to surface; `!ok` carries a recovery refusal to print on exit.
 export type DiscoveredIdentity =
 	| { ok: true; identity: SshIdentity; notice?: string }
 	| { ok: false; refusal: string };
 
-/**
- * Resolve the Player's Identity Key (ADR 0004 amendment, #297): anchored key first, then a
- * real external SSH key on first launch, then a generated fallback so a keyless machine is
- * never locked out. Passing a shared ConfigStore keeps the anchor write in the same in-memory
- * config the rest of the client persists, so a later save can't clobber it.
- */
 export async function discoverSshIdentity(
 	config: ConfigStore = new ConfigStore().load(),
 	env: Record<string, string | undefined> = process.env,
@@ -498,17 +405,13 @@ export async function discoverSshIdentity(
 	const anchor = config.identityAnchor();
 	const keyPath = config.identityKeyPath;
 
-	// Resolve the candidates the decision needs. We only probe the agent/file when it could
-	// matter (no anchor, or an external anchor) so a generated player never needs an agent.
 	const wantRaw =
 		anchor?.source === 'external'
 			? (parsePublicKeyLine(anchor.publicKey)?.key ?? null)
 			: null;
 	const generated =
 		anchor?.source === 'generated' ? readGeneratedIdentity(keyPath) : null;
-	// Always PINNED for an external anchor: a corrupt anchor line (unparseable, so `wantRaw` is
-	// null) must not fall back to an unpinned probe that could pick up a different loaded key —
-	// it resolves to no external candidate and refuses, keeping the Save safe.
+	// A corrupt external-anchor line resolves to no candidate, never an unpinned probe that could grab a different key.
 	const external =
 		anchor?.source === 'generated'
 			? null
@@ -519,7 +422,6 @@ export async function discoverSshIdentity(
 	const plan = planIdentity(anchor, external, generated);
 	switch (plan.kind) {
 		case 'external': {
-			// external is guaranteed non-null by planIdentity for this branch.
 			const identity = external as SshIdentity;
 			if (plan.writeAnchor)
 				config.saveIdentityAnchor({

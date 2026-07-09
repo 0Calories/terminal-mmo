@@ -6,8 +6,6 @@ export function projectileBox(p: Projectile): Box {
 	return { x: p.x, y: p.y, w: PROJECTILE.w, h: PROJECTILE.h };
 }
 
-// A shooter's telegraphed pebble (ADR 0017 §8): launched ahead of the owner carrying the
-// SHOOTER hit-reaction payload, so it resolves through the same gate a melee hit does.
 export function spawnProjectile(
 	id: number,
 	owner: Entity,
@@ -27,7 +25,6 @@ export function spawnProjectile(
 	};
 }
 
-// Returns null on despawn (lifetime expired or entered solid Terrain).
 export function stepProjectile(
 	t: Terrain,
 	p: Projectile,

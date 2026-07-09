@@ -1,7 +1,3 @@
-// The controls overlay (#242): a read-only cheat-sheet of every input on the modal layer.
-// Level-gated verbs (#233) show WHEN they unlock, so a fresh Player knows both the key
-// and whether it's earned yet.
-
 import type { Capability } from '@mmo/shared';
 import { CAPABILITY_UNLOCK, capabilityUnlocked } from '@mmo/shared';
 import {
@@ -15,16 +11,12 @@ import { COLORS } from './theme';
 
 export interface ControlRow {
 	label: string;
-	// Binding(s) in the default keyboard scheme.
 	keys: string;
-	// Binding under the keyboard+mouse scheme; absent when the scheme doesn't change the key.
 	mouseKeys?: string;
-	// The capability a level-gated verb sits behind (#233); absent for always-available inputs.
 	capability?: Capability;
 }
 
-// Every input, grouped move → combat → social → system. Keep in lockstep with the
-// binding tables in input.ts and the emotes in chat.ts.
+// Keep in lockstep with the binding tables in input.ts and the emotes in chat.ts.
 export const CONTROL_ROWS: readonly ControlRow[] = [
 	{ label: 'Move', keys: '←/→  ·  a/d' },
 	{ label: 'Jump', keys: '␣  ·  ↑' },
@@ -65,7 +57,6 @@ export const CONTROL_ROWS: readonly ControlRow[] = [
 
 const LABEL_PAD = Math.max(...CONTROL_ROWS.map((r) => r.label.length));
 
-// The mouse override when the mouse scheme is active and the row has one, else the keyboard binding.
 export function keysFor(row: ControlRow, scheme: Scheme): string {
 	return scheme === 'mouse' && row.mouseKeys ? row.mouseKeys : row.keys;
 }
@@ -87,7 +78,6 @@ export class Controls {
 	private readonly rows: TextRenderable;
 
 	constructor(ctx: RenderContext) {
-		// zIndex 20: above the HUD (z10), same layer as the Shop / AudioOptions modals.
 		this.container = new BoxRenderable(ctx, {
 			position: 'absolute',
 			top: 0,

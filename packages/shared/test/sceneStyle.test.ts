@@ -5,8 +5,6 @@ import {
 	SCENE_PALETTE,
 } from '../src/sceneStyle';
 
-// A trivial colour type so we can assert the factory is applied to every tuple
-// without pulling in opentui (which @mmo/shared must never depend on).
 type Col = { r: number; g: number; b: number; a: number };
 const toCol = (r: number, g: number, b: number, a: number): Col => ({
 	r,
@@ -39,8 +37,6 @@ describe('buildSceneStyle', () => {
 	});
 
 	it('exposes the chrome tuples as plain (opentui-free) data', () => {
-		// Single source of truth for the game + forge preview: data only,
-		// so consumers bind their own colour type (no drift, no opentui in shared).
 		expect(SCENE_COLORS.bg).toEqual([16, 18, 26, 255]);
 		expect(Array.isArray(SCENE_COLORS.bg)).toBe(true);
 	});

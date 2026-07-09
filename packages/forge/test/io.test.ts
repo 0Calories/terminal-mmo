@@ -23,12 +23,10 @@ describe('writeZone', () => {
 
 		const loaded = loadZone(root, 'town-7', loadCatalogs(root));
 		expect(loaded.parseError).toBeUndefined();
-		expect(loaded.text).toBe(text); // no glyph/identity loss on the disk trip
+		expect(loaded.text).toBe(text);
 		expect(loaded.zone?.id).toBe('town-7');
 	});
 
-	// Atomic write (#98): a temp sibling renamed over the target, so a crash mid-write
-	// never leaves a half-written .zone (all-or-nothing, no stray temp files).
 	test('overwrites an existing zone in place, leaving no temp files behind', () => {
 		writeZone(root, 'town-7', newZoneTemplate('town-7', 'town'));
 		const next = newZoneTemplate('town-7', 'field');
@@ -40,7 +38,6 @@ describe('writeZone', () => {
 	});
 
 	test('does not clobber the target when the new content fails to materialize', () => {
-		// A pre-existing temp sibling must not interfere with a clean write.
 		const text = newZoneTemplate('town-7', 'town');
 		writeFileSync(join(root, 'town-7.zone.tmp'), 'garbage');
 		writeZone(root, 'town-7', text);

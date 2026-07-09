@@ -2,8 +2,6 @@ import { expect, test } from 'bun:test';
 import type { AvatarIntent } from '@mmo/shared';
 import { foldPendingEdges } from '../src/intents';
 
-// A minimal reported intent for a session holding still, interact NOT on the sticky
-// flag (it rides the pending-edge set, ADR 0027).
 function held(sessionId: number): AvatarIntent {
 	return {
 		sessionId,
@@ -21,16 +19,12 @@ function held(sessionId: number): AvatarIntent {
 test('a queued interact edge folds onto exactly ONE tick, then is gone (ADR 0027 portal-once)', () => {
 	const intents = new Map([[7, held(7)]]);
 	const pendingEmotes = new Map<number, string>();
-	const pendingInteract = new Set<number>([7]); // one press arrived since last tick
+	const pendingInteract = new Set<number>([7]);
 
-	// Tick 1: the edge fires...
 	const t1 = foldPendingEdges(intents.values(), pendingEmotes, pendingInteract);
 	expect(t1[0].interact).toBe(true);
-	// ...and is consumed, so it can't re-fire even though the reused intent persists.
 	expect(pendingInteract.has(7)).toBe(false);
 
-	// Tick 2 (and beyond): no edge queued → interact stays false. This is what stops the
-	// overlapping Portal arrival (#90) from ping-ponging.
 	const t2 = foldPendingEdges(intents.values(), pendingEmotes, pendingInteract);
 	expect(t2[0].interact).toBe(false);
 });
@@ -42,7 +36,7 @@ test('a session with no queued edge is returned untouched (same object)', () => 
 		new Map(),
 		new Set(),
 	);
-	expect(out).toBe(i); // no allocation when nothing to fold
+	expect(out).toBe(i);
 });
 
 test('emote and interact edges fold together, each consumed once', () => {
@@ -69,7 +63,7 @@ test('one session’s edge never leaks onto another session', () => {
 	const out = foldPendingEdges(
 		intents.values(),
 		new Map(),
-		new Set<number>([8]), // only session 8 pressed
+		new Set<number>([8]),
 	);
 	const byId = new Map(out.map((i) => [i.sessionId, i]));
 	expect(byId.get(8)?.interact).toBe(true);

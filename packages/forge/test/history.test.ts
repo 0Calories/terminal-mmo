@@ -10,9 +10,6 @@ import {
 	undo,
 } from '../src/history';
 
-// The tests use strings as stand-in states — History<T> is generic (the editor
-// stores `EditorDoc` snapshots). Coalescing merges one drag into a single step (#98).
-
 describe('initHistory', () => {
 	test('starts with the present and empty stacks', () => {
 		const h = initHistory('a');
@@ -34,7 +31,7 @@ describe('record', () => {
 
 	test('a new edit clears the redo future', () => {
 		let h = record(initHistory('a'), 'b');
-		h = undo(h); // present back to 'a', future = ['b']
+		h = undo(h);
 		expect(canRedo(h)).toBe(true);
 		h = record(h, 'c');
 		expect(h.future).toEqual([]);
@@ -46,7 +43,6 @@ describe('record', () => {
 		let h = initHistory('s0');
 		for (let i = 1; i <= HISTORY_CAP + 50; i++) h = record(h, `s${i}`);
 		expect(h.past.length).toBe(HISTORY_CAP);
-		// oldest retained is s50 (the first 50 fell off the bottom)
 		expect(h.past[0]).toBe('s50');
 		expect(h.present).toBe(`s${HISTORY_CAP + 50}`);
 	});
@@ -54,13 +50,12 @@ describe('record', () => {
 
 describe('record with coalescing tag', () => {
 	test('same tag merges into the current step (no new past entry)', () => {
-		let h = record(initHistory('a'), 'b', 'stroke1'); // first cell of a drag
+		let h = record(initHistory('a'), 'b', 'stroke1');
 		expect(h.past).toEqual(['a']);
 		h = record(h, 'c', 'stroke1');
 		h = record(h, 'd', 'stroke1');
 		expect(h.present).toBe('d');
-		expect(h.past).toEqual(['a']); // still ONE step for the whole drag
-		// one undo reverts the entire stroke
+		expect(h.past).toEqual(['a']);
 		expect(undo(h).present).toBe('a');
 	});
 
@@ -79,8 +74,8 @@ describe('record with coalescing tag', () => {
 
 	test('coalescing still clears the redo future', () => {
 		let h = record(initHistory('a'), 'b', 'stroke1');
-		h = undo(h); // future = ['b']
-		h = record(h, 'z', 'stroke1'); // tag matches the (now-undone) step? -> new edit
+		h = undo(h);
+		h = record(h, 'z', 'stroke1');
 		expect(h.future).toEqual([]);
 	});
 });
@@ -126,7 +121,6 @@ describe('undo / redo', () => {
 	});
 
 	test('an edit after undo cannot coalesce with a step across the undo', () => {
-		// undo resets the coalesce anchor so the next stroke is its own step.
 		let h = record(initHistory('a'), 'b', 'stroke1');
 		h = undo(h);
 		h = record(h, 'c', 'stroke1');

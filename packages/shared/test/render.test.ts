@@ -26,13 +26,9 @@ interface Cell {
 	ch: string;
 	fg: string;
 	bg: string;
-	// Set via setCellWithAlphaBlending, so tests can tell an opaque cell from a
-	// terrain-revealing translucent one (ADR 0016).
 	blended?: boolean;
 }
 
-// A stand-in for opentui's OptimizedBuffer: records the last cell written at each (x,y)
-// so tests can assert glyphs/colours without a real renderer.
 class FakeBuffer implements CellBuffer<string> {
 	readonly width: number;
 	readonly height: number;
@@ -68,9 +64,6 @@ class FakeBuffer implements CellBuffer<string> {
 	}
 }
 
-// Assert a sprite's lit glyphs landed at the top-left anchor. Expectations derive from
-// the same Sprite the renderer uses, so this pins placement/wiring, not appearance —
-// surviving art iteration.
 function expectSpriteAt(
 	buf: FakeBuffer,
 	sprite: Sprite,
@@ -78,8 +71,6 @@ function expectSpriteAt(
 	ay: number,
 	facing: Facing,
 	expectedFg: (key: string) => string,
-	// Cells another layer legitimately overwrites (e.g. the blade-edge arc over the active
-	// blade) — skipped so the frame check survives that overlay.
 	skip?: (px: number, py: number) => boolean,
 ) {
 	const glyphs = sprite.rows(facing);
@@ -120,7 +111,6 @@ const STYLE: RenderStyle<string> = {
 	},
 	paletteDefault: 'DEF',
 	cosmetics: {
-		// Distinct sentinels per index so a test can assert which catalog slot was used.
 		hues: ['hue0', 'hue1', 'hue2', 'hue3', 'hue4', 'hue5', 'hue6', 'hue7'],
 		nameplates: ['np0', 'np1', 'np2', 'np3', 'np4', 'np5', 'np6', 'np7'],
 		nameplateBgs: ['bg0', 'bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'bg7'],
@@ -132,9 +122,6 @@ const fgFor = (key: string) => STYLE.palette[key] ?? STYLE.paletteDefault;
 const accentFg = (accent: string) =>
 	STYLE.palette[accent] ?? STYLE.paletteDefault;
 
-// The blade's accent cells are repainted to the accent colour, so a weapon-frame
-// assertion resolves `WEAPON_ACCENT_KEY` to the accent, not the (absent) palette entry
-// for `a`; other keys use the normal palette (ADR 0018 §6).
 const weaponFgFor = (accent: string) => (key: string) =>
 	key === WEAPON_ACCENT_KEY ? accentFg(accent) : fgFor(key);
 
@@ -159,8 +146,6 @@ function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
 const flat20 = () =>
 	parseTerrain(Array.from({ length: 16 }, () => '.'.repeat(20)));
 
-// A ground plane solid at and below the feet row (`e.y + BOX.h`), so the feet sample
-// solid ground while the body rows above do not.
 const groundUnder = (e: Entity) => {
 	const surface = Math.round(e.y + BOX.h);
 	return parseTerrain(
@@ -169,8 +154,6 @@ const groundUnder = (e: Entity) => {
 };
 
 test('terrain: a solid cell renders as a block; empty cells stay cleared', () => {
-	// A single solid cell at (3,2) with air above → a top surface, rendered as the
-	// lower-half block `▄` (the lowered ground line, ADR 0021).
 	const terrain = parseTerrain(['......', '......', '...#..', '......']);
 	const buf = new FakeBuffer(6, 4);
 
@@ -182,14 +165,12 @@ test('terrain: a solid cell renders as a block; empty cells stay cleared', () =>
 	);
 
 	expect(buf.cleared).toBe('BG');
-	// Ground in the lower half, sky in the upper — so its bg is the scene `BG`, not
-	// `terrainBg`.
+	// Lower-half block, so its bg is the sky BG, not terrainBg.
 	expect(buf.at(3, 2)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' });
 	expect(buf.at(0, 0)).toBeUndefined();
 });
 
 test('the terrain top surface lowers to ▄; interior cells stay █ (ADR 0021)', () => {
-	// Upper row is a top surface (air above) → `▄`; the lower has solid above → full `█`.
 	const terrain = parseTerrain(['......', '...#..', '...#..', '......']);
 	const buf = new FakeBuffer(6, 4);
 
@@ -200,12 +181,11 @@ test('the terrain top surface lowers to ▄; interior cells stay █ (ADR 0021)'
 		STYLE,
 	);
 
-	expect(buf.at(3, 1)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' }); // surface: sky bg
-	expect(buf.at(3, 2)).toEqual({ ch: '█', fg: 'TFG', bg: 'TBG' }); // interior
+	expect(buf.at(3, 1)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' });
+	expect(buf.at(3, 2)).toEqual({ ch: '█', fg: 'TFG', bg: 'TBG' });
 });
 
 test('terrain scrolls with the camera', () => {
-	// Solid at world (3, 2); camera at (2, 1) shifts it to screen (1, 1). Air above → `▄`.
 	const terrain = parseTerrain(['......', '......', '...#..', '......']);
 	const buf = new FakeBuffer(6, 4);
 
@@ -216,7 +196,7 @@ test('terrain scrolls with the camera', () => {
 		STYLE,
 	);
 
-	expect(buf.at(1, 1)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' }); // surface: sky bg
+	expect(buf.at(1, 1)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' });
 	expect(buf.at(3, 2)).toBeUndefined();
 });
 
@@ -255,8 +235,6 @@ test('portals render as a translucent block across their box', () => {
 
 test('ghost mode keeps every glyph as-is and fades the colour over the tint (#118)', () => {
 	const buf = new FakeBuffer(20, 16);
-	// The shooter sprite has both solid and partial blocks; every one must survive
-	// unchanged (no glyph swap) — only the colour fades.
 	const e = makeEntity({ type: 'shooter', x: 6, y: 6 });
 	const fade = (fg: string) => `FADED(${fg})`;
 	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE, undefined, {
@@ -276,19 +254,16 @@ test('ghost mode keeps every glyph as-is and fades the colour over the tint (#11
 		for (let rx = 0; rx < sprite.w; rx++) {
 			const ch = glyphs[ry][rx];
 			const cell = buf.at(sx + rx, sy + ry);
-			// Every cell in the bounding box carries the tint — lit or transparent — so the
-			// footprint reads as one solid rectangle (#118).
 			expect(cell?.bg).toBe('TINT');
 			if (ch === ' ') {
-				expect(cell?.ch).toBe(' '); // a transparent cell, filled with the tint
+				expect(cell?.ch).toBe(' ');
 				sawFilledGap = true;
 				continue;
 			}
-			expect(cell?.ch).toBe(ch); // glyph kept exactly — no swap
-			expect(cell?.fg).toBe(fade(fgFor(keys[ry][rx]))); // colour run through fade
-			if (ch === '█')
-				sawSolid = true; // a solid full block...
-			else sawPartial = true; // ...and a puzzle-shape block both survive
+			expect(cell?.ch).toBe(ch);
+			expect(cell?.fg).toBe(fade(fgFor(keys[ry][rx])));
+			if (ch === '█') sawSolid = true;
+			else sawPartial = true;
 		}
 	}
 	expect(sawSolid && sawPartial && sawFilledGap).toBe(true);
@@ -358,19 +333,17 @@ test('a hurt entity flashes: every glyph painted with the hurt colour', () => {
 
 test('entities are z-ordered by y: a lower entity is drawn over a higher one', () => {
 	const buf = new FakeBuffer(20, 16);
-	// Same x; `front` has the larger y, so it must overdraw `back` where they meet.
 	const back = makeEntity({ id: 1, type: 'chaser', x: 8, y: 5 });
 	const front = makeEntity({ id: 2, type: 'player', x: 8, y: 6 });
 
 	renderZoneScene(
 		buf,
-		// Deliberately passed back-to-front out of order to prove the renderer sorts.
+		// Passed out of order to prove the renderer sorts.
 		{ terrain: flat20(), portals: [], npcs: [], entities: [front, back] },
 		{ x: 0, y: 0 },
 		STYLE,
 	);
 
-	// front's sprite top row should win over back's overlapping body.
 	const sprite = formFrame(FORMS[0], 'idle');
 	const ax = Math.round(front.x - Math.floor((sprite.w - BOX.w) / 2));
 	const ay = Math.round(front.y + BOX.h - sprite.h + (FORMS[0].baseline ?? 0));
@@ -382,34 +355,24 @@ test('entities are z-ordered by y: a lower entity is drawn over a higher one', (
 	}
 });
 
-// --- Nameplates: bare Handle on a tinted backing, a caller-composited top layer
-// (#217, ADR 0023) -----------------------------------------------------------------
-
-// The row a Handle anchors on: one past the planted feet, `e.y + BOX.h + baseline`
-// (the buddy Form's baseline is 1).
 const handleRow = (e: Entity) =>
 	Math.round(e.y + BOX.h + (FORMS[0].baseline ?? 0));
-// The left column the centred Handle starts at, bare text centred over the box.
 const handleLeft = (e: Entity) =>
 	Math.round(e.x + BOX.w / 2 - (e.name?.length ?? 0) / 2);
 
 test('drawNameplates draws the Handle one row below the planted feet', () => {
 	const buf = new FakeBuffer(20, 16);
-	// The buddy Form's baseline-1 plants its feet one cell lower; the Handle must follow,
-	// on the row just past them — the bug the redesign fixes.
 	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'neo' });
 
 	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
 
 	const row = handleRow(e);
 	const left = handleLeft(e);
-	expect(row).toBe(Math.round(e.y + BOX.h + 1)); // baseline included
+	expect(row).toBe(Math.round(e.y + BOX.h + 1));
 	expect(buf.at(left, row)?.ch).toBe('n');
 	expect(buf.at(left + 1, row)?.ch).toBe('e');
 	expect(buf.at(left + 2, row)?.ch).toBe('o');
-	// One row only — no pill lip below.
 	expect(buf.at(left, row + 1)).toBeUndefined();
-	// No bevel/pad cells flanking the bare text.
 	expect(buf.at(left - 1, row)).toBeUndefined();
 	expect(buf.at(left + 3, row)).toBeUndefined();
 });
@@ -430,8 +393,6 @@ test('the Handle position is independent of hat height', () => {
 	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'a' });
 	const row = handleRow(e);
 	const left = handleLeft(e);
-	// No hat vs the tallest hat: the Handle lands on the same row/column, since it
-	// anchors below the feet (ADR 0023).
 	expect(render(0).at(left, row)?.ch).toBe('a');
 	expect(render(3).at(left, row)?.ch).toBe('a');
 });
@@ -443,7 +404,6 @@ test('each Handle letter is the cosmetic ink on a darkened same-hue backing', ()
 		x: 8,
 		y: 7,
 		name: 'neo',
-		// nameplate index 4 → ink np4, backing bg4.
 		cosmetics: { hue: 0, hat: 3, nameplate: 4, form: 0 },
 	});
 
@@ -451,7 +411,6 @@ test('each Handle letter is the cosmetic ink on a darkened same-hue backing', ()
 
 	const row = handleRow(e);
 	const left = handleLeft(e);
-	// Opaque (not blended): bright ink foreground, darkened tint background.
 	expect(buf.at(left, row)).toEqual({ ch: 'n', fg: 'np4', bg: 'bg4' });
 	expect(buf.at(left + 1, row)).toEqual({ ch: 'e', fg: 'np4', bg: 'bg4' });
 	expect(buf.at(left + 2, row)).toEqual({ ch: 'o', fg: 'np4', bg: 'bg4' });
@@ -474,8 +433,6 @@ test('the Handle backing is unconditional — same over terrain, sprite, or sky'
 	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'n' });
 	const row = handleRow(e);
 	const left = handleLeft(e);
-	// Ground under the Handle row and plain sky both produce the identical opaque cell —
-	// the backing never samples what's behind.
 	const overSky = new FakeBuffer(20, 16);
 	drawNameplates(overSky, [e], { x: 0, y: 0 }, flat20(), STYLE);
 	const overGround = new FakeBuffer(20, 16);
@@ -490,7 +447,7 @@ test('the Handle backing is unconditional — same over terrain, sprite, or sky'
 
 test('an entity with no Handle draws nothing', () => {
 	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'player', x: 8, y: 7 }); // no `name`
+	const e = makeEntity({ type: 'player', x: 8, y: 7 });
 
 	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
 
@@ -508,7 +465,6 @@ test('renderZoneScene alone draws no nameplate cells (names are a caller layer)'
 		STYLE,
 	);
 
-	// The Handle row carries no letters until a caller runs drawNameplates.
 	const row = handleRow(e);
 	const left = handleLeft(e);
 	expect(buf.at(left, row)?.ch).not.toBe('n');
@@ -516,26 +472,16 @@ test('renderZoneScene alone draws no nameplate cells (names are a caller layer)'
 	expect(buf.at(left + 2, row)?.ch).not.toBe('o');
 });
 
-// --- Cosmetics (#35) -------------------------------------------------------
-
-// The own Avatar is drawn directly (not via the z-ordered scene loop), so these tests
-// render through drawEntitySprite to pin the per-Avatar overrides.
 function avatarTopLeft(e: Entity) {
-	// The Avatar body is its Form's resolved Pose; grip/head anchors live on the Form,
-	// not the Sprite (ADR 0020).
 	const form = FORMS[e.cosmetics?.form ?? 0];
 	const sprite = formFrame(form, 'idle');
 	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
-	// The Form's baseline shifts the body down so its feet plant on the surface (ADR
-	// 0021); the buddy's baseline is 1, so the anchor includes it.
 	const ay = Math.round(e.y + BOX.h - sprite.h + (form.baseline ?? 0));
 	return { sprite, ax, ay, grip: form.grip, head: form.head };
 }
 
 test("an Avatar renders its Form's idle Pose as its body, through the bodyFrame selector (ADR 0020)", () => {
 	const buf = new FakeBuffer(20, 16);
-	// A resting Avatar's body must be FORMS[0]'s `idle` grid (not a hardcoded sprite),
-	// mirrored correctly when facing left.
 	for (const facing of [1, -1] as Facing[]) {
 		buf.clear('BG');
 		const e = makeEntity({ type: 'player', x: 8, y: 7, facing });
@@ -552,8 +498,6 @@ test("an Avatar renders its Form's idle Pose as its body, through the bodyFrame 
 });
 
 test('each Avatar Form renders its own idle body through the shared render path (ADR 0020)', () => {
-	// Every shippable Form renders as its own `idle` grid at the shared anchor — proving a
-	// selected `cosmetics.form` composites correctly through drawEntitySprite, either facing.
 	for (let form = 0; form < FORMS.length; form++) {
 		for (const facing of [1, -1] as Facing[]) {
 			const buf = new FakeBuffer(20, 16);
@@ -573,7 +517,6 @@ test('each Avatar Form renders its own idle body through the shared render path 
 			);
 			const { sprite, ax, ay } = avatarTopLeft(e);
 			expect(sprite).toBe(formFrame(FORMS[form], 'idle'));
-			// The body is `p`-keyed, so the (present) hue cosmetic recolours it to hue 0.
 			expectSpriteAt(buf, sprite, ax, ay, facing, (key) =>
 				key === 'p' ? 'hue0' : fgFor(key),
 			);
@@ -581,10 +524,6 @@ test('each Avatar Form renders its own idle body through the shared render path 
 	}
 });
 
-// Render one Avatar's body and assert the expected Pose grid landed at the anchor. Pins
-// wiring, not appearance (the grid comes from the same Form the renderer uses). Walk poses
-// share idle's torso and differ only on the feet row, so a pose assertion discriminates on
-// the animated feet.
 function expectBodyPose(over: Partial<Entity>, sprite: Sprite) {
 	const buf = new FakeBuffer(40, 16);
 	const e = makeEntity({ type: 'player', y: 7, facing: 1, ...over });
@@ -599,20 +538,14 @@ test('a moving Avatar animates the distance-driven walk cycle; standing freezes 
 	const walkA = formFrame(FORMS[0], 'walkA');
 	const walkB = formFrame(FORMS[0], 'walkB');
 
-	// Moving on the ground: the foot frame flips walkA/walkB at each STRIDE boundary of
-	// |x|. 2·STRIDE+3 is an even stride (walkA); 3·STRIDE+3 the next, odd one (walkB).
+	// 2·STRIDE+3 is an even stride (walkA); 3·STRIDE+3 the next, odd one (walkB).
 	expectBodyPose({ x: 2 * STRIDE + 3, vx: 3 }, walkA);
 	expectBodyPose({ x: 3 * STRIDE + 3, vx: 3 }, walkB);
 
-	// Standing still (vx 0) at that same position holds idle: the cycle freezes to rest,
-	// not mid-stride — gait is gated on moving.
 	expectBodyPose({ x: 3 * STRIDE + 3, vx: 0 }, idle);
 });
 
 test('an observer renders the same walk frame as the owner for a given position (ADR 0020 §7)', () => {
-	// The owner derives its action from predicted state; an observer carries the snapshot
-	// `action`. The gait reads only `x`/`vx`/`onGround` — the same for both — so both
-	// compute the identical foot frame.
 	const owner = makeEntity({ type: 'player', x: 3 * STRIDE + 3, y: 7, vx: 3 });
 	const observer = makeEntity({
 		type: 'player',
@@ -637,21 +570,17 @@ test('an observer renders the same walk frame as the owner for a given position 
 	const walkB = formFrame(FORMS[0], 'walkB');
 	const ax = Math.round(3 * STRIDE + 3 - Math.floor((walkB.w - BOX.w) / 2));
 	const ay = Math.round(7 + BOX.h - walkB.h + (FORMS[0].baseline ?? 0));
-	// Both land the same walkB grid at the same anchor — owner/observer agree.
 	expectSpriteAt(render(owner), walkB, ax, ay, 1, fgFor);
 	expectSpriteAt(render(observer), walkB, ax, ay, 1, fgFor);
 });
 
 test('an airborne Avatar does not walk even while moving horizontally (ADR 0020 ladder)', () => {
-	// Off the ground, jump sits above walk on the ladder, so a horizontally-moving jumper
-	// poses `jump` — the render path honours `airborne` and does not walk in the air.
 	const jump = formFrame(FORMS[0], 'jump');
 	expectBodyPose({ x: 3 * STRIDE + 3, vx: 3, onGround: false }, jump);
 });
 
 test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouched", () => {
 	const buf = new FakeBuffer(20, 16);
-	// hue 2 -> 'hue2'; the player sprite is entirely the 'p' body key.
 	const e = makeEntity({
 		type: 'player',
 		x: 8,
@@ -674,7 +603,7 @@ test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouch
 
 test('a cosmetic hat is overlaid directly above the head', () => {
 	const buf = new FakeBuffer(20, 16);
-	const hatIdx = 1; // Cap
+	const hatIdx = 1;
 	const e = makeEntity({
 		type: 'player',
 		x: 8,
@@ -693,7 +622,7 @@ test('a cosmetic hat is overlaid directly above the head', () => {
 	if (!hat) throw new Error('expected a hat sprite');
 	const { sprite, ax, ay } = avatarTopLeft(e);
 	const hx = ax + Math.round((sprite.w - hat.w) / 2);
-	const hy = ay - hat.h; // bottom row sits on the row above the Sprite top
+	const hy = ay - hat.h;
 	expectSpriteAt(
 		buf,
 		hat,
@@ -705,7 +634,7 @@ test('a cosmetic hat is overlaid directly above the head', () => {
 });
 
 test('an equipped Avatar at rest renders the weapon idle frame at the mirrored grip, on top of the body (ADR 0018)', () => {
-	const weapon = weaponById(0).sprite; // default Sword
+	const weapon = weaponById(0).sprite;
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
 	const frame = weapon.frames.idle;
 	if (!frame) throw new Error('expected an authored idle frame');
@@ -721,21 +650,15 @@ test('an equipped Avatar at rest renders the weapon idle frame at the mirrored g
 		);
 
 		const { sprite: body, ax: sx, ay: sy, grip } = avatarTopLeft(e);
-		// Body grip cell, its column reflected across the body when facing left.
 		const bodyGripX = sx + (facing === 1 ? grip.x : body.w - 1 - grip.x);
 		const bodyGripY = sy + grip.y;
-		// Weapon grip cell, mirrored so grip lands on grip. The grip may sit OUTSIDE the art
-		// (a negative column anchoring the blade beside the hand), so it isn't necessarily a
-		// drawn cell — placement below is asserted from it.
+		// The grip may sit outside the art (negative column), so it isn't a drawn cell.
 		const wgx = facing === 1 ? weapon.grip.x : frame.w - 1 - weapon.grip.x;
 		const wx: number = bodyGripX - wgx;
 		const wy: number = bodyGripY - weapon.grip.y;
 
 		expectSpriteAt(buf, frame, wx, wy, facing, weaponFgFor(weapon.accent));
 
-		// Where a lit weapon cell lands on a lit body cell, the weapon draws on top. Found
-		// generically (no assumption which cell overlaps) so it survives art iteration; we
-		// also assert an overlap exists, or the on-top check is vacuous.
 		const wGlyphs = frame.rows(facing);
 		const bGlyphs = body.rows(facing);
 		let overlaps = 0;
@@ -758,20 +681,17 @@ test('an equipped Avatar at rest renders the weapon idle frame at the mirrored g
 });
 
 test('mid-active-swing the composited weapon plays the sweep frame, and no box-fill floods the melee hitbox (ADR 0018 §4/§5)', () => {
-	const weapon = weaponById(0).sprite; // default Sword
+	const weapon = weaponById(0).sprite;
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
 	const sweep = weapon.frames.active;
 	if (!sweep || sweep.length === 0)
 		throw new Error('expected authored active sweep frames');
 
-	// Half-way through active samples the middle sweep frame (first at 0, last at 1) —
-	// the same pure mapping owner and observer share.
 	const progress = 0.5;
 	const frame = sweep[sweepIndex(progress, sweep.length)];
 
 	const buf = new FakeBuffer(28, 16);
 	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
-	// An observer reads the swing from the replicated action-state (move/phase/progress).
 	e.action = {
 		move: 'basic',
 		phase: 'active',
@@ -788,14 +708,12 @@ test('mid-active-swing the composited weapon plays the sweep frame, and no box-f
 	);
 
 	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
-	const bodyGripX = sx + grip.x; // facing 1
+	const bodyGripX = sx + grip.x;
 	const bodyGripY = sy + grip.y;
-	const wgx = weapon.grip.x; // facing 1
+	const wgx = weapon.grip.x;
 	const wx = bodyGripX - wgx;
 	const wy = bodyGripY - weapon.grip.y;
 
-	// The sweep frame's blade cells land at the grip-anchored position, in the accent
-	// colour — skipping the cells the blade-edge arc draws over (asserted below) (ADR 0018 §6).
 	const arcCells = new Set(
 		bladeEdgeArc(progress, 1).map(
 			(c) => `${bodyGripX + c.dx},${bodyGripY + c.dy}`,
@@ -805,8 +723,6 @@ test('mid-active-swing the composited weapon plays the sweep frame, and no box-f
 		arcCells.has(`${px},${py}`),
 	);
 
-	// The melee hitbox is purely logical, never flood-filled: count written cells across
-	// the region — a fill would write every cell, so at least one must stay untouched.
 	const hb = meleeHitbox(e);
 	let written = 0;
 	let total = 0;
@@ -817,17 +733,15 @@ test('mid-active-swing the composited weapon plays the sweep frame, and no box-f
 		}
 	}
 	expect(total).toBeGreaterThan(0);
-	expect(written).toBeLessThan(total); // not a solid fill — the box-fill is gone
+	expect(written).toBeLessThan(total);
 });
 
 test('the active phase renders the blade-edge arc in the accent colour; other phases draw none (ADR 0018 §5/§6)', () => {
-	const weapon = weaponById(0).sprite; // default Sword
+	const weapon = weaponById(0).sprite;
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
 	const accent = accentFg(weapon.accent);
 	const progress = 0.5;
 
-	// Mid-active: every blade-edge arc cell is written, its curve glyph in the accent
-	// colour. The arc traces the tip — NOT a hitbox fill.
 	const active = new FakeBuffer(28, 16);
 	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
 	e.action = {
@@ -845,7 +759,7 @@ test('the active phase renders the blade-edge arc in the accent colour; other ph
 		STYLE,
 	);
 	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
-	const bodyGripX = sx + grip.x; // facing 1
+	const bodyGripX = sx + grip.x;
 	const bodyGripY = sy + grip.y;
 
 	const arc = bladeEdgeArc(progress, 1);
@@ -853,11 +767,10 @@ test('the active phase renders the blade-edge arc in the accent colour; other ph
 	for (const c of arc) {
 		const cell = active.at(bodyGripX + c.dx, bodyGripY + c.dy);
 		expect(cell?.ch).toBe(c.glyph);
-		expect(cell?.fg).toBe(accent); // the accent colour reaches the arc cells
+		expect(cell?.fg).toBe(accent);
 	}
 
-	// At rest there is NO arc. The forward arc cells (|dx| = 3) sit clear of the narrow
-	// idle blade and body, so they stay untouched.
+	// Forward arc cells (|dx|=3) sit clear of the idle blade, so they stay untouched.
 	const idle = new FakeBuffer(28, 16);
 	const rest = makeEntity({
 		type: 'player',
@@ -880,7 +793,6 @@ test('the active phase renders the blade-edge arc in the accent colour; other ph
 
 test('a weaponless Avatar draws no weapon layer', () => {
 	const buf = new FakeBuffer(24, 16);
-	// Same body, but no equipped weapon (weapon undefined): the weapon layer is skipped.
 	const e = makeEntity({ type: 'player', x: 10, y: 6, facing: 1 });
 	renderZoneScene(
 		buf,
@@ -889,15 +801,10 @@ test('a weaponless Avatar draws no weapon layer', () => {
 		STYLE,
 	);
 	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
-	// The sword's blade tip sits a row above the body when equipped; with no weapon that
-	// cell stays empty — the layer is gated on an equipped weapon.
+	// The sword's blade tip would sit a row above the body; with no weapon that cell stays empty.
 	expect(buf.at(sx + grip.x, sy - 1)).toBeUndefined();
 });
 
-// --- Sprite ground contact: planted feet (#210, ADR 0021) ------------------
-
-// The screen anchor of a resolved Pose, baseline included. The buddy Form's baseline-1
-// shifts the whole sprite down one cell so its feet row lands on the surface (ADR 0021).
 function bodyAnchor(e: Entity, sprite: Sprite) {
 	const form = FORMS[e.cosmetics?.form ?? 0];
 	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
@@ -919,7 +826,6 @@ test('a buddy Avatar plants its feet: each foot cell on the terrain surface is o
 	const sprite = formFrame(FORMS[0], 'idle');
 	const { ax, ay } = bodyAnchor(e, sprite);
 	const surface = Math.round(e.y + BOX.h);
-	// The baseline lands the sprite's last row exactly on the terrain surface row.
 	expect(ay + sprite.h - 1).toBe(surface);
 
 	const glyphs = sprite.rows(1);
@@ -931,8 +837,6 @@ test('a buddy Avatar plants its feet: each foot cell on the terrain surface is o
 		if (ch === ' ') continue;
 		feet++;
 		const cell = buf.at(ax + rx, surface);
-		// Foot glyph kept, body-colour fg, bg the terrain block colour — written OPAQUELY
-		// (no dark terrainBg notch under the boot).
 		expect(cell?.ch).toBe(ch);
 		expect(cell?.fg).toBe(fgFor(keys[footRow][rx]));
 		expect(cell?.bg).toBe('TFG');
@@ -941,9 +845,6 @@ test('a buddy Avatar plants its feet: each foot cell on the terrain surface is o
 	expect(feet).toBeGreaterThan(0);
 });
 
-// Assert every lit foot cell over solid ground is planted: glyph kept, body-colour fg,
-// opaque `terrainFg` bg. Shared so idle/walk frames all check the one over-solid rule
-// (ADR 0021).
 function expectPlantedFeet(buf: FakeBuffer, e: Entity, sprite: Sprite) {
 	const { ax } = bodyAnchor(e, sprite);
 	const surface = Math.round(e.y + BOX.h);
@@ -965,8 +866,6 @@ function expectPlantedFeet(buf: FakeBuffer, e: Entity, sprite: Sprite) {
 }
 
 test('the walk frames plant on the same general over-solid rule, no pose-specific code (ADR 0021)', () => {
-	// Drive the selector to each walk frame and confirm BOTH plant — the rule keys on
-	// `isSolid` under each cell, not on which Pose is showing.
 	for (const [x, pose] of [
 		[2 * STRIDE + 3, 'walkA'],
 		[3 * STRIDE + 3, 'walkB'],
@@ -985,8 +884,6 @@ test('the walk frames plant on the same general over-solid rule, no pose-specifi
 
 test('an airborne Avatar floats: its jump feet render transparent, not planted (ADR 0021)', () => {
 	const buf = new FakeBuffer(20, 16);
-	// Off the ground, no solid under the feet row: the baseline still applies but the
-	// over-solid composite does NOT fire, so the feet stay see-through, hanging in air.
 	const e = makeEntity({ type: 'player', x: 8, y: 7, onGround: false });
 	renderZoneScene(
 		buf,
@@ -1007,7 +904,6 @@ test('an airborne Avatar floats: its jump feet render transparent, not planted (
 		feet++;
 		const cell = buf.at(ax + rx, surface);
 		expect(cell?.ch).toBe(ch);
-		// Transparent / alpha-blended — bg is NOT the terrain block colour.
 		expect(cell?.bg).toBe('TR');
 		expect(cell?.bg).not.toBe('TFG');
 		expect(cell?.blended).toBe(true);
@@ -1021,8 +917,6 @@ test('one foot past a platform edge floats while the other stays planted (ADR 00
 	const sprite = formFrame(FORMS[0], 'idle');
 	const { ax } = bodyAnchor(e, sprite);
 	const surface = Math.round(e.y + BOX.h);
-	// The idle feet sit at the outer columns; build a platform whose lip falls between
-	// them, so the left foot is over solid ground and the right hangs past it.
 	const glyphs = sprite.rows(1);
 	const footRow = sprite.h - 1;
 	const footCols: number[] = [];
@@ -1030,7 +924,7 @@ test('one foot past a platform edge floats while the other stays planted (ADR 00
 		if (glyphs[footRow][rx] !== ' ') footCols.push(ax + rx);
 	const leftFoot = footCols[0];
 	const rightFoot = footCols[footCols.length - 1];
-	const lip = Math.floor((leftFoot + rightFoot) / 2); // solid up to here, air after
+	const lip = Math.floor((leftFoot + rightFoot) / 2);
 
 	const terrain = parseTerrain(
 		Array.from({ length: 16 }, (_, r) =>
@@ -1045,7 +939,6 @@ test('one foot past a platform edge floats while the other stays planted (ADR 00
 		STYLE,
 	);
 
-	// The planted foot is opaque over the terrain colour; the foot past the lip floats.
 	expect(buf.at(leftFoot, surface)?.bg).toBe('TFG');
 	expect(buf.at(leftFoot, surface)?.blended).toBeFalsy();
 	expect(buf.at(rightFoot, surface)?.bg).toBe('TR');
@@ -1056,8 +949,6 @@ test('an Avatar on a one-cell-thick platform still plants on its surface (ADR 00
 	const buf = new FakeBuffer(20, 16);
 	const e = makeEntity({ type: 'player', x: 8, y: 7 });
 	const surface = Math.round(e.y + BOX.h);
-	// A single solid row (air above and below): the over-solid check is per cell on the
-	// surface row, so feet plant regardless of ground thickness.
 	const terrain = parseTerrain(
 		Array.from({ length: 16 }, (_, r) =>
 			(r === surface ? '#' : '.').repeat(20),
@@ -1086,10 +977,7 @@ test('a baseline-0 monster (chaser) blits unchanged — no planting (ADR 0021)',
 
 	const sprite = spriteFor('chaser');
 	expect(sprite.baseline).toBe(0);
-	// baseline 0 keeps the anchor where it was — feet one cell ABOVE the surface, over air
-	// — so the over-solid composite never fires and every cell blits transparently. (It
-	// floats a half-cell until it adopts `▀` contact feet — an accepted transitional state,
-	// ADR 0021 decision 5.)
+	// baseline 0 leaves feet a cell above the surface (over air), so nothing plants — an accepted transitional float.
 	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
 	const ay = Math.round(e.y + BOX.h - sprite.h);
 	expectSpriteAt(buf, sprite, ax, ay, 1, fgFor);
@@ -1105,8 +993,6 @@ test('a baseline-0 monster (chaser) blits unchanged — no planting (ADR 0021)',
 
 test('a cosmetic-hue Avatar keeps its recoloured body fg on the planted foot ink half (ADR 0021)', () => {
 	const buf = new FakeBuffer(20, 16);
-	// hue 2 -> 'hue2'; the body (feet included) is the 'p' key, so the planted foot's ink
-	// half carries the recoloured hue over the terrain-colour bg.
 	const e = makeEntity({
 		type: 'player',
 		x: 8,
@@ -1130,8 +1016,8 @@ test('a cosmetic-hue Avatar keeps its recoloured body fg on the planted foot ink
 		if (glyphs[footRow][rx] === ' ') continue;
 		feet++;
 		const cell = buf.at(ax + rx, surface);
-		expect(cell?.fg).toBe('hue2'); // recoloured body ink, not the default 'cP'
-		expect(cell?.bg).toBe('TFG'); // planted over the terrain colour
+		expect(cell?.fg).toBe('hue2');
+		expect(cell?.bg).toBe('TFG');
 		expect(cell?.blended).toBeFalsy();
 	}
 	expect(feet).toBeGreaterThan(0);
@@ -1139,9 +1025,6 @@ test('a cosmetic-hue Avatar keeps its recoloured body fg on the planted foot ink
 
 test('combat telegraphs are exempt from planting: the blade-edge arc keeps its own bg over solid ground (ADR 0021)', () => {
 	const buf = new FakeBuffer(28, 16);
-	// Terrain solid EVERYWHERE, so every body/weapon cell would plant — but the blade-edge
-	// arc renders above with its own transparent bg and must stay exempt (a live-motion
-	// telegraph, not part of the body layer).
 	const terrain = parseTerrain(
 		Array.from({ length: 16 }, () => '#'.repeat(28)),
 	);
@@ -1169,7 +1052,6 @@ test('combat telegraphs are exempt from planting: the blade-edge arc keeps its o
 	expect(arc.length).toBeGreaterThan(0);
 	for (const c of arc) {
 		const cell = buf.at(bodyGripX + c.dx, bodyGripY + c.dy);
-		// Arc cell carries its own translucent bg — NOT painted with the terrain colour.
 		expect(cell?.ch).toBe(c.glyph);
 		expect(cell?.bg).toBe('TR');
 		expect(cell?.bg).not.toBe('TFG');

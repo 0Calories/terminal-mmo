@@ -34,8 +34,6 @@ describe('EditorDoc round-trip', () => {
 
 describe('lossless where parseZone is not', () => {
 	test('header keys parseZone discards survive a parse→serialize round-trip', () => {
-		// `z` is declared but never placed (an orphan key parseZone drops); `loot`
-		// is a field parseZone never reads. Both must come back unchanged.
 		const text =
 			'{\n  "id": "z",\n  "type": "field",\n  "spawns": {\n    "z": "slime"\n  },\n  "loot": "gold"\n}\n---\n...\n###\n';
 		const doc = parseDoc(text);
@@ -63,8 +61,8 @@ describe('grid edit ops', () => {
 	});
 
 	test('placing past a row end pads the row with empty cells', () => {
-		const placed = placeGlyph(sample, 5, 0, 'P'); // row 0 is only 3 wide
-		expect(placed.rows[0]).toBe('...' + '..' + 'P'); // padded to '.....P'
+		const placed = placeGlyph(sample, 5, 0, 'P');
+		expect(placed.rows[0]).toBe('...' + '..' + 'P');
 		expect(cellAt(placed, 5, 0)).toBe('P');
 	});
 
@@ -104,7 +102,7 @@ describe('header: display name + type (#99)', () => {
 		expect(zoneType(sample)).toBe('field');
 		const town = setZoneType(sample, 'town');
 		expect(zoneType(town)).toBe('town');
-		expect(zoneType(sample)).toBe('field'); // input untouched
+		expect(zoneType(sample)).toBe('field');
 	});
 
 	test('placedMonsterCount counts grid cells anchored to a spawn glyph', () => {
@@ -113,7 +111,6 @@ describe('header: display name + type (#99)', () => {
 			rows: ['..c..s..c', '#########'],
 		};
 		expect(placedMonsterCount(doc)).toBe(3);
-		// undeclared glyphs and terrain don't count; no spawns map → 0
 		expect(placedMonsterCount(sample)).toBe(0);
 		expect(
 			placedMonsterCount({ header: { id: 'f', type: 'field' }, rows: ['ccc'] }),

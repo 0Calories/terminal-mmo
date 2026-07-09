@@ -58,9 +58,6 @@ test('baseline defaults to 0; an explicit value is kept (ADR 0021)', () => {
 	);
 });
 
-// We deliberately do NOT pin the *appearance* of individual sprites (their glyph
-// grids change as art is iterated). These cover the lookup wiring only.
-
 test('every entity type resolves to a sprite', () => {
 	for (const type of ['player', 'chaser', 'shooter'] as const) {
 		expect(spriteFor(type)).toBeInstanceOf(Sprite);

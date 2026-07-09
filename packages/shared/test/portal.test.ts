@@ -18,7 +18,6 @@ const INTERACT: Input = {
 	interact: true,
 };
 
-/** A Player standing on a Portal in a Field that leads to a Town. */
 function portalGame(): GameState {
 	const y = GROUND_TOP - BOX.h;
 	const portal: Portal = {
@@ -45,7 +44,7 @@ function portalGame(): GameState {
 	if (!town) throw new Error('town-01 missing from authored zones/');
 	return {
 		player: {
-			avatar: spawnAvatar(20, y), // box overlaps the portal at x=20
+			avatar: spawnAvatar(20, y),
 			progress: { level: 3, xp: 17, gold: 42 },
 			inventory: [],
 			zoneId: field.id,
@@ -81,7 +80,7 @@ test('no transition without the interact intent, even while on a Portal', () => 
 
 test('no transition when the Avatar is not overlapping a Portal', () => {
 	const game = portalGame();
-	game.player.avatar.x = 80; // well clear of the portal at x=20
+	game.player.avatar.x = 80;
 	const g = step(game, INTERACT, 16);
 	expect(g.player.zoneId).toBe('field-01');
 });
@@ -93,14 +92,12 @@ test('createGame wires a round-trip Portal pair: Town -> Field -> Town', () => {
 	expect(g.world.zones[townPortal.target].type).toBe('field');
 	expect(g.world.zones[fieldPortal.target].type).toBe('town');
 
-	// The Player spawns into the Town hub; portal out to the Field...
 	expect(g.player.zoneId).toBe('town-01');
 	g.player.avatar.x = townPortal.x;
 	g = step(g, INTERACT, 16);
 	expect(g.player.zoneId).toBe('field-01');
 	expect(g.player.avatar.x).toBe(townPortal.arrival.x);
 
-	// ...and back to the Town.
 	g.player.avatar.x = fieldPortal.x;
 	g = step(g, INTERACT, 16);
 	expect(g.player.zoneId).toBe('town-01');

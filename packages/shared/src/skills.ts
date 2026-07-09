@@ -4,24 +4,18 @@ import type { Box, Entity } from './types';
 
 export type PlayerClass = 'warrior';
 
-// A 'frontal' Skill projects its hitbox in front of the Avatar (a forgiving arc);
-// an 'aoe' Skill detonates a box centred on the Avatar, hitting both facings at
-// once for crowd control. Undefined kind reads as 'frontal' (back-compat).
 export type SkillKind = 'frontal' | 'aoe';
 
 export interface Skill {
 	id: string;
 	name: string;
-	// The canonical keycap (u = slot 1, i = slot 2), so the server-generated "Unlocked:
-	// <name> [<key>]!" line (#271) and the HUD name one key from one source. This is the
-	// DEFAULT binding; the mouse scheme (MMO_SCHEME=mouse) rebinds to e/r, but the feedback
-	// line stays on the canonical keycap.
+	// The DEFAULT binding; MMO_SCHEME=mouse rebinds keys but feedback lines stay on this.
 	key: string;
 	kind: SkillKind;
 	unlockLevel: number;
-	cooldown: number; // seconds
+	cooldown: number;
 	damage: number;
-	reach: number; // cells the hitbox extends past the Avatar body
+	reach: number;
 }
 
 export const POWER_STRIKE: Skill = {
@@ -29,7 +23,6 @@ export const POWER_STRIKE: Skill = {
 	name: 'Power Strike',
 	key: 'u',
 	kind: 'frontal',
-	// The Player's first Active skill — the L3 rung of the capability ladder (ADR 0024 §5).
 	unlockLevel: CAPABILITY_UNLOCK['power-strike'],
 	cooldown: 2.5,
 	damage: 20,
@@ -41,14 +34,12 @@ export const GROUND_POUND: Skill = {
 	name: 'Ground Pound',
 	key: 'i',
 	kind: 'aoe',
-	// The cap-level (L5) reward — the final rung of the capability ladder (ADR 0024 §5).
 	unlockLevel: CAPABILITY_UNLOCK['ground-pound'],
 	cooldown: 6,
 	damage: 30,
-	reach: 7, // extends this far on BOTH sides of the Avatar
+	reach: 7,
 };
 
-// slot N = index N-1
 export const WARRIOR_SKILLS: readonly Skill[] = [POWER_STRIKE, GROUND_POUND];
 
 const SKILLS_BY_CLASS: Record<PlayerClass, readonly Skill[]> = {
@@ -66,9 +57,7 @@ export function skillUnlocked(skill: Skill, level: number): boolean {
 	return level >= skill.unlockLevel;
 }
 
-// The Active skills unlocked by climbing from `fromLevel` to `toLevel`, each whose unlock
-// rung lands in the half-open span (fromLevel, toLevel] — a multi-level jump surfaces every
-// rung crossed. Cosmetic only: drives the "Unlocked: <name> [<key>]!" line (#271).
+// Unlock rungs in the half-open span (fromLevel, toLevel], so a multi-level jump surfaces all.
 export function skillsUnlockedBetween(
 	cls: PlayerClass,
 	fromLevel: number,
@@ -81,7 +70,6 @@ export function skillsUnlockedBetween(
 
 export function skillHitbox(e: Entity, skill: Skill): Box {
 	if (skill.kind === 'aoe') {
-		// Centred on the Avatar — extends `reach` past both edges, facing-agnostic.
 		return {
 			x: e.x - skill.reach,
 			y: e.y,

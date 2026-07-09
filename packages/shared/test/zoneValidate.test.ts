@@ -19,7 +19,7 @@ const catalogs = { monsters, npcs };
 
 const W = 30;
 const H = 12;
-const FLOOR = 10; // rows 10,11 solid
+const FLOOR = 10;
 
 function flatTerrain(): Terrain {
 	const cells = new Uint8Array(W * H);
@@ -264,15 +264,13 @@ describe('validateZoneSet — whole-set integrity', () => {
 	});
 });
 
-// Orphan-key detection reads the RAW .zone text (parseZone discards header glyph
-// keys whose glyph never appears in the grid), so its fixtures are text, not Zones.
+// Orphan-key detection reads the RAW .zone text, so its fixtures are text, not Zones.
 describe('findOrphanGlyphs — header keys must be used in the grid', () => {
 	const grid = ['..........', '....c.....', '##########'].join('\n');
 	const file = (header: string) => `${header}\n---\n${grid}`;
 
 	test('a declared spawn glyph that never appears in the grid is an error', () => {
 		const text = file('{"type":"field","spawns":{"c":"chaser","z":"chaser"}}');
-		// The id is supplied by the caller (the filename, ADR 0011), not the header.
 		const d = findOrphanGlyphs(text, 'f');
 		expect(d).toHaveLength(1);
 		expect(d[0].severity).toBe('error');
@@ -292,7 +290,7 @@ describe('findOrphanGlyphs — header keys must be used in the grid', () => {
 				'"portals":{"P":{"target":"town-01","arrival":[1,1]}}}',
 		);
 		const d = findOrphanGlyphs(text);
-		expect(d).toHaveLength(2); // M and P never appear in the grid
+		expect(d).toHaveLength(2);
 		expect(d.map((x) => x.message).join(' ')).toContain("'M'");
 		expect(d.map((x) => x.message).join(' ')).toContain("'P'");
 		expect(d.every((x) => x.severity === 'error')).toBe(true);

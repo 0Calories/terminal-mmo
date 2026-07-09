@@ -9,8 +9,6 @@ import {
 } from '../src/audio-options';
 import { AUDIO_DEFAULTS } from '../src/config';
 
-// --- key → action mapping --------------------------------------------------
-
 test('arrows map to move (up/down) and adjust (left/right) by a volume step', () => {
 	expect(audioKeyAction('up')).toEqual({ kind: 'move', delta: -1 });
 	expect(audioKeyAction('down')).toEqual({ kind: 'move', delta: 1 });
@@ -31,23 +29,17 @@ test('m toggles mute; o and escape close; anything else is inert', () => {
 	expect(audioKeyAction('z')).toEqual({ kind: 'none' });
 });
 
-// --- selection clamping ----------------------------------------------------
-
 test('selection clamps within the row range, never wrapping past the ends', () => {
-	expect(clampSelection(0, -1)).toBe(0); // already at top
+	expect(clampSelection(0, -1)).toBe(0);
 	expect(clampSelection(0, 1)).toBe(1);
-	expect(clampSelection(AUDIO_ROWS.length - 1, 1)).toBe(AUDIO_ROWS.length - 1); // at bottom
+	expect(clampSelection(AUDIO_ROWS.length - 1, 1)).toBe(AUDIO_ROWS.length - 1);
 });
-
-// --- volume bar rendering --------------------------------------------------
 
 test('volumeBar fills proportionally and shows a percentage', () => {
 	expect(volumeBar(1, 10)).toBe('██████████ 100%');
 	expect(volumeBar(0, 10)).toBe('░░░░░░░░░░ 0%');
 	expect(volumeBar(0.5, 10)).toBe('█████░░░░░ 50%');
 });
-
-// --- display rows ----------------------------------------------------------
 
 test('rows list master + the three voiced buses, focusing the selected one', () => {
 	const rows = audioOptionsRows(AUDIO_DEFAULTS, 1);
@@ -59,7 +51,6 @@ test('rows list master + the three voiced buses, focusing the selected one', () 
 	]);
 	expect(rows[1].focused).toBe(true);
 	expect(rows[0].focused).toBe(false);
-	// Master reads from prefs.master; buses from prefs.buses.
 	expect(rows[0].value).toContain('100%');
 });
 

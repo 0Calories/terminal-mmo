@@ -1,12 +1,8 @@
 import type { Facing } from '../types';
 
-// `·` (U+00B7) marks a transparent cell: visible in the editor and survives
-// trailing-whitespace trimming, unlike a literal space (also transparent).
+// `·` (U+00B7): a transparent cell that survives whitespace trimming, unlike a space.
 export const SENTINEL = '·';
 
-// Block Elements (U+2580–259F) mirror by swapping lit quadrants across the
-// vertical axis (TL↔TR, BL↔BR): e.g. ▌→▐, ▘→▝, ▛→▜. Fully symmetric blocks
-// (█ ▀ ▄ space) are self-mirrors and omitted.
 const MIRROR: Record<string, string> = {
 	'(': ')',
 	')': '(',
@@ -36,8 +32,6 @@ const MIRROR: Record<string, string> = {
 	'▞': '▚',
 };
 
-// Exposed so the combat layer orients a weapon glyph by facing with the SAME table the
-// sprite mirroring uses, not a duplicate map (ADR 0017 §13b).
 export function mirrorGlyph(glyph: string): string {
 	return MIRROR[glyph] ?? glyph;
 }
@@ -58,8 +52,6 @@ function mirrorGlyphs(rows: readonly string[]): string[] {
 	});
 }
 
-// Colour keys carry no orientation, so mirroring is a plain reverse to keep
-// them aligned to the mirrored glyphs.
 function reverseRows(rows: readonly string[]): string[] {
 	return rows.map((row) => {
 		let out = '';
@@ -70,26 +62,16 @@ function reverseRows(rows: readonly string[]): string[] {
 
 export interface SpriteOptions {
 	defaultKey: string;
-	/** Colour-key grid aligned cell-for-cell to the glyph grid; `·`/space fall
-	 *  back to `defaultKey`. Must match the glyph grid's dimensions. */
 	colors?: string;
-	/** Anchor cell (right-facing coords) another layer aligns to grip-to-grip — the body's
-	 *  hand position for the weapon layer (ADR 0018 §3). Absent for art with no anchor. */
 	grip?: { x: number; y: number };
-	/** Cells added to `sy` so the whole figure drops to plant its bottom row on the terrain
-	 *  surface: `1` for ink-top contact feet, `0` for feet that already touch it (ADR 0021). */
 	baseline?: number;
 }
 
 export class Sprite {
 	readonly w: number;
 	readonly h: number;
-	// Fallback colour key for cells without one — the dominant body colour, reused as the
-	// death-gore tint (#139).
 	readonly defaultKey: string;
-	// Anchor cell the weapon layer aligns to (ADR 0018 §3); undefined when unanchored.
 	readonly grip?: { x: number; y: number };
-	// Cells the sprite drops so its bottom row plants on the terrain surface (ADR 0021).
 	readonly baseline: number;
 	private readonly glyphRight: readonly string[];
 	private readonly glyphLeft: readonly string[];

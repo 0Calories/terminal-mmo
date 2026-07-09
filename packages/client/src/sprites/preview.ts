@@ -6,7 +6,7 @@ const RESET = '\x1b[0m';
 const BOLD = '\x1b[1m';
 const DIM = '\x1b[2m';
 const fg = (r: number, g: number, b: number) => `\x1b[38;2;${r};${g};${b}m`;
-const MISSING: [number, number, number] = [120, 120, 120]; // unknown palette key
+const MISSING: [number, number, number] = [120, 120, 120];
 
 function paint(sprite: GalleryEntry['sprite'], facing: 1 | -1): string[] {
 	const glyphs = sprite.rows(facing);

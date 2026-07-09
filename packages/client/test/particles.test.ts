@@ -17,7 +17,6 @@ import {
 	stepParticles,
 } from '../src/particles';
 
-// A deterministic [0,1) RNG so spawn velocities/counts are reproducible headlessly.
 function seededRng(seed: number): () => number {
 	let s = seed >>> 0;
 	return () => {
@@ -32,7 +31,6 @@ function floorTerrain(w = 40, h = 20): Terrain {
 	return parseTerrain(rows);
 }
 
-// A floor plus a tall solid wall, to test specks spraying sideways into it.
 function wallTerrain(w = 40, h = 20, wallX = 25): Terrain {
 	const rows: string[] = [];
 	for (let y = 0; y < h; y++) {
@@ -60,8 +58,6 @@ test('a blood Effect expands into a burst of specks', () => {
 });
 
 test('the level-up fountain is a non-colliding gold air burst spawned straight into the pool (#271)', () => {
-	// Client-only cosmetic, off the wire — spawned directly, bypassing Effect/SPAWN_MAP.
-	// Must stay a pure air burst (never pools) and a gold flash.
 	expect(LEVELUP.collide).toBe(false);
 	const born = LEVELUP.colors[0];
 	expect(born.r).toBeGreaterThan(born.b);
@@ -71,7 +67,6 @@ test('the level-up fountain is a non-colliding gold air burst spawned straight i
 	for (let i = 0; i < LEVELUP_SPECKS; i++)
 		sys.spawn(LEVELUP, 10, 10, 0, seededRng(i + 1));
 	expect(sys.activeCount).toBe(LEVELUP_SPECKS);
-	// Clears within its ~1s lifetime — a quick flourish, not a linger.
 	const terrain = floorTerrain();
 	for (let i = 0; i < 80; i++)
 		stepParticles(sys, [], 16, terrain, seededRng(7));
@@ -80,10 +75,10 @@ test('the level-up fountain is a non-colliding gold air burst spawned straight i
 
 test('bigger hits spawn visibly more specks, clamped to a sane range', () => {
 	expect(speckCount(2)).toBeGreaterThanOrEqual(1);
-	expect(speckCount(40)).toBe(24); // clamped at the cap
-	expect(speckCount(0)).toBeGreaterThanOrEqual(1); // a chip hit still sprays
-	expect(speckCount(20)).toBeGreaterThan(speckCount(4)); // scales with damage
-	expect(speckCount(-5)).toBeGreaterThanOrEqual(1); // never negative
+	expect(speckCount(40)).toBe(24);
+	expect(speckCount(0)).toBeGreaterThanOrEqual(1);
+	expect(speckCount(20)).toBeGreaterThan(speckCount(4));
+	expect(speckCount(-5)).toBeGreaterThanOrEqual(1);
 });
 
 test('blood is bright red at birth, darkens with age, and fades to zero alpha', () => {
@@ -96,7 +91,6 @@ test('blood is bright red at birth, darkens with age, and fades to zero alpha', 
 	expect(born.r).toBeGreaterThan(born.g);
 	expect(born.r).toBeGreaterThan(born.b);
 
-	// Drive well into the fade stage, sampling each fade frame for the aged colour.
 	let fadeColor = born;
 	for (let i = 0; i < 600 && p.active; i++) {
 		stepParticles(sys, [], 16, terrain, seededRng(99));
@@ -107,9 +101,6 @@ test('blood is bright red at birth, darkens with age, and fades to zero alpha', 
 });
 
 test('a non-colliding spark fades smoothly to transparent over its life, not a pop at end (#264)', () => {
-	// IMPACT sparks never bounce or rest (collide:false), so they never reach the
-	// `fade` stage; their alpha must instead be driven off AGE, entering the fade ramp
-	// at maxLife - fadeMs so they wink out gradually in the air.
 	expect(IMPACT.collide).toBe(false);
 	const terrain = floorTerrain();
 	const sys = new ParticleSystem();
@@ -125,7 +116,7 @@ test('a non-colliding spark fades smoothly to transparent over its life, not a p
 	expect(particleColor(p).a).toBe(255);
 
 	let sawFullOpacity = false;
-	let sawPartial = false; // a strictly-in-between alpha proves a gradual ramp
+	let sawPartial = false;
 	let minAlpha = 255;
 	let lastAlpha = 255;
 	let neverRoseWhileFading = true;
@@ -133,13 +124,13 @@ test('a non-colliding spark fades smoothly to transparent over its life, not a p
 		const a = particleColor(p).a;
 		if (a === 255) sawFullOpacity = true;
 		if (a > 0 && a < 255) sawPartial = true;
-		if (a < 255 && a > lastAlpha) neverRoseWhileFading = false; // monotone fade
+		if (a < 255 && a > lastAlpha) neverRoseWhileFading = false;
 		lastAlpha = a;
 		minAlpha = Math.min(minAlpha, a);
 		stepParticles(sys, [], 16, terrain, seededRng(99));
 	}
 	expect(sawFullOpacity).toBe(true);
-	expect(sawPartial).toBe(true); // ramps through partial opacity — no pop
+	expect(sawPartial).toBe(true);
 	expect(neverRoseWhileFading).toBe(true);
 	expect(minAlpha).toBeLessThan(32);
 	expect(p.active).toBe(false);
@@ -213,7 +204,7 @@ test('a tinted speck keeps its hue but darkens with age', () => {
 		stepParticles(sys, [], 16, terrain, seededRng(99));
 		if (p.stage === 'fade' && p.stageMs > 0) aged = particleColor(p);
 	}
-	expect(aged.b).toBeGreaterThan(aged.r); // still the same blue hue family
+	expect(aged.b).toBeGreaterThan(aged.r);
 	expect(aged.b).toBeLessThan(born.b);
 	expect(aged.a).toBeLessThan(255);
 });
@@ -229,19 +220,18 @@ test('the pool is capped and never overflows', () => {
 test('when the pool is full the newest burst evicts the oldest specks', () => {
 	const sys = new ParticleSystem(4);
 	const rng = seededRng(7);
-	stepParticles(sys, [bloodAt(5, 5, 2)], 16, floorTerrain(), rng); // ~3 specks
-	stepParticles(sys, [bloodAt(5, 5, 2)], 16, floorTerrain(), rng); // fills + overflows
+	stepParticles(sys, [bloodAt(5, 5, 2)], 16, floorTerrain(), rng);
+	stepParticles(sys, [bloodAt(5, 5, 2)], 16, floorTerrain(), rng);
 	const borns = sys.particles.filter((p) => p.active).map((p) => p.born);
 	expect(sys.activeCount).toBe(4);
 	const maxBorn = Math.max(...borns);
-	// Every survivor is among the newest `size` births — the oldest were evicted.
+	// every survivor is among the newest `size` births — the oldest were evicted
 	expect(Math.min(...borns)).toBeGreaterThan(maxBorn - 4);
 });
 
 test('a speck runs the full lifecycle: airborne → bounce → rest → fade → cull, landing on terrain', () => {
 	const terrain = floorTerrain();
 	const sys = new ParticleSystem();
-	// Emit just above the floor so every speck lands quickly.
 	stepParticles(sys, [bloodAt(10, 16, 2)], 16, terrain, seededRng(3));
 	const p = sys.particles[0];
 	expect(p.active).toBe(true);
@@ -264,14 +254,12 @@ test('a speck runs the full lifecycle: airborne → bounce → rest → fade →
 	expect(sawRest).toBe(true);
 	expect(sawFade).toBe(true);
 	expect(p.active).toBe(false);
-	// Rests ON TOP of the platform, not sunk in: own cell empty, cell below solid.
 	expect(isSolid(terrain, Math.floor(10), Math.floor(restY))).toBe(false);
 	expect(isSolid(terrain, Math.floor(10), Math.floor(restY) + 1)).toBe(true);
 });
 
 test('a falling speck collides with the surface and never penetrates the ground', () => {
-	// A tall arena so a speck builds up enough speed (>1 cell/frame) to tunnel
-	// through the floor without swept collision.
+	// tall arena so a speck exceeds 1 cell/frame and would tunnel without swept collision
 	const terrain = floorTerrain(40, 80);
 	const sys = new ParticleSystem();
 	stepParticles(sys, [bloodAt(10, 2, 24)], 16, terrain, seededRng(5));
@@ -280,7 +268,7 @@ test('a falling speck collides with the surface and never penetrates the ground'
 		for (const p of sys.particles) {
 			if (!p.active) continue;
 			const col = Math.floor(p.x);
-			if (col < 0 || col >= terrain.w) continue; // off-world (camera skips these)
+			if (col < 0 || col >= terrain.w) continue;
 			expect(isSolid(terrain, col, Math.floor(p.y))).toBe(false);
 		}
 	}
@@ -302,9 +290,7 @@ test('specks spraying sideways into a wall never embed in the solid terrain', ()
 });
 
 test('the draw row biases up out of a solid cell when rounding would sink a near-surface speck', () => {
-	// Floor along the bottom row (row 19). A speck physically resting just above it
-	// at y = 18.6 keeps its *physics* cell (floor 18) empty, but Math.round(18.6) =
-	// 19 lands the *draw* cell in the solid floor — the one-frame tunnel #134 reports.
+	// y=18.6 keeps the physics cell (18) empty, but Math.round→19 sinks the draw cell into the floor
 	const terrain = floorTerrain(40, 20);
 	const sunk: Particle = {
 		active: true,
@@ -321,9 +307,9 @@ test('the draw row biases up out of a solid cell when rounding would sink a near
 		seed: 0,
 	};
 	const col = Math.round(sunk.x);
-	expect(isSolid(terrain, col, Math.round(sunk.y))).toBe(true); // raw round = sunk
+	expect(isSolid(terrain, col, Math.round(sunk.y))).toBe(true);
 	const row = particleDrawRow(sunk, terrain, col, Math.round(sunk.y));
-	expect(isSolid(terrain, col, row)).toBe(false); // biased up out of the floor
+	expect(isSolid(terrain, col, row)).toBe(false);
 	expect(row).toBe(18);
 });
 
@@ -349,10 +335,6 @@ test('the draw row is a no-op when the rounded cell is already empty', () => {
 });
 
 test('no active in-bounds AIRBORNE speck ever DRAWS inside a solid cell over a real burst', () => {
-	// #134: the *draw row* (not just the physics row) is never solid for an active
-	// AIRBORNE speck, and the raw Math.round projection WOULD have sunk without the clamp
-	// (so the fix is load-bearing, not vacuous). Settled specks are excluded — they
-	// deliberately draw flush IN the `▄` surface cell (#264), asserted separately.
 	const terrain = floorTerrain(40, 24);
 	const sys = new ParticleSystem();
 	stepParticles(sys, [bloodAt(10, 18, 24)], 16, terrain, seededRng(5));
@@ -362,21 +344,20 @@ test('no active in-bounds AIRBORNE speck ever DRAWS inside a solid cell over a r
 		for (const p of sys.particles) {
 			if (!p.active || p.stage !== 'airborne') continue;
 			const col = Math.round(p.x);
-			if (col < 0 || col >= terrain.w) continue; // off-world (camera skips these)
+			if (col < 0 || col >= terrain.w) continue;
 			const rawRow = Math.round(p.y);
 			if (isSolid(terrain, col, rawRow)) rawWouldSink = true;
 			const row = particleDrawRow(p, terrain, col, rawRow);
 			expect(isSolid(terrain, col, row)).toBe(false);
 		}
 	}
+	// rawWouldSink guards a vacuous pass: the raw projection really would have sunk
 	expect(rawWouldSink).toBe(true);
 });
 
 test('a settled speck draws flush IN the `▄` surface cell, on the visible ground line (#264)', () => {
-	// A top-surface solid cell renders as a lower-half `▄` block, so a settled speck must
-	// draw INTO that cell (not the empty cell above) to sit on the visible ground line —
-	// while physics still parks it in the empty cell above (the invariant holds).
-	const terrain = floorTerrain(40, 20); // solid floor at row 19
+	// a top-surface solid renders as a lower-half `▄`, so a settled speck draws into that cell, not the empty one above
+	const terrain = floorTerrain(40, 20);
 	const sys = new ParticleSystem();
 	stepParticles(sys, [bloodAt(10, 16, 4)], 16, terrain, seededRng(3));
 	let settled: Particle | undefined;
@@ -388,7 +369,6 @@ test('a settled speck draws flush IN the `▄` surface cell, on the visible grou
 	}
 	expect(settled).toBeDefined();
 	const p = settled as Particle;
-	// Physics invariant preserved: the speck's own physics cell is open air.
 	const col = Math.round(p.x);
 	expect(isSolid(terrain, col, Math.floor(p.y))).toBe(false);
 	const rawRow = Math.round(p.y);

@@ -1,6 +1,3 @@
-// Hand-rolled binary wire protocol for the client/server split (ADR 0006). Floats
-// use f64 so encode -> decode is exact; bandwidth is trivial at this scale.
-
 import { SHOOTER } from './constants';
 import { clampCosmetics, DEFAULT_COSMETICS } from './cosmetics';
 import { EMOTES } from './emote';
@@ -142,42 +139,25 @@ class Reader {
 	}
 	bytes(): Uint8Array {
 		const len = this.u32();
-		// Copy out of the frame buffer so the value outlives the socket's recycled
-		// receive buffer (a subarray would alias it).
+		// slice (not subarray) so the value outlives the socket's recycled receive buffer.
 		const out = this.buf.slice(this.pos, this.pos + len);
 		this.pos += len;
 		return out;
 	}
-	// Lets a decoder treat a missing trailing field as absent (e.g. a legacy `hello`
-	// with no protocol version) rather than reading past the buffer and throwing.
 	remaining(): number {
 		return this.buf.byteLength - this.pos;
 	}
 }
 
-// --- Client -> server -------------------------------------------------------
-
-// The handshake: `hello` (desired handle, release Version, SSH public key) →
-// `challenge` → `proof` → `welcome`; only a verified proof joins the World (ADR
-// 0004). `input` carries client-authoritative Avatar kinematics (ADR 0001) plus
-// tick intents. A `skill` of 0 means none was pressed.
 export type ClientMessage =
 	| {
 			t: 'hello';
-			// Desired username on first launch; ignored for a key that already owns one —
-			// the registered Handle wins (ADR 0004).
 			handle: string;
 			version: string;
 			cosmetics: Cosmetics;
-			// Equipped Weapon catalog index; joins broadcast appearance and keys the stat
-			// block (ADR 0017 §14).
 			weapon: number;
-			// OpenSSH one-line ssh-ed25519 public key ('' = none offered; refused with a
-			// human-readable reason).
 			publicKey: string;
 	  }
-	// The ssh-agent-format signature blob over the server's nonce (domain-separated —
-	// see challengePayload).
 	| { t: 'proof'; signature: Uint8Array }
 	| {
 			t: 'input';
@@ -188,43 +168,19 @@ export type ClientMessage =
 			facing: Facing;
 			onGround: boolean;
 			attack: boolean;
-			// Raise the Guard this tick; the server folds it into `guardT` (ADR 0017 §5).
 			guard: boolean;
 			interact: boolean;
-			// Dodge intent for the tick: the server loads the i-frame timer, but the hop
-			// displacement is client-authoritative and never re-simulated (ADR 0001, 0017 §5).
 			dodge: boolean;
 			skill?: number;
 	  }
-	// A Zone-local chat line, relayed to the sender's Zone (#34).
 	| { t: 'chat'; text: string }
-	// A private message to one online Player by handle — world-wide, not Zone-local (#40).
 	| { t: 'whisper'; to: string; text: string }
-	// A triggered emote from the fixed set, Zone-local like chat (#38). `emote` is an
-	// EMOTES id; the server drops an unknown one.
 	| { t: 'emote'; emote: string }
-	// A request to sell one owned Item to the Town Merchant (#267, ADR 0025). The
-	// server never trusts it: re-derives the price, checks ownership, and gates on
-	// standing at a Merchant — an unowned/unknown `itemId` is a silent no-op.
 	| { t: 'sell'; itemId: number }
-	// A request to buy one starter good from the Town Merchant (#273, ADR 0025). Carries
-	// only the good's index into the fixed STARTER_GOODS catalog, never a price: the server
-	// re-derives price, checks affordability, and gates on a Merchant — out-of-range or
-	// unaffordable is a silent no-op.
 	| { t: 'buy'; index: number }
-	// Finalise brand-new Avatar creation, sent once after `welcome` reported `isNew`
-	// (#302, ADR 0028): the server validates + claims the Handle, mints the Save, and
-	// spawns into the starting Town. A returning account never sends it. `handle` ''
-	// means "use the auto-derived placeholder" (#304).
 	| { t: 'createAvatar'; handle: string; cosmetics: Cosmetics }
-	// In-game Avatar re-customization ([c], Town-only) (#305, ADR 0028). Changes Cosmetics
-	// only, never the Handle (set-once); the server gates on standing in a Town and shares
-	// `createAvatar`'s apply path. A no-op outside a Town.
 	| { t: 'setCosmetics'; cosmetics: Cosmetics };
 
-// Four u8 catalog indices — hue, hat, nameplate, form (#35, ADR 0020). Decode clamps
-// to a valid index so a garbled/forward-version value can't crash the renderer. `form`
-// is written last so the older byte positions are unchanged (ADR 0024 §8).
 function writeCosmetics(w: Writer, c: Cosmetics) {
 	w.u8(c.hue);
 	w.u8(c.hat);
@@ -263,7 +219,6 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.str(msg.version);
 			writeCosmetics(w, msg.cosmetics);
 			w.u8(msg.weapon);
-			// Trails the pre-auth fields (#235) so an older decoder still reads a valid hello.
 			w.str(msg.publicKey);
 			break;
 		case 'proof':
@@ -281,8 +236,6 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.bool(msg.attack);
 			w.bool(msg.interact);
 			w.u8(msg.skill ?? 0);
-			// Trailing intents (ADR 0017 §5) so an older decoder that stops after `skill`
-			// still reads a valid input; decode reads them back in this order.
 			w.bool(msg.dodge);
 			w.bool(msg.guard);
 			break;
@@ -310,8 +263,6 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 		case 'createAvatar':
 			w.u8(CLIENT_TAG.createAvatar);
 			writeCosmetics(w, msg.cosmetics);
-			// Trails the cosmetics, append-only (#304): a #302-era client that omits it still
-			// decodes (server falls back to the placeholder).
 			w.str(msg.handle);
 			break;
 		case 'setCosmetics':
@@ -328,18 +279,10 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 	switch (tag) {
 		case CLIENT_TAG.hello: {
 			const handle = r.str();
-			// A pre-0012 client sends an integer where we now expect a Version string; the
-			// `remaining` guards keep decode from throwing on the short/garbled read, and the
-			// bogus Version just fails the equality gate — the "out of date" reject we want.
 			const version = r.remaining() >= 4 ? r.str() : '';
-			// Trailing; a client predating them defaults to the bareheaded look (rejected by
-			// the version gate regardless).
 			const cosmetics =
 				r.remaining() >= 4 ? readCosmetics(r) : DEFAULT_COSMETICS;
-			// Trails cosmetics; a client predating it defaults to the Warrior sword.
 			const weapon = r.remaining() >= 1 ? r.u8() : DEFAULT_WEAPON;
-			// Trails weapon; absent decodes as '' — no key offered, which the server refuses
-			// with an auth reason (not a frame error).
 			const publicKey = r.remaining() >= 4 ? r.str() : '';
 			return { t: 'hello', handle, version, cosmetics, weapon, publicKey };
 		}
@@ -355,8 +298,6 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			const attack = r.bool();
 			const interact = r.bool();
 			const skill = r.u8();
-			// Trailing intents (ADR 0017 §5), read back in encode order; a client predating
-			// them omits the bytes, so default to no Dodge / no Guard.
 			const dodge = r.remaining() >= 1 ? r.bool() : false;
 			const guard = r.remaining() >= 1 ? r.bool() : false;
 			const msg: ClientMessage = {
@@ -387,8 +328,6 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			return { t: 'buy', index: r.u32() };
 		case CLIENT_TAG.createAvatar: {
 			const cosmetics = readCosmetics(r);
-			// Trails; absent (a #302-era frame) decodes as '' — server falls back to the
-			// placeholder (#304).
 			const handle = r.remaining() >= 4 ? r.str() : '';
 			return { t: 'createAvatar', handle, cosmetics };
 		}
@@ -401,13 +340,9 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 	}
 }
 
-// --- Server -> client -------------------------------------------------------
-
-// The server-owned view of one Avatar (ADR 0001): kinematics plus authoritative
-// vitals. The recipient finds itself by `sessionId` to reconcile its own HP/respawn.
 export interface AvatarSnapshot {
 	sessionId: number;
-	handle: string; // ephemeral nameplate handle
+	handle: string;
 	cosmetics: Cosmetics;
 	x: number;
 	y: number;
@@ -418,9 +353,7 @@ export interface AvatarSnapshot {
 	hp: number;
 	maxHp: number;
 	hurtT: number;
-	// Replicated appearance so every other client renders this Avatar's weapon (ADR 0024).
 	weapon: number;
-	// Replicated action-state so every other client renders its swing (ADR 0017 §10).
 	action: ActionState;
 }
 
@@ -436,15 +369,9 @@ export interface MonsterSnapshot {
 	hp: number;
 	maxHp: number;
 	hurtT: number;
-	// Replicated action-state (ADR 0017 §10). Monsters broadcast idle for now; the field
-	// is here so the telegraphed-offense rework needs no protocol change.
 	action: ActionState;
 }
 
-// `challenge` answers `hello` with a nonce to sign; a verified `proof` earns `welcome`,
-// which carries the durable Handle the key resolved to — not necessarily what the client
-// asked for (ADR 0004). `snapshot` is one tick of authoritative Zone state plus this
-// Player's private progress/inventory/log (respawn is just a position reset + log line).
 export type ServerMessage =
 	| { t: 'challenge'; nonce: Uint8Array }
 	| {
@@ -452,11 +379,7 @@ export type ServerMessage =
 			sessionId: number;
 			zoneId: string;
 			tickRate: number;
-			// The durable username this connection authenticated as (#235).
 			handle: string;
-			// New-vs-returning verdict from the server's Save lookup — the only authority,
-			// never a client flag (#302, ADR 0028). `true` holds the session authenticated but
-			// UNSPAWNED until `createAvatar`; `false` is already spawned into its last Town.
 			isNew: boolean;
 	  }
 	| {
@@ -466,22 +389,13 @@ export type ServerMessage =
 			avatars: AvatarSnapshot[];
 			monsters: MonsterSnapshot[];
 			projectiles: Projectile[];
-			// Combat Effects this tick, already Zone-filtered and originator-suppressed for
-			// this recipient (ADR 0013). Decoded Effects carry no `source` (wire-stripped).
 			effects: Effect[];
-			// This recipient's OWN loot Drops (#238): loot is instanced/private, so a session
-			// only ever receives the Drops it owns.
 			drops: Drop[];
 			progress: PlayerProgress;
 			inventory: Item[];
 			log: string[];
 	  }
-	// A Zone-local chat line, event-driven not per-tick (#34). `sessionId` keys the
-	// over-head Speech bubble to the sender's sprite; the handle is a display label, not
-	// an identity (#59, ADR 0007).
 	| { t: 'chat'; sessionId: number; handle: string; text: string }
-	// A private whisper (#40) delivered to BOTH sender and recipient. `fromSessionId`
-	// lets the recipient tell an incoming whisper from its own echo.
 	| {
 			t: 'whisper';
 			fromSessionId: number;
@@ -489,14 +403,8 @@ export type ServerMessage =
 			to: string;
 			text: string;
 	  }
-	// A sender-only system line (#40): e.g. whispering a handle that is not online.
 	| { t: 'notice'; text: string }
-	// The server is refusing the connection and will close it — version mismatch or a
-	// connection cap (ADR 0009). `reason` is surfaced before the client exits.
 	| { t: 'reject'; reason: string }
-	// A `createAvatar` finalise was refused — the Handle is `taken` or `invalid` (#304,
-	// ADR 0028). Unlike `reject` it does NOT close the connection: the session stays
-	// held-but-unspawned so the client keeps the creator open and lets the Player retry.
 	| { t: 'createRejected'; reason: 'taken' | 'invalid' };
 
 const SERVER_TAG = {
@@ -510,7 +418,6 @@ const SERVER_TAG = {
 	createRejected: 8,
 } as const;
 
-// u8 index, append-only; a forward-version index clamps to 'invalid' on decode (#304).
 const CREATE_REJECT_REASONS = ['taken', 'invalid'] as const;
 
 const ENTITY_TYPES: readonly EntityType[] = [
@@ -519,21 +426,13 @@ const ENTITY_TYPES: readonly EntityType[] = [
 	'shooter',
 	'brute',
 ];
-// Append-only: the index is the wire encoding, so a new kind goes on the END (a reorder
-// would remap existing Effects); a forward-version kind clamps to `blood` on decode.
+// Append-only: array position is the wire encoding, so reordering silently remaps values.
 const EFFECT_KINDS: readonly EffectKind[] = ['blood', 'gore', 'impact'];
-// Append-only like EFFECT_KINDS; a forward-version index clamps to `idle` on decode.
 const MOVE_IDS: readonly MoveId[] = ['idle', 'basic', 'dodge'];
 const ATTACK_PHASES: readonly AttackPhase[] = ['windup', 'active', 'recovery'];
-// Append-only emote catalog (ADR 0020 §9). `NO_EMOTE` (0xFF) is the "no active emote"
-// sentinel; an unknown forward-version index decodes to null so it can't crash an older
-// client (just shows idle).
 const EMOTE_IDS: readonly string[] = EMOTES.map((e) => e.id);
 const NO_EMOTE = 0xff;
 
-// Per-entity action-state (ADR 0017 §10, ADR 0020 §9). `emoteT` is a oneshot's remaining
-// lifetime, a loop/hold's elapsed sim-time. A forward-version move/phase/emote index
-// clamps to idle/wind-up/none on decode.
 function writeAction(w: Writer, a: ActionState) {
 	w.u8(MOVE_IDS.indexOf(a.move));
 	w.u8(ATTACK_PHASES.indexOf(a.phase));
@@ -639,8 +538,6 @@ function writeProjectile(w: Writer, p: Projectile) {
 	w.f64(p.vy);
 	w.f64(p.life);
 	w.f64(p.damage);
-	// Poise + Knockback that makes a heavy shot Stagger like a melee hit, appended after
-	// the original fields (ADR 0017 §8).
 	w.f64(p.poiseDamage);
 	w.f64(p.knockback);
 	w.f64(p.knockbackUp);
@@ -656,8 +553,6 @@ function readProjectile(r: Reader): Projectile {
 		life: r.f64(),
 		damage: r.f64(),
 	};
-	// A pre-§8 shot carried no payload fields; fall back to the SHOOTER pebble values so an
-	// older snapshot decodes as the legacy shot rather than crashing on a short read.
 	if (r.remaining() < 1)
 		return {
 			...base,
@@ -673,16 +568,12 @@ function readProjectile(r: Reader): Projectile {
 	};
 }
 
-// `source` is server-internal attribution stripped during snapshot-building (ADR 0013),
-// so a decoded Effect never carries it. `dir` is -1 | 0 | 1, carried as a signed byte.
 function writeEffect(w: Writer, e: Effect) {
 	w.u8(EFFECT_KINDS.indexOf(e.kind));
 	w.f64(e.x);
 	w.f64(e.y);
 	w.f64(e.intensity);
 	w.i8(e.dir);
-	// Optional RGB tint (#139), guarded by a present flag so an untinted Effect costs one
-	// extra byte.
 	w.bool(e.tint !== undefined);
 	if (e.tint !== undefined) {
 		w.u8(e.tint.r);
@@ -726,8 +617,6 @@ function readItem(r: Reader): Item {
 	return { id, base, slot, rarity, affixes };
 }
 
-// `owner` is always the recipient (a session only receives its own Drops), carried anyway
-// so a decoded Drop round-trips losslessly (#238).
 function writeDrop(w: Writer, d: Drop) {
 	w.u32(d.id);
 	w.u32(d.owner);
@@ -764,10 +653,7 @@ export function encodeServerMessage(msg: ServerMessage): Uint8Array {
 			w.u32(msg.sessionId);
 			w.str(msg.zoneId);
 			w.u16(msg.tickRate);
-			// Trails the pre-auth fields (#235) so an older decoder still reads a valid welcome.
 			w.str(msg.handle);
-			// Trails the Handle, append-only (#302); an older decoder that stops after the
-			// Handle never reads it.
 			w.bool(msg.isNew);
 			break;
 		case 'snapshot':
@@ -831,11 +717,7 @@ export function decodeServerMessage(buf: Uint8Array): ServerMessage {
 			const sessionId = r.u32();
 			const zoneId = r.str();
 			const tickRate = r.u16();
-			// Trails; absent decodes as '' (pre-auth welcome) — the caller falls back to the
-			// handle it asked for (#235).
 			const handle = r.remaining() >= 4 ? r.str() : '';
-			// Trails the Handle (#302); a welcome predating it defaults to `false` — a returning
-			// account, so no creator shows.
 			const isNew = r.remaining() >= 1 ? r.bool() : false;
 			return { t: 'welcome', sessionId, zoneId, tickRate, handle, isNew };
 		}

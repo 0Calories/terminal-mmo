@@ -53,12 +53,9 @@ test('difficulty rises with distance: pokers only Field 2+, Brute only in Field 
 				?.spawns.map((s) => s.type),
 		);
 
-	// Field 1 is the warm-up: chasers only — no ranged pokers, no Brute.
 	expect(behaviors('field-01')).toEqual(new Set(['chaser']));
-	// Field 2 introduces the ranged poker (shooter) alongside chasers; still no Brute.
 	expect(behaviors('field-02').has('shooter')).toBe(true);
 	expect(behaviors('field-02').has('brute')).toBe(false);
-	// Field 3 (deep) carries the Brute plus chasers and pokers.
 	expect(behaviors('field-03').has('brute')).toBe(true);
 	expect(behaviors('field-03').has('shooter')).toBe(true);
 });
@@ -68,7 +65,6 @@ test('the Dungeon is authored: a combat Zone entered from Town, round-tripping (
 	const dungeon = zones.find((z) => z.id === 'dungeon-01');
 	const town = zones.find((z) => z.id === 'town-01');
 
-	// Fixed-difficulty, repeatable combat faucet: the instanced kind, with Monsters.
 	expect(dungeon?.type).toBe('dungeon');
 	expect(dungeon?.spawns.length).toBeGreaterThan(0);
 	expect(dungeon?.monsters.length).toBe(dungeon?.spawns.length);
@@ -85,8 +81,6 @@ test('Town has 2-3 signpost NPCs with directional dialogue (D3, #239)', () => {
 });
 
 test('the shared Player spawn point lands on walkable ground in the start Town', () => {
-	// The SPAWN cell must be clear and rest on solid ground, or the game opens mid-air
-	// or in a wall.
 	const town = loadZones()[0];
 	expect(town.id).toBe('town-01');
 	const t = town.terrain;

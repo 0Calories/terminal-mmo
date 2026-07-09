@@ -3,22 +3,16 @@ import { terrainCell } from './terrain';
 import type { Entity, Npc, SpawnPoint, Terrain } from './types';
 import { type Portal, spawnMonster, type Zone, type ZoneType } from './world';
 
-// Entity boxes are engine-derived from the anchor glyph, not authored (ADR 0008);
-// footprint dims live in constants.ts, shared with the editor placement ghost (#96).
-
-/** A spawn glyph resolves to one of these. */
 export interface MonsterCatalogEntry {
 	id: string;
 	behavior: 'chaser' | 'shooter' | 'brute';
 	name: string;
 }
 
-/** An npc glyph resolves to one of these. */
 export interface NpcCatalogEntry {
 	id: string;
 	kind: 'vendor' | 'signpost';
 	name: string;
-	// Signpost dialogue (PRD story 9); unused by a vendor.
 	lines?: string[];
 }
 
@@ -27,10 +21,6 @@ export interface Catalogs {
 	npcs: NpcCatalogEntry[];
 }
 
-/**
- * Malformed `.zone` or catalog reference. `code` is a stable tag the validator (#53)
- * turns into a human message; parseZone fails safe, never half-builds a Zone.
- */
 export class ZoneParseError extends Error {
 	constructor(
 		public code: string,
@@ -81,13 +71,6 @@ type Glyph =
 	| { kind: 'npc'; ref: string }
 	| { kind: 'portal'; ref: PortalSpec };
 
-/**
- * Loads the `.zone` format (ADR 0008): a JSON header, a `---` line, then an ASCII
- * grid where `#` is a wall, `=` a one-way platform (ADR 0026), `.` empty, and every
- * other glyph anchors an entity resolved through the header maps + catalogs.
- *
- * `id` comes from the FILENAME (ADR 0011), never the header, so the two can't drift.
- */
 export function parseZone(text: string, catalogs: Catalogs, id: string): Zone {
 	const lines = text.split('\n');
 	const di = lines.findIndex((l) => l.trim() === '---');
@@ -117,14 +100,13 @@ export function parseZone(text: string, catalogs: Catalogs, id: string): Zone {
 	const monsters: Entity[] = [];
 	const npcs: Npc[] = [];
 	const portals: Portal[] = [];
-	let nextMonsterId = 2; // the Avatar is id 1
+	let nextMonsterId = 2; // Avatar is id 1
 	let nextNpcId = 1;
 
 	for (let y = 0; y < h; y++) {
 		const line = body[y];
 		for (let x = 0; x < line.length; x++) {
 			const ch = line[x];
-			// A terrain glyph sets the cell; anything else is an entity anchor.
 			const cell = terrainCell(ch);
 			if (cell !== undefined) {
 				if (cell) cells[y * w + x] = cell;
@@ -192,8 +174,6 @@ function parseHeader(text: string): ZoneHeader {
 			`header is not valid JSON: ${(e as Error).message}`,
 		);
 	}
-	// Reject a header `id` outright rather than ignore it: the id is the filename, and
-	// a second source of identity would drift (ADR 0011).
 	if ('id' in header)
 		throw new ZoneParseError(
 			'bad-header',
@@ -216,7 +196,6 @@ function parseHeader(text: string): ZoneHeader {
 	return header;
 }
 
-/** Collapse the header's per-kind maps into one glyph→ref table, rejecting clashes. */
 function buildGlyphMap(header: ZoneHeader): Map<string, Glyph> {
 	const map = new Map<string, Glyph>();
 	const add = (ch: string, g: Glyph) => {

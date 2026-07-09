@@ -16,19 +16,16 @@ import {
 import { MessageLog } from './message-log';
 import { COLORS } from './theme';
 
-// Level-up banner flash window (#271).
 const BANNER_MS = 1000;
 const BANNER_TEXT = '★  LEVEL UP!  ★';
 
 const HINT =
 	'move ←/→ a/d  jump ␣/↑  attack j/x  block k  dodge l  skills u/i  interact e  chat ⏎  ? controls  quit q';
-const Z = 10; // above the playfield (zIndex 0)
-const BAR_WIDTH = 10; // glyph cells per HUD vital bar
+const Z = 10;
+const BAR_WIDTH = 10;
 const BAR_FILL = '█';
 const BAR_TRACK = '░';
 
-// One labelled HUD vital bar (#243): fill and track are two TextRenderables so the lit
-// portion carries the vital's colour while the remainder stays a faint track.
 class Bar {
 	readonly box: BoxRenderable;
 	private readonly fill: TextRenderable;
@@ -103,7 +100,6 @@ export class Hud {
 	private readonly meta: TextRenderable;
 	private readonly skills: TextRenderable;
 	private readonly messages: MessageLog;
-	// `bannerUntil`: wall-clock (performance.now) time the level-up flash clears (#271).
 	private readonly banner: BoxRenderable;
 	private readonly bannerText: TextRenderable;
 	private bannerUntil = 0;
@@ -132,7 +128,6 @@ export class Hud {
 			bg: COLORS.hudBg,
 		});
 		this.hpBar = new Bar(ctx, 'HP', COLORS.hp);
-		// ── Stamina bar slots in here: new Bar(ctx, 'SP', <its colour>) ──
 		this.xpBar = new Bar(ctx, 'XP', COLORS.xp);
 		this.wallet = new TextRenderable(ctx, {
 			content: '',
@@ -143,7 +138,6 @@ export class Hud {
 		vitals.add(this.hpBar.box);
 		vitals.add(this.xpBar.box);
 		vitals.add(this.wallet);
-		// Alpha warning, networked play only — the live World is ephemeral (ADR 0009).
 		this.alpha = new TextRenderable(ctx, {
 			content: '',
 			fg: COLORS.vendor,
@@ -177,7 +171,6 @@ export class Hud {
 		this.messages = new MessageLog(ctx);
 		this.bottom.add(this.messages.scrollBox);
 
-		// Level-up banner: kept empty (no visual space) until a level-up arms it (#271).
 		this.banner = new BoxRenderable(ctx, {
 			position: 'absolute',
 			top: 2,
@@ -202,8 +195,6 @@ export class Hud {
 		parent.add(this.banner);
 	}
 
-	// Arm the level-up flash (#271). Idempotent — re-arming extends the window, so
-	// back-to-back level-ups read as one flash.
 	flashLevelUp(): void {
 		this.bannerUntil = performance.now() + BANNER_MS;
 	}
@@ -238,13 +229,10 @@ export class Hud {
 		this.messages.syncChat(lines);
 	}
 
-	// The loop gates game input on this so keys stay inert while typing (#272).
 	get chatOpen(): boolean {
 		return this.messages.chatOpen;
 	}
 
-	// Opening consumes the triggering key in the loop so it isn't delivered to the
-	// freshly-focused input (#272).
 	openChat(): void {
 		this.messages.openChat();
 	}

@@ -1,6 +1,3 @@
-// View + selection state only — never the transaction: the server owns the Gold/inventory
-// change (#267/#273, ADR 0025). Sell/Buy tabs switch with ←/→ (#242); `sellOnly` collapses
-// it to just the Sell tab.
 import type { GameState } from '@mmo/shared';
 import { STARTER_GOODS, saleValue } from '@mmo/shared';
 import {
@@ -105,7 +102,6 @@ export class Shop {
 		this.container.visible = false;
 	}
 
-	// Inert in `sellOnly` mode — there is no Buy tab to flip to (#267).
 	switchTab(): void {
 		if (this.sellOnly) return;
 		this.mode = this.mode === 'sell' ? 'buy' : 'sell';
@@ -123,7 +119,6 @@ export class Shop {
 	update(player: ShopView): void {
 		const count = this.count(player);
 		if (this.selected > count - 1) this.selected = Math.max(0, count - 1);
-		// Sell-only hides the tab strip — there is no Buy to advertise.
 		this.tabs.content = this.sellOnly
 			? ''
 			: this.mode === 'sell'

@@ -16,7 +16,6 @@ import {
 
 test('the default cosmetics are the first slot of every catalog (bareheaded amber)', () => {
 	expect(DEFAULT_COSMETICS).toEqual({ hue: 0, hat: 0, nameplate: 0, form: 0 });
-	// Catalog index 0 is the unchanged-looking default in each case.
 	expect(HATS[0].sprite).toBeNull();
 });
 
@@ -28,8 +27,6 @@ test('catalog counts agree with the underlying catalogs', () => {
 });
 
 test('the demo ships a single shippable Form + hats at the ADR 0024 §8 cap (5 hats)', () => {
-	// Form 2 (wisp) is drafted out pending art rework, leaving one shippable Form. The
-	// hat cap is a TOTAL, not additive (ADR 0024 §8): 6 slots = bareheaded + 5 hats, exact.
 	expect(FORM_COUNT).toBe(1);
 	expect(HAT_COUNT).toBe(6);
 	for (let i = 1; i < HATS.length; i++) expect(HATS[i].sprite).not.toBeNull();
@@ -55,8 +52,6 @@ test('clampCosmetics collapses out-of-range / non-integer indices to the default
 });
 
 test('clampCosmetics defaults an out-of-range form index to 0 (mirrors hue/hat/nameplate)', () => {
-	// `form` is a fourth catalog index (ADR 0020); a stray value can never produce an
-	// out-of-range FORMS lookup.
 	const base = { hue: 0, hat: 0, nameplate: 0 };
 	expect(clampCosmetics({ ...base, form: FORM_COUNT }).form).toBe(0);
 	expect(clampCosmetics({ ...base, form: -1 }).form).toBe(0);
@@ -67,7 +62,6 @@ test('randomCosmetics is deterministic for a seed and always in range', () => {
 	for (let seed = 0; seed < 200; seed++) {
 		const c = randomCosmetics(seed);
 		expect(c).toEqual(randomCosmetics(seed));
-		// Always a valid, clamp-stable catalog index.
 		expect(clampCosmetics(c)).toEqual(c);
 		expect(c.hue).toBeGreaterThanOrEqual(0);
 		expect(c.hue).toBeLessThan(HUE_COUNT);
@@ -86,7 +80,7 @@ test('randomCosmetics spreads across the catalogs (not a constant)', () => {
 		forms.add(randomCosmetics(seed).form);
 	}
 	expect(hats.size).toBeGreaterThan(1);
-	// With Form 2 (wisp) drafted out, only one Form ships, so every roll lands on it.
+	// only one Form ships, so every roll lands on it
 	expect(forms.size).toBe(1);
 	expect(forms.has(0)).toBe(true);
 });

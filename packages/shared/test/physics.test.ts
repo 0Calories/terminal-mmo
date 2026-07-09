@@ -23,7 +23,7 @@ const FLAT = parseTerrain([
 	'############',
 	'############',
 ]);
-const COL = '........#...'; // solid column at x=8
+const COL = '........#...';
 const WALL = parseTerrain([
 	COL,
 	COL,
@@ -38,8 +38,6 @@ const WALL = parseTerrain([
 	'############',
 	'############',
 ]);
-// A wide flat floor with room to shove a body across without clipping the world
-// edge (out-of-bounds cells read as solid).
 const open = '.'.repeat(60);
 const floor = '#'.repeat(60);
 const WIDE = parseTerrain([
@@ -56,29 +54,28 @@ const WIDE = parseTerrain([
 	floor,
 	floor,
 ]);
-// A one-way platform (row 8, x=2..7) suspended above a ground floor (rows 18-19):
-// rising from below passes through, descending from above lands on top.
+// One-way platform (`=`) at row 8, x=2..7; ground floor at rows 18-19.
 const PLATFORM = parseTerrain([
-	'............', // 0
-	'............', // 1
-	'............', // 2
-	'............', // 3
-	'............', // 4
-	'............', // 5
-	'............', // 6
-	'............', // 7
-	'..======....', // 8  one-way platform (`=`, ADR 0026)
-	'............', // 9
-	'............', // 10
-	'............', // 11
-	'............', // 12
-	'............', // 13
-	'............', // 14
-	'............', // 15
-	'............', // 16
-	'............', // 17
-	'############', // 18 ground
-	'############', // 19
+	'............',
+	'............',
+	'............',
+	'............',
+	'............',
+	'............',
+	'............',
+	'............',
+	'..======....',
+	'............',
+	'............',
+	'............',
+	'............',
+	'............',
+	'............',
+	'............',
+	'............',
+	'............',
+	'############',
+	'############',
 ]);
 const IDLE: Control = { moveX: 0, jump: false };
 
@@ -95,8 +92,8 @@ test('gravity: an entity falls and lands on the ground', () => {
 
 test('walls: horizontal movement is blocked by a solid column', () => {
 	const e = settle(WALL, spawnAvatar(1, 0), { moveX: 1, jump: false });
-	expect(e.x + BOX.w).toBeLessThanOrEqual(8); // never overlaps the wall at x=8
-	expect(e.x).toBeGreaterThan(1); // but it did move toward it
+	expect(e.x + BOX.w).toBeLessThanOrEqual(8);
+	expect(e.x).toBeGreaterThan(1);
 });
 
 test('jump: leaves the ground with upward velocity', () => {
@@ -107,11 +104,7 @@ test('jump: leaves the ground with upward velocity', () => {
 	expect(jumped.onGround).toBe(false);
 });
 
-// --- One-way platforms (#262) -----------------------------------------------
-
 test('one-way platform: rising through a platform passes through (no head bonk)', () => {
-	// A two-sided solid would bonk the head and stop it at row 9; one-way lets the
-	// rising head pass the surface (row 8).
 	const grounded = settle(PLATFORM, spawnAvatar(3, 13));
 	expect(grounded.onGround).toBe(true);
 	let e = stepEntity(PLATFORM, grounded, { moveX: 0, jump: true }, 1 / 60).e;
@@ -124,15 +117,12 @@ test('one-way platform: rising through a platform passes through (no head bonk)'
 });
 
 test('one-way platform: descending from above lands on top', () => {
-	// Surface top is row 8, so the box's top rests at row 8 - BOX.h = 3.
 	const e = settle(PLATFORM, spawnAvatar(3, 0));
 	expect(e.onGround).toBe(true);
 	expect(e.y).toBeCloseTo(8 - BOX.h, 5);
 });
 
 test('one-way platform: came-from-below never snaps up (no teleport glitch)', () => {
-	// After rising through from below, the body must fall back to the ground it
-	// launched from, never snapping onto the platform it entered from underneath.
 	const grounded = settle(PLATFORM, spawnAvatar(3, 13));
 	let e = stepEntity(PLATFORM, grounded, { moveX: 0, jump: true }, 1 / 60).e;
 	e = settle(PLATFORM, e);
@@ -141,8 +131,6 @@ test('one-way platform: came-from-below never snaps up (no teleport glitch)', ()
 });
 
 test('one-way platform: descending with feet below the surface does not land', () => {
-	// The came-from-above guard in isolation: feet already below the surface (row 8)
-	// and moving down must keep falling, not snap up onto the surface.
 	const straddling: Entity = { ...spawnAvatar(3, 3.5), vy: 2, onGround: false };
 	const e = stepEntity(PLATFORM, straddling, IDLE, 1 / 60).e;
 	expect(e.onGround).toBe(false);
@@ -150,16 +138,13 @@ test('one-way platform: descending with feet below the surface does not land', (
 });
 
 test('one-way platform: horizontal movement is preserved while rising through it (#262 halt regression)', () => {
-	// Before ADR 0026 the horizontal sweep treated the platform as a wall, so `vx` was
-	// zeroed the instant the rising box overlapped it — the "jumping up through a
-	// platform halts sideways movement" feel bug. It must now keep advancing.
 	const ground = '#'.repeat(40);
 	const PLATFORM_WIDE = parseTerrain([
 		...Array(8).fill('.'.repeat(40)),
-		`.....${'='.repeat(16)}${'.'.repeat(19)}`, // 8  one-way platform, cols 5..20
+		`.....${'='.repeat(16)}${'.'.repeat(19)}`,
 		...Array(9).fill('.'.repeat(40)),
-		ground, // 18
-		ground, // 19
+		ground,
+		ground,
 	]);
 	const grounded = settle(PLATFORM_WIDE, spawnAvatar(6, 13));
 	expect(grounded.onGround).toBe(true);
@@ -178,14 +163,10 @@ test('one-way platform: horizontal movement is preserved while rising through it
 		prevX = e.x;
 		minY = Math.min(minY, e.y);
 	}
-	expect(minY).toBeLessThan(8); // it really did rise up THROUGH the platform row
+	expect(minY).toBeLessThan(8);
 });
 
-// --- Momentum body (ADR 0017, #162) -----------------------------------------
-
 test('parity: with no impulse, a settled idle body never gains horizontal drift', () => {
-	// The ivx channel must be inert in normal play: a grounded, input-less body
-	// never gains horizontal velocity.
 	const e = settle(WIDE, spawnAvatar(20, 0));
 	expect(e.ivx ?? 0).toBe(0);
 	expect(e.vx).toBe(0);
@@ -203,7 +184,7 @@ test('impulse: a horizontal shove moves a body and decays under drag', () => {
 	for (let i = 0; i < 120; i++) {
 		e = stepEntity(WIDE, e, IDLE, 1 / 60).e;
 		const speed = Math.abs(e.ivx ?? 0);
-		expect(speed).toBeLessThanOrEqual(prevSpeed); // monotonic decay
+		expect(speed).toBeLessThanOrEqual(prevSpeed);
 		prevSpeed = speed;
 	}
 	expect(e.x).toBeGreaterThan(startX);
@@ -220,7 +201,7 @@ test('impulse: an up-and-out shove arcs — rises under the launch, falls under 
 		e = stepEntity(WIDE, e, IDLE, 1 / 60).e;
 		minY = Math.min(minY, e.y);
 	}
-	expect(minY).toBeLessThan(grounded.y); // smaller y = higher
+	expect(minY).toBeLessThan(grounded.y);
 	expect(e.onGround).toBe(true);
 	expect(e.x).toBeGreaterThan(startX);
 });
@@ -244,7 +225,7 @@ test('impulse: a shove into a wall is absorbed, not stored', () => {
 	let e = applyImpulse(grounded, 200, 0);
 	for (let i = 0; i < 20; i++) e = stepEntity(WALL, e, IDLE, 1 / 60).e;
 	expect(e.x + BOX.w).toBeLessThanOrEqual(8);
-	expect(e.ivx ?? 0).toBe(0); // the wall ate the residual impulse, didn't store it
+	expect(e.ivx ?? 0).toBe(0);
 });
 
 test('airborne monster: integrates gravity on the shared body and lands', () => {
@@ -252,6 +233,6 @@ test('airborne monster: integrates gravity on the shared body and lands', () => 
 	let e = stepEntity(WIDE, m, { moveX: 0, jump: false }, 1 / 60).e;
 	expect(e.onGround).toBe(false);
 	e = settle(WIDE, e, { moveX: 0, jump: false });
-	expect(e.onGround).toBe(true); // shared body, no Monster special-casing
+	expect(e.onGround).toBe(true);
 	expect(e.vy).toBe(0);
 });

@@ -1,10 +1,5 @@
 import { Sprite } from './sprite';
 
-// The cosmetic hat catalog (#35, ADR 0003): a decorative Sprite overlaid above the
-// Avatar's head, anchored by the renderer so it never occludes the face. Index 0 is the
-// bareheaded default.
-//
-// VISUAL ARTEFACT — the art here needs design review / sign-off before merge.
 export interface HatDef {
 	name: string;
 	sprite: Sprite | null;
@@ -42,7 +37,6 @@ kkkkkk`,
 	},
 );
 
-// The demo's one added hat, landing the catalog at ADR 0024 §8's cap.
 const partyHat = new Sprite(
 	`
 ··▲··
@@ -57,7 +51,6 @@ const partyHat = new Sprite(
 	},
 );
 
-// Index is the on-the-wire cosmetic hat id; order is stable (append only).
 export const HATS: readonly HatDef[] = [
 	{ name: 'None', sprite: null },
 	{ name: 'Cap', sprite: cap },

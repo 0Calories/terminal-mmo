@@ -1,7 +1,3 @@
-// Clean-shutdown hook tests (#269): the flush→close→exit sequence, its order, its
-// at-most-once guard, and an end-to-end proof that state flushed only at shutdown survives
-// because `close()` checkpoints the WAL to disk (no progress loss between periodic flushes).
-
 import { expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,7 +26,6 @@ test('shutdown flushes dirty state, then closes the store, then exits 0', () => 
 
 	shutdown('SIGTERM');
 
-	// Order matters: flush must complete before the store is closed, and exit is last.
 	expect(calls).toEqual(['flush', 'close', 'exit:0']);
 });
 
@@ -45,7 +40,6 @@ test('a repeated / cross signal is idempotent — never double-flush or double-c
 		log: () => {},
 	});
 
-	// First SIGINT, then a racing SIGTERM: only the first wins.
 	shutdown('SIGINT');
 	shutdown('SIGTERM');
 	shutdown('SIGINT');
@@ -71,8 +65,6 @@ test('a throwing flush still closes the store and exits — no stranded handle',
 		},
 	});
 
-	// A single failing session save must not strand the WAL checkpoint or the exit — the
-	// store's close() and the exit still run so already-flushed rows are made durable.
 	shutdown('SIGTERM');
 
 	expect(calls).toEqual(['flush', 'close', 'exit:0']);
@@ -86,8 +78,6 @@ test('no progress loss: state flushed only at shutdown survives via close()', ()
 		const store = openPlayerStore(path);
 		const key = 'ssh-ed25519 AAAAtestkeyblob';
 
-		// Nothing else persists this row, so its survival after close() checkpoints the WAL
-		// proves the hook is what saved the progress.
 		const shutdown = createShutdown({
 			flushAll: () => store.save(key, richSave()),
 			close: () => store.close(),

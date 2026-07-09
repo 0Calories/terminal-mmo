@@ -1,7 +1,5 @@
 import { Sprite } from './sprite';
 
-// A read-only signpost NPC — unlike the Merchant it never opens a shop, just shows its
-// directional dialogue (PRD story 9).
 const GLYPH = `
 ┌───┐
 │ » │

@@ -30,7 +30,6 @@ describe('newZoneTemplate', () => {
 		const errors = validateZone(zone, catalogs).filter(
 			(d) => d.severity === 'error',
 		);
-		// the one expected, documented next-edit: a field needs at least one spawn
 		expect(errors).toHaveLength(1);
 		expect(errors[0].message).toContain('at least one monster spawn');
 	});
