@@ -8,7 +8,7 @@ import {
 	isDodging,
 	spawnDodgeEcho,
 	stepDodgeEchoes,
-} from '../src/dodge-echo';
+} from '../src/effects/dodge-echo';
 
 function avatar(over: Partial<Entity> = {}): Entity {
 	return {

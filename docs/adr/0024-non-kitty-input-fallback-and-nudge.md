@@ -2,7 +2,7 @@
 
 ## Context
 
-Movement uses **hold-to-move**: `InputState` (`packages/client/src/input.ts`) keeps a
+Movement uses **hold-to-move**: `InputState` (`packages/client/src/input/movement.ts`) keeps a
 `held` set and `poll()` turns held `left`/`right` into `moveX`. On terminals that
 implement the **Kitty keyboard protocol** (`useKittyKeyboard: { events: true }`),
 key-**release** events fire, `releaseCapable` flips true, and the held set is exact —

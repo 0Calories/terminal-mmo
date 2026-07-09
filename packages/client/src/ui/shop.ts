@@ -6,7 +6,7 @@ import {
 	type RenderContext,
 	TextRenderable,
 } from '@opentui/core';
-import { COLORS } from './theme';
+import { COLORS } from '../theme';
 
 const RARITY_PAD = 9; // width of 'legendary', the widest rarity word
 const SLOT_PAD = 9; // width of 'accessory', the widest Slot word

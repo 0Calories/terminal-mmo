@@ -6,7 +6,7 @@ import {
 	initCameraState,
 	stepCamera,
 	type View,
-} from '../src/camera';
+} from '../src/render/camera';
 
 const VIEW: View = { sw: 80, sh: 24, ww: 240, wh: 40 };
 const Z = 'field-01';
@@ -98,7 +98,7 @@ import {
 	type Kick,
 	NO_KICK,
 	stepKick,
-} from '../src/camera';
+} from '../src/effects/camera-kick';
 
 const mag = (k: Kick) => Math.max(Math.abs(k.x), Math.abs(k.y));
 
@@ -139,7 +139,7 @@ import {
 	NO_HITSTOP,
 	stepHitstop,
 	triggerHitstop,
-} from '../src/hitstop';
+} from '../src/effects/hitstop';
 
 test('hitstop freezes on trigger and drains to unfrozen over its duration', () => {
 	expect(isFrozen(NO_HITSTOP)).toBe(false);

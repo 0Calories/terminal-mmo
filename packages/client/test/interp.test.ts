@@ -5,7 +5,7 @@ import type {
 	ServerMessage,
 } from '@mmo/shared';
 import { IDLE_ACTION } from '@mmo/shared';
-import { SnapshotBuffer } from '../src/interp';
+import { SnapshotBuffer } from '../src/net/interp';
 
 type Snapshot = Extract<ServerMessage, { t: 'snapshot' }>;
 

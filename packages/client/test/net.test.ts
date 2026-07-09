@@ -9,8 +9,8 @@ import {
 	spawnAvatar,
 	type Zone,
 } from '@mmo/shared';
-import { INTERP_DELAY_MS } from '../src/interp';
-import { NetClient, snapshotToGame } from '../src/net';
+import { INTERP_DELAY_MS } from '../src/net/interp';
+import { NetClient, snapshotToGame } from '../src/net/net';
 
 const y = GROUND_TOP - BOX.h;
 

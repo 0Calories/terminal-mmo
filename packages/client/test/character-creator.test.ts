@@ -9,8 +9,8 @@ import {
 	PREVIEW_H,
 	previewAvatar,
 	VPAD,
-} from '../src/character-creator';
-import { CUSTOMIZE_FIELDS } from '../src/customize';
+} from '../src/ui/character-creator';
+import { CUSTOMIZE_FIELDS } from '../src/ui/customize';
 
 // undo previewAvatar's inverse of drawEntitySprite's placement (offset up by BOX.h - PLAYER.h)
 const spriteTopOf = (hat: number) =>

@@ -1,7 +1,7 @@
 import type { Entity } from '@mmo/shared';
 import { BOX, dodgePhase, spriteFor } from '@mmo/shared';
 import { type OptimizedBuffer, RGBA } from '@opentui/core';
-import { COLORS as C } from './theme';
+import { COLORS as C } from '../theme';
 
 export const SAMPLE_INTERVAL_MS = 90;
 const FADE_MS = 300;

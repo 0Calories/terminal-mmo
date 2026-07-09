@@ -20,6 +20,7 @@ import {
 	RGBA,
 	TextRenderable,
 } from '@opentui/core';
+import { COLORS } from '../theme';
 import {
 	CUSTOMIZE_FIELDS,
 	type CustomizeState,
@@ -31,7 +32,6 @@ import {
 	initCustomize,
 	reduceCustomize,
 } from './customize';
-import { COLORS } from './theme';
 
 export interface CreatorKey {
 	name: string;

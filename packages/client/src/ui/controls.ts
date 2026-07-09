@@ -6,8 +6,8 @@ import {
 	type RenderContext,
 	TextRenderable,
 } from '@opentui/core';
-import type { Scheme } from './input';
-import { COLORS } from './theme';
+import type { Scheme } from '../input/movement';
+import { COLORS } from '../theme';
 
 export interface ControlRow {
 	label: string;

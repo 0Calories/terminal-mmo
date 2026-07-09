@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { InputState } from '../src/input';
+import { InputState } from '../src/input/movement';
 
 test('clear() releases all held keys so they cannot stick after a mode switch', () => {
 	const input = new InputState();

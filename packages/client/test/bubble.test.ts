@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { CHAT_MAX_LEN } from '@mmo/shared';
-import { BUBBLE_COLS, bubbleTtl, layoutBubble } from '../src/bubble';
+import { BUBBLE_COLS, bubbleTtl, layoutBubble } from '../src/ui/bubble';
 
 test('bubbleTtl scales with length, clamped to [3, 7] seconds', () => {
 	expect(bubbleTtl(0)).toBe(3);

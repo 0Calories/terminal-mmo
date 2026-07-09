@@ -13,8 +13,8 @@ import {
 	type RGBA,
 	TextRenderable,
 } from '@opentui/core';
+import { COLORS } from '../theme';
 import { MessageLog } from './message-log';
-import { COLORS } from './theme';
 
 const BANNER_MS = 1000;
 const BANNER_TEXT = '★  LEVEL UP!  ★';

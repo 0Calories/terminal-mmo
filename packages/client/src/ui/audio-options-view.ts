@@ -4,14 +4,14 @@ import {
 	type RenderContext,
 	TextRenderable,
 } from '@opentui/core';
+import type { SoundSystem } from '../sound/system';
+import { COLORS } from '../theme';
 import {
 	AUDIO_ROWS,
 	audioKeyAction,
 	audioOptionsRows,
 	clampSelection,
 } from './audio-options';
-import type { SoundSystem } from './sound/system';
-import { COLORS } from './theme';
 
 export class AudioOptions {
 	private readonly container: BoxRenderable;

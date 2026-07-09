@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { parseChatCommand } from '../src/chat';
+import { parseChatCommand } from '../src/input/chat';
 
 test('parseChatCommand treats a plain line as a Zone-local say', () => {
 	expect(parseChatCommand('hello field')).toEqual({

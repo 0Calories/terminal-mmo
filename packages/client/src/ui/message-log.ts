@@ -10,7 +10,7 @@ import {
 	TextRenderable,
 	t,
 } from '@opentui/core';
-import { COLORS, RARITY_RGBA } from './theme';
+import { COLORS, RARITY_RGBA } from '../theme';
 
 const LOG_WIDTH = 60;
 const LOG_HEIGHT = 6;
