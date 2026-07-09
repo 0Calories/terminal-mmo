@@ -1,13 +1,13 @@
-import type { Cosmetics, Entity, RenderStyle } from '@mmo/core';
+import type { Cosmetics, Entity } from '@mmo/core';
+import { BOX, maxHpForLevel } from '@mmo/core';
 import {
-	BOX,
 	buildSceneStyle,
 	drawNameplates,
 	HATS,
-	maxHpForLevel,
+	type RenderStyle,
 	renderZoneScene,
 	spriteFor,
-} from '@mmo/core';
+} from '@mmo/render';
 import {
 	BoxRenderable,
 	InputRenderable,

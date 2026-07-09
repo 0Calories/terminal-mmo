@@ -11,7 +11,6 @@ export * from './player';
 export * from './progression';
 export * from './projectile';
 export * from './protocol';
-export * from './render';
 export * from './rng';
 export * from './sceneStyle';
 export * from './serverWorld';

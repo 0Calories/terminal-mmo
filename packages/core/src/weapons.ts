@@ -1,18 +1,16 @@
 import { COMBAT } from './constants';
-import { sword, type WeaponSprite } from './sprites';
 
-// A Weapon contributes damage + visuals only; the WEAPONS index is the wire-replicated id.
+// A Weapon contributes damage + stats only; the WEAPONS index is the wire-replicated id
+// that also keys the weapon *art* (WeaponSprite) held client-side in @mmo/render.
 export interface Weapon {
 	name: string;
 	damage: number;
-	sprite?: WeaponSprite;
 }
 
 export const WEAPONS: readonly Weapon[] = [
 	{
 		name: 'Sword',
 		damage: COMBAT.meleeDamage,
-		sprite: sword,
 	},
 ];
 

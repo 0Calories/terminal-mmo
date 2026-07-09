@@ -1,5 +1,5 @@
 {
-	"name": "@mmo/forge",
+	"name": "@mmo/render",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
@@ -8,15 +8,10 @@
 	"exports": {
 		".": "./src/index.ts"
 	},
-	"bin": {
-		"forge": "bin/forge.ts"
-	},
 	"scripts": {
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@mmo/core": "workspace:*",
-		"@mmo/render": "workspace:*",
-		"@opentui/core": "^0.4.1"
+		"@mmo/core": "workspace:*"
 	}
 }

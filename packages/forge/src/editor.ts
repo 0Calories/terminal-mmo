@@ -1,23 +1,25 @@
 import {
 	BOX,
-	buildSceneStyle,
 	type Catalogs,
 	type Diagnostic,
-	drawEntitySprite,
-	drawNpcSprite,
 	type Entity,
 	findOrphanGlyphs,
-	type GhostStyle,
 	NPC_BOX,
 	type Npc,
 	PORTAL_BOX,
 	parseZone,
-	renderZoneScene,
 	spawnMonster,
 	validateZone,
 	ZONE_MAX,
 	type Zone,
 } from '@mmo/core';
+import {
+	buildSceneStyle,
+	drawEntitySprite,
+	drawNpcSprite,
+	type GhostStyle,
+	renderZoneScene,
+} from '@mmo/render';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import {

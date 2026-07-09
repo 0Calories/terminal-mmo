@@ -1,4 +1,4 @@
-import type { Facing } from '../types';
+import type { Facing } from '@mmo/core';
 
 // `·` (U+00B7): a transparent cell that survives whitespace trimming, unlike a space.
 export const SENTINEL = '·';

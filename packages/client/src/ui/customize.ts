@@ -5,11 +5,11 @@ import {
 	HANDLE_CHAR_RE,
 	HANDLE_MAX_LEN,
 	HAT_COUNT,
-	HATS,
 	HUE_COUNT,
 	NAMEPLATE_COUNT,
 	validHandle,
 } from '@mmo/core';
+import { HATS } from '@mmo/render';
 
 export { HANDLE_MAX_LEN } from '@mmo/core';
 

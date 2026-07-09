@@ -1,16 +1,18 @@
 // Run: bun packages/client/src/sprites/cosmetics-preview.ts
 import {
-	type CellBuffer,
 	type Cosmetics,
-	drawNameplates,
 	type Entity,
-	HATS,
 	HUES,
 	NAMEPLATE_COLORS,
-	type RenderStyle,
-	renderZoneScene,
 	SCENE_PALETTE,
 } from '@mmo/core';
+import {
+	type CellBuffer,
+	drawNameplates,
+	HATS,
+	type RenderStyle,
+	renderZoneScene,
+} from '@mmo/render';
 
 class TextBuffer implements CellBuffer<string> {
 	readonly width: number;

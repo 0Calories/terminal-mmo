@@ -1,35 +1,29 @@
 import {
 	ACTION_FLAG,
+	type AttackPhase,
+	BOX,
 	bladeEdgeArc,
+	bodyFrame,
+	type Entity,
+	type Facing,
+	isSolid,
+	type MoveId,
+	mirrorAnchorX,
+	type Npc,
+	type Portal,
+	spriteMetaFor,
 	sweepIndex,
 	swingPhase,
 	swingProgress,
+	type Terrain,
 	weaponFrame,
-} from './combat';
-import { BOX } from './constants';
-import {
-	bodyFrame,
-	formById,
-	formFrame,
-	HATS,
-	mirrorAnchorX,
-	type Sprite,
-	spriteFor,
-	spriteForNpc,
-	WEAPON_ACCENT_KEY,
-	type WeaponSprite,
-} from './sprites';
-import { isSolid } from './terrain';
-import type {
-	AttackPhase,
-	Entity,
-	Facing,
-	MoveId,
-	Npc,
-	Terrain,
-} from './types';
-import { weaponById } from './weapons';
-import type { Portal } from './world';
+} from '@mmo/core';
+import { formById, formFrame } from './body-sprite';
+import { HATS } from './hats';
+import { spriteFor, spriteForNpc } from './registry';
+import type { Sprite } from './sprite';
+import { WEAPON_ACCENT_KEY, type WeaponSprite } from './weapon-sprite';
+import { weaponSpriteById } from './weapons';
 
 export interface CellBuffer<C> {
 	readonly width: number;
@@ -128,7 +122,7 @@ function blitSprite<C>(
 
 function baselineFor(e: Entity): number {
 	const body = e.type === 'player' ? formById(e.cosmetics?.form) : null;
-	return body ? (body.baseline ?? 0) : spriteFor(e.type).baseline;
+	return body ? (body.baseline ?? 0) : spriteMetaFor(e.type).baseline;
 }
 
 function hatFor(e: Entity): Sprite | null {
@@ -137,7 +131,7 @@ function hatFor(e: Entity): Sprite | null {
 
 function weaponSpriteFor(e: Entity): WeaponSprite | null {
 	if (e.weapon === undefined) return null;
-	return weaponById(e.weapon).sprite ?? null;
+	return weaponSpriteById(e.weapon) ?? null;
 }
 
 function recolorFor<C>(
@@ -201,7 +195,7 @@ export function drawEntitySprite<C>(
 		head = body.head;
 	} else {
 		sprite = spriteFor(e.type);
-		baseline = sprite.baseline;
+		baseline = spriteMetaFor(e.type).baseline;
 		grip = sprite.grip;
 	}
 

@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
-import { BOX, type Cosmetics, DEFAULT_COSMETICS, HATS } from '@mmo/core';
+import { BOX, type Cosmetics, DEFAULT_COSMETICS } from '@mmo/core';
+import { HATS } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
 import {
 	CharacterCreator,
