@@ -1,15 +1,15 @@
 import { expect, test } from 'bun:test';
 import type { TerminalCapabilities } from '@opentui/core';
 import { createTestRenderer } from '@opentui/core/testing';
-import { CharacterCreator } from '../src/character-creator';
+import { shouldWarnNoKitty } from '../src/input/no-kitty-probe';
+import { CharacterCreator } from '../src/ui/character-creator';
 import {
 	type Gateable,
 	KITTY_TERMINALS,
 	MULTIPLEXER_CAVEAT,
 	NoKittyNotice,
 	NoticeGate,
-	shouldWarnNoKitty,
-} from '../src/no-kitty';
+} from '../src/ui/no-kitty-notice';
 
 function caps(kitty: boolean): TerminalCapabilities {
 	return {

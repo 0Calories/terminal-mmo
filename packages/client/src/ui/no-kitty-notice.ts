@@ -2,17 +2,9 @@ import {
 	BoxRenderable,
 	type Renderable,
 	type RenderContext,
-	type TerminalCapabilities,
 	TextRenderable,
 } from '@opentui/core';
-import { COLORS } from './theme';
-
-// Fail-open: warn only when the probe resolved and reports absent; strict === false keeps non-booleans silent.
-export function shouldWarnNoKitty(
-	capabilities: TerminalCapabilities | null | undefined,
-): boolean {
-	return capabilities != null && capabilities.kitty_keyboard === false;
-}
+import { COLORS } from '../theme';
 
 export const KITTY_TERMINALS: readonly string[] = [
 	'Kitty',

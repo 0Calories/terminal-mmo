@@ -1,4 +1,4 @@
-import type { AudioPrefs } from './config';
+import type { AudioPrefs } from '../config';
 
 export const VOLUME_STEP = 0.1;
 

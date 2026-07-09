@@ -155,7 +155,7 @@ atomic, versioned act, and folds the protocol version into the release version.
 
 - **Wire change:** `hello` drops `protocol: number` and carries a Version string;
   `@mmo/shared` loses `PROTOCOL_VERSION`. `packages/server/src/index.ts` and
-  `packages/client/src/net.ts` swap the integer gate for the string-equality gate;
+  `packages/client/src/net/net.ts` swap the integer gate for the string-equality gate;
   the server reads `MMO_VERSION` and skips the gate when it is unset.
 - The client must learn its own Version (baked into the bundle at build from the
   tag); the server must learn its own (`MMO_VERSION` env, set by the pipeline at

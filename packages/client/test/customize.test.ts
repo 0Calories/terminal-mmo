@@ -9,7 +9,7 @@ import {
 	handleConfirmable,
 	initCustomize,
 	reduceCustomize,
-} from '../src/customize';
+} from '../src/ui/customize';
 
 test('right cycles the focused field forward', () => {
 	const s = initCustomize(DEFAULT_COSMETICS);

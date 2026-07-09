@@ -8,9 +8,9 @@ import {
 	encodeServerMessage,
 	swatEvent,
 } from '@mmo/shared';
-import { applyKick, CAMERA_KICK, NO_KICK } from '../src/camera';
-import { isFrozen, NO_HITSTOP, triggerHitstop } from '../src/hitstop';
-import { ParticleSystem, stepParticles } from '../src/particles';
+import { applyKick, CAMERA_KICK, NO_KICK } from '../src/effects/camera-kick';
+import { isFrozen, NO_HITSTOP, triggerHitstop } from '../src/effects/hitstop';
+import { ParticleSystem, stepParticles } from '../src/effects/particles';
 import { effectSoundCues } from '../src/sound/world';
 import { entity, flatTerrain, makeProjectile, seededRng } from './helpers';
 

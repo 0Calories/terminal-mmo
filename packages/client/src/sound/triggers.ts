@@ -17,9 +17,3 @@ export function landed(
 export function leveledUp(prevLevel: number, nextLevel: number): boolean {
 	return nextLevel > prevLevel;
 }
-
-const MENU_BLIP_KEYS = new Set(['up', 'down', 'left', 'right', 'return']);
-
-export function isMenuBlipKey(name: string): boolean {
-	return MENU_BLIP_KEYS.has(name);
-}

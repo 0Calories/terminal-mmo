@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { CombatEvent, Effect, GameState } from '@mmo/shared';
 import { combatEventAt, deathEvent, effectsOf } from '@mmo/shared';
 import { createTestRenderer } from '@opentui/core/testing';
-import { PlayfieldRenderable } from '../src/playfield';
+import { PlayfieldRenderable } from '../src/render/playfield';
 import { GOLDEN_VIEW, goldenGame, manualClock, seededRng } from './helpers';
 
 // The baseline every client-modularization phase diffs against: a refactor that changes this

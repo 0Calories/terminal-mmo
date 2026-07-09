@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { AUDIO_DEFAULTS } from '../src/config';
 import {
 	AUDIO_ROWS,
 	audioKeyAction,
@@ -6,8 +7,7 @@ import {
 	clampSelection,
 	VOLUME_STEP,
 	volumeBar,
-} from '../src/audio-options';
-import { AUDIO_DEFAULTS } from '../src/config';
+} from '../src/ui/audio-options';
 
 test('arrows map to move (up/down) and adjust (left/right) by a volume step', () => {
 	expect(audioKeyAction('up')).toEqual({ kind: 'move', delta: -1 });

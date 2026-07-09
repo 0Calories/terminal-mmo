@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { isStyledText } from '@opentui/core';
-import { appendedTail, styleLogLine } from '../src/message-log';
+import { appendedTail, styleLogLine } from '../src/ui/message-log';
 
 test('appendedTail returns all of a fresh buffer on the first sync', () => {
 	expect(appendedTail([], ['a', 'b'])).toEqual(['a', 'b']);

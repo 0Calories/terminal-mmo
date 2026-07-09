@@ -1,10 +1,5 @@
 import { expect, test } from 'bun:test';
-import {
-	isMenuBlipKey,
-	jumpStarted,
-	landed,
-	leveledUp,
-} from '../src/sound/triggers';
+import { jumpStarted, landed, leveledUp } from '../src/sound/triggers';
 
 test('fires on the frame an Avatar leaves the ground moving upward', () => {
 	expect(jumpStarted({ onGround: true }, { onGround: false, vy: -34 })).toBe(
@@ -63,14 +58,4 @@ test('leveledUp is silent when the level is unchanged', () => {
 
 test('leveledUp is silent when the level drops', () => {
 	expect(leveledUp(5, 1)).toBe(false);
-});
-
-test('directional + confirm menu keys produce a blip', () => {
-	for (const k of ['up', 'down', 'left', 'right', 'return'])
-		expect(isMenuBlipKey(k)).toBe(true);
-});
-
-test('close and unrelated keys produce no blip', () => {
-	for (const k of ['escape', 'e', 'o', 'q', 'a', ''])
-		expect(isMenuBlipKey(k)).toBe(false);
 });

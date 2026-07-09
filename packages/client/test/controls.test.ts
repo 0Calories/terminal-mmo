@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { CAPABILITY_UNLOCK } from '@mmo/shared';
-import { CONTROL_ROWS, controlRowText, keysFor } from '../src/controls';
+import { CONTROL_ROWS, controlRowText, keysFor } from '../src/ui/controls';
 
 test('the controls listing covers every required input', () => {
 	const labels = CONTROL_ROWS.map((r) => r.label);

@@ -13,10 +13,10 @@ import {
 	type ServerMessage,
 	type Zone,
 } from '@mmo/shared';
-import { bubbleTtl } from './bubble';
+import type { SshIdentity } from '../ssh-auth';
+import { bubbleTtl } from '../ui/bubble';
+import { CLIENT_VERSION } from '../version';
 import { INTERP_DELAY_MS, SnapshotBuffer } from './interp';
-import type { SshIdentity } from './ssh-auth';
-import { CLIENT_VERSION } from './version';
 
 export interface Bubble {
 	text: string;

@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { CapturedFrame, CapturedSpan } from '@opentui/core';
 import { createTestRenderer } from '@opentui/core/testing';
-import { CharacterCreator, type CreatorKey } from '../src/character-creator';
+import { CharacterCreator, type CreatorKey } from '../src/ui/character-creator';
 
 const HANDLE = 'Neo';
 

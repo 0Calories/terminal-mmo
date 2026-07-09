@@ -15,7 +15,7 @@ import {
 	SPAWN_MAP,
 	speckCount,
 	stepParticles,
-} from '../src/particles';
+} from '../src/effects/particles';
 
 function seededRng(seed: number): () => number {
 	let s = seed >>> 0;
