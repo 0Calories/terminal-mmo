@@ -1,4 +1,4 @@
-import { BOX } from '@mmo/shared';
+import { BOX } from '@mmo/core';
 
 export interface Cam {
 	x: number;

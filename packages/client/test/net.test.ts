@@ -8,7 +8,7 @@ import {
 	type ServerMessage,
 	spawnAvatar,
 	type Zone,
-} from '@mmo/shared';
+} from '@mmo/core';
 import { INTERP_DELAY_MS } from '../src/net/interp';
 import { NetClient, snapshotToGame } from '../src/net/net';
 

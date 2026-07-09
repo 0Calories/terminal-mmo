@@ -1,6 +1,5 @@
 import { HUES, NAMEPLATE_COLORS } from './sceneStyle';
-import { FORMS } from './sprites/body-sprite';
-import { HATS } from './sprites/hats';
+import { FORM_COUNT, HAT_COUNT } from './sprites';
 import type { Cosmetics } from './types';
 
 export type { Cosmetics };
@@ -13,9 +12,7 @@ export const DEFAULT_COSMETICS: Cosmetics = {
 };
 
 export const HUE_COUNT = HUES.length;
-export const HAT_COUNT = HATS.length;
 export const NAMEPLATE_COUNT = NAMEPLATE_COLORS.length;
-export const FORM_COUNT = FORMS.length;
 
 function clampIndex(v: number, count: number): number {
 	return Number.isInteger(v) && v >= 0 && v < count ? v : 0;

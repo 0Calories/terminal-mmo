@@ -1,9 +1,10 @@
 import type { Sprite } from './sprite';
 
+// The recolor key the Weapon accent drives (see Weapon accent in CONTEXT.md).
 export const WEAPON_ACCENT_KEY = 'a';
 
-export type WeaponFrameId = 'idle' | 'windup' | 'active' | 'recovery';
-
+// The *art* half of a Weapon: its animated frame set. Weapon *stats* (name, damage)
+// and pose selection (WeaponFrameId) live in @mmo/core.
 export interface WeaponSprite {
 	frames: {
 		idle?: Sprite;

@@ -1,4 +1,4 @@
-import type { Effect, EffectKind } from '@mmo/shared';
+import type { Effect, EffectKind } from '@mmo/core';
 import type { SoundKind } from './registry';
 
 export const EFFECT_SOUND_MAP: Record<EffectKind, SoundKind> = {

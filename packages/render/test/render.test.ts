@@ -1,26 +1,30 @@
 import { expect, test } from 'bun:test';
-import { bladeEdgeArc, meleeHitbox, sweepIndex } from '../src/combat';
-import { BOX } from '../src/constants';
+import {
+	BOX,
+	bladeEdgeArc,
+	type Entity,
+	type EntityType,
+	type Facing,
+	meleeHitbox,
+	parseTerrain,
+	STRIDE,
+	sweepIndex,
+} from '@mmo/core';
 import {
 	type CellBuffer,
 	drawEntitySprite,
 	drawNameplates,
-	type RenderStyle,
-	renderZoneScene,
-} from '../src/render';
-import {
 	FORMS,
 	formFrame,
 	HATS,
+	type RenderStyle,
+	renderZoneScene,
 	type Sprite,
-	STRIDE,
 	spriteFor,
 	spriteForNpc,
 	WEAPON_ACCENT_KEY,
-} from '../src/sprites';
-import { parseTerrain } from '../src/terrain';
-import type { Entity, EntityType, Facing } from '../src/types';
-import { weaponById } from '../src/weapons';
+	weaponSpriteById,
+} from '../src';
 
 interface Cell {
 	ch: string;
@@ -634,7 +638,7 @@ test('a cosmetic hat is overlaid directly above the head', () => {
 });
 
 test('an equipped Avatar at rest renders the weapon idle frame at the mirrored grip, on top of the body (ADR 0018)', () => {
-	const weapon = weaponById(0).sprite;
+	const weapon = weaponSpriteById(0);
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
 	const frame = weapon.frames.idle;
 	if (!frame) throw new Error('expected an authored idle frame');
@@ -681,7 +685,7 @@ test('an equipped Avatar at rest renders the weapon idle frame at the mirrored g
 });
 
 test('mid-active-swing the composited weapon plays the sweep frame, and no box-fill floods the melee hitbox (ADR 0018 §4/§5)', () => {
-	const weapon = weaponById(0).sprite;
+	const weapon = weaponSpriteById(0);
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
 	const sweep = weapon.frames.active;
 	if (!sweep || sweep.length === 0)
@@ -737,7 +741,7 @@ test('mid-active-swing the composited weapon plays the sweep frame, and no box-f
 });
 
 test('the active phase renders the blade-edge arc in the accent colour; other phases draw none (ADR 0018 §5/§6)', () => {
-	const weapon = weaponById(0).sprite;
+	const weapon = weaponSpriteById(0);
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
 	const accent = accentFg(weapon.accent);
 	const progress = 0.5;

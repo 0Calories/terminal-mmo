@@ -1,4 +1,4 @@
-import type { Entity } from '@mmo/shared';
+import type { Entity } from '@mmo/core';
 
 export function jumpStarted(
 	prev: Pick<Entity, 'onGround'>,

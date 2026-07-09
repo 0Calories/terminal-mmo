@@ -1,10 +1,10 @@
-import type { Zone } from '@mmo/shared';
+import type { Zone } from '@mmo/core';
 import {
 	aabbOverlap,
 	DEFAULT_COSMETICS,
 	entityBox,
 	randomCosmetics,
-} from '@mmo/shared';
+} from '@mmo/core';
 import type { CliRenderer } from '@opentui/core';
 import type { ConfigStore } from '../config';
 import type { InputState, Scheme } from '../input/movement';

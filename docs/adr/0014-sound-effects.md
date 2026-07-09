@@ -60,7 +60,7 @@ fact; the client owns the pixels and the audio.
   attempt audio. If `Audio.create()` returns null, `start()` returns `false`, or
   the engine's `error` event fires during setup → `enabled = false`, logged once
   at debug level. Every `play(kind, …)` early-returns when disabled — the facade
-  is the single choke point, not try/catch at call sites. **`@mmo/shared` never
+  is the single choke point, not try/catch at call sites. **`@mmo/core` never
   references audio**: `stepZone()` is byte-identical whether or not anyone can
   hear it, exactly as Sprites and Particles are decoupled from the sim. Dispose on
   clean shutdown, never blocking exit.

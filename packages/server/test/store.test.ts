@@ -12,7 +12,7 @@ import {
 	stepServerWorld,
 	zoneOf,
 	zoneStateOf,
-} from '@mmo/shared';
+} from '@mmo/core';
 import { openPlayerStore } from '../src/store';
 
 const KEY = 'ssh-ed25519 AAAAtestkeyblob';

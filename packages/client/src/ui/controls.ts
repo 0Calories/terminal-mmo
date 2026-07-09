@@ -1,5 +1,5 @@
-import type { Capability } from '@mmo/shared';
-import { CAPABILITY_UNLOCK, capabilityUnlocked } from '@mmo/shared';
+import type { Capability } from '@mmo/core';
+import { CAPABILITY_UNLOCK, capabilityUnlocked } from '@mmo/core';
 import {
 	BoxRenderable,
 	type Renderable,

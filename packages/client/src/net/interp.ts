@@ -1,4 +1,4 @@
-import type { ServerMessage } from '@mmo/shared';
+import type { ServerMessage } from '@mmo/core';
 
 type Snapshot = Extract<ServerMessage, { t: 'snapshot' }>;
 

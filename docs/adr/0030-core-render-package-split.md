@@ -2,12 +2,12 @@
 status: accepted
 ---
 
-# Split @mmo/shared into @mmo/core and @mmo/render
+# Split the shared package into @mmo/core and @mmo/render
 
-`@mmo/shared` held everything: the deterministic simulation (types, combat, physics,
-zone, pose selection, sprite metadata) AND presentation (the sprite art grids and
-`render.ts` drawing). The server never draws, yet could import a renderer from the
-same barrel — the sim/presentation boundary was convention only.
+The original shared package held everything: the deterministic simulation (types,
+combat, physics, zone, pose selection, sprite metadata) AND presentation (the sprite
+art grids and `render.ts` drawing). The server never draws, yet could import a renderer
+from the same barrel — the sim/presentation boundary was convention only.
 
 We split it in two:
 

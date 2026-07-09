@@ -1,4 +1,4 @@
-import { isSolid, type Terrain, type Tint } from '@mmo/shared';
+import { isSolid, type Terrain, type Tint } from '@mmo/core';
 
 export type Stage = 'airborne' | 'rest' | 'fade';
 

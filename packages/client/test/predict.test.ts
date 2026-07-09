@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import type { Entity, Input } from '@mmo/shared';
-import { COMBAT, DEFAULT_WEAPON, EMOTES, SPAWN } from '@mmo/shared';
+import type { Entity, Input } from '@mmo/core';
+import { COMBAT, DEFAULT_WEAPON, EMOTES, SPAWN } from '@mmo/core';
 import {
 	applyEmote,
 	arriveInZone,

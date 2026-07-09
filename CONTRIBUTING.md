@@ -22,7 +22,7 @@ type, add a message — keep to these rules:
    new catalog entry at the end of its table), with a `remaining()` guard on
    decode — so an old frame still decodes cleanly and the version gate, not a
    garbled read, is what refuses a stale peer.
-3. **Round-trip test every change** in `packages/shared/test/protocol.test.ts`,
+3. **Round-trip test every change** in `packages/core/test/protocol.test.ts`,
    including the truncated legacy form wherever a trailing field is optional.
 
 A stale client is bounced with: *"Your client is out of date — run
@@ -63,7 +63,7 @@ override the target.
 
 ## Conventions
 
-- Game logic is pure/deterministic in `@mmo/shared` so client and server can't
+- Game logic is pure/deterministic in `@mmo/core` so client and server can't
   diverge. Test behavior there, not rendering.
 - Design docs are the source of truth: [`CONTEXT.md`](./CONTEXT.md) (glossary),
   [`docs/PRD.md`](./docs/PRD.md), [`docs/adr/`](./docs/adr/).

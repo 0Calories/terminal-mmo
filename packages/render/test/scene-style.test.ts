@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import {
-	buildSceneStyle,
-	SCENE_COLORS,
-	SCENE_PALETTE,
-} from '../src/sceneStyle';
+import { SCENE_COLORS, SCENE_PALETTE } from '@mmo/core';
+import { buildSceneStyle } from '../src';
 
 type Col = { r: number; g: number; b: number; a: number };
 const toCol = (r: number, g: number, b: number, a: number): Col => ({

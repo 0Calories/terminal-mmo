@@ -6,8 +6,8 @@ import type {
 	GameState,
 	Input,
 	Zone,
-} from '@mmo/shared';
-import { activeZone } from '@mmo/shared';
+} from '@mmo/core';
+import { activeZone } from '@mmo/core';
 import type { Bubble } from '../net/net';
 import { snapshotToGame } from '../net/net';
 import type { SoundKind } from '../sound/registry';

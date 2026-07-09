@@ -1,11 +1,11 @@
 import { watch } from 'node:fs';
+import type { Zone } from '@mmo/core';
 import {
 	buildSceneStyle,
 	drawNameplates,
 	renderZoneScene,
-	type Zone,
 	type ZoneScene,
-} from '@mmo/shared';
+} from '@mmo/render';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import { loadCatalogs, loadZone } from './io';

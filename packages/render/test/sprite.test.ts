@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { Sprite, spriteFor } from '../src/sprites';
+import { Sprite, spriteFor } from '../src';
 
 test('parses art: trims template blank lines, maps sentinel, computes dims', () => {
 	const s = new Sprite('\n·A·\nBBB\n', { defaultKey: 'x' });

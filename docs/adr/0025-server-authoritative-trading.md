@@ -41,7 +41,7 @@ client to report its own balance — the classic dupe/forge vector.
   bought Item never collides with loot. A forged/stale/duplicate request can neither
   conjure Gold nor an Item, nor touch another Player's bag.
 
-- **The logic lives in `@mmo/shared` as pure functions.** `applySell`/`applyBuy`/
+- **The logic lives in `@mmo/core` as pure functions.** `applySell`/`applyBuy`/
   `atMerchant` compose the existing pure `sellItem`/`buyItem` + `saleValue`; the server
   handlers are thin adapters. Per CLAUDE.md, one home for the rule means the client (which
   reuses the same `saleValue`/`STARTER_GOODS` only to *display* prices) can't drift from

@@ -83,6 +83,6 @@ are accepted as the deliberate roughness that motivates switching.
   the notice; they will feel the stickiness and (intentionally) investigate.
 - The embedded terminal list goes stale with the binary and must be re-verified each
   release. Kept short to limit the blast radius.
-- Detection and the modal are client-only concerns; no `@mmo/shared` change. The
+- Detection and the modal are client-only concerns; no `@mmo/core` change. The
   adaptive window is pure and testable (`packages/client/test/input.test.ts`); the
   capability path is mockable via `setRendererCapabilities`.

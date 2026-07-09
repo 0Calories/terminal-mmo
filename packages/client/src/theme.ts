@@ -1,4 +1,4 @@
-import { RARITY_COLOR, type Rarity } from '@mmo/shared';
+import { RARITY_COLOR, type Rarity } from '@mmo/core';
 import { RGBA } from '@opentui/core';
 
 export const COLORS = {

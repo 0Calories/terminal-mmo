@@ -1,10 +1,6 @@
 import { expect, test } from 'bun:test';
-import type {
-	AvatarSnapshot,
-	MonsterSnapshot,
-	ServerMessage,
-} from '@mmo/shared';
-import { IDLE_ACTION } from '@mmo/shared';
+import type { AvatarSnapshot, MonsterSnapshot, ServerMessage } from '@mmo/core';
+import { IDLE_ACTION } from '@mmo/core';
 import { SnapshotBuffer } from '../src/net/interp';
 
 type Snapshot = Extract<ServerMessage, { t: 'snapshot' }>;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { CombatEvent, Effect } from '@mmo/shared';
+import type { CombatEvent, Effect } from '@mmo/core';
 import {
 	combatEventAt,
 	deathEvent,
@@ -7,7 +7,7 @@ import {
 	effectsOf,
 	encodeServerMessage,
 	swatEvent,
-} from '@mmo/shared';
+} from '@mmo/core';
 import { applyKick, CAMERA_KICK, NO_KICK } from '../src/effects/camera-kick';
 import { isFrozen, NO_HITSTOP, triggerHitstop } from '../src/effects/hitstop';
 import { advanceParticles, ParticleSystem } from '../src/effects/particles';

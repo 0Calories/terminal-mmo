@@ -1,4 +1,4 @@
-import type { Box, Effect, Entity, Input, Terrain } from '@mmo/shared';
+import type { Box, Effect, Entity, Input, Terrain } from '@mmo/core';
 import {
 	applyImpulse,
 	COMBAT,
@@ -14,7 +14,7 @@ import {
 	spawnAvatar,
 	stepAvatarCombat,
 	weaponById,
-} from '@mmo/shared';
+} from '@mmo/core';
 
 export function spawnPredicted(weapon: number): Entity {
 	return { ...spawnAvatar(SPAWN.x, SPAWN.y), weapon };

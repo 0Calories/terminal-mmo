@@ -5,13 +5,13 @@ import {
 	HANDLE_CHAR_RE,
 	HANDLE_MAX_LEN,
 	HAT_COUNT,
-	HATS,
 	HUE_COUNT,
 	NAMEPLATE_COUNT,
 	validHandle,
-} from '@mmo/shared';
+} from '@mmo/core';
+import { HATS } from '@mmo/render';
 
-export { HANDLE_MAX_LEN } from '@mmo/shared';
+export { HANDLE_MAX_LEN } from '@mmo/core';
 
 export function filterHandleDraft(raw: string): string {
 	const kept = Array.from(raw).filter((ch) => HANDLE_CHAR_RE.test(ch));

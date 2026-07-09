@@ -1,26 +1,28 @@
-import type { AttackPhase, Entity, GameState } from '@mmo/shared';
+import type { AttackPhase, Entity, GameState } from '@mmo/core';
 import {
 	ACTION_FLAG,
 	aabbOverlap,
 	activeZone,
-	buildSceneStyle,
-	drawEntitySprite,
-	drawNameplates,
 	entityBox,
 	guardPoseCell,
 	guardPoseGlyph,
 	guardRaised,
 	itemLabel,
-	type RenderStyle,
-	renderZoneScene,
 	skillForSlot,
 	skillHitbox,
-	spriteForNpc,
 	swingPhase,
 	swingPose,
 	swingPoseCell,
 	swingProgress,
-} from '@mmo/shared';
+} from '@mmo/core';
+import {
+	buildSceneStyle,
+	drawEntitySprite,
+	drawNameplates,
+	type RenderStyle,
+	renderZoneScene,
+	spriteForNpc,
+} from '@mmo/render';
 import { type OptimizedBuffer, RGBA } from '@opentui/core';
 import type { VisualEffects } from '../effects';
 import { COLORS as C, RARITY_RGBA } from '../theme';

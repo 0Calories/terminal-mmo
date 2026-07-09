@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import type { ClientMessage } from '@mmo/shared';
-import { EMOTES } from '@mmo/shared';
+import type { ClientMessage } from '@mmo/core';
+import { EMOTES } from '@mmo/core';
 import { sendChatLine } from '../src/net/chat';
 
 function sink() {

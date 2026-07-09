@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import type { Entity } from '@mmo/shared';
-import { DODGE_TOTAL, IDLE_ACTION } from '@mmo/shared';
+import type { Entity } from '@mmo/core';
+import { DODGE_TOTAL, IDLE_ACTION } from '@mmo/core';
 import {
 	DODGE_ECHO_LIFE_MS,
 	type DodgeEcho,

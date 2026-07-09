@@ -38,15 +38,17 @@ volume). These prefs persist to `~/.config/terminal-mmo/config.json` (honoring
 
 ```
 packages/
-  shared/     @mmo/shared — deterministic game logic + wire protocol (single source of truth)
+  core/       @mmo/core — deterministic game logic + wire protocol (single source of truth)
+  render/     @mmo/render — presentation: sprite art + drawing (client + forge, never the server)
   client/     @mmo/client — OpenTUI terminal client (rendering + input + netcode)
   server/     @mmo/server — authoritative Bun WebSocket world (M2)
   cli/        terminal-mmo — the published bundle for `bunx` (ADR 0009)
   forge/      @mmo/forge — content authoring suite: zones now; sprites/NPCs/quests next
 ```
 
-The `shared` package holds all simulation (physics, combat, loot, progression) as
-pure, deterministic functions so client and server can never diverge.
+The `core` package holds all simulation (physics, combat, loot, progression) as
+pure, deterministic functions so client and server can never diverge; `render`
+holds the sprite art and drawing code on top of it (ADR 0030).
 
 ## Commands
 

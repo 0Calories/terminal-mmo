@@ -1,4 +1,4 @@
-import type { Diagnostic } from '@mmo/shared';
+import type { Diagnostic } from '@mmo/core';
 
 export function formatDiagnostics(diags: Diagnostic[]): string {
 	return diags

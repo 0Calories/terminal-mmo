@@ -28,7 +28,7 @@
 	},
 	"devDependencies": {
 		"@mmo/client": "workspace:*",
-		"@mmo/shared": "workspace:*"
+		"@mmo/core": "workspace:*"
 	},
 	"publishConfig": {
 		"access": "public"

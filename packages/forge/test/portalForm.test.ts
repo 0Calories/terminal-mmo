@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type Portal, SPAWN } from '@mmo/shared';
+import { type Portal, SPAWN } from '@mmo/core';
 import {
 	defaultArrival,
 	filterCandidates,

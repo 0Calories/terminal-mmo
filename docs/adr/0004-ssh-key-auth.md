@@ -40,7 +40,7 @@ authenticate players by SSH-key challenge-response rather than passwords or
   earns `welcome`, which carries the durable Handle. The signed payload is
   domain-separated (`terminal-mmo-auth-v1` ‖ nonce) so a signature can never be
   replayed from/into another raw-bytes protocol using the same key.
-- **The verifier and the claim registry are pure functions in `@mmo/shared`**
+- **The verifier and the claim registry are pure functions in `@mmo/core`**
   (`auth.ts`): socket-free, seam-tested. The registry is held in memory by the
   server; #236 moves it behind bun:sqlite without touching the seam.
 - **Handle revised (vs ADR 0006):** the claimed username IS the Handle — durable

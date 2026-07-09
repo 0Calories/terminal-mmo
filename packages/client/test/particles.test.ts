@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import type { Effect, EffectKind, Terrain } from '@mmo/shared';
-import { isSolid, parseTerrain } from '@mmo/shared';
+import type { Effect, EffectKind, Terrain } from '@mmo/core';
+import { isSolid, parseTerrain } from '@mmo/core';
 import {
 	advanceParticles,
 	type Particle,

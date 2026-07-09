@@ -1,5 +1,5 @@
 // Candidate sprite designs, not wired into the registry. Preview: bun packages/client/src/sprites/preview.ts
-import { Sprite, spriteFor, spriteForNpc } from '@mmo/shared';
+import { Sprite, spriteFor, spriteForNpc } from '@mmo/render';
 
 const player = spriteFor('player');
 const merchant = spriteForNpc('vendor');

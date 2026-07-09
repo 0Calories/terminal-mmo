@@ -29,21 +29,15 @@ function avatar(over: Partial<Entity> = {}): Entity {
 	};
 }
 
-describe('WEAPONS catalog — damage + visuals only (ADR 0024)', () => {
-	test('a Weapon carries damage plus visuals (sprite/accent) and nothing else', () => {
-		const allowed = new Set(['name', 'damage', 'sprite']);
+describe('WEAPONS catalog — name + damage only (ADR 0024/0030)', () => {
+	test('a Weapon carries a name and damage and nothing else (art lives in @mmo/render)', () => {
+		const allowed = new Set(['name', 'damage']);
 		for (const w of WEAPONS)
 			for (const key of Object.keys(w)) expect(allowed).toContain(key);
 	});
 
 	test('the default weapon (index 0) deals the shared COMBAT melee damage', () => {
 		expect(WEAPONS[DEFAULT_WEAPON].damage).toBe(COMBAT.meleeDamage);
-	});
-
-	test('the default sword ships its composited sprite with an accent colour', () => {
-		const sprite = WEAPONS[DEFAULT_WEAPON].sprite;
-		expect(sprite).toBeDefined();
-		expect(typeof sprite?.accent).toBe('string');
 	});
 });
 

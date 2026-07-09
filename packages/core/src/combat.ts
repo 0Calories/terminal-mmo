@@ -9,7 +9,7 @@ import {
 	skillHitbox,
 	skillUnlocked,
 } from './skills';
-import { spriteFor, type WeaponFrameId } from './sprites';
+import { spriteMetaFor, type WeaponFrameId } from './sprites';
 import type {
 	ActionState,
 	AttackPhase,
@@ -31,7 +31,7 @@ export function entityTint(e: Entity): Tint {
 	const quad =
 		e.cosmetics !== undefined
 			? (HUES[e.cosmetics.hue] ?? HUES[0])
-			: (BODY_PALETTE[spriteFor(e.type).defaultKey] ?? BODY_PALETTE.p);
+			: (BODY_PALETTE[spriteMetaFor(e.type).defaultKey] ?? BODY_PALETTE.p);
 	return { r: quad[0], g: quad[1], b: quad[2] };
 }
 

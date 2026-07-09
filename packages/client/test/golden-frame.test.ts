@@ -1,8 +1,8 @@
 import { expect, test } from 'bun:test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { CombatEvent, Effect, GameState } from '@mmo/shared';
-import { combatEventAt, deathEvent, effectsOf } from '@mmo/shared';
+import type { CombatEvent, Effect, GameState } from '@mmo/core';
+import { combatEventAt, deathEvent, effectsOf } from '@mmo/core';
 import { createTestRenderer } from '@opentui/core/testing';
 import { PlayfieldRenderable } from '../src/render/playfield';
 import { GOLDEN_VIEW, goldenGame, manualClock, seededRng } from './helpers';

@@ -7,7 +7,7 @@ import type {
 	Projectile,
 	Terrain,
 	Zone,
-} from '@mmo/shared';
+} from '@mmo/core';
 import {
 	BOX,
 	DEFAULT_COSMETICS,
@@ -17,7 +17,7 @@ import {
 	parseTerrain,
 	rngNext,
 	SWING_TOTAL,
-} from '@mmo/shared';
+} from '@mmo/core';
 
 // mulberry32 with the state threaded for us — the same generator the sim seeds from.
 export function seededRng(seed: number): () => number {

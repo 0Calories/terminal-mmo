@@ -1,8 +1,9 @@
 import { emoteById } from '../emote';
 import type { AttackPhase, Facing, MoveId } from '../types';
-import { buddy } from './forms/buddy';
-import { wisp } from './forms/wisp';
-import type { Sprite } from './sprite';
+
+// Pose *selection* + pose identity — the deterministic, art-free half of a sprite
+// that the shared sim reasons about (owner and observers must agree on the Pose;
+// the actual glyph grids live in @mmo/render).
 
 export type EmotePoseId = `emote:${string}`;
 export type PoseId =
@@ -16,41 +17,7 @@ export type PoseId =
 	| 'hurt'
 	| EmotePoseId;
 
-export interface BodySprite {
-	frames: Partial<Record<PoseId, Sprite | readonly Sprite[]>>;
-	grip: { x: number; y: number };
-	head: { x: number; y: number };
-	baseline?: number;
-}
-
-export const FORMS: readonly BodySprite[] = [buddy];
-
-// Kept so the `wisp` import stays live while drafted out of FORMS.
-export const DRAFTED_FORMS: readonly BodySprite[] = [wisp];
-
-export const DEFAULT_FORM = 0;
-
-export function formById(i: number | undefined): BodySprite {
-	if (i === undefined || !Number.isInteger(i) || i < 0 || i >= FORMS.length)
-		return FORMS[DEFAULT_FORM];
-	return FORMS[i];
-}
-
-export function formFrame(
-	body: BodySprite,
-	poseId: PoseId,
-	frameIndex = 0,
-): Sprite {
-	const frame = body.frames[poseId] ?? body.frames.idle;
-	if (frame === undefined)
-		throw new Error('BodySprite is missing its required `idle` Pose');
-	if (Array.isArray(frame)) {
-		const arr = frame as readonly Sprite[];
-		const i = ((frameIndex % arr.length) + arr.length) % arr.length;
-		return arr[i];
-	}
-	return frame as Sprite;
-}
+export type WeaponFrameId = 'idle' | 'windup' | 'active' | 'recovery';
 
 export const STRIDE = 6;
 

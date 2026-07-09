@@ -1,14 +1,16 @@
 import {
 	BOX,
-	buildSceneStyle,
 	createGameFromZones,
-	drawEntitySprite,
 	type GameState,
 	type Input,
-	renderZoneScene,
 	step,
+} from '@mmo/core';
+import {
+	buildSceneStyle,
+	drawEntitySprite,
+	renderZoneScene,
 	type ZoneScene,
-} from '@mmo/shared';
+} from '@mmo/render';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import { loadCatalogs, loadZoneSet } from './io';

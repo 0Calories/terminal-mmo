@@ -4,9 +4,7 @@ import {
 	clampCosmetics,
 	DEFAULT_COSMETICS,
 	FORM_COUNT,
-	FORMS,
 	HAT_COUNT,
-	HATS,
 	HUE_COUNT,
 	HUES,
 	NAMEPLATE_COLORS,
@@ -16,20 +14,16 @@ import {
 
 test('the default cosmetics are the first slot of every catalog (bareheaded amber)', () => {
 	expect(DEFAULT_COSMETICS).toEqual({ hue: 0, hat: 0, nameplate: 0, form: 0 });
-	expect(HATS[0].sprite).toBeNull();
 });
 
 test('catalog counts agree with the underlying catalogs', () => {
 	expect(HUE_COUNT).toBe(HUES.length);
-	expect(HAT_COUNT).toBe(HATS.length);
 	expect(NAMEPLATE_COUNT).toBe(NAMEPLATE_COLORS.length);
-	expect(FORM_COUNT).toBe(FORMS.length);
 });
 
 test('the demo ships a single shippable Form + hats at the ADR 0024 §8 cap (5 hats)', () => {
 	expect(FORM_COUNT).toBe(1);
 	expect(HAT_COUNT).toBe(6);
-	for (let i = 1; i < HATS.length; i++) expect(HATS[i].sprite).not.toBeNull();
 });
 
 test('clampCosmetics passes valid indices through unchanged', () => {

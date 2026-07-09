@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { DEFAULT_COSMETICS, FORM_COUNT, HUE_COUNT } from '@mmo/shared';
+import { DEFAULT_COSMETICS, FORM_COUNT, HUE_COUNT } from '@mmo/core';
 import {
 	CUSTOMIZE_FIELDS,
 	customizeRows,

@@ -33,6 +33,9 @@ jobs:
       - name: Test
         if: ${{ !cancelled() }}
         run: bun test
+      - name: Dependency boundaries (dependency-cruiser)
+        if: ${{ !cancelled() }}
+        run: bun run depcruise
       - name: Zones check
         if: ${{ !cancelled() }}
         run: bun run zones:check

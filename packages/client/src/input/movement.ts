@@ -1,4 +1,4 @@
-import type { Input } from '@mmo/shared';
+import type { Input } from '@mmo/core';
 
 // No key-release events on non-Kitty terminals: promote a key's idle window short→long once auto-repeat confirms, so taps stay crisp and walks survive repeat gaps.
 const HELD_SHORT_MS = 140;

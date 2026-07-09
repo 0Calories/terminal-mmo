@@ -1,5 +1,5 @@
-import type { Effect, GameState } from '@mmo/shared';
-import { activeZone, BOX } from '@mmo/shared';
+import type { Effect, GameState } from '@mmo/core';
+import { activeZone, BOX } from '@mmo/core';
 import {
 	type OptimizedBuffer,
 	Renderable,
