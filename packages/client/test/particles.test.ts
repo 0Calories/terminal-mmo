@@ -2,20 +2,39 @@ import { expect, test } from 'bun:test';
 import type { Effect, EffectKind, Terrain } from '@mmo/shared';
 import { isSolid, parseTerrain } from '@mmo/shared';
 import {
-	BLOOD,
-	GORE,
-	IMPACT,
-	LEVELUP,
-	LEVELUP_SPECKS,
+	advanceParticles,
 	type Particle,
 	ParticleSystem,
 	type ParticleType,
 	particleColor,
 	particleDrawRow,
-	SPAWN_MAP,
-	speckCount,
-	stepParticles,
 } from '../src/effects/particles';
+import {
+	BLOOD,
+	type Camera,
+	GORE,
+	IMPACT,
+	LEVELUP,
+	LEVELUP_SPECKS,
+	REALIZE,
+	type Realization,
+	spawnEffects,
+	speckCount,
+} from '../src/effects/realize';
+
+// The adapter spawn + engine advance the facade composes each frame.
+function stepParticles(
+	sys: ParticleSystem,
+	effects: readonly Effect[],
+	dtMs: number,
+	terrain: Terrain,
+	rng: () => number,
+	cam?: Camera,
+	realize?: Record<EffectKind, Realization>,
+): void {
+	spawnEffects(sys, effects, rng, cam, realize);
+	advanceParticles(sys, dtMs, terrain);
+}
 
 function seededRng(seed: number): () => number {
 	let s = seed >>> 0;
@@ -137,11 +156,11 @@ test('a non-colliding spark fades smoothly to transparent over its life, not a p
 });
 
 test('the Effect.kind → ParticleType map routes blood to the blood profile', () => {
-	expect(SPAWN_MAP.blood).toContain(BLOOD);
+	expect(REALIZE.blood.particles).toContain(BLOOD);
 });
 
 test('the Effect.kind → ParticleType map routes gore (death) to the gore profile', () => {
-	expect(SPAWN_MAP.gore).toContain(GORE);
+	expect(REALIZE.gore.particles).toContain(GORE);
 });
 
 test('gore is a meatier, chunkier profile — distinct glyphs, flies out further, fewer chunks', () => {
@@ -386,10 +405,15 @@ test('a profile with no gravity and no terrain collision never settles (profile-
 		launchSpeed: 0,
 		launchSpread: 0,
 	};
-	const map: Record<EffectKind, ParticleType[]> = {
-		blood: [FLOATER],
-		gore: [FLOATER],
-		impact: [FLOATER],
+	const float: Realization = {
+		particles: [FLOATER],
+		kick: false,
+		hitstop: false,
+	};
+	const map: Record<EffectKind, Realization> = {
+		blood: float,
+		gore: float,
+		impact: float,
 	};
 	const terrain = floorTerrain();
 	const sys = new ParticleSystem();

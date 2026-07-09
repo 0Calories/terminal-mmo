@@ -44,6 +44,69 @@ export function stepDodgeEchoes(list: DodgeEcho[], dtMs: number): DodgeEcho[] {
 	return list.filter((echo) => echo.ageMs < DODGE_ECHO_LIFE_MS);
 }
 
+type DodgeTrack = {
+	x: number;
+	y: number;
+	facing: Entity['facing'];
+	dodging: boolean;
+	sinceSampleMs: number;
+};
+
+/**
+ * Watches entities across frames and turns dodge motion into echoes: one at the
+ * pre-dodge origin the frame a dodge starts, then a sample every interval while
+ * it lasts.
+ */
+export class DodgeTracker {
+	private echoes: DodgeEcho[] = [];
+	private track = new Map<number, DodgeTrack>();
+
+	update(entities: readonly Entity[], dtMs: number): void {
+		const nextTrack = new Map<number, DodgeTrack>();
+		for (const e of entities) {
+			const dodging = isDodging(e);
+			const prev = this.track.get(e.id);
+			const started = dodging && !prev?.dodging;
+			let sinceSampleMs = (prev?.sinceSampleMs ?? 0) + dtMs;
+			if (started) {
+				spawnDodgeEcho(this.echoes, {
+					x: prev?.x ?? e.x,
+					y: prev?.y ?? e.y,
+					facing: e.facing,
+					type: e.type,
+				});
+				sinceSampleMs = 0;
+			} else if (dodging && sinceSampleMs >= SAMPLE_INTERVAL_MS) {
+				spawnDodgeEcho(this.echoes, {
+					x: e.x,
+					y: e.y,
+					facing: e.facing,
+					type: e.type,
+				});
+				sinceSampleMs = 0;
+			}
+			nextTrack.set(e.id, {
+				x: e.x,
+				y: e.y,
+				facing: e.facing,
+				dodging,
+				sinceSampleMs,
+			});
+		}
+		this.track = nextTrack;
+		this.echoes = stepDodgeEchoes(this.echoes, dtMs);
+	}
+
+	draw(
+		buf: OptimizedBuffer,
+		cam: { x: number; y: number },
+		sw: number,
+		sh: number,
+	): void {
+		drawDodgeEchoes(buf, this.echoes, cam, sw, sh);
+	}
+}
+
 export function drawDodgeEchoes(
 	buf: OptimizedBuffer,
 	list: readonly DodgeEcho[],

@@ -10,7 +10,8 @@ import {
 } from '@mmo/shared';
 import { applyKick, CAMERA_KICK, NO_KICK } from '../src/effects/camera-kick';
 import { isFrozen, NO_HITSTOP, triggerHitstop } from '../src/effects/hitstop';
-import { ParticleSystem, stepParticles } from '../src/effects/particles';
+import { advanceParticles, ParticleSystem } from '../src/effects/particles';
+import { REALIZE, spawnEffects } from '../src/effects/realize';
 import { effectSoundCues } from '../src/sound/world';
 import { entity, flatTerrain, makeProjectile, seededRng } from './helpers';
 
@@ -54,15 +55,17 @@ function observerProjection(event: CombatEvent): Effect[] {
 /** The realized VisualEffect: the particles a projection spawns, plus the view shake it drives. */
 function realize(effects: Effect[]) {
 	const sys = new ParticleSystem(64);
-	stepParticles(sys, effects, 16, flatTerrain(64, 24), seededRng(SEED));
+	spawnEffects(sys, effects, seededRng(SEED));
+	advanceParticles(sys, 16, flatTerrain(64, 24));
 
 	let kick = NO_KICK;
 	let hitstop = NO_HITSTOP;
-	for (const fx of effects)
-		if (fx.kind === 'impact') {
+	for (const fx of effects) {
+		const realization = REALIZE[fx.kind];
+		if (realization.kick)
 			kick = applyKick(kick, fx.dir * CAMERA_KICK.maxCells, -1);
-			hitstop = triggerHitstop(hitstop);
-		}
+		if (realization.hitstop) hitstop = triggerHitstop(hitstop);
+	}
 
 	return {
 		particles: sys.particles.filter((p) => p.active),

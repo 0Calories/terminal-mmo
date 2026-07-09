@@ -1,4 +1,4 @@
-import type { Effect, Entity, GameState } from '@mmo/shared';
+import type { Effect, GameState } from '@mmo/shared';
 import { activeZone, BOX } from '@mmo/shared';
 import {
 	type OptimizedBuffer,
@@ -6,33 +6,7 @@ import {
 	type RenderableOptions,
 	type RenderContext,
 } from '@opentui/core';
-import {
-	applyKick,
-	CAMERA_KICK,
-	type Kick,
-	NO_KICK,
-	stepKick,
-} from '../effects/camera-kick';
-import {
-	type DodgeEcho,
-	isDodging,
-	SAMPLE_INTERVAL_MS,
-	spawnDodgeEcho,
-	stepDodgeEchoes,
-} from '../effects/dodge-echo';
-import {
-	type Hitstop,
-	isFrozen,
-	NO_HITSTOP,
-	stepHitstop,
-	triggerHitstop,
-} from '../effects/hitstop';
-import {
-	LEVELUP,
-	LEVELUP_SPECKS,
-	ParticleSystem,
-	stepParticles,
-} from '../effects/particles';
+import { VisualEffects } from '../effects';
 import type { SoundKind } from '../sound/registry';
 import { effectSoundCues } from '../sound/world';
 import { type CameraState, initCameraState, stepCamera } from './camera';
@@ -49,31 +23,18 @@ export interface PlayfieldOptions extends RenderableOptions {
 	rng?: () => number;
 }
 
-type DodgeTrack = {
-	x: number;
-	y: number;
-	facing: Entity['facing'];
-	dodging: boolean;
-	sinceSampleMs: number;
-};
-
 export class PlayfieldRenderable extends Renderable {
 	game: GameState | null = null;
 
 	sound: SoundSink | null = null;
 
 	private camState: CameraState = initCameraState();
-	private kick: Kick = NO_KICK;
-	private hitstop: Hitstop = NO_HITSTOP;
-	private particles = new ParticleSystem();
+	private readonly fx: VisualEffects;
 	private lastParticleTick = -1;
 	private lastZoneId: string | null = null;
 	private lastTime = 0;
-	private dodgeEchoes: DodgeEcho[] = [];
-	private dodgeTrack = new Map<number, DodgeTrack>();
 	private predicted: Effect[] = [];
 	private readonly now: () => number;
-	private readonly rng: () => number;
 
 	emitPredicted(effects: Effect[]): void {
 		if (effects.length) this.predicted.push(...effects);
@@ -82,10 +43,7 @@ export class PlayfieldRenderable extends Renderable {
 	levelUpBurst(): void {
 		if (!this.game) return;
 		const a = this.game.player.avatar;
-		const cx = a.x + BOX.w / 2;
-		const cy = a.y + BOX.h / 2;
-		for (let i = 0; i < LEVELUP_SPECKS; i++)
-			this.particles.spawn(LEVELUP, cx, cy, 0, this.rng);
+		this.fx.levelUpBurst(a.x + BOX.w / 2, a.y + BOX.h / 2);
 	}
 
 	// Reset on any zone change: a new zone's tick can collide with the last consumed, wedging the gate.
@@ -107,7 +65,7 @@ export class PlayfieldRenderable extends Renderable {
 		const { now, rng, ...renderable } = options;
 		super(ctx, { width: '100%', height: '100%', live: true, ...renderable });
 		this.now = now ?? (() => performance.now());
-		this.rng = rng ?? Math.random;
+		this.fx = new VisualEffects(rng ?? Math.random);
 	}
 
 	protected renderSelf(buffer: OptimizedBuffer): void {
@@ -117,8 +75,8 @@ export class PlayfieldRenderable extends Renderable {
 		this.lastTime = now;
 
 		// Render-only freeze: hold the last drawn frame; the sim keeps advancing in game/loop.ts.
-		if (isFrozen(this.hitstop)) {
-			this.hitstop = stepHitstop(this.hitstop, dt);
+		if (this.fx.holding()) {
+			this.fx.hold(dt);
 			return;
 		}
 
@@ -149,54 +107,14 @@ export class PlayfieldRenderable extends Renderable {
 			: snapshotEffects;
 		this.predicted = [];
 
-		for (const fx of fresh)
-			if (fx.kind === 'impact') {
-				this.kick = applyKick(this.kick, fx.dir * CAMERA_KICK.maxCells, -1);
-				this.hitstop = triggerHitstop(this.hitstop);
-			}
-		this.kick = stepKick(this.kick, dt);
-		const cam = { x: baseCam.x + this.kick.x, y: baseCam.y + this.kick.y };
-
-		stepParticles(this.particles, fresh, dt, zone.terrain, this.rng, {
-			x: cam.x,
-			y: cam.y,
-			w: buffer.width,
-			h: buffer.height,
+		this.fx.step(dt, {
+			effects: fresh,
+			entities: [a, ...(this.game.others ?? [])],
+			terrain: zone.terrain,
+			view: { ...baseCam, w: buffer.width, h: buffer.height },
 		});
-
-		const nextTrack = new Map<number, DodgeTrack>();
-		for (const e of [a, ...(this.game.others ?? [])]) {
-			const dodging = isDodging(e);
-			const prev = this.dodgeTrack.get(e.id);
-			const started = dodging && !prev?.dodging;
-			let sinceSampleMs = (prev?.sinceSampleMs ?? 0) + dt;
-			if (started) {
-				spawnDodgeEcho(this.dodgeEchoes, {
-					x: prev?.x ?? e.x,
-					y: prev?.y ?? e.y,
-					facing: e.facing,
-					type: e.type,
-				});
-				sinceSampleMs = 0;
-			} else if (dodging && sinceSampleMs >= SAMPLE_INTERVAL_MS) {
-				spawnDodgeEcho(this.dodgeEchoes, {
-					x: e.x,
-					y: e.y,
-					facing: e.facing,
-					type: e.type,
-				});
-				sinceSampleMs = 0;
-			}
-			nextTrack.set(e.id, {
-				x: e.x,
-				y: e.y,
-				facing: e.facing,
-				dodging,
-				sinceSampleMs,
-			});
-		}
-		this.dodgeTrack = nextTrack;
-		this.dodgeEchoes = stepDodgeEchoes(this.dodgeEchoes, dt);
+		const offset = this.fx.viewOffset();
+		const cam = { x: baseCam.x + offset.x, y: baseCam.y + offset.y };
 
 		if (this.sound && fresh.length) {
 			const centerX = cam.x + buffer.width / 2;
@@ -205,6 +123,6 @@ export class PlayfieldRenderable extends Renderable {
 				this.sound.play(cue.kind, { volume: cue.volume, pan: cue.pan });
 		}
 
-		drawPlayfield(buffer, this.game, cam, this.particles, this.dodgeEchoes);
+		drawPlayfield(buffer, this.game, cam, this.fx);
 	}
 }
