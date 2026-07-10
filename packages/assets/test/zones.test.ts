@@ -8,8 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { BOX } from '@mmo/core/entities';
 import { isSolid } from '@mmo/core/physics';
-import { SPAWN } from '@mmo/core/world';
-import { validateZoneSet } from '@mmo/core/zones';
+import { SPAWN, validateZoneSet } from '@mmo/core/zones';
 import {
 	catalogsFromEntries,
 	loadCatalogs,

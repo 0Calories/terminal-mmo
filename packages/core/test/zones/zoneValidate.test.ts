@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { BOX } from '../../src/entities/archetypes';
 import type { Terrain } from '../../src/entities/types';
-import type { Portal, Zone } from '../../src/world/world';
+import type { Portal, Zone } from '../../src/zones/types';
 import { parseZone } from '../../src/zones/zoneFormat';
 import type { Diagnostic } from '../../src/zones/zoneValidate';
 import {

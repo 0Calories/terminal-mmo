@@ -1,6 +1,6 @@
 import type { EntityType } from '@mmo/core/entities';
 import { cellGlyph } from '@mmo/core/physics';
-import type { Zone } from '@mmo/core/world';
+import type { Zone } from '@mmo/core/zones';
 
 const SPAWN_GLYPH: Partial<Record<EntityType, string>> = {
 	chaser: 'c',

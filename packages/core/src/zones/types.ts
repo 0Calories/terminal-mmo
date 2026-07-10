@@ -33,12 +33,3 @@ export interface Zone {
 	drops?: Drop[];
 	nextDropId?: number;
 }
-
-export interface World {
-	zones: Record<ZoneId, Zone>;
-	tick: number;
-}
-
-export function activeZone(world: World, zoneId: ZoneId): Zone {
-	return world.zones[zoneId];
-}

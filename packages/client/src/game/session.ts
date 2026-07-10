@@ -1,6 +1,6 @@
 import { aabbOverlap, entityBox } from '@mmo/core/combat';
 import { DEFAULT_COSMETICS, randomCosmetics } from '@mmo/core/entities';
-import type { Zone } from '@mmo/core/world';
+import type { Zone } from '@mmo/core/zones';
 import { FORM_IDS, HAT_IDS } from '@mmo/render';
 import type { CliRenderer } from '@opentui/core';
 import type { ConfigStore } from '../config';

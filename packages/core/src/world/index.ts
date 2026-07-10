@@ -1,21 +1,18 @@
-// world — the zone graph, the multi-session server world, and the single-session sim loop.
+// world — the whole: the multi-session server world (zone registry, Dungeon
+// instances, Party keying, portal transitions, death relocation), session
+// placement, and the synthetic local session that drives it single-player.
 
+export { TOWN_SPAWN } from './constants';
 export {
-	GROUND_TOP,
-	NPC_BOX,
-	PORTAL_BOX,
-	RESPAWN,
-	SPAWN,
-	TOWN,
-	TOWN_SPAWN,
-	WORLD,
-} from './constants';
+	createLocalWorld,
+	type LocalWorld,
+	localAvatar,
+	localZoneState,
+	stepLocalWorld,
+} from './localSession';
 export {
 	addSession,
-	applyBuy,
-	applyCosmetics,
-	applySell,
-	atMerchant,
+	avatarBox,
 	createServerWorld,
 	handleOf,
 	joinParty,
@@ -25,21 +22,15 @@ export {
 	sessionsInZone,
 	spawnNewAvatar,
 	stepServerWorld,
+	updateAvatar,
 	worldSnapshotFor,
 	zoneInstance,
 	zoneOf,
 	zoneStateOf,
 } from './serverWorld';
 export {
-	createGameFromZones,
-	type GameState,
-	step,
-} from './sim';
-export {
-	activeZone,
-	type Portal,
-	type World,
-	type Zone,
-	type ZoneId,
-	type ZoneType,
-} from './world';
+	addAvatar,
+	removeAvatar,
+	snapshotFor,
+	withCosmetics,
+} from './session';

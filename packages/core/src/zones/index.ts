@@ -1,17 +1,23 @@
-// zones — authoritative zone stepping, the .zone text format, and zone validation.
+// zones — the place: zone types, the .zone text format, forge-only validation,
+// zone state, and the slim authoritative tick. The whole (registry, instances,
+// portals, sessions) lives in world/.
 
-export { ZONE_MAX } from './constants';
+export {
+	GROUND_TOP,
+	NPC_BOX,
+	PORTAL_BOX,
+	RESPAWN,
+	SPAWN,
+	WORLD,
+	ZONE_MAX,
+} from './constants';
+export type { Portal, Zone, ZoneId, ZoneType } from './types';
 export {
 	type AvatarIntent,
-	addAvatar,
 	clientStepAvatar,
 	createZoneState,
-	removeAvatar,
-	resolveDeaths,
 	type ServerAvatar,
-	snapshotFor,
 	stepZone,
-	withCosmetics,
 	type ZoneState,
 } from './zone';
 export {

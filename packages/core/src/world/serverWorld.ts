@@ -1,8 +1,6 @@
 import { aabbOverlap } from '../combat/combat';
 import { BOX } from '../entities/archetypes';
 import type { Box, Cosmetics } from '../entities/types';
-import { itemLabel } from '../items/loot';
-import { buyItem, STARTER_GOODS, saleValue, sellItem } from '../items/vendor';
 import {
 	emptySave,
 	type PlayerSave,
@@ -10,19 +8,16 @@ import {
 	restoredFromSave,
 } from '../persistence/persistence';
 import type { ServerMessage } from '../protocol/protocol';
+import type { Zone, ZoneId } from '../zones/types';
 import {
 	type AvatarIntent,
-	addAvatar,
 	createZoneState,
-	removeAvatar,
 	type ServerAvatar,
-	snapshotFor,
 	stepZone,
-	withCosmetics,
 	type ZoneState,
 } from '../zones/zone';
 import { TOWN_SPAWN } from './constants';
-import type { Zone, ZoneId } from './world';
+import { addAvatar, removeAvatar, snapshotFor } from './session';
 
 export interface ServerWorld {
 	zones: Record<ZoneId, ZoneState>;
@@ -62,7 +57,9 @@ function partyLeaderOf(world: ServerWorld, sessionId: number): number {
 	return world.party[sessionId] ?? sessionId;
 }
 
-function instanceKey(zone: ZoneId, leader: number): string {
+// Module-internal (not in the barrel): localSession seeds a direct-play
+// Dungeon instance under the same key a portal entry would use.
+export function instanceKey(zone: ZoneId, leader: number): string {
 	return `${zone}#${leader}`;
 }
 
@@ -155,18 +152,13 @@ export function handleOf(
 	)?.handle;
 }
 
-export function atMerchant(world: ServerWorld, sessionId: number): boolean {
-	const zs = zoneStateOf(world, sessionId);
-	if (zs === undefined) return false;
-	const sa = zs.avatars.find((a) => a.sessionId === sessionId);
-	if (sa === undefined) return false;
-	const box = boxAt(sa.avatar.x, sa.avatar.y);
-	return (zs.zone.npcs ?? []).some(
-		(n) => n.kind === 'vendor' && aabbOverlap(box, n),
-	);
+export function avatarBox(x: number, y: number): Box {
+	return { x, y, w: BOX.w, h: BOX.h };
 }
 
-function withAvatar(
+// The world's one write door to a placed avatar: request handlers (vendor,
+// cosmetics, …) live outside this module and update sessions through it.
+export function updateAvatar(
 	world: ServerWorld,
 	sessionId: number,
 	fn: (sa: ServerAvatar) => ServerAvatar,
@@ -187,72 +179,6 @@ function withAvatar(
 		...world,
 		zones: { ...world.zones, [zone]: map(world.zones[zone]) },
 	};
-}
-
-export function applySell(
-	world: ServerWorld,
-	sessionId: number,
-	itemId: number,
-): { world: ServerWorld; sold: boolean } {
-	if (!atMerchant(world, sessionId)) return { world, sold: false };
-	const zs = zoneStateOf(world, sessionId);
-	const sa = zs?.avatars.find((a) => a.sessionId === sessionId);
-	if (sa === undefined) return { world, sold: false };
-	const item = sa.inventory.find((i) => i.id === itemId);
-	if (item === undefined) return { world, sold: false };
-	const { progress, inventory } = sellItem(sa.progress, sa.inventory, itemId);
-	const next = withAvatar(world, sessionId, (a) => ({
-		...a,
-		progress,
-		inventory,
-		log: [
-			...a.log.slice(-5),
-			`Sold ${itemLabel(item)} (+${saleValue(item)}g).`,
-		],
-	}));
-	return { world: next, sold: true };
-}
-
-export function applyBuy(
-	world: ServerWorld,
-	sessionId: number,
-	index: number,
-): { world: ServerWorld; bought: boolean } {
-	if (!atMerchant(world, sessionId)) return { world, bought: false };
-	const good = STARTER_GOODS[index];
-	if (good === undefined) return { world, bought: false };
-	const zs = zoneStateOf(world, sessionId);
-	const sa = zs?.avatars.find((a) => a.sessionId === sessionId);
-	if (sa === undefined) return { world, bought: false };
-	const { progress, inventory, bought } = buyItem(
-		sa.progress,
-		sa.inventory,
-		good,
-		sa.nextId,
-	);
-	if (!bought) return { world, bought: false };
-	const next = withAvatar(world, sessionId, (a) => ({
-		...a,
-		progress,
-		inventory,
-		nextId: a.nextId + 1,
-		log: [...a.log.slice(-5), `Bought ${good.base} (−${good.price}g).`],
-	}));
-	return { world: next, bought: true };
-}
-
-export function applyCosmetics(
-	world: ServerWorld,
-	sessionId: number,
-	cosmetics: Cosmetics,
-): { world: ServerWorld; changed: boolean } {
-	const zs = zoneStateOf(world, sessionId);
-	if (zs === undefined) return { world, changed: false };
-	if (zs.zone.type !== 'town') return { world, changed: false };
-	const sa = zs.avatars.find((a) => a.sessionId === sessionId);
-	if (sa === undefined) return { world, changed: false };
-	const next = withAvatar(world, sessionId, (a) => withCosmetics(a, cosmetics));
-	return { world: next, changed: true };
 }
 
 export function addSession(
@@ -363,10 +289,6 @@ export function worldSnapshotFor(
 	return snapshotFor(zs, sessionId);
 }
 
-function boxAt(x: number, y: number): Box {
-	return { x, y, w: BOX.w, h: BOX.h };
-}
-
 function reposition(sa: ServerAvatar, x: number, y: number): ServerAvatar {
 	return {
 		...sa,
@@ -398,7 +320,7 @@ export function stepServerWorld(
 		const intent = byId.get(sessionId);
 		if (!intent?.interact) continue;
 		const portal = world.templates[zone].portals.find((p) =>
-			aabbOverlap(boxAt(intent.x, intent.y), p),
+			aabbOverlap(avatarBox(intent.x, intent.y), p),
 		);
 		if (portal)
 			portalDest.set(sessionId, {

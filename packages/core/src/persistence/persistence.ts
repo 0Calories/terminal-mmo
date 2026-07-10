@@ -7,7 +7,7 @@ import {
 	LEGACY_HAT_IDS,
 } from '../entities/cosmetics';
 import type { Cosmetics, Item, PlayerProgress } from '../entities/types';
-import type { ZoneId } from '../world/world';
+import type { ZoneId } from '../zones/types';
 import type { ServerAvatar } from '../zones/zone';
 import type { AccountRegistry } from './auth';
 

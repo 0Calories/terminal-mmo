@@ -15,3 +15,9 @@ export {
 	DEV_VERSION,
 	isReleaseVersion,
 } from './version';
+export {
+	activeZone,
+	type GameState,
+	type PlayerState,
+	type World,
+} from './viewModel';

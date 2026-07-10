@@ -17,7 +17,7 @@ bun run forge zone new <id> --type field|town   # scaffold a blank <id>.zone
 bun run forge zone render <id>                   # ASCII dump + per-file diagnostics
 bun run forge zone check [dir]                   # whole-set validation (CI gate)
 bun run forge zone preview <id>                  # live, faithful TUI render (needs a TTY)
-bun run forge zone play <id>                     # boot the Zone into the offline sim (needs a TTY)
+bun run forge zone play <id>                     # playtest on the real server world, one local session (needs a TTY)
 ```
 
 `forge zone check` (also `bun run zones:check`, part of `bun run ci`) is the invariant:
@@ -49,11 +49,16 @@ TTY is involved:
 Put the script at the **repo root** (e.g. `view.ts`, untracked) and import the
 package entries by path — the `@mmo/core`/`@mmo/render` workspace aliases only
 resolve *inside* a package that depends on them, not from a standalone scratch
-file. The sim (`createGame`) lives in `@mmo/core`; the drawing (`buildSceneStyle`,
+file. The runtime is the real server world with one local session — the exact
+code `forge zone play` and the live server run (`createLocalWorld` /
+`stepLocalWorld` in `@mmo/core/world`); the drawing (`buildSceneStyle`,
 `renderZoneScene`, `drawEntitySprite`, `CellBuffer`) lives in `@mmo/render`:
 
 ```ts
-import { createGame } from './packages/core/src';
+import { loadZones } from './packages/assets/src';
+import {
+  createLocalWorld, localAvatar, localZoneState, stepLocalWorld,
+} from './packages/core/src/world';
 import {
   buildSceneStyle, drawEntitySprite, renderZoneScene,
   type CellBuffer,
@@ -74,13 +79,15 @@ class TextBuffer implements CellBuffer<string> {
 }
 
 const style = buildSceneStyle<string>(() => 'x'); // glyphs only; colour irrelevant
-const g = createGame();                            // boots the authored set in the start Zone
-const z = g.world.zones[g.player.zoneId];
+let lw = createLocalWorld(loadZones(), 'town-01'); // any authored Zone id, dungeons included
+// optional: step it (e.g. walk right a second) — same tick the live server runs
+for (let i = 0; i < 60; i++) lw = stepLocalWorld(lw, { moveX: 1, jump: false, attack: false }, 16);
+const z = localZoneState(lw)!.zone;
 const buf = new TextBuffer(z.terrain.w, z.terrain.h); // whole Zone in one frame
 renderZoneScene(buf, {
   terrain: z.terrain, portals: z.portals, npcs: z.npcs ?? [], entities: z.monsters,
 }, { x: 0, y: 0 }, style);
-drawEntitySprite(buf, g.player.avatar, { x: 0, y: 0 }, style); // Avatar on top (ADR 0003)
+drawEntitySprite(buf, localAvatar(lw)!.avatar, { x: 0, y: 0 }, style, z.terrain); // Avatar on top (ADR 0003)
 console.log(buf.dump());
 ```
 

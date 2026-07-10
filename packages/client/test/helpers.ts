@@ -5,18 +5,13 @@ import {
 	type Drop,
 	type Entity,
 	type Npc,
-	type PlayerState,
 	type Projectile,
 	type Terrain,
 } from '@mmo/core/entities';
 import { rngNext } from '@mmo/core/items';
 import { parseTerrain } from '@mmo/core/physics';
-import {
-	type GameState,
-	NPC_BOX,
-	PORTAL_BOX,
-	type Zone,
-} from '@mmo/core/world';
+import type { GameState, PlayerState } from '@mmo/core/protocol';
+import { NPC_BOX, PORTAL_BOX, type Zone } from '@mmo/core/zones';
 
 // mulberry32 with the state threaded for us — the same generator the sim seeds from.
 export function seededRng(seed: number): () => number {

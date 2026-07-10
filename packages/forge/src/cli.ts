@@ -7,7 +7,7 @@ import {
 	loadZoneSet,
 	zonePath,
 } from '@mmo/assets';
-import type { ZoneType } from '@mmo/core/world';
+import type { ZoneType } from '@mmo/core/zones';
 import {
 	type Diagnostic,
 	findOrphanGlyphs,

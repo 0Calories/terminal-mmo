@@ -1,21 +1,27 @@
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets';
-import { createGameFromZones } from '@mmo/core/world';
+import { createLocalWorld, localAvatar } from '@mmo/core/world';
 import { followCam, playSceneOf, playStatusLine } from '../src/play';
 
-function townGame() {
+function fieldWorld() {
 	const zones = loadZones();
 	const field = zones.find((z) => z.type === 'field');
 	if (!field) throw new Error('expected an authored field Zone');
-	return { game: createGameFromZones(zones, field.id), zone: field };
+	return { lw: createLocalWorld(zones, field.id), zone: field };
 }
 
+test('createLocalWorld boots the played Zone on the real server world', () => {
+	const { lw, zone } = fieldWorld();
+	expect(localAvatar(lw)?.avatar.type).toBe('player');
+	expect(lw.world.startZone).toBe(zone.id);
+});
+
 test('playSceneOf exposes the active Zone as a renderable scene', () => {
-	const { game, zone } = townGame();
-	const scene = playSceneOf(game);
+	const { lw, zone } = fieldWorld();
+	const scene = playSceneOf(lw);
 	expect(scene.terrain).toBe(zone.terrain);
 	expect(scene.portals).toBe(zone.portals);
-	expect(scene.entities).toBe(game.world.zones[game.player.zoneId].monsters);
+	expect(scene.entities).toBe(zone.monsters);
 	expect(scene.npcs).toEqual(zone.npcs ?? []);
 });
 
@@ -29,8 +35,8 @@ test('followCam centres the Player and clamps to the grid', () => {
 });
 
 test('playStatusLine reports the Zone id and Player vitals', () => {
-	const { game, zone } = townGame();
-	const line = playStatusLine(game);
+	const { lw, zone } = fieldWorld();
+	const line = playStatusLine(lw);
 	expect(line).toContain(zone.id);
 	expect(line).toContain('hp');
 	expect(line).toContain('lv');

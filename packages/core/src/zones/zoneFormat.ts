@@ -7,9 +7,8 @@ import type {
 	Terrain,
 } from '../entities/types';
 import { terrainCell } from '../physics/terrain';
-import { NPC_BOX, PORTAL_BOX } from '../world/constants';
-import type { Portal, Zone, ZoneType } from '../world/world';
-import { ZONE_MAX } from './constants';
+import { NPC_BOX, PORTAL_BOX, ZONE_MAX } from './constants';
+import type { Portal, Zone, ZoneType } from './types';
 
 export interface MonsterCatalogEntry {
 	id: string;

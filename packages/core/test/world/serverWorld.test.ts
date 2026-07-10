@@ -1,18 +1,11 @@
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets';
-import type { Cosmetics, Item, Npc } from '../../src/entities';
+import type { Cosmetics } from '../../src/entities';
 import { BOX, DEFAULT_COSMETICS } from '../../src/entities';
-import { STARTER_GOODS, saleValue } from '../../src/items';
-import { emptySave, restoredFromSave } from '../../src/persistence';
 import type { ServerWorld } from '../../src/world';
 import {
 	addSession,
-	applyBuy,
-	applyCosmetics,
-	applySell,
-	atMerchant,
 	createServerWorld,
-	GROUND_TOP,
 	handleOf,
 	joinParty,
 	removeSession,
@@ -27,6 +20,7 @@ import {
 	zoneStateOf,
 } from '../../src/world';
 import type { AvatarIntent } from '../../src/zones';
+import { GROUND_TOP } from '../../src/zones';
 
 const y = GROUND_TOP - BOX.h;
 
@@ -474,248 +468,8 @@ test('a re-entered Dungeon is a fresh instance (repeatable faucet)', () => {
 	expect(w.instances[w.instanceOf[1]].tick).toBe(0);
 });
 
-const sellable = (over: Partial<Item> = {}): Item => ({
-	id: 1,
-	base: 'Rusty Sword',
-	slot: 'weapon',
-	rarity: 'rare',
-	affixes: [{ stat: 'str', value: 3 }],
-	...over,
-});
-
-function sellWorld(
-	inventory: Item[],
-	gold: number,
-	standAtMerchant = true,
-): { w: ServerWorld; merchant: Npc } {
-	let w = townWorld();
-	w = addSession(
-		w,
-		1,
-		'neo',
-		undefined,
-		undefined,
-		restoredFromSave({
-			...emptySave('neo', 'town-01'),
-			inventory,
-			progress: { level: 2, xp: 0, gold },
-		}),
-	);
-	const merchant = zoneOrThrow(w, 'town-01').zone.npcs?.find(
-		(n) => n.kind === 'vendor',
-	);
-	if (!merchant) throw new Error('town-01 must have a Merchant');
-	const x = standAtMerchant ? merchant.x : 0;
-	w = stepServerWorld(
-		w,
-		[
-			{
-				sessionId: 1,
-				x,
-				y: merchant.y,
-				vx: 0,
-				vy: 0,
-				facing: 1,
-				onGround: true,
-				attack: false,
-			},
-		],
-		16,
-	);
-	return { w, merchant };
-}
-
 function avatarOf(w: ServerWorld, sessionId: number) {
 	return zoneStateOf(w, sessionId)?.avatars.find(
 		(a) => a.sessionId === sessionId,
 	);
 }
-
-test('atMerchant is true standing on the Town Merchant, false when away', () => {
-	expect(atMerchant(sellWorld([sellable()], 0).w, 1)).toBe(true);
-	expect(atMerchant(sellWorld([sellable()], 0, false).w, 1)).toBe(false);
-});
-
-test('applySell removes the Item and credits its re-derived sale value to Gold', () => {
-	const item = sellable({ id: 7 });
-	const { w } = sellWorld(
-		[item, sellable({ id: 8, base: 'Copper Ring' })],
-		100,
-	);
-	const res = applySell(w, 1, 7);
-	expect(res.sold).toBe(true);
-	const sa = avatarOf(res.world, 1);
-	expect(sa?.inventory.map((i) => i.id)).toEqual([8]);
-	expect(sa?.progress.gold).toBe(100 + saleValue(item));
-	expect(sa?.log.at(-1)).toContain('Sold');
-});
-
-test('selling an unowned id is a no-op — Gold and inventory unchanged', () => {
-	const { w } = sellWorld([sellable({ id: 7 })], 100);
-	const res = applySell(w, 1, 999);
-	expect(res.sold).toBe(false);
-	const sa = avatarOf(res.world, 1);
-	expect(sa?.inventory.map((i) => i.id)).toEqual([7]);
-	expect(sa?.progress.gold).toBe(100);
-});
-
-test('selling the same id twice: the second sell is a no-op (no double credit)', () => {
-	const item = sellable({ id: 7 });
-	const first = applySell(sellWorld([item], 0).w, 1, 7);
-	expect(first.sold).toBe(true);
-	const gold = avatarOf(first.world, 1)?.progress.gold;
-	const second = applySell(first.world, 1, 7);
-	expect(second.sold).toBe(false);
-	expect(avatarOf(second.world, 1)?.progress.gold).toBe(gold);
-});
-
-test('a sell away from any Merchant is refused — never trust the client', () => {
-	const { w } = sellWorld([sellable({ id: 7 })], 100, false);
-	const res = applySell(w, 1, 7);
-	expect(res.sold).toBe(false);
-	const sa = avatarOf(res.world, 1);
-	expect(sa?.inventory.map((i) => i.id)).toEqual([7]);
-	expect(sa?.progress.gold).toBe(100);
-});
-
-test('applySell for an unplaced session is a no-op', () => {
-	const res = applySell(townWorld(), 999, 1);
-	expect(res.sold).toBe(false);
-});
-
-test('applyBuy deducts the re-derived price, appends the good, and logs it', () => {
-	const good = STARTER_GOODS[0];
-	const { w } = sellWorld([], 100);
-	const res = applyBuy(w, 1, 0);
-	expect(res.bought).toBe(true);
-	const sa = avatarOf(res.world, 1);
-	expect(sa?.progress.gold).toBe(100 - good.price);
-	const added = sa?.inventory.at(-1);
-	expect(added?.base).toBe(good.base);
-	expect(added?.slot).toBe(good.slot);
-	expect(added?.rarity).toBe('common');
-	expect(added?.affixes).toEqual([]);
-	expect(sa?.log.at(-1)).toContain('Bought');
-});
-
-test('two buys mint distinct Item ids (nextId advances)', () => {
-	const { w } = sellWorld([], 100);
-	const first = applyBuy(w, 1, 0);
-	const second = applyBuy(first.world, 1, 0);
-	expect(second.bought).toBe(true);
-	const ids = avatarOf(second.world, 1)?.inventory.map((i) => i.id) ?? [];
-	expect(new Set(ids).size).toBe(ids.length);
-	expect(ids.length).toBe(2);
-});
-
-test('buying when unaffordable is a no-op — Gold and inventory unchanged', () => {
-	const good = STARTER_GOODS[0];
-	const { w } = sellWorld([], good.price - 1);
-	const res = applyBuy(w, 1, 0);
-	expect(res.bought).toBe(false);
-	const sa = avatarOf(res.world, 1);
-	expect(sa?.progress.gold).toBe(good.price - 1);
-	expect(sa?.inventory).toEqual([]);
-});
-
-test('buying an out-of-range catalog index is refused', () => {
-	const { w } = sellWorld([], 1000);
-	expect(applyBuy(w, 1, STARTER_GOODS.length).bought).toBe(false);
-	expect(applyBuy(w, 1, -1).bought).toBe(false);
-	expect(avatarOf(applyBuy(w, 1, 99).world, 1)?.progress.gold).toBe(1000);
-});
-
-test('a buy away from any Merchant is refused — never trust the client', () => {
-	const { w } = sellWorld([], 1000, false);
-	const res = applyBuy(w, 1, 0);
-	expect(res.bought).toBe(false);
-	const sa = avatarOf(res.world, 1);
-	expect(sa?.inventory).toEqual([]);
-	expect(sa?.progress.gold).toBe(1000);
-});
-
-test('applyBuy for an unplaced session is a no-op', () => {
-	expect(applyBuy(townWorld(), 999, 0).bought).toBe(false);
-});
-
-test('round-trip buy then sell is always a net Gold loss', () => {
-	for (let i = 0; i < STARTER_GOODS.length; i++) {
-		const { w } = sellWorld([], 100);
-		const boughtRes = applyBuy(w, 1, i);
-		expect(boughtRes.bought).toBe(true);
-		const minted = avatarOf(boughtRes.world, 1)?.inventory.at(-1);
-		if (!minted) throw new Error('bought Item missing');
-		const soldRes = applySell(boughtRes.world, 1, minted.id);
-		expect(soldRes.sold).toBe(true);
-		expect(avatarOf(soldRes.world, 1)?.progress.gold).toBeLessThan(100);
-	}
-});
-
-test('applyCosmetics in a Town stamps the new look on the live Avatar (rebroadcast + persist path) (#305)', () => {
-	const { world } = spawnNewAvatar(
-		makeWorld(),
-		7,
-		'neo',
-		DEFAULT_COSMETICS,
-		0,
-		'town-01',
-	);
-	expect(zoneOf(world, 7)).toBe('town-01');
-	const next: Cosmetics = { hue: 3, hat: 'cap', nameplate: 2, form: 'buddy' };
-	const res = applyCosmetics(world, 7, next);
-	expect(res.changed).toBe(true);
-	const seen = worldSnapshotFor(res.world, 7).avatars.find(
-		(a) => a.sessionId === 7,
-	);
-	expect(seen?.cosmetics).toEqual(next);
-});
-
-test('applyCosmetics clamps an out-of-range index at the apply boundary (#305)', () => {
-	const { world } = spawnNewAvatar(
-		makeWorld(),
-		7,
-		'neo',
-		DEFAULT_COSMETICS,
-		0,
-		'town-01',
-	);
-	const res = applyCosmetics(world, 7, {
-		hue: 2,
-		hat: 250 as unknown as string,
-		nameplate: 1,
-		form: 250 as unknown as string,
-	});
-	expect(res.changed).toBe(true);
-	expect(avatarOf(res.world, 7)?.cosmetics).toEqual({
-		hue: 2,
-		hat: '',
-		nameplate: 1,
-		form: 'buddy',
-	});
-});
-
-test('applyCosmetics outside a Town is a silent no-op (Town-only re-customize) (#305)', () => {
-	const world = addSession(makeWorld(), 7, 'neo');
-	expect(zoneOf(world, 7)).toBe('field-01');
-	const res = applyCosmetics(world, 7, {
-		hue: 3,
-		hat: 'cap',
-		nameplate: 2,
-		form: 'buddy',
-	});
-	expect(res.changed).toBe(false);
-	expect(res.world).toBe(world);
-	expect(avatarOf(world, 7)?.cosmetics).toEqual(DEFAULT_COSMETICS);
-});
-
-test('applyCosmetics for an unplaced session is a silent no-op (#305)', () => {
-	const world = makeWorld();
-	const res = applyCosmetics(world, 999, {
-		hue: 1,
-		hat: 'cap',
-		nameplate: 1,
-		form: 'buddy',
-	});
-	expect(res.changed).toBe(false);
-	expect(res.world).toBe(world);
-});

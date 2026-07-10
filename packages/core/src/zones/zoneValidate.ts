@@ -1,7 +1,7 @@
 import { BOX } from '../entities/archetypes';
 import type { Box, Terrain } from '../entities/types';
 import { isSolid } from '../physics/terrain';
-import type { Zone } from '../world/world';
+import type { Zone } from './types';
 import type { Catalogs } from './zoneFormat';
 
 export type Severity = 'error' | 'warning';

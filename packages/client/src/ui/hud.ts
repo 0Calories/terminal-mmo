@@ -1,6 +1,6 @@
 import { skillForSlot, skillUnlocked } from '@mmo/core/combat';
 import { filledCells, xpProgress } from '@mmo/core/progression';
-import { activeZone, type GameState } from '@mmo/core/world';
+import { activeZone, type GameState } from '@mmo/core/protocol';
 import {
 	BoxRenderable,
 	type Renderable,

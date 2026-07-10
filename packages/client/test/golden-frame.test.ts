@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type CombatEvent, combatEventAt, deathEvent } from '@mmo/core/combat';
-import type { GameState } from '@mmo/core/world';
+import type { GameState } from '@mmo/core/protocol';
 import { createTestRenderer } from '@opentui/core/testing';
 import { PlayfieldRenderable } from '../src/render/playfield';
 import { GOLDEN_VIEW, goldenGame, manualClock, seededRng } from './helpers';

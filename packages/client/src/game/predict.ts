@@ -17,8 +17,7 @@ import {
 } from '@mmo/core/entities';
 import { applyImpulse, PHYS } from '@mmo/core/physics';
 import { capabilityUnlocked } from '@mmo/core/progression';
-import { SPAWN } from '@mmo/core/world';
-import { clientStepAvatar } from '@mmo/core/zones';
+import { clientStepAvatar, SPAWN } from '@mmo/core/zones';
 
 export function spawnPredicted(weapon: number): Entity {
 	return spawnAvatar(SPAWN.x, SPAWN.y, { weapon });

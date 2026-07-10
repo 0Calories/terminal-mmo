@@ -3,7 +3,7 @@ import { loadZones } from '@mmo/assets';
 import { ACTION_FLAG, IDLE_ACTION } from '@mmo/core/combat';
 import { BOX, spawnAvatar } from '@mmo/core/entities';
 import type { ServerMessage } from '@mmo/core/protocol';
-import { GROUND_TOP, type Zone } from '@mmo/core/world';
+import { GROUND_TOP, type Zone } from '@mmo/core/zones';
 import { INTERP_DELAY_MS } from '../src/net/interp';
 import { NetClient, snapshotToGame } from '../src/net/net';
 
