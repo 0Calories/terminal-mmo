@@ -5,6 +5,8 @@ import { runEdit } from '../src/editor';
 import { runPlay } from '../src/play';
 import { runPreview } from '../src/preview';
 import { runSprite } from '../src/sprite-cli';
+import { runSpritePreview } from '../src/sprite-editor/preview';
+import { runSpriteEdit } from '../src/sprite-editor/tui';
 
 const root = join(process.cwd(), 'zones');
 const deps = { root, log: (l: string) => console.log(l) };
@@ -21,14 +23,17 @@ if (domain === 'zone') {
 		root: join(process.cwd(), 'sprites'),
 		log: (l: string) => console.log(l),
 	};
-	process.exit(runSprite(rest, spriteDeps));
+	if (rest[0] === 'edit') await runSpriteEdit(rest.slice(1), spriteDeps);
+	else if (rest[0] === 'preview')
+		await runSpritePreview(rest.slice(1), spriteDeps);
+	else process.exit(runSprite(rest, spriteDeps));
 } else {
 	console.log(
 		[
 			'usage: forge <domain> <command>',
 			'',
 			'  zone     author + validate .zone content (render|preview|play|edit|check|new|rename)',
-			'  sprite   author + validate .sprite art (render|check)',
+			'  sprite   author + validate .sprite art (render|check|edit|preview)',
 			'',
 			'run `forge zone` for zone subcommands.',
 			'run `forge sprite` for sprite subcommands.',
