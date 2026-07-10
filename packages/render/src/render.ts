@@ -17,7 +17,7 @@ import {
 } from '@mmo/core/entities';
 import { isSolid } from '@mmo/core/physics';
 import { bodyFrame, mirrorAnchorX, spriteMetaFor } from '@mmo/core/sprites';
-import type { Portal } from '@mmo/core/world';
+import type { Portal } from '@mmo/core/zones';
 import { type BodySprite, formFrame } from './body-sprite';
 import { formById } from './forms';
 import { hatById } from './hats';

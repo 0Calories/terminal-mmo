@@ -1,11 +1,8 @@
 import {
 	aabbOverlap,
-	actionFlags,
-	actionStateOf,
 	type CombatEvent,
 	deathEvent,
 	entityBox,
-	IDLE_ACTION,
 	meleeActive,
 	meleeHitbox,
 	regenPoise,
@@ -18,28 +15,22 @@ import {
 } from '../combat/combat';
 import { COMBAT } from '../combat/constants';
 import { projectileBox, spawnProjectile } from '../combat/projectile';
-import {
-	type PlayerClass,
-	skillForSlot,
-	skillsUnlockedBetween,
-} from '../combat/skills';
-import { DEFAULT_WEAPON, weaponById } from '../combat/weapons';
-import { BOX, meleeProfileOf, rangedProfileOf } from '../entities/archetypes';
+import { type PlayerClass, skillForSlot } from '../combat/skills';
+import { weaponById } from '../combat/weapons';
+import { meleeProfileOf, rangedProfileOf } from '../entities/archetypes';
 import { BRAINS, type BrainView } from '../entities/brain';
-import { clampCosmetics, DEFAULT_COSMETICS } from '../entities/cosmetics';
 import {
 	emoteById,
 	emoteInterrupted,
 	initialEmoteT,
 	stepEmote,
 } from '../entities/emote';
-import { spawnAvatar, spawnMonster } from '../entities/factory';
+import { spawnMonster } from '../entities/factory';
 import type {
 	Control,
 	Cosmetics,
 	Drop,
 	Entity,
-	EntityType,
 	Facing,
 	Item,
 	PendingRespawn,
@@ -48,25 +39,13 @@ import type {
 	Strike,
 	Terrain,
 } from '../entities/types';
-import { LOOT } from '../items/constants';
-import {
-	itemLabel,
-	type LootTable,
-	lootTableFor,
-	rollDrop,
-} from '../items/loot';
-import type { RestoredAvatar } from '../persistence/persistence';
+import { itemLabel, lootTableFor } from '../items/loot';
 import { PHYS } from '../physics/constants';
 import { IDLE_DRIVE, stepEntity } from '../physics/physics';
 import { stepProjectile } from '../physics/projectile';
-import { applyXp, maxHpForLevel, xpForKill } from '../progression/progression';
-import type {
-	AvatarSnapshot,
-	MonsterSnapshot,
-	ServerMessage,
-} from '../protocol/protocol';
-import { RESPAWN, SPAWN } from '../world/constants';
-import type { Zone, ZoneId } from '../world/world';
+import { SPAWN } from './constants';
+import { resolveDeaths } from './rewards';
+import type { Zone, ZoneId } from './types';
 
 export interface ServerAvatar {
 	sessionId: number;
@@ -470,214 +449,6 @@ export function stepZone(
 	};
 }
 
-export function resolveDeaths(
-	avatars: ServerAvatar[],
-	deadMonsters: Entity[],
-	ctx: { zoneId: ZoneId; lootTable: LootTable; nextDropId: number },
-): {
-	avatars: ServerAvatar[];
-	drops: Drop[];
-	nextDropId: number;
-	respawns: PendingRespawn[];
-	deaths: number[];
-	events: CombatEvent[];
-} {
-	const next = avatars.slice();
-	const drops: Drop[] = [];
-	const respawns: PendingRespawn[] = [];
-	let nextDropId = ctx.nextDropId;
-	for (const m of deadMonsters) {
-		for (const sid of m.contributors ?? []) {
-			const idx = next.findIndex((a) => a.sessionId === sid);
-			if (idx < 0) continue;
-			let sa = grantXp(next[idx], m.type, ctx.zoneId);
-			const roll = rollDrop(sa.rngState, sa.progress.level, ctx.lootTable);
-			sa = { ...sa, rngState: roll.state };
-			if (roll.item) {
-				drops.push(
-					spawnDrop(nextDropId++, sid, m, { ...roll.item, id: sa.nextId }),
-				);
-				sa = { ...sa, nextId: sa.nextId + 1 };
-			}
-			next[idx] = sa;
-		}
-		if (m.spawnIndex !== undefined)
-			respawns.push({ spawnIndex: m.spawnIndex, remaining: RESPAWN.delaySec });
-	}
-
-	const deaths: number[] = [];
-	const events: CombatEvent[] = [];
-	for (const sa of next) {
-		if (sa.avatar.hp <= 0) {
-			deaths.push(sa.sessionId);
-			events.push(deathEvent(sa.avatar));
-		}
-	}
-
-	return { avatars: next, drops, nextDropId, respawns, deaths, events };
-}
-
-function grantXp(
-	sa: ServerAvatar,
-	monster: EntityType,
-	zoneId: string,
-): ServerAvatar {
-	const ap = applyXp(sa.progress, xpForKill(monster, zoneId));
-	const log = [...sa.log];
-	let avatar = sa.avatar;
-	if (ap.leveled > 0) {
-		const mhp = maxHpForLevel(ap.progress.level);
-		avatar = { ...avatar, maxHp: mhp, hp: mhp };
-		log.push(`Level up! Now level ${ap.progress.level}.`);
-		for (const skill of skillsUnlockedBetween(
-			sa.class ?? 'warrior',
-			sa.progress.level,
-			ap.progress.level,
-		))
-			log.push(`Unlocked: ${skill.name} [${skill.key}]!`);
-	}
-	return { ...sa, avatar, progress: ap.progress, log };
-}
-
-// `source` is server-internal (used to filter out an avatar's own hit events
-// above) and never crosses the wire — strip it before it reaches the client.
-function stripSource(e: CombatEvent): CombatEvent {
-	if (e.kind !== 'hit') return e;
-	const { source: _source, ...rest } = e;
-	return rest;
-}
-
-function spawnDrop(id: number, owner: number, m: Entity, item: Item): Drop {
-	return {
-		id,
-		owner,
-		item,
-		x: m.x + BOX.w / 2 - LOOT.pickup.w / 2,
-		y: m.y + BOX.h - LOOT.pickup.h,
-		w: LOOT.pickup.w,
-		h: LOOT.pickup.h,
-		ttl: LOOT.ttlSec,
-	};
-}
-
-export function snapshotFor(
-	state: ZoneState,
-	sessionId: number,
-): Extract<ServerMessage, { t: 'snapshot' }> {
-	const me = state.avatars.find((a) => a.sessionId === sessionId);
-	const avatars: AvatarSnapshot[] = state.avatars.map((a) => ({
-		sessionId: a.sessionId,
-		handle: a.handle,
-		cosmetics: a.cosmetics,
-		x: a.avatar.x,
-		y: a.avatar.y,
-		vx: a.avatar.vx,
-		vy: a.avatar.vy,
-		facing: a.avatar.facing,
-		onGround: a.avatar.onGround,
-		hp: a.avatar.hp,
-		maxHp: a.avatar.maxHp,
-		hurtT: a.avatar.hurtT,
-		weapon: a.avatar.weapon ?? DEFAULT_WEAPON,
-		action: actionStateOf(a.avatar),
-	}));
-	const monsters: MonsterSnapshot[] = state.zone.monsters.map((m) => ({
-		id: m.id,
-		type: m.type,
-		x: m.x,
-		y: m.y,
-		vx: m.vx,
-		vy: m.vy,
-		facing: m.facing,
-		onGround: m.onGround,
-		hp: m.hp,
-		maxHp: m.maxHp,
-		hurtT: m.hurtT,
-		action:
-			m.type !== 'player'
-				? actionStateOf(m)
-				: { ...IDLE_ACTION, flags: actionFlags(m) },
-	}));
-	const events: CombatEvent[] = (state.events ?? [])
-		.filter((e) => !(e.kind === 'hit' && e.source === sessionId))
-		.map(stripSource);
-	const drops: Drop[] = (state.zone.drops ?? []).filter(
-		(d) => d.owner === sessionId,
-	);
-	return {
-		t: 'snapshot',
-		tick: state.tick,
-		zoneId: state.zone.id,
-		avatars,
-		monsters,
-		projectiles: state.zone.projectiles,
-		events,
-		drops,
-		progress: me?.progress ?? { level: 1, xp: 0, gold: 0 },
-		inventory: me?.inventory ?? [],
-		log: me?.log ?? [],
-	};
-}
-
 export function createZoneState(zone: Zone): ZoneState {
 	return { zone, avatars: [], tick: 0 };
-}
-
-export function withCosmetics(
-	sa: ServerAvatar,
-	cosmetics: Cosmetics,
-): ServerAvatar {
-	return { ...sa, cosmetics: clampCosmetics(cosmetics) };
-}
-
-export function addAvatar(
-	state: ZoneState,
-	sessionId: number,
-	handle: string,
-	cosmetics: Cosmetics = DEFAULT_COSMETICS,
-	weapon: number = DEFAULT_WEAPON,
-	restore?: RestoredAvatar,
-): ZoneState {
-	const cos = restore?.cosmetics ?? cosmetics;
-	const wpn = restore?.equippedWeapon ?? weapon;
-	const avatar: Entity = spawnAvatar(SPAWN.x, SPAWN.y, {
-		id: sessionId,
-		weapon: wpn,
-	});
-	if (restore) {
-		const mhp = maxHpForLevel(restore.progress.level);
-		avatar.maxHp = mhp;
-		avatar.hp = mhp;
-	}
-	const sa: ServerAvatar = withCosmetics(
-		{
-			sessionId,
-			handle,
-			cosmetics: cos,
-			avatar,
-			progress: restore?.progress ?? { level: 1, xp: 0, gold: 0 },
-			inventory: restore?.inventory ?? [],
-			log: ['Welcome. Hunt the chasers (j attack, k guard).'],
-			nextId: nextItemId(restore?.inventory),
-			rngState: sessionId,
-			class: 'warrior',
-			skillCooldowns: {},
-			lastTown: restore?.lastTown,
-			bossDefeated: restore?.bossDefeated,
-		},
-		cos,
-	);
-	return { ...state, avatars: [...state.avatars, sa] };
-}
-
-function nextItemId(inventory: Item[] | undefined): number {
-	if (!inventory || inventory.length === 0) return 1;
-	return inventory.reduce((n, it) => Math.max(n, it.id), 0) + 1;
-}
-
-export function removeAvatar(state: ZoneState, sessionId: number): ZoneState {
-	return {
-		...state,
-		avatars: state.avatars.filter((a) => a.sessionId !== sessionId),
-	};
 }

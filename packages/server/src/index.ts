@@ -28,9 +28,6 @@ import {
 } from '@mmo/core/protocol';
 import {
 	addSession,
-	applyBuy,
-	applyCosmetics,
-	applySell,
 	createServerWorld,
 	handleOf,
 	removeSession,
@@ -45,9 +42,11 @@ import {
 } from '@mmo/core/world';
 import type { AvatarIntent } from '@mmo/core/zones';
 import type { ServerWebSocket } from 'bun';
+import { applyCosmetics } from './cosmetics';
 import { foldPendingEdges } from './intents';
 import { installShutdownHooks } from './shutdown';
 import { openPlayerStore } from './store';
+import { applyBuy, applySell } from './vendor';
 
 const PORT = Number(process.env.PORT) || Number(process.env.MMO_PORT) || 8080;
 

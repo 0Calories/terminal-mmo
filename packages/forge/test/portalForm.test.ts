@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { type Portal, SPAWN } from '@mmo/core/world';
+import { type Portal, SPAWN } from '@mmo/core/zones';
 import {
 	defaultArrival,
 	filterCandidates,

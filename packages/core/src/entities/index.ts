@@ -47,10 +47,6 @@ export {
 } from './factory';
 export type { Npc } from './npc';
 export {
-	type PlayerState,
-	spawnPlayerState,
-} from './player';
-export {
 	darken,
 	HUES,
 	NAMEPLATE_BG_DARKEN,

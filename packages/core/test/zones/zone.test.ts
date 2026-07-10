@@ -22,16 +22,15 @@ import {
 import { lootTableFor, rollDrop } from '../../src/items';
 import { CAPABILITY_UNLOCK, xpForKill, xpToNext } from '../../src/progression';
 import { decodeServerMessage, encodeServerMessage } from '../../src/protocol';
-import type { Zone } from '../../src/world';
-import { GROUND_TOP, SPAWN } from '../../src/world';
+import { addAvatar, removeAvatar, snapshotFor } from '../../src/world';
 import type { AvatarIntent, ServerAvatar, ZoneState } from '../../src/zones';
 import {
-	addAvatar,
 	clientStepAvatar,
 	createZoneState,
-	removeAvatar,
-	snapshotFor,
+	GROUND_TOP,
+	SPAWN,
 	stepZone,
+	type Zone,
 } from '../../src/zones';
 import { flatTerrain, makeProjectile } from '../helpers';
 

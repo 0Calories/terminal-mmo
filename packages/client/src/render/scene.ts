@@ -14,7 +14,7 @@ import {
 } from '@mmo/core/combat';
 import type { AttackPhase, Entity } from '@mmo/core/entities';
 import { itemLabel } from '@mmo/core/items';
-import { activeZone, type GameState } from '@mmo/core/world';
+import { activeZone, type GameState } from '@mmo/core/protocol';
 import {
 	buildSceneStyle,
 	drawEntitySprite,

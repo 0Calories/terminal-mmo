@@ -1,6 +1,6 @@
 import type { CombatEvent } from '@mmo/core/combat';
 import { BOX } from '@mmo/core/entities';
-import { activeZone, type GameState } from '@mmo/core/world';
+import { activeZone, type GameState } from '@mmo/core/protocol';
 import {
 	type OptimizedBuffer,
 	Renderable,

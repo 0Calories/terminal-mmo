@@ -1,13 +1,15 @@
 import { loadCatalogs, loadZone, loadZoneSet } from '@mmo/assets';
 import { BOX, type Entity, type Npc, spawnMonster } from '@mmo/core/entities';
-import { NPC_BOX, PORTAL_BOX, type Zone } from '@mmo/core/world';
 import {
 	type Catalogs,
 	type Diagnostic,
 	findOrphanGlyphs,
+	NPC_BOX,
+	PORTAL_BOX,
 	parseZone,
 	validateZone,
 	ZONE_MAX,
+	type Zone,
 } from '@mmo/core/zones';
 import {
 	buildSceneStyle,

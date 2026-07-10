@@ -3,8 +3,7 @@
 // knowledge — it is "given content, simulate".
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Zone } from '@mmo/core/world';
-import { type Catalogs, parseZone } from '@mmo/core/zones';
+import { type Catalogs, parseZone, type Zone } from '@mmo/core/zones';
 import { type AssetEntries, entryId, loadAssetEntries } from './store';
 
 const ZONE_EXT = '.zone';
@@ -20,7 +19,7 @@ export function catalogsFromEntries(entries: AssetEntries): Catalogs {
 	return catalogsFromJson(entries[`zones/${CATALOGS_FILE}`]);
 }
 
-// Order matters downstream: the start Zone (a Town) is first — createGameFromZones
+// Order matters downstream: the start Zone (a Town) is first — local-world
 // callers and the client's fallback both spawn into loadZones()[0].
 export function zonesFromEntries(entries: AssetEntries): Zone[] {
 	const catalogs = catalogsFromEntries(entries);

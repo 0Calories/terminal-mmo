@@ -7,71 +7,89 @@ import {
 	skillsUnlockedBetween,
 	skillUnlocked,
 } from '../../src/combat';
-import type { Input, PlayerState } from '../../src/entities';
-import { ARCHETYPES, BOX, spawnAvatar, spawnMonster } from '../../src/entities';
+import type { Entity, Input } from '../../src/entities';
+import {
+	ARCHETYPES,
+	BOX,
+	DEFAULT_COSMETICS,
+	spawnAvatar,
+	spawnMonster,
+} from '../../src/entities';
 import { CAPABILITY_UNLOCK } from '../../src/progression';
-import type { GameState, Zone } from '../../src/world';
-import { activeZone, GROUND_TOP, step } from '../../src/world';
+import {
+	type AvatarIntent,
+	GROUND_TOP,
+	type ServerAvatar,
+	stepZone,
+	type ZoneState,
+} from '../../src/zones';
 import { flatTerrain } from '../helpers';
 
-function skillGame(level: number): GameState {
-	const y = GROUND_TOP - BOX.h;
-	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
-	const zone: Zone = {
-		id: 'field-01',
-		type: 'field',
-		terrain: flatTerrain(),
-		monsters: [m],
-		projectiles: [],
-		nextProjectileId: 1,
-		spawns: [],
-		respawns: [],
-		portals: [],
-		nextMonsterId: 3,
-	};
-	const player: PlayerState = {
-		avatar: spawnAvatar(20, y),
+const y = GROUND_TOP - BOX.h;
+
+// Skill use at the zone-tick seam: the ONE runtime the server and the forge
+// playtest both drive (the old single-player runtime's coverage, re-expressed).
+function skillState(level: number, monsters: Entity[]): ZoneState {
+	const sa: ServerAvatar = {
+		sessionId: 1,
+		handle: 'hero',
+		cosmetics: DEFAULT_COSMETICS,
+		avatar: { ...spawnAvatar(20, y), id: 1 },
 		progress: { level, xp: 0, gold: 0 },
 		inventory: [],
-		zoneId: zone.id,
 		log: [],
 		nextId: 1,
 		rngState: 1,
 		class: 'warrior',
 		skillCooldowns: {},
 	};
-	return { player, world: { zones: { [zone.id]: zone }, tick: 0 } };
+	return {
+		zone: {
+			id: 'field-01',
+			type: 'field',
+			terrain: flatTerrain(),
+			monsters,
+			projectiles: [],
+			nextProjectileId: 1,
+			spawns: [],
+			respawns: [],
+			portals: [],
+			nextMonsterId: 100,
+		},
+		avatars: [sa],
+		tick: 0,
+	};
+}
+
+function skillGame(level: number): ZoneState {
+	return skillState(level, [spawnMonster('chaser', 2, 20 + BOX.w, y)]);
 }
 
 // The Avatar flanked by a chaser each side, both in AoE reach.
-function flankedGame(level: number): GameState {
-	const y = GROUND_TOP - BOX.h;
-	const front = spawnMonster('chaser', 2, 20 + BOX.w, y);
-	const back = spawnMonster('chaser', 3, 20 - BOX.w, y);
-	const zone: Zone = {
-		id: 'field-01',
-		type: 'field',
-		terrain: flatTerrain(),
-		monsters: [front, back],
-		projectiles: [],
-		nextProjectileId: 1,
-		spawns: [],
-		respawns: [],
-		portals: [],
-		nextMonsterId: 4,
+function flankedGame(level: number): ZoneState {
+	return skillState(level, [
+		spawnMonster('chaser', 2, 20 + BOX.w, y),
+		spawnMonster('chaser', 3, 20 - BOX.w, y),
+	]);
+}
+
+function intent(zs: ZoneState, input: Input): AvatarIntent {
+	const a = zs.avatars[0].avatar;
+	return {
+		sessionId: 1,
+		x: a.x,
+		y: a.y,
+		vx: 0,
+		vy: 0,
+		facing: a.facing,
+		onGround: true,
+		attack: input.attack,
+		skill: input.skill,
 	};
-	const player: PlayerState = {
-		avatar: spawnAvatar(20, y),
-		progress: { level, xp: 0, gold: 0 },
-		inventory: [],
-		zoneId: zone.id,
-		log: [],
-		nextId: 1,
-		rngState: 1,
-		class: 'warrior',
-		skillCooldowns: {},
-	};
-	return { player, world: { zones: { [zone.id]: zone }, tick: 0 } };
+}
+
+function step(zs: ZoneState, input: Input, dtMs: number): ZoneState {
+	return stepZone(zs, [intent(zs, input)], dtMs);
 }
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false };
@@ -155,19 +173,17 @@ test('Ground Pound hitbox is the same regardless of which way the Avatar faces',
 
 test('Power Strike is locked below its unlock level — no effect, no cooldown', () => {
 	const g = step(skillGame(POWER_STRIKE.unlockLevel - 1), POWER, 16);
-	expect(activeZone(g.world, g.player.zoneId).monsters[0].hp).toBe(
-		ARCHETYPES.chaser.hp,
-	);
-	expect(g.player.skillCooldowns?.[POWER_STRIKE.id]).toBeUndefined();
+	expect(g.zone.monsters[0].hp).toBe(ARCHETYPES.chaser.hp);
+	expect(g.avatars[0].skillCooldowns?.[POWER_STRIKE.id]).toBeUndefined();
 });
 
 test('Power Strike fires at its unlock level, hitting harder than a basic swing', () => {
 	const g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16);
-	expect(activeZone(g.world, g.player.zoneId).monsters[0].hp).toBe(
+	expect(g.zone.monsters[0].hp).toBe(
 		ARCHETYPES.chaser.hp - POWER_STRIKE.damage,
 	);
 	expect(POWER_STRIKE.damage).toBeGreaterThan(8);
-	expect(g.player.skillCooldowns?.[POWER_STRIKE.id]).toBe(
+	expect(g.avatars[0].skillCooldowns?.[POWER_STRIKE.id]).toBe(
 		POWER_STRIKE.cooldown,
 	);
 });
@@ -175,7 +191,7 @@ test('Power Strike fires at its unlock level, hitting harder than a basic swing'
 test('Power Strike cannot re-fire while on cooldown', () => {
 	let g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16);
 	g = step(g, POWER, 16);
-	const cd = g.player.skillCooldowns?.[POWER_STRIKE.id] ?? 0;
+	const cd = g.avatars[0].skillCooldowns?.[POWER_STRIKE.id] ?? 0;
 	expect(cd).toBeGreaterThan(0);
 	expect(cd).toBeLessThan(POWER_STRIKE.cooldown);
 });
@@ -184,41 +200,39 @@ test('Power Strike re-fires once its cooldown elapses', () => {
 	let g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16);
 	// idle long enough for the cooldown to expire (dt clamped to 0.05s/tick)
 	for (let i = 0; i < 80; i++) g = step(g, IDLE, 50);
-	expect(g.player.skillCooldowns?.[POWER_STRIKE.id] ?? 0).toBe(0);
+	expect(g.avatars[0].skillCooldowns?.[POWER_STRIKE.id] ?? 0).toBe(0);
 	g = step(g, POWER, 16);
-	expect(g.player.skillCooldowns?.[POWER_STRIKE.id]).toBe(
+	expect(g.avatars[0].skillCooldowns?.[POWER_STRIKE.id]).toBe(
 		POWER_STRIKE.cooldown,
 	);
 });
 
 test('Ground Pound is locked below its unlock level — no effect, no cooldown', () => {
 	const g = step(flankedGame(GROUND_POUND.unlockLevel - 1), POUND, 16);
-	const ms = activeZone(g.world, g.player.zoneId).monsters;
+	const ms = g.zone.monsters;
 	expect(ms[0].hp).toBe(ARCHETYPES.chaser.hp);
 	expect(ms[1].hp).toBe(ARCHETYPES.chaser.hp);
-	expect(g.player.skillCooldowns?.[GROUND_POUND.id]).toBeUndefined();
+	expect(g.avatars[0].skillCooldowns?.[GROUND_POUND.id]).toBeUndefined();
 });
 
 test('Ground Pound damages monsters on BOTH sides of the Avatar at once', () => {
 	const g = step(flankedGame(GROUND_POUND.unlockLevel), POUND, 16);
-	expect(activeZone(g.world, g.player.zoneId).monsters.length).toBe(0);
-	expect(g.player.skillCooldowns?.[GROUND_POUND.id]).toBe(
+	expect(g.zone.monsters.length).toBe(0);
+	expect(g.avatars[0].skillCooldowns?.[GROUND_POUND.id]).toBe(
 		GROUND_POUND.cooldown,
 	);
 });
 
 test('a frontal skill leaves the monster behind the Avatar untouched (contrast)', () => {
 	const g = step(flankedGame(POWER_STRIKE.unlockLevel), POWER, 16);
-	const back = activeZone(g.world, g.player.zoneId).monsters.find(
-		(m) => m.id === 3,
-	);
+	const back = g.zone.monsters.find((m) => m.id === 3);
 	expect(back?.hp).toBe(ARCHETYPES.chaser.hp);
 });
 
 test('Ground Pound cannot re-fire while on cooldown', () => {
 	let g = step(flankedGame(GROUND_POUND.unlockLevel), POUND, 16);
 	g = step(g, POUND, 16);
-	const cd = g.player.skillCooldowns?.[GROUND_POUND.id] ?? 0;
+	const cd = g.avatars[0].skillCooldowns?.[GROUND_POUND.id] ?? 0;
 	expect(cd).toBeGreaterThan(0);
 	expect(cd).toBeLessThan(GROUND_POUND.cooldown);
 });
@@ -231,10 +245,8 @@ test('skill use is deterministic for identical inputs', () => {
 		a = step(a, input, 16);
 		b = step(b, input, 16);
 	}
-	expect(activeZone(b.world, b.player.zoneId).monsters[0]?.hp).toBe(
-		activeZone(a.world, a.player.zoneId).monsters[0]?.hp,
-	);
-	expect(b.player.skillCooldowns?.[POWER_STRIKE.id]).toBe(
-		a.player.skillCooldowns?.[POWER_STRIKE.id],
+	expect(b.zone.monsters[0]?.hp).toBe(a.zone.monsters[0]?.hp);
+	expect(b.avatars[0].skillCooldowns?.[POWER_STRIKE.id]).toBe(
+		a.avatars[0].skillCooldowns?.[POWER_STRIKE.id],
 	);
 });
