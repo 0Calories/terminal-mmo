@@ -2,17 +2,14 @@ import {
 	aabbOverlap,
 	actionFlags,
 	actionStateOf,
-	applyPoiseDamage,
-	avatarHittable,
 	type CombatEvent,
-	combatEventAt,
 	deathEvent,
 	entityBox,
 	IDLE_ACTION,
 	meleeActive,
 	meleeHitbox,
 	regenPoise,
-	resolveGuard,
+	resolveHitsOnAvatars,
 	resolveHitsOnMonsters,
 	SWING_TOTAL,
 	stepAvatarCombat,
@@ -63,7 +60,7 @@ import {
 } from '../items/loot';
 import type { RestoredAvatar } from '../persistence/persistence';
 import { PHYS } from '../physics/constants';
-import { applyImpulse, stepEntity } from '../physics/physics';
+import { stepEntity } from '../physics/physics';
 import { isSolid } from '../physics/terrain';
 import { applyXp, maxHpForLevel, xpForKill } from '../progression/progression';
 import type {
@@ -256,6 +253,9 @@ export function stepZone(
 	let nextDropId = zone.nextDropId ?? 1;
 	const lootTable = lootTableFor(zone.id);
 
+	// Strikes against Avatars (Faction 'monsters'): melee committers' active
+	// frames plus travelling Projectiles — all land in resolveHitsOnAvatars.
+	const hostileStrikes: Strike[] = [];
 	const advanced: Entity[] = [];
 	for (const m0 of zone.monsters) {
 		let m: Entity = { ...m0 };
@@ -316,44 +316,77 @@ export function stepZone(
 			(m.attackCdT ?? 0) <= 0
 		) {
 			m.facing = dx >= 0 ? 1 : -1;
-			m = { ...m, attackT: SWING_TOTAL, attackCdT: melee.commitCd };
+			// A fresh commit is a fresh swing: its dedup ledger starts empty.
+			m = {
+				...m,
+				attackT: SWING_TOTAL,
+				attackCdT: melee.commitCd,
+				swingHits: [],
+			};
 		}
 
-		if (melee && meleeActive(m.attackT)) {
-			const hb = meleeHitbox(m);
-			for (let i = 0; i < avatars.length; i++) {
-				const a = avatars[i].avatar;
-				if (!avatarHittable(a) || !aabbOverlap(hb, entityBox(a))) continue;
-				const g = resolveGuard(a, m.x, melee.damage);
-				const away: -1 | 0 | 1 = a.x === m.x ? 0 : a.x > m.x ? 1 : -1;
-				const unguarded =
-					g.result === 'none' ? applyPoiseDamage(a, melee.poise) : null;
-				const broke = unguarded ? unguarded.broke : g.guardBroke;
-				const poise = unguarded ? unguarded.poise : g.defenderPoise;
-				let na: Entity = {
-					...a,
-					hp: a.hp - g.hpDamage,
-					hurtT: COMBAT.iframes,
-					poise,
-					poiseT: COMBAT.poise.regenDelay,
-				};
-				if (broke) {
-					na = applyImpulse(
-						na,
-						COMBAT.knockback * m.facing,
-						-COMBAT.knockbackUp,
-					);
-					na = { ...na, stunT: COMBAT.hitstun };
-					events.push(combatEventAt('break', a, m.facing, melee.damage));
-				} else if (g.result !== 'block') {
-					events.push(combatEventAt('hit', a, away, melee.damage));
-				}
-				avatars[i] = { ...avatars[i], avatar: na };
-			}
-		}
+		// Project, never apply (ADR 0022/0034): the active frames emit a Strike;
+		// resolveHitsOnAvatars owns guard/damage/poise/knockback application.
+		if (melee && meleeActive(m.attackT))
+			hostileStrikes.push({
+				attackerId: m.id,
+				attackerKind: 'monster',
+				hitbox: meleeHitbox(m),
+				damage: melee.damage,
+				poiseDamage: melee.poise,
+				facing: m.facing,
+				faction: 'monsters',
+				attackerX: m.x,
+				knockback: COMBAT.knockback,
+				knockbackUp: COMBAT.knockbackUp,
+			});
 
 		advanced.push(m);
 	}
+
+	// Projectiles travel; a live Avatar swing swats a shot before it can
+	// strike; each survivor projects this tick's body as a Strike.
+	const flying: Projectile[] = [];
+	for (const pr0 of zone.projectiles) {
+		const pr = stepProjectile(t, pr0, dt);
+		if (!pr) continue;
+		const travel: Facing = pr.vx >= 0 ? 1 : -1;
+		if (strikes.some((s) => aabbOverlap(s.hitbox, projectileBox(pr)))) {
+			events.push(swatEvent(pr, travel === 1 ? -1 : 1));
+			continue;
+		}
+		flying.push(pr);
+		hostileStrikes.push({
+			attackerId: pr.id,
+			attackerKind: 'projectile',
+			hitbox: projectileBox(pr),
+			damage: pr.damage,
+			poiseDamage: pr.poiseDamage,
+			facing: travel,
+			faction: 'monsters',
+			knockback: pr.knockback,
+			knockbackUp: pr.knockbackUp,
+		});
+	}
+
+	// The single resolve pass on Avatars (ADR 0022's guard hub): every hostile
+	// Strike lands here, after all projection. A landed projectile Strike is
+	// consumed (the shot despawns); melee dedups per swing via the ledger.
+	const monsterSwingHits = new Map<number, Set<number>>(
+		advanced.map((m) => [m.id, new Set(m.swingHits ?? [])]),
+	);
+	const hitsOnAvatars = resolveHitsOnAvatars(
+		avatars.map((sa) => sa.avatar),
+		hostileStrikes,
+		monsterSwingHits,
+	);
+	events.push(...hitsOnAvatars.events);
+	for (let i = 0; i < avatars.length; i++)
+		avatars[i] = { ...avatars[i], avatar: hitsOnAvatars.avatars[i] };
+	const projectiles: Projectile[] = flying.filter(
+		(pr) => !hitsOnAvatars.consumed.has(pr.id),
+	);
+	projectiles.push(...fired);
 
 	const hitsOnMonsters = resolveHitsOnMonsters(advanced, strikes, swingHits);
 	events.push(...hitsOnMonsters.events);
@@ -362,7 +395,11 @@ export function stepZone(
 	const deadMonsters: Entity[] = [];
 	for (const m of hitsOnMonsters.monsters) {
 		if (m.hp > 0) {
-			monsters.push(m);
+			// Persist the swing ledger: the active window spans multiple ticks.
+			monsters.push({
+				...m,
+				swingHits: [...(monsterSwingHits.get(m.id) ?? [])],
+			});
 			continue;
 		}
 		events.push(deathEvent(m));
@@ -380,53 +417,6 @@ export function stepZone(
 			spawnMonster(s.type, nextMonsterId++, s.x, s.y, r.spawnIndex),
 		);
 	}
-
-	const projectiles: Projectile[] = [];
-	for (const pr0 of zone.projectiles) {
-		const pr = stepProjectile(t, pr0, dt);
-		if (!pr) continue;
-		const travel: -1 | 0 | 1 = pr.vx > 0 ? 1 : pr.vx < 0 ? -1 : 0;
-
-		let consumed = false;
-		for (const s of strikes) {
-			if (aabbOverlap(s.hitbox, projectileBox(pr))) {
-				events.push(swatEvent(pr, (-travel || 1) as Facing));
-				consumed = true;
-				break;
-			}
-		}
-		if (consumed) continue;
-
-		for (let i = 0; i < avatars.length; i++) {
-			const a = avatars[i].avatar;
-			if (!avatarHittable(a) || !aabbOverlap(projectileBox(pr), entityBox(a)))
-				continue;
-			const g = resolveGuard(a, a.x - travel, pr.damage);
-			const unguarded =
-				g.result === 'none' ? applyPoiseDamage(a, pr.poiseDamage) : null;
-			const broke = unguarded ? unguarded.broke : g.guardBroke;
-			const poise = unguarded ? unguarded.poise : g.defenderPoise;
-			let na: Entity = {
-				...a,
-				hp: a.hp - g.hpDamage,
-				hurtT: COMBAT.iframes,
-				poise,
-				poiseT: COMBAT.poise.regenDelay,
-			};
-			if (broke) {
-				na = applyImpulse(na, pr.knockback * travel, -pr.knockbackUp);
-				na = { ...na, stunT: COMBAT.hitstun };
-				events.push(combatEventAt('break', a, travel || 1, pr.damage));
-			} else if (g.result !== 'block') {
-				events.push(combatEventAt('hit', a, travel, pr.damage));
-			}
-			avatars[i] = { ...avatars[i], avatar: na };
-			consumed = true;
-			break;
-		}
-		if (!consumed) projectiles.push(pr);
-	}
-	projectiles.push(...fired);
 
 	const deathPass = resolveDeaths(avatars, deadMonsters, {
 		zoneId: zone.id,

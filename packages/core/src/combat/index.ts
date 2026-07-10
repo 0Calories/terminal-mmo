@@ -36,6 +36,7 @@ export {
 	regenPoise,
 	resolveCombat,
 	resolveGuard,
+	resolveHitsOnAvatars,
 	resolveHitsOnMonsters,
 	SWING_TOTAL,
 	type SwingPose,

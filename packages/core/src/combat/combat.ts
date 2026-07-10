@@ -546,7 +546,7 @@ export function resolveHitsOnMonsters<E extends Combatant>(
 				contributors,
 			});
 			if (broke) {
-				m = applyImpulse(m, COMBAT.knockback * s.facing, -COMBAT.knockbackUp);
+				m = applyImpulse(m, s.knockback * s.facing, -s.knockbackUp);
 				m = patch(m, { stunT: COMBAT.hitstun });
 				events.push(combatEventAt('break', m, s.facing, s.damage));
 			} else {
@@ -557,6 +557,71 @@ export function resolveHitsOnMonsters<E extends Combatant>(
 		return m;
 	});
 	return { monsters: resolved, events };
+}
+
+// The Guard hub (ADR 0022): the ONE pass that lands monster-Faction Strikes on
+// Avatars — melee and Projectile contacts share the guard/damage/poise/break
+// application. Nothing outside this pass may apply damage, poise, or knockback
+// to an Avatar. The kinds differ only in contact arity: a melee swing is
+// multi-contact, deduped per swing by the `swingHits` ledger (attackerId →
+// victims already hit, kept on the source entity across ticks); a Projectile
+// is single-contact — no ledger, it lands at most once and its attackerId
+// joins `consumed` for the caller to despawn the shot.
+// Strikes resolve in emission order with in-pass i-frame consumption — the
+// same rule as resolveHitsOnMonsters (ADR 0022's nearest-attacker-wins rule
+// stays future work; this preserves the pre-Strike behavior, per #358).
+export function resolveHitsOnAvatars<E extends Combatant>(
+	avatars: E[],
+	strikes: Strike[],
+	swingHits: Map<number, Set<number>>,
+): { avatars: E[]; events: CombatEvent[]; consumed: Set<number> } {
+	const events: CombatEvent[] = [];
+	const consumed = new Set<number>();
+	const next = avatars.slice();
+	for (const s of strikes) {
+		if (s.faction !== 'monsters') continue;
+		const projectile = s.attackerKind === 'projectile';
+		for (let i = 0; i < next.length; i++) {
+			const a = next[i];
+			if (!avatarHittable(a) || !aabbOverlap(s.hitbox, entityBox(a))) continue;
+			if (!projectile) {
+				const hits = swingHits.get(s.attackerId) ?? new Set<number>();
+				if (hits.has(a.id)) continue;
+				hits.add(a.id);
+				swingHits.set(s.attackerId, hits);
+			}
+			// Melee guards against the attacker's actual position; a Strike
+			// without an origin (a shot) reads as frontal from its travel side.
+			const attackerX = s.attackerX ?? a.x - s.facing;
+			const g = resolveGuard(a, attackerX, s.damage);
+			const unguarded =
+				g.result === 'none' ? applyPoiseDamage(a, s.poiseDamage) : null;
+			const broke = unguarded ? unguarded.broke : g.guardBroke;
+			const poise = unguarded ? unguarded.poise : g.defenderPoise;
+			let na = patch(a, {
+				hp: a.hp - g.hpDamage,
+				hurtT: COMBAT.iframes,
+				poise,
+				poiseT: COMBAT.poise.regenDelay,
+			});
+			if (broke) {
+				na = applyImpulse(na, s.knockback * s.facing, -s.knockbackUp);
+				na = patch(na, { stunT: COMBAT.hitstun });
+				events.push(combatEventAt('break', a, s.facing, s.damage));
+			} else if (g.result !== 'block') {
+				// Chip blood sprays away from the attack's origin.
+				const away: -1 | 0 | 1 =
+					a.x === attackerX ? 0 : a.x > attackerX ? 1 : -1;
+				events.push(combatEventAt('hit', a, away, s.damage));
+			}
+			next[i] = na;
+			if (projectile) {
+				consumed.add(s.attackerId);
+				break;
+			}
+		}
+	}
+	return { avatars: next, events, consumed };
 }
 
 export interface AvatarCombatCtx {
@@ -607,6 +672,9 @@ export function stepAvatarCombat<E extends Combatant>(
 						poiseDamage: COMBAT.poiseDamage,
 						facing: folded.facing,
 						faction: 'players',
+						attackerX: folded.x,
+						knockback: COMBAT.knockback,
+						knockbackUp: COMBAT.knockbackUp,
 					},
 				]
 			: [];

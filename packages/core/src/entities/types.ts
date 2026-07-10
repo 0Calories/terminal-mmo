@@ -119,6 +119,15 @@ export interface Strike {
 	poiseDamage: number;
 	facing: Facing;
 	faction: Faction;
+	/**
+	 * Attacker origin at projection time — Guard's frontal-arc check faces this
+	 * x. Absent on a Projectile Strike: a shot always reads as frontal from its
+	 * travel direction (`facing`), whatever column its body occupies.
+	 */
+	attackerX?: number;
+	/** Impulse applied along `facing` when this Strike lands a Poise break. */
+	knockback: number;
+	knockbackUp: number;
 }
 
 export interface Projectile {

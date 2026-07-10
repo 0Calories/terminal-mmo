@@ -492,6 +492,66 @@ test('a dodge intent loads the i-frame timer through stepZone (active on the fir
 	expect(me?.action.move).toBe('dodge');
 });
 
+test('a Monster swing overlapping the Avatar across multiple active frames lands ONCE per swing (dedup ledger)', () => {
+	const m = strikingCommitterAt20();
+	const av = serverAvatar(7, 20);
+	const before = av.avatar.hp;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+	expect(before - state.avatars[0].avatar.hp).toBe(
+		ARCHETYPES.chaser.melee.damage,
+	);
+	// Strip the i-frames so ONLY the per-swing ledger can gate the re-contact;
+	// the swing is still mid-active for several more ticks.
+	for (let i = 0; i < 3; i++) {
+		state.avatars[0].avatar.hurtT = 0;
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+	}
+	expect(before - state.avatars[0].avatar.hp).toBe(
+		ARCHETYPES.chaser.melee.damage,
+	);
+	expect(state.events?.some((e) => e.kind === 'break')).toBe(false);
+	expect(state.avatars[0].avatar.stunT ?? 0).toBe(0);
+});
+
+test('a FRESH Monster swing clears the dedup ledger — the same Avatar is hit once per swing, again and again', () => {
+	const m = spawnMonster('chaser', 2, 20 + ARCHETYPES.chaser.melee.range, y);
+	m.onGround = true;
+	const av = serverAvatar(7, 20);
+	av.avatar.hp = 999;
+	const before = av.avatar.hp;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const drops: number[] = [];
+	let prevHp = before;
+	for (let i = 0; i < 120 && drops.length < 2; i++) {
+		state.avatars[0].avatar.hurtT = 0; // ledger, not i-frames, is the gate
+		const held = holdAt(7, state.avatars[0].avatar);
+		state = stepZone(state, [{ ...held, x: 20, vx: 0 }], 16);
+		const hp = state.avatars[0].avatar.hp;
+		if (hp < prevHp) drops.push(prevHp - hp);
+		prevHp = hp;
+	}
+	// Two separate swings each landed exactly one full hit.
+	expect(drops).toEqual([
+		ARCHETYPES.chaser.melee.damage,
+		ARCHETYPES.chaser.melee.damage,
+	]);
+});
+
+test('one active frame strikes EVERY overlapping Avatar — the melee Strike is not consumed by its first victim', () => {
+	const m = strikingCommitterAt20();
+	const a = serverAvatar(7, 20);
+	const b = serverAvatar(8, 21);
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [a, b], tick: 0 };
+	state = stepZone(state, [holdAt(7, a.avatar), holdAt(8, b.avatar)], 16);
+	expect(state.avatars[0].avatar.hp).toBe(
+		a.avatar.maxHp - ARCHETYPES.chaser.melee.damage,
+	);
+	expect(state.avatars[1].avatar.hp).toBe(
+		b.avatar.maxHp - ARCHETYPES.chaser.melee.damage,
+	);
+});
+
 // strikingCommitterAt20 hits from the LEFT: a frontal Guard needs facing -1; +1 is a rear hit.
 function guardIntent(
 	sessionId: number,
