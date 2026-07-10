@@ -4,10 +4,10 @@
 // hand-authored TS art or catalog of hat definitions any more. 'None' is the
 // absence of an id (`cosmetics.hat === ''`).
 
+import { loadSpriteSources, type SpriteSource } from '@mmo/assets';
 import type { Sprite } from './sprite';
 import { spriteFromDoc } from './sprite-compile';
 import { parseSpriteFile } from './sprite-file';
-import { loadSpriteSources, type SpriteSource } from './sprite-sources';
 
 export function buildHatRegistry(
 	sources: Iterable<SpriteSource>,

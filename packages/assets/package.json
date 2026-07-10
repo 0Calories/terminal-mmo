@@ -1,14 +1,18 @@
 {
-	"name": "@mmo/server",
+	"name": "@mmo/assets",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
+	"main": "src/index.ts",
+	"module": "src/index.ts",
+	"exports": {
+		".": "./src/index.ts",
+		"./meta": "./src/meta.ts"
+	},
 	"scripts": {
-		"dev": "bun run src/index.ts",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@mmo/assets": "workspace:*",
 		"@mmo/core": "workspace:*"
 	}
 }

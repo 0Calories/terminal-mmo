@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { loadZones } from '@mmo/assets';
 import type { AvatarIntent, Cosmetics, Item, Npc, ServerWorld } from '../src';
 import {
 	addSession,
@@ -13,7 +14,6 @@ import {
 	GROUND_TOP,
 	handleOf,
 	joinParty,
-	loadZones,
 	removeSession,
 	restoredFromSave,
 	STARTER_GOODS,

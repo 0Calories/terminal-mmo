@@ -5,11 +5,11 @@
 // there is no hand-authored TS body art any more. Unlike hats, a Form is never
 // absent: an unknown/dangling id falls back to the default Form.
 
+import { loadSpriteSources, type SpriteSource } from '@mmo/assets';
 import { DEFAULT_FORM_ID } from '@mmo/core';
 import type { BodySprite } from './body-sprite';
 import { Sprite } from './sprite';
 import { compileBodySprite } from './sprite-compile';
-import { loadSpriteSources, type SpriteSource } from './sprite-sources';
 import { acceptSprite } from './sprite-validate';
 
 // A guard body used only when the disk/embedded scan yields no Forms at all (a

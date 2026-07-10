@@ -1,3 +1,4 @@
+import { loadCatalogs, loadZoneSet } from '@mmo/assets';
 import {
 	BOX,
 	createGameFromZones,
@@ -13,7 +14,6 @@ import {
 } from '@mmo/render';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
-import { loadCatalogs, loadZoneSet } from './io';
 import { type Cam, clampPreviewCam } from './preview';
 
 // Avatar is drawn on top by the shell, so it's not in `entities` here.

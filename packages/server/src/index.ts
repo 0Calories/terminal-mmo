@@ -1,4 +1,7 @@
 import { randomBytes } from 'node:crypto';
+// The server's sole door into asset content (ADR 0033): ids/roles/zone-list.
+// Sprite text and art code stay unreachable; depcruise enforces the boundary.
+import { loadZones, spriteIds } from '@mmo/assets/meta';
 import {
 	type AvatarIntent,
 	addSession,
@@ -16,7 +19,6 @@ import {
 	encodeServerMessage,
 	handleOf,
 	isReleaseVersion,
-	loadZones,
 	NONCE_LEN,
 	parsePublicKeyLine,
 	registryFromSaves,
@@ -39,7 +41,6 @@ import {
 import type { ServerWebSocket } from 'bun';
 import { foldPendingEdges } from './intents';
 import { installShutdownHooks } from './shutdown';
-import { scanFormIds, scanHatIds } from './sprites';
 import { openPlayerStore } from './store';
 
 const PORT = Number(process.env.PORT) || Number(process.env.MMO_PORT) || 8080;
@@ -76,11 +77,11 @@ function reject(ws: ServerWebSocket<WsData>, reason: string) {
 }
 
 // Set-membership validation is the server's job (core only shapes the type);
-// computed once at startup by scanning sprites/hats and sprites/forms. Any hat
-// or form id not in the scanned set sanitizes to the default; the default Form
-// ('buddy') ships as sprites/forms/buddy.sprite, so it is a member of the set.
-const validHatIds: ReadonlySet<string> = scanHatIds();
-const validFormIds: ReadonlySet<string> = scanFormIds();
+// computed once at startup from @mmo/assets/meta. Any hat or form id not in
+// the set sanitizes to the default; the default Form ('buddy') ships as
+// sprites/forms/buddy.sprite, so it is a member of the set.
+const validHatIds: ReadonlySet<string> = spriteIds('hats');
+const validFormIds: ReadonlySet<string> = spriteIds('forms');
 
 function withValidCosmetics(c: Cosmetics): Cosmetics {
 	return {

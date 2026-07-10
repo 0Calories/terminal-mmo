@@ -12,7 +12,6 @@ import { capabilityUnlocked } from './progression';
 import type { Entity, Input } from './types';
 import type { World, Zone } from './world';
 import { type AvatarIntent, type ServerAvatar, stepZone } from './zone';
-import { loadZones } from './zoneContent';
 
 export interface GameState {
 	player: PlayerState;
@@ -31,12 +30,6 @@ export function createGameFromZones(
 	const start = rec[startId] ?? zones[0];
 	const player = spawnPlayerState(start.id, SPAWN.x, SPAWN.y, seed);
 	return { player, world: { zones: rec, tick: 0 } };
-}
-
-export function createGame(seed = 1): GameState {
-	// loadZones() returns the start Zone (the Town) first, where the Player spawns.
-	const loaded = loadZones();
-	return createGameFromZones(loaded, loaded[0].id, seed);
 }
 
 // TODO(M1): portal connecting the Field and Town (#3).

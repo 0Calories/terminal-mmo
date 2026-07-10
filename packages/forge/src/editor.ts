@@ -1,3 +1,4 @@
+import { loadCatalogs, loadZone, loadZoneSet } from '@mmo/assets';
 import {
 	BOX,
 	type Catalogs,
@@ -34,7 +35,7 @@ import {
 	zoneType,
 } from './doc';
 import { canRedo, canUndo, initHistory, record, redo, undo } from './history';
-import { loadCatalogs, loadZone, loadZoneSet, writeZone } from './io';
+import { writeZone } from './io';
 import { buildPalette, erase, type Placeable, place } from './placeable';
 import {
 	type Arrival,

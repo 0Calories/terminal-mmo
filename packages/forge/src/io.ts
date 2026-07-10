@@ -1,61 +1,9 @@
-import {
-	existsSync,
-	readdirSync,
-	readFileSync,
-	renameSync,
-	writeFileSync,
-} from 'node:fs';
-import { join } from 'node:path';
-import type { Catalogs, Zone } from '@mmo/core';
-import { parseZone } from '@mmo/core';
-
-const ZONE_EXT = '.zone';
-const CATALOGS_FILE = 'catalogs.json';
-
-export interface LoadedZone {
-	id: string;
-	zone?: Zone;
-	parseError?: string;
-	text?: string;
-}
-
-export function loadCatalogs(root: string): Catalogs {
-	const path = join(root, CATALOGS_FILE);
-	if (!existsSync(path)) return { monsters: [], npcs: [] };
-	const parsed = JSON.parse(readFileSync(path, 'utf8'));
-	return { monsters: parsed.monsters ?? [], npcs: parsed.npcs ?? [] };
-}
-
-export function loadZone(
-	root: string,
-	id: string,
-	catalogs: Catalogs,
-): LoadedZone {
-	const path = join(root, `${id}${ZONE_EXT}`);
-	if (!existsSync(path)) return { id, parseError: `no such Zone '${id}'` };
-	const text = readFileSync(path, 'utf8');
-	try {
-		return { id, zone: parseZone(text, catalogs, id), text };
-	} catch (e) {
-		return { id, parseError: (e as Error).message, text };
-	}
-}
-
-export function listZoneIds(root: string): string[] {
-	if (!existsSync(root)) return [];
-	return readdirSync(root)
-		.filter((f) => f.endsWith(ZONE_EXT))
-		.map((f) => f.slice(0, -ZONE_EXT.length))
-		.sort();
-}
-
-export function loadZoneSet(root: string, catalogs: Catalogs): LoadedZone[] {
-	return listZoneIds(root).map((id) => loadZone(root, id, catalogs));
-}
-
-export function zonePath(root: string, id: string): string {
-	return join(root, `${id}${ZONE_EXT}`);
-}
+// The write side of the forge's write → re-read loop. Reading (discovery,
+// identity, parsing) lives in @mmo/assets (ADR 0033); the forge re-reads
+// through it after every write, so the file — not code — stays where zone
+// content lives (ADR 0031).
+import { existsSync, renameSync, writeFileSync } from 'node:fs';
+import { zonePath } from '@mmo/assets';
 
 export function zoneExists(root: string, id: string): boolean {
 	return existsSync(zonePath(root, id));

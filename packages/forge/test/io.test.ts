@@ -2,12 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import {
-	loadCatalogs,
-	loadZone,
-	rewritePortalTarget,
-	writeZone,
-} from '../src/io';
+import { loadCatalogs, loadZone } from '@mmo/assets';
+import { rewritePortalTarget, writeZone } from '../src/io';
 import { newZoneTemplate } from '../src/template';
 
 let root: string;

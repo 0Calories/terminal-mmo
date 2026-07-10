@@ -1,8 +1,8 @@
 // Role-profile validator (ADR 0031): pure functions over parsed SpriteDocs and
 // in-memory SpriteSource sets. No disk access.
 import { expect, test } from 'bun:test';
+import type { SpriteSource } from '@mmo/assets';
 import { parseSpriteFile, type SpriteDoc } from '../src';
-import type { SpriteSource } from '../src/sprite-sources';
 import {
 	acceptSprite,
 	validateSpriteRole,

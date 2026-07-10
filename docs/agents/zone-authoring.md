@@ -23,7 +23,7 @@ bun run forge zone play <id>                     # boot the Zone into the offlin
 `forge zone check` (also `bun run zones:check`, part of `bun run ci`) is the invariant:
 portal round-trips resolve, arrivals land on walkable ground, spawns/NPCs rest on
 ground, catalog refs resolve. The authored set is also asserted clean in
-`packages/core/test/zoneContent.test.ts`, so a broken build fails `bun test`.
+`packages/assets/test/zones.test.ts`, so a broken build fails `bun test`.
 
 ### Geometry that has to line up
 

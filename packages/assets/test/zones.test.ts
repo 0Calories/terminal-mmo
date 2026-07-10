@@ -1,7 +1,19 @@
-import { expect, test } from 'bun:test';
-import { CATALOGS, loadZones, validateZoneSet } from '../src';
-import { BOX, SPAWN } from '../src/constants';
-import { isSolid } from '../src/terrain';
+// Zones leave @mmo/assets parsed (ADR 0033). Real-tree tests exercise the
+// fs-scan strategy against the authored repo-root zones/; the *FromEntries
+// tests inject an embedded-style map, proving the compiled-binary strategy
+// without a bundler.
+import { afterEach, describe, expect, test } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { BOX, isSolid, SPAWN, validateZoneSet } from '@mmo/core';
+import {
+	catalogsFromEntries,
+	loadCatalogs,
+	loadZones,
+	zonesFromEntries,
+} from '../src';
+import { CATALOGS_JSON, FIELD_TEXT, TOWN_TEXT } from './fixtures';
 
 test('loadZones parses the authored Field and Town from the repo-root zones/', () => {
 	const zones = loadZones();
@@ -20,7 +32,7 @@ test('loadZones parses the authored Field and Town from the repo-root zones/', (
 });
 
 test('the authored Zone set validates clean (the CI `zone check` invariant)', () => {
-	const errors = validateZoneSet(loadZones(), CATALOGS).filter(
+	const errors = validateZoneSet(loadZones(), loadCatalogs()).filter(
 		(d) => d.severity === 'error',
 	);
 	expect(errors).toEqual([]);
@@ -83,4 +95,59 @@ test('the shared Player spawn point lands on walkable ground in the start Town',
 	for (let x = SPAWN.x; x < SPAWN.x + BOX.w; x++)
 		if (isSolid(t, x, SPAWN.y + BOX.h)) grounded = true;
 	expect(grounded).toBe(true);
+});
+
+// --- Embedded strategy, proven with an injected entries map. ---
+
+describe('zonesFromEntries (the embedded-map strategy)', () => {
+	test('parses every zones/*.zone against zones/catalogs.json, town first', () => {
+		const zones = zonesFromEntries({
+			'zones/f.zone': FIELD_TEXT, // sorts before t.zone — the Town must still lead
+			'zones/t.zone': TOWN_TEXT,
+			'zones/catalogs.json': CATALOGS_JSON,
+			'sprites/hats/cap.sprite': 'not a zone', // other-kind entries are ignored
+		});
+		expect(zones.map((z) => z.id)).toEqual(['t', 'f']);
+		expect(zones[0].type).toBe('town');
+		expect(zones[1].spawns[0]?.type).toBe('chaser');
+	});
+
+	test('missing catalogs.json degrades to empty catalogs, not a crash', () => {
+		expect(catalogsFromEntries({})).toEqual({ monsters: [], npcs: [] });
+		const zones = zonesFromEntries({ 'zones/t.zone': TOWN_TEXT });
+		expect(zones.map((z) => z.id)).toEqual(['t']);
+	});
+});
+
+// --- The dev loop: a hand-edited .zone is picked up on re-read, no rebuild. ---
+
+describe('loadZones (fs-scan strategy)', () => {
+	const cleanupDirs: string[] = [];
+	let savedCwd: string | undefined;
+
+	afterEach(() => {
+		if (savedCwd) {
+			process.chdir(savedCwd);
+			savedCwd = undefined;
+		}
+		for (const dir of cleanupDirs.splice(0)) {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	test('re-reads the zones/ tree on every call: a hand edit shows up without a rebuild', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'assets-zones-'));
+		cleanupDirs.push(dir);
+		mkdirSync(join(dir, 'zones'));
+		writeFileSync(join(dir, 'zones', 'catalogs.json'), CATALOGS_JSON);
+		writeFileSync(join(dir, 'zones', 't.zone'), TOWN_TEXT);
+
+		savedCwd = process.cwd();
+		process.chdir(dir);
+
+		expect(loadZones().map((z) => z.id)).toEqual(['t']);
+
+		writeFileSync(join(dir, 'zones', 'f.zone'), FIELD_TEXT);
+		expect(loadZones().map((z) => z.id)).toEqual(['t', 'f']);
+	});
 });

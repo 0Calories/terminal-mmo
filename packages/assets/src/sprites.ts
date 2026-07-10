@@ -1,7 +1,14 @@
+// Sprites leave the assets package raw (ADR 0033): id + role + text, never
+// compiled art. Compilation to Sprite objects stays in @mmo/render, preserving
+// ADR 0030's wall — sprite *code* is unreachable from the server.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, join, sep } from 'node:path';
-
-declare const MMO_EMBEDDED_SPRITES: Record<string, string>;
+import { join, sep } from 'node:path';
+import {
+	type AssetEntries,
+	entryId,
+	loadAssetEntries,
+	SPRITE_EXT,
+} from './store';
 
 export interface SpriteSource {
 	id: string; // filename without .sprite — globally unique identity (ADR 0011 zone precedent)
@@ -10,19 +17,21 @@ export interface SpriteSource {
 }
 
 export function spriteSourcesFromEntries(
-	entries: Record<string, string>,
+	entries: AssetEntries,
 ): ReadonlyMap<string, SpriteSource> {
 	const map = new Map<string, SpriteSource>();
-	for (const [key, text] of Object.entries(entries)) {
+	for (const key of Object.keys(entries).sort()) {
+		if (!key.startsWith('sprites/') || !key.endsWith(SPRITE_EXT)) continue;
 		const segments = key.split('/');
-		const role = segments[0] ?? '';
-		const last = segments[segments.length - 1] ?? '';
-		const id = last.replace(/\.sprite$/, '');
-		map.set(id, { id, role, text });
+		const role = segments.length > 2 ? segments[1] : '';
+		const id = entryId(key, SPRITE_EXT);
+		map.set(id, { id, role, text: entries[key] });
 	}
 	return map;
 }
 
+// Explicit-root scan for the forge's `sprite check [dir]` — `dir` is a sprites
+// tree root whose first-level directories are the roles.
 export function readSpriteSourcesFromDir(
 	dir: string,
 ): ReadonlyMap<string, SpriteSource> {
@@ -37,7 +46,7 @@ export function readSpriteSourcesFromDir(
 	}
 
 	for (const entry of entries) {
-		if (!entry.endsWith('.sprite')) continue;
+		if (!entry.endsWith(SPRITE_EXT)) continue;
 		const fullPath = join(dir, entry);
 		let text: string;
 		try {
@@ -48,36 +57,13 @@ export function readSpriteSourcesFromDir(
 		const segments = entry.split(sep);
 		const role = segments.length > 1 ? segments[0] : '';
 		const last = segments[segments.length - 1] ?? '';
-		const id = last.replace(/\.sprite$/, '');
+		const id = last.slice(0, -SPRITE_EXT.length);
 		map.set(id, { id, role: role ?? '', text });
 	}
 
 	return map;
 }
 
-function findSpritesDir(): string | undefined {
-	const cwdCandidate = join(process.cwd(), 'sprites');
-	if (existsSync(cwdCandidate)) return cwdCandidate;
-
-	let current = import.meta.dir;
-	for (let i = 0; i < 6; i++) {
-		const candidate = join(current, 'sprites');
-		if (existsSync(candidate)) return candidate;
-		const parent = dirname(current);
-		if (parent === current) break;
-		current = parent;
-	}
-
-	return undefined;
-}
-
 export function loadSpriteSources(): ReadonlyMap<string, SpriteSource> {
-	if (typeof MMO_EMBEDDED_SPRITES !== 'undefined') {
-		return spriteSourcesFromEntries(MMO_EMBEDDED_SPRITES);
-	}
-
-	const dir = findSpritesDir();
-	if (dir) return readSpriteSourcesFromDir(dir);
-
-	return new Map();
+	return spriteSourcesFromEntries(loadAssetEntries());
 }

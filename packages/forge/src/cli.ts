@@ -1,18 +1,16 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
-import type { Diagnostic, ZoneType } from '@mmo/core';
-import { findOrphanGlyphs, validateZone, validateZoneSet } from '@mmo/core';
-import { formatDiagnostics } from './diagnostics';
 import {
 	listZoneIds,
 	loadCatalogs,
 	loadZone,
 	loadZoneSet,
-	renameZoneFile,
-	rewritePortalTarget,
-	zoneExists,
 	zonePath,
-} from './io';
+} from '@mmo/assets';
+import type { Diagnostic, ZoneType } from '@mmo/core';
+import { findOrphanGlyphs, validateZone, validateZoneSet } from '@mmo/core';
+import { formatDiagnostics } from './diagnostics';
+import { renameZoneFile, rewritePortalTarget, zoneExists } from './io';
 import { renderZone } from './render';
 import { newZoneTemplate } from './template';
 

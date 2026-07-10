@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test';
+import { loadZones } from '@mmo/assets';
 import {
 	ACTION_FLAG,
 	BOX,
 	GROUND_TOP,
 	IDLE_ACTION,
-	loadZones,
 	type ServerMessage,
 	spawnAvatar,
 	type Zone,

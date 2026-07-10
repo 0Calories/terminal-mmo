@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import type { SpriteSource } from '@mmo/assets';
 import {
 	DEFAULT_FORM_ID,
 	type EntityType,
@@ -14,7 +15,6 @@ import {
 	formById,
 	HAT_IDS,
 	hatById,
-	type SpriteSource,
 	spriteFor,
 	spriteForNpc,
 	weaponSpriteById,

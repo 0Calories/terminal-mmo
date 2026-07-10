@@ -46,12 +46,6 @@ export {
 	serializeSpriteFile,
 } from './sprite-file';
 export {
-	loadSpriteSources,
-	readSpriteSourcesFromDir,
-	type SpriteSource,
-	spriteSourcesFromEntries,
-} from './sprite-sources';
-export {
 	ROLE_PROFILES,
 	validateSpriteRole,
 	validateSpriteSet,

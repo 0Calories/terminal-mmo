@@ -1,5 +1,8 @@
-import { chmodSync, readdirSync, readFileSync } from 'node:fs';
+import { chmodSync } from 'node:fs';
 import { join } from 'node:path';
+// This build script runs unbundled, so loadAssetEntries takes the fs-scan
+// strategy: the binary embeds exactly what the store reads in dev (ADR 0033).
+import { loadAssetEntries } from '@mmo/assets';
 
 const here = import.meta.dir;
 const outdir = join(here, 'dist');
@@ -7,18 +10,7 @@ const outfile = join(outdir, 'cli.js');
 
 const version = process.env.MMO_VERSION ?? 'dev';
 
-const spritesDir = join(here, '..', '..', 'sprites');
-const embeddedSprites: Record<string, string> = {};
-try {
-	const entries = readdirSync(spritesDir, { recursive: true }) as string[];
-	for (const entry of entries) {
-		if (!entry.endsWith('.sprite')) continue;
-		const key = entry.slice(0, -'.sprite'.length).split(/[\\/]/).join('/');
-		embeddedSprites[key] = readFileSync(join(spritesDir, entry), 'utf8');
-	}
-} catch {
-	// No sprites dir — ship with an empty embedded map.
-}
+const embeddedAssets = loadAssetEntries();
 
 const result = await Bun.build({
 	entrypoints: [join(here, '..', 'client', 'src', 'index.ts')],
@@ -29,7 +21,7 @@ const result = await Bun.build({
 	external: ['@opentui/core'],
 	define: {
 		'process.env.MMO_VERSION': JSON.stringify(version),
-		MMO_EMBEDDED_SPRITES: JSON.stringify(embeddedSprites),
+		MMO_EMBEDDED_ASSETS: JSON.stringify(embeddedAssets),
 	},
 	banner: '#!/usr/bin/env bun',
 });
@@ -41,5 +33,5 @@ if (!result.success) {
 
 chmodSync(outfile, 0o755);
 console.log(
-	`built ${outfile} (version ${version}, ${Object.keys(embeddedSprites).length} sprite sources embedded)`,
+	`built ${outfile} (version ${version}, ${Object.keys(embeddedAssets).length} asset files embedded)`,
 );

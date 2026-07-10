@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { loadZones } from '@mmo/assets';
 import {
 	addSession,
 	createServerWorld,
@@ -6,7 +7,6 @@ import {
 	DEFAULT_WEAPON,
 	emptySave,
 	type Item,
-	loadZones,
 	migrateSaveCosmetics,
 	type PlayerSave,
 	registryFromSaves,
