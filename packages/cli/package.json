@@ -27,6 +27,7 @@
 		"@opentui/core": "0.4.1"
 	},
 	"devDependencies": {
+		"@mmo/assets": "workspace:*",
 		"@mmo/client": "workspace:*",
 		"@mmo/core": "workspace:*"
 	},
