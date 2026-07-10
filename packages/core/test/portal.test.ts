@@ -1,15 +1,8 @@
 import { expect, test } from 'bun:test';
+import { loadZones } from '@mmo/assets';
 import type { GameState, Input, Portal, Zone } from '../src';
-import {
-	activeZone,
-	BOX,
-	createGame,
-	GROUND_TOP,
-	loadZones,
-	spawnAvatar,
-	step,
-} from '../src';
-import { flatTerrain } from './helpers';
+import { activeZone, BOX, GROUND_TOP, spawnAvatar, step } from '../src';
+import { createGame, flatTerrain } from './helpers';
 
 const INTERACT: Input = {
 	moveX: 0,

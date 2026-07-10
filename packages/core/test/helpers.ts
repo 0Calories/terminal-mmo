@@ -1,6 +1,18 @@
+// Tests exercise the sim against the real authored content, so they load it
+// through @mmo/assets (dev-only dependency); core's own source stays
+// content-free — "given content, simulate" (ADR 0033).
+import { loadZones } from '@mmo/assets';
 import { GROUND_TOP, SHOOTER, WORLD } from '../src/constants';
+import { createGameFromZones, type GameState } from '../src/sim';
 import { parseTerrain } from '../src/terrain';
 import type { Projectile, Terrain } from '../src/types';
+
+// The shipped game booted for tests: what core's createGame() was before core
+// dropped bundled zone content. loadZones() returns the start Town first.
+export function createGame(seed = 1): GameState {
+	const zones = loadZones();
+	return createGameFromZones(zones, zones[0].id, seed);
+}
 
 export function makeProjectile(over: Partial<Projectile> = {}): Projectile {
 	return {

@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
+import { readSpriteSourcesFromDir } from '@mmo/assets';
 import {
 	parseSpriteFile,
-	readSpriteSourcesFromDir,
 	type SpriteDiagnostic,
 	validateSpriteSet,
 } from '@mmo/render';

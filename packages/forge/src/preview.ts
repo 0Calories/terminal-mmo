@@ -1,4 +1,5 @@
 import { watch } from 'node:fs';
+import { loadCatalogs, loadZone } from '@mmo/assets';
 import type { Zone } from '@mmo/core';
 import {
 	buildSceneStyle,
@@ -8,7 +9,6 @@ import {
 } from '@mmo/render';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
-import { loadCatalogs, loadZone } from './io';
 
 export interface Cam {
 	x: number;

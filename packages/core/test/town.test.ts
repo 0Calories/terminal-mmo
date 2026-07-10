@@ -1,14 +1,8 @@
 import { expect, test } from 'bun:test';
+import { loadZones } from '@mmo/assets';
 import type { GameState, Input, Zone } from '../src';
-import {
-	activeZone,
-	BOX,
-	createGame,
-	GROUND_TOP,
-	loadZones,
-	spawnAvatar,
-	step,
-} from '../src';
+import { activeZone, BOX, GROUND_TOP, spawnAvatar, step } from '../src';
+import { createGame } from './helpers';
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false };
 

@@ -24,6 +24,5 @@ export * from './version';
 export * from './weapons';
 export * from './world';
 export * from './zone';
-export * from './zoneContent';
 export * from './zoneFormat';
 export * from './zoneValidate';

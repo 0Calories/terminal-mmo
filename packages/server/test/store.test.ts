@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test';
+import { loadZones } from '@mmo/assets/meta';
 import {
 	addSession,
 	createServerWorld,
 	type Item,
-	loadZones,
 	type PlayerSave,
 	registryFromSaves,
 	restoredFromSave,
