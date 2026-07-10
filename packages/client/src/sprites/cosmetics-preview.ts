@@ -1,6 +1,7 @@
 // Run: bun packages/client/src/sprites/cosmetics-preview.ts
 import {
 	type Cosmetics,
+	DEFAULT_FORM_ID,
 	type Entity,
 	HUES,
 	NAMEPLATE_COLORS,
@@ -96,11 +97,11 @@ console.log(
 	'=== Avatar cosmetic hats (#35) — rendered through the shared renderer ===\n',
 );
 console.log(
-	`${frame('[none] None', { hue: 0, hat: '', nameplate: 0, form: 'buddy' })}\n`,
+	`${frame('[none] None', { hue: 0, hat: '', nameplate: 0, form: DEFAULT_FORM_ID })}\n`,
 );
 for (const hat of HAT_IDS)
 	console.log(
-		`${frame(`[${hat}] ${hat}`, { hue: 0, hat, nameplate: 0, form: 'buddy' })}\n`,
+		`${frame(`[${hat}] ${hat}`, { hue: 0, hat, nameplate: 0, form: DEFAULT_FORM_ID })}\n`,
 	);
 
 console.log(`=== Hue catalog (${HUES.length}) — body recolour, RGBA ===`);

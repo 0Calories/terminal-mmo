@@ -76,13 +76,13 @@ function reject(ws: ServerWebSocket<WsData>, reason: string) {
 }
 
 // Set-membership validation is the server's job (core only shapes the type);
-// computed once at startup by scanning sprites/hats and sprites/forms. The
-// forms dir does not exist yet, so validFormIds is empty and every form
-// sanitizes to the default Form ('buddy') — correct today.
+// computed once at startup by scanning sprites/hats and sprites/forms. Any hat
+// or form id not in the scanned set sanitizes to the default; the default Form
+// ('buddy') ships as sprites/forms/buddy.sprite, so it is a member of the set.
 const validHatIds: ReadonlySet<string> = scanHatIds();
 const validFormIds: ReadonlySet<string> = scanFormIds();
 
-function withValidHat(c: Cosmetics): Cosmetics {
+function withValidCosmetics(c: Cosmetics): Cosmetics {
 	return {
 		...c,
 		hat: sanitizeHatId(c.hat, validHatIds),
@@ -162,7 +162,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			publicKey: msg.publicKey,
 			key: canonicalPublicKey(pub),
 			handle: msg.handle,
-			cosmetics: withValidHat(msg.cosmetics),
+			cosmetics: withValidCosmetics(msg.cosmetics),
 			weapon: msg.weapon,
 		});
 		ws.send(encodeServerMessage({ t: 'challenge', nonce }));
@@ -206,7 +206,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 				pending.weapon,
 				{
 					...restored,
-					cosmetics: withValidHat(restored.cosmetics),
+					cosmetics: withValidCosmetics(restored.cosmetics),
 				},
 			);
 			sockets.set(sessionId, ws);
@@ -266,7 +266,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 			world,
 			sessionId,
 			claim.handle,
-			withValidHat(msg.cosmetics),
+			withValidCosmetics(msg.cosmetics),
 			pending.weapon,
 			TOWN_ZONE,
 		);
@@ -279,7 +279,11 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		return;
 	}
 	if (msg.t === 'setCosmetics') {
-		const res = applyCosmetics(world, sessionId, withValidHat(msg.cosmetics));
+		const res = applyCosmetics(
+			world,
+			sessionId,
+			withValidCosmetics(msg.cosmetics),
+		);
 		if (res.changed) {
 			world = res.world;
 			flushSession(sessionId);

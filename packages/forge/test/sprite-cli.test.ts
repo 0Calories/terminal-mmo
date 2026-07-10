@@ -178,7 +178,7 @@ AB
 			mkdirSync(join(root, 'monsters'), { recursive: true });
 			writeFileSync(join(root, 'monsters', `${id}.sprite`), idle);
 		}
-		for (const id of ['merchant', 'signpost']) {
+		for (const id of ['merchant', 'fixture-npc']) {
 			mkdirSync(join(root, 'npcs'), { recursive: true });
 			writeFileSync(join(root, 'npcs', `${id}.sprite`), idle);
 		}
@@ -188,6 +188,21 @@ AB
 		writeCompleteSet();
 		expect(runSprite(['check'], deps())).toBe(0);
 		expect(output()).toContain('no issues');
+	});
+
+	test('check: a set whose only diagnostics are warnings stays green (exit 0)', () => {
+		writeCompleteSet();
+		// An unknown header field is a warning, not an error, so the set still
+		// resolves and `check` must exit 0 while printing the warning.
+		mkdirSync(join(root, 'hats'), { recursive: true });
+		writeFileSync(
+			join(root, 'hats', 'warn.sprite'),
+			`{"nope": 1}\n--- idle\nAB\n`,
+		);
+		expect(runSprite(['check'], deps())).toBe(0);
+		const out = output();
+		expect(out).toContain('warning');
+		expect(out).toContain("unknown header field 'nope'");
 	});
 
 	test('check: dangling catalog references fail with exit 1', () => {

@@ -1,5 +1,5 @@
 import type { Cosmetics, Entity } from '@mmo/core';
-import { BOX, maxHpForLevel } from '@mmo/core';
+import { BOX, DEFAULT_FORM_ID, maxHpForLevel } from '@mmo/core';
 import {
 	buildSceneStyle,
 	drawNameplates,
@@ -83,7 +83,7 @@ export function previewAvatar(cosmetics: Cosmetics, name: string): Entity {
 
 class PreviewRenderable extends Renderable {
 	avatar: Entity = previewAvatar(
-		{ hue: 0, hat: '', nameplate: 0, form: 'buddy' },
+		{ hue: 0, hat: '', nameplate: 0, form: DEFAULT_FORM_ID },
 		'',
 	);
 

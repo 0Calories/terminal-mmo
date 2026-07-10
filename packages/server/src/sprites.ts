@@ -48,10 +48,10 @@ export function scanHatIds(dir = findHatsDir()): ReadonlySet<string> {
 	return scanSpriteIds(dir);
 }
 
-// Mirrors findHatsDir/scanHatIds for Forms (sprites/forms/*.sprite). That
-// directory does not exist yet — the scan then returns an empty set (never
-// throws), so every form id sanitizes to the default Form, which is correct
-// today (only 'buddy' ships).
+// Mirrors findHatsDir/scanHatIds for Forms (sprites/forms/*.sprite). Scans that
+// directory for `.sprite` ids (returns an empty set — never throws — if it is
+// missing), so any form id not in the set sanitizes to the default Form. The
+// default 'buddy' ships as sprites/forms/buddy.sprite.
 export function findFormsDir(): string | undefined {
 	return findSpriteKindDir('forms');
 }

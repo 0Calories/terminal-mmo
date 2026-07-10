@@ -211,17 +211,22 @@ function readCosmetics(r: Reader): Cosmetics {
 	});
 }
 
-// Reads the appended full-fidelity hat id, if present, else falls back to the
-// quad-derived hat (a legacy peer's best-effort mapping).
-function readTrailingHat(r: Reader, fallback: string): string {
+// Reads one appended full-fidelity id (hat, then form), if present, else falls
+// back to the quad-derived value (a legacy peer's best-effort mapping). The
+// trailing ids sit back-to-back in write order (hat first, then form), so read
+// the hat before the form.
+function readTrailingId(r: Reader, fallback: string): string {
 	return r.remaining() >= 4 ? r.str() : fallback;
 }
 
-// Reads the appended full-fidelity form id, if present, else falls back to the
-// quad-derived form (a legacy peer's best-effort mapping). Sits immediately
-// after the trailing hat id, so read it only once the hat field is consumed.
-function readTrailingForm(r: Reader, fallback: string): string {
-	return r.remaining() >= 4 ? r.str() : fallback;
+// Merges the trailing hat/form ids back onto the quad, reusing the quad object
+// unchanged when neither overrode it (a legacy frame with no trailing ids).
+function mergeTrailingCosmetics(
+	quad: Cosmetics,
+	hat: string,
+	form: string,
+): Cosmetics {
+	return hat === quad.hat && form === quad.form ? quad : { ...quad, hat, form };
 }
 
 const CLIENT_TAG = {
@@ -317,16 +322,13 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			const quad = r.remaining() >= 4 ? readCosmetics(r) : DEFAULT_COSMETICS;
 			const weapon = r.remaining() >= 1 ? r.u8() : DEFAULT_WEAPON;
 			const publicKey = r.remaining() >= 4 ? r.str() : '';
-			const hat = readTrailingHat(r, quad.hat);
-			const form = readTrailingForm(r, quad.form);
+			const hat = readTrailingId(r, quad.hat);
+			const form = readTrailingId(r, quad.form);
 			return {
 				t: 'hello',
 				handle,
 				version,
-				cosmetics:
-					hat === quad.hat && form === quad.form
-						? quad
-						: { ...quad, hat, form },
+				cosmetics: mergeTrailingCosmetics(quad, hat, form),
 				weapon,
 				publicKey,
 			};
@@ -374,27 +376,21 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 		case CLIENT_TAG.createAvatar: {
 			const quad = readCosmetics(r);
 			const handle = r.remaining() >= 4 ? r.str() : '';
-			const hat = readTrailingHat(r, quad.hat);
-			const form = readTrailingForm(r, quad.form);
+			const hat = readTrailingId(r, quad.hat);
+			const form = readTrailingId(r, quad.form);
 			return {
 				t: 'createAvatar',
 				handle,
-				cosmetics:
-					hat === quad.hat && form === quad.form
-						? quad
-						: { ...quad, hat, form },
+				cosmetics: mergeTrailingCosmetics(quad, hat, form),
 			};
 		}
 		case CLIENT_TAG.setCosmetics: {
 			const quad = readCosmetics(r);
-			const hat = readTrailingHat(r, quad.hat);
-			const form = readTrailingForm(r, quad.form);
+			const hat = readTrailingId(r, quad.hat);
+			const form = readTrailingId(r, quad.form);
 			return {
 				t: 'setCosmetics',
-				cosmetics:
-					hat === quad.hat && form === quad.form
-						? quad
-						: { ...quad, hat, form },
+				cosmetics: mergeTrailingCosmetics(quad, hat, form),
 			};
 		}
 		default:
@@ -569,13 +565,12 @@ function readAvatar(r: Reader): AvatarSnapshot {
 	const hurtT = r.f64();
 	const weapon = r.u8();
 	const action = readAction(r);
-	const hat = readTrailingHat(r, quad.hat);
-	const form = readTrailingForm(r, quad.form);
+	const hat = readTrailingId(r, quad.hat);
+	const form = readTrailingId(r, quad.form);
 	return {
 		sessionId,
 		handle,
-		cosmetics:
-			hat === quad.hat && form === quad.form ? quad : { ...quad, hat, form },
+		cosmetics: mergeTrailingCosmetics(quad, hat, form),
 		x,
 		y,
 		vx,
