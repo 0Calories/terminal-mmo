@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Catalogs } from '@mmo/core/zones';
-import { parseZone, validateZone } from '@mmo/core/zones';
+import { type Catalogs, parseZone, validateZone } from '@mmo/core/zones';
 import { newZoneTemplate } from '../src/template';
 
 const catalogs: Catalogs = { monsters: [], npcs: [] };

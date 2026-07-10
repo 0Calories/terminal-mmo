@@ -1,13 +1,20 @@
-import type { CombatEvent } from '@mmo/core/combat';
 import {
 	COMBAT,
+	type CombatEvent,
 	canStartDodge,
 	predictHits,
 	stepAvatarCombat,
 	weaponById,
 } from '@mmo/core/combat';
-import type { Box, Entity, Input, Terrain } from '@mmo/core/entities';
-import { emoteById, initialEmoteT, spawnAvatar } from '@mmo/core/entities';
+import {
+	type Box,
+	type Entity,
+	emoteById,
+	type Input,
+	initialEmoteT,
+	spawnAvatar,
+	type Terrain,
+} from '@mmo/core/entities';
 import { applyImpulse, PHYS } from '@mmo/core/physics';
 import { capabilityUnlocked } from '@mmo/core/progression';
 import { SPAWN } from '@mmo/core/world';

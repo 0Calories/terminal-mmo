@@ -1,8 +1,7 @@
 import type { CombatEvent } from '@mmo/core/combat';
 import type { Entity, Input } from '@mmo/core/entities';
 import type { AvatarSnapshot, ClientMessage } from '@mmo/core/protocol';
-import type { GameState, Zone } from '@mmo/core/world';
-import { activeZone } from '@mmo/core/world';
+import { activeZone, type GameState, type Zone } from '@mmo/core/world';
 import type { Bubble } from '../net/net';
 import { snapshotToGame } from '../net/net';
 import type { SoundKind } from '../sound/registry';

@@ -8,8 +8,8 @@ import {
 	zonePath,
 } from '@mmo/assets';
 import type { ZoneType } from '@mmo/core/world';
-import type { Diagnostic } from '@mmo/core/zones';
 import {
+	type Diagnostic,
 	findOrphanGlyphs,
 	validateZone,
 	validateZoneSet,

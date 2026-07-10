@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { CombatEvent } from '@mmo/core/combat';
-import { COMBAT, combatEventAt, deathEvent, swatEvent } from '@mmo/core/combat';
+import {
+	COMBAT,
+	type CombatEvent,
+	combatEventAt,
+	deathEvent,
+	swatEvent,
+} from '@mmo/core/combat';
 import { effectsOf } from '../src/effects/project';
 import { entity, makeProjectile } from './helpers';
 

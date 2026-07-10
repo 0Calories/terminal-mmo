@@ -1,5 +1,4 @@
-import type { CombatEvent } from '@mmo/core/combat';
-import { COMBAT } from '@mmo/core/combat';
+import { COMBAT, type CombatEvent } from '@mmo/core/combat';
 import type { Tint } from '@mmo/core/entities';
 
 /**

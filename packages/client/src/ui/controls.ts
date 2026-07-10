@@ -1,5 +1,8 @@
-import type { Capability } from '@mmo/core/progression';
-import { CAPABILITY_UNLOCK, capabilityUnlocked } from '@mmo/core/progression';
+import {
+	CAPABILITY_UNLOCK,
+	type Capability,
+	capabilityUnlocked,
+} from '@mmo/core/progression';
 import {
 	BoxRenderable,
 	type Renderable,
