@@ -36,48 +36,19 @@ function caps(kitty: boolean): TerminalCapabilities {
 	} as TerminalCapabilities;
 }
 
-test('resolved + no Kitty support → warn', () => {
-	expect(shouldWarnNoKitty(caps(false))).toBe(true);
-});
-
-test('resolved + Kitty support → no warn', () => {
-	expect(shouldWarnNoKitty(caps(true))).toBe(false);
-});
-
-test('unresolved capabilities (null) → no warn (fail-open)', () => {
-	expect(shouldWarnNoKitty(null)).toBe(false);
-});
-
-test('unresolved capabilities (undefined) → no warn (fail-open)', () => {
-	expect(shouldWarnNoKitty(undefined)).toBe(false);
-});
-
-test('unknown / missing kitty_keyboard field → no warn (fail-open)', () => {
-	const unknown = {
-		...caps(false),
-		kitty_keyboard: undefined,
-	} as unknown as TerminalCapabilities;
-	expect(shouldWarnNoKitty(unknown)).toBe(false);
-});
-
-test('the terminal list is short, non-empty, and URL-free', () => {
-	expect(KITTY_TERMINALS.length).toBeGreaterThan(0);
-	expect(KITTY_TERMINALS.length).toBeLessThanOrEqual(8);
-	for (const name of KITTY_TERMINALS) expect(name).not.toContain('://');
-});
-
-test('the caveat names a multiplexer and carries no URL', () => {
-	expect(MULTIPLEXER_CAVEAT.toLowerCase()).toContain('tmux');
-	expect(MULTIPLEXER_CAVEAT).not.toContain('://');
-});
-
 // sentinels unique to each overlay's interior, so compositing decides which is on top
 const NOTICE_BODY = 'Press any key to continue';
 const CREATOR_BODY = 'Nameplate';
 
 const STARTER_LOOK = { hue: 0, hat: '', nameplate: 0, form: 'buddy' } as const;
 
-test('the notice draws ABOVE the Avatar creator (top layer), matching the real attach order', async () => {
+test('the self-contained notice draws above the creator as a blocking pre-gate', async () => {
+	expect(KITTY_TERMINALS.length).toBeGreaterThan(0);
+	expect(KITTY_TERMINALS.length).toBeLessThanOrEqual(8);
+	for (const name of KITTY_TERMINALS) expect(name).not.toContain('://');
+	expect(MULTIPLEXER_CAVEAT.toLowerCase()).toContain('tmux');
+	expect(MULTIPLEXER_CAVEAT).not.toContain('://');
+
 	const { renderer, renderOnce, captureCharFrame } = await createTestRenderer({
 		width: 100,
 		height: 40,

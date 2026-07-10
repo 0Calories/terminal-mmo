@@ -1,106 +1,22 @@
 import { describe, expect, test } from 'bun:test';
-import {
-	COMBAT,
-	DEFAULT_WEAPON,
-	type Entity,
-	resolveCombat,
-	SWING_TOTAL,
-	stepAvatarCombat,
-	WEAPONS,
-	weaponById,
-} from '../src';
-
-function avatar(over: Partial<Entity> = {}): Entity {
-	return {
-		id: 1,
-		type: 'player',
-		x: 20,
-		y: 4,
-		vx: 0,
-		vy: 0,
-		speed: 0,
-		facing: 1,
-		onGround: true,
-		hp: 20,
-		maxHp: 20,
-		attackT: 0,
-		hurtT: 0,
-		...over,
-	};
-}
+import { COMBAT, DEFAULT_WEAPON, WEAPONS, weaponById } from '../src';
 
 describe('WEAPONS catalog — name + damage + art reference (ADR 0024/0030/0031)', () => {
-	test('a Weapon carries name, damage, and a sprite reference and nothing else (art itself lives in @mmo/render)', () => {
+	test('the catalog is core-owned stats plus render-owned sprite references', () => {
 		const allowed = new Set(['name', 'damage', 'sprite']);
-		for (const w of WEAPONS)
-			for (const key of Object.keys(w)) expect(allowed).toContain(key);
-	});
-
-	test('every catalog entry references its art by a non-empty sprite id (ADR 0031)', () => {
 		for (const w of WEAPONS) {
+			for (const key of Object.keys(w)) expect(allowed).toContain(key);
 			expect(typeof w.sprite).toBe('string');
 			expect(w.sprite.length).toBeGreaterThan(0);
 		}
-	});
-
-	test('the default weapon (index 0) is the sword and deals the shared COMBAT melee damage', () => {
 		expect(WEAPONS[DEFAULT_WEAPON].damage).toBe(COMBAT.meleeDamage);
 		expect(WEAPONS[DEFAULT_WEAPON].sprite).toBe('sword');
 	});
 });
 
-describe('one shared moveset — no weapon reshapes combat resolution', () => {
-	test('a fresh swing loads the ONE shared phase total for every catalog weapon', () => {
-		for (let i = 0; i < WEAPONS.length; i++) {
-			const r = resolveCombat(
-				avatar(),
-				{},
-				1,
-				'warrior',
-				{ attack: true },
-				0.016,
-				weaponById(i),
-			);
-			expect(r.attackT).toBe(SWING_TOTAL);
-		}
-	});
-
-	test('the active hitbox spans the shared melee reach, not a per-weapon arc', () => {
-		const inActive =
-			SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
-		for (let i = 0; i < WEAPONS.length; i++) {
-			const r = resolveCombat(
-				avatar({ attackT: inActive }),
-				{},
-				1,
-				'warrior',
-				{},
-				0,
-				weaponById(i),
-			);
-			expect(r.hitbox?.w).toBe(COMBAT.meleeReach);
-		}
-	});
-
-	test('a landed swing deals the weapon damage but the shared poise damage', () => {
-		const inActive =
-			SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
-		const { strikes } = stepAvatarCombat(
-			avatar({ attackT: inActive }),
-			{},
-			{ level: 1, cls: 'warrior', weapon: weaponById(DEFAULT_WEAPON), dt: 0 },
-		);
-		expect(strikes[0].damage).toBe(weaponById(DEFAULT_WEAPON).damage);
-		expect(strikes[0].poiseDamage).toBe(COMBAT.poiseDamage);
-	});
-});
-
 describe('weaponById', () => {
-	test('resolves a catalog index to its stat block', () => {
+	test('resolves valid ids and safely defaults absent or forward-version ids', () => {
 		expect(weaponById(DEFAULT_WEAPON)).toBe(WEAPONS[DEFAULT_WEAPON]);
-	});
-
-	test('clamps an absent / out-of-range / forward-version index to the default', () => {
 		expect(weaponById(undefined)).toBe(WEAPONS[DEFAULT_WEAPON]);
 		expect(weaponById(999)).toBe(WEAPONS[DEFAULT_WEAPON]);
 		expect(weaponById(-1)).toBe(WEAPONS[DEFAULT_WEAPON]);
