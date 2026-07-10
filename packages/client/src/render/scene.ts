@@ -161,14 +161,7 @@ export function drawPlayfield(
 		const sx =
 			Math.round(onNpc.x + Math.floor((onNpc.w - sprite.w) / 2)) - camX;
 		const sy = Math.round(onNpc.y + onNpc.h - sprite.h) - camY;
-		if (onNpc.kind === 'signpost' && onNpc.lines && onNpc.lines.length > 0) {
-			const lines = onNpc.lines;
-			lines.forEach((line, i) => {
-				drawText(buf, sx, sy - lines.length + i, line, C.signpost, sw, sh);
-			});
-		} else {
-			drawText(buf, sx, sy - 1, `↵ e  talk to ${onNpc.name}`, C.vendor, sw, sh);
-		}
+		drawText(buf, sx, sy - 1, `↵ e  talk to ${onNpc.name}`, C.vendor, sw, sh);
 	}
 
 	for (const d of zone.drops ?? []) {

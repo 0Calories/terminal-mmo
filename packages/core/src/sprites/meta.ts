@@ -40,7 +40,6 @@ export const MONSTER_SPRITE_REF: Readonly<
 
 export const NPC_SPRITE_REF: Readonly<Record<Npc['kind'], string>> = {
 	vendor: 'merchant',
-	signpost: 'signpost',
 };
 
 // Resolve a Monster entity type to its art-reference sprite id (undefined for the

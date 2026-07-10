@@ -178,7 +178,6 @@ test('golden: monster sprites', () => {
 
 test('golden: npc sprites', () => {
 	expect(spriteGrid(spriteForNpc('vendor'))).toMatchSnapshot('vendor');
-	expect(spriteGrid(spriteForNpc('signpost'))).toMatchSnapshot('signpost');
 });
 
 test('golden: hat sprites', () => {

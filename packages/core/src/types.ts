@@ -133,9 +133,8 @@ export interface Projectile {
 
 export interface Npc extends Box {
 	id: number;
-	kind: 'vendor' | 'signpost';
+	kind: 'vendor';
 	name: string;
-	lines?: string[];
 }
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';

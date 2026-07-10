@@ -14,11 +14,11 @@ import {
 	spriteMetaFor,
 } from '../src';
 
-// The five art references this migration introduces — the ids that key the
+// The art references this migration introduces — the ids that key the
 // `.sprite` files under sprites/monsters/ and sprites/npcs/ (chaser, shooter,
-// brute, merchant, signpost). Behaviour/stats stay elsewhere; these are art
+// brute, merchant). Behaviour/stats stay elsewhere; these are art
 // bindings only.
-test('the Monster/NPC sprite references are the five migrated ids', () => {
+test('the Monster/NPC sprite references are the migrated ids', () => {
 	expect(MONSTER_SPRITE_REF).toEqual({
 		chaser: 'chaser',
 		shooter: 'shooter',
@@ -26,7 +26,6 @@ test('the Monster/NPC sprite references are the five migrated ids', () => {
 	});
 	expect(NPC_SPRITE_REF).toEqual({
 		vendor: 'merchant',
-		signpost: 'signpost',
 	});
 });
 
@@ -36,7 +35,6 @@ test('the reference resolvers return the crumb id (player has no Monster art)', 
 	expect(monsterSpriteRef('brute')).toBe('brute');
 	expect(monsterSpriteRef('player')).toBeUndefined();
 	expect(npcSpriteRef('vendor')).toBe('merchant');
-	expect(npcSpriteRef('signpost')).toBe('signpost');
 });
 
 // The death-tint crumb the server reads is `spriteMetaFor(type).defaultKey`, a

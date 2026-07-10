@@ -105,15 +105,6 @@ function goldenZone(id: string): Zone {
 	const npcs: Npc[] = [
 		// Overlapping the Avatar's box, so the frame carries the "talk to" interact prompt.
 		{ id: 1, kind: 'vendor', name: 'Mira', x: 17, y: FLOOR, ...NPC_BOX },
-		{
-			id: 2,
-			kind: 'signpost',
-			name: 'Sign',
-			x: 52,
-			y: FLOOR,
-			...NPC_BOX,
-			lines: ['east: the Dungeon'],
-		},
 	];
 
 	const drops: Drop[] = [
@@ -168,7 +159,7 @@ function goldenZone(id: string): Zone {
 /**
  * The fixed scene the golden frame renders: two zones (so a zone change is drivable),
  * a player mid-swing, a co-present Avatar with a Handle and a speech bubble, monsters,
- * an NPC, a signpost, a drop, a portal, and an in-flight Projectile.
+ * an NPC, a drop, a portal, and an in-flight Projectile.
  */
 export function goldenGame(): GameState {
 	// Mid-swing and weaponless, so the frame carries the melee telegraph glyph.
