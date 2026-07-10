@@ -182,14 +182,14 @@ exports[`golden: npc sprites: signpost 1`] = `
   "h": 5,
   "keysLeft": [
     "yyyyy",
-    "yyyyy",
+    "ywywy",
     "yyyyy",
     "wwwww",
     "wwwww",
   ],
   "keysRight": [
     "yyyyy",
-    "yyyyy",
+    "ywywy",
     "yyyyy",
     "wwwww",
     "wwwww",

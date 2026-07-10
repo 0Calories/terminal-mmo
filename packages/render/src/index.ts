@@ -9,7 +9,15 @@ export {
 	QUADRANT_GLYPHS,
 	quadrantsFromGlyph,
 } from './quadrant';
-export { spriteFor, spriteForNpc } from './registry';
+export {
+	buildMonsterRegistry,
+	buildNpcRegistry,
+	buildSpriteRegistry,
+	MONSTER_SPRITE_IDS,
+	NPC_SPRITE_IDS,
+	spriteFor,
+	spriteForNpc,
+} from './registry';
 export {
 	type CellBuffer,
 	drawEntitySprite,
