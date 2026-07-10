@@ -104,14 +104,14 @@ export const ARCHETYPES = {
 	brute: BRUTE,
 } as const satisfies Record<MonsterType, ArchetypeProfile>;
 
+function profileOf(type: EntityType): ArchetypeProfile | null {
+	return type === 'player' ? null : ARCHETYPES[type];
+}
+
 export function meleeProfileOf(type: EntityType): MeleeProfile | null {
-	if (type === 'player') return null;
-	const p: ArchetypeProfile = ARCHETYPES[type];
-	return p.melee ?? null;
+	return profileOf(type)?.melee ?? null;
 }
 
 export function rangedProfileOf(type: EntityType): RangedProfile | null {
-	if (type === 'player') return null;
-	const p: ArchetypeProfile = ARCHETYPES[type];
-	return p.ranged ?? null;
+	return profileOf(type)?.ranged ?? null;
 }

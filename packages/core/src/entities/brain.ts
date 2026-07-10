@@ -77,23 +77,34 @@ function patrolDrive(m: Entity, t: Terrain): Drive {
 const stunned = (m: Entity) => (m.stunT ?? 0) > 0;
 const committed = (m: Entity) => m.attackT > 0;
 
+// The one perception every FSM shares: the signed and absolute gap to the target.
+function gapTo(
+	m: Entity,
+	targetX: number | null,
+): { dx: number; adx: number } | null {
+	if (targetX === null) return null;
+	const dx = targetX - m.x;
+	return { dx, adx: Math.abs(dx) };
+}
+
+const toward = (dx: number): Facing => (dx >= 0 ? 1 : -1);
+
 // Melee FSM (chaser, brute): patrol → chase inside aggro → commit `swing` in
 // range once off cooldown. States re-derive from distance each tick, so no
 // memory is needed; `ai` threads through untouched.
 function meleeBrain(p: MeleeProfile): Brain {
 	return (m, view) => {
 		if (stunned(m) || committed(m)) return { drive: IDLE_DRIVE, ai: m.ai };
-		const dx = view.targetX !== null ? view.targetX - m.x : null;
-		const adx = dx !== null ? Math.abs(dx) : Infinity;
+		const gap = gapTo(m, view.targetX);
 		let drive: Drive;
-		if (dx !== null && adx < p.aggro)
+		if (gap && gap.adx < p.aggro)
 			drive = {
-				moveX: adx < p.deadzone ? 0 : dx > 0 ? 1 : -1,
+				moveX: gap.adx < p.deadzone ? 0 : gap.dx > 0 ? 1 : -1,
 				jump: false,
 			};
 		else drive = patrolDrive(m, view.terrain);
-		if (dx !== null && adx <= p.range && (m.attackCdT ?? 0) <= 0)
-			drive = { ...drive, face: dx >= 0 ? 1 : -1, commit: 'swing' };
+		if (gap && gap.adx <= p.range && (m.attackCdT ?? 0) <= 0)
+			drive = { ...drive, face: toward(gap.dx), commit: 'swing' };
 		return { drive, ai: m.ai };
 	};
 }
@@ -110,6 +121,12 @@ function shooterAi(ai: unknown): ShooterAi {
 		: { state: 'patrol' };
 }
 
+// Hysteresis at the band's inner edge: a repositioning shooter opens a little
+// MORE than keepDist before it settles into attack. The prior state — its ai
+// memory — decides, so the FSM cannot flip-flop on the boundary (this is the
+// sequencing ADR 0034 kept memory for: "reposition, THEN attack").
+const SETTLE_MARGIN = 2;
+
 // Shooter FSM: patrol outside aggro; inside aggro, reposition until the target
 // sits in the comfort band [keepDist, aggro), and ONLY the attack state may
 // commit `fire` — a crowded shooter backs off first instead of firing
@@ -118,14 +135,15 @@ function shooterBrain(p: RangedProfile): Brain {
 	return (m, view) => {
 		const ai = shooterAi(m.ai);
 		if (stunned(m) || committed(m)) return { drive: IDLE_DRIVE, ai };
-		const dx = view.targetX !== null ? view.targetX - m.x : null;
-		const adx = dx !== null ? Math.abs(dx) : Infinity;
-		if (dx === null || adx >= p.aggro)
+		const gap = gapTo(m, view.targetX);
+		if (!gap || gap.adx >= p.aggro)
 			return { drive: patrolDrive(m, view.terrain), ai: { state: 'patrol' } };
-		const face: Facing = dx >= 0 ? 1 : -1;
-		if (adx < p.keepDist)
+		const face = toward(gap.dx);
+		const settleAt =
+			ai.state === 'reposition' ? p.keepDist + SETTLE_MARGIN : p.keepDist;
+		if (gap.adx < settleAt)
 			return {
-				drive: { moveX: dx > 0 ? -1 : 1, jump: false, face },
+				drive: { moveX: gap.dx > 0 ? -1 : 1, jump: false, face },
 				ai: { state: 'reposition' },
 			};
 		const drive: Drive = { moveX: 0, jump: false, face };

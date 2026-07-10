@@ -196,6 +196,22 @@ test('reposition → attack sequencing: fire is committed only once the band is 
 	expect(states.indexOf('attack')).toBe(states.lastIndexOf('reposition') + 1);
 });
 
+test('the band edge has hysteresis: at the same distance, the prior state (ai memory) decides', () => {
+	const { keepDist } = ARCHETYPES.shooter.ranged;
+	const targetX = 50 - (keepDist + 1); // just past keepDist, inside the settle margin
+	const repositioning = grounded('shooter', 50);
+	repositioning.ai = { state: 'reposition' };
+	const r1 = BRAINS.shooter(repositioning, view(targetX));
+	expect(r1.drive.commit).toBeUndefined(); // still opening the gap
+	expect(r1.drive.moveX).toBe(1);
+	expect(r1.ai).toEqual({ state: 'reposition' });
+	const attacking = grounded('shooter', 50);
+	attacking.ai = { state: 'attack' };
+	const r2 = BRAINS.shooter(attacking, view(targetX));
+	expect(r2.drive.commit).toBe('fire'); // holds the band down to keepDist
+	expect(r2.ai).toEqual({ state: 'attack' });
+});
+
 test('a committed shooter is locked in: idle drive, aim frozen', () => {
 	const m = grounded('shooter', 50);
 	m.attackT = 0.2;

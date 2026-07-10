@@ -18,8 +18,9 @@ about each other.
 ## Decisions
 
 - **The controller pattern: a Brain's entire output is a decision, never an
-  effect.** `brain(entity, view) → { drive, commit?, ai }` — move direction,
-  jump, and optionally an attack commit naming an ability. The zone tick is
+  effect.** `brain(entity, view) → { drive, ai }` — the Drive carrying move
+  direction, jump, aim, and optionally an attack commit naming an ability
+  (glossary: the commit rides the Drive). The zone tick is
   uniform per entity: obtain a **Drive** (from the net Intent for players, from
   the Brain for monsters), feed physics, let attack phases project Strikes, and
   land everything in the single resolve pass. Nothing outside a Brain ever
