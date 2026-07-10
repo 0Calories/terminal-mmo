@@ -3,9 +3,12 @@
 // ADR 0030's wall — sprite *code* is unreachable from the server.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
-import { type AssetEntries, loadAssetEntries } from './store';
-
-const SPRITE_EXT = '.sprite';
+import {
+	type AssetEntries,
+	entryId,
+	loadAssetEntries,
+	SPRITE_EXT,
+} from './store';
 
 export interface SpriteSource {
 	id: string; // filename without .sprite — globally unique identity (ADR 0011 zone precedent)
@@ -21,8 +24,7 @@ export function spriteSourcesFromEntries(
 		if (!key.startsWith('sprites/') || !key.endsWith(SPRITE_EXT)) continue;
 		const segments = key.split('/');
 		const role = segments.length > 2 ? segments[1] : '';
-		const last = segments[segments.length - 1] ?? '';
-		const id = last.slice(0, -SPRITE_EXT.length);
+		const id = entryId(key, SPRITE_EXT);
 		map.set(id, { id, role, text: entries[key] });
 	}
 	return map;

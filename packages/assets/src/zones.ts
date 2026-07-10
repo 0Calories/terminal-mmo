@@ -5,7 +5,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Catalogs, Zone } from '@mmo/core';
 import { parseZone } from '@mmo/core';
-import { type AssetEntries, loadAssetEntries } from './store';
+import { type AssetEntries, entryId, loadAssetEntries } from './store';
 
 const ZONE_EXT = '.zone';
 const CATALOGS_FILE = 'catalogs.json';
@@ -27,11 +27,7 @@ export function zonesFromEntries(entries: AssetEntries): Zone[] {
 	const zones = Object.keys(entries)
 		.filter((k) => k.startsWith('zones/') && k.endsWith(ZONE_EXT))
 		.sort()
-		.map((key) => {
-			const last = key.slice(key.lastIndexOf('/') + 1);
-			const id = last.slice(0, -ZONE_EXT.length);
-			return parseZone(entries[key], catalogs, id);
-		});
+		.map((key) => parseZone(entries[key], catalogs, entryId(key, ZONE_EXT)));
 	return [
 		...zones.filter((z) => z.type === 'town'),
 		...zones.filter((z) => z.type !== 'town'),

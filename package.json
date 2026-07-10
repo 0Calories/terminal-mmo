@@ -19,7 +19,7 @@
 		"zones:edit": "bun run packages/forge/bin/forge.ts zone edit",
 		"test": "bun test",
 		"typecheck": "bun run --filter '*' typecheck",
-		"depcruise": "depcruise packages/server/src --config .dependency-cruiser.cjs",
+		"depcruise": "depcruise packages/server/src packages/assets/src --config .dependency-cruiser.cjs",
 		"lint": "biome lint .",
 		"format": "biome format --write .",
 		"check": "biome check --write .",

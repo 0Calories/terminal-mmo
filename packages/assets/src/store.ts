@@ -15,6 +15,15 @@ declare const MMO_EMBEDDED_ASSETS: Record<string, string>;
 // so both strategies (and the builder that embeds them) speak one format.
 export type AssetEntries = Record<string, string>;
 
+export const SPRITE_EXT = '.sprite';
+
+// 'sprites/hats/cap.sprite' → 'cap': the filename-minus-extension identity
+// rule (ADR 0031/0011) applied to an entry key. Shared by both doors.
+export function entryId(key: string, ext: string): string {
+	const last = key.slice(key.lastIndexOf('/') + 1);
+	return last.slice(0, -ext.length);
+}
+
 const ASSET_TREES = [
 	{ name: 'sprites', exts: ['.sprite'] },
 	{ name: 'zones', exts: ['.zone', '.json'] },
