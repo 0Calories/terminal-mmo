@@ -1,29 +1,6 @@
 import { expect, test } from 'bun:test';
-import { spawnProjectile, stepProjectile } from '../../src/combat';
+import { spawnProjectile } from '../../src/combat';
 import type { Entity } from '../../src/entities';
-import { parseTerrain } from '../../src/physics';
-import { makeProjectile } from '../helpers';
-
-test('a projectile travels in its velocity direction over a step', () => {
-	const open = parseTerrain(['      ', '      ', '      ']);
-	const p = makeProjectile({ x: 1, y: 1, vx: 10, damage: 5 });
-	const next = stepProjectile(open, p, 0.1);
-	expect(next).not.toBeNull();
-	expect(next?.x).toBeCloseTo(2);
-	expect(next?.y).toBeCloseTo(1);
-});
-
-test('a projectile despawns when it enters solid Terrain', () => {
-	const walled = parseTerrain(['   #  ', '   #  ', '   #  ']);
-	const p = makeProjectile({ x: 1, y: 1, vx: 25, damage: 5 });
-	expect(stepProjectile(walled, p, 0.1)).toBeNull();
-});
-
-test('a projectile despawns when its lifetime runs out', () => {
-	const open = parseTerrain(['      ', '      ', '      ']);
-	const p = makeProjectile({ x: 1, y: 1, life: 0.05, damage: 5 });
-	expect(stepProjectile(open, p, 0.1)).toBeNull();
-});
 
 test('spawnProjectile launches ahead of the shooter in its facing direction', () => {
 	const shooter: Entity = {

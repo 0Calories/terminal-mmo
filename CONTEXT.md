@@ -711,6 +711,21 @@ jumping up through a platform while moving left/right feels smooth. Authored per
 distinct from a Wall so a structure can mix posts (walls) and ledges (platforms).
 _Avoid_: Ledge, floor, semisolid
 
+**Sweep**:
+The physics module's terrain-collision primitive: what does a point travelling
+from A to B hit? Bidirectional and axis-separated (x leg, then y leg), it checks
+every cell crossed so fast travel cannot tunnel, and it carries the global
+one-way rule — a One-way platform stops only descending travel; a Wall blocks
+point travel in every direction. The ascending leg exists for point travellers:
+rising Particle specks used to embed inside thick solids (ADR 0013 amendment).
+Rising *bodies* still pass any solid vertically — the **Momentum body** step
+keeps ADR 0026's no-head-bonk by never sweeping upward. Both integrators (the
+Momentum-body step and the projectile step) resolve terrain through it, and the
+client **Particle** simulation rebuilds on it, so "what blocks a moving point"
+has exactly one answer (ADR 0032).
+_Avoid_: Raycast, trace, sweep test (physics-engine jargon; this is cell-grid
+point travel)
+
 **Interact edge**:
 The `interact` intent as a one-shot **edge**, not a held flag (ADR 0027): a single
 physical press of the interact key yields exactly one true reading, used to enter a
