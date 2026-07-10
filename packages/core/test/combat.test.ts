@@ -1010,7 +1010,7 @@ describe('dodge action-state + pose', () => {
 describe('resolveCombat with an equipped weapon (ADR 0024 — damage only)', () => {
 	const avatar = (over: Partial<Entity> = {}) =>
 		monster(20, 4, { type: 'player', facing: 1, ...over });
-	const heavy: Weapon = { name: 'Test Cleaver', damage: 16 };
+	const heavy: Weapon = { name: 'Test Cleaver', damage: 16, sprite: 'sword' };
 
 	test('a fresh swing loads the ONE shared phase total, whatever the weapon', () => {
 		const r = resolveCombat(

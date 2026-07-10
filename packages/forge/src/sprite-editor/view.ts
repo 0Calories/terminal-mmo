@@ -3,8 +3,10 @@
 // buffer and keyboard. Everything is a deterministic function over the pure
 // editor state so it is unit-testable headlessly, exactly like the zone editor's
 // `editor.ts` helpers.
-import type { RGBAQuad } from '@mmo/core';
-import type { DynamicPreviews } from './state';
+import type { Facing, RGBAQuad } from '@mmo/core';
+import { mirrorAnchorX } from '@mmo/core';
+import { ROLE_PROFILES, type SpriteDoc, spriteFromDoc } from '@mmo/render';
+import type { AnchorMarker, DynamicPreviews } from './state';
 import type { SpriteRole } from './templates';
 
 // ---------------------------------------------------------------------------
@@ -31,6 +33,42 @@ export function dirForRole(role: SpriteRole): string {
 
 export function roleForDir(dir: string): SpriteRole | undefined {
 	return DIR_ROLES[dir];
+}
+
+// ---------------------------------------------------------------------------
+// Role-required-pose / anchor hints (ROLE_PROFILES is keyed by directory name)
+// ---------------------------------------------------------------------------
+
+// Required poses a doc of this role is missing — a non-blocking authoring hint,
+// not a refusal (deleting a required pose is allowed, just surfaced here).
+export function missingRequiredPoses(
+	doc: SpriteDoc,
+	role: SpriteRole,
+): string[] {
+	const profile = ROLE_PROFILES[dirForRole(role)];
+	if (!profile) return [];
+	return profile.poses.filter((p) => !(p in doc.poses));
+}
+
+// Required doc-level anchors this doc is missing.
+export function missingRequiredAnchors(
+	doc: SpriteDoc,
+	role: SpriteRole,
+): string[] {
+	const profile = ROLE_PROFILES[dirForRole(role)];
+	if (!profile) return [];
+	return profile.anchors.filter((a) => !(a in doc.anchors));
+}
+
+// One-line hint of what a role still needs (empty when the doc is complete).
+export function requiredHintLine(doc: SpriteDoc, role: SpriteRole): string {
+	const poses = missingRequiredPoses(doc, role);
+	const anchors = missingRequiredAnchors(doc, role);
+	if (poses.length === 0 && anchors.length === 0) return '';
+	const parts: string[] = [];
+	if (poses.length) parts.push(`poses: ${poses.join(', ')}`);
+	if (anchors.length) parts.push(`anchors: ${anchors.join(', ')}`);
+	return `needs ${parts.join(' · ')}`;
 }
 
 export interface EditTarget {
@@ -130,6 +168,50 @@ export function scrollViewport(
 }
 
 // ---------------------------------------------------------------------------
+// Mirror view — the true left-facing render of the current frame
+// ---------------------------------------------------------------------------
+
+// The overlay glyph marking an anchor's cell on the canvas (distinct from art).
+export const ANCHOR_MARKER = '✛';
+
+export interface MirrorRender {
+	rows: readonly string[];
+	colors: readonly string[];
+	bg: readonly string[];
+	// Rendered width in cells (the left grid's row length after compilation).
+	width: number;
+}
+
+// Compile the frame to a runtime Sprite and read its LEFT-facing output — the
+// exact glyph/colour/bg grids the game shows when the entity faces left, with
+// the glyph MIRROR table already applied. Read-only: painting stays on the
+// right-facing canvas.
+export function mirrorRender(doc: SpriteDoc, frameName: string): MirrorRender {
+	const sprite = spriteFromDoc(doc, frameName);
+	const left: Facing = -1;
+	const width = sprite.rows(1)[0]?.length ?? 0;
+	return {
+		rows: sprite.rows(left),
+		colors: sprite.colorKeys(left),
+		bg: sprite.bgKeys(left),
+		width,
+	};
+}
+
+// Mirror anchor markers across the rendered width so they sit on the left-facing
+// art where the game would place them.
+export function mirrorAnchorMarkers(
+	markers: readonly AnchorMarker[],
+	width: number,
+): AnchorMarker[] {
+	const left: Facing = -1;
+	return markers.map((m) => ({
+		...m,
+		x: mirrorAnchorX(m.x, width, left),
+	}));
+}
+
+// ---------------------------------------------------------------------------
 // Cursor quadrant marker
 // ---------------------------------------------------------------------------
 
@@ -158,6 +240,10 @@ export interface SpriteStatusModel {
 	cell: { x: number; y: number };
 	bit: number;
 	dirty: boolean;
+	// Optional pose / anchor-tool context (issue #339).
+	pose?: string;
+	anchorName?: string;
+	anchorScope?: string;
 }
 
 const BIT_NAMES = ['TL', 'TR', 'BL', 'BR'] as const;
@@ -171,7 +257,13 @@ export function bitName(bit: number): string {
 export function spriteStatusLine(m: SpriteStatusModel): string {
 	const bg = m.bgKey === null ? 'none' : m.bgKey;
 	const dirty = m.dirty ? ' *' : '';
-	return `${m.id} (${m.role})${dirty} · frame ${m.frame} [${m.frameIdx + 1}/${m.frameCount}] · ${m.tool} · fg ${m.fgKey} · bg ${bg} · cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
+	const pose = m.pose ? ` · pose ${m.pose}` : '';
+	// In the anchor tool, surface which anchor + scope the next placement targets.
+	const tool =
+		m.tool === 'anchor' && m.anchorName
+			? `anchor ${m.anchorName}@${m.anchorScope ?? 'doc'}`
+			: m.tool;
+	return `${m.id} (${m.role})${dirty}${pose} · frame ${m.frame} [${m.frameIdx + 1}/${m.frameCount}] · ${tool} · fg ${m.fgKey} · bg ${bg} · cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
 }
 
 export interface KeyHint {
@@ -184,13 +276,17 @@ export interface KeyHint {
 export const SPRITE_KEY_HINTS: readonly KeyHint[] = [
 	{ keys: 'hjkl', label: 'move' },
 	{ keys: 'space', label: 'paint' },
-	{ keys: 'p/e/s', label: 'tools' },
+	{ keys: 'p/e/s/a', label: 'tools' },
 	{ keys: 'f/g', label: 'color' },
 	{ keys: 'c', label: 'clear' },
 	{ keys: '[ ]', label: 'frame' },
 	{ keys: 'u/^r', label: 'undo' },
 	{ keys: '^s', label: 'save' },
 	{ keys: 'q', label: 'quit' },
+	{ keys: 'P', label: 'poses' },
+	{ keys: 'A', label: 'anchor' },
+	{ keys: 'm', label: 'mirror' },
+	{ keys: '. ,', label: 'play' },
 ];
 
 export function spriteHelpLine(): string {

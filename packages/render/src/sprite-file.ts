@@ -43,6 +43,10 @@ export interface SpriteDoc {
 	id: string;
 	key: string;
 	baseline: number;
+	// The accent palette key a weapon's dynamic `a` channel resolves to at render
+	// time (see `WEAPON_ACCENT_KEY`). Optional and role-agnostic in the format;
+	// only the weapon compiler consumes it. Absent for non-weapon sprites.
+	accent?: string;
 	anchors: Readonly<Record<string, SpriteAnchor>>;
 	poses: Readonly<Record<string, readonly string[]>>;
 	fps: Readonly<Record<string, number>>;
@@ -82,6 +86,13 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 function isNonNegInt(v: unknown): v is number {
 	return typeof v === 'number' && Number.isInteger(v) && v >= 0;
+}
+
+// Anchors are seat *offsets*, not in-bounds cell references, so they may be any
+// integer — a weapon grip legitimately sits one cell left of its art (x = -1).
+// Out-of-range values still warn (a typo guard) but are not rejected.
+function isInt(v: unknown): v is number {
+	return typeof v === 'number' && Number.isInteger(v);
 }
 
 // Drop leading/trailing all-blank lines; right-pad to widest row.
@@ -141,12 +152,7 @@ function parseAnchorEntries(
 		return out;
 	}
 	for (const [name, v] of Object.entries(value)) {
-		if (
-			Array.isArray(v) &&
-			v.length === 2 &&
-			isNonNegInt(v[0]) &&
-			isNonNegInt(v[1])
-		) {
+		if (Array.isArray(v) && v.length === 2 && isInt(v[0]) && isInt(v[1])) {
 			out[name] = { x: v[0], y: v[1] };
 		} else {
 			report('error', `invalid anchor entry '${name}' in ${label}`);
@@ -158,6 +164,7 @@ function parseAnchorEntries(
 interface ParsedHeader {
 	key: string;
 	baseline: number;
+	accent?: string;
 	anchors: Record<string, SpriteAnchor>;
 	explicitPoses: Record<string, string[]>;
 	fpsRaw: Record<string, number>;
@@ -172,6 +179,7 @@ function parseHeaderObject(
 	const known = new Set([
 		'key',
 		'baseline',
+		'accent',
 		'anchors',
 		'poses',
 		'fps',
@@ -215,6 +223,15 @@ function parseHeaderObject(
 			baseline = header.baseline;
 		} else {
 			report('error', "invalid 'baseline': must be an integer >= 0");
+		}
+	}
+
+	let accent: string | undefined;
+	if (header.accent !== undefined) {
+		if (typeof header.accent === 'string' && header.accent.length === 1) {
+			accent = header.accent;
+		} else {
+			report('error', "invalid 'accent': must be a single character");
 		}
 	}
 
@@ -312,6 +329,7 @@ function parseHeaderObject(
 	return {
 		key,
 		baseline,
+		...(accent !== undefined ? { accent } : {}),
 		anchors,
 		explicitPoses,
 		fpsRaw,
@@ -562,7 +580,10 @@ export function parseSpriteFile(
 		const h = f.rows.length;
 		const w = h > 0 ? f.rows[0].length : 0;
 		for (const [anchorName, a] of Object.entries(effective)) {
-			if (a.x >= w || a.y >= h) {
+			// Anchors are offsets and may be any integer; a value outside the art
+			// bounds (either direction) is still worth a typo-guard warning, but a
+			// grip-style anchor on a weapon legitimately trips it.
+			if (a.x < 0 || a.y < 0 || a.x >= w || a.y >= h) {
 				report('warning', `anchor '${anchorName}' out of bounds`, {
 					frame: f.name,
 					cell: { x: a.x, y: a.y },
@@ -614,6 +635,7 @@ export function parseSpriteFile(
 		id,
 		key: header.key,
 		baseline: header.baseline,
+		...(header.accent !== undefined ? { accent: header.accent } : {}),
 		anchors: header.anchors,
 		poses,
 		fps,
@@ -632,6 +654,7 @@ export function serializeSpriteFile(doc: SpriteDoc): string {
 	const header: Record<string, unknown> = {};
 	if (doc.key !== DEFAULT_KEY) header.key = doc.key;
 	if (doc.baseline !== 0) header.baseline = doc.baseline;
+	if (doc.accent !== undefined) header.accent = doc.accent;
 	if (Object.keys(doc.anchors).length > 0) {
 		header.anchors = Object.fromEntries(
 			Object.entries(doc.anchors).map(([n, a]) => [n, [a.x, a.y]]),

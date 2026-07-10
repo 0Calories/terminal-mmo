@@ -47,6 +47,21 @@ may override an anchor so a raised arm carries the weapon. The old fixed
 per-body anchor quietly forbade poses that move the hand/head — the normal case
 in expressive art.
 
+**Anchors are offsets, not in-bounds cell references.** Any integer is a valid
+anchor coordinate, including negatives — a weapon grip legitimately sits one
+cell left of its art (the sword's `grip: [-1, 2]`). A coordinate outside the art
+bounds (either direction) is a *warning* (a typo guard), never a parse error, so
+grip-style weapon anchors round-trip cleanly. Rejecting out-of-bounds anchors was
+considered and dropped: it conflated "seat offset" with "paint here," and the
+alternative (a padding column to keep the grip in-bounds) would have widened the
+sprite and broken golden parity.
+
+**Weapon accent is an optional header field.** A weapon file names the palette
+key its dynamic `a` channel resolves to via an optional single-char `accent`
+header field, carried onto the compiled `WeaponSprite`. The accent *value* still
+resolves render-side on the rarity seam (`style.palette[accent]`); only the
+accent's *usage* (`a`-keyed `@colors` cells) and *naming* moved into the file.
+
 **String ids everywhere; identity is the filename.** `cosmetics.form`/`hat` and
 the weapon's replicated appearance become sprite ids (directory = role, id =
 filename, per ADR 0011's zone precedent) in the Save, on the wire, and in the

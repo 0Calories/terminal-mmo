@@ -789,6 +789,11 @@ Weapon sprite, `head` seats the hat; names are open, so new overlay kinds are
 new names, not a format change. Declared per file with optional per-frame
 overrides (a Pose that raises the arm carries the weapon with it). Mirrors with
 facing. Generalizes the **Grip anchor**.
+An anchor is an **offset**, not an in-bounds cell reference: any integer is
+valid, including negatives, so a weapon grip legitimately sits one cell left of
+its art (`grip: [-1, 2]` on the sword). A value outside the art bounds (either
+direction) is a *warning* only — a typo guard that grip-style anchors on weapons
+legitimately trip — never a rejection (ADR 0031).
 _Avoid_: Mount point, slot, hardpoint
 
 **Composited preview**:

@@ -382,6 +382,59 @@ test('anchor out of bounds -> warning', () => {
 	expect(warn?.cell).toEqual({ x: 9, y: 9 });
 });
 
+test('negative anchor is accepted as an offset (out-of-bounds warning, not rejected)', () => {
+	// A weapon grip legitimately sits one cell left of its art (x = -1). Anchors
+	// are offsets, not in-bounds cell references, so the value survives; the
+	// out-of-bounds check is a typo-guard warning, not an error.
+	const { doc, diagnostics } = parseSpriteFile(
+		'{ "anchors": { "grip": [-1, 2] } }\n--- idle\nAB\nCD\nEF\n',
+		'x',
+	);
+	expect(doc?.anchors).toEqual({ grip: { x: -1, y: 2 } });
+	expect(diagnostics.some((d) => d.severity === 'error')).toBe(false);
+	const warn = diagnostics.find(
+		(d) => d.severity === 'warning' && /out of bounds/.test(d.message),
+	);
+	expect(warn).toBeDefined();
+	expect(warn?.cell).toEqual({ x: -1, y: 2 });
+});
+
+test('non-integer anchor entry is still rejected as an error', () => {
+	const { doc, diagnostics } = parseSpriteFile(
+		'{ "anchors": { "grip": [0.5, 2], "head": [0, 0] } }\n--- a\nAB\n',
+		'x',
+	);
+	expect(doc?.anchors).toEqual({ head: { x: 0, y: 0 } });
+	expect(
+		diagnostics.some((d) => d.severity === 'error' && /grip/.test(d.message)),
+	).toBe(true);
+});
+
+test('accent header field is parsed onto the doc and round-trips', () => {
+	const { doc, diagnostics } = parseSpriteFile(
+		'{ "accent": "s" }\n--- idle\nAB\n',
+		'x',
+	);
+	expect(doc?.accent).toBe('s');
+	expect(diagnostics.some((d) => d.severity === 'error')).toBe(false);
+	expect(diagnostics.some((d) => /unknown header field/.test(d.message))).toBe(
+		false,
+	);
+	const reparsed = parseSpriteFile(serializeSpriteFile(doc as SpriteDoc), 'x');
+	expect(reparsed.doc?.accent).toBe('s');
+});
+
+test('invalid accent (multi-char) -> error diagnostic, dropped', () => {
+	const { doc, diagnostics } = parseSpriteFile(
+		'{ "accent": "sw" }\n--- idle\nAB\n',
+		'x',
+	);
+	expect(doc?.accent).toBeUndefined();
+	expect(
+		diagnostics.some((d) => d.severity === 'error' && /accent/.test(d.message)),
+	).toBe(true);
+});
+
 test('bad frame-name charset -> error diagnostic, still parsed', () => {
 	const { doc, diagnostics } = parseSpriteFile('--- weird!name\nAB\n', 'x');
 	expect(doc?.frames[0].name).toBe('weird!name');

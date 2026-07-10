@@ -37,7 +37,14 @@ import {
 	undo,
 } from '../history';
 
-export type SpriteTool = 'paint' | 'erase' | 'stamp';
+export type SpriteTool = 'paint' | 'erase' | 'stamp' | 'anchor';
+
+// The two places an anchor can live: at the document level (shared by every
+// frame) or as a per-frame override on the current frame (ADR 0031).
+export type AnchorScope = 'doc' | 'frame';
+
+// Anchor + frame/pose names share the parser's identifier charset.
+const NAME_RE = /^[A-Za-z0-9:_-]+$/;
 
 // A selected background: a color key, or `null` for a transparent background.
 export type BgSelection = string | null;
@@ -46,11 +53,16 @@ export interface SpriteEditorState {
 	doc: SpriteDoc;
 	// Name of the frame currently being edited.
 	frame: string;
+	// Name of the pose the current frame belongs to (drives playback + pose ops).
+	pose: string;
 	// Cursor in PIXEL coordinates (2× the cell resolution on each axis).
 	cursor: { x: number; y: number };
 	tool: SpriteTool;
 	fgKey: string;
 	bgKey: BgSelection;
+	// The anchor name the anchor tool places, and whether at doc or frame scope.
+	anchorName: string;
+	anchorScope: AnchorScope;
 	// The human-readable reason the last operation was refused; '' on success.
 	feedback: string;
 	history: History<SpriteDoc>;
@@ -98,15 +110,30 @@ export function initSpriteEditor(
 	return {
 		doc,
 		frame: name,
+		pose: poseContaining(doc, name) ?? name,
 		cursor: { x: 0, y: 0 },
 		tool: 'paint',
 		fgKey: doc.key,
 		bgKey: null,
+		anchorName: firstAnchorName(doc),
+		anchorScope: 'doc',
 		feedback: '',
 		history: initHistory(doc),
 		stroke: null,
 		strokeSeq: 0,
 	};
+}
+
+// The pose whose frame list contains `frame`, if any (the parser also treats a
+// frame referenced by no pose as its own implicit single-frame pose).
+function poseContaining(doc: SpriteDoc, frame: string): string | undefined {
+	for (const [pose, frames] of Object.entries(doc.poses))
+		if (frames.includes(frame)) return pose;
+	return undefined;
+}
+
+function firstAnchorName(doc: SpriteDoc): string {
+	return Object.keys(doc.anchors)[0] ?? '';
 }
 
 export function currentFrame(state: SpriteEditorState): SpriteFrameDoc {
@@ -312,7 +339,257 @@ export function selectFrame(
 ): SpriteEditorState {
 	if (!state.doc.frames.some((f) => f.name === name))
 		return refuse(state, `no such frame '${name}'`);
-	return { ...state, frame: name, stroke: null, feedback: '' };
+	const pose = poseContaining(state.doc, name) ?? state.pose;
+	return { ...state, frame: name, pose, stroke: null, feedback: '' };
+}
+
+// ---------------------------------------------------------------------------
+// Poses — named ordered frame lists (ADR 0031). All mutations are undoable;
+// illegal names / missing targets refuse with `feedback`.
+// ---------------------------------------------------------------------------
+
+export function poseNames(state: SpriteEditorState): string[] {
+	return Object.keys(state.doc.poses);
+}
+
+export function poseFrames(state: SpriteEditorState, pose: string): string[] {
+	return [...(state.doc.poses[pose] ?? [])];
+}
+
+// A fresh, fully-transparent frame sized to the current canvas so new frames
+// line up with the art the artist is already drawing.
+function newBlankFrame(state: SpriteEditorState, name: string): SpriteFrameDoc {
+	const cur = state.doc.frames.find((f) => f.name === state.frame);
+	const { w, h } = cur ? frameExtent(cur) : { w: 6, h: 4 };
+	const rows = Array.from({ length: Math.max(1, h) }, () =>
+		' '.repeat(Math.max(1, w)),
+	);
+	return { name, rows, colors: rows.slice(), bg: rows.slice(), anchors: {} };
+}
+
+// Create a named pose backed by one fresh blank frame of the same name; switch
+// to it. Refuses illegal/duplicate names or a name colliding with a frame.
+export function createPose(
+	state: SpriteEditorState,
+	name: string,
+): SpriteEditorState {
+	if (!NAME_RE.test(name))
+		return refuse(
+			state,
+			`'${name}' is not a legal pose name (${NAME_RE.source})`,
+		);
+	if (name in state.doc.poses)
+		return refuse(state, `pose '${name}' already exists`);
+	if (state.doc.frames.some((f) => f.name === name))
+		return refuse(state, `a frame named '${name}' already exists`);
+	const frame = newBlankFrame(state, name);
+	const nextDoc: SpriteDoc = {
+		...state.doc,
+		frames: [...state.doc.frames, frame],
+		poses: { ...state.doc.poses, [name]: [name] },
+	};
+	const committed = commitDoc(state, nextDoc);
+	return { ...committed, pose: name, frame: name };
+}
+
+// Append a fresh blank frame to an existing pose and select it. Without a name,
+// one is derived (`<pose>-2`, `<pose>-3`, …) avoiding collisions.
+export function addFrameToPose(
+	state: SpriteEditorState,
+	pose: string,
+	frameName?: string,
+): SpriteEditorState {
+	const list = state.doc.poses[pose];
+	if (list === undefined) return refuse(state, `no such pose '${pose}'`);
+	const name = frameName ?? autoFrameName(state, pose);
+	if (!NAME_RE.test(name))
+		return refuse(state, `'${name}' is not a legal frame name`);
+	if (state.doc.frames.some((f) => f.name === name))
+		return refuse(state, `a frame named '${name}' already exists`);
+	const frame = newBlankFrame(state, name);
+	const nextDoc: SpriteDoc = {
+		...state.doc,
+		frames: [...state.doc.frames, frame],
+		poses: { ...state.doc.poses, [pose]: [...list, name] },
+	};
+	const committed = commitDoc(state, nextDoc);
+	return { ...committed, pose, frame: name };
+}
+
+function autoFrameName(state: SpriteEditorState, pose: string): string {
+	for (let n = 2; ; n++) {
+		const candidate = `${pose}-${n}`;
+		if (!state.doc.frames.some((f) => f.name === candidate)) return candidate;
+	}
+}
+
+// Delete a pose entry and garbage-collect any frame sections it orphaned (a
+// frame referenced by no remaining pose is removed, so it does not silently
+// become an implicit single-frame pose). Refuses removing the last pose.
+export function deletePose(
+	state: SpriteEditorState,
+	pose: string,
+): SpriteEditorState {
+	if (!(pose in state.doc.poses))
+		return refuse(state, `no such pose '${pose}'`);
+	if (Object.keys(state.doc.poses).length <= 1)
+		return refuse(state, 'cannot delete the last pose');
+	const nextPoses: Record<string, readonly string[]> = {};
+	for (const [name, frames] of Object.entries(state.doc.poses))
+		if (name !== pose) nextPoses[name] = frames;
+	const referenced = new Set(Object.values(nextPoses).flat());
+	const nextFrames = state.doc.frames.filter((f) => referenced.has(f.name));
+	const nextDoc: SpriteDoc = {
+		...state.doc,
+		poses: nextPoses,
+		frames: nextFrames,
+	};
+	const committed = commitDoc(state, nextDoc);
+	// Keep the cursor on a live pose/frame.
+	if (nextPoses[state.pose] !== undefined) return committed;
+	const nextPose = Object.keys(nextPoses)[0];
+	return { ...committed, pose: nextPose, frame: nextPoses[nextPose][0] };
+}
+
+// Switch the current pose, landing on its first frame. Not a doc mutation, so
+// it is not recorded in history.
+export function selectPose(
+	state: SpriteEditorState,
+	pose: string,
+): SpriteEditorState {
+	const list = state.doc.poses[pose];
+	if (list === undefined) return refuse(state, `no such pose '${pose}'`);
+	return {
+		...state,
+		pose,
+		frame: list[0] ?? state.frame,
+		stroke: null,
+		feedback: '',
+	};
+}
+
+// Swap the frame at `index` with the one at `index + delta` within a pose.
+export function reorderFrame(
+	state: SpriteEditorState,
+	pose: string,
+	index: number,
+	delta: number,
+): SpriteEditorState {
+	const list = state.doc.poses[pose];
+	if (list === undefined) return refuse(state, `no such pose '${pose}'`);
+	const to = index + delta;
+	if (index < 0 || index >= list.length || to < 0 || to >= list.length)
+		return refuse(state, 'cannot move that frame — out of range');
+	const next = [...list];
+	[next[index], next[to]] = [next[to], next[index]];
+	const nextDoc: SpriteDoc = {
+		...state.doc,
+		poses: { ...state.doc.poses, [pose]: next },
+	};
+	return commitDoc(state, nextDoc);
+}
+
+// Set (positive number) or clear (`null`/non-positive) a pose's playback fps.
+// A cleared pose animates at the default EMOTE_FPS.
+export function setPoseFps(
+	state: SpriteEditorState,
+	pose: string,
+	fps: number | null,
+): SpriteEditorState {
+	if (!(pose in state.doc.poses))
+		return refuse(state, `no such pose '${pose}'`);
+	const nextFps: Record<string, number> = { ...state.doc.fps };
+	if (fps === null) {
+		delete nextFps[pose];
+	} else if (!Number.isFinite(fps) || fps <= 0) {
+		return refuse(state, 'fps must be a positive number');
+	} else {
+		nextFps[pose] = fps;
+	}
+	return commitDoc(state, { ...state.doc, fps: nextFps });
+}
+
+// ---------------------------------------------------------------------------
+// Anchors — named cell coordinates, at doc scope or per-frame override. Anchors
+// may legitimately sit outside the art grid (the parser warns, never blocks).
+// ---------------------------------------------------------------------------
+
+export interface AnchorMarker {
+	name: string;
+	x: number;
+	y: number;
+	// True when the position comes from a per-frame override, not the doc level.
+	overridden: boolean;
+}
+
+// The effective anchors for the current frame: doc-level anchors overlaid with
+// this frame's overrides (frame wins), each tagged with its source.
+export function anchorMarkers(state: SpriteEditorState): AnchorMarker[] {
+	const frame = currentFrame(state);
+	const out = new Map<string, AnchorMarker>();
+	for (const [name, a] of Object.entries(state.doc.anchors))
+		out.set(name, { name, x: a.x, y: a.y, overridden: false });
+	for (const [name, a] of Object.entries(frame.anchors))
+		out.set(name, { name, x: a.x, y: a.y, overridden: true });
+	return [...out.values()];
+}
+
+export function setAnchorName(
+	state: SpriteEditorState,
+	name: string,
+): SpriteEditorState {
+	if (!NAME_RE.test(name))
+		return refuse(state, `'${name}' is not a legal anchor name`);
+	return { ...state, anchorName: name, feedback: '' };
+}
+
+export function setAnchorScope(
+	state: SpriteEditorState,
+	scope: AnchorScope,
+): SpriteEditorState {
+	return { ...state, anchorScope: scope, feedback: '' };
+}
+
+// Place (or move) a named anchor at a cell. `scope` chooses doc level or a
+// per-frame override on the current frame. Out-of-grid cells are allowed.
+export function placeAnchor(
+	state: SpriteEditorState,
+	name: string,
+	cellX: number,
+	cellY: number,
+	scope: AnchorScope,
+): SpriteEditorState {
+	if (!NAME_RE.test(name))
+		return refuse(state, `'${name}' is not a legal anchor name`);
+	if (cellX < 0 || cellY < 0)
+		return refuse(state, 'an anchor cannot sit at a negative cell');
+	if (scope === 'doc') {
+		const nextDoc: SpriteDoc = {
+			...state.doc,
+			anchors: { ...state.doc.anchors, [name]: { x: cellX, y: cellY } },
+		};
+		return commitDoc(state, nextDoc);
+	}
+	const frame = currentFrame(state);
+	const nextFrame: SpriteFrameDoc = {
+		...frame,
+		anchors: { ...frame.anchors, [name]: { x: cellX, y: cellY } },
+	};
+	return commitFrame(state, nextFrame);
+}
+
+// Remove a per-frame anchor override; the anchor falls back to its doc-level
+// position. Refuses when the current frame has no override for that name.
+export function removeAnchorOverride(
+	state: SpriteEditorState,
+	name: string,
+): SpriteEditorState {
+	const frame = currentFrame(state);
+	if (!(name in frame.anchors))
+		return refuse(state, `frame '${frame.name}' has no override for '${name}'`);
+	const anchors = { ...frame.anchors };
+	delete anchors[name];
+	return commitFrame(state, { ...frame, anchors });
 }
 
 // ---------------------------------------------------------------------------

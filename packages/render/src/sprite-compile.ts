@@ -4,6 +4,7 @@ import type { PoseId } from '@mmo/core';
 import type { BodySprite } from './body-sprite';
 import { SENTINEL, Sprite } from './sprite';
 import type { SpriteDoc, SpriteFrameDoc } from './sprite-file';
+import { WEAPON_ACCENT_KEY, type WeaponSprite } from './weapon-sprite';
 
 function toGlyphText(rows: readonly string[]): string {
 	return rows.map((row) => row.replaceAll(' ', SENTINEL)).join('\n');
@@ -89,5 +90,33 @@ export function compileBodySprite(doc: SpriteDoc): BodySprite {
 		head,
 		baseline: doc.baseline,
 		...(Object.keys(doc.fps).length > 0 ? { fps: doc.fps } : {}),
+	};
+}
+
+// Compile a weapon sprite (ADR 0031): phase poses `idle`/`windup`/`recovery`
+// each compile to a single Sprite, `active` to the swing sweep (readonly
+// Sprite[]) the renderer samples by Attack progress. The grip is a doc-level
+// anchor (an offset, so it may be negative); the accent is the palette key the
+// dynamic `a` channel resolves to at render time. Assumes the doc passed the
+// `weapons` role profile — still throws if the required grip is absent.
+export function compileWeaponSprite(doc: SpriteDoc): WeaponSprite {
+	const grip = doc.anchors.grip;
+	if (grip === undefined)
+		throw new Error(
+			`sprite doc '${doc.id}' (role 'weapons') requires a doc-level anchor 'grip'`,
+		);
+
+	const frames: WeaponSprite['frames'] = {};
+	if (doc.poses.idle) frames.idle = spriteFromDoc(doc, doc.poses.idle[0]);
+	if (doc.poses.windup) frames.windup = spriteFromDoc(doc, doc.poses.windup[0]);
+	if (doc.poses.recovery)
+		frames.recovery = spriteFromDoc(doc, doc.poses.recovery[0]);
+	if (doc.poses.active)
+		frames.active = doc.poses.active.map((name) => spriteFromDoc(doc, name));
+
+	return {
+		frames,
+		grip: { x: grip.x, y: grip.y },
+		accent: doc.accent ?? WEAPON_ACCENT_KEY,
 	};
 }
