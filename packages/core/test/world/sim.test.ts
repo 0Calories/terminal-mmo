@@ -1,27 +1,17 @@
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets';
-import type {
-	GameState,
-	Input,
-	PlayerState,
-	Projectile,
-	Zone,
-} from '../../src';
+import { COMBAT, SWING_TOTAL } from '../../src/combat';
+import type { Input, PlayerState, Projectile } from '../../src/entities';
+import { BOX, MONSTER, SHOOTER, spawnAvatar } from '../../src/entities';
+import { CAPABILITY_UNLOCK, xpForKill } from '../../src/progression';
+import type { GameState, Zone } from '../../src/world';
 import {
 	activeZone,
-	BOX,
-	CAPABILITY_UNLOCK,
-	COMBAT,
 	createGameFromZones,
 	GROUND_TOP,
-	MONSTER,
-	SHOOTER,
-	SWING_TOTAL,
-	spawnAvatar,
 	spawnMonster,
 	step,
-	xpForKill,
-} from '../../src';
+} from '../../src/world';
 import { createGame, flatTerrain, makeProjectile } from '../helpers';
 
 const IDLE: Input = { moveX: 0, jump: false, attack: false };

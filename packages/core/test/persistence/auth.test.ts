@@ -11,7 +11,7 @@ import {
 	resolveAuth,
 	validHandle,
 	verifyChallenge,
-} from '../../src';
+} from '../../src/persistence';
 
 function makeIdentity(comment?: string) {
 	const { publicKey, privateKey } = generateKeyPairSync('ed25519');

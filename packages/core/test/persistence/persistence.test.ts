@@ -1,19 +1,16 @@
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets';
+import { DEFAULT_WEAPON } from '../../src/combat';
+import { DEFAULT_COSMETICS, type Item } from '../../src/entities';
 import {
-	addSession,
-	createServerWorld,
-	DEFAULT_COSMETICS,
-	DEFAULT_WEAPON,
 	emptySave,
-	type Item,
 	migrateSaveCosmetics,
 	type PlayerSave,
 	registryFromSaves,
 	restoredFromSave,
 	saveFromAvatar,
-	zoneStateOf,
-} from '../../src';
+} from '../../src/persistence';
+import { addSession, createServerWorld, zoneStateOf } from '../../src/world';
 
 function freshAvatar() {
 	const w = addSession(

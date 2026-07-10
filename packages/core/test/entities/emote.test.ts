@@ -1,12 +1,12 @@
 import { expect, test } from 'bun:test';
 import {
-	EMOTE_FPS,
 	EMOTES,
 	emoteById,
 	emoteInterrupted,
 	initialEmoteT,
 	stepEmote,
-} from '../../src';
+} from '../../src/entities';
+import { EMOTE_FPS } from '../../src/sprites';
 
 test('EMOTES is a non-empty fixed set of distinct ids with a known lifetime', () => {
 	expect(EMOTES.length).toBeGreaterThan(0);

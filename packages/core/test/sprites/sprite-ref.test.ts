@@ -3,16 +3,15 @@
 // Everything here imports from @mmo/core ONLY: the deterministic sim / server
 // reads its identity crumbs from core, never from @mmo/render's art.
 import { expect, test } from 'bun:test';
+import { entityTint } from '../../src/combat';
+import { type Entity, SCENE_PALETTE } from '../../src/entities';
 import {
-	type Entity,
-	entityTint,
 	MONSTER_SPRITE_REF,
 	monsterSpriteRef,
 	NPC_SPRITE_REF,
 	npcSpriteRef,
-	SCENE_PALETTE,
 	spriteMetaFor,
-} from '../../src';
+} from '../../src/sprites';
 
 // The art references this migration introduces — the ids that key the
 // `.sprite` files under sprites/monsters/ and sprites/npcs/ (chaser, shooter,

@@ -1,29 +1,21 @@
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets';
-import type {
-	AvatarIntent,
-	Cosmetics,
-	Item,
-	Npc,
-	ServerWorld,
-} from '../../src';
+import type { Cosmetics, Item, Npc } from '../../src/entities';
+import { BOX, DEFAULT_COSMETICS } from '../../src/entities';
+import { STARTER_GOODS, saleValue } from '../../src/items';
+import { emptySave, restoredFromSave } from '../../src/persistence';
+import type { ServerWorld } from '../../src/world';
 import {
 	addSession,
 	applyBuy,
 	applyCosmetics,
 	applySell,
 	atMerchant,
-	BOX,
 	createServerWorld,
-	DEFAULT_COSMETICS,
-	emptySave,
 	GROUND_TOP,
 	handleOf,
 	joinParty,
 	removeSession,
-	restoredFromSave,
-	STARTER_GOODS,
-	saleValue,
 	sessionByHandle,
 	sessionsInZone,
 	spawnNewAvatar,
@@ -33,7 +25,8 @@ import {
 	zoneInstance,
 	zoneOf,
 	zoneStateOf,
-} from '../../src';
+} from '../../src/world';
+import type { AvatarIntent } from '../../src/zones';
 
 const y = GROUND_TOP - BOX.h;
 

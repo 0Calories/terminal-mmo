@@ -5,7 +5,7 @@ import {
 	fillRatio,
 	PROGRESSION,
 	xpProgress,
-} from '../../src';
+} from '../../src/progression';
 
 test('fillRatio is the clamped fraction, guarding bad maxima', () => {
 	expect(fillRatio(50, 100)).toBe(0.5);

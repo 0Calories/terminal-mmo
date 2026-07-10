@@ -1,44 +1,37 @@
 import { expect, test } from 'bun:test';
-import type {
-	AvatarIntent,
-	Drop,
-	Entity,
-	Item,
-	ServerAvatar,
-	Zone,
-	ZoneState,
-} from '../../src';
 import {
 	ACTION_FLAG,
-	addAvatar,
 	applyPoiseDamage,
-	BOX,
-	BRUTE,
-	CAPABILITY_UNLOCK,
 	COMBAT,
-	clientStepAvatar,
-	createZoneState,
-	DEFAULT_COSMETICS,
 	DEFAULT_WEAPON,
 	DODGE_TOTAL,
 	dodgePhase,
 	entityTint,
-	GROUND_TOP,
-	lootTableFor,
-	MONSTER,
-	removeAvatar,
-	rollDrop,
-	SPAWN,
 	SWING_TOTAL,
-	snapshotFor,
-	spawnAvatar,
-	spawnMonster,
-	stepZone,
 	swingPhase,
 	weaponById,
-	xpForKill,
-	xpToNext,
-} from '../../src';
+} from '../../src/combat';
+import type { Drop, Entity, Item } from '../../src/entities';
+import {
+	BOX,
+	BRUTE,
+	DEFAULT_COSMETICS,
+	MONSTER,
+	spawnAvatar,
+} from '../../src/entities';
+import { lootTableFor, rollDrop } from '../../src/items';
+import { CAPABILITY_UNLOCK, xpForKill, xpToNext } from '../../src/progression';
+import type { Zone } from '../../src/world';
+import { GROUND_TOP, SPAWN, spawnMonster } from '../../src/world';
+import type { AvatarIntent, ServerAvatar, ZoneState } from '../../src/zones';
+import {
+	addAvatar,
+	clientStepAvatar,
+	createZoneState,
+	removeAvatar,
+	snapshotFor,
+	stepZone,
+} from '../../src/zones';
 import { flatTerrain, makeProjectile } from '../helpers';
 
 const y = GROUND_TOP - BOX.h;

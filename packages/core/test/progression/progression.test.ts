@@ -8,7 +8,7 @@ import {
 	PROGRESSION,
 	xpForKill,
 	xpToNext,
-} from '../../src';
+} from '../../src/progression';
 
 test('xpToNext accelerates geometrically and is infinite at the cap', () => {
 	expect(xpToNext(1)).toBe(60);

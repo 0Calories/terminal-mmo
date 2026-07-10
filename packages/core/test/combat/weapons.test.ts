@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { COMBAT, DEFAULT_WEAPON, WEAPONS, weaponById } from '../../src';
+import { COMBAT, DEFAULT_WEAPON, WEAPONS, weaponById } from '../../src/combat';
 
 describe('WEAPONS catalog — name + damage + art reference (ADR 0024/0030/0031)', () => {
 	test('the catalog is core-owned stats plus render-owned sprite references', () => {

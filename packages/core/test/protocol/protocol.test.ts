@@ -1,15 +1,13 @@
 import { expect, test } from 'bun:test';
-import type { ClientMessage, ServerMessage } from '../../src';
+import { ACTION_FLAG, DEFAULT_WEAPON, IDLE_ACTION } from '../../src/combat';
+import { DEFAULT_COSMETICS } from '../../src/entities';
+import type { ClientMessage, ServerMessage } from '../../src/protocol';
 import {
-	ACTION_FLAG,
-	DEFAULT_COSMETICS,
-	DEFAULT_WEAPON,
 	decodeClientMessage,
 	decodeServerMessage,
 	encodeClientMessage,
 	encodeServerMessage,
-	IDLE_ACTION,
-} from '../../src';
+} from '../../src/protocol';
 
 // Helper to byte-craft a legacy (pre-#348) frame: tag + fields, with the hat
 // carried as a raw u8 LEGACY_HAT_IDS index and NO trailing hat-id string.

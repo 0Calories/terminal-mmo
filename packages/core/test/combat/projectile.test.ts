@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
-import type { Entity } from '../../src';
-import { parseTerrain, spawnProjectile, stepProjectile } from '../../src';
+import { spawnProjectile, stepProjectile } from '../../src/combat';
+import type { Entity } from '../../src/entities';
+import { parseTerrain } from '../../src/physics';
 import { makeProjectile } from '../helpers';
 
 test('a projectile travels in its velocity direction over a step', () => {

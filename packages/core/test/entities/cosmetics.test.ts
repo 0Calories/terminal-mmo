@@ -13,7 +13,7 @@ import {
 	randomCosmetics,
 	sanitizeFormId,
 	sanitizeHatId,
-} from '../../src';
+} from '../../src/entities';
 
 test('the default cosmetics are the first slot of every catalog (bareheaded amber, buddy Form)', () => {
 	expect(DEFAULT_COSMETICS).toEqual({

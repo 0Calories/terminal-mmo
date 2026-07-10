@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { Rarity } from '../../src';
+import type { Rarity } from '../../src/entities';
 import {
 	BASES,
 	DEFAULT_LOOT_TABLE,
@@ -10,7 +10,7 @@ import {
 	RARITY_COLOR,
 	rollDrop,
 	rollItem,
-} from '../../src';
+} from '../../src/items';
 
 test('rollItem is deterministic for a given state', () => {
 	const a = rollItem(123, 5);

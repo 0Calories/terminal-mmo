@@ -1,21 +1,17 @@
 import { expect, test } from 'bun:test';
-import type { GameState, Input, PlayerState, Zone } from '../../src';
 import {
-	activeZone,
-	BOX,
-	CAPABILITY_UNLOCK,
 	GROUND_POUND,
-	GROUND_TOP,
-	MONSTER,
 	POWER_STRIKE,
 	skillForSlot,
 	skillHitbox,
 	skillsUnlockedBetween,
 	skillUnlocked,
-	spawnAvatar,
-	spawnMonster,
-	step,
-} from '../../src';
+} from '../../src/combat';
+import type { Input, PlayerState } from '../../src/entities';
+import { BOX, MONSTER, spawnAvatar } from '../../src/entities';
+import { CAPABILITY_UNLOCK } from '../../src/progression';
+import type { GameState, Zone } from '../../src/world';
+import { activeZone, GROUND_TOP, spawnMonster, step } from '../../src/world';
 import { flatTerrain } from '../helpers';
 
 function skillGame(level: number): GameState {

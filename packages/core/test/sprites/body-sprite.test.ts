@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { type BodyState, bodyFrame, EMOTE_FPS, STRIDE } from '../../src';
+import {
+	type BodyState,
+	bodyFrame,
+	EMOTE_FPS,
+	STRIDE,
+} from '../../src/sprites';
 
 const REST: BodyState = {
 	move: 'idle',
