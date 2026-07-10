@@ -1,12 +1,25 @@
 import { expect, test } from 'bun:test';
-import { type EntityType, FORM_COUNT, spriteMetaFor, WEAPONS } from '@mmo/core';
-import { FORMS, HAT_IDS, hatById, spriteFor, weaponSpriteById } from '../src';
+import {
+	DEFAULT_FORM_ID,
+	type EntityType,
+	spriteMetaFor,
+	WEAPONS,
+} from '@mmo/core';
+import {
+	FORM_IDS,
+	formById,
+	HAT_IDS,
+	hatById,
+	spriteFor,
+	weaponSpriteById,
+} from '../src';
 
-// The @mmo/core registry counts are the metadata source of truth; the art registries
-// here must stay index-aligned with them (a stray art entry can't drift the count the
-// server-side cosmetics validation clamps against).
-test('the Form art registry matches the @mmo/core FORM_COUNT', () => {
-	expect(FORMS.length).toBe(FORM_COUNT);
+// Forms are discovered by directory scan (ADR 0031). The catalog is whatever
+// `.sprite` files ship under sprites/forms/; the launch demo ships exactly one,
+// 'buddy', which must always be resolvable as the default Form.
+test('FORM_IDS contains the shipped default Form, which resolves to a body', () => {
+	expect(FORM_IDS).toContain(DEFAULT_FORM_ID);
+	expect(formById(DEFAULT_FORM_ID).frames.idle).toBeDefined();
 });
 
 // Hats are discovered by directory scan (ADR 0031) — the five known

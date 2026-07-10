@@ -55,6 +55,51 @@ test('validateSpriteRole: forms fails naming missing pose and anchor', () => {
 	expect(joined).not.toContain('walkA');
 });
 
+const FORMS_KNOWN_EMOTE = `{
+	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"poses": { "walkA": ["wa"], "walkB": ["wb"], "emote:wave": ["ev"] }
+}
+--- idle
+AB
+--- wa
+AB
+--- wb
+AB
+--- ev
+AB
+`;
+
+test('validateSpriteRole: forms accepts an emote pose for a registered emote', () => {
+	expect(
+		validateSpriteRole(docOf(FORMS_KNOWN_EMOTE, 'buddy'), 'forms'),
+	).toEqual([]);
+});
+
+const FORMS_UNKNOWN_EMOTE = `{
+	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"poses": { "walkA": ["wa"], "walkB": ["wb"], "emote:boogie": ["bg"] }
+}
+--- idle
+AB
+--- wa
+AB
+--- wb
+AB
+--- bg
+AB
+`;
+
+test('validateSpriteRole: forms rejects an emote pose for an unregistered emote', () => {
+	const diags = validateSpriteRole(
+		docOf(FORMS_UNKNOWN_EMOTE, 'buddy'),
+		'forms',
+	);
+	expect(diags.length).toBe(1);
+	expect(diags[0].severity).toBe('error');
+	expect(diags[0].message).toContain('boogie');
+	expect(diags[0].message).toContain('unknown emote');
+});
+
 const WEAPON_OK = `{
 	"anchors": { "grip": [0, 0] },
 	"poses": { "windup": ["wu"], "active": ["ac"] }

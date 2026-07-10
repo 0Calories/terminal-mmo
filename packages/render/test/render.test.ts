@@ -14,7 +14,6 @@ import {
 	type CellBuffer,
 	drawEntitySprite,
 	drawNameplates,
-	FORMS,
 	formById,
 	formFrame,
 	hatById,
@@ -27,6 +26,13 @@ import {
 	weaponSpriteById,
 } from '../src';
 import { blitSprite } from '../src/render';
+
+// Forms are now a directory-scan registry keyed by string id (ADR 0031). These
+// render tests predate that and index a `FORMS` array; the demo ships exactly
+// one Form ('buddy'), so a one-element shim over the registry keeps them honest
+// without a rewrite. formById tolerates the legacy numeric index at runtime
+// (any non-id falls back to the default Form).
+const FORMS = [formById('buddy')] as const;
 
 interface Cell {
 	ch: string;

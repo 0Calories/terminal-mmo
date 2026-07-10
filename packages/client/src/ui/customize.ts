@@ -4,11 +4,10 @@ import {
 	HANDLE_CHAR_RE,
 	HANDLE_MAX_LEN,
 	HUE_COUNT,
-	LEGACY_FORM_IDS,
 	NAMEPLATE_COUNT,
 	validHandle,
 } from '@mmo/core';
-import { HAT_IDS } from '@mmo/render';
+import { FORM_IDS, HAT_IDS } from '@mmo/render';
 
 export { HANDLE_MAX_LEN } from '@mmo/core';
 
@@ -39,9 +38,10 @@ export interface CustomizeFieldDef {
 // '' ("None") always leads, then the scanned ids in sorted order.
 const HAT_OPTIONS: readonly string[] = ['', ...HAT_IDS];
 
-// Forms are id-cycled like hats, but never empty (no leading ''). A later slice
-// swaps LEGACY_FORM_IDS for the render-package directory-scan Form registry.
-const FORM_OPTIONS: readonly string[] = LEGACY_FORM_IDS;
+// Forms are id-cycled like hats, but never empty (no leading ''): the scanned
+// Form ids in sorted order (ADR 0031), the same directory-scan registry the
+// server validates against.
+const FORM_OPTIONS: readonly string[] = FORM_IDS;
 
 const ALL_CUSTOMIZE_FIELDS: readonly CustomizeFieldDef[] = [
 	{

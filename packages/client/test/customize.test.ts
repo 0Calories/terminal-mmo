@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { DEFAULT_COSMETICS, FORM_COUNT, HUE_COUNT } from '@mmo/core';
+import { DEFAULT_COSMETICS, HUE_COUNT } from '@mmo/core';
 import { HAT_IDS } from '@mmo/render';
 import {
 	CUSTOMIZE_FIELDS,
@@ -56,7 +56,7 @@ test('return confirms with the chosen cosmetics, leaving them unchanged', () => 
 });
 
 test('the single-option Form is hidden from the picker but still confirms as the buddy Form', () => {
-	expect(FORM_COUNT).toBe(1);
+	// The demo ships exactly one Form (buddy), so the picker row is hidden.
 	expect(CUSTOMIZE_FIELDS.some((f) => f.key === 'form')).toBe(false);
 	let s = initCustomize(DEFAULT_COSMETICS);
 	s = reduceCustomize(s, 'right').state;

@@ -14,9 +14,8 @@ import {
 } from '@mmo/core';
 import {
 	type CellBuffer,
-	DRAFTED_FORMS,
 	drawEntitySprite,
-	FORMS,
+	formById,
 	HAT_IDS,
 	hatById,
 	type RenderStyle,
@@ -190,23 +189,15 @@ test('golden: hat sprites', () => {
 	}
 });
 
+// buddy is now compiled from sprites/forms/buddy.sprite (ADR 0031) rather than
+// hand-authored TS. These snapshots pin that the compiled frames are pixel-for-
+// pixel identical to the pre-migration art.
 test('golden: buddy form frames', () => {
-	for (const [poseId, frame] of Object.entries(FORMS[0].frames)) {
+	for (const [poseId, frame] of Object.entries(formById('buddy').frames)) {
 		const isArr = Array.isArray(frame);
 		const frames: readonly Sprite[] = isArr ? frame : [frame as Sprite];
 		frames.forEach((f, i) => {
 			const label = isArr ? `buddy: ${poseId}[${i}]` : `buddy: ${poseId}`;
-			expect(spriteGrid(f)).toMatchSnapshot(label);
-		});
-	}
-});
-
-test('golden: wisp (drafted) form frames', () => {
-	for (const [poseId, frame] of Object.entries(DRAFTED_FORMS[0].frames)) {
-		const isArr = Array.isArray(frame);
-		const frames: readonly Sprite[] = isArr ? frame : [frame as Sprite];
-		frames.forEach((f, i) => {
-			const label = isArr ? `wisp: ${poseId}[${i}]` : `wisp: ${poseId}`;
 			expect(spriteGrid(f)).toMatchSnapshot(label);
 		});
 	}

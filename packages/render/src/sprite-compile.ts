@@ -15,7 +15,11 @@ function isAllBlank(rows: readonly string[]): boolean {
 
 function toGridText(rows: readonly string[]): string | undefined {
 	if (isAllBlank(rows)) return undefined;
-	return rows.join('\n');
+	// Blank cells become SENTINEL (not a literal space) so a fully-transparent
+	// trailing row survives Sprite's blank-line trimming — otherwise a colour/bg
+	// grid whose bottom row is all-transparent would come out one row short of
+	// the art grid. SENTINEL maps back to the default key (colours) / no-bg (bg).
+	return rows.map((row) => row.replaceAll(' ', SENTINEL)).join('\n');
 }
 
 function selectFrame(doc: SpriteDoc, frameName: string): SpriteFrameDoc {
@@ -50,11 +54,13 @@ function compileFrameSprite(doc: SpriteDoc, frameName: string): Sprite {
 			`sprite doc '${doc.id}' pose references missing frame '${frameName}'`,
 		);
 	const anchors = { ...doc.anchors, ...frame.anchors };
+	// A body's baseline is a whole-form property carried on BodySprite, not on
+	// each pose frame — leaving the per-frame Sprite baseline at its 0 default
+	// keeps compiled frames byte-identical to hand-authored ones.
 	return new Sprite(toGlyphText(frame.rows), {
 		defaultKey: doc.key,
 		colors: toGridText(frame.colors),
 		bg: toGridText(frame.bg),
-		baseline: doc.baseline,
 		anchors,
 	});
 }

@@ -5,6 +5,7 @@ import { runEdit } from '../src/editor';
 import { runPlay } from '../src/play';
 import { runPreview } from '../src/preview';
 import { runSprite } from '../src/sprite-cli';
+import { runSpriteEdit } from '../src/sprite-editor/tui';
 
 const root = join(process.cwd(), 'zones');
 const deps = { root, log: (l: string) => console.log(l) };
@@ -17,12 +18,12 @@ if (domain === 'zone') {
 	else if (rest[0] === 'edit') await runEdit(rest.slice(1), deps);
 	else process.exit(run(rest, deps));
 } else if (domain === 'sprite') {
-	process.exit(
-		runSprite(rest, {
-			root: join(process.cwd(), 'sprites'),
-			log: (l: string) => console.log(l),
-		}),
-	);
+	const spriteDeps = {
+		root: join(process.cwd(), 'sprites'),
+		log: (l: string) => console.log(l),
+	};
+	if (rest[0] === 'edit') await runSpriteEdit(rest.slice(1), spriteDeps);
+	else process.exit(runSprite(rest, spriteDeps));
 } else {
 	console.log(
 		[

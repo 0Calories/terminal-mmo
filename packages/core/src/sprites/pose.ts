@@ -35,7 +35,14 @@ export interface BodyState {
 	staggered: boolean;
 }
 
-export function bodyFrame(s: BodyState): {
+export function bodyFrame(
+	s: BodyState,
+	// Per-pose playback rates (art-authored, replicated via the compiled body,
+	// ADR 0031). Selection stays deterministic: a multi-frame emote's frame index
+	// is emoteT × the pose's fps. A pose absent from the map uses EMOTE_FPS, so a
+	// body that declares no custom rate animates exactly as before.
+	fps?: Readonly<Record<string, number>>,
+): {
 	poseId: PoseId;
 	frameIndex: number;
 } {
@@ -48,10 +55,12 @@ export function bodyFrame(s: BodyState): {
 		return { poseId: stride % 2 === 0 ? 'walkA' : 'walkB', frameIndex: 0 };
 	}
 	if (s.emote) {
+		const poseId: EmotePoseId = `emote:${s.emote}`;
 		const hold = emoteById(s.emote)?.lifetime === 'hold';
+		const rate = fps?.[poseId] ?? EMOTE_FPS;
 		return {
-			poseId: `emote:${s.emote}`,
-			frameIndex: hold ? 0 : Math.floor(Math.max(0, s.emoteT) * EMOTE_FPS),
+			poseId,
+			frameIndex: hold ? 0 : Math.floor(Math.max(0, s.emoteT) * rate),
 		};
 	}
 	return { poseId: 'idle', frameIndex: 0 };

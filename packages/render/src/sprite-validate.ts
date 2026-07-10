@@ -4,9 +4,14 @@
 // must provide; missing requirements are `error` diagnostics. Catalog-reference
 // and emote checks belong to a later slice — this file leaves that seam open.
 
+import { EMOTES } from '@mmo/core';
 import type { SpriteDiagnostic, SpriteDoc } from './sprite-file';
 import { parseSpriteFile } from './sprite-file';
 import type { SpriteSource } from './sprite-sources';
+
+// The emote ids the sim knows about (core's registry). A Form pose named
+// `emote:<x>` is only meaningful if `<x>` is one of these.
+const KNOWN_EMOTES = new Set(EMOTES.map((e) => e.id));
 
 interface RoleProfile {
 	// Poses that must exist (by name) in the doc's resolved pose map.
@@ -55,6 +60,23 @@ export function validateSpriteRole(
 				spriteId: doc.id,
 				message: `sprite '${doc.id}' (role '${role}') is missing required anchor '${anchor}'`,
 			});
+		}
+	}
+	// A Form may author `emote:<x>` poses; the sim only plays emotes in core's
+	// EMOTES registry, so a pose for an unregistered emote is a dead grid and an
+	// authoring error. (A registered emote the Form omits is fine — it falls back
+	// to idle at runtime.)
+	if (role === 'forms') {
+		for (const poseName of Object.keys(doc.poses)) {
+			if (!poseName.startsWith('emote:')) continue;
+			const emoteId = poseName.slice('emote:'.length);
+			if (!KNOWN_EMOTES.has(emoteId)) {
+				diagnostics.push({
+					severity: 'error',
+					spriteId: doc.id,
+					message: `sprite '${doc.id}' (role '${role}') has pose '${poseName}' for unknown emote '${emoteId}'`,
+				});
+			}
 		}
 	}
 	return diagnostics;

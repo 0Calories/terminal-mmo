@@ -18,7 +18,8 @@ import {
 	type Terrain,
 	weaponFrame,
 } from '@mmo/core';
-import { formById, formFrame } from './body-sprite';
+import { formFrame } from './body-sprite';
+import { formById } from './forms';
 import { hatById } from './hats';
 import { spriteFor, spriteForNpc } from './registry';
 import type { Sprite } from './sprite';
@@ -196,17 +197,20 @@ export function drawEntitySprite<C>(
 	let grip: { x: number; y: number } | undefined;
 	let head: { x: number; y: number } | undefined;
 	if (body) {
-		const pose = bodyFrame({
-			move,
-			phase,
-			swingProgress: progress,
-			emote,
-			emoteT,
-			airborne: !e.onGround,
-			moving: e.vx !== 0,
-			distanceX: e.x,
-			staggered,
-		});
+		const pose = bodyFrame(
+			{
+				move,
+				phase,
+				swingProgress: progress,
+				emote,
+				emoteT,
+				airborne: !e.onGround,
+				moving: e.vx !== 0,
+				distanceX: e.x,
+				staggered,
+			},
+			body.fps,
+		);
 		sprite = formFrame(body, pose.poseId, pose.frameIndex);
 		baseline = body.baseline ?? 0;
 		// Per-frame anchors win over the BodySprite's (ADR 0031); TS-authored

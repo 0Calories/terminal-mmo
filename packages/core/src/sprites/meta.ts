@@ -22,9 +22,3 @@ const ENTITY_SPRITE_META: Record<EntityType, SpriteMeta> = {
 export function spriteMetaFor(type: EntityType): SpriteMeta {
 	return ENTITY_SPRITE_META[type];
 }
-
-// Registry index — how many cosmetic Forms exist, the metadata cosmetics
-// validation clamps against. The art registry in @mmo/render must match this
-// count (guarded by a render-side test).
-export const DEFAULT_FORM = 0;
-export const FORM_COUNT = 1;

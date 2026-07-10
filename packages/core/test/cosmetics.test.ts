@@ -4,7 +4,6 @@ import {
 	clampCosmetics,
 	DEFAULT_COSMETICS,
 	DEFAULT_FORM_ID,
-	FORM_COUNT,
 	HUE_COUNT,
 	HUES,
 	LEGACY_FORM_IDS,
@@ -28,10 +27,6 @@ test('the default cosmetics are the first slot of every catalog (bareheaded ambe
 test('catalog counts agree with the underlying catalogs', () => {
 	expect(HUE_COUNT).toBe(HUES.length);
 	expect(NAMEPLATE_COUNT).toBe(NAMEPLATE_COLORS.length);
-});
-
-test('the demo ships a single shippable Form (hats are now scanned sprite ids)', () => {
-	expect(FORM_COUNT).toBe(1);
 });
 
 test('clampCosmetics passes valid indices + a string hat + a string form through unchanged', () => {

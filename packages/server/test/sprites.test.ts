@@ -57,8 +57,8 @@ test('scanFormIds on an explicit missing directory returns an empty set, never t
 	expect(scanFormIds(missing)).toEqual(new Set());
 });
 
-test('scanFormIds resolves via findFormsDir; the sprites/forms dir does not exist yet, so it is empty', () => {
-	// A later slice adds sprites/forms/*.sprite; today the scan must return an
-	// empty set without throwing (every id then sanitizes to the default Form).
-	expect(scanFormIds()).toEqual(new Set());
+test('scanFormIds resolves via findFormsDir and finds the shipped Form set (ADR 0031)', () => {
+	// Forms now live as sprites/forms/*.sprite; the launch demo ships 'buddy'.
+	const ids = scanFormIds();
+	expect(ids.has('buddy')).toBe(true);
 });

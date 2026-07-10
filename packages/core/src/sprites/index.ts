@@ -2,12 +2,7 @@
 // half the sim (and the server) reasons about. The Sprite class, glyph grids, form/hat/
 // weapon art, and the drawing code live in @mmo/render.
 
-export {
-	DEFAULT_FORM,
-	FORM_COUNT,
-	type SpriteMeta,
-	spriteMetaFor,
-} from './meta';
+export { type SpriteMeta, spriteMetaFor } from './meta';
 export {
 	type BodyState,
 	bodyFrame,

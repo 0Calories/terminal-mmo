@@ -5,7 +5,8 @@ import type { CliDeps } from './cli';
 
 const USAGE = [
 	'usage:',
-	"  forge sprite render <id>   parse + dump one .sprite file's frames as ASCII + diagnostics",
+	"  forge sprite render <id>          parse + dump one .sprite file's frames as ASCII + diagnostics",
+	'  forge sprite edit <role>/<id>     open the pixel Sprite editor (a fresh template if the id is new)',
 ].join('\n');
 
 export function runSprite(argv: string[], deps: CliDeps): number {
@@ -22,7 +23,7 @@ export function runSprite(argv: string[], deps: CliDeps): number {
 const hasError = (diags: SpriteDiagnostic[]) =>
 	diags.some((d) => d.severity === 'error');
 
-function formatSpriteDiagnostics(diags: SpriteDiagnostic[]): string {
+export function formatSpriteDiagnostics(diags: SpriteDiagnostic[]): string {
 	return diags
 		.map((d) => {
 			const sev = d.severity === 'error' ? 'error  ' : 'warning';
@@ -33,7 +34,7 @@ function formatSpriteDiagnostics(diags: SpriteDiagnostic[]): string {
 		.join('\n');
 }
 
-function findSpriteFile(root: string, id: string): string | undefined {
+export function findSpriteFile(root: string, id: string): string | undefined {
 	if (id.includes('/') || id.endsWith('.sprite')) {
 		const candidate = isAbsolute(id) ? id : resolve(process.cwd(), id);
 		if (existsSync(candidate)) return candidate;

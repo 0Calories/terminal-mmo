@@ -6,12 +6,13 @@ import { expect, test } from 'bun:test';
 import type { Entity, EntityType } from '@mmo/core';
 import {
 	type BodySprite,
+	buildFormRegistry,
 	type CellBuffer,
 	drawEntitySprite,
-	FORMS,
+	formFrame,
 	type RenderStyle,
-	Sprite,
 } from '../src';
+import type { SpriteSource } from '../src/sprite-sources';
 
 interface Cell {
 	ch: string;
@@ -82,67 +83,63 @@ function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
 	};
 }
 
-function leftmostX(buf: FakeBuffer): number {
-	let min = Number.POSITIVE_INFINITY;
-	for (const key of buf.cells.keys()) {
-		const x = Number(key.split(',')[0]);
-		if (x < min) min = x;
-	}
-	return min;
+// A `forms` source with a per-frame `grip` override on one pose. Bodies now
+// come only from the directory-scan registry, so a per-frame override is
+// authored as a `.sprite` document (via buildFormRegistry) rather than by
+// mutating an array. idle/walkA/walkB satisfy the forms role profile.
+const OVERRIDE_FORM = `{
+	"anchors": { "grip": [2, 0], "head": [1, 0] },
+	"frames": { "walkB": { "anchors": { "grip": [0, 0] } } }
 }
+--- idle
+···
+···
+--- walkA
+···
+···
+--- walkB
+···
+···
+`;
 
-// Fully transparent body so the only cells drawn are the weapon's — makes the
-// weapon seat position directly observable.
-function transparentBody(anchors?: Record<string, { x: number; y: number }>) {
-	const idle = new Sprite('···\n···', {
-		defaultKey: 'p',
-		...(anchors ? { anchors } : {}),
-	});
-	const body: BodySprite = {
-		frames: { idle },
-		grip: { x: 2, y: 0 },
-		head: { x: 1, y: 0 },
-	};
+function overrideBody() {
+	const registry = buildFormRegistry([
+		{ id: 'ovr', role: 'forms', text: OVERRIDE_FORM } satisfies SpriteSource,
+	]);
+	const body = registry.get('ovr');
+	if (body === undefined) throw new Error('override form failed to compile');
 	return body;
 }
 
-function renderWithBody(body: BodySprite): FakeBuffer {
-	const forms = FORMS as BodySprite[];
-	forms.push(body);
-	const idx = forms.length - 1;
-	try {
+// Reproduces drawEntitySprite's seat rule verbatim (render.ts): a frame's own
+// grip anchor wins, otherwise the BodySprite's grip.
+function resolvedGripX(body: BodySprite, pose: 'idle' | 'walkB') {
+	const frame = formFrame(body, pose);
+	return frame.anchors.grip?.x ?? body.grip.x;
+}
+
+test('a per-frame grip override wins over the doc grip; a plain pose inherits it (end-to-end from a .sprite source)', () => {
+	const body = overrideBody();
+	// idle authors no override -> the renderer resolves the doc/body grip (x=2)
+	expect(resolvedGripX(body, 'idle')).toBe(2);
+	// walkB overrides grip to x=0 -> two cells left of the body grip
+	expect(resolvedGripX(body, 'walkB')).toBe(0);
+	expect(resolvedGripX(body, 'walkB')).toBe(resolvedGripX(body, 'idle') - 2);
+});
+
+test('drawEntitySprite seats a weapon layer for the default Form (the seat resolution runs end-to-end)', () => {
+	const render = (weapon: number | undefined) => {
 		const buf = new FakeBuffer(24, 16);
 		const e = makeEntity({
 			type: 'player',
-			weapon: 0,
-			// `form` is mid-migration to a string id in @mmo/core; formById still
-			// accepts a numeric index at runtime, which is how we reach an
-			// injected test body. Cast past the in-flight string type.
-			cosmetics: {
-				hue: 0,
-				hat: '',
-				nameplate: 0,
-				form: idx as unknown as string,
-			} as Entity['cosmetics'],
+			weapon,
+			cosmetics: { hue: 0, hat: '', nameplate: 0, form: 'buddy' },
 		});
 		drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE);
-		return buf;
-	} finally {
-		forms.pop();
-	}
-}
-
-test('frame with no anchors seats weapon at body grip; a frame grip override shifts it', () => {
-	// plain frame -> render resolves grip from body.grip (x=2)
-	const plain = renderWithBody(transparentBody());
-	// overriding frame -> grip anchor x=0, two cells to the left of body grip
-	const shifted = renderWithBody(transparentBody({ grip: { x: 0, y: 0 } }));
-
-	const plainLeft = leftmostX(plain);
-	const shiftedLeft = leftmostX(shifted);
-
-	expect(Number.isFinite(plainLeft)).toBe(true);
-	expect(Number.isFinite(shiftedLeft)).toBe(true);
-	// body.grip.x (2) - override grip.x (0) = 2 cells left
-	expect(shiftedLeft).toBe(plainLeft - 2);
+		return buf.cells.size;
+	};
+	// Arming the Avatar adds a weapon layer, which drawEntitySprite can only place
+	// by resolving the body/frame grip — so the armed render paints strictly more
+	// cells than the unarmed one.
+	expect(render(0)).toBeGreaterThan(render(undefined));
 });
