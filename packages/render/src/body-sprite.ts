@@ -1,4 +1,4 @@
-import type { PoseId } from '@mmo/core';
+import type { PoseId } from '@mmo/core/sprites';
 import type { Sprite } from './sprite';
 
 // The *art* half of a Form: the named Pose grids plus their anchors and per-pose

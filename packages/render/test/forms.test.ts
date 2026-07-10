@@ -5,7 +5,7 @@ import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SpriteSource } from '@mmo/assets';
-import { DEFAULT_FORM_ID } from '@mmo/core';
+import { DEFAULT_FORM_ID } from '@mmo/core/entities';
 import { buildFormRegistry, FORM_IDS, formById } from '../src';
 
 const BUDDY_TEXT = readFileSync(

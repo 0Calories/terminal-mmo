@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { SCENE_COLORS, SCENE_PALETTE } from '@mmo/core';
+import { SCENE_COLORS, SCENE_PALETTE } from '@mmo/core/entities';
 import { buildSceneStyle } from '../src';
 
 type Col = { r: number; g: number; b: number; a: number };

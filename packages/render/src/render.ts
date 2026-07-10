@@ -1,23 +1,23 @@
 import {
 	ACTION_FLAG,
-	type AttackPhase,
-	BOX,
 	bladeEdgeArc,
-	bodyFrame,
-	type Entity,
-	type Facing,
-	isSolid,
-	type MoveId,
-	mirrorAnchorX,
-	type Npc,
-	type Portal,
-	spriteMetaFor,
 	sweepIndex,
 	swingPhase,
 	swingProgress,
-	type Terrain,
 	weaponFrame,
-} from '@mmo/core';
+} from '@mmo/core/combat';
+import {
+	type AttackPhase,
+	BOX,
+	type Entity,
+	type Facing,
+	type MoveId,
+	type Npc,
+	type Terrain,
+} from '@mmo/core/entities';
+import { isSolid } from '@mmo/core/physics';
+import { bodyFrame, mirrorAnchorX, spriteMetaFor } from '@mmo/core/sprites';
+import type { Portal } from '@mmo/core/world';
 import { type BodySprite, formFrame } from './body-sprite';
 import { formById } from './forms';
 import { hatById } from './hats';

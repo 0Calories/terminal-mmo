@@ -6,7 +6,7 @@
 // absent: an unknown/dangling id falls back to the default Form.
 
 import { loadSpriteSources, type SpriteSource } from '@mmo/assets';
-import { DEFAULT_FORM_ID } from '@mmo/core';
+import { DEFAULT_FORM_ID } from '@mmo/core/entities';
 import type { BodySprite } from './body-sprite';
 import { Sprite } from './sprite';
 import { compileBodySprite } from './sprite-compile';

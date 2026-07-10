@@ -1,13 +1,12 @@
 import { expect, test } from 'bun:test';
 import type { SpriteSource } from '@mmo/assets';
+import { WEAPONS } from '@mmo/core/combat';
+import { DEFAULT_FORM_ID, type EntityType } from '@mmo/core/entities';
 import {
-	DEFAULT_FORM_ID,
-	type EntityType,
 	MONSTER_SPRITE_REF,
 	NPC_SPRITE_REF,
 	spriteMetaFor,
-	WEAPONS,
-} from '@mmo/core';
+} from '@mmo/core/sprites';
 import {
 	buildMonsterRegistry,
 	buildNpcRegistry,

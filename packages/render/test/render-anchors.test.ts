@@ -4,7 +4,7 @@
 // FakeBuffer (see golden-frames.test.ts for the pattern) rather than snapshots.
 import { expect, test } from 'bun:test';
 import type { SpriteSource } from '@mmo/assets';
-import type { Entity, EntityType } from '@mmo/core';
+import type { Entity, EntityType } from '@mmo/core/entities';
 import {
 	type BodySprite,
 	buildFormRegistry,
