@@ -1,4 +1,4 @@
-import type { EntityType, Npc } from '../types';
+import type { EntityType, Npc } from '../entities/types';
 
 // Sprite *metadata* — the identity crumb the deterministic sim reads, never the art.
 // The default palette key feeds `entityTint` (a monster with no cosmetics takes its

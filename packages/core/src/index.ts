@@ -1,28 +1,14 @@
-export * from './auth';
-export * from './bars';
+// Temporary root barrel (ADR 0032): re-exports the module barrels so existing
+// `@mmo/core` consumers stay green during the carve. Removed in the follow-up —
+// consumers migrate to `@mmo/core/<module>` subpaths.
+
 export * from './combat';
-export * from './constants';
-export * from './cosmetics';
-export * from './emote';
-export * from './loot';
+export * from './entities';
+export * from './items';
 export * from './persistence';
 export * from './physics';
-export * from './player';
 export * from './progression';
-export * from './projectile';
 export * from './protocol';
-export * from './rng';
-export * from './sceneStyle';
-export * from './serverWorld';
-export * from './sim';
-export * from './skills';
 export * from './sprites';
-export * from './terrain';
-export * from './types';
-export * from './vendor';
-export * from './version';
-export * from './weapons';
 export * from './world';
-export * from './zone';
-export * from './zoneFormat';
-export * from './zoneValidate';
+export * from './zones';

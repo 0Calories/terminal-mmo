@@ -1,5 +1,5 @@
-import { emoteById } from '../emote';
-import type { AttackPhase, Facing, MoveId } from '../types';
+import { emoteById } from '../entities/emote';
+import type { AttackPhase, Facing, MoveId } from '../entities/types';
 
 // Pose *selection* + pose identity — the deterministic, art-free half of a sprite
 // that the shared sim reasons about (owner and observers must agree on the Pose;
