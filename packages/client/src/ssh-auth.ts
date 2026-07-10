@@ -16,7 +16,7 @@ import {
 	SSH_ED25519,
 	SshBlobReader,
 	SshBlobWriter,
-} from '@mmo/core';
+} from '@mmo/core/persistence';
 import { ConfigStore, type IdentityAnchor } from './config';
 
 export interface SshIdentity {

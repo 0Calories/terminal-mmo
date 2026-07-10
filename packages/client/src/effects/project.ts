@@ -1,5 +1,6 @@
-import type { CombatEvent, Tint } from '@mmo/core';
-import { COMBAT } from '@mmo/core';
+import type { CombatEvent } from '@mmo/core/combat';
+import { COMBAT } from '@mmo/core/combat';
+import type { Tint } from '@mmo/core/entities';
 
 /**
  * The client-side projection point (ADR 0029): the one place a server

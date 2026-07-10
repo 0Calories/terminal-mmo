@@ -1,5 +1,6 @@
-import type { Entity, Terrain } from '@mmo/core';
-import { BOX, isSolid } from '@mmo/core';
+import type { Entity, Terrain } from '@mmo/core/entities';
+import { BOX } from '@mmo/core/entities';
+import { isSolid } from '@mmo/core/physics';
 import { spriteFor } from '@mmo/render';
 import type { OptimizedBuffer, RGBA } from '@opentui/core';
 import { COLORS as C } from '../theme';

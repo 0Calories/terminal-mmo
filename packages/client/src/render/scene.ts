@@ -1,20 +1,21 @@
-import type { AttackPhase, Entity, GameState } from '@mmo/core';
 import {
 	ACTION_FLAG,
 	aabbOverlap,
-	activeZone,
 	entityBox,
 	guardPoseCell,
 	guardPoseGlyph,
 	guardRaised,
-	itemLabel,
 	skillForSlot,
 	skillHitbox,
 	swingPhase,
 	swingPose,
 	swingPoseCell,
 	swingProgress,
-} from '@mmo/core';
+} from '@mmo/core/combat';
+import type { AttackPhase, Entity } from '@mmo/core/entities';
+import { itemLabel } from '@mmo/core/items';
+import type { GameState } from '@mmo/core/world';
+import { activeZone } from '@mmo/core/world';
 import {
 	buildSceneStyle,
 	drawEntitySprite,

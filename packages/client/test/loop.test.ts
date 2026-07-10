@@ -1,12 +1,10 @@
 import { expect, test } from 'bun:test';
-import type {
-	ClientMessage,
-	CombatEvent,
-	GameState,
-	Input,
-	Zone,
-} from '@mmo/core';
-import { DEFAULT_WEAPON, EMOTES } from '@mmo/core';
+import type { CombatEvent } from '@mmo/core/combat';
+import { DEFAULT_WEAPON } from '@mmo/core/combat';
+import type { Input } from '@mmo/core/entities';
+import { EMOTES } from '@mmo/core/entities';
+import type { ClientMessage } from '@mmo/core/protocol';
+import type { GameState, Zone } from '@mmo/core/world';
 import { GameLoop, type GameLoopDeps } from '../src/game/loop';
 import { flatTerrain } from './helpers';
 

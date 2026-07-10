@@ -1,23 +1,17 @@
+import { DEFAULT_WEAPON, SWING_TOTAL } from '@mmo/core/combat';
 import type {
 	Drop,
 	Entity,
-	GameState,
 	Npc,
 	PlayerState,
 	Projectile,
 	Terrain,
-	Zone,
-} from '@mmo/core';
-import {
-	BOX,
-	DEFAULT_COSMETICS,
-	DEFAULT_WEAPON,
-	NPC_BOX,
-	PORTAL_BOX,
-	parseTerrain,
-	rngNext,
-	SWING_TOTAL,
-} from '@mmo/core';
+} from '@mmo/core/entities';
+import { BOX, DEFAULT_COSMETICS } from '@mmo/core/entities';
+import { rngNext } from '@mmo/core/items';
+import { parseTerrain } from '@mmo/core/physics';
+import type { GameState, Zone } from '@mmo/core/world';
+import { NPC_BOX, PORTAL_BOX } from '@mmo/core/world';
 
 // mulberry32 with the state threaded for us — the same generator the sim seeds from.
 export function seededRng(seed: number): () => number {

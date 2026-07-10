@@ -1,4 +1,4 @@
-import type { Terrain } from '@mmo/core';
+import type { Terrain } from '@mmo/core/entities';
 import { type OptimizedBuffer, RGBA } from '@opentui/core';
 import { COLORS as C } from '../theme';
 import {

@@ -1,6 +1,8 @@
 import { expect, test } from 'bun:test';
-import type { Entity, Input } from '@mmo/core';
-import { COMBAT, DEFAULT_WEAPON, EMOTES, SPAWN } from '@mmo/core';
+import { COMBAT, DEFAULT_WEAPON } from '@mmo/core/combat';
+import type { Entity, Input } from '@mmo/core/entities';
+import { EMOTES } from '@mmo/core/entities';
+import { SPAWN } from '@mmo/core/world';
 import {
 	applyEmote,
 	arriveInZone,

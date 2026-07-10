@@ -1,5 +1,6 @@
-import type { Entity } from '@mmo/core';
-import { BOX, dodgePhase } from '@mmo/core';
+import { dodgePhase } from '@mmo/core/combat';
+import type { Entity } from '@mmo/core/entities';
+import { BOX } from '@mmo/core/entities';
 import { spriteFor } from '@mmo/render';
 import { type OptimizedBuffer, RGBA } from '@opentui/core';
 import { COLORS as C } from '../theme';
