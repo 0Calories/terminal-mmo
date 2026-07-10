@@ -35,6 +35,18 @@ the second pass: modules become deep, and their boundaries become mechanical.
   churns the protocol/interp/predict layers for a mostly aesthetic gain, and
   remains possible later behind these same signatures. Per-kind factories in
   `entities/` are the one place required-vs-absent fields are decided.
+- **One world runtime; zones is the place, world is the whole.** The zones
+  module owns zone types, geometry constants, parsing, forge-only validation,
+  zone state, and a slim orchestrating tick; the world module owns the whole —
+  zone registry, Dungeon instances, Party keying, portal transitions, death
+  relocation, and session placement. The parallel single-player runtime
+  (`sim.ts`) is deleted: forge playtest drives the real server world through
+  one synthetic local session (`world/localSession.ts`, which owns only the
+  client half — dodge gating + movement prediction), so portal/death/instance
+  logic exists and is tested exactly once. Vendor/cosmetics request handling
+  is evicted from the world module to the server package (request handling is
+  the server's business), writing through the world's one `updateAvatar` door;
+  the client view-model type moves to the protocol module.
 - **`constants.ts` dissolves into its owning modules** (`COMBAT` → combat,
   monster tuning → entity archetype profiles); a hub constants file with fan-in
   15 was the god-type pattern in miniature.

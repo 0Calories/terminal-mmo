@@ -44,6 +44,16 @@ test('createLocalWorld boots the authored set with one placed session', () => {
 	expect(zone(lw).tick).toBe(0);
 });
 
+test('every shipped Zone boots and ticks on the one runtime (AC: forge playtest = live server)', () => {
+	for (const z of loadZones()) {
+		let lw = createLocalWorld(loadZones(), z.id);
+		expect(zone(lw).zone.id).toBe(z.id);
+		for (let i = 0; i < 5; i++) lw = stepLocalWorld(lw, IDLE, 16);
+		expect(zone(lw).tick).toBe(5);
+		expect(me(lw).avatar.type).toBe('player');
+	}
+});
+
 test('createLocalWorld falls back to the first Zone for an unknown start id', () => {
 	const lw = createLocalWorld(loadZones(), 'no-such-zone');
 	expect(zone(lw).zone.id).toBe(loadZones()[0].id);

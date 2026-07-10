@@ -17,15 +17,20 @@ import {
 	zoneStateOf,
 } from '@mmo/core/world';
 
-export function atMerchant(world: ServerWorld, sessionId: number): boolean {
+// The placed avatar, but only when it is standing at a vendor Npc.
+function placedAtMerchant(world: ServerWorld, sessionId: number) {
 	const zs = zoneStateOf(world, sessionId);
-	if (zs === undefined) return false;
-	const sa = zs.avatars.find((a) => a.sessionId === sessionId);
-	if (sa === undefined) return false;
+	const sa = zs?.avatars.find((a) => a.sessionId === sessionId);
+	if (zs === undefined || sa === undefined) return undefined;
 	const box = avatarBox(sa.avatar.x, sa.avatar.y);
-	return (zs.zone.npcs ?? []).some(
+	const near = (zs.zone.npcs ?? []).some(
 		(n) => n.kind === 'vendor' && aabbOverlap(box, n),
 	);
+	return near ? sa : undefined;
+}
+
+export function atMerchant(world: ServerWorld, sessionId: number): boolean {
+	return placedAtMerchant(world, sessionId) !== undefined;
 }
 
 export function applySell(
@@ -33,9 +38,7 @@ export function applySell(
 	sessionId: number,
 	itemId: number,
 ): { world: ServerWorld; sold: boolean } {
-	if (!atMerchant(world, sessionId)) return { world, sold: false };
-	const zs = zoneStateOf(world, sessionId);
-	const sa = zs?.avatars.find((a) => a.sessionId === sessionId);
+	const sa = placedAtMerchant(world, sessionId);
 	if (sa === undefined) return { world, sold: false };
 	const item = sa.inventory.find((i) => i.id === itemId);
 	if (item === undefined) return { world, sold: false };
@@ -57,11 +60,9 @@ export function applyBuy(
 	sessionId: number,
 	index: number,
 ): { world: ServerWorld; bought: boolean } {
-	if (!atMerchant(world, sessionId)) return { world, bought: false };
 	const good = STARTER_GOODS[index];
 	if (good === undefined) return { world, bought: false };
-	const zs = zoneStateOf(world, sessionId);
-	const sa = zs?.avatars.find((a) => a.sessionId === sessionId);
+	const sa = placedAtMerchant(world, sessionId);
 	if (sa === undefined) return { world, bought: false };
 	const { progress, inventory, bought } = buyItem(
 		sa.progress,
