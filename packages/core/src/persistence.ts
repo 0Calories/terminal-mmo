@@ -1,5 +1,11 @@
 import type { AccountRegistry } from './auth';
-import { clampCosmetics, DEFAULT_COSMETICS, LEGACY_HAT_IDS } from './cosmetics';
+import {
+	clampCosmetics,
+	DEFAULT_COSMETICS,
+	DEFAULT_FORM_ID,
+	LEGACY_FORM_IDS,
+	LEGACY_HAT_IDS,
+} from './cosmetics';
 import type { Cosmetics, Item, PlayerProgress } from './types';
 import { DEFAULT_WEAPON } from './weapons';
 import type { ZoneId } from './world';
@@ -71,16 +77,26 @@ export function registryFromSaves(
 	return { handleByKey, keyByHandle };
 }
 
-// Pre-ADR-0031 Saves stored `hat` as a numeric index into the render-side HATS
-// array. Map it through the frozen LEGACY_HAT_IDS order into a sprite id;
-// strings (post-migration Saves) pass through unchanged.
-export function migrateSaveCosmetics(
-	c: Cosmetics | (Omit<Cosmetics, 'hat'> & { hat: number }),
-): Cosmetics {
-	if (typeof c.hat === 'number') {
-		return { ...c, hat: LEGACY_HAT_IDS[c.hat] ?? '' };
-	}
-	return c as Cosmetics;
+// Pre-ADR-0031 Saves stored `hat` and `form` as numeric indices into the
+// render-side HATS / FORMS arrays. Map each through its frozen legacy order into
+// a sprite id; strings (post-migration Saves) pass through unchanged, so an
+// already-migrated Save is a no-op.
+type LegacyCosmetics = {
+	hue: number;
+	hat: string | number;
+	nameplate: number;
+	form: string | number;
+};
+export function migrateSaveCosmetics(c: LegacyCosmetics): Cosmetics {
+	return {
+		hue: c.hue,
+		hat: typeof c.hat === 'number' ? (LEGACY_HAT_IDS[c.hat] ?? '') : c.hat,
+		nameplate: c.nameplate,
+		form:
+			typeof c.form === 'number'
+				? (LEGACY_FORM_IDS[c.form] ?? DEFAULT_FORM_ID)
+				: c.form,
+	};
 }
 
 export function restoredFromSave(save: PlayerSave): RestoredAvatar {

@@ -13,6 +13,7 @@
 		"build:cli": "bun run packages/cli/build.ts",
 		"forge": "bun run packages/forge/bin/forge.ts",
 		"zones:check": "bun run packages/forge/bin/forge.ts zone check",
+		"sprites:check": "bun run packages/forge/bin/forge.ts sprite check",
 		"zones:preview": "bun run packages/forge/bin/forge.ts zone preview",
 		"zones:play": "bun run packages/forge/bin/forge.ts zone play",
 		"zones:edit": "bun run packages/forge/bin/forge.ts zone edit",
@@ -22,7 +23,7 @@
 		"lint": "biome lint .",
 		"format": "biome format --write .",
 		"check": "biome check --write .",
-		"ci": "biome ci . && bun run typecheck && bun test && bun run depcruise && bun run zones:check"
+		"ci": "biome ci . && bun run typecheck && bun test && bun run depcruise && bun run zones:check && bun run sprites:check"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.0",

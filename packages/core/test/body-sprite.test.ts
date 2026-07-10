@@ -87,4 +87,21 @@ describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
 		expect(bodyFrame({ ...REST, emote: 'sit', emoteT: 0 }).frameIndex).toBe(0);
 		expect(bodyFrame({ ...REST, emote: 'sit', emoteT: 99 }).frameIndex).toBe(0);
 	});
+
+	test('a per-pose fps overrides EMOTE_FPS for that emote, changing frame progression (ADR 0031)', () => {
+		const fps = { 'emote:wave': 10 } as const;
+		// At 10 fps, emoteT = 1/EMOTE_FPS (0.2s) lands on floor(0.2 * 10) = 2, not 1.
+		expect(
+			bodyFrame({ ...REST, emote: 'wave', emoteT: 1 / EMOTE_FPS }, fps)
+				.frameIndex,
+		).toBe(2);
+		expect(
+			bodyFrame({ ...REST, emote: 'wave', emoteT: 0.5 }, fps).frameIndex,
+		).toBe(5);
+		// A pose absent from the fps map still uses EMOTE_FPS.
+		expect(
+			bodyFrame({ ...REST, emote: 'dance', emoteT: 3 / EMOTE_FPS }, fps)
+				.frameIndex,
+		).toBe(3);
+	});
 });

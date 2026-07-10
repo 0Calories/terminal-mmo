@@ -29,15 +29,23 @@ function avatar(over: Partial<Entity> = {}): Entity {
 	};
 }
 
-describe('WEAPONS catalog — name + damage only (ADR 0024/0030)', () => {
-	test('a Weapon carries a name and damage and nothing else (art lives in @mmo/render)', () => {
-		const allowed = new Set(['name', 'damage']);
+describe('WEAPONS catalog — name + damage + art reference (ADR 0024/0030/0031)', () => {
+	test('a Weapon carries name, damage, and a sprite reference and nothing else (art itself lives in @mmo/render)', () => {
+		const allowed = new Set(['name', 'damage', 'sprite']);
 		for (const w of WEAPONS)
 			for (const key of Object.keys(w)) expect(allowed).toContain(key);
 	});
 
-	test('the default weapon (index 0) deals the shared COMBAT melee damage', () => {
+	test('every catalog entry references its art by a non-empty sprite id (ADR 0031)', () => {
+		for (const w of WEAPONS) {
+			expect(typeof w.sprite).toBe('string');
+			expect(w.sprite.length).toBeGreaterThan(0);
+		}
+	});
+
+	test('the default weapon (index 0) is the sword and deals the shared COMBAT melee damage', () => {
 		expect(WEAPONS[DEFAULT_WEAPON].damage).toBe(COMBAT.meleeDamage);
+		expect(WEAPONS[DEFAULT_WEAPON].sprite).toBe('sword');
 	});
 });
 

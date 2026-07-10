@@ -15,7 +15,7 @@ const menuKey = (name: string): CreatorKey => ({
 async function mountCreator(nameplate: number) {
 	const t = await createTestRenderer({ width: 80, height: 40 });
 	const creator = new CharacterCreator(t.renderer, HANDLE, {
-		form: 0,
+		form: 'buddy',
 		hue: 0,
 		hat: '',
 		nameplate,

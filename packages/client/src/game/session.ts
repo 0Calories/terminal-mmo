@@ -5,7 +5,7 @@ import {
 	entityBox,
 	randomCosmetics,
 } from '@mmo/core';
-import { HAT_IDS } from '@mmo/render';
+import { FORM_IDS, HAT_IDS } from '@mmo/render';
 import type { CliRenderer } from '@opentui/core';
 import type { ConfigStore } from '../config';
 import type { InputState, Scheme } from '../input/movement';
@@ -72,7 +72,7 @@ export async function runSession(deps: SessionDeps): Promise<void> {
 	const creator = new CharacterCreator(
 		renderer,
 		deps.handle,
-		randomCosmetics((Math.random() * 0x7fffffff) | 0, HAT_IDS),
+		randomCosmetics((Math.random() * 0x7fffffff) | 0, HAT_IDS, FORM_IDS),
 	);
 
 	let started = false;

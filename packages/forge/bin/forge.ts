@@ -17,19 +17,18 @@ if (domain === 'zone') {
 	else if (rest[0] === 'edit') await runEdit(rest.slice(1), deps);
 	else process.exit(run(rest, deps));
 } else if (domain === 'sprite') {
-	process.exit(
-		runSprite(rest, {
-			root: join(process.cwd(), 'sprites'),
-			log: (l: string) => console.log(l),
-		}),
-	);
+	const spriteDeps = {
+		root: join(process.cwd(), 'sprites'),
+		log: (l: string) => console.log(l),
+	};
+	process.exit(runSprite(rest, spriteDeps));
 } else {
 	console.log(
 		[
 			'usage: forge <domain> <command>',
 			'',
 			'  zone     author + validate .zone content (render|preview|play|edit|check|new|rename)',
-			'  sprite   author + validate .sprite art (render)',
+			'  sprite   author + validate .sprite art (render|check)',
 			'',
 			'run `forge zone` for zone subcommands.',
 			'run `forge sprite` for sprite subcommands.',

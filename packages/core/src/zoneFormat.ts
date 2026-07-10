@@ -11,9 +11,8 @@ export interface MonsterCatalogEntry {
 
 export interface NpcCatalogEntry {
 	id: string;
-	kind: 'vendor' | 'signpost';
+	kind: 'vendor';
 	name: string;
-	lines?: string[];
 }
 
 export interface Catalogs {
@@ -128,7 +127,6 @@ export function parseZone(text: string, catalogs: Catalogs, id: string): Zone {
 					id: nextNpcId++,
 					kind: entry.kind,
 					name: entry.name,
-					...(entry.lines !== undefined ? { lines: entry.lines } : {}),
 					x,
 					y,
 					w: NPC_BOX.w,

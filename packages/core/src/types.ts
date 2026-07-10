@@ -39,7 +39,8 @@ export interface Cosmetics {
 	/** Sprite id from sprites/hats/*.sprite (scanned by the server); '' = no hat. */
 	hat: string;
 	nameplate: number;
-	form: number;
+	/** Sprite id from sprites/forms/*.sprite (scanned by the server); never empty. */
+	form: string;
 }
 
 export interface Entity {
@@ -132,9 +133,8 @@ export interface Projectile {
 
 export interface Npc extends Box {
 	id: number;
-	kind: 'vendor' | 'signpost';
+	kind: 'vendor';
 	name: string;
-	lines?: string[];
 }
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';

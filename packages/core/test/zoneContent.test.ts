@@ -72,14 +72,6 @@ test('the Dungeon is authored: a combat Zone entered from Town, round-tripping (
 	expect(dungeon?.portals.some((p) => p.target === 'town-01')).toBe(true);
 });
 
-test('Town has 2-3 signpost NPCs with directional dialogue (D3, #239)', () => {
-	const town = loadZones().find((z) => z.id === 'town-01');
-	const signs = (town?.npcs ?? []).filter((n) => n.kind === 'signpost');
-	expect(signs.length).toBeGreaterThanOrEqual(2);
-	expect(signs.length).toBeLessThanOrEqual(3);
-	for (const s of signs) expect((s.lines ?? []).length).toBeGreaterThan(0);
-});
-
 test('the shared Player spawn point lands on walkable ground in the start Town', () => {
 	const town = loadZones()[0];
 	expect(town.id).toBe('town-01');

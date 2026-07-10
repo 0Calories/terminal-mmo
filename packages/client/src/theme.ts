@@ -13,7 +13,6 @@ export const COLORS = {
 	projectile: RGBA.fromInts(255, 120, 80, 255),
 	portal: RGBA.fromInts(180, 130, 255, 255),
 	vendor: RGBA.fromInts(255, 200, 90, 255),
-	signpost: RGBA.fromInts(214, 176, 120, 255),
 	hud: RGBA.fromInts(232, 232, 238, 255),
 	hudBg: RGBA.fromInts(8, 9, 13, 255),
 	hp: RGBA.fromInts(90, 220, 120, 255),

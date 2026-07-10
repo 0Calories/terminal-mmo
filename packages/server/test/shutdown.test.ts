@@ -10,7 +10,7 @@ const richSave = () => ({
 	progress: { level: 7, xp: 420, gold: 999 },
 	inventory: [],
 	equippedWeapon: 2,
-	cosmetics: { hue: 1, hat: '', nameplate: 1, form: 0 },
+	cosmetics: { hue: 1, hat: '', nameplate: 1, form: 'buddy' },
 	lastTown: 'town-01' as const,
 	bossDefeated: true,
 });

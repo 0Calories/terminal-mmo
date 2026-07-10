@@ -3,8 +3,10 @@
 // weapon art, and the drawing code live in @mmo/render.
 
 export {
-	DEFAULT_FORM,
-	FORM_COUNT,
+	MONSTER_SPRITE_REF,
+	monsterSpriteRef,
+	NPC_SPRITE_REF,
+	npcSpriteRef,
 	type SpriteMeta,
 	spriteMetaFor,
 } from './meta';

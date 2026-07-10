@@ -176,42 +176,6 @@ exports[`golden: npc sprites: vendor 1`] = `
 }
 `;
 
-exports[`golden: npc sprites: signpost 1`] = `
-{
-  "baseline": 0,
-  "h": 5,
-  "keysLeft": [
-    "yyyyy",
-    "yyyyy",
-    "yyyyy",
-    "wwwww",
-    "wwwww",
-  ],
-  "keysRight": [
-    "yyyyy",
-    "yyyyy",
-    "yyyyy",
-    "wwwww",
-    "wwwww",
-  ],
-  "left": [
-    "┐───┌",
-    "│ » │",
-    "┘─┬─└",
-    "  │  ",
-    "  ┴  ",
-  ],
-  "right": [
-    "┌───┐",
-    "│ » │",
-    "└─┬─┘",
-    "  │  ",
-    "  ┴  ",
-  ],
-  "w": 5,
-}
-`;
-
 exports[`golden: hat sprites: hat: cap 1`] = `
 {
   "baseline": 0,

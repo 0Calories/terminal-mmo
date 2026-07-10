@@ -1,26 +1,17 @@
-import { DEFAULT_FORM, type PoseId } from '@mmo/core';
-import { buddy } from './forms/buddy';
-import { wisp } from './forms/wisp';
+import type { PoseId } from '@mmo/core';
 import type { Sprite } from './sprite';
 
-// The *art* half of a Form: the named Pose grids plus their anchors. Pose *selection*
-// (bodyFrame) and the registry count (FORM_COUNT) live in @mmo/core.
+// The *art* half of a Form: the named Pose grids plus their anchors and per-pose
+// animation rate. Forms are compiled from `.sprite` files (ADR 0031); the art
+// registry lives in `forms.ts`. Pose *selection* (bodyFrame) lives in @mmo/core.
 export interface BodySprite {
 	frames: Partial<Record<PoseId, Sprite | readonly Sprite[]>>;
 	grip: { x: number; y: number };
 	head: { x: number; y: number };
 	baseline?: number;
-}
-
-export const FORMS: readonly BodySprite[] = [buddy];
-
-// Kept so the `wisp` import stays live while drafted out of FORMS.
-export const DRAFTED_FORMS: readonly BodySprite[] = [wisp];
-
-export function formById(i: number | undefined): BodySprite {
-	if (i === undefined || !Number.isInteger(i) || i < 0 || i >= FORMS.length)
-		return FORMS[DEFAULT_FORM];
-	return FORMS[i];
+	// Per-pose animation rate carried from a `.sprite` doc (ADR 0031); drives the
+	// multi-frame emote frame index (see `bodyFrame`). Absent forms use EMOTE_FPS.
+	fps?: Readonly<Record<string, number>>;
 }
 
 export function formFrame(

@@ -21,33 +21,6 @@
 			"id": "merchant",
 			"kind": "vendor",
 			"name": "Merchant"
-		},
-		{
-			"id": "sign-fields",
-			"kind": "signpost",
-			"name": "Signpost",
-			"lines": [
-				"» The Fields lie east.",
-				"Warm up on the near one — only Slimes."
-			]
-		},
-		{
-			"id": "sign-deeper",
-			"kind": "signpost",
-			"name": "Signpost",
-			"lines": [
-				"»» Push deeper for a fight.",
-				"Sporelings poke from range out there. Bring a Block."
-			]
-		},
-		{
-			"id": "sign-edge",
-			"kind": "signpost",
-			"name": "Signpost",
-			"lines": [
-				"»»» Something waits at the world's edge.",
-				"The deepest Field guards it. Come back stronger."
-			]
 		}
 	]
 }

@@ -177,7 +177,7 @@ test('removeSession drops a disconnected session from its Zone and the map', () 
 });
 
 test('spawnNewAvatar spawns into the starting Town with the chosen look, and mints a matching Save', () => {
-	const chosen: Cosmetics = { hue: 5, hat: 'cap', nameplate: 2, form: 0 };
+	const chosen: Cosmetics = { hue: 5, hat: 'cap', nameplate: 2, form: 'buddy' };
 	const before = townWorld();
 	expect(zoneOf(before, 7)).toBeUndefined();
 
@@ -662,7 +662,7 @@ test('applyCosmetics in a Town stamps the new look on the live Avatar (rebroadca
 		'town-01',
 	);
 	expect(zoneOf(world, 7)).toBe('town-01');
-	const next: Cosmetics = { hue: 3, hat: 'cap', nameplate: 2, form: 0 };
+	const next: Cosmetics = { hue: 3, hat: 'cap', nameplate: 2, form: 'buddy' };
 	const res = applyCosmetics(world, 7, next);
 	expect(res.changed).toBe(true);
 	const seen = worldSnapshotFor(res.world, 7).avatars.find(
@@ -684,14 +684,14 @@ test('applyCosmetics clamps an out-of-range index at the apply boundary (#305)',
 		hue: 2,
 		hat: 250 as unknown as string,
 		nameplate: 1,
-		form: 250,
+		form: 250 as unknown as string,
 	});
 	expect(res.changed).toBe(true);
 	expect(avatarOf(res.world, 7)?.cosmetics).toEqual({
 		hue: 2,
 		hat: '',
 		nameplate: 1,
-		form: 0,
+		form: 'buddy',
 	});
 });
 
@@ -702,7 +702,7 @@ test('applyCosmetics outside a Town is a silent no-op (Town-only re-customize) (
 		hue: 3,
 		hat: 'cap',
 		nameplate: 2,
-		form: 0,
+		form: 'buddy',
 	});
 	expect(res.changed).toBe(false);
 	expect(res.world).toBe(world);
@@ -715,7 +715,7 @@ test('applyCosmetics for an unplaced session is a silent no-op (#305)', () => {
 		hue: 1,
 		hat: 'cap',
 		nameplate: 1,
-		form: 0,
+		form: 'buddy',
 	});
 	expect(res.changed).toBe(false);
 	expect(res.world).toBe(world);
