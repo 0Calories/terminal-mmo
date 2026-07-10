@@ -7,8 +7,13 @@ import {
 	loadZoneSet,
 	zonePath,
 } from '@mmo/assets';
-import type { Diagnostic, ZoneType } from '@mmo/core';
-import { findOrphanGlyphs, validateZone, validateZoneSet } from '@mmo/core';
+import type { ZoneType } from '@mmo/core/world';
+import type { Diagnostic } from '@mmo/core/zones';
+import {
+	findOrphanGlyphs,
+	validateZone,
+	validateZoneSet,
+} from '@mmo/core/zones';
 import { formatDiagnostics } from './diagnostics';
 import { renameZoneFile, rewritePortalTarget, zoneExists } from './io';
 import { renderZone } from './render';

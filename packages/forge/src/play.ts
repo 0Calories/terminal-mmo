@@ -1,11 +1,6 @@
 import { loadCatalogs, loadZoneSet } from '@mmo/assets';
-import {
-	BOX,
-	createGameFromZones,
-	type GameState,
-	type Input,
-	step,
-} from '@mmo/core';
+import { BOX, type Input } from '@mmo/core/entities';
+import { createGameFromZones, type GameState, step } from '@mmo/core/world';
 import {
 	buildSceneStyle,
 	drawEntitySprite,

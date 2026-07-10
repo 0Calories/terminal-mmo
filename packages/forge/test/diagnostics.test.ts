@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Diagnostic } from '@mmo/core';
+import type { Diagnostic } from '@mmo/core/zones';
 import { formatDiagnostics } from '../src/diagnostics';
 
 describe('formatDiagnostics', () => {

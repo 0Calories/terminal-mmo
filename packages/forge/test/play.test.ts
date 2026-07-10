@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets';
-import { createGameFromZones } from '@mmo/core';
+import { createGameFromZones } from '@mmo/core/world';
 import { followCam, playSceneOf, playStatusLine } from '../src/play';
 
 function townGame() {
