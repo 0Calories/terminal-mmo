@@ -323,6 +323,18 @@ A non-hostile, server-controlled character (shopkeeper, quest-giver, etc.).
 Distinct from Monster — NPCs are never fought.
 _Avoid_: Vendor, bot
 
+**Brain**:
+The decision function that controls a **Monster** each tick: it perceives a
+limited view of its Zone and produces a **Drive** — including whether to commit
+an attack — and nothing else. A Brain never applies damage, never moves
+anything, and never touches another entity; every consequence it initiates
+flows through the same **Strike** resolution as a Player's. Each Monster
+archetype (chaser, **Brute**, **Ranged poker**, the **Boss**) is one Brain, and
+a Brain may keep private memory that the rest of the simulation — and the wire
+— never sees.
+_Avoid_: AI (too generic), behavior script, controller (reserve for the
+Player-side input path)
+
 **Melee committer**:
 A Monster archetype that deals damage *only* through a telegraphed melee **Attack
 phase** — approach/space → **wind-up** (committed, replicated for the Player to
@@ -464,6 +476,15 @@ impulse fed into it, so a shove decays under drag and a launch arcs under gravit
 on the same path that walks and jumps. Monsters are airborne-capable on it with no
 special case (`stepEntity` in `physics.ts`).
 _Avoid_: Rigidbody, actor, character controller
+
+**Drive**:
+The per-tick movement decision an entity's controller feeds into the physics
+step — move direction, jump, and optionally an attack commit. Produced from the
+Player's **Intent** for an Avatar and by a **Brain** for a Monster; the
+simulation consumes Drives without knowing or caring who is driving. The seam
+that makes Avatars and Monsters move through one shared path.
+_Avoid_: Input (raw client keys), Intent (the client→server bundle a Drive is
+derived from), command, controls
 
 **Super-armor**:
 The temporary **Poise** spike an entity holds during a wind-up, letting a heavy

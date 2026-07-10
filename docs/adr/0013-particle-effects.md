@@ -94,3 +94,28 @@ pixels.
   `Effect.kind → ParticleType[]` spawn map.
 - Effect emission is pure and unit-testable headlessly; the particle sim is tested
   for invariants (pool cap, lifecycle transitions, cull), not exact pixels.
+
+## Amendment (2026-07): named effects, decoupled feel systems, one-way collision
+
+The wire half of this ADR was superseded by ADR 0029 (CombatEvents on the wire,
+client-side `effectsOf` projection). The client half is restructured with the
+deep-modules pass (ADR 0032):
+
+- **Named effects are the engine's only public surface** — `spawn('blood' | 'gore'
+  | 'impact' | 'levelup', at, dir, intensity)`. Raw `ParticleType` spawning is no
+  longer exported; each effect is one definition file owning all of its knobs
+  (gravity, restitution, glyph ramp, fade curve, count-from-intensity). Adding a
+  look is adding a file.
+- **The `VisualEffects` facade dissolves.** Camera kick moves to the camera
+  module (it is a viewport offset), hitstop to the game loop (it is render
+  pacing, not a visual), the dodge echo to its own module (a sprite-ghost trail,
+  not particles). `project`/`realize` collapse into one stateless routing layer —
+  the only place that knows a `break` means impact + kick + hitstop together.
+- **Particle terrain collision rebuilds on core physics' shared `sweep`
+  primitive** (bidirectional — the old downward-only `surfaceHit` let rising
+  specks embed inside ≥2-thick solids) and **obeys the entity one-way rule**
+  (ADR 0026): descending specks land on a platform's top, ascending specks pass
+  through; only walls/ground block. Two diagnosed stuck-in-wall bugs are fixed in
+  the rebuild: the draw column is floor-aligned for colliding specks (round()
+  painted wall-adjacent specks into the wall tile), and a colliding speck whose
+  own cell is solid dies instead of resting.
