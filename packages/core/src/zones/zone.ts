@@ -28,7 +28,8 @@ import {
 	skillsUnlockedBetween,
 } from '../combat/skills';
 import { DEFAULT_WEAPON, weaponById } from '../combat/weapons';
-import { ARCHETYPES, BOX, meleeProfileOf } from '../entities/archetypes';
+import { BOX, meleeProfileOf, rangedProfileOf } from '../entities/archetypes';
+import { BRAINS, type BrainView, IDLE_DRIVE } from '../entities/brain';
 import { clampCosmetics, DEFAULT_COSMETICS } from '../entities/cosmetics';
 import {
 	emoteById,
@@ -61,7 +62,6 @@ import {
 import type { RestoredAvatar } from '../persistence/persistence';
 import { PHYS } from '../physics/constants';
 import { stepEntity } from '../physics/physics';
-import { isSolid } from '../physics/terrain';
 import { applyXp, maxHpForLevel, xpForKill } from '../progression/progression';
 import type {
 	AvatarSnapshot,
@@ -266,56 +266,25 @@ export function stepZone(
 		m.stunT = Math.max(0, (m.stunT ?? 0) - dt);
 		m.poiseT = Math.max(0, (m.poiseT ?? 0) - dt);
 		if ((m.poiseT ?? 0) <= 0) m.poise = regenPoise(m, dt);
-		const stunned = (m.stunT ?? 0) > 0;
-		const committed = m.type !== 'player' && m.attackT > 0;
-		const melee = meleeProfileOf(m.type);
 
+		// The uniform controller seam (ADR 0034): the Brain decides, the tick
+		// executes. All archetype behavior lives in BRAINS + ARCHETYPES; the
+		// tick only threads the Brain's private `ai` memory through opaquely.
 		const target = nearestAvatar(avatars, m.x);
-		const dx = target >= 0 ? avatars[target].avatar.x - m.x : 0;
-		const adx = Math.abs(dx);
-		const engaged =
-			!stunned &&
-			target >= 0 &&
-			m.type === 'shooter' &&
-			adx < ARCHETYPES.shooter.ranged.aggro;
-		let moveX: -1 | 0 | 1;
-		if (stunned || committed) moveX = 0;
-		else if (melee && target >= 0 && adx < melee.aggro)
-			moveX = adx < melee.deadzone ? 0 : dx > 0 ? 1 : -1;
-		else if (engaged)
-			moveX = adx < ARCHETYPES.shooter.ranged.keepDist ? (dx > 0 ? -1 : 1) : 0;
-		else moveX = m.facing;
-		const res = stepEntity(t, m, { moveX, jump: false }, dt);
-		m = res.e;
+		const view: BrainView = {
+			terrain: t,
+			targetX: target >= 0 ? avatars[target].avatar.x : null,
+		};
+		const { drive, ai } =
+			m.type === 'player'
+				? { drive: IDLE_DRIVE, ai: m.ai }
+				: BRAINS[m.type](m, view);
+		m.ai = ai;
+		m = stepEntity(t, m, { moveX: drive.moveX, jump: drive.jump }, dt).e;
+		if (drive.face !== undefined) m.facing = drive.face;
 
-		if (!stunned && !committed && m.onGround && !engaged) {
-			const lead = moveX >= 0 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x);
-			const footY = Math.ceil(m.y + BOX.h);
-			if (res.hitWall || !isSolid(t, lead, footY))
-				m.facing = m.facing === 1 ? -1 : 1;
-		}
-
-		if (engaged && !committed) m.facing = dx >= 0 ? 1 : -1;
-		if (engaged && !committed && (m.attackCdT ?? 0) <= 0 && m.attackT <= 0)
-			m = { ...m, attackT: SWING_TOTAL };
-		if (
-			m.type === 'shooter' &&
-			swingPhase(attackTBefore) !== 'active' &&
-			meleeActive(m.attackT)
-		) {
-			fired.push(spawnProjectile(nextProjectileId++, m, m.facing));
-			m = { ...m, attackCdT: ARCHETYPES.shooter.ranged.fireCooldown };
-		}
-
-		if (
-			!stunned &&
-			!committed &&
-			melee &&
-			target >= 0 &&
-			adx <= melee.range &&
-			(m.attackCdT ?? 0) <= 0
-		) {
-			m.facing = dx >= 0 ? 1 : -1;
+		const melee = meleeProfileOf(m.type);
+		if (drive.commit === 'swing' && melee)
 			// A fresh commit is a fresh swing: its dedup ledger starts empty.
 			m = {
 				...m,
@@ -323,6 +292,18 @@ export function stepZone(
 				attackCdT: melee.commitCd,
 				swingHits: [],
 			};
+		else if (drive.commit === 'fire') m = { ...m, attackT: SWING_TOTAL };
+
+		// A ranged archetype releases its shot on the windup→active edge: the
+		// wind-up stays a readable cue, and the fire cooldown starts at release.
+		const ranged = rangedProfileOf(m.type);
+		if (
+			ranged &&
+			swingPhase(attackTBefore) !== 'active' &&
+			meleeActive(m.attackT)
+		) {
+			fired.push(spawnProjectile(nextProjectileId++, m, m.facing));
+			m = { ...m, attackCdT: ranged.fireCooldown };
 		}
 
 		// Project, never apply (ADR 0022/0034): the active frames emit a Strike;
