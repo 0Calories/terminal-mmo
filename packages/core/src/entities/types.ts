@@ -72,6 +72,11 @@ export interface Entity {
 	dodgeCdT?: number;
 	guardT?: number;
 	swingHits?: number[];
+	/**
+	 * Brain-private memory (ADR 0034): read and written ONLY by this entity's
+	 * own Brain. Opaque to the tick and combat, and NEVER in snapshots/wire.
+	 */
+	ai?: unknown;
 	skillCooldowns?: Record<string, number>;
 	spawnIndex?: number;
 	contributors?: number[];

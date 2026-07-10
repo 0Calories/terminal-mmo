@@ -109,3 +109,9 @@ export function meleeProfileOf(type: EntityType): MeleeProfile | null {
 	const p: ArchetypeProfile = ARCHETYPES[type];
 	return p.melee ?? null;
 }
+
+export function rangedProfileOf(type: EntityType): RangedProfile | null {
+	if (type === 'player') return null;
+	const p: ArchetypeProfile = ARCHETYPES[type];
+	return p.ranged ?? null;
+}

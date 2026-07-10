@@ -10,7 +10,18 @@ export {
 	meleeProfileOf,
 	type ProjectileSpec,
 	type RangedProfile,
+	rangedProfileOf,
 } from './archetypes';
+export {
+	type AbilityId,
+	BRAINS,
+	type Brain,
+	type BrainResult,
+	type BrainView,
+	type Drive,
+	IDLE_DRIVE,
+	type ShooterState,
+} from './brain';
 export {
 	clampCosmetics,
 	DEFAULT_COSMETICS,

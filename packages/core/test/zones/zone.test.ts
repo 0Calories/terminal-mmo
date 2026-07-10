@@ -21,6 +21,7 @@ import {
 } from '../../src/entities';
 import { lootTableFor, rollDrop } from '../../src/items';
 import { CAPABILITY_UNLOCK, xpForKill, xpToNext } from '../../src/progression';
+import { decodeServerMessage, encodeServerMessage } from '../../src/protocol';
 import type { Zone } from '../../src/world';
 import { GROUND_TOP, SPAWN } from '../../src/world';
 import type { AvatarIntent, ServerAvatar, ZoneState } from '../../src/zones';
@@ -948,6 +949,73 @@ test('a ranged poker telegraphs through stepZone: it commits a swing and fires o
 	}
 	expect(fired.length).toBe(1);
 	expect(fired[0].vx).toBeLessThan(0);
+});
+
+test('a crowded shooter NEVER fires inside keepDist — it repositions instead (ADR 0034)', () => {
+	const m = spawnMonster('shooter', 2, 50, y);
+	m.onGround = true;
+	const av = serverAvatar(7, 50); // point-blank, and staying there
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	for (let i = 0; i < 150; i++) {
+		// Pin the Avatar onto the shooter every tick so the gap never opens.
+		const mon = state.zone.monsters[0];
+		const held = holdAt(7, state.avatars[0].avatar);
+		state = stepZone(state, [{ ...held, x: mon.x, vx: 0 }], 16);
+		expect(state.zone.projectiles.length).toBe(0);
+	}
+	expect(state.zone.nextProjectileId).toBe(1); // not one shot, ever
+	expect(state.zone.monsters[0].x).toBeGreaterThan(50); // it spent the time backing off
+});
+
+test('the shooter releases every shot from its comfort band, never closer than keepDist', () => {
+	const { keepDist } = ARCHETYPES.shooter.ranged;
+	const m = spawnMonster('shooter', 2, 30, y); // adx 10: crowded, must reposition first
+	m.onGround = true;
+	const av = serverAvatar(7, 20);
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	const releaseGaps: number[] = [];
+	let lastId = state.zone.nextProjectileId;
+	for (let i = 0; i < 400; i++) {
+		const held = holdAt(7, state.avatars[0].avatar);
+		state = stepZone(state, [{ ...held, x: 20, vx: 0 }], 16);
+		if (state.zone.nextProjectileId > lastId) {
+			lastId = state.zone.nextProjectileId;
+			releaseGaps.push(Math.abs(state.zone.monsters[0].x - 20));
+		}
+	}
+	expect(releaseGaps.length).toBeGreaterThan(0);
+	for (const gap of releaseGaps) expect(gap).toBeGreaterThanOrEqual(keepDist);
+});
+
+test('an unaggroed Monster patrols: it turns at the world edge instead of walking off', () => {
+	const m = spawnMonster('chaser', 2, 220, y);
+	m.onGround = true;
+	m.facing = 1;
+	const av = serverAvatar(7, 10); // far outside aggro the whole time
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	let maxX = m.x;
+	for (let i = 0; i < 300; i++) {
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+		maxX = Math.max(maxX, state.zone.monsters[0].x);
+	}
+	expect(maxX).toBeLessThanOrEqual(240 - BOX.w); // never left the world
+	expect(state.zone.monsters[0].x).toBeLessThan(220); // turned and walked back
+	expect(state.zone.monsters[0].facing).toBe(-1);
+});
+
+test("the Brain's ai memory stays server-private: never in snapshots, never on the wire", () => {
+	const m = spawnMonster('shooter', 2, 50, y);
+	m.onGround = true;
+	const av = serverAvatar(7, 20);
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	state = stepZone(state, [holdAt(7, av.avatar)], 16);
+	// The Brain DID record memory on the server-side entity...
+	expect(state.zone.monsters[0].ai).toEqual({ state: 'attack' });
+	// ...but the snapshot omits it, and a wire round-trip carries no trace.
+	const snap = snapshotFor(state, 7);
+	expect(Object.keys(snap.monsters[0])).not.toContain('ai');
+	const decoded = decodeServerMessage(encodeServerMessage(snap));
+	expect(JSON.stringify(decoded)).not.toContain('"ai"');
 });
 
 test('an unguarded heavy projectile Staggers the Avatar on a Poise break, like a melee hit', () => {
