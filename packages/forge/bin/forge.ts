@@ -33,7 +33,7 @@ if (domain === 'zone') {
 			'usage: forge <domain> <command>',
 			'',
 			'  zone     author + validate .zone content (render|preview|play|edit|check|new|rename)',
-			'  sprite   author + validate .sprite art (render)',
+			'  sprite   author + validate .sprite art (render|check|edit|preview)',
 			'',
 			'run `forge zone` for zone subcommands.',
 			'run `forge sprite` for sprite subcommands.',

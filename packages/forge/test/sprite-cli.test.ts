@@ -157,4 +157,64 @@ describe('sprite CLI', () => {
 		expect(runSprite(['bogus'], deps())).toBe(1);
 		expect(output().toLowerCase()).toContain('usage');
 	});
+
+	// Write a complete, valid set covering every @mmo/core catalog/reference id so
+	// the whole-set reference check resolves cleanly.
+	function writeCompleteSet(): void {
+		const weapon = `{"anchors":{"grip":[0,0]},"poses":{"windup":["wu"],"active":["ac"]}}
+--- idle
+AB
+--- wu
+AB
+--- ac
+AB
+`;
+		const idle = `--- idle\nAB\n`;
+		for (const [dir, id] of [['weapons', 'sword']] as const) {
+			mkdirSync(join(root, dir), { recursive: true });
+			writeFileSync(join(root, dir, `${id}.sprite`), weapon);
+		}
+		for (const id of ['chaser', 'shooter', 'brute']) {
+			mkdirSync(join(root, 'monsters'), { recursive: true });
+			writeFileSync(join(root, 'monsters', `${id}.sprite`), idle);
+		}
+		for (const id of ['merchant', 'signpost']) {
+			mkdirSync(join(root, 'npcs'), { recursive: true });
+			writeFileSync(join(root, 'npcs', `${id}.sprite`), idle);
+		}
+	}
+
+	test('check: a clean, complete sprite set exits 0 and reports no issues', () => {
+		writeCompleteSet();
+		expect(runSprite(['check'], deps())).toBe(0);
+		expect(output()).toContain('no issues');
+	});
+
+	test('check: dangling catalog references fail with exit 1', () => {
+		// Only a hat present — the weapon/monster/npc catalog references dangle.
+		mkdirSync(join(root, 'hats'), { recursive: true });
+		writeFileSync(join(root, 'hats', 'cap.sprite'), `--- idle\nAB\n`);
+		expect(runSprite(['check'], deps())).toBe(1);
+		expect(output()).toContain('sword');
+	});
+
+	test('check: an error in a sprite file fails with exit 1 and prints the diagnostic', () => {
+		writeCompleteSet();
+		writeFileSync(join(root, 'hats-bad.sprite'), RESERVED_KEY_ERROR);
+		mkdirSync(join(root, 'hats'), { recursive: true });
+		writeFileSync(join(root, 'hats', 'bad.sprite'), RESERVED_KEY_ERROR);
+		expect(runSprite(['check'], deps())).toBe(1);
+		expect(output()).toContain("reserved recolor key 'p'");
+	});
+
+	test('check: an unresolvable color key fails with exit 1', () => {
+		writeCompleteSet();
+		mkdirSync(join(root, 'hats'), { recursive: true });
+		writeFileSync(
+			join(root, 'hats', 'badcol.sprite'),
+			`{"colors":{"q":[1,2,3,255]}}\n--- idle\nAB\n@colors\nqz\n`,
+		);
+		expect(runSprite(['check'], deps())).toBe(1);
+		expect(output()).toContain('unknown color key');
+	});
 });

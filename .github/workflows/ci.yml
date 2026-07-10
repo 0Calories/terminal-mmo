@@ -39,3 +39,6 @@ jobs:
       - name: Zones check
         if: ${{ !cancelled() }}
         run: bun run zones:check
+      - name: Sprites check
+        if: ${{ !cancelled() }}
+        run: bun run sprites:check

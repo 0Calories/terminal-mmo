@@ -1,11 +1,17 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
-import { parseSpriteFile, type SpriteDiagnostic } from '@mmo/render';
+import {
+	parseSpriteFile,
+	readSpriteSourcesFromDir,
+	type SpriteDiagnostic,
+	validateSpriteSet,
+} from '@mmo/render';
 import type { CliDeps } from './cli';
 
 const USAGE = [
 	'usage:',
 	"  forge sprite render <id>          parse + dump one .sprite file's frames as ASCII + diagnostics",
+	'  forge sprite check [dir]          whole-set validation (CI; non-zero on error)',
 	'  forge sprite edit <role>/<id>     open the pixel Sprite editor (a fresh template if the id is new)',
 	'  forge sprite preview <id>         live Composited preview: the art rendered the way the game draws it',
 ].join('\n');
@@ -15,6 +21,8 @@ export function runSprite(argv: string[], deps: CliDeps): number {
 	switch (cmd) {
 		case 'render':
 			return cmdRender(rest, deps);
+		case 'check':
+			return cmdCheck(rest, deps);
 		default:
 			deps.log(USAGE);
 			return cmd ? 1 : 0;
@@ -53,6 +61,26 @@ export function findSpriteFile(root: string, id: string): string | undefined {
 		if (basename(entry) === target) return join(root, entry);
 	}
 	return undefined;
+}
+
+// Whole-set validation, the sprite analogue of `zone check`: load every
+// `.sprite` under the root, run the pure set validator, print the diagnostics,
+// and exit non-zero on any error (warnings alone stay green). CI's gate.
+function cmdCheck(args: string[], deps: CliDeps): number {
+	const dir = args[0]
+		? isAbsolute(args[0])
+			? args[0]
+			: resolve(process.cwd(), args[0])
+		: deps.root;
+
+	const sources = readSpriteSourcesFromDir(dir);
+	const diags = validateSpriteSet(sources.values());
+
+	if (sources.size === 0) deps.log(`check: no .sprite files found in ${dir}`);
+	if (diags.length === 0) deps.log('✓ no issues');
+	else deps.log(formatSpriteDiagnostics(diags));
+
+	return hasError(diags) ? 1 : 0;
 }
 
 function cmdRender(args: string[], deps: CliDeps): number {
