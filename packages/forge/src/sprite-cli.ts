@@ -12,8 +12,6 @@ const USAGE = [
 	'usage:',
 	"  forge sprite render <id>          parse + dump one .sprite file's frames as ASCII + diagnostics",
 	'  forge sprite check [dir]          whole-set validation (CI; non-zero on error)',
-	'  forge sprite edit <role>/<id>     open the pixel Sprite editor (a fresh template if the id is new)',
-	'  forge sprite preview <id>         live Composited preview: the art rendered the way the game draws it',
 ].join('\n');
 
 export function runSprite(argv: string[], deps: CliDeps): number {
