@@ -3,41 +3,47 @@ import { randomBytes } from 'node:crypto';
 // Sprite text and art code stay unreachable; depcruise enforces the boundary.
 import { loadZones, spriteIds } from '@mmo/assets/meta';
 import {
-	type AvatarIntent,
+	type Cosmetics,
+	emoteById,
+	sanitizeFormId,
+	sanitizeHatId,
+} from '@mmo/core/entities';
+import {
+	canonicalPublicKey,
+	claimHandle,
+	NONCE_LEN,
+	parsePublicKeyLine,
+	registryFromSaves,
+	resolveAuth,
+	restoredFromSave,
+	saveFromAvatar,
+	validHandle,
+} from '@mmo/core/persistence';
+import {
+	CHAT_MAX_LEN,
+	type ClientMessage,
+	decodeClientMessage,
+	encodeServerMessage,
+	isReleaseVersion,
+} from '@mmo/core/protocol';
+import {
 	addSession,
 	applyBuy,
 	applyCosmetics,
 	applySell,
-	CHAT_MAX_LEN,
-	type ClientMessage,
-	type Cosmetics,
-	canonicalPublicKey,
-	claimHandle,
 	createServerWorld,
-	decodeClientMessage,
-	emoteById,
-	encodeServerMessage,
 	handleOf,
-	isReleaseVersion,
-	NONCE_LEN,
-	parsePublicKeyLine,
-	registryFromSaves,
 	removeSession,
-	resolveAuth,
-	restoredFromSave,
 	type ServerWorld,
-	sanitizeFormId,
-	sanitizeHatId,
-	saveFromAvatar,
 	sessionByHandle,
 	sessionsInZone,
 	spawnNewAvatar,
 	stepServerWorld,
-	validHandle,
 	worldSnapshotFor,
 	zoneOf,
 	zoneStateOf,
-} from '@mmo/core';
+} from '@mmo/core/world';
+import type { AvatarIntent } from '@mmo/core/zones';
 import type { ServerWebSocket } from 'bun';
 import { foldPendingEdges } from './intents';
 import { installShutdownHooks } from './shutdown';
