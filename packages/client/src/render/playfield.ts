@@ -143,25 +143,29 @@ export class PlayfieldRenderable extends Renderable {
 
 		// The one routing pass (ADR 0029 / ADR 0013 amendment): fold this frame's
 		// CombatEvents (snapshot-gated + locally predicted) into presentation exactly once.
-		const show = present(fresh);
+		const presentation = present(fresh);
 
-		for (const dir of show.kicks)
+		for (const dir of presentation.kicks)
 			this.kick = applyKick(this.kick, dir * CAMERA_KICK.maxCells, -1);
-		if (show.hitstop) this.hitstop = triggerHitstop(this.hitstop);
+		if (presentation.hitstop) this.hitstop = triggerHitstop(this.hitstop);
 		this.kick = stepKick(this.kick, dt);
 
 		const cam = { x: baseCam.x + this.kick.x, y: baseCam.y + this.kick.y };
 		const view = { ...cam, w: buffer.width, h: buffer.height };
-		for (const fx of show.effects)
+		for (const fx of presentation.effects)
 			if (inView(view, fx.x, fx.y))
 				this.particles.spawn(fx.kind, fx, fx.dir, fx.intensity, fx.tint);
 		this.particles.step(dt, zone.terrain);
 
 		this.dodges.update([a, ...(this.game.others ?? [])], dt);
 
-		if (this.sound && show.effects.length) {
+		if (this.sound && presentation.effects.length) {
 			const centerX = cam.x + buffer.width / 2;
-			const cues = effectSoundCues(show.effects, centerX, buffer.width / 2);
+			const cues = effectSoundCues(
+				presentation.effects,
+				centerX,
+				buffer.width / 2,
+			);
 			for (const cue of cues)
 				this.sound.play(cue.kind, { volume: cue.volume, pan: cue.pan });
 		}

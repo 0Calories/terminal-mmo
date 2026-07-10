@@ -37,50 +37,39 @@ export function present(events: readonly CombatEvent[]): Presentation {
 	const kicks: (-1 | 0 | 1)[] = [];
 	let hitstop = false;
 
+	const at = (
+		e: CombatEvent,
+		kind: VisualEffectKind,
+		intensity: number,
+	): VisualEffect => ({ kind, x: e.x, y: e.y, intensity, dir: e.dir });
+
+	// An impact is the "big moment" treatment: the burst plus a camera punch
+	// and a redraw freeze, together.
+	const impact = (e: CombatEvent, intensity: number): void => {
+		effects.push(at(e, 'impact', intensity));
+		kicks.push(e.dir);
+		hitstop = true;
+	};
+
 	for (const e of events) {
 		switch (e.kind) {
 			case 'hit':
-				effects.push({
-					kind: 'blood',
-					x: e.x,
-					y: e.y,
-					intensity: e.intensity,
-					dir: e.dir,
-				});
+				effects.push(at(e, 'blood', e.intensity));
 				break;
 			case 'break':
-				effects.push({
-					kind: 'impact',
-					x: e.x,
-					y: e.y,
-					intensity: e.intensity + COMBAT.poise.max,
-					dir: e.dir,
-				});
-				kicks.push(e.dir);
-				hitstop = true;
+				impact(e, e.intensity + COMBAT.poise.max);
 				break;
 			case 'death': {
-				const fx: VisualEffect = {
-					kind: 'gore',
-					x: e.x,
-					y: e.y,
-					intensity: e.intensity,
-					dir: e.dir,
-				};
+				const fx = at(e, 'gore', e.intensity);
 				if (e.tint !== undefined) fx.tint = e.tint;
 				effects.push(fx);
 				break;
 			}
 			case 'swat':
-				effects.push({
-					kind: 'impact',
-					x: e.x,
-					y: e.y,
-					intensity: e.intensity,
-					dir: e.dir,
-				});
-				kicks.push(e.dir);
-				hitstop = true;
+				// A swat clinks with the full impact treatment — kick and hitstop
+				// included, exactly what the light clink got pre-rebuild (the old
+				// REALIZE map gave every impact both).
+				impact(e, e.intensity);
 				break;
 		}
 	}
