@@ -3,8 +3,9 @@
 // knowledge — it is "given content, simulate".
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Catalogs, Zone } from '@mmo/core';
-import { parseZone } from '@mmo/core';
+import type { Zone } from '@mmo/core/world';
+import type { Catalogs } from '@mmo/core/zones';
+import { parseZone } from '@mmo/core/zones';
 import { type AssetEntries, entryId, loadAssetEntries } from './store';
 
 const ZONE_EXT = '.zone';

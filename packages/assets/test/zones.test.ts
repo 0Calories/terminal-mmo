@@ -6,7 +6,10 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BOX, isSolid, SPAWN, validateZoneSet } from '@mmo/core';
+import { BOX } from '@mmo/core/entities';
+import { isSolid } from '@mmo/core/physics';
+import { SPAWN } from '@mmo/core/world';
+import { validateZoneSet } from '@mmo/core/zones';
 import {
 	catalogsFromEntries,
 	loadCatalogs,
