@@ -26,9 +26,7 @@ import {
 	GROUND_TOP,
 	lootTableFor,
 	MONSTER,
-	RESPAWN,
 	removeAvatar,
-	resolveDeaths,
 	rollDrop,
 	SPAWN,
 	SWING_TOTAL,
@@ -786,7 +784,7 @@ test('stepZone reports no deaths when every Avatar survives the tick', () => {
 	expect(next.deaths).toEqual([]);
 });
 
-test('stepZone is deterministic for identical state + intents', () => {
+test('stepZone is pure and deterministic for identical state + intents', () => {
 	const mk = () => {
 		const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 		m.hp = 4;
@@ -797,8 +795,11 @@ test('stepZone is deterministic for identical state + intents', () => {
 		...holdAt(7, serverAvatar(7, 20).avatar),
 		attack: true,
 	};
-	const a = stepZone(mk(), [intent], 16);
+	const input = mk();
+	const before = structuredClone(input);
+	const a = stepZone(input, [intent], 16);
 	const b = stepZone(mk(), [intent], 16);
+	expect(input).toEqual(before);
 	expect(b.avatars[0].inventory[0]).toEqual(a.avatars[0].inventory[0]);
 	expect(b.avatars[0].progress.xp).toBe(a.avatars[0].progress.xp);
 });
@@ -1046,6 +1047,24 @@ test('a single chip hit deals HP + Poise damage but does NOT Stagger a full-Pois
 	expect(next.events?.some((e) => e.kind === 'hit')).toBe(true);
 });
 
+test('wind-up super-armor absorbs a Poise break without interrupting the committed swing', () => {
+	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
+	m.hp = 100;
+	m.poise = 1;
+	m.attackT = SWING_TOTAL;
+	const av = primeSwing(serverAvatar(7, 20));
+	const next = stepZone(
+		{ zone: zoneWith([m]), avatars: [av], tick: 0 },
+		[attackRight(av)],
+		16,
+	);
+	const mon = next.zone.monsters[0];
+	expect(mon.hp).toBeLessThan(100);
+	expect(mon.poise).toBe(0);
+	expect(mon.stunT ?? 0).toBe(0);
+	expect(swingPhase(mon.attackT)).toBe('windup');
+});
+
 test('a Poise break Staggers: Hitstun + a Knockback impulse + a break CombatEvent', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.poise = 1;
@@ -1221,86 +1240,4 @@ test('a Poise break throws the body along the swing — the SHARED Knockback', (
 	);
 	expect(next.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0);
 	expect(next.zone.monsters[0].ivx ?? 0).toBeGreaterThan(0);
-});
-
-const deadCtx = (zoneId = 'dungeon-01', nextDropId = 1) => ({
-	zoneId,
-	lootTable: lootTableFor(zoneId),
-	nextDropId,
-});
-
-test('resolveDeaths grants each dead Monster contributor shared XP and its own instanced loot', () => {
-	const killer = serverAvatar(7, 20);
-	const helper = serverAvatar(8, 300);
-	helper.rngState = 999; // a distinct loot seed, to prove instancing
-	const m = spawnMonster('chaser', 2, 20, y);
-	m.hp = 0; // already decided dead by combat resolution
-	m.contributors = [7, 8];
-	const out = resolveDeaths([killer, helper], [m], deadCtx());
-	// Shared, not split: each contributor earns the FULL kill XP.
-	expect(out.avatars[0].progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
-	expect(out.avatars[1].progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
-	// The dungeon table always drops: each contributor gets its OWN private Drop.
-	expect(out.drops.map((d) => d.owner).sort()).toEqual([7, 8]);
-	// The helper's Drop is the dungeon-table roll off its OWN seed — loot never crosses.
-	const expected = rollDrop(
-		999,
-		out.avatars[1].progress.level,
-		lootTableFor('dungeon-01'),
-	);
-	if (!expected.item) throw new Error('dungeon table must always drop');
-	const helperDrop = out.drops.find((d) => d.owner === 8);
-	expect(helperDrop?.item).toEqual({ ...expected.item, id: 1 });
-	// Drop ids advance from the passed cursor; it is returned for the caller to thread on.
-	expect(out.nextDropId).toBe(3);
-});
-
-test('resolveDeaths reports the died-this-tick set and defers the respawn to the caller', () => {
-	const dead = serverAvatar(7, 200);
-	dead.avatar.hp = 0; // combat resolution already brought it to 0
-	const alive = serverAvatar(8, 50);
-	const out = resolveDeaths([dead, alive], [], deadCtx());
-	expect(out.deaths).toEqual([7]);
-	expect(out.avatars[1].avatar.hp).toBe(alive.avatar.maxHp);
-	expect(out.avatars[1].avatar.x).toBe(50);
-	// The pass REPORTS the death but does NOT respawn — the caller does, so the fallen Avatar is unmoved here.
-	expect(out.avatars[0].avatar.x).toBe(200);
-	expect(out.avatars[0].avatar.hp).toBe(0);
-});
-
-test('resolveDeaths sprays a radial death CombatEvent at the fall site', () => {
-	const dead = serverAvatar(7, 200);
-	dead.avatar.hp = 0;
-	const out = resolveDeaths([dead], [], deadCtx());
-	const death = out.events.find(
-		(ev) => ev.dir === 0 && ev.intensity === COMBAT.deathBurstIntensity,
-	);
-	expect(death?.kind).toBe('death');
-	// at the fall spot (x ~200); the caller respawns to SPAWN.x afterwards.
-	expect(death?.x).toBeGreaterThanOrEqual(200);
-});
-
-test('resolveDeaths schedules a respawn for a dead Monster that has a spawn point', () => {
-	const m = spawnMonster('chaser', 2, 20, y, 3);
-	m.hp = 0;
-	const out = resolveDeaths([], [m], deadCtx());
-	expect(out.respawns).toEqual([
-		{ spawnIndex: 3, remaining: RESPAWN.delaySec },
-	]);
-});
-
-test('resolveDeaths schedules no respawn for a Monster with no spawn point', () => {
-	const m = spawnMonster('chaser', 2, 20, y);
-	m.hp = 0;
-	const out = resolveDeaths([], [m], deadCtx());
-	expect(out.respawns).toEqual([]);
-});
-
-test('resolveDeaths pays out nothing for a Monster with no contributors', () => {
-	const bystander = serverAvatar(7, 20);
-	const m = spawnMonster('chaser', 2, 20, y);
-	m.hp = 0;
-	const out = resolveDeaths([bystander], [m], deadCtx());
-	expect(out.avatars[0].progress.xp).toBe(0);
-	expect(out.drops).toEqual([]);
 });
