@@ -17,11 +17,7 @@ import {
 	swingPhase,
 } from '../combat/combat';
 import { COMBAT } from '../combat/constants';
-import {
-	projectileBox,
-	spawnProjectile,
-	stepProjectile,
-} from '../combat/projectile';
+import { projectileBox, spawnProjectile } from '../combat/projectile';
 import {
 	type PlayerClass,
 	skillForSlot,
@@ -29,7 +25,7 @@ import {
 } from '../combat/skills';
 import { DEFAULT_WEAPON, weaponById } from '../combat/weapons';
 import { BOX, meleeProfileOf, rangedProfileOf } from '../entities/archetypes';
-import { BRAINS, type BrainView, IDLE_DRIVE } from '../entities/brain';
+import { BRAINS, type BrainView } from '../entities/brain';
 import { clampCosmetics, DEFAULT_COSMETICS } from '../entities/cosmetics';
 import {
 	emoteById,
@@ -61,7 +57,8 @@ import {
 } from '../items/loot';
 import type { RestoredAvatar } from '../persistence/persistence';
 import { PHYS } from '../physics/constants';
-import { stepEntity } from '../physics/physics';
+import { IDLE_DRIVE, stepEntity } from '../physics/physics';
+import { stepProjectile } from '../physics/projectile';
 import { applyXp, maxHpForLevel, xpForKill } from '../progression/progression';
 import type {
 	AvatarSnapshot,
@@ -280,8 +277,7 @@ export function stepZone(
 				? { drive: IDLE_DRIVE, ai: m.ai }
 				: BRAINS[m.type](m, view);
 		m.ai = ai;
-		m = stepEntity(t, m, { moveX: drive.moveX, jump: drive.jump }, dt).e;
-		if (drive.face !== undefined) m.facing = drive.face;
+		m = stepEntity(t, m, drive, dt).e;
 
 		const melee = meleeProfileOf(m.type);
 		if (drive.commit === 'swing' && melee)

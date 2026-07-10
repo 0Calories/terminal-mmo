@@ -1,12 +1,5 @@
 import { ARCHETYPES, BOX } from '../entities/archetypes';
-import type {
-	Box,
-	Entity,
-	Facing,
-	Projectile,
-	Terrain,
-} from '../entities/types';
-import { isSolid } from '../physics/terrain';
+import type { Box, Entity, Facing, Projectile } from '../entities/types';
 import { PROJECTILE } from './constants';
 
 export function projectileBox(p: Projectile): Box {
@@ -31,17 +24,4 @@ export function spawnProjectile(
 		knockback: spec.knockback,
 		knockbackUp: spec.knockbackUp,
 	};
-}
-
-export function stepProjectile(
-	t: Terrain,
-	p: Projectile,
-	dt: number,
-): Projectile | null {
-	const life = p.life - dt;
-	if (life <= 0) return null;
-	const x = p.x + p.vx * dt;
-	const y = p.y + p.vy * dt;
-	if (isSolid(t, Math.floor(x), Math.floor(y))) return null;
-	return { ...p, x, y, life };
 }

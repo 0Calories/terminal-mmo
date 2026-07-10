@@ -1,13 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { BrainView, Entity, Terrain } from '../../src/entities';
-import {
-	ARCHETYPES,
-	BOX,
-	BRAINS,
-	IDLE_DRIVE,
-	spawnMonster,
-} from '../../src/entities';
-import { parseTerrain } from '../../src/physics';
+import { ARCHETYPES, BOX, BRAINS, spawnMonster } from '../../src/entities';
+import { IDLE_DRIVE, parseTerrain } from '../../src/physics';
 import { GROUND_TOP } from '../../src/world';
 import { flatTerrain } from '../helpers';
 

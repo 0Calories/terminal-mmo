@@ -6,6 +6,9 @@
 // damage, never moves anything, and its `ai` memory is private to it — the
 // tick threads it through opaquely and it never crosses the wire.
 
+// A Brain's output type is physics-owned: the Drive is the shared decision
+// packet every controller (Intent or Brain) feeds into the step (ADR 0032).
+import { type Drive, IDLE_DRIVE } from '../physics/physics';
 import { isSolid, isWall } from '../physics/terrain';
 import {
 	ARCHETYPES,
@@ -14,28 +17,6 @@ import {
 	type RangedProfile,
 } from './archetypes';
 import type { Entity, Facing, MonsterType, Terrain } from './types';
-
-/** An ability a Drive may commit; the tick resolves it against the archetype profile. */
-export type AbilityId = 'swing' | 'fire';
-
-/**
- * The per-tick movement decision a controller feeds into physics — produced
- * from the net Intent for an Avatar, by a Brain for a Monster (glossary:
- * Drive). The simulation consumes Drives without caring who is driving.
- */
-export interface Drive {
-	moveX: -1 | 0 | 1;
-	jump: boolean;
-	/**
-	 * Aim decoupled from locomotion. Physics turns a body toward its velocity;
-	 * `face` overrides that after the step — a committing melee squares up to
-	 * its target, a shooter keeps eyes (and its muzzle) on the target while
-	 * backpedaling. Absent = let movement decide.
-	 */
-	face?: Facing;
-	/** Attack commit — the ONLY way any attack starts (ADR 0034). */
-	commit?: AbilityId;
-}
 
 /** The limited slice of its Zone a Brain may perceive. */
 export interface BrainView {
@@ -51,8 +32,6 @@ export interface BrainResult {
 }
 
 export type Brain = (m: Entity, view: BrainView) => BrainResult;
-
-export const IDLE_DRIVE: Drive = { moveX: 0, jump: false };
 
 // Patrol: walk the current facing, turn at a wall or a ledge. Probed pre-step
 // from the Brain's view of the terrain (the Brain decides; physics executes).

@@ -59,7 +59,6 @@ export {
 export {
 	projectileBox,
 	spawnProjectile,
-	stepProjectile,
 } from './projectile';
 export {
 	GROUND_POUND,
