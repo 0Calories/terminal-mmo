@@ -1,11 +1,15 @@
-// entities — the flat Entity record, per-kind archetype tuning, player spawning,
-// cosmetics identity, emotes, and the shared palette/hue tables.
+// entities — the flat Entity record and its per-kind factories, one archetype
+// profile per Monster kind, Npc placements, cosmetics identity, emotes, and
+// the shared palette/hue tables.
 
 export {
+	ARCHETYPES,
+	type ArchetypeProfile,
 	BOX,
-	BRUTE,
-	MONSTER,
-	SHOOTER,
+	type MeleeProfile,
+	meleeProfileOf,
+	type ProjectileSpec,
+	type RangedProfile,
 } from './archetypes';
 export {
 	clampCosmetics,
@@ -29,8 +33,13 @@ export {
 	stepEmote,
 } from './emote';
 export {
-	type PlayerState,
+	type AvatarOptions,
 	spawnAvatar,
+	spawnMonster,
+} from './factory';
+export type { Npc } from './npc';
+export {
+	type PlayerState,
 	spawnPlayerState,
 } from './player';
 export {
@@ -56,8 +65,8 @@ export type {
 	Input,
 	Item,
 	ItemAffix,
+	MonsterType,
 	MoveId,
-	Npc,
 	PendingRespawn,
 	PlayerProgress,
 	Projectile,

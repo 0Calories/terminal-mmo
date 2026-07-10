@@ -2,14 +2,13 @@ import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets';
 import { COMBAT, SWING_TOTAL } from '../../src/combat';
 import type { Input, PlayerState, Projectile } from '../../src/entities';
-import { BOX, MONSTER, SHOOTER, spawnAvatar } from '../../src/entities';
+import { ARCHETYPES, BOX, spawnAvatar, spawnMonster } from '../../src/entities';
 import { CAPABILITY_UNLOCK, xpForKill } from '../../src/progression';
 import type { GameState, Zone } from '../../src/world';
 import {
 	activeZone,
 	createGameFromZones,
 	GROUND_TOP,
-	spawnMonster,
 	step,
 } from '../../src/world';
 import { createGame, flatTerrain, makeProjectile } from '../helpers';
@@ -108,7 +107,7 @@ test('attacking damages an adjacent monster', () => {
 		16,
 	);
 	const zone = activeZone(g.world, g.player.zoneId);
-	expect(zone.monsters[0].hp).toBe(MONSTER.chaserHp - 8);
+	expect(zone.monsters[0].hp).toBe(ARCHETYPES.chaser.hp - 8);
 });
 
 test('step surfaces the tick CombatEvents so the offline loop can feed the particle system', () => {
@@ -250,15 +249,15 @@ test('a ranged poker does not auto-fire a second shot during its cooldown', () =
 });
 
 test('a shooter does not fire when the Avatar is out of range', () => {
-	const g = step(shooterGame(SHOOTER.aggro + 10), IDLE, 16);
+	const g = step(shooterGame(ARCHETYPES.shooter.ranged.aggro + 10), IDLE, 16);
 	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(0);
 });
 
 test('a shooter backs away when the Avatar gets too close', () => {
-	const g = step(shooterGame(SHOOTER.keepDist - 5), IDLE, 16);
+	const g = step(shooterGame(ARCHETYPES.shooter.ranged.keepDist - 5), IDLE, 16);
 	const m = activeZone(g.world, g.player.zoneId).monsters[0];
 	// shooter started right of the Avatar, so retreating means moving further right
-	expect(m.x).toBeGreaterThan(40 + SHOOTER.keepDist - 5);
+	expect(m.x).toBeGreaterThan(40 + ARCHETYPES.shooter.ranged.keepDist - 5);
 });
 
 test('a projectile overlapping the Avatar damages it and applies i-frames', () => {
@@ -297,7 +296,9 @@ test('a projectile overlapping the Avatar damages it and applies i-frames', () =
 		IDLE,
 		16,
 	);
-	expect(g.player.avatar.hp).toBe(before - SHOOTER.projDamage);
+	expect(g.player.avatar.hp).toBe(
+		before - ARCHETYPES.shooter.ranged.projectile.damage,
+	);
 	expect(g.player.avatar.hurtT).toBeGreaterThan(0);
 	expect(activeZone(g.world, g.player.zoneId).projectiles.length).toBe(0);
 });
@@ -358,7 +359,7 @@ test('a scheduled respawn restores the monster at full HP at its spawn point', (
 		if (zone.monsters.length === 1) {
 			respawned = true;
 			const m = zone.monsters[0];
-			expect(m.hp).toBe(MONSTER.chaserHp);
+			expect(m.hp).toBe(ARCHETYPES.chaser.hp);
 			expect(m.hp).toBe(m.maxHp);
 			expect(m.x).toBe(20 + BOX.w);
 			expect(m.y).toBe(GROUND_TOP - BOX.h);

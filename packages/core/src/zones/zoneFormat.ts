@@ -1,17 +1,19 @@
-import type { Entity, Npc, SpawnPoint, Terrain } from '../entities/types';
+import { spawnMonster } from '../entities/factory';
+import type { Npc } from '../entities/npc';
+import type {
+	Entity,
+	MonsterType,
+	SpawnPoint,
+	Terrain,
+} from '../entities/types';
 import { terrainCell } from '../physics/terrain';
 import { NPC_BOX, PORTAL_BOX } from '../world/constants';
-import {
-	type Portal,
-	spawnMonster,
-	type Zone,
-	type ZoneType,
-} from '../world/world';
+import type { Portal, Zone, ZoneType } from '../world/world';
 import { ZONE_MAX } from './constants';
 
 export interface MonsterCatalogEntry {
 	id: string;
-	behavior: 'chaser' | 'shooter' | 'brute';
+	behavior: MonsterType;
 	name: string;
 }
 

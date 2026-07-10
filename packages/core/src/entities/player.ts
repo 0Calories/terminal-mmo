@@ -1,7 +1,6 @@
 import type { PlayerClass } from '../combat/skills';
-import { DEFAULT_MASS, PHYS } from '../physics/constants';
-import { maxHpForLevel } from '../progression/progression';
 import type { ZoneId } from '../world/world';
+import { spawnAvatar } from './factory';
 import type { Entity, Item, PlayerProgress } from './types';
 
 export interface PlayerState {
@@ -14,25 +13,6 @@ export interface PlayerState {
 	rngState: number;
 	class?: PlayerClass;
 	skillCooldowns?: Record<string, number>;
-}
-
-export function spawnAvatar(x: number, y: number): Entity {
-	return {
-		id: 1,
-		type: 'player',
-		x,
-		y,
-		vx: 0,
-		vy: 0,
-		speed: PHYS.speed,
-		facing: 1,
-		onGround: false,
-		hp: maxHpForLevel(1),
-		maxHp: maxHpForLevel(1),
-		hurtT: 0,
-		attackT: 0,
-		mass: DEFAULT_MASS,
-	};
 }
 
 export function spawnPlayerState(

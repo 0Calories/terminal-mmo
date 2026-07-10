@@ -21,6 +21,9 @@ export interface Input extends Control {
 
 export type EntityType = 'player' | 'chaser' | 'shooter' | 'brute';
 
+/** The Monster archetypes — every EntityType except the player-controlled Avatar. */
+export type MonsterType = Exclude<EntityType, 'player'>;
+
 export type AttackPhase = 'windup' | 'active' | 'recovery';
 
 export type MoveId = 'idle' | 'basic' | 'dodge';
@@ -88,7 +91,7 @@ export interface Tint {
 }
 
 export interface SpawnPoint {
-	type: EntityType;
+	type: MonsterType;
 	x: number;
 	y: number;
 }
@@ -129,12 +132,6 @@ export interface Projectile {
 	poiseDamage: number;
 	knockback: number;
 	knockbackUp: number;
-}
-
-export interface Npc extends Box {
-	id: number;
-	kind: 'vendor';
-	name: string;
 }
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';

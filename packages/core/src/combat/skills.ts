@@ -1,5 +1,5 @@
 import { BOX } from '../entities/archetypes';
-import type { Box, Entity } from '../entities/types';
+import type { Box, Facing } from '../entities/types';
 import { CAPABILITY_UNLOCK } from '../progression/progression';
 
 export type PlayerClass = 'warrior';
@@ -68,7 +68,10 @@ export function skillsUnlockedBetween(
 	);
 }
 
-export function skillHitbox(e: Entity, skill: Skill): Box {
+export function skillHitbox(
+	e: { x: number; y: number; facing: Facing },
+	skill: Skill,
+): Box {
 	if (skill.kind === 'aoe') {
 		return {
 			x: e.x - skill.reach,

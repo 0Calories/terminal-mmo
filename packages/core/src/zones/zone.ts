@@ -11,7 +11,6 @@ import {
 	IDLE_ACTION,
 	meleeActive,
 	meleeHitbox,
-	meleeProfileOf,
 	regenPoise,
 	resolveGuard,
 	resolveHitsOnMonsters,
@@ -32,7 +31,7 @@ import {
 	skillsUnlockedBetween,
 } from '../combat/skills';
 import { DEFAULT_WEAPON, weaponById } from '../combat/weapons';
-import { BOX, SHOOTER } from '../entities/archetypes';
+import { ARCHETYPES, BOX, meleeProfileOf } from '../entities/archetypes';
 import { clampCosmetics, DEFAULT_COSMETICS } from '../entities/cosmetics';
 import {
 	emoteById,
@@ -40,7 +39,7 @@ import {
 	initialEmoteT,
 	stepEmote,
 } from '../entities/emote';
-import { spawnAvatar } from '../entities/player';
+import { spawnAvatar, spawnMonster } from '../entities/factory';
 import type {
 	Control,
 	Cosmetics,
@@ -73,7 +72,7 @@ import type {
 	ServerMessage,
 } from '../protocol/protocol';
 import { RESPAWN, SPAWN } from '../world/constants';
-import { spawnMonster, type Zone, type ZoneId } from '../world/world';
+import type { Zone, ZoneId } from '../world/world';
 
 export interface ServerAvatar {
 	sessionId: number;
@@ -275,12 +274,16 @@ export function stepZone(
 		const dx = target >= 0 ? avatars[target].avatar.x - m.x : 0;
 		const adx = Math.abs(dx);
 		const engaged =
-			!stunned && target >= 0 && m.type === 'shooter' && adx < SHOOTER.aggro;
+			!stunned &&
+			target >= 0 &&
+			m.type === 'shooter' &&
+			adx < ARCHETYPES.shooter.ranged.aggro;
 		let moveX: -1 | 0 | 1;
 		if (stunned || committed) moveX = 0;
 		else if (melee && target >= 0 && adx < melee.aggro)
 			moveX = adx < melee.deadzone ? 0 : dx > 0 ? 1 : -1;
-		else if (engaged) moveX = adx < SHOOTER.keepDist ? (dx > 0 ? -1 : 1) : 0;
+		else if (engaged)
+			moveX = adx < ARCHETYPES.shooter.ranged.keepDist ? (dx > 0 ? -1 : 1) : 0;
 		else moveX = m.facing;
 		const res = stepEntity(t, m, { moveX, jump: false }, dt);
 		m = res.e;
@@ -301,7 +304,7 @@ export function stepZone(
 			meleeActive(m.attackT)
 		) {
 			fired.push(spawnProjectile(nextProjectileId++, m, m.facing));
-			m = { ...m, attackCdT: SHOOTER.fireCooldown };
+			m = { ...m, attackCdT: ARCHETYPES.shooter.ranged.fireCooldown };
 		}
 
 		if (
@@ -670,11 +673,10 @@ export function addAvatar(
 ): ZoneState {
 	const cos = restore?.cosmetics ?? cosmetics;
 	const wpn = restore?.equippedWeapon ?? weapon;
-	const avatar: Entity = {
-		...spawnAvatar(SPAWN.x, SPAWN.y),
+	const avatar: Entity = spawnAvatar(SPAWN.x, SPAWN.y, {
 		id: sessionId,
 		weapon: wpn,
-	};
+	});
 	if (restore) {
 		const mhp = maxHpForLevel(restore.progress.level);
 		avatar.maxHp = mhp;

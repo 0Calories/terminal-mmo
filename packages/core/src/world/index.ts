@@ -38,7 +38,6 @@ export {
 export {
 	activeZone,
 	type Portal,
-	spawnMonster,
 	type World,
 	type Zone,
 	type ZoneId,

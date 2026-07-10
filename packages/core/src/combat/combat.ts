@@ -1,11 +1,10 @@
-import { BOX, BRUTE, MONSTER } from '../entities/archetypes';
+import { BOX } from '../entities/archetypes';
 import { HUES, type RGBAQuad, SCENE_PALETTE } from '../entities/sceneStyle';
 import type {
 	ActionState,
 	AttackPhase,
 	Box,
 	Entity,
-	EntityType,
 	Facing,
 	MoveId,
 	Projectile,
@@ -27,6 +26,41 @@ import { DEFAULT_WEAPON, type Weapon, weaponById } from './weapons';
 
 const BODY_PALETTE: Record<string, RGBAQuad> = SCENE_PALETTE;
 
+// The slice of an Entity that combat resolution reads and writes (ADR 0032:
+// modules declare narrow structural views over the flat record, never the
+// whole bag). The impulse channel (vy/ivx/mass) is here because a poise break
+// knocks the victim back. Signatures stay generic-preserving: callers pass a
+// full Entity and get a full Entity back.
+export interface Combatant {
+	id: number;
+	x: number;
+	y: number;
+	facing: Facing;
+	onGround: boolean;
+	hp: number;
+	hurtT: number;
+	attackT: number;
+	vy: number;
+	ivx?: number;
+	mass?: number;
+	poise?: number;
+	poiseMax?: number;
+	poiseT?: number;
+	stunT?: number;
+	dodgeT?: number;
+	dodgeCdT?: number;
+	guardT?: number;
+	swingHits?: number[];
+	skillCooldowns?: Record<string, number>;
+	contributors?: number[];
+}
+
+// Generic-preserving update over the flat record: E in, E out (Object.assign
+// keeps the intersection assignable to E where an object spread would not).
+function patch<E extends Combatant>(e: E, p: Partial<Combatant>): E {
+	return Object.assign({}, e, p);
+}
+
 export function entityTint(e: Entity): Tint {
 	const quad =
 		e.cosmetics !== undefined
@@ -35,7 +69,7 @@ export function entityTint(e: Entity): Tint {
 	return { r: quad[0], g: quad[1], b: quad[2] };
 }
 
-export function entityBox(e: Entity): Box {
+export function entityBox(e: Pick<Combatant, 'x' | 'y'>): Box {
 	return { x: e.x, y: e.y, w: BOX.w, h: BOX.h };
 }
 
@@ -65,37 +99,6 @@ export function meleeActive(attackT: number): boolean {
 	return swingPhase(attackT) === 'active';
 }
 
-export interface MeleeProfile {
-	damage: number;
-	poise: number;
-	range: number;
-	aggro: number;
-	deadzone: number;
-	commitCd: number;
-}
-
-export function meleeProfileOf(type: EntityType): MeleeProfile | null {
-	if (type === 'chaser')
-		return {
-			damage: MONSTER.meleeDamage,
-			poise: COMBAT.poiseDamage,
-			range: MONSTER.meleeRange,
-			aggro: MONSTER.chaserAggro,
-			deadzone: MONSTER.chaserDeadzone,
-			commitCd: 0,
-		};
-	if (type === 'brute')
-		return {
-			damage: BRUTE.meleeDamage,
-			poise: BRUTE.meleePoise,
-			range: BRUTE.meleeRange,
-			aggro: BRUTE.aggro,
-			deadzone: BRUTE.deadzone,
-			commitCd: BRUTE.commitCooldown,
-		};
-	return null;
-}
-
 export const DODGE_TOTAL = COMBAT.dodge.active + COMBAT.dodge.recovery;
 
 export const DODGE_LOCKOUT = DODGE_TOTAL + COMBAT.dodge.cooldown;
@@ -114,11 +117,11 @@ export function dodgeProgress(dodgeT: number): number {
 	return recovery > 0 ? (elapsed - active) / recovery : 1;
 }
 
-export function dodgeInvulnerable(e: Entity): boolean {
+export function dodgeInvulnerable(e: Combatant): boolean {
 	return dodgePhase(e.dodgeT ?? 0) === 'active';
 }
 
-export function dodgeReady(e: Entity): boolean {
+export function dodgeReady(e: Combatant): boolean {
 	return (
 		(e.dodgeCdT ?? 0) <= 0 &&
 		(e.dodgeT ?? 0) <= 0 &&
@@ -128,11 +131,11 @@ export function dodgeReady(e: Entity): boolean {
 }
 
 // Evaluate BEFORE the hop ungrounds the body — the movement conditions can't be re-derived post-physics.
-export function canStartDodge(e: Entity, moveX: number): boolean {
+export function canStartDodge(e: Combatant, moveX: number): boolean {
 	return dodgeReady(e) && e.onGround && moveX !== 0;
 }
 
-export function avatarHittable(a: Entity): boolean {
+export function avatarHittable(a: Combatant): boolean {
 	return a.hurtT <= 0 && !dodgeInvulnerable(a);
 }
 
@@ -158,12 +161,12 @@ export const IDLE_ACTION: ActionState = {
 	emoteT: 0,
 };
 
-export function superArmorActive(e: Entity): boolean {
+export function superArmorActive(e: Combatant): boolean {
 	return swingPhase(e.attackT) === 'windup';
 }
 
 export function applyPoiseDamage(
-	e: Entity,
+	e: Combatant,
 	poiseDamage: number,
 ): { poise: number; broke: boolean } {
 	const max = e.poiseMax ?? COMBAT.poise.max;
@@ -175,7 +178,7 @@ export function applyPoiseDamage(
 	return { poise: next, broke: false };
 }
 
-export function regenPoise(e: Entity, dt: number): number {
+export function regenPoise(e: Combatant, dt: number): number {
 	const max = e.poiseMax ?? COMBAT.poise.max;
 	return Math.min(max, (e.poise ?? max) + COMBAT.poise.regen * dt);
 }
@@ -211,7 +214,10 @@ export function guardRaised(guardT: number): boolean {
 }
 
 // A hit from behind (defender facing away) ignores Guard; a same-column attacker counts as frontal.
-export function facingToward(defender: Entity, attackerX: number): boolean {
+export function facingToward(
+	defender: Pick<Combatant, 'x' | 'facing'>,
+	attackerX: number,
+): boolean {
 	const side = Math.sign(attackerX - defender.x);
 	return side === 0 || side === defender.facing;
 }
@@ -223,7 +229,7 @@ export interface GuardOutcome {
 	guardBroke: boolean;
 }
 export function resolveGuard(
-	defender: Entity,
+	defender: Combatant,
 	attackerX: number,
 	hpDamage: number,
 	cfg: typeof COMBAT.guard = COMBAT.guard,
@@ -352,7 +358,7 @@ export type CombatEvent =
 
 export function combatEventAt(
 	kind: 'hit' | 'break',
-	target: Entity,
+	target: Pick<Combatant, 'id' | 'x' | 'y'>,
 	dir: -1 | 0 | 1,
 	intensity: number,
 	source?: number,
@@ -392,7 +398,7 @@ export function swatEvent(pr: Projectile, dir: Facing): CombatEvent {
 	};
 }
 
-export function meleeHitbox(p: Entity): Box {
+export function meleeHitbox(p: Pick<Combatant, 'x' | 'y' | 'facing'>): Box {
 	const w = COMBAT.meleeReach;
 	return {
 		x: p.facing === 1 ? p.x + BOX.w : p.x - w,
@@ -411,7 +417,7 @@ export function aabbOverlap(a: Box, b: Box): boolean {
 export function swingHitsTarget(
 	hitbox: Box | null,
 	swingHits: ReadonlySet<number>,
-	target: Entity,
+	target: Pick<Combatant, 'id' | 'x' | 'y'>,
 ): boolean {
 	return (
 		hitbox !== null &&
@@ -425,7 +431,7 @@ export function predictHits(
 	attackerFacing: Facing,
 	damage: number,
 	swingHits: ReadonlySet<number>,
-	monsters: Entity[],
+	monsters: readonly Pick<Combatant, 'id' | 'x' | 'y'>[],
 ): CombatEvent[] {
 	if (!hitbox) return [];
 	const events: CombatEvent[] = [];
@@ -436,7 +442,7 @@ export function predictHits(
 }
 
 export function resolveCombat(
-	avatar: Entity,
+	avatar: Combatant,
 	cooldowns: Record<string, number>,
 	level: number,
 	cls: PlayerClass,
@@ -515,11 +521,11 @@ export function resolveCombat(
 	};
 }
 
-export function resolveHitsOnMonsters(
-	monsters: Entity[],
+export function resolveHitsOnMonsters<E extends Combatant>(
+	monsters: E[],
 	strikes: Strike[],
 	swingHits: Map<number, Set<number>>,
-): { monsters: Entity[]; events: CombatEvent[] } {
+): { monsters: E[]; events: CombatEvent[] } {
 	const events: CombatEvent[] = [];
 	const resolved = monsters.map((m0) => {
 		let m = m0;
@@ -533,16 +539,15 @@ export function resolveHitsOnMonsters(
 				? m.contributors
 				: [...(m.contributors ?? []), s.attackerId];
 			const { poise, broke } = applyPoiseDamage(m, s.poiseDamage);
-			m = {
-				...m,
+			m = patch(m, {
 				hp: m.hp - s.damage,
 				poise,
 				poiseT: COMBAT.poise.regenDelay,
 				contributors,
-			};
+			});
 			if (broke) {
 				m = applyImpulse(m, COMBAT.knockback * s.facing, -COMBAT.knockbackUp);
-				m = { ...m, stunT: COMBAT.hitstun };
+				m = patch(m, { stunT: COMBAT.hitstun });
 				events.push(combatEventAt('break', m, s.facing, s.damage));
 			} else {
 				events.push(combatEventAt('hit', m, s.facing, s.damage, s.attackerId));
@@ -561,8 +566,8 @@ export interface AvatarCombatCtx {
 	dt: number;
 }
 
-export function stepAvatarCombat(
-	avatar: Entity,
+export function stepAvatarCombat<E extends Combatant>(
+	avatar: E,
 	intent: {
 		attack?: boolean;
 		skill?: number;
@@ -571,7 +576,7 @@ export function stepAvatarCombat(
 	},
 	ctx: AvatarCombatCtx,
 ): {
-	avatar: Entity;
+	avatar: E;
 	strikes: Strike[];
 } {
 	const r = resolveCombat(
@@ -583,15 +588,14 @@ export function stepAvatarCombat(
 		ctx.dt,
 		ctx.weapon,
 	);
-	const folded: Entity = {
-		...avatar,
+	const folded: E = patch(avatar, {
 		attackT: r.attackT,
 		dodgeT: r.dodgeT,
 		dodgeCdT: r.dodgeCdT,
 		guardT: r.guardT,
 		skillCooldowns: r.cooldowns,
 		swingHits: r.swingStarted ? [] : (avatar.swingHits ?? []),
-	};
+	});
 	const strikes: Strike[] =
 		r.hitbox !== null
 			? [
