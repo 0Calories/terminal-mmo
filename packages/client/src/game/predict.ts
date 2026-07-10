@@ -113,8 +113,8 @@ export function reconcileHealth(
 /**
  * Show this swing's hits immediately rather than waiting a round trip. Records the
  * targets on `predicted.swingHits` so one swing can't hit the same monster twice.
- * Returns the optimistic `hit` CombatEvents; projection into VisualEffects happens
- * where they're consumed (see effects/project.ts, ADR 0029).
+ * Returns the optimistic `hit` CombatEvents; routing into presentation happens
+ * where they're consumed (see render/present.ts, ADR 0029).
  */
 export function predictSwingEvents(
 	predicted: Entity,

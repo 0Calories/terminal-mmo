@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import type { VisualEffect } from '../src/effects/project';
+import type { VisualEffect } from '../src/render/present';
 import {
 	AUDIBLE_RADIUS,
 	EFFECT_SOUND_MAP,
