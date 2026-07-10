@@ -19,9 +19,8 @@ import { formFrame } from './body-sprite';
 import { formById } from './forms';
 import { Sprite } from './sprite';
 import { spriteFromDoc } from './sprite-compile';
-import { parseSpriteFile } from './sprite-file';
 import { loadSpriteSources, type SpriteSource } from './sprite-sources';
-import { validateSpriteRole } from './sprite-validate';
+import { acceptSprite } from './sprite-validate';
 
 // A guard sprite used only when a reference is dangling (its id has no compiled
 // sprite in the registry) — a broken/renamed art file or a bare test env with no
@@ -39,11 +38,8 @@ export function buildSpriteRegistry(
 	const registry = new Map<string, Sprite>();
 	for (const source of sources) {
 		if (source.role !== role) continue;
-		const { doc, diagnostics } = parseSpriteFile(source.text, source.id);
+		const doc = acceptSprite(source, role);
 		if (doc === null) continue;
-		if (diagnostics.some((d) => d.severity === 'error')) continue;
-		if (validateSpriteRole(doc, role).some((d) => d.severity === 'error'))
-			continue;
 		registry.set(source.id, spriteFromDoc(doc, 'idle'));
 	}
 	return registry;

@@ -3,7 +3,11 @@
 import { expect, test } from 'bun:test';
 import { parseSpriteFile, type SpriteDoc } from '../src';
 import type { SpriteSource } from '../src/sprite-sources';
-import { validateSpriteRole, validateSpriteSet } from '../src/sprite-validate';
+import {
+	acceptSprite,
+	validateSpriteRole,
+	validateSpriteSet,
+} from '../src/sprite-validate';
 
 function docOf(text: string, id = 's'): SpriteDoc {
 	const { doc, diagnostics } = parseSpriteFile(text, id);
@@ -152,6 +156,27 @@ test('validateSpriteRole: unknown role is a warning', () => {
 	expect(diags[0].message).toContain('bogus');
 });
 
+test('acceptSprite: returns the parsed doc for a source that parses cleanly and satisfies its role', () => {
+	const source: SpriteSource = { id: 'buddy', role: 'forms', text: FORMS_OK };
+	const doc = acceptSprite(source, 'forms');
+	expect(doc).not.toBeNull();
+	expect(doc?.id).toBe('buddy');
+});
+
+test('acceptSprite: returns null for a source that fails its role profile', () => {
+	const source: SpriteSource = { id: 'buddy', role: 'forms', text: FORMS_BAD };
+	expect(acceptSprite(source, 'forms')).toBeNull();
+});
+
+test('acceptSprite: returns null for a source that fails to parse', () => {
+	const source: SpriteSource = {
+		id: 'broken',
+		role: 'hats',
+		text: 'not valid json {{{',
+	};
+	expect(acceptSprite(source, 'hats')).toBeNull();
+});
+
 test('validateSpriteSet: aggregates parse diagnostics and role-profile diagnostics', () => {
 	const sources: SpriteSource[] = [
 		{ id: 'good-hat', role: 'hats', text: `--- idle\nAB\n` },
@@ -221,7 +246,7 @@ test('validateSpriteSet: resolved catalog references produce no dangling-referen
 		idleSource('shooter', 'monsters'),
 		idleSource('brute', 'monsters'),
 		idleSource('merchant', 'npcs'),
-		idleSource('signpost', 'npcs'),
+		idleSource('unused-npc', 'npcs'),
 	];
 	const diags = validateSpriteSet(sources);
 	// The dangling-reference diagnostic message contains the word "resolves".

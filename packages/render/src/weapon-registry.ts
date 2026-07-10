@@ -8,9 +8,8 @@
 
 import { weaponById } from '@mmo/core';
 import { compileWeaponSprite } from './sprite-compile';
-import { parseSpriteFile } from './sprite-file';
 import { loadSpriteSources, type SpriteSource } from './sprite-sources';
-import { validateSpriteRole } from './sprite-validate';
+import { acceptSprite } from './sprite-validate';
 import type { WeaponSprite } from './weapon-sprite';
 
 export function buildWeaponRegistry(
@@ -19,13 +18,11 @@ export function buildWeaponRegistry(
 	const registry = new Map<string, WeaponSprite>();
 	for (const source of sources) {
 		if (source.role !== 'weapons') continue;
-		const { doc, diagnostics } = parseSpriteFile(source.text, source.id);
+		// A weapon that fails to parse or does not satisfy the role profile (missing
+		// phase poses or the grip anchor) is skipped rather than compiled into broken
+		// art.
+		const doc = acceptSprite(source, 'weapons');
 		if (doc === null) continue;
-		if (diagnostics.some((d) => d.severity === 'error')) continue;
-		// A weapon that does not satisfy the role profile (missing phase poses or
-		// the grip anchor) is skipped rather than compiled into broken art.
-		if (validateSpriteRole(doc, 'weapons').some((d) => d.severity === 'error'))
-			continue;
 		registry.set(source.id, compileWeaponSprite(doc));
 	}
 	return registry;

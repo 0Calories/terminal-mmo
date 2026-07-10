@@ -9,9 +9,8 @@ import { DEFAULT_FORM_ID } from '@mmo/core';
 import type { BodySprite } from './body-sprite';
 import { Sprite } from './sprite';
 import { compileBodySprite } from './sprite-compile';
-import { parseSpriteFile } from './sprite-file';
 import { loadSpriteSources, type SpriteSource } from './sprite-sources';
-import { validateSpriteRole } from './sprite-validate';
+import { acceptSprite } from './sprite-validate';
 
 // A guard body used only when the disk/embedded scan yields no Forms at all (a
 // broken install or a bare test env with no `sprites/` tree). It is not art —
@@ -28,13 +27,11 @@ export function buildFormRegistry(
 	const registry = new Map<string, BodySprite>();
 	for (const source of sources) {
 		if (source.role !== 'forms') continue;
-		const { doc, diagnostics } = parseSpriteFile(source.text, source.id);
+		// A Form that fails to parse or does not satisfy the role profile (missing
+		// poses/anchors or an unknown emote) is skipped rather than compiled into a
+		// broken body.
+		const doc = acceptSprite(source, 'forms');
 		if (doc === null) continue;
-		if (diagnostics.some((d) => d.severity === 'error')) continue;
-		// A Form that does not satisfy the role profile (missing poses/anchors or
-		// an unknown emote) is skipped rather than compiled into a broken body.
-		if (validateSpriteRole(doc, 'forms').some((d) => d.severity === 'error'))
-			continue;
 		registry.set(source.id, compileBodySprite(doc));
 	}
 	return registry;

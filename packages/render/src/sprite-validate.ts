@@ -85,6 +85,28 @@ export function validateSpriteRole(
 	return diagnostics;
 }
 
+// The shared acceptance predicate every role registry builds on: parse a source,
+// reject it on any parse-error diagnostic, then reject it unless it satisfies its
+// role profile — returning the parsed doc when (and only when) it is art the
+// registry would compile, or null otherwise. `buildFormRegistry`,
+// `buildSpriteRegistry` (monsters/npcs) and `buildWeaponRegistry` all call this and
+// keep only their compile step local; `resolvesInRole` below uses it too. Kept in
+// this leaf module (no module-eval side effects) rather than in the builder
+// modules on purpose: those run disk-backed `loadSpriteSources()` registry builds
+// at module-eval time, so importing them here would form an initialization cycle.
+export function acceptSprite(
+	source: SpriteSource,
+	role: string,
+): SpriteDoc | null {
+	const { doc, diagnostics } = parseSpriteFile(source.text, source.id);
+	if (doc === null) return null;
+	if (diagnostics.some((d) => d.severity === 'error')) return null;
+	if (validateSpriteRole(doc, role).some((d) => d.severity === 'error')) {
+		return null;
+	}
+	return doc;
+}
+
 // The prefix of the parser's unknown-color-key diagnostic. The parser resolves a
 // cell key against SCENE_PALETTE ∪ reserved (`p`/`a`) ∪ the file's own palette
 // and, for a key in none of those, keeps the raw key but only *warns* — it does
@@ -92,15 +114,9 @@ export function validateSpriteRole(
 // acceptable art, so the set validator surfaces that warning as an error.
 const UNKNOWN_COLOR_KEY_PREFIX = 'unknown color key';
 
-// Does a sprite of the given role and id resolve in this source set? Mirrors the
-// exact filtering `buildSpriteRegistry` / `buildWeaponRegistry` apply before a
-// sprite lands in a role registry — parses cleanly, no error diagnostics, and
-// satisfies its role profile — so a `has` here means the registry would resolve
-// it. (Reimplemented from those predicates rather than calling the builders: the
-// builder modules run disk-backed registry builds at module-eval time, so a
-// static import of them from here forms an initialization cycle — their
-// module-level `loadSpriteSources()` runs while this module's consts are still
-// in TDZ.)
+// Does a sprite of the given role and id resolve in this source set? Uses the same
+// `acceptSprite` predicate the role registries build on, so a `true` here means the
+// registry would resolve it.
 function resolvesInRole(
 	sources: SpriteSource[],
 	role: string,
@@ -108,12 +124,7 @@ function resolvesInRole(
 ): boolean {
 	const source = sources.find((s) => s.role === role && s.id === id);
 	if (source === undefined) return false;
-	const { doc, diagnostics } = parseSpriteFile(source.text, source.id);
-	if (doc === null) return false;
-	if (diagnostics.some((d) => d.severity === 'error')) return false;
-	if (validateSpriteRole(doc, role).some((d) => d.severity === 'error'))
-		return false;
-	return true;
+	return acceptSprite(source, role) !== null;
 }
 
 // Enumerate the sprite ids the game expects to resolve, and check each against
