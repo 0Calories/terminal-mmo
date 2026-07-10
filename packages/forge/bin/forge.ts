@@ -5,6 +5,7 @@ import { runEdit } from '../src/editor';
 import { runPlay } from '../src/play';
 import { runPreview } from '../src/preview';
 import { runSprite } from '../src/sprite-cli';
+import { runSpritePreview } from '../src/sprite-editor/preview';
 import { runSpriteEdit } from '../src/sprite-editor/tui';
 
 const root = join(process.cwd(), 'zones');
@@ -23,6 +24,8 @@ if (domain === 'zone') {
 		log: (l: string) => console.log(l),
 	};
 	if (rest[0] === 'edit') await runSpriteEdit(rest.slice(1), spriteDeps);
+	else if (rest[0] === 'preview')
+		await runSpritePreview(rest.slice(1), spriteDeps);
 	else process.exit(runSprite(rest, spriteDeps));
 } else {
 	console.log(

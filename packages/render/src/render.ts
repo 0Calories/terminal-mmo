@@ -18,7 +18,7 @@ import {
 	type Terrain,
 	weaponFrame,
 } from '@mmo/core';
-import { formFrame } from './body-sprite';
+import { type BodySprite, formFrame } from './body-sprite';
 import { formById } from './forms';
 import { hatById } from './hats';
 import { spriteFor, spriteForNpc } from './registry';
@@ -68,6 +68,30 @@ export interface ZoneScene {
 export interface GhostStyle<C> {
 	bg: C;
 	fade: (fg: C) => C;
+}
+
+// Work-in-progress art injected into `drawEntitySprite`, replacing what the
+// frozen id-keyed registries would resolve (ADR 0031). The forge Sprite editor's
+// Composited preview compiles the live (unsaved) `.sprite` doc and passes the
+// piece under edit here, so the WIP art flows through the identical seat / mirror
+// / recolor / swing-sample logic the game uses — pixel-identical by construction.
+//
+// Semantics are strictly PER FIELD and PRESENCE-BASED: a field replaces its piece
+// only when the property is present on the object; an absent field falls back to
+// normal registry resolution. This is deliberate so `{ weapon }` does not strip
+// the hat. `hat` additionally distinguishes an explicit no-hat: when the `hat`
+// property is present, the hat becomes `overrides.hat ?? null` (so `null` — or a
+// present-but-undefined value — means "draw no hat"); when `hat` is absent, the
+// registry hat is drawn as usual.
+export interface SpriteOverrides {
+	// Replaces the non-player base sprite (`spriteFor(e.type)`) — monster/npc art.
+	base?: Sprite;
+	// Replaces the player body (`formById(e.cosmetics?.form)`).
+	body?: BodySprite;
+	// Replaces the hat; present ⇒ `overrides.hat ?? null` (null = no hat).
+	hat?: Sprite | null;
+	// Replaces the weapon sprite (`weaponSpriteById(e.weapon)`).
+	weapon?: WeaponSprite;
 }
 
 interface PlantContext {
@@ -168,6 +192,7 @@ export function drawEntitySprite<C>(
 	style: RenderStyle<C>,
 	terrain?: Terrain,
 	ghost?: GhostStyle<C>,
+	overrides?: SpriteOverrides,
 ): void {
 	let move: MoveId;
 	let phase: AttackPhase | null;
@@ -191,7 +216,9 @@ export function drawEntitySprite<C>(
 		emoteT = e.emoteT ?? 0;
 	}
 
-	const body = e.type === 'player' ? formById(e.cosmetics?.form) : null;
+	const body =
+		overrides?.body ??
+		(e.type === 'player' ? formById(e.cosmetics?.form) : null);
 	let sprite: Sprite;
 	let baseline: number;
 	let grip: { x: number; y: number } | undefined;
@@ -218,7 +245,7 @@ export function drawEntitySprite<C>(
 		grip = sprite.anchors.grip ?? body.grip;
 		head = sprite.anchors.head ?? body.head;
 	} else {
-		sprite = spriteFor(e.type);
+		sprite = overrides?.base ?? spriteFor(e.type);
 		baseline = spriteMetaFor(e.type).baseline;
 		grip = sprite.grip;
 	}
@@ -243,7 +270,7 @@ export function drawEntitySprite<C>(
 		plant,
 	);
 
-	const ws = weaponSpriteFor(e);
+	const ws = overrides?.weapon ?? weaponSpriteFor(e);
 	if (ws && grip) {
 		const id = weaponFrame(move, phase);
 		const frame =
@@ -284,7 +311,8 @@ export function drawEntitySprite<C>(
 		}
 	}
 
-	const hat = hatFor(e);
+	const hat =
+		overrides && 'hat' in overrides ? (overrides.hat ?? null) : hatFor(e);
 	if (hat) {
 		const headX = head
 			? mirrorAnchorX(head.x, sprite.w, e.facing)

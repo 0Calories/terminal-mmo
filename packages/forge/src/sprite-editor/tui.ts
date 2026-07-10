@@ -10,7 +10,10 @@ import { basename, dirname, join } from 'node:path';
 import type { RGBAQuad } from '@mmo/core';
 import { SCENE_PALETTE } from '@mmo/core';
 import {
+	buildSceneStyle,
+	type CellBuffer,
 	parseSpriteFile,
+	type RenderStyle,
 	SENTINEL,
 	type SpriteDiagnostic,
 	type SpriteDoc,
@@ -23,6 +26,7 @@ import {
 } from '@opentui/core';
 import type { CliDeps } from '../cli';
 import { findSpriteFile, formatSpriteDiagnostics } from '../sprite-cli';
+import { renderComposite } from './composite';
 import {
 	type AnchorMenuAction,
 	type AnchorMenuState,
@@ -155,12 +159,46 @@ function toMenuKey(k: SpriteKey): MenuKey {
 	return { name: k.name };
 }
 
+// Adapts a sub-rectangle of an opentui OptimizedBuffer to the shared renderer's
+// `CellBuffer` so `renderComposite` (which clears + fills its whole buffer) can
+// draw the Composited preview into just the right-hand panel.
+class RegionBuffer implements CellBuffer<RGBA> {
+	constructor(
+		private readonly buf: OptimizedBuffer,
+		private readonly ox: number,
+		private readonly oy: number,
+		readonly width: number,
+		readonly height: number,
+	) {}
+	clear(bg: RGBA): void {
+		this.buf.fillRect(this.ox, this.oy, this.width, this.height, bg);
+	}
+	setCell(x: number, y: number, ch: string, fg: RGBA, bg: RGBA): void {
+		if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+		this.buf.setCell(this.ox + x, this.oy + y, ch, fg, bg);
+	}
+	setCellWithAlphaBlending(
+		x: number,
+		y: number,
+		ch: string,
+		fg: RGBA,
+		bg: RGBA,
+	): void {
+		if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+		this.buf.setCellWithAlphaBlending(this.ox + x, this.oy + y, ch, fg, bg);
+	}
+}
+
 export class SpriteEditor extends Renderable {
 	state: SpriteEditorState;
 	picker: PickerState | null = null;
 	poseMenu: PoseMenuState | null = null;
 	anchorMenu: AnchorMenuState | null = null;
 	mirror = false;
+	// The in-context Composited preview panel (toggle: `o`) — the WIP art rendered
+	// the way the game draws it, right beside the pixel canvas.
+	composite = false;
+	private readonly sceneStyle: RenderStyle<RGBA>;
 	awaitingStamp = false;
 	// Animation playback is presentation only — it never touches the doc/history.
 	playMode: PlayMode = 'none';
@@ -187,6 +225,9 @@ export class SpriteEditor extends Renderable {
 		this.save = opts.save;
 		this.onQuit = opts.onQuit;
 		this.globalPalette = opts.globalPalette ?? SCENE_PALETTE;
+		this.sceneStyle = buildSceneStyle((r, g, b, a) =>
+			RGBA.fromInts(r, g, b, a),
+		);
 	}
 
 	attach(root: { add: (r: Renderable) => void }): void {
@@ -567,6 +608,10 @@ export class SpriteEditor extends Renderable {
 				this.mirror = !this.mirror;
 				return;
 			}
+			if (k.name === 'o') {
+				this.composite = !this.composite;
+				return;
+			}
 			if (k.sequence === '.') {
 				this.togglePlay('pose');
 				return;
@@ -617,6 +662,10 @@ export class SpriteEditor extends Renderable {
 		}
 		if (k.name === 'm') {
 			this.mirror = !this.mirror;
+			return;
+		}
+		if (k.name === 'o') {
+			this.composite = !this.composite;
 			return;
 		}
 		if (k.sequence === '.') {
@@ -723,9 +772,16 @@ export class SpriteEditor extends Renderable {
 				? this.state
 				: { ...this.state, frame: displayFrame };
 
-		// The main (right-facing) canvas fills the left region; a mirror panel, when
-		// toggled, takes the right region with a one-column divider between.
-		const mainW = this.mirror ? Math.max(1, Math.floor((W - 1) / 2)) : W;
+		// The main (right-facing) canvas fills the left region; a right-hand panel,
+		// when toggled, takes the right region with a one-column divider between.
+		// The Composited preview (`o`) wins the panel over the mirror when both are on.
+		const rightPanel = this.composite
+			? 'composite'
+			: this.mirror
+				? 'mirror'
+				: 'none';
+		const mainW =
+			rightPanel === 'none' ? W : Math.max(1, Math.floor((W - 1) / 2));
 
 		// Keep the cursor's cell within the canvas viewport.
 		const cursorCell = pixelToCell(this.state.cursor.x, this.state.cursor.y);
@@ -795,7 +851,7 @@ export class SpriteEditor extends Renderable {
 			);
 		}
 
-		if (this.mirror) {
+		if (rightPanel === 'mirror') {
 			this.renderMirror(buf, mainW, W, viewH, displayFrame, {
 				c,
 				grid: C.grid,
@@ -805,6 +861,8 @@ export class SpriteEditor extends Renderable {
 				anchorFg,
 				overrideFg,
 			});
+		} else if (rightPanel === 'composite') {
+			this.renderComposite(buf, mainW, W, viewH, displayFrame, C.dim, C.bg);
 		}
 
 		// Chrome: status, feedback/save, help.
@@ -949,6 +1007,48 @@ export class SpriteEditor extends Renderable {
 				a.overridden ? P.overrideFg : P.anchorFg,
 				P.bg,
 			);
+		}
+	}
+
+	// The in-context Composited preview drawn into the right-hand region, through
+	// the shared renderer (`renderComposite`) — pixel-identical to the game. Shows
+	// the CURRENT display frame: a hat on a body, a weapon in hand at its phase, a
+	// form wearing a hat + weapon, or a monster/npc plain. Animates during playback
+	// because `frameName` (the editor's display frame) advances with each tick.
+	private renderComposite(
+		buf: OptimizedBuffer,
+		mainW: number,
+		W: number,
+		viewH: number,
+		frameName: string,
+		dim: RGBA,
+		bg: RGBA,
+	): void {
+		const divider = mainW;
+		const dividerColor = RGBA.fromInts(48, 54, 72, 255);
+		for (let sy = 0; sy < viewH; sy++)
+			buf.setCell(divider, sy, '│', dividerColor, bg);
+		const ox = mainW + 1;
+		const panelW = W - ox;
+		if (panelW <= 0) return;
+
+		const region = new RegionBuffer(buf, ox, 0, panelW, viewH);
+		const ok = renderComposite(
+			region,
+			this.state.doc,
+			this.role,
+			this.sceneStyle,
+			{
+				facing: this.mirror ? -1 : 1,
+				// The display frame is a concrete frame name; the composite maps it to
+				// the role-appropriate composition (weapon frame → swing phase, etc.).
+				stance: frameName,
+				elapsedS: 0,
+			},
+		);
+		if (!ok) {
+			const msg = 'keep drawing…';
+			buf.drawText(msg.slice(0, panelW), ox, 0, dim, bg);
 		}
 	}
 

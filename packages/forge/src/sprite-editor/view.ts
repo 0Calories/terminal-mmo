@@ -286,6 +286,7 @@ export const SPRITE_KEY_HINTS: readonly KeyHint[] = [
 	{ keys: 'P', label: 'poses' },
 	{ keys: 'A', label: 'anchor' },
 	{ keys: 'm', label: 'mirror' },
+	{ keys: 'o', label: 'in-context' },
 	{ keys: '. ,', label: 'play' },
 ];
 

@@ -26,6 +26,7 @@ export {
 	type GhostStyle,
 	type RenderStyle,
 	renderZoneScene,
+	type SpriteOverrides,
 	type ZoneScene,
 } from './render';
 export { buildSceneStyle, type ColorFactory } from './scene-style';
