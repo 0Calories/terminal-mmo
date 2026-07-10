@@ -7,7 +7,7 @@
 // resolves to `undefined`, so the renderer safely draws no weapon.
 
 import { loadSpriteSources, type SpriteSource } from '@mmo/assets';
-import { weaponById } from '@mmo/core';
+import { weaponById } from '@mmo/core/combat';
 import { compileWeaponSprite } from './sprite-compile';
 import { acceptSprite } from './sprite-validate';
 import type { WeaponSprite } from './weapon-sprite';

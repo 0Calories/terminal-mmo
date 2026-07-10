@@ -8,7 +8,9 @@
 // (aggregated from the parser). Missing requirements are `error` diagnostics.
 
 import type { SpriteSource } from '@mmo/assets';
-import { EMOTES, MONSTER_SPRITE_REF, NPC_SPRITE_REF, WEAPONS } from '@mmo/core';
+import { WEAPONS } from '@mmo/core/combat';
+import { EMOTES } from '@mmo/core/entities';
+import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
 import type { SpriteDiagnostic, SpriteDoc } from './sprite-file';
 import { parseSpriteFile } from './sprite-file';
 

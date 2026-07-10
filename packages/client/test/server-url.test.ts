@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { DEV_VERSION } from '@mmo/core';
+import { DEV_VERSION } from '@mmo/core/protocol';
 import {
 	LOCAL_SERVER_URL,
 	PROD_SERVER_URL,

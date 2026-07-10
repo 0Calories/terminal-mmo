@@ -1,6 +1,6 @@
 import { watch } from 'node:fs';
 import { loadCatalogs, loadZone } from '@mmo/assets';
-import type { Zone } from '@mmo/core';
+import type { Zone } from '@mmo/core/world';
 import {
 	buildSceneStyle,
 	drawNameplates,

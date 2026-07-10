@@ -1,5 +1,6 @@
-import type { CombatEvent, GameState } from '@mmo/core';
-import { activeZone, BOX } from '@mmo/core';
+import type { CombatEvent } from '@mmo/core/combat';
+import { BOX } from '@mmo/core/entities';
+import { activeZone, type GameState } from '@mmo/core/world';
 import {
 	type OptimizedBuffer,
 	Renderable,

@@ -1,19 +1,24 @@
-import type { Box, CombatEvent, Entity, Input, Terrain } from '@mmo/core';
 import {
-	applyImpulse,
 	COMBAT,
+	type CombatEvent,
 	canStartDodge,
-	capabilityUnlocked,
-	clientStepAvatar,
-	emoteById,
-	initialEmoteT,
-	PHYS,
 	predictHits,
-	SPAWN,
-	spawnAvatar,
 	stepAvatarCombat,
 	weaponById,
-} from '@mmo/core';
+} from '@mmo/core/combat';
+import {
+	type Box,
+	type Entity,
+	emoteById,
+	type Input,
+	initialEmoteT,
+	spawnAvatar,
+	type Terrain,
+} from '@mmo/core/entities';
+import { applyImpulse, PHYS } from '@mmo/core/physics';
+import { capabilityUnlocked } from '@mmo/core/progression';
+import { SPAWN } from '@mmo/core/world';
+import { clientStepAvatar } from '@mmo/core/zones';
 
 export function spawnPredicted(weapon: number): Entity {
 	return { ...spawnAvatar(SPAWN.x, SPAWN.y), weapon };

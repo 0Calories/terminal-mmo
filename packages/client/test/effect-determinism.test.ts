@@ -1,12 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import type { CombatEvent } from '@mmo/core';
 import {
+	type CombatEvent,
 	combatEventAt,
 	deathEvent,
-	decodeServerMessage,
-	encodeServerMessage,
 	swatEvent,
-} from '@mmo/core';
+} from '@mmo/core/combat';
+import { decodeServerMessage, encodeServerMessage } from '@mmo/core/protocol';
 import { applyKick, CAMERA_KICK, NO_KICK } from '../src/effects/camera-kick';
 import { isFrozen, NO_HITSTOP, triggerHitstop } from '../src/effects/hitstop';
 import { advanceParticles, ParticleSystem } from '../src/effects/particles';

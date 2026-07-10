@@ -1,5 +1,5 @@
 // release.yml reads PROD_SERVER_HOST from this file by path, so keep it the bare host.
-import { isReleaseVersion } from '@mmo/core';
+import { isReleaseVersion } from '@mmo/core/protocol';
 
 export const PROD_SERVER_HOST = 'mmoserver-production-c9d8.up.railway.app';
 export const PROD_SERVER_URL = `wss://${PROD_SERVER_HOST}`;

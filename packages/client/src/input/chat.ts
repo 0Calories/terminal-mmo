@@ -1,4 +1,4 @@
-import { EMOTES, emoteById } from '@mmo/core';
+import { EMOTES, emoteById } from '@mmo/core/entities';
 
 export type ChatCommand =
 	| { kind: 'say'; text: string }

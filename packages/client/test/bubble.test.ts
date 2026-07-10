@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { CHAT_MAX_LEN } from '@mmo/core';
+import { CHAT_MAX_LEN } from '@mmo/core/protocol';
 import { BUBBLE_COLS, bubbleTtl, layoutBubble } from '../src/ui/bubble';
 
 test('bubbleTtl scales with length, clamped to [3, 7] seconds', () => {

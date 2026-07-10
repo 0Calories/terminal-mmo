@@ -5,13 +5,9 @@
 //
 // Tests against CURRENT behaviour only — do not modify any source file.
 import { expect, test } from 'bun:test';
-import {
-	BOX,
-	type Entity,
-	type EntityType,
-	parseTerrain,
-	STRIDE,
-} from '@mmo/core';
+import { BOX, type Entity, type EntityType } from '@mmo/core/entities';
+import { parseTerrain } from '@mmo/core/physics';
+import { STRIDE } from '@mmo/core/sprites';
 import {
 	type CellBuffer,
 	drawEntitySprite,

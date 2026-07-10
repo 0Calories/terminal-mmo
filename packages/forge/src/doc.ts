@@ -1,4 +1,4 @@
-import type { ZoneType } from '@mmo/core';
+import type { ZoneType } from '@mmo/core/world';
 
 export interface EditorDoc {
 	header: Record<string, unknown>;

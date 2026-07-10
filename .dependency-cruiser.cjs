@@ -35,8 +35,23 @@ module.exports = {
 			from: { path: '^packages/assets' },
 			to: { path: '(^packages/render|^@mmo/render$)' },
 		},
+		{
+			name: 'core-modules-via-barrels-only',
+			comment:
+				'@mmo/core is a set of deep modules; each module directory is entered only ' +
+				'through its curated barrel (ADR 0032). The package.json exports map already ' +
+				'fails unlisted subpaths at resolve time — this rule backstops it (and the ' +
+				'removed root barrel) against someone re-adding an export or a deep path.',
+			severity: 'error',
+			from: { path: '^packages/(?!core)' },
+			to: {
+				path: '(^packages/core/src|^@mmo/core)',
+				pathNot: '(^packages/core/src/[^/]+/index\\.ts$|^@mmo/core/[^/]+$)',
+			},
+		},
 	],
 	options: {
+		exclude: { path: '(^|/)(node_modules|dist)/' },
 		tsConfig: { fileName: 'tsconfig.base.json' },
 		tsPreCompilationDeps: true,
 		doNotFollow: { path: 'node_modules' },

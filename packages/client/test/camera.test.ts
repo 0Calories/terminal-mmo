@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { BOX } from '@mmo/core';
+import { BOX } from '@mmo/core/entities';
 import {
 	CAMERA,
 	type CameraState,

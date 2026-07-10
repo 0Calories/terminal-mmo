@@ -1,4 +1,4 @@
-import type { Entity, Terrain } from '@mmo/core';
+import type { Entity, Terrain } from '@mmo/core/entities';
 import type { OptimizedBuffer } from '@opentui/core';
 import {
 	applyKick,

@@ -1,5 +1,5 @@
-import type { GameState } from '@mmo/core';
-import { STARTER_GOODS, saleValue } from '@mmo/core';
+import { STARTER_GOODS, saleValue } from '@mmo/core/items';
+import type { GameState } from '@mmo/core/world';
 import {
 	BoxRenderable,
 	type Renderable,

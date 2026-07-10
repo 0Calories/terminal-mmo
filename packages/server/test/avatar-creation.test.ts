@@ -1,18 +1,18 @@
 import { expect, test } from 'bun:test';
 import { generateKeyPairSync, type KeyObject, sign } from 'node:crypto';
+import { type Cosmetics, DEFAULT_COSMETICS } from '@mmo/core/entities';
 import {
-	type Cosmetics,
 	challengePayload,
-	DEFAULT_COSMETICS,
-	decodeServerMessage,
-	encodeClientMessage,
 	encodePublicKeyLine,
 	encodeSignatureBlob,
+} from '@mmo/core/persistence';
+import { decodeServerMessage, encodeClientMessage } from '@mmo/core/protocol';
+import {
 	type ServerWorld,
 	worldSnapshotFor,
 	zoneOf,
 	zoneStateOf,
-} from '@mmo/core';
+} from '@mmo/core/world';
 
 process.env.MMO_DB_PATH = ':memory:';
 delete process.env.MMO_VERSION;
