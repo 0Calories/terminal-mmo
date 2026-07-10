@@ -1,8 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { Control, Entity, Terrain } from '../../src/entities';
-import { BOX, spawnAvatar } from '../../src/entities';
+import { BOX, spawnAvatar, spawnMonster } from '../../src/entities';
 import { applyImpulse, parseTerrain, stepEntity } from '../../src/physics';
-import { spawnMonster } from '../../src/world';
 
 const FLAT = parseTerrain([
 	'............',

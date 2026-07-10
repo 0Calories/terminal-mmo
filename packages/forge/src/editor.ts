@@ -1,6 +1,6 @@
 import { loadCatalogs, loadZone, loadZoneSet } from '@mmo/assets';
-import { BOX, type Entity, type Npc } from '@mmo/core/entities';
-import { NPC_BOX, PORTAL_BOX, spawnMonster, type Zone } from '@mmo/core/world';
+import { BOX, type Entity, type Npc, spawnMonster } from '@mmo/core/entities';
+import { NPC_BOX, PORTAL_BOX, type Zone } from '@mmo/core/world';
 import {
 	type Catalogs,
 	type Diagnostic,

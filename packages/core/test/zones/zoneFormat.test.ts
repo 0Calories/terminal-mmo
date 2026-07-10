@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { BOX, MONSTER, SHOOTER } from '../../src/entities/archetypes';
+import { ARCHETYPES, BOX } from '../../src/entities/archetypes';
 import {
 	type MonsterCatalogEntry,
 	type NpcCatalogEntry,
@@ -69,8 +69,8 @@ describe('parseZone — happy path', () => {
 		expect(c.type).toBe('chaser');
 		expect(c.x).toBe(2);
 		expect(c.y).toBe(1);
-		expect(c.hp).toBe(MONSTER.chaserHp);
-		expect(s.hp).toBe(SHOOTER.hp);
+		expect(c.hp).toBe(ARCHETYPES.chaser.hp);
+		expect(s.hp).toBe(ARCHETYPES.shooter.hp);
 		expect(c.spawnIndex).toBe(0);
 		expect(s.spawnIndex).toBe(1);
 		expect(zone.nextMonsterId).toBe(4);

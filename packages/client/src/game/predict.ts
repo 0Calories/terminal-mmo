@@ -21,7 +21,7 @@ import { SPAWN } from '@mmo/core/world';
 import { clientStepAvatar } from '@mmo/core/zones';
 
 export function spawnPredicted(weapon: number): Entity {
-	return { ...spawnAvatar(SPAWN.x, SPAWN.y), weapon };
+	return spawnAvatar(SPAWN.x, SPAWN.y, { weapon });
 }
 
 // A zone change teleports the Avatar: take the server's arrival point and kill inherited velocity.

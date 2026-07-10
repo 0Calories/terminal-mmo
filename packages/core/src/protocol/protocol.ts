@@ -1,6 +1,6 @@
 import type { CombatEvent, CombatEventKind } from '../combat/combat';
 import { DEFAULT_WEAPON } from '../combat/weapons';
-import { SHOOTER } from '../entities/archetypes';
+import { ARCHETYPES } from '../entities/archetypes';
 import {
 	clampCosmetics,
 	DEFAULT_COSMETICS,
@@ -643,9 +643,9 @@ function readProjectile(r: Reader): Projectile {
 	if (r.remaining() < 1)
 		return {
 			...base,
-			poiseDamage: SHOOTER.projPoise,
-			knockback: SHOOTER.projKnockback,
-			knockbackUp: SHOOTER.projKnockbackUp,
+			poiseDamage: ARCHETYPES.shooter.ranged.projectile.poise,
+			knockback: ARCHETYPES.shooter.ranged.projectile.knockback,
+			knockbackUp: ARCHETYPES.shooter.ranged.projectile.knockbackUp,
 		};
 	return {
 		...base,

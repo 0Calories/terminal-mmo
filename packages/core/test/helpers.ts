@@ -2,7 +2,7 @@
 // through @mmo/assets (dev-only dependency); core's own source stays
 // content-free — "given content, simulate" (ADR 0033).
 import { loadZones } from '@mmo/assets';
-import { SHOOTER } from '../src/entities/archetypes';
+import { ARCHETYPES } from '../src/entities/archetypes';
 import type { Projectile, Terrain } from '../src/entities/types';
 import { parseTerrain } from '../src/physics/terrain';
 import { GROUND_TOP, WORLD } from '../src/world/constants';
@@ -23,10 +23,10 @@ export function makeProjectile(over: Partial<Projectile> = {}): Projectile {
 		vx: 0,
 		vy: 0,
 		life: 2,
-		damage: SHOOTER.projDamage,
-		poiseDamage: SHOOTER.projPoise,
-		knockback: SHOOTER.projKnockback,
-		knockbackUp: SHOOTER.projKnockbackUp,
+		damage: ARCHETYPES.shooter.ranged.projectile.damage,
+		poiseDamage: ARCHETYPES.shooter.ranged.projectile.poise,
+		knockback: ARCHETYPES.shooter.ranged.projectile.knockback,
+		knockbackUp: ARCHETYPES.shooter.ranged.projectile.knockbackUp,
 		...over,
 	};
 }

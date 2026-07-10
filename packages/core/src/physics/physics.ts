@@ -3,8 +3,23 @@ import type { Control, Entity, Terrain } from '../entities/types';
 import { DEFAULT_MASS, PHYS } from './constants';
 import { isSolid, isWall } from './terrain';
 
+// The slice of an Entity an impulse touches (ADR 0032: narrow structural views
+// over the flat record; callers pass a full Entity and get a full Entity back).
+// Deliberately NOT the glossary's Momentum body — that is the whole integrated
+// body (position + velocity + Mass), the view stepEntity will type against when
+// it adopts Drives (ADR 0034); this is only the impulse channel.
+export interface ImpulseBody {
+	vy: number;
+	ivx?: number;
+	mass?: number;
+}
+
 // Horizontal impulse rides the decaying ivx channel, not vx (input rewrites vx each tick).
-export function applyImpulse(e: Entity, ix: number, iy: number): Entity {
+export function applyImpulse<E extends ImpulseBody>(
+	e: E,
+	ix: number,
+	iy: number,
+): E {
 	const m = e.mass ?? DEFAULT_MASS;
 	return { ...e, ivx: (e.ivx ?? 0) + ix / m, vy: e.vy + iy / m };
 }

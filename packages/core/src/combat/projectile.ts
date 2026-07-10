@@ -1,4 +1,4 @@
-import { BOX, SHOOTER } from '../entities/archetypes';
+import { ARCHETYPES, BOX } from '../entities/archetypes';
 import type {
 	Box,
 	Entity,
@@ -18,17 +18,18 @@ export function spawnProjectile(
 	owner: Entity,
 	dir: Facing,
 ): Projectile {
+	const spec = ARCHETYPES.shooter.ranged.projectile;
 	return {
 		id,
 		x: dir === 1 ? owner.x + BOX.w : owner.x - PROJECTILE.w,
 		y: owner.y + Math.floor((BOX.h - PROJECTILE.h) / 2),
-		vx: dir * SHOOTER.projSpeed,
+		vx: dir * spec.speed,
 		vy: 0,
-		life: SHOOTER.projLife,
-		damage: SHOOTER.projDamage,
-		poiseDamage: SHOOTER.projPoise,
-		knockback: SHOOTER.projKnockback,
-		knockbackUp: SHOOTER.projKnockbackUp,
+		life: spec.life,
+		damage: spec.damage,
+		poiseDamage: spec.poise,
+		knockback: spec.knockback,
+		knockbackUp: spec.knockbackUp,
 	};
 }
 

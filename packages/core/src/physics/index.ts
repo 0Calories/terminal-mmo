@@ -6,6 +6,7 @@ export {
 } from './constants';
 export {
 	applyImpulse,
+	type ImpulseBody,
 	stepEntity,
 } from './physics';
 export {
