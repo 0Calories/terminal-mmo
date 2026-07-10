@@ -83,7 +83,7 @@ export function previewAvatar(cosmetics: Cosmetics, name: string): Entity {
 
 class PreviewRenderable extends Renderable {
 	avatar: Entity = previewAvatar(
-		{ hue: 0, hat: '', nameplate: 0, form: 0 },
+		{ hue: 0, hat: '', nameplate: 0, form: 'buddy' },
 		'',
 	);
 

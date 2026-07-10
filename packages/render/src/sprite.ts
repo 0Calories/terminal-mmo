@@ -68,6 +68,11 @@ export interface SpriteOptions {
 	bg?: string;
 	grip?: { x: number; y: number };
 	baseline?: number;
+	// Named seat points (ADR 0031), e.g. `grip` (weapon) and `head` (hat). The
+	// legacy `grip` option folds into this map when set. Frames carry their own
+	// per-frame overrides here; the renderer prefers a frame's anchor over the
+	// BodySprite's.
+	anchors?: Readonly<Record<string, { x: number; y: number }>>;
 }
 
 export class Sprite {
@@ -75,6 +80,7 @@ export class Sprite {
 	readonly h: number;
 	readonly defaultKey: string;
 	readonly grip?: { x: number; y: number };
+	readonly anchors: Readonly<Record<string, { x: number; y: number }>>;
 	readonly baseline: number;
 	private readonly glyphRight: readonly string[];
 	private readonly glyphLeft: readonly string[];
@@ -91,6 +97,12 @@ export class Sprite {
 			);
 		this.defaultKey = defaultKey;
 		this.grip = opts.grip;
+		const anchors: Record<string, { x: number; y: number }> = {
+			...(opts.anchors ?? {}),
+		};
+		if (opts.grip !== undefined && !('grip' in anchors))
+			anchors.grip = opts.grip;
+		this.anchors = anchors;
 		this.baseline = opts.baseline ?? 0;
 
 		const glyphRows = splitTrimPad(glyph).map((r) =>

@@ -96,11 +96,11 @@ console.log(
 	'=== Avatar cosmetic hats (#35) — rendered through the shared renderer ===\n',
 );
 console.log(
-	`${frame('[none] None', { hue: 0, hat: '', nameplate: 0, form: 0 })}\n`,
+	`${frame('[none] None', { hue: 0, hat: '', nameplate: 0, form: 'buddy' })}\n`,
 );
 for (const hat of HAT_IDS)
 	console.log(
-		`${frame(`[${hat}] ${hat}`, { hue: 0, hat, nameplate: 0, form: 0 })}\n`,
+		`${frame(`[${hat}] ${hat}`, { hue: 0, hat, nameplate: 0, form: 'buddy' })}\n`,
 	);
 
 console.log(`=== Hue catalog (${HUES.length}) — body recolour, RGBA ===`);

@@ -27,7 +27,7 @@ export {
 } from './render';
 export { buildSceneStyle, type ColorFactory } from './scene-style';
 export { mirrorGlyph, SENTINEL, Sprite } from './sprite';
-export { spriteFromDoc } from './sprite-compile';
+export { compileBodySprite, spriteFromDoc } from './sprite-compile';
 export {
 	parseSpriteFile,
 	type SpriteAnchor,
@@ -43,6 +43,11 @@ export {
 	type SpriteSource,
 	spriteSourcesFromEntries,
 } from './sprite-sources';
+export {
+	ROLE_PROFILES,
+	validateSpriteRole,
+	validateSpriteSet,
+} from './sprite-validate';
 export { weaponSpriteById } from './weapon-registry';
 export { WEAPON_ACCENT_KEY, type WeaponSprite } from './weapon-sprite';
 export { sword } from './weapons/sword';

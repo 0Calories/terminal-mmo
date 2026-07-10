@@ -209,8 +209,10 @@ export function drawEntitySprite<C>(
 		});
 		sprite = formFrame(body, pose.poseId, pose.frameIndex);
 		baseline = body.baseline ?? 0;
-		grip = body.grip;
-		head = body.head;
+		// Per-frame anchors win over the BodySprite's (ADR 0031); TS-authored
+		// frames carry none, so they fall back to the body and render unchanged.
+		grip = sprite.anchors.grip ?? body.grip;
+		head = sprite.anchors.head ?? body.head;
 	} else {
 		sprite = spriteFor(e.type);
 		baseline = spriteMetaFor(e.type).baseline;

@@ -34,7 +34,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 			{
 				sessionId: 1,
 				handle: 'me',
-				cosmetics: { hue: 2, hat: 'cap', nameplate: 4, form: 0 },
+				cosmetics: { hue: 2, hat: 'cap', nameplate: 4, form: 'buddy' },
 				x: 40,
 				y,
 				vx: 0,
@@ -91,7 +91,7 @@ function withOther(): Extract<ServerMessage, { t: 'snapshot' }> {
 	s.avatars.push({
 		sessionId: 2,
 		handle: 'rival',
-		cosmetics: { hue: 5, hat: 'crown', nameplate: 6, form: 0 },
+		cosmetics: { hue: 5, hat: 'crown', nameplate: 6, form: 'buddy' },
 		x: 70,
 		y,
 		vx: 0,
@@ -129,13 +129,13 @@ test('snapshotToGame threads cosmetics onto co-present Avatars and the own Avata
 		hue: 5,
 		hat: 'crown',
 		nameplate: 6,
-		form: 0,
+		form: 'buddy',
 	});
 	expect(game.player.avatar.cosmetics).toEqual({
 		hue: 2,
 		hat: 'cap',
 		nameplate: 4,
-		form: 0,
+		form: 'buddy',
 	});
 });
 

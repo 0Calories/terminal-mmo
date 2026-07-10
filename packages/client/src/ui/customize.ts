@@ -1,10 +1,10 @@
 import {
 	type Cosmetics,
 	clampCosmetics,
-	FORM_COUNT,
 	HANDLE_CHAR_RE,
 	HANDLE_MAX_LEN,
 	HUE_COUNT,
+	LEGACY_FORM_IDS,
 	NAMEPLATE_COUNT,
 	validHandle,
 } from '@mmo/core';
@@ -39,8 +39,17 @@ export interface CustomizeFieldDef {
 // '' ("None") always leads, then the scanned ids in sorted order.
 const HAT_OPTIONS: readonly string[] = ['', ...HAT_IDS];
 
+// Forms are id-cycled like hats, but never empty (no leading ''). A later slice
+// swaps LEGACY_FORM_IDS for the render-package directory-scan Form registry.
+const FORM_OPTIONS: readonly string[] = LEGACY_FORM_IDS;
+
 const ALL_CUSTOMIZE_FIELDS: readonly CustomizeFieldDef[] = [
-	{ key: 'form', label: 'Form', count: FORM_COUNT },
+	{
+		key: 'form',
+		label: 'Form',
+		count: FORM_OPTIONS.length,
+		options: FORM_OPTIONS,
+	},
 	{ key: 'hue', label: 'Body hue', count: HUE_COUNT },
 	{
 		key: 'hat',

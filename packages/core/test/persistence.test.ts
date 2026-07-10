@@ -57,7 +57,7 @@ test('restoredFromSave clamps out-of-range cosmetics at the trust boundary', () 
 			hue: 999,
 			hat: -1 as unknown as string,
 			nameplate: 4.5,
-			form: 0,
+			form: 'buddy',
 		},
 	};
 	const restored = restoredFromSave(save);
@@ -65,7 +65,7 @@ test('restoredFromSave clamps out-of-range cosmetics at the trust boundary', () 
 });
 
 test('migrateSaveCosmetics maps a legacy numeric hat index through LEGACY_HAT_IDS', () => {
-	const base = { hue: 0, nameplate: 0, form: 0 };
+	const base = { hue: 0, nameplate: 0, form: 'buddy' };
 	expect(migrateSaveCosmetics({ ...base, hat: 1 })).toEqual({
 		...base,
 		hat: 'cap',
@@ -81,7 +81,7 @@ test('migrateSaveCosmetics maps a legacy numeric hat index through LEGACY_HAT_ID
 });
 
 test('migrateSaveCosmetics maps an out-of-range legacy hat index to the empty (no-hat) id', () => {
-	const base = { hue: 0, nameplate: 0, form: 0 };
+	const base = { hue: 0, nameplate: 0, form: 'buddy' };
 	expect(migrateSaveCosmetics({ ...base, hat: 250 })).toEqual({
 		...base,
 		hat: '',
@@ -92,12 +92,33 @@ test('migrateSaveCosmetics maps an out-of-range legacy hat index to the empty (n
 	});
 });
 
-test('migrateSaveCosmetics is a no-op for an already-migrated string hat', () => {
-	const c = { hue: 0, hat: 'cap', nameplate: 0, form: 0 };
+test('migrateSaveCosmetics maps a legacy numeric form index through LEGACY_FORM_IDS', () => {
+	const base = { hue: 0, hat: '', nameplate: 0 };
+	// index 0 was the only shipped Form, 'buddy'
+	expect(migrateSaveCosmetics({ ...base, form: 0 })).toEqual({
+		...base,
+		form: 'buddy',
+	});
+});
+
+test('migrateSaveCosmetics maps an out-of-range legacy form index to the default Form', () => {
+	const base = { hue: 0, hat: '', nameplate: 0 };
+	expect(migrateSaveCosmetics({ ...base, form: 250 })).toEqual({
+		...base,
+		form: 'buddy',
+	});
+	expect(migrateSaveCosmetics({ ...base, form: -1 })).toEqual({
+		...base,
+		form: 'buddy',
+	});
+});
+
+test('migrateSaveCosmetics is a no-op for an already-migrated string hat + form', () => {
+	const c = { hue: 0, hat: 'cap', nameplate: 0, form: 'buddy' };
 	expect(migrateSaveCosmetics(c)).toEqual(c);
 });
 
-test('restoredFromSave migrates a numeric-hat Save written before ADR 0031', () => {
+test('restoredFromSave migrates a numeric-hat + numeric-form Save written before ADR 0031', () => {
 	const save = {
 		...emptySave('Neo', 'town-01'),
 		cosmetics: { hue: 2, hat: 3, nameplate: 1, form: 0 },
@@ -107,7 +128,7 @@ test('restoredFromSave migrates a numeric-hat Save written before ADR 0031', () 
 		hue: 2,
 		hat: 'wizard',
 		nameplate: 1,
-		form: 0,
+		form: 'buddy',
 	});
 });
 

@@ -1,14 +1,17 @@
 import { HUES, NAMEPLATE_COLORS } from './sceneStyle';
-import { FORM_COUNT } from './sprites';
 import type { Cosmetics } from './types';
 
 export type { Cosmetics };
+
+// Every Avatar has a Form (unlike hat, which can be '' = none). 'buddy' was
+// index 0 and the only shipped Form before ADR 0031.
+export const DEFAULT_FORM_ID = 'buddy';
 
 export const DEFAULT_COSMETICS: Cosmetics = {
 	hue: 0,
 	hat: '',
 	nameplate: 0,
-	form: 0,
+	form: DEFAULT_FORM_ID,
 };
 
 export const HUE_COUNT = HUES.length;
@@ -26,6 +29,12 @@ export const LEGACY_HAT_IDS: readonly string[] = [
 	'party-hat',
 ];
 
+// The FROZEN order of the pre-migration render-side FORMS array (only 'buddy'
+// ever shipped as a selectable Form; 'wisp' was drafted but never selectable).
+// Exists solely to migrate numeric-form Saves written before ADR 0031 into sprite
+// ids — never reorder this. Droppable after one release.
+export const LEGACY_FORM_IDS: readonly string[] = ['buddy'];
+
 function clampIndex(v: number, count: number): number {
 	return Number.isInteger(v) && v >= 0 && v < count ? v : 0;
 }
@@ -35,7 +44,7 @@ export function clampCosmetics(c: Cosmetics): Cosmetics {
 		hue: clampIndex(c.hue, HUE_COUNT),
 		hat: typeof c.hat === 'string' ? c.hat : '',
 		nameplate: clampIndex(c.nameplate, NAMEPLATE_COUNT),
-		form: clampIndex(c.form, FORM_COUNT),
+		form: typeof c.form === 'string' ? c.form : DEFAULT_FORM_ID,
 	};
 }
 
@@ -45,9 +54,19 @@ export function sanitizeHatId(id: unknown, valid: ReadonlySet<string>): string {
 	return typeof id === 'string' && valid.has(id) ? id : '';
 }
 
+// Like sanitizeHatId, but a Form is never empty: an unknown id collapses to the
+// default Form ('buddy'), not ''.
+export function sanitizeFormId(
+	id: unknown,
+	valid: ReadonlySet<string>,
+): string {
+	return typeof id === 'string' && valid.has(id) ? id : DEFAULT_FORM_ID;
+}
+
 export function randomCosmetics(
 	seed: number,
 	hatIds: readonly string[] = [],
+	formIds: readonly string[] = [DEFAULT_FORM_ID],
 ): Cosmetics {
 	let s = seed | 0 || 1;
 	const next = () => {
@@ -57,11 +76,12 @@ export function randomCosmetics(
 		return (s >>> 0) % 1_000_000;
 	};
 	const hatPool = ['', ...hatIds];
+	const formPool = formIds.length > 0 ? formIds : [DEFAULT_FORM_ID];
 	// Draw form last so the hue/hat/nameplate sequence stays stable.
 	return {
 		hue: next() % HUE_COUNT,
 		hat: hatPool[next() % hatPool.length],
 		nameplate: next() % NAMEPLATE_COUNT,
-		form: next() % FORM_COUNT,
+		form: formPool[next() % formPool.length],
 	};
 }

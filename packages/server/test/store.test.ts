@@ -39,7 +39,7 @@ function richSave(): PlayerSave {
 		progress: { level: 7, xp: 420, gold: 999 },
 		inventory: [gear],
 		equippedWeapon: 2,
-		cosmetics: { hue: 1, hat: 'crown', nameplate: 1, form: 0 },
+		cosmetics: { hue: 1, hat: 'crown', nameplate: 1, form: 'buddy' },
 		lastTown: 'town-01',
 		bossDefeated: true,
 	};
@@ -88,7 +88,7 @@ test('a live Avatar round-trips durable state but not transient position/HP', ()
 		...sa,
 		progress: { level: 7, xp: 420, gold: 999 },
 		inventory: [gear],
-		cosmetics: { hue: 1, hat: 'cap', nameplate: 1, form: 0 },
+		cosmetics: { hue: 1, hat: 'cap', nameplate: 1, form: 'buddy' },
 		bossDefeated: true,
 		avatar: { ...sa.avatar, weapon: 2, x: 123, y: 45, hp: 3, vx: 9 },
 	};
@@ -111,7 +111,12 @@ test('a live Avatar round-trips durable state but not transient position/HP', ()
 	expect(back.progress).toEqual({ level: 7, xp: 420, gold: 999 });
 	expect(back.inventory).toEqual([gear]);
 	expect(back.avatar.weapon).toBe(2);
-	expect(back.cosmetics).toEqual({ hue: 1, hat: 'cap', nameplate: 1, form: 0 });
+	expect(back.cosmetics).toEqual({
+		hue: 1,
+		hat: 'cap',
+		nameplate: 1,
+		form: 'buddy',
+	});
 	expect(back.bossDefeated).toBe(true);
 	expect(back.avatar.x).not.toBe(123);
 	expect(back.avatar.hp).toBe(back.avatar.maxHp);

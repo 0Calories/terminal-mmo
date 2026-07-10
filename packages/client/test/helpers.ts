@@ -182,7 +182,7 @@ export function goldenGame(): GameState {
 		maxHp: 100,
 		name: 'Neo',
 		attackT: SWING_TOTAL * 0.55,
-		cosmetics: { hue: 2, hat: 'cap', nameplate: 3, form: 1 },
+		cosmetics: { hue: 2, hat: 'cap', nameplate: 3, form: 'buddy' },
 	});
 
 	// Equipped, so the frame carries the composited weapon layer, a Handle and a bubble.

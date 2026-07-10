@@ -1,6 +1,12 @@
 import type { CombatEvent, CombatEventKind } from './combat';
 import { SHOOTER } from './constants';
-import { clampCosmetics, DEFAULT_COSMETICS, LEGACY_HAT_IDS } from './cosmetics';
+import {
+	clampCosmetics,
+	DEFAULT_COSMETICS,
+	DEFAULT_FORM_ID,
+	LEGACY_FORM_IDS,
+	LEGACY_HAT_IDS,
+} from './cosmetics';
 import { EMOTES } from './emote';
 import type {
 	ActionState,
@@ -181,18 +187,19 @@ export type ClientMessage =
 	| { t: 'setCosmetics'; cosmetics: Cosmetics };
 
 // Legacy (pre-#348) 4×u8 quad, BYTE-IDENTICAL to what a released client
-// sends/expects — the hat byte carries a LEGACY_HAT_IDS index, best-effort
-// only. The full-fidelity string hat id rides as a separate trailing field
-// on each message (see CONTRIBUTING "Wire protocol changes"), appended after
-// this quad and read behind a `remaining()` guard so it overrides the
-// quad-derived hat when present, and legacy frames still decode cleanly
-// without it.
+// sends/expects — the hat and form bytes carry LEGACY_HAT_IDS / LEGACY_FORM_IDS
+// indices, best-effort only. The full-fidelity string hat AND form ids ride as
+// separate trailing fields on each message (see CONTRIBUTING "Wire protocol
+// changes"), appended after this quad (hat first, then form) and read behind a
+// `remaining()` guard so they override the quad-derived values when present, and
+// legacy frames still decode cleanly without them.
 function writeCosmetics(w: Writer, c: Cosmetics) {
 	w.u8(c.hue);
 	const hatIdx = LEGACY_HAT_IDS.indexOf(c.hat);
 	w.u8(hatIdx >= 0 ? hatIdx : 0);
 	w.u8(c.nameplate);
-	w.u8(c.form);
+	const formIdx = LEGACY_FORM_IDS.indexOf(c.form);
+	w.u8(formIdx >= 0 ? formIdx : 0);
 }
 
 function readCosmetics(r: Reader): Cosmetics {
@@ -200,13 +207,20 @@ function readCosmetics(r: Reader): Cosmetics {
 		hue: r.u8(),
 		hat: LEGACY_HAT_IDS[r.u8()] ?? '',
 		nameplate: r.u8(),
-		form: r.u8(),
+		form: LEGACY_FORM_IDS[r.u8()] ?? DEFAULT_FORM_ID,
 	});
 }
 
 // Reads the appended full-fidelity hat id, if present, else falls back to the
 // quad-derived hat (a legacy peer's best-effort mapping).
 function readTrailingHat(r: Reader, fallback: string): string {
+	return r.remaining() >= 4 ? r.str() : fallback;
+}
+
+// Reads the appended full-fidelity form id, if present, else falls back to the
+// quad-derived form (a legacy peer's best-effort mapping). Sits immediately
+// after the trailing hat id, so read it only once the hat field is consumed.
+function readTrailingForm(r: Reader, fallback: string): string {
 	return r.remaining() >= 4 ? r.str() : fallback;
 }
 
@@ -234,6 +248,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.u8(msg.weapon);
 			w.str(msg.publicKey);
 			w.str(msg.cosmetics.hat); // append-only: full-fidelity hat id (CONTRIBUTING §wire)
+			w.str(msg.cosmetics.form); // append-only: full-fidelity form id (CONTRIBUTING §wire)
 			break;
 		case 'proof':
 			w.u8(CLIENT_TAG.proof);
@@ -279,11 +294,13 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			writeCosmetics(w, msg.cosmetics);
 			w.str(msg.handle);
 			w.str(msg.cosmetics.hat); // append-only: full-fidelity hat id (CONTRIBUTING §wire)
+			w.str(msg.cosmetics.form); // append-only: full-fidelity form id (CONTRIBUTING §wire)
 			break;
 		case 'setCosmetics':
 			w.u8(CLIENT_TAG.setCosmetics);
 			writeCosmetics(w, msg.cosmetics);
 			w.str(msg.cosmetics.hat); // append-only: full-fidelity hat id (CONTRIBUTING §wire)
+			w.str(msg.cosmetics.form); // append-only: full-fidelity form id (CONTRIBUTING §wire)
 			break;
 	}
 	return w.finish();
@@ -301,11 +318,15 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			const weapon = r.remaining() >= 1 ? r.u8() : DEFAULT_WEAPON;
 			const publicKey = r.remaining() >= 4 ? r.str() : '';
 			const hat = readTrailingHat(r, quad.hat);
+			const form = readTrailingForm(r, quad.form);
 			return {
 				t: 'hello',
 				handle,
 				version,
-				cosmetics: hat === quad.hat ? quad : { ...quad, hat },
+				cosmetics:
+					hat === quad.hat && form === quad.form
+						? quad
+						: { ...quad, hat, form },
 				weapon,
 				publicKey,
 			};
@@ -354,18 +375,26 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			const quad = readCosmetics(r);
 			const handle = r.remaining() >= 4 ? r.str() : '';
 			const hat = readTrailingHat(r, quad.hat);
+			const form = readTrailingForm(r, quad.form);
 			return {
 				t: 'createAvatar',
 				handle,
-				cosmetics: hat === quad.hat ? quad : { ...quad, hat },
+				cosmetics:
+					hat === quad.hat && form === quad.form
+						? quad
+						: { ...quad, hat, form },
 			};
 		}
 		case CLIENT_TAG.setCosmetics: {
 			const quad = readCosmetics(r);
 			const hat = readTrailingHat(r, quad.hat);
+			const form = readTrailingForm(r, quad.form);
 			return {
 				t: 'setCosmetics',
-				cosmetics: hat === quad.hat ? quad : { ...quad, hat },
+				cosmetics:
+					hat === quad.hat && form === quad.form
+						? quad
+						: { ...quad, hat, form },
 			};
 		}
 		default:
@@ -520,8 +549,9 @@ function writeAvatar(w: Writer, a: AvatarSnapshot) {
 	// snapshots only ever flow between gate-matched peers (a release client
 	// talking to its matching release server) or same-source peers (dev), so
 	// record-level append is safe here — the quad still carries a
-	// legacy-best-effort hat for any peer that doesn't read this far.
+	// legacy-best-effort hat + form for any peer that doesn't read this far.
 	w.str(a.cosmetics.hat);
+	w.str(a.cosmetics.form);
 }
 
 function readAvatar(r: Reader): AvatarSnapshot {
@@ -540,10 +570,12 @@ function readAvatar(r: Reader): AvatarSnapshot {
 	const weapon = r.u8();
 	const action = readAction(r);
 	const hat = readTrailingHat(r, quad.hat);
+	const form = readTrailingForm(r, quad.form);
 	return {
 		sessionId,
 		handle,
-		cosmetics: hat === quad.hat ? quad : { ...quad, hat },
+		cosmetics:
+			hat === quad.hat && form === quad.form ? quad : { ...quad, hat, form },
 		x,
 		y,
 		vx,

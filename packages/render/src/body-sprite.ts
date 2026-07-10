@@ -10,6 +10,9 @@ export interface BodySprite {
 	grip: { x: number; y: number };
 	head: { x: number; y: number };
 	baseline?: number;
+	// Per-pose animation rate carried from a `.sprite` doc (ADR 0031); consumed
+	// by a later animation slice. Absent for TS-authored forms.
+	fps?: Readonly<Record<string, number>>;
 }
 
 export const FORMS: readonly BodySprite[] = [buddy];
@@ -17,10 +20,16 @@ export const FORMS: readonly BodySprite[] = [buddy];
 // Kept so the `wisp` import stays live while drafted out of FORMS.
 export const DRAFTED_FORMS: readonly BodySprite[] = [wisp];
 
-export function formById(i: number | undefined): BodySprite {
-	if (i === undefined || !Number.isInteger(i) || i < 0 || i >= FORMS.length)
+export function formById(id: string | number | undefined): BodySprite {
+	// Tolerant during the number->string cosmetics.form migration: a known string
+	// id resolves, any other string (or out-of-range number) falls back to the
+	// default form. A later slice makes this string-only.
+	if (typeof id === 'string') {
+		return id === 'buddy' ? buddy : FORMS[DEFAULT_FORM];
+	}
+	if (id === undefined || !Number.isInteger(id) || id < 0 || id >= FORMS.length)
 		return FORMS[DEFAULT_FORM];
-	return FORMS[i];
+	return FORMS[id];
 }
 
 export function formFrame(

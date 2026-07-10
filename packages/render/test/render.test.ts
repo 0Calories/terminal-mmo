@@ -15,6 +15,7 @@ import {
 	drawEntitySprite,
 	drawNameplates,
 	FORMS,
+	formById,
 	formFrame,
 	hatById,
 	type RenderStyle,
@@ -390,7 +391,7 @@ test('the Handle position is independent of hat height', () => {
 			x: 8,
 			y: 7,
 			name: 'a',
-			cosmetics: { hue: 0, hat, nameplate: 0, form: 0 },
+			cosmetics: { hue: 0, hat, nameplate: 0, form: 'buddy' },
 		});
 		drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
 		return buf;
@@ -409,7 +410,7 @@ test('each Handle letter is the cosmetic ink on a darkened same-hue backing', ()
 		x: 8,
 		y: 7,
 		name: 'neo',
-		cosmetics: { hue: 0, hat: 'wizard', nameplate: 4, form: 0 },
+		cosmetics: { hue: 0, hat: 'wizard', nameplate: 4, form: 'buddy' },
 	});
 
 	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
@@ -478,7 +479,7 @@ test('renderZoneScene alone draws no nameplate cells (names are a caller layer)'
 });
 
 function avatarTopLeft(e: Entity) {
-	const form = FORMS[e.cosmetics?.form ?? 0];
+	const form = formById(e.cosmetics?.form);
 	const sprite = formFrame(form, 'idle');
 	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
 	const ay = Math.round(e.y + BOX.h - sprite.h + (form.baseline ?? 0));
@@ -512,7 +513,14 @@ test('each Avatar Form renders its own idle body through the shared render path 
 				x: 8,
 				y: 7,
 				facing,
-				cosmetics: { hue: 0, hat: '', nameplate: 0, form },
+				// This loop deliberately drives the numeric form index (see FORMS[form]
+				// below); formById still accepts it. Cast past the in-flight string type.
+				cosmetics: {
+					hue: 0,
+					hat: '',
+					nameplate: 0,
+					form: form as unknown as string,
+				},
 			});
 			renderZoneScene(
 				buf,
@@ -590,7 +598,7 @@ test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouch
 		type: 'player',
 		x: 8,
 		y: 7,
-		cosmetics: { hue: 2, hat: '', nameplate: 0, form: 0 },
+		cosmetics: { hue: 2, hat: '', nameplate: 0, form: 'buddy' },
 	});
 
 	renderZoneScene(
@@ -613,7 +621,7 @@ test('a cosmetic hat is overlaid directly above the head', () => {
 		type: 'player',
 		x: 8,
 		y: 7,
-		cosmetics: { hue: 0, hat: hatId, nameplate: 0, form: 0 },
+		cosmetics: { hue: 0, hat: hatId, nameplate: 0, form: 'buddy' },
 	});
 
 	renderZoneScene(
@@ -811,7 +819,7 @@ test('a weaponless Avatar draws no weapon layer', () => {
 });
 
 function bodyAnchor(e: Entity, sprite: Sprite) {
-	const form = FORMS[e.cosmetics?.form ?? 0];
+	const form = formById(e.cosmetics?.form);
 	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
 	const ay = Math.round(e.y + BOX.h - sprite.h + (form.baseline ?? 0));
 	return { ax, ay };
@@ -1002,7 +1010,7 @@ test('a cosmetic-hue Avatar keeps its recoloured body fg on the planted foot ink
 		type: 'player',
 		x: 8,
 		y: 7,
-		cosmetics: { hue: 2, hat: '', nameplate: 0, form: 0 },
+		cosmetics: { hue: 2, hat: '', nameplate: 0, form: 'buddy' },
 	});
 	renderZoneScene(
 		buf,

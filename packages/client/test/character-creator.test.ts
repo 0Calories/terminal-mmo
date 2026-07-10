@@ -15,7 +15,7 @@ import { CUSTOMIZE_FIELDS } from '../src/ui/customize';
 
 // undo previewAvatar's inverse of drawEntitySprite's placement (offset up by BOX.h - PLAYER.h)
 const spriteTopOf = (hat: string) =>
-	previewAvatar({ hue: 0, hat, nameplate: 0, form: 0 }, 'name').y +
+	previewAvatar({ hue: 0, hat, nameplate: 0, form: 'buddy' }, 'name').y +
 	(BOX.h - PLAYER.h);
 
 const ALL_HATS = ['', ...HAT_IDS];
@@ -154,7 +154,7 @@ test('a createRejected surfaces a transient "name" error, cleared on the next ed
 	expect(cc.errorMessage).toBe('');
 });
 
-const SEED: Cosmetics = { hue: 2, hat: 'cap', nameplate: 3, form: 0 };
+const SEED: Cosmetics = { hue: 2, hat: 'cap', nameplate: 3, form: 'buddy' };
 
 async function mountRecustomize(handle = 'Neo', cosmetics = SEED) {
 	const { renderer } = await createTestRenderer({ width: 80, height: 30 });

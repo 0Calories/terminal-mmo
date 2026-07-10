@@ -241,7 +241,7 @@ test('golden scene: full avatar facing right', () => {
 		y: 7,
 		facing: 1,
 		weapon: 0,
-		cosmetics: { hue: 2, hat: 'wizard', nameplate: 0, form: 0 },
+		cosmetics: { hue: 2, hat: 'wizard', nameplate: 0, form: 'buddy' },
 	});
 	renderZoneScene(
 		buf,
@@ -260,7 +260,7 @@ test('golden scene: full avatar facing left', () => {
 		y: 7,
 		facing: -1,
 		weapon: 0,
-		cosmetics: { hue: 2, hat: 'wizard', nameplate: 0, form: 0 },
+		cosmetics: { hue: 2, hat: 'wizard', nameplate: 0, form: 'buddy' },
 	});
 	renderZoneScene(
 		buf,

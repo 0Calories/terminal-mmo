@@ -39,7 +39,8 @@ export interface Cosmetics {
 	/** Sprite id from sprites/hats/*.sprite (scanned by the server); '' = no hat. */
 	hat: string;
 	nameplate: number;
-	form: number;
+	/** Sprite id from sprites/forms/*.sprite (scanned by the server); never empty. */
+	form: string;
 }
 
 export interface Entity {

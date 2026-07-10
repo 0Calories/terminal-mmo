@@ -9,13 +9,13 @@ import { dirname, join } from 'node:path';
 // looking for sprites/hats, so the scan still finds the real set when the
 // server isn't started from the repo root (e.g. under a test runner).
 // Non-recursive: hat sprites are never nested.
-export function findHatsDir(): string | undefined {
-	const cwdCandidate = join(process.cwd(), 'sprites', 'hats');
+function findSpriteKindDir(kind: string): string | undefined {
+	const cwdCandidate = join(process.cwd(), 'sprites', kind);
 	if (existsSync(cwdCandidate)) return cwdCandidate;
 
 	let current = import.meta.dir;
 	for (let i = 0; i < 6; i++) {
-		const candidate = join(current, 'sprites', 'hats');
+		const candidate = join(current, 'sprites', kind);
 		if (existsSync(candidate)) return candidate;
 		const parent = dirname(current);
 		if (parent === current) break;
@@ -25,7 +25,7 @@ export function findHatsDir(): string | undefined {
 	return undefined;
 }
 
-export function scanHatIds(dir = findHatsDir()): ReadonlySet<string> {
+function scanSpriteIds(dir: string | undefined): ReadonlySet<string> {
 	if (dir === undefined) return new Set();
 	let entries: string[];
 	try {
@@ -38,4 +38,24 @@ export function scanHatIds(dir = findHatsDir()): ReadonlySet<string> {
 		if (name.endsWith('.sprite')) ids.add(name.slice(0, -'.sprite'.length));
 	}
 	return ids;
+}
+
+export function findHatsDir(): string | undefined {
+	return findSpriteKindDir('hats');
+}
+
+export function scanHatIds(dir = findHatsDir()): ReadonlySet<string> {
+	return scanSpriteIds(dir);
+}
+
+// Mirrors findHatsDir/scanHatIds for Forms (sprites/forms/*.sprite). That
+// directory does not exist yet — the scan then returns an empty set (never
+// throws), so every form id sanitizes to the default Form, which is correct
+// today (only 'buddy' ships).
+export function findFormsDir(): string | undefined {
+	return findSpriteKindDir('forms');
+}
+
+export function scanFormIds(dir = findFormsDir()): ReadonlySet<string> {
+	return scanSpriteIds(dir);
 }

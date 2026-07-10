@@ -24,6 +24,7 @@ import {
 	resolveAuth,
 	restoredFromSave,
 	type ServerWorld,
+	sanitizeFormId,
 	sanitizeHatId,
 	saveFromAvatar,
 	sessionByHandle,
@@ -38,7 +39,7 @@ import {
 import type { ServerWebSocket } from 'bun';
 import { foldPendingEdges } from './intents';
 import { installShutdownHooks } from './shutdown';
-import { scanHatIds } from './sprites';
+import { scanFormIds, scanHatIds } from './sprites';
 import { openPlayerStore } from './store';
 
 const PORT = Number(process.env.PORT) || Number(process.env.MMO_PORT) || 8080;
@@ -75,11 +76,18 @@ function reject(ws: ServerWebSocket<WsData>, reason: string) {
 }
 
 // Set-membership validation is the server's job (core only shapes the type);
-// computed once at startup by scanning sprites/hats/*.sprite.
+// computed once at startup by scanning sprites/hats and sprites/forms. The
+// forms dir does not exist yet, so validFormIds is empty and every form
+// sanitizes to the default Form ('buddy') — correct today.
 const validHatIds: ReadonlySet<string> = scanHatIds();
+const validFormIds: ReadonlySet<string> = scanFormIds();
 
 function withValidHat(c: Cosmetics): Cosmetics {
-	return { ...c, hat: sanitizeHatId(c.hat, validHatIds) };
+	return {
+		...c,
+		hat: sanitizeHatId(c.hat, validHatIds),
+		form: sanitizeFormId(c.form, validFormIds),
+	};
 }
 
 const START_ZONE = 'town-01';

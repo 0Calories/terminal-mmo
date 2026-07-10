@@ -16,7 +16,7 @@ test('right cycles the focused field forward', () => {
 	const s = initCustomize(DEFAULT_COSMETICS);
 	const { state } = reduceCustomize(s, 'right');
 	expect(state.cosmetics.hue).toBe(1);
-	expect(state.cosmetics.form).toBe(0);
+	expect(state.cosmetics.form).toBe('buddy');
 	expect(state.cosmetics.hat).toBe('');
 	expect(state.cosmetics.nameplate).toBe(0);
 });
@@ -47,17 +47,22 @@ test('return confirms with the chosen cosmetics, leaving them unchanged', () => 
 	s = reduceCustomize(s, 'right').state;
 	const { state, confirm } = reduceCustomize(s, 'return');
 	expect(confirm).toBe(true);
-	expect(state.cosmetics).toEqual({ hue: 1, hat: '', nameplate: 0, form: 0 });
+	expect(state.cosmetics).toEqual({
+		hue: 1,
+		hat: '',
+		nameplate: 0,
+		form: 'buddy',
+	});
 });
 
-test('the single-option Form is hidden from the picker but still confirms as form 0', () => {
+test('the single-option Form is hidden from the picker but still confirms as the buddy Form', () => {
 	expect(FORM_COUNT).toBe(1);
 	expect(CUSTOMIZE_FIELDS.some((f) => f.key === 'form')).toBe(false);
 	let s = initCustomize(DEFAULT_COSMETICS);
 	s = reduceCustomize(s, 'right').state;
 	const { state, confirm } = reduceCustomize(s, 'return');
 	expect(confirm).toBe(true);
-	expect(state.cosmetics.form).toBe(0);
+	expect(state.cosmetics.form).toBe('buddy');
 });
 
 test('customizeRows yields one focused-marked row per field, hat named from catalog', () => {

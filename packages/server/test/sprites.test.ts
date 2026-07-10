@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { findHatsDir, scanHatIds } from '../src/sprites';
+import { findHatsDir, scanFormIds, scanHatIds } from '../src/sprites';
 
 test('scanHatIds finds .sprite basenames and ignores everything else (explicit dir)', () => {
 	const dir = mkdtempSync(join(tmpdir(), 'hats-'));
@@ -37,4 +37,28 @@ test('scanHatIds with no dir argument resolves via findHatsDir and finds the rea
 	const ids = scanHatIds();
 	for (const id of ['cap', 'crown', 'party-hat', 'top-hat', 'wizard'])
 		expect(ids.has(id)).toBe(true);
+});
+
+test('scanFormIds finds .sprite basenames and ignores everything else (explicit dir)', () => {
+	const dir = mkdtempSync(join(tmpdir(), 'forms-'));
+	try {
+		writeFileSync(join(dir, 'buddy.sprite'), 'x');
+		writeFileSync(join(dir, 'wisp.sprite'), 'x');
+		writeFileSync(join(dir, 'notes.txt'), 'x');
+		const ids = scanFormIds(dir);
+		expect(ids).toEqual(new Set(['buddy', 'wisp']));
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test('scanFormIds on an explicit missing directory returns an empty set, never throws', () => {
+	const missing = join(tmpdir(), 'definitely-does-not-exist-forms-dir');
+	expect(scanFormIds(missing)).toEqual(new Set());
+});
+
+test('scanFormIds resolves via findFormsDir; the sprites/forms dir does not exist yet, so it is empty', () => {
+	// A later slice adds sprites/forms/*.sprite; today the scan must return an
+	// empty set without throwing (every id then sanitizes to the default Form).
+	expect(scanFormIds()).toEqual(new Set());
 });
