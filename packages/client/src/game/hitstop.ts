@@ -1,4 +1,8 @@
-// Render-only freeze; the sim never pauses, only the redraw is gated.
+// Hitstop is render pacing, not a visual (ADR 0013 amendment): the frame
+// loop holds the last drawn frame for a beat on a meaty hit. The sim never
+// pauses — only the redraw is gated, so positions catch up the instant the
+// freeze drains.
+
 export const HITSTOP_MS = 70;
 
 export interface Hitstop {

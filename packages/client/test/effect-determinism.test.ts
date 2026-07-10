@@ -6,11 +6,11 @@ import {
 	swatEvent,
 } from '@mmo/core/combat';
 import { decodeServerMessage, encodeServerMessage } from '@mmo/core/protocol';
-import { applyKick, CAMERA_KICK, NO_KICK } from '../src/effects/camera-kick';
-import { isFrozen, NO_HITSTOP, triggerHitstop } from '../src/effects/hitstop';
-import { advanceParticles, ParticleSystem } from '../src/effects/particles';
-import { effectsOf, type VisualEffect } from '../src/effects/project';
-import { REALIZE, spawnEffects } from '../src/effects/realize';
+import { NO_HITSTOP, triggerHitstop } from '../src/game/hitstop';
+import { EFFECTS } from '../src/particles/effects';
+import { advanceSpecks, Pool, spawnSpeck } from '../src/particles/engine';
+import { applyKick, CAMERA_KICK, NO_KICK } from '../src/render/camera';
+import { type Presentation, present } from '../src/render/present';
 import { effectSoundCues } from '../src/sound/world';
 import { entity, flatTerrain, makeProjectile, seededRng } from './helpers';
 
@@ -25,14 +25,14 @@ const EVENTS: Record<string, CombatEvent> = {
 };
 
 /**
- * The owner predicts locally: `effectsOf` runs on the CombatEvent it just minted.
- * An observer receives the server's projection of the same event over the wire.
+ * The owner predicts locally: `present` runs on the CombatEvent it just minted.
+ * An observer receives the server's broadcast of the same event over the wire.
  */
-function ownerProjection(event: CombatEvent): VisualEffect[] {
-	return effectsOf(event);
+function ownerProjection(event: CombatEvent): Presentation {
+	return present([event]);
 }
 
-function observerProjection(event: CombatEvent): VisualEffect[] {
+function observerProjection(event: CombatEvent): Presentation {
 	const wire = encodeServerMessage({
 		t: 'snapshot',
 		tick: 1,
@@ -48,40 +48,40 @@ function observerProjection(event: CombatEvent): VisualEffect[] {
 	});
 	const msg = decodeServerMessage(wire);
 	if (msg.t !== 'snapshot') throw new Error('expected a snapshot');
-	return msg.events.flatMap(effectsOf);
+	return present(msg.events);
 }
 
-/** The realized VisualEffect: the particles a projection spawns, plus the view shake it drives. */
-function realize(effects: VisualEffect[]) {
-	const sys = new ParticleSystem(64);
-	spawnEffects(sys, effects, seededRng(SEED));
-	advanceParticles(sys, 16, flatTerrain(64, 24));
+/** The realized presentation: the specks a routing spawns, plus the view shake and freeze it drives. */
+function realize(show: Presentation) {
+	const pool = new Pool(64);
+	const rng = seededRng(SEED);
+	for (const fx of show.effects) {
+		const def = EFFECTS[fx.kind];
+		for (let i = 0; i < def.count(fx.intensity); i++)
+			spawnSpeck(pool, def.profile, fx.x, fx.y, fx.dir, rng, fx.tint);
+	}
+	advanceSpecks(pool, 16, flatTerrain(64, 24));
 
 	let kick = NO_KICK;
-	let hitstop = NO_HITSTOP;
-	for (const fx of effects) {
-		const realization = REALIZE[fx.kind];
-		if (realization.kick)
-			kick = applyKick(kick, fx.dir * CAMERA_KICK.maxCells, -1);
-		if (realization.hitstop) hitstop = triggerHitstop(hitstop);
-	}
+	for (const dir of show.kicks)
+		kick = applyKick(kick, dir * CAMERA_KICK.maxCells, -1);
 
 	return {
-		particles: sys.particles.filter((p) => p.active),
+		specks: pool.specks.filter((p) => p.active),
 		kick,
-		frozen: isFrozen(hitstop),
-		sounds: effectSoundCues(effects, 20, 30),
+		hitstop: show.hitstop ? triggerHitstop(NO_HITSTOP) : NO_HITSTOP,
+		sounds: effectSoundCues(show.effects, 20, 30),
 	};
 }
 
-describe('a CombatEvent projects to the same VisualEffect for its owner and an observer', () => {
+describe('a CombatEvent routes to the same presentation for its owner and an observer', () => {
 	for (const [kind, event] of Object.entries(EVENTS)) {
 		test(`a ${kind} agrees across predict and receive`, () => {
 			const owner = ownerProjection(event);
 			const observer = observerProjection(event);
 
 			// `source` is server-internal — it suppresses the echo and never crosses the wire,
-			// and effectsOf already drops it when projecting to a VisualEffect.
+			// and present already drops it when routing to presentation.
 			expect(owner).toEqual(observer);
 			expect(realize(owner)).toEqual(realize(observer));
 		});
@@ -89,8 +89,8 @@ describe('a CombatEvent projects to the same VisualEffect for its owner and an o
 });
 
 test('a death keeps its tint across the wire, so the gore matches the entity that died', () => {
-	const [observed] = observerProjection(EVENTS.death);
+	const [observed] = observerProjection(EVENTS.death).effects;
 
-	expect(observed.tint).toEqual(effectsOf(EVENTS.death)[0].tint);
+	expect(observed.tint).toEqual(present([EVENTS.death]).effects[0].tint);
 	expect(observed.tint).toBeDefined();
 });
