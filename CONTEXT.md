@@ -52,11 +52,18 @@ two, so animating is redrawing the grid. Every Body sprite must author the core
 _Avoid_: Body model, rig, skeleton (poses are whole frames, there is no rig)
 
 **Pose**:
-One selectable whole frame of a **Body sprite** (or **Weapon sprite**), chosen each
-render by a pure, shared function of replicated state so owner and observers agree.
-Body-pose priority is a fixed ladder — `hurt/stagger > combat > airborne > walk >
-emote > idle` — where, deliberately, walking cancels an **Emote**.
-_Avoid_: Frame (reserve for an individual grid), stance, animation state
+A named, selectable animation unit of the player's **Body sprite** — Poses exist
+specifically for players, handling the special frames and animations of states
+(`walk`, `jump`, attack) and **Emote**s. An ordered list of **Frame**s played at
+a per-Pose fps, where a single Frame is the common case and a Frame belonging to
+no Pose is its own implicit single-frame Pose. Which Pose shows is chosen each
+render by a pure, shared function of replicated state so owner and observers
+agree. Body-pose priority is a fixed ladder — `hurt/stagger > combat > airborne >
+walk > emote > idle` — where, deliberately, walking cancels an **Emote**. Other
+roles' multi-frame art (a **Weapon sprite**'s swing phases) is plain Frames
+selected by that role's own logic, not Poses.
+_Avoid_: Frame (a Pose *contains* Frames; reserve Frame for one grid), stance
+(see **Preview stance**), animation state
 
 **Walk cycle**:
 The `walkA↔walkB` alternation that animates a moving Avatar, flipped every stride of
@@ -784,7 +791,8 @@ the game-world language above.
 **Sprite file**:
 The `.sprite` asset file that *is* a sprite's source of truth — human-readable
 art (glyph grids you can see in a text editor, zone-style) plus its metadata:
-named Pose frames, **Anchor**s, colors, per-pose animation speed. One format
+**Frame**s grouped into named **Pose**s, **Anchor**s, colors, per-Pose animation
+speed. One format
 covers every sprite shape (a hat is the degenerate single-frame case; a Form and
 a Weapon are richer profiles of the same format). Identity is the filename
 (cf. Zone id), and the containing directory names its **Sprite role**. Consumed
@@ -806,9 +814,18 @@ the author paints sub-cell pixel art and the editor compiles it to half-block
 glyph grids, so nobody hand-XORs quadrant glyphs. WYSIWYG against the shared
 renderer: mirrored facing, animation playback, and the **Composited preview**
 are part of drawing, not a separate check. An **inexpressible cell** (more
-colors than a terminal cell can carry) is blocked at paint time — unrepresentable,
-not merely validated (cf. Placeable).
+colors than a terminal cell can carry) is auto-resolved at paint time — the ink
+wins the touched Pixel and the cell coerces to the nearest legal state, with
+status-line feedback; never refused, never merely validated after the fact
+(cf. Placeable).
 _Avoid_: Paint program, pixel editor (it edits Sprite files, pixels are the means)
+
+**Frame**:
+One named glyph grid in a Sprite file — the unit the Sprite editor paints and the
+thing a **Pose** orders into an animation. A Frame referenced by no Pose is its
+own implicit single-frame Pose, which is how bare frame names (`walkA`) stay
+selectable at render time.
+_Avoid_: Cel, image, page
 
 **Pixel**:
 The Sprite editor's atomic unit — one quadrant sub-cell, four per terminal cell
@@ -843,3 +860,9 @@ its swing, a Form wearing hat and weapon — against the game's real background,
 through the shared renderer. The forge analogue of the Zone editor's "faithful
 render" promise.
 _Avoid_: Mannequin, dress-up view, test render
+
+**Preview stance**:
+The **Composited preview**'s scenario — the facing plus what the mannequin is
+doing (which body Pose, which weapon swing phase). A selection *across* multiple
+sprites at once, which is why it is not itself a **Pose**.
+_Avoid_: Pose (a stance picks poses, plural), preview mode
