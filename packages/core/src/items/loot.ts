@@ -1,3 +1,4 @@
+import { type RGBAQuad, STANDARD_PALETTE } from '../entities/sceneStyle';
 import type { Item, ItemAffix, Rarity, Slot } from '../entities/types';
 import { rngNext } from './rng';
 
@@ -29,14 +30,15 @@ export const RARITIES: RarityDef[] = [
 
 export const AFFIXES = ['str', 'dex', 'int', 'hp', 'crit', 'haste'];
 
-export const RARITY_COLOR: Record<Rarity, { r: number; g: number; b: number }> =
-	{
-		common: { r: 176, g: 184, b: 196 },
-		uncommon: { r: 96, g: 210, b: 122 },
-		rare: { r: 92, g: 158, b: 255 },
-		epic: { r: 190, g: 120, b: 255 },
-		legendary: { r: 255, g: 178, b: 68 },
-	};
+// Selection from the standard palette: common s, uncommon f, rare b, epic v,
+// legendary p.
+export const RARITY_COLOR: Record<Rarity, RGBAQuad> = {
+	common: STANDARD_PALETTE.s,
+	uncommon: STANDARD_PALETTE.f,
+	rare: STANDARD_PALETTE.b,
+	epic: STANDARD_PALETTE.v,
+	legendary: STANDARD_PALETTE.p,
+};
 
 export interface LootTable {
 	bases: string[];

@@ -54,6 +54,7 @@ export {
 	type RGBAQuad,
 	SCENE_COLORS,
 	SCENE_PALETTE,
+	STANDARD_PALETTE,
 } from './sceneStyle';
 export type {
 	ActionState,

@@ -48,14 +48,14 @@ test('every rarity tier maps to a distinct colour (in-world + on-pickup source)'
 	for (const t of tiers) {
 		const c = RARITY_COLOR[t];
 		expect(c).toBeDefined();
-		for (const ch of [c.r, c.g, c.b]) {
+		for (const ch of [c[0], c[1], c[2]]) {
 			expect(ch).toBeGreaterThanOrEqual(0);
 			expect(ch).toBeLessThanOrEqual(255);
 		}
 	}
 	const keys = tiers.map((t) => {
 		const c = RARITY_COLOR[t];
-		return `${c.r},${c.g},${c.b}`;
+		return `${c[0]},${c[1]},${c[2]}`;
 	});
 	expect(new Set(keys).size).toBe(tiers.length);
 });
