@@ -157,8 +157,22 @@ export interface SpriteEditorOpts {
 const CHROME_H = 3;
 const SCROLLOFF = 2;
 
-// The cursor ring glyph, drawn over each edge cell of the active Pixel's block.
-const CURSOR_GLYPH = '□';
+// The box-drawing glyph for one cell of the cursor's z×z outline ring, or '' for
+// an interior (non-edge) cell. All are unambiguous width-1 (unlike □/▫), so the
+// ring never desyncs the terminal's mouse columns.
+function cursorRingGlyph(dx: number, dy: number, z: number): string {
+	const left = dx === 0;
+	const right = dx === z - 1;
+	const top = dy === 0;
+	const bot = dy === z - 1;
+	if (top && left) return '┌';
+	if (top && right) return '┐';
+	if (bot && left) return '└';
+	if (bot && right) return '┘';
+	if (top || bot) return '─';
+	if (left || right) return '│';
+	return '';
+}
 
 // What playback is currently animating.
 type PlayMode = 'none' | 'pose' | 'walk';
@@ -978,19 +992,32 @@ export class SpriteEditor extends Renderable {
 			);
 		}
 
-		// Cursor: a bright ring on the active Pixel's z×z block, drawn as a glyph
-		// OVER the pixel's own colour (kept as the cell background) so the pixel
-		// under the cursor stays legible even at ×1/×2 where the ring fills it.
+		// Cursor: a bright ring on the active Pixel's z×z block, drawn with
+		// box-drawing glyphs OVER the pixel's own colour (kept as the cell
+		// background) so the pixel under the cursor stays legible. The glyphs are
+		// unambiguous width-1 — an ambiguous-width marker (e.g. □) renders
+		// double-wide in some terminals and desyncs every mouse column to its right.
+		// At ×1 the single cell is reverse-highlighted instead (no room for a ring).
 		const cb = pixelToScreen(this.state.cursor.x, this.state.cursor.y, cam, z);
-		for (let dy = 0; dy < z; dy++) {
-			for (let dx = 0; dx < z; dx++) {
-				const edge = dx === 0 || dy === 0 || dx === z - 1 || dy === z - 1;
-				if (!edge) continue;
-				const sx = cb.x + dx;
-				const sy = cb.y + dy;
-				if (sx < 0 || sx >= mainW || sy < 0 || sy >= viewH) continue;
-				const under = pixelBg(this.state.cursor.x, this.state.cursor.y, sx, sy);
-				buf.setCell(sx, sy, CURSOR_GLYPH, C.cursorBg, under);
+		if (z === 1) {
+			if (cb.x >= 0 && cb.x < mainW && cb.y >= 0 && cb.y < viewH)
+				buf.setCell(cb.x, cb.y, ' ', C.cursorFg, C.cursorBg);
+		} else {
+			for (let dy = 0; dy < z; dy++) {
+				for (let dx = 0; dx < z; dx++) {
+					const glyph = cursorRingGlyph(dx, dy, z);
+					if (!glyph) continue;
+					const sx = cb.x + dx;
+					const sy = cb.y + dy;
+					if (sx < 0 || sx >= mainW || sy < 0 || sy >= viewH) continue;
+					const under = pixelBg(
+						this.state.cursor.x,
+						this.state.cursor.y,
+						sx,
+						sy,
+					);
+					buf.setCell(sx, sy, glyph, C.cursorBg, under);
+				}
 			}
 		}
 
