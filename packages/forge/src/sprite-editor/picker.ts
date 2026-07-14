@@ -1,20 +1,23 @@
-// Pure state machine for the Sprite editor's color-picker overlay (ADR 0031). It
-// drives two flows: choosing a color key for the fg or bg slot from a list, and
-// the minimal "define a new file-local color" sub-flow (pick an unused single
-// char, then enter r,g,b). No I/O, no `@opentui/core` — the TUI renders the
-// `PickerState` and feeds keys through the reducers, applying any emitted action
-// to the underlying editor state.
+// Pure state machine for the Sprite editor's ink-picker overlay (ADR 0031,
+// spec #387). It drives two flows: choosing the single active *ink* — a palette
+// key, or transparent — from a list, and the minimal "define a new file-local
+// color" sub-flow (pick an unused single char, then enter r,g,b). No I/O, no
+// `@opentui/core`: the TUI renders the `PickerState` and feeds keys through the
+// reducers, applying any emitted action to the underlying editor state.
 import type { RGBAQuad } from '@mmo/core';
-import type { PaletteEntry } from './state';
+import {
+	colorInk,
+	type Ink,
+	type PaletteEntry,
+	TRANSPARENT_INK,
+} from './state';
 
-// Which color slot the overlay is picking for.
-export type PickerSlot = 'fg' | 'bg';
-
-// One selectable row: an existing palette key, the transparent "none" choice
-// (bg only), or the "define a new local color" entry point.
+// One selectable row: an existing palette key, the transparent ink, or the
+// "define a new local color" entry point. Transparent is a first-class ink, so
+// the row is always offered (spec #387 — transparent is not the absence of ink).
 export type PickerOption =
 	| { kind: 'entry'; entry: PaletteEntry }
-	| { kind: 'none' }
+	| { kind: 'transparent' }
 	| { kind: 'new' };
 
 // The new-local-color form: enter a key char, then r, g, b (each confirmed).
@@ -27,7 +30,6 @@ export interface NewColorForm {
 }
 
 export interface PickerState {
-	slot: PickerSlot;
 	options: readonly PickerOption[];
 	index: number;
 	// null in list view; a form while defining a new local color.
@@ -39,38 +41,32 @@ export interface PickerState {
 // What the reducer asks the caller to apply once an option is chosen / the form
 // completes / the overlay is dismissed.
 export type PickerAction =
-	| { type: 'setFg'; key: string }
-	| { type: 'setBg'; key: string | null }
-	| { type: 'defineColor'; key: string; rgba: RGBAQuad; slot: PickerSlot }
+	| { type: 'setInk'; ink: Ink }
+	| { type: 'defineColor'; key: string; rgba: RGBAQuad }
 	| { type: 'close' };
 
 export function buildPickerOptions(
-	slot: PickerSlot,
 	entries: readonly PaletteEntry[],
 ): PickerOption[] {
-	const opts: PickerOption[] = [];
-	if (slot === 'bg') opts.push({ kind: 'none' });
+	const opts: PickerOption[] = [{ kind: 'transparent' }];
 	for (const entry of entries) opts.push({ kind: 'entry', entry });
 	opts.push({ kind: 'new' });
 	return opts;
 }
 
+// Open the overlay, landing the cursor on the currently active ink.
 export function openPicker(
-	slot: PickerSlot,
 	entries: readonly PaletteEntry[],
-	current: string | null,
+	current: Ink,
 ): PickerState {
-	const options = buildPickerOptions(slot, entries);
-	// Land the cursor on the currently selected key, if it is in the list.
-	let index = 0;
-	if (current === null) {
-		index = options.findIndex((o) => o.kind === 'none');
-	} else {
-		index = options.findIndex(
-			(o) => o.kind === 'entry' && o.entry.key === current,
-		);
-	}
-	return { slot, options, index: index < 0 ? 0 : index, form: null, error: '' };
+	const options = buildPickerOptions(entries);
+	const index =
+		current.kind === 'transparent'
+			? options.findIndex((o) => o.kind === 'transparent')
+			: options.findIndex(
+					(o) => o.kind === 'entry' && o.entry.key === current.key,
+				);
+	return { options, index: index < 0 ? 0 : index, form: null, error: '' };
 }
 
 export function pickerMove(state: PickerState, delta: number): PickerState {
@@ -90,8 +86,8 @@ export interface PickerResult {
 	action?: PickerAction;
 }
 
-// Choose the highlighted row. An 'entry'/'none' resolves immediately to a
-// setFg/setBg action and closes; 'new' opens the define-color form.
+// Choose the highlighted row. An 'entry'/'transparent' resolves immediately to a
+// setInk action and closes; 'new' opens the define-color form.
 export function pickerChoose(state: PickerState): PickerResult {
 	const opt = currentOption(state);
 	if (!opt) return { picker: null, action: { type: 'close' } };
@@ -104,13 +100,12 @@ export function pickerChoose(state: PickerState): PickerResult {
 			},
 		};
 	}
-	if (opt.kind === 'none')
-		return { picker: null, action: { type: 'setBg', key: null } };
-	// An existing entry: assign to the active slot.
-	const key = opt.entry.key;
-	return state.slot === 'fg'
-		? { picker: null, action: { type: 'setFg', key } }
-		: { picker: null, action: { type: 'setBg', key } };
+	if (opt.kind === 'transparent')
+		return { picker: null, action: { type: 'setInk', ink: TRANSPARENT_INK } };
+	return {
+		picker: null,
+		action: { type: 'setInk', ink: colorInk(opt.entry.key) },
+	};
 }
 
 const RESERVED = new Set(['p', 'a']);
@@ -179,7 +174,7 @@ export function formAdvance(state: PickerState): PickerResult {
 	const rgba: RGBAQuad = [nums[0], nums[1], nums[2], 255];
 	return {
 		picker: null,
-		action: { type: 'defineColor', key: f.key, rgba, slot: state.slot },
+		action: { type: 'defineColor', key: f.key, rgba },
 	};
 }
 

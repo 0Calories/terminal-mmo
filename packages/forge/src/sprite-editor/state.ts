@@ -1,7 +1,7 @@
 // The Sprite editor's pure, headless state module (ADR 0031). Everything the
 // forge `sprite edit` TUI needs to draw quadrant pixel art lives here as pure
 // functions over an immutable state: a quadrant pixel canvas with the fg+bg
-// expressibility rules, a glyph stamp Tool, color-key selection, undo/redo, and
+// expressibility rules, a glyph stamp Tool, a single active ink, undo/redo, and
 // save. No TUI, no I/O — the TUI slice wires these to keys and the screen.
 //
 // Cell / pixel model. Each terminal *cell* of the current frame is a 2×2 grid
@@ -14,8 +14,21 @@
 //       unlit quadrants show the scene behind.
 //   (c) two colors, fully opaque — fg key + mask 1..14, bg key filling the
 //       complement; nothing transparent.
-// Never two colors *and* transparency; never three colors. Every operation here
-// preserves that invariant or refuses with `feedback` — no refusal is silent.
+// Never two colors *and* transparency; never three colors.
+//
+// Auto-resolve, never refuse (spec #387, rules #377). The artist picks a single
+// active *ink* (a color key, or transparent), never an fg/bg pair. Every paint
+// succeeds: the ink wins the touched Pixel and the cell coerces to the nearest
+// legal state, reporting what it did on `feedback`. The three coercions:
+//   • overpaint — a color ink into a one-color cell whose fg differs demotes the
+//     old fg into the bg slot (the cell goes fully opaque, the touched Pixel the
+//     lone new fg);
+//   • recolor — a color ink into an already-opaque two-color cell recolors the
+//     fg (no third color, no transparency to shed into);
+//   • punch — transparent ink clears the touched Pixel and drops the bg
+//     cell-wide, so the cell can never hold two colors plus a hole.
+// The fg/bg split survives only as a half-block compilation detail of the
+// `.sprite` grids; the artist never selects a bg.
 import type { RGBAQuad } from '@mmo/core';
 import {
 	glyphFromQuadrants,
@@ -46,8 +59,27 @@ export type AnchorScope = 'doc' | 'frame';
 // Anchor + frame/pose names share the parser's identifier charset.
 const NAME_RE = /^[A-Za-z0-9:_-]+$/;
 
-// A selected background: a color key, or `null` for a transparent background.
-export type BgSelection = string | null;
+// The single active ink (spec #387): a color key painting lit Pixels, or
+// transparent. Transparent is a first-class ink (the `t` key / the right mouse
+// button), not the absence of one — painting it punches Pixels out.
+export type Ink =
+	| { readonly kind: 'color'; readonly key: string }
+	| { readonly kind: 'transparent' };
+
+export const TRANSPARENT_INK: Ink = { kind: 'transparent' };
+
+export function colorInk(key: string): Ink {
+	return { kind: 'color', key };
+}
+
+// The color key an ink paints, or `null` when it is transparent.
+export function inkColorKey(ink: Ink): string | null {
+	return ink.kind === 'color' ? ink.key : null;
+}
+
+export function inkLabel(ink: Ink): string {
+	return ink.kind === 'color' ? ink.key : 'transparent';
+}
 
 export interface SpriteEditorState {
 	doc: SpriteDoc;
@@ -58,8 +90,8 @@ export interface SpriteEditorState {
 	// Cursor in PIXEL coordinates (2× the cell resolution on each axis).
 	cursor: { x: number; y: number };
 	tool: SpriteTool;
-	fgKey: string;
-	bgKey: BgSelection;
+	// The single active ink every paint uses (a color key, or transparent).
+	ink: Ink;
 	// The anchor name the anchor tool places, and whether at doc or frame scope.
 	anchorName: string;
 	anchorScope: AnchorScope;
@@ -113,8 +145,7 @@ export function initSpriteEditor(
 		pose: poseContaining(doc, name) ?? name,
 		cursor: { x: 0, y: 0 },
 		tool: 'paint',
-		fgKey: doc.key,
-		bgKey: null,
+		ink: colorInk(doc.key),
 		anchorName: firstAnchorName(doc),
 		anchorScope: 'doc',
 		feedback: '',
@@ -315,22 +346,12 @@ function validKey(key: string): boolean {
 	return key.length === 1 && key !== SENTINEL && key !== ' ';
 }
 
-export function setFgKey(
-	state: SpriteEditorState,
-	key: string,
-): SpriteEditorState {
-	if (!validKey(key))
-		return refuse(state, `'${key}' is not a usable color key`);
-	return { ...state, fgKey: key, feedback: '' };
-}
-
-export function setBgKey(
-	state: SpriteEditorState,
-	key: BgSelection,
-): SpriteEditorState {
-	if (key !== null && !validKey(key))
-		return refuse(state, `'${key}' is not a usable color key`);
-	return { ...state, bgKey: key, feedback: '' };
+// Set the single active ink. A color ink must carry a usable key; transparent
+// is always valid.
+export function setInk(state: SpriteEditorState, ink: Ink): SpriteEditorState {
+	if (ink.kind === 'color' && !validKey(ink.key))
+		return refuse(state, `'${ink.key}' is not a usable color key`);
+	return { ...state, ink, feedback: '' };
 }
 
 export function selectFrame(
@@ -593,81 +614,186 @@ export function removeAnchorOverride(
 }
 
 // ---------------------------------------------------------------------------
-// Painting
+// Painting — auto-resolve, never refuse (spec #387, coercion rules #377)
 // ---------------------------------------------------------------------------
 
+// Commit a coerced cell write and attach the human-readable coercion note (''
+// when the paint was a clean, non-coercing edit).
+function commitPaint(
+	state: SpriteEditorState,
+	frame: SpriteFrameDoc,
+	note: string,
+): SpriteEditorState {
+	const committed = commitFrame(state, frame, state.stroke ?? undefined);
+	return note ? { ...committed, feedback: note } : committed;
+}
+
+// Write the touched cell as a quadrant cell (glyph derived from `mask`) and
+// commit it with a coercion note. `fgKey`/`bgKey` are the raw keys, `''` for
+// transparent; an empty mask forces a blank cell. Every coercion branch lands
+// here, so the write+commit skeleton lives in one place.
+function commitQuadrant(
+	state: SpriteEditorState,
+	cellX: number,
+	cellY: number,
+	mask: number,
+	fgKey: string,
+	bgKey: string,
+	note: string,
+): SpriteEditorState {
+	const frame = writeCell(
+		currentFrame(state),
+		cellX,
+		cellY,
+		glyphFromQuadrants(mask),
+		mask === 0 ? ' ' : fgKey,
+		bgKey === '' ? ' ' : bgKey,
+	);
+	return commitPaint(state, frame, note);
+}
+
+// Paint one Pixel with an explicit ink, coercing the touched cell to the nearest
+// legal state. This is the single paint primitive; `paintPixel` / `erasePixel`
+// are the active-ink and transparent-ink spellings the TUI and input seam use.
+export function paintWithInk(
+	state: SpriteEditorState,
+	px: number,
+	py: number,
+	ink: Ink,
+): SpriteEditorState {
+	// Off-canvas to the top/left has no cell to coerce; clip with feedback rather
+	// than grow into negative space (canvas growth is an explicit op, spec #379).
+	if (px < 0 || py < 0)
+		return refuse(state, 'clipped — nothing painted past the canvas edge');
+	return ink.kind === 'transparent'
+		? punchTransparent(state, px, py)
+		: paintColor(state, px, py, ink.key);
+}
+
+// The active-ink paint (left button / `space`): whatever ink is selected.
 export function paintPixel(
 	state: SpriteEditorState,
 	px: number,
 	py: number,
 ): SpriteEditorState {
-	if (px < 0 || py < 0) return refuse(state, 'cannot paint outside the canvas');
-	const { cellX, cellY, bit } = pixelToCell(px, py);
-	const cell = cellAt(state, cellX, cellY);
-	if (cell.mask === undefined)
-		return refuse(
-			state,
-			`this cell holds a stamped glyph '${cell.glyph}' — clear it first`,
-		);
-	const t = 1 << bit;
-	const sf = state.fgKey;
-	const hasFg = cell.mask > 0;
-	if (hasFg && cell.fg !== sf)
-		return refuse(
-			state,
-			`this cell already uses color '${cell.fg}' — select '${cell.fg}' to extend it, or erase first`,
-		);
-
-	const newMask = cell.mask | t;
-	// The complement (unlit quadrants) is one uniform color: the selected bg, or
-	// transparent when none is selected. A full mask leaves no complement, so any
-	// bg would be invisible — it is dropped, demoting the cell to one color.
-	let newBgKey = state.bgKey === null ? cell.bg : state.bgKey;
-	if (newMask === 15) newBgKey = '';
-
-	const glyph = glyphFromQuadrants(newMask);
-	const bgChar = newBgKey === '' ? ' ' : newBgKey;
-	// No-op: the pixel is already exactly this — don't grow history.
-	if (glyph === cell.glyph && sf === cell.fg && bgChar === (cell.bg || ' '))
-		return { ...state, feedback: '' };
-	const frame = writeCell(currentFrame(state), cellX, cellY, glyph, sf, bgChar);
-	return commitFrame(state, frame, state.stroke ?? undefined);
+	return paintWithInk(state, px, py, state.ink);
 }
 
+// The transparent-ink paint (right button / the eraser): always punches out,
+// regardless of the selected ink.
 export function erasePixel(
+	state: SpriteEditorState,
+	px: number,
+	py: number,
+): SpriteEditorState {
+	return paintWithInk(state, px, py, TRANSPARENT_INK);
+}
+
+// Paint a color ink into a cell, applying the overpaint/recolor coercions.
+function paintColor(
+	state: SpriteEditorState,
+	px: number,
+	py: number,
+	key: string,
+): SpriteEditorState {
+	const { cellX, cellY, bit } = pixelToCell(px, py);
+	const cell = cellAt(state, cellX, cellY);
+	const t = 1 << bit;
+
+	// A stamped (non-quadrant) cell has no sub-pixels to share: the ink wins the
+	// touched Pixel by replacing the stamp with a one-Pixel quadrant cell.
+	if (cell.mask === undefined)
+		return commitQuadrant(
+			state,
+			cellX,
+			cellY,
+			t,
+			key,
+			'',
+			`replaced stamp '${cell.glyph}'`,
+		);
+
+	const opaque = cell.bg !== '';
+	const hasFg = cell.mask > 0;
+
+	// Empty cell, or extending the same fg into transparent complement: the plain
+	// one-color path — light the Pixel, keep the bg (transparent, or an existing
+	// opaque bg when the same fg simply gains a Pixel).
+	if (!hasFg || cell.fg === key) {
+		const newMask = cell.mask | t;
+		// A full fg mask leaves no complement, so any bg is invisible — drop it,
+		// demoting the cell to one opaque colour.
+		const dropBg = newMask === 15 && cell.bg !== '';
+		const bg = dropBg ? '' : cell.bg;
+		const note = dropBg ? `filled — background '${cell.bg}' dropped` : '';
+		// No-op: the Pixel is already exactly this — don't grow history.
+		if (
+			glyphFromQuadrants(newMask) === cell.glyph &&
+			key === cell.fg &&
+			bg === cell.bg
+		)
+			return { ...state, feedback: '' };
+		return commitQuadrant(state, cellX, cellY, newMask, key, bg, note);
+	}
+
+	// Opaque two-colour cell, different fg: recolour the fg (no third colour, no
+	// transparency to shed into). All lit Pixels become the new ink; the touched
+	// Pixel joins them; the bg colour is untouched — unless the Pixel completes
+	// the mask, when the bg loses its complement and drops.
+	if (opaque) {
+		const newMask = cell.mask | t;
+		const bg = newMask === 15 ? '' : cell.bg;
+		const note =
+			newMask === 15
+				? `recoloured foreground → '${key}', background '${cell.bg}' dropped`
+				: `recoloured foreground '${cell.fg}' → '${key}'`;
+		return commitQuadrant(state, cellX, cellY, newMask, key, bg, note);
+	}
+
+	// One-colour + transparent cell, different fg: overpaint. The ink wins the
+	// touched Pixel as the lone fg; the old fg demotes into the bg slot, filling
+	// the complement, so the cell goes fully opaque.
+	return commitQuadrant(
+		state,
+		cellX,
+		cellY,
+		t,
+		key,
+		cell.fg,
+		`overpainted '${cell.fg}' → background`,
+	);
+}
+
+// Paint transparent ink: clear the touched Pixel and punch any bg out cell-wide,
+// so a cell can never end up two colours plus a hole.
+function punchTransparent(
 	state: SpriteEditorState,
 	px: number,
 	py: number,
 ): SpriteEditorState {
 	const { cellX, cellY, bit } = pixelToCell(px, py);
 	const cell = cellAt(state, cellX, cellY);
+
+	// Transparent ink clears a stamped cell whole (rule #377).
 	if (cell.mask === undefined)
-		return refuse(
+		return commitQuadrant(
 			state,
-			`this cell holds a stamped glyph '${cell.glyph}' — clear it first`,
+			cellX,
+			cellY,
+			0,
+			'',
+			'',
+			`cleared stamp '${cell.glyph}'`,
 		);
-	if (cell.mask === 0) return { ...state, feedback: '' };
-	// Erasing a sub-pixel of a two-color cell would leave a transparent hole
-	// beside a bg color — two colors + transparency, which is inexpressible.
-	if (cell.bg !== '')
-		return refuse(
-			state,
-			`this cell has a background color '${cell.bg}' — clear the cell before erasing pixels`,
-		);
+
 	const t = 1 << bit;
-	if ((cell.mask & t) === 0) return { ...state, feedback: '' };
+	const pixelAlreadyClear = (cell.mask & t) === 0;
+	// Nothing to do: the Pixel is already off and there is no bg to punch.
+	if (pixelAlreadyClear && cell.bg === '') return { ...state, feedback: '' };
+
 	const newMask = cell.mask & ~t;
-	const glyph = glyphFromQuadrants(newMask);
-	const fgChar = newMask === 0 ? ' ' : cell.fg;
-	const frame = writeCell(
-		currentFrame(state),
-		cellX,
-		cellY,
-		glyph,
-		fgChar,
-		' ',
-	);
-	return commitFrame(state, frame, state.stroke ?? undefined);
+	const note = cell.bg !== '' ? `punched background '${cell.bg}'` : '';
+	return commitQuadrant(state, cellX, cellY, newMask, cell.fg, '', note);
 }
 
 // ---------------------------------------------------------------------------
@@ -686,15 +812,10 @@ export function stampGlyph(
 		return refuse(state, 'a stamp is a single character');
 	if (char === SENTINEL || char === ' ')
 		return refuse(state, 'use clearCell to empty a cell');
-	const bgChar = state.bgKey === null ? ' ' : state.bgKey;
-	const frame = writeCell(
-		currentFrame(state),
-		cellX,
-		cellY,
-		char,
-		state.fgKey,
-		bgChar,
-	);
+	// A stamp needs a colour; when the active ink is transparent fall back to the
+	// doc default key so the glyph is still visible.
+	const fgChar = inkColorKey(state.ink) ?? state.doc.key;
+	const frame = writeCell(currentFrame(state), cellX, cellY, char, fgChar, ' ');
 	return commitFrame(state, frame);
 }
 

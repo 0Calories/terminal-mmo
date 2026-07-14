@@ -99,29 +99,26 @@ describe('Sprite editor TUI smoke', () => {
 		expect(t.captureCharFrame()).toContain('█');
 	});
 
-	test('a refused paint surfaces feedback in the frame', async () => {
+	test('a coercing paint surfaces its feedback note in the frame', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('bad', 'hat'),
 			id: 'bad',
 			role: 'hat',
 		});
-		// Paint one pixel with fg 'p'.
+		// Paint one pixel with the default ink 'p'.
 		t.editor.key(key('space'));
 		t.editor.key(key('space')); // lift pen
-		// Switch fg to a different key, move to the other TR quadrant, paint → refused.
-		t.editor.key(key('f')); // open fg picker
-		// Navigate to the 'm' palette entry (any non-'p' key) and pick it.
-		// Simpler: type a new local color 'z'.
-		// Move to the "+ new" row and define a color.
-		// Instead, drive setFgKey via picker: choose an existing global entry.
-		// Move down to first non-current entry and choose it.
-		t.editor.key(key('down'));
+		// Switch ink to a different key via the picker (choose the first entry that
+		// isn't the current 'p').
+		t.editor.key(key('f')); // open the ink picker (lands on the current ink 'p')
+		t.editor.key(key('down')); // step to the next entry — a different colour key
 		t.editor.key(key('enter'));
 		expect(t.editor.picker).toBeNull();
-		t.editor.key(key('right')); // move to TR quadrant of same cell
-		t.editor.key(key('space')); // paint with a different color → refused
+		t.editor.key(key('right')); // move to the TR quadrant of the same cell
+		t.editor.key(key('space')); // overpaint a second colour → coerces, never refuses
 		await t.renderOnce();
 		const frame = t.captureCharFrame();
+		// The paint succeeded (the doc changed) and reported the coercion it made.
 		expect(t.editor.state.feedback).not.toBe('');
 		expect(frame).toContain('⚠');
 	});

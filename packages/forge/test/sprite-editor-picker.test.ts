@@ -11,7 +11,11 @@ import {
 	pickerChoose,
 	pickerMove,
 } from '../src/sprite-editor/picker';
-import type { PaletteEntry } from '../src/sprite-editor/state';
+import {
+	colorInk,
+	type PaletteEntry,
+	TRANSPARENT_INK,
+} from '../src/sprite-editor/state';
 
 const ENTRIES: PaletteEntry[] = [
 	{ key: 'p', rgba: [1, 2, 3, 255], label: 'player hue', kind: 'dynamic' },
@@ -20,34 +24,29 @@ const ENTRIES: PaletteEntry[] = [
 ];
 
 describe('buildPickerOptions', () => {
-	test('fg: entries then a "new" row', () => {
-		const opts = buildPickerOptions('fg', ENTRIES);
-		expect(opts[0]).toEqual({ kind: 'entry', entry: ENTRIES[0] });
-		expect(opts.at(-1)).toEqual({ kind: 'new' });
-		expect(opts.some((o) => o.kind === 'none')).toBe(false);
-	});
-	test('bg: a "none" row leads, then entries, then "new"', () => {
-		const opts = buildPickerOptions('bg', ENTRIES);
-		expect(opts[0]).toEqual({ kind: 'none' });
+	test('a transparent row leads, then entries, then "new" — transparent is an ink', () => {
+		const opts = buildPickerOptions(ENTRIES);
+		expect(opts[0]).toEqual({ kind: 'transparent' });
+		expect(opts[1]).toEqual({ kind: 'entry', entry: ENTRIES[0] });
 		expect(opts.at(-1)).toEqual({ kind: 'new' });
 	});
 });
 
-describe('openPicker lands on the current selection', () => {
-	test('fg lands on the current key', () => {
-		const p = openPicker('fg', ENTRIES, 'g');
+describe('openPicker lands on the current ink', () => {
+	test('a colour ink lands on its key', () => {
+		const p = openPicker(ENTRIES, colorInk('g'));
 		const opt = currentOption(p);
 		expect(opt.kind === 'entry' && opt.entry.key).toBe('g');
 	});
-	test('bg with null lands on none', () => {
-		const p = openPicker('bg', ENTRIES, null);
-		expect(currentOption(p).kind).toBe('none');
+	test('transparent ink lands on the transparent row', () => {
+		const p = openPicker(ENTRIES, TRANSPARENT_INK);
+		expect(currentOption(p).kind).toBe('transparent');
 	});
 });
 
 describe('navigation', () => {
 	test('pickerMove wraps around', () => {
-		const p = openPicker('fg', ENTRIES, 'p');
+		const p = { ...openPicker(ENTRIES, TRANSPARENT_INK), index: 0 };
 		expect(pickerMove(p, -1).index).toBe(p.options.length - 1);
 		const last = { ...p, index: p.options.length - 1 };
 		expect(pickerMove(last, 1).index).toBe(0);
@@ -55,27 +54,23 @@ describe('navigation', () => {
 });
 
 describe('choosing a list row', () => {
-	test('choosing an fg entry emits setFg + closes', () => {
-		const p = openPicker('fg', ENTRIES, 'q');
+	test('choosing a colour entry emits setInk + closes', () => {
+		const p = openPicker(ENTRIES, colorInk('q'));
 		const res = pickerChoose(p);
 		expect(res.picker).toBeNull();
-		expect(res.action).toEqual({ type: 'setFg', key: 'q' });
+		expect(res.action).toEqual({ type: 'setInk', ink: colorInk('q') });
 	});
-	test('choosing a bg entry emits setBg', () => {
-		let p = openPicker('bg', ENTRIES, null);
-		p = { ...p, index: p.options.findIndex((o) => o.kind === 'entry') };
-		const res = pickerChoose(p);
-		expect(res.action?.type).toBe('setBg');
-	});
-	test('choosing none clears the bg', () => {
-		const p = openPicker('bg', ENTRIES, null);
-		const res = pickerChoose(p);
-		expect(res.action).toEqual({ type: 'setBg', key: null });
+	test('choosing the transparent row emits transparent setInk', () => {
+		const p = openPicker(ENTRIES, colorInk('g'));
+		const res = pickerChoose({
+			...p,
+			index: p.options.findIndex((o) => o.kind === 'transparent'),
+		});
+		expect(res.action).toEqual({ type: 'setInk', ink: TRANSPARENT_INK });
 	});
 	test('choosing "new" opens the define form', () => {
-		let p = openPicker('fg', ENTRIES, 'p');
-		p = { ...p, index: p.options.length - 1 };
-		const res = pickerChoose(p);
+		const p = openPicker(ENTRIES, colorInk('p'));
+		const res = pickerChoose({ ...p, index: p.options.length - 1 });
 		expect(res.action).toBeUndefined();
 		expect(res.picker?.form?.stage).toBe('key');
 	});
@@ -83,12 +78,12 @@ describe('choosing a list row', () => {
 
 describe('define-a-local-color form', () => {
 	function openForm() {
-		let p = openPicker('fg', ENTRIES, 'p');
-		p = { ...p, index: p.options.length - 1 };
-		return pickerChoose(p).picker as PickerState;
+		const p = openPicker(ENTRIES, colorInk('p'));
+		return pickerChoose({ ...p, index: p.options.length - 1 })
+			.picker as PickerState;
 	}
 
-	test('happy path: key then r,g,b emits defineColor', () => {
+	test('happy path: key then r,g,b emits defineColor (no slot)', () => {
 		let p = openForm();
 		p = formInput(p, 'z');
 		expect(p.form?.key).toBe('z');
@@ -108,7 +103,6 @@ describe('define-a-local-color form', () => {
 			type: 'defineColor',
 			key: 'z',
 			rgba: [10, 20, 30, 255],
-			slot: 'fg',
 		});
 	});
 
