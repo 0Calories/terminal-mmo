@@ -122,7 +122,7 @@ describe('quadrant markers', () => {
 });
 
 describe('status + help chrome', () => {
-	test('status line surfaces id, role, frame, tool, colors, cursor', () => {
+	test('status line surfaces id, role, frame, tool, ink, cursor', () => {
 		const line = spriteStatusLine({
 			id: 'buddy',
 			role: 'form',
@@ -130,8 +130,7 @@ describe('status + help chrome', () => {
 			frameIdx: 0,
 			frameCount: 3,
 			tool: 'paint',
-			fgKey: 'p',
-			bgKey: null,
+			ink: 'p',
 			cell: { x: 2, y: 1 },
 			bit: 3,
 			dirty: true,
@@ -141,8 +140,7 @@ describe('status + help chrome', () => {
 		expect(line).toContain('idle');
 		expect(line).toContain('[1/3]');
 		expect(line).toContain('paint');
-		expect(line).toContain('fg p');
-		expect(line).toContain('bg none');
+		expect(line).toContain('ink p');
 		expect(line).toContain('(2,1)');
 		expect(line).toContain('BR');
 		expect(line).toContain('*');

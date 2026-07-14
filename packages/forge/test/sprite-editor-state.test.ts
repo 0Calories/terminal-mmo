@@ -5,6 +5,7 @@ import {
 	beginStroke,
 	cellAt,
 	clearCell,
+	colorInk,
 	currentFrame,
 	defineLocalColor,
 	endStroke,
@@ -20,10 +21,10 @@ import {
 	type SpriteEditorState,
 	saveResult,
 	selectFrame,
-	setBgKey,
-	setFgKey,
+	setInk,
 	setTool,
 	stampGlyph,
+	TRANSPARENT_INK,
 	undoEdit,
 } from '../src/sprite-editor/state';
 import {
@@ -89,15 +90,6 @@ describe('paintPixel — the one-color path', () => {
 		expect(cell.bg).toBe('');
 	});
 
-	test('a second, different fg color in the same cell is refused (never two fg)', () => {
-		let s = paintPixel(blankState(), 0, 0); // fg 'p'
-		s = setFgKey(s, 'g');
-		const before = s.doc;
-		s = paintPixel(s, 1, 0);
-		expect(s.doc).toBe(before); // unchanged
-		expect(s.feedback).toContain("already uses color 'p'");
-	});
-
 	test('painting an already-lit pixel with the same color is a no-op (no history)', () => {
 		const s0 = paintPixel(blankState(), 0, 0);
 		const s1 = paintPixel(s0, 0, 0);
@@ -107,56 +99,59 @@ describe('paintPixel — the one-color path', () => {
 	});
 });
 
-describe('paintPixel — the two-color (fg + bg) path', () => {
-	test('a bg selection fills the complement, producing a fully-opaque two-color cell', () => {
-		let s = setFgKey(blankState(), 'g');
-		s = setBgKey(s, 'w');
-		s = paintPixel(s, 0, 0); // one fg quadrant + bg fills the other three
+describe('paintPixel — coercion (auto-resolve, never refuse)', () => {
+	// Build an opaque two-colour cell the only way the single-ink model allows:
+	// paint one colour, then overpaint a second — the old fg demotes to bg.
+	function opaqueCell(): SpriteEditorState {
+		let s = paintPixel(blankState(), 0, 0); // 'p' at TL
+		s = setInk(s, colorInk('g'));
+		s = paintPixel(s, 1, 1); // BR, different colour → overpaint
+		return s;
+	}
+
+	test('overpaint: a second colour into a one-colour cell demotes the old fg to bg', () => {
+		const s = opaqueCell();
 		const cell = cellAt(s, 0, 0);
-		expect(cell.mask).toBe(0b0001);
-		expect(cell.fg).toBe('g');
-		expect(cell.bg).toBe('w');
-		expect(cell.glyph).toBe('▘');
+		expect(cell.fg).toBe('g'); // the new ink wins the touched Pixel as fg
+		expect(cell.bg).toBe('p'); // the old fg demotes into the bg slot
+		expect(cell.mask).toBe(0b1000); // only the touched Pixel (BR) is lit fg
+		expect(cell.glyph).toBe('▗');
+		expect(s.feedback).toContain('overpainted');
 	});
 
-	test('extending the fg into the bg complement keeps it opaque and two-color', () => {
-		let s = setFgKey(blankState(), 'g');
-		s = setBgKey(s, 'w');
-		s = paintPixel(s, 0, 0); // fg TL, bg elsewhere
-		s = setBgKey(s, null); // keep drawing fg, no bg change
-		s = paintPixel(s, 1, 0); // fg TR
+	test('recolor: painting a different colour into an opaque two-colour cell recolours the fg', () => {
+		let s = opaqueCell(); // fg 'g' @ BR, bg 'p'
+		s = setInk(s, colorInk('w'));
+		s = paintPixel(s, 1, 0); // TR, into the opaque cell
 		const cell = cellAt(s, 0, 0);
-		expect(cell.mask).toBe(0b0011);
-		expect(cell.fg).toBe('g');
-		expect(cell.bg).toBe('w'); // bg preserved
+		expect(cell.fg).toBe('w'); // fg recoloured to the new ink
+		expect(cell.bg).toBe('p'); // bg untouched
+		expect(cell.mask).toBe(0b1010); // BR + TR now fg
+		expect(s.feedback).toContain('recoloured');
 	});
 
-	test('filling the last complement pixel demotes to one opaque color (bg dropped)', () => {
-		let s = setFgKey(blankState(), 'g');
-		s = setBgKey(s, 'w');
-		s = paintPixel(s, 0, 0);
-		s = setFgKey(s, 'g');
-		s = setBgKey(s, null);
+	test('recolor filling the last complement Pixel drops the bg (one opaque colour)', () => {
+		let s = opaqueCell(); // fg 'g' @ BR, bg 'p'
+		s = setInk(s, colorInk('w'));
 		for (const [px, py] of [
+			[0, 0],
 			[1, 0],
 			[0, 1],
-			[1, 1],
 		])
 			s = paintPixel(s, px, py);
 		const cell = cellAt(s, 0, 0);
 		expect(cell.mask).toBe(15);
-		expect(cell.bg).toBe(''); // no complement, bg is invisible → dropped
+		expect(cell.fg).toBe('w');
+		expect(cell.bg).toBe(''); // no complement left, bg dropped
 	});
 
-	test('painting a different fg over a two-color cell is refused (no third color)', () => {
-		let s = setFgKey(blankState(), 'g');
-		s = setBgKey(s, 'w');
-		s = paintPixel(s, 0, 0);
-		s = setFgKey(s, 'm');
-		const before = s.doc;
-		s = paintPixel(s, 1, 0);
-		expect(s.doc).toBe(before);
-		expect(s.feedback).toContain("already uses color 'g'");
+	test('extending the same fg into the transparent complement stays one colour', () => {
+		let s = paintPixel(blankState(), 0, 0); // 'p' TL
+		s = paintPixel(s, 1, 0); // 'p' TR — same ink
+		const cell = cellAt(s, 0, 0);
+		expect(cell.mask).toBe(0b0011);
+		expect(cell.fg).toBe('p');
+		expect(cell.bg).toBe(''); // still transparent, one colour
 	});
 });
 
@@ -180,14 +175,17 @@ describe('erasePixel', () => {
 		expect(cell.fg).toBe('');
 	});
 
-	test('erasing a pixel of a two-color cell is refused — clear the cell first', () => {
-		let s = setFgKey(blankState(), 'g');
-		s = setBgKey(s, 'w');
-		s = paintPixel(s, 0, 0);
-		const before = s.doc;
-		s = erasePixel(s, 0, 0);
-		expect(s.doc).toBe(before);
-		expect(s.feedback).toContain('background color');
+	test('transparent ink punches the bg out cell-wide and clears the Pixel', () => {
+		// Opaque two-colour cell: fg 'g' @ BR, bg 'p'.
+		let s = paintPixel(blankState(), 0, 0); // 'p' TL
+		s = setInk(s, colorInk('g'));
+		s = paintPixel(s, 1, 1); // overpaint → two-colour opaque
+		expect(cellAt(s, 0, 0).bg).toBe('p');
+		s = erasePixel(s, 1, 1); // transparent ink at the fg Pixel
+		const cell = cellAt(s, 0, 0);
+		expect(cell.bg).toBe(''); // bg punched out cell-wide
+		expect(cell.mask).toBe(0); // the only fg Pixel cleared
+		expect(s.feedback).toContain('punched');
 	});
 
 	test('erasing empty space is a silent no-op', () => {
@@ -198,9 +196,9 @@ describe('erasePixel', () => {
 	});
 });
 
-describe('glyph stamp + immunity', () => {
-	test('stampGlyph places an arbitrary character with the selected fg', () => {
-		let s = setFgKey(blankState(), 'g');
+describe('glyph stamp + coercion', () => {
+	test('stampGlyph places an arbitrary character with the active ink colour', () => {
+		let s = setInk(blankState(), colorInk('g'));
 		s = stampGlyph(s, 0, 0, '▲');
 		const cell = cellAt(s, 0, 0);
 		expect(cell.glyph).toBe('▲');
@@ -209,20 +207,22 @@ describe('glyph stamp + immunity', () => {
 		expect(cell.mask).toBeUndefined();
 	});
 
-	test('a stamped cell is immune to paintPixel until cleared', () => {
-		let s = stampGlyph(blankState(), 0, 0, '▲');
-		const before = s.doc;
-		s = paintPixel(s, 0, 0);
-		expect(s.doc).toBe(before);
-		expect(s.feedback).toContain("stamped glyph '▲'");
+	test('painting a colour over a stamped cell replaces the stamp with a Pixel', () => {
+		let s = stampGlyph(setInk(blankState(), colorInk('g')), 0, 0, '▲');
+		s = setInk(s, colorInk('w'));
+		s = paintPixel(s, 0, 0); // TL
+		const cell = cellAt(s, 0, 0);
+		expect(cell.glyph).toBe('▘');
+		expect(cell.fg).toBe('w');
+		expect(cell.mask).toBe(0b0001);
+		expect(s.feedback).toContain('replaced stamp');
 	});
 
-	test('a stamped cell is immune to erasePixel until cleared', () => {
-		let s = stampGlyph(blankState(), 0, 0, '╱');
-		const before = s.doc;
+	test('transparent ink clears a stamped cell', () => {
+		let s = stampGlyph(setInk(blankState(), colorInk('g')), 0, 0, '╱');
 		s = erasePixel(s, 0, 0);
-		expect(s.doc).toBe(before);
-		expect(s.feedback).toContain("stamped glyph '╱'");
+		expect(cellAt(s, 0, 0).glyph).toBe(' ');
+		expect(s.feedback).toContain('cleared stamp');
 	});
 
 	test('clearCell empties a stamped cell so pixels work again', () => {
@@ -258,22 +258,20 @@ describe('auto-grow', () => {
 		expect(cellAt(s, 10, 6).glyph).toBe('▘');
 	});
 
-	test('painting at negative pixel coordinates is refused', () => {
+	test('painting past the top/left edge is clipped, not grown into negative space', () => {
 		const s0 = blankState();
 		const s = paintPixel(s0, -1, 0);
-		expect(s.doc).toBe(s0.doc);
-		expect(s.feedback).toContain('outside the canvas');
+		expect(s.doc).toBe(s0.doc); // no doc change
+		expect(s.feedback).toContain('clipped');
 	});
 });
 
 describe('color selection & local colors', () => {
-	test('setFgKey / setBgKey update selection; bg none clears it', () => {
-		let s = setFgKey(blankState(), 'g');
-		expect(s.fgKey).toBe('g');
-		s = setBgKey(s, 'w');
-		expect(s.bgKey).toBe('w');
-		s = setBgKey(s, null);
-		expect(s.bgKey).toBeNull();
+	test('setInk selects a colour ink or the transparent ink', () => {
+		let s = setInk(blankState(), colorInk('g'));
+		expect(s.ink).toEqual(colorInk('g'));
+		s = setInk(s, TRANSPARENT_INK);
+		expect(s.ink).toEqual(TRANSPARENT_INK);
 	});
 
 	test('defineLocalColor adds a file-local color to the doc', () => {
@@ -364,10 +362,12 @@ describe('undo / redo', () => {
 		expect(s.doc).toEqual(painted);
 	});
 
-	test('refused ops create no history entry', () => {
-		let s = stampGlyph(blankState(), 0, 0, '▲');
+	test('clipped and no-op paints create no history entry', () => {
+		let s = paintPixel(blankState(), 0, 0);
 		const depth = s.history.past.length;
-		s = paintPixel(s, 0, 0); // refused (immune)
+		s = paintPixel(s, -1, 0); // clipped past the edge
+		expect(s.history.past.length).toBe(depth);
+		s = paintPixel(s, 0, 0); // already exactly this Pixel — no-op
 		expect(s.history.past.length).toBe(depth);
 	});
 });
@@ -410,15 +410,16 @@ describe('saveResult round-trip', () => {
 	test('serializes a doc exercising poses, anchors, colors and bg with no error diagnostics', () => {
 		let s = initSpriteEditor(emptySpriteDoc('hero', 'form'));
 		s = defineLocalColor(s, 'z', [10, 20, 30, 255]);
-		// One-color pixel with a local fg.
-		s = setFgKey(s, 'z');
+		// One-color pixel with a local ink.
+		s = setInk(s, colorInk('z'));
 		s = paintPixel(s, 0, 0);
-		// A two-color (fg+bg) cell.
-		s = setFgKey(s, 'g');
-		s = setBgKey(s, 'w');
-		s = paintPixel(s, 4, 0);
+		// A two-color (fg+bg) cell, built by overpainting a second colour.
+		s = setInk(s, colorInk('g'));
+		s = paintPixel(s, 8, 0); // fg 'g' at cell (4,0)
+		s = setInk(s, colorInk('w'));
+		s = paintPixel(s, 9, 1); // overpaint → fg 'w', bg 'g'
 		// A glyph stamp.
-		s = setBgKey(s, null);
+		s = setInk(s, colorInk('g'));
 		s = stampGlyph(s, 3, 1, '▲');
 
 		const { text, diagnostics } = saveResult(s);

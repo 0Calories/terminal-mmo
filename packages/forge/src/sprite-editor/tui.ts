@@ -27,6 +27,7 @@ import {
 import type { CliDeps } from '../cli';
 import { findSpriteFile, formatSpriteDiagnostics } from '../sprite-cli';
 import { renderComposite } from './composite';
+import { applyInput, type KeyPaint, normalizeKey } from './input';
 import {
 	type AnchorMenuAction,
 	type AnchorMenuState,
@@ -58,15 +59,15 @@ import {
 	beginStroke,
 	cellAt,
 	clearCell,
+	colorInk,
 	createPose,
 	defineLocalColor,
 	deletePose,
 	endStroke,
-	erasePixel,
 	frameNames,
 	initSpriteEditor,
+	inkLabel,
 	moveCursor,
-	paintPixel,
 	paletteEntries,
 	pixelToCell,
 	placeAnchor,
@@ -81,11 +82,11 @@ import {
 	selectPose,
 	setAnchorName,
 	setAnchorScope,
-	setBgKey,
-	setFgKey,
+	setInk,
 	setPoseFps,
 	setTool,
 	stampGlyph,
+	TRANSPARENT_INK,
 	undoEdit,
 } from './state';
 import { emptySpriteDoc, type SpriteRole } from './templates';
@@ -253,10 +254,14 @@ export class SpriteEditor extends Renderable {
 
 	private applyAtCursor(): void {
 		const { x, y } = this.state.cursor;
-		this.state =
-			this.state.tool === 'erase'
-				? erasePixel(this.state, x, y)
-				: paintPixel(this.state, x, y);
+		// Enter the pure layer through the one normalized input event, exactly as a
+		// mouse click will (spec #387): the eraser tool paints transparent ink, the
+		// pencil paints the active ink.
+		const paint: KeyPaint = this.state.tool === 'erase' ? 'transparent' : 'ink';
+		this.state = applyInput(
+			this.state,
+			normalizeKey({ pixel: { x, y }, paint }),
+		);
 	}
 
 	private primary(): void {
@@ -286,27 +291,20 @@ export class SpriteEditor extends Renderable {
 
 	// ---- picker ----
 
-	private openPicker(slot: 'fg' | 'bg'): void {
+	private openPicker(): void {
 		this.liftPen();
-		const current = slot === 'fg' ? this.state.fgKey : this.state.bgKey;
-		this.picker = openPickerState(slot, this.entries(), current);
+		this.picker = openPickerState(this.entries(), this.state.ink);
 	}
 
 	private applyPickerAction(action: PickerAction): void {
 		switch (action.type) {
-			case 'setFg':
-				this.state = setFgKey(this.state, action.key);
-				break;
-			case 'setBg':
-				this.state = setBgKey(this.state, action.key);
+			case 'setInk':
+				this.state = setInk(this.state, action.ink);
 				break;
 			case 'defineColor': {
 				this.state = defineLocalColor(this.state, action.key, action.rgba);
-				// Select the freshly defined color into the slot it was made for.
-				this.state =
-					action.slot === 'fg'
-						? setFgKey(this.state, action.key)
-						: setBgKey(this.state, action.key);
+				// Select the freshly defined color as the active ink.
+				this.state = setInk(this.state, colorInk(action.key));
 				break;
 			}
 			case 'close':
@@ -712,10 +710,11 @@ export class SpriteEditor extends Renderable {
 				this.switchTool('anchor');
 				return;
 			case 'f':
-				this.openPicker('fg');
+				this.openPicker();
 				return;
-			case 'g':
-				this.openPicker('bg');
+			case 't':
+				this.liftPen();
+				this.state = setInk(this.state, TRANSPARENT_INK);
 				return;
 			case 'c':
 				this.clearAtCursor();
@@ -874,8 +873,7 @@ export class SpriteEditor extends Renderable {
 			frameIdx: Math.max(0, names.indexOf(this.state.frame)),
 			frameCount: names.length,
 			tool: this.state.tool,
-			fgKey: this.state.fgKey,
-			bgKey: this.state.bgKey,
+			ink: inkLabel(this.state.ink),
 			cell: { x: cursorCell.cellX, y: cursorCell.cellY },
 			bit: cursorCell.bit,
 			dirty: this.dirty,
@@ -1065,7 +1063,7 @@ export class SpriteEditor extends Renderable {
 		if (p.form) {
 			const f = p.form;
 			const mark = (s: 'key' | 'r' | 'g' | 'b') => (f.stage === s ? '▸' : ' ');
-			rows.push(`New file-local color (slot: ${p.slot})`);
+			rows.push('New file-local color');
 			rows.push(`${mark('key')} key: ${f.key || '_'}`);
 			rows.push(`${mark('r')} r: ${f.r || '_'}`);
 			rows.push(`${mark('g')} g: ${f.g || '_'}`);
@@ -1073,12 +1071,12 @@ export class SpriteEditor extends Renderable {
 			if (p.error) rows.push(`⚠ ${p.error}`);
 			rows.push('Enter next · Esc back');
 		} else {
-			rows.push(`Pick ${p.slot} color`);
+			rows.push('Pick ink');
 			for (let i = 0; i < p.options.length; i++) {
 				const o = p.options[i];
 				const label =
-					o.kind === 'none'
-						? 'none (transparent)'
+					o.kind === 'transparent'
+						? 'transparent'
 						: o.kind === 'new'
 							? '+ new file-local color'
 							: `${o.entry.key}  ${o.entry.label}${o.entry.kind === 'dynamic' ? ' (dynamic)' : ''}`;

@@ -235,8 +235,8 @@ export interface SpriteStatusModel {
 	frameIdx: number;
 	frameCount: number;
 	tool: string;
-	fgKey: string;
-	bgKey: string | null;
+	// The active ink label ('transparent', or a colour key).
+	ink: string;
 	cell: { x: number; y: number };
 	bit: number;
 	dirty: boolean;
@@ -255,7 +255,6 @@ export function bitName(bit: number): string {
 // The persistent status line (feedback + save diagnostics are drawn separately,
 // styled to stand out).
 export function spriteStatusLine(m: SpriteStatusModel): string {
-	const bg = m.bgKey === null ? 'none' : m.bgKey;
 	const dirty = m.dirty ? ' *' : '';
 	const pose = m.pose ? ` · pose ${m.pose}` : '';
 	// In the anchor tool, surface which anchor + scope the next placement targets.
@@ -263,7 +262,7 @@ export function spriteStatusLine(m: SpriteStatusModel): string {
 		m.tool === 'anchor' && m.anchorName
 			? `anchor ${m.anchorName}@${m.anchorScope ?? 'doc'}`
 			: m.tool;
-	return `${m.id} (${m.role})${dirty}${pose} · frame ${m.frame} [${m.frameIdx + 1}/${m.frameCount}] · ${tool} · fg ${m.fgKey} · bg ${bg} · cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
+	return `${m.id} (${m.role})${dirty}${pose} · frame ${m.frame} [${m.frameIdx + 1}/${m.frameCount}] · ${tool} · ink ${m.ink} · cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
 }
 
 export interface KeyHint {
@@ -277,7 +276,8 @@ export const SPRITE_KEY_HINTS: readonly KeyHint[] = [
 	{ keys: 'hjkl', label: 'move' },
 	{ keys: 'space', label: 'paint' },
 	{ keys: 'p/e/s/a', label: 'tools' },
-	{ keys: 'f/g', label: 'color' },
+	{ keys: 'f', label: 'ink' },
+	{ keys: 't', label: 'transparent' },
 	{ keys: 'c', label: 'clear' },
 	{ keys: '[ ]', label: 'frame' },
 	{ keys: 'u/^r', label: 'undo' },
