@@ -27,7 +27,13 @@ import {
 import type { CliDeps } from '../cli';
 import { findSpriteFile, formatSpriteDiagnostics } from '../sprite-cli';
 import { renderComposite } from './composite';
-import { applyInput, type KeyPaint, normalizeKey } from './input';
+import {
+	applyInput,
+	type KeyPaint,
+	normalizeKey,
+	normalizeMouse,
+	type RawMouse,
+} from './input';
 import {
 	type AnchorMenuAction,
 	type AnchorMenuState,
@@ -93,20 +99,25 @@ import { emptySpriteDoc, type SpriteRole } from './templates';
 import {
 	ANCHOR_MARKER,
 	type Cam,
+	composeStatusLine,
+	DEFAULT_ZOOM,
 	dirForRole,
 	mirrorAnchorMarkers,
 	mirrorRender,
 	missingRequiredAnchors,
 	parseEditArg,
-	quadrantMarker,
+	pixelToScreen,
 	requiredHintLine,
 	resolveColorKey,
 	roleForDir,
 	SPRITE_PREVIEWS,
 	saveDiagSummary,
-	scrollViewport,
+	screenToPixel,
+	scrollAxis,
 	spriteHelpLine,
 	spriteStatusLine,
+	stepZoom,
+	visiblePixels,
 } from './view';
 
 // A keyboard event as opentui's keyInput delivers it (a subset — see the zone
@@ -119,6 +130,16 @@ export interface SpriteKey {
 	shift?: boolean;
 	super?: boolean;
 	option?: boolean;
+}
+
+// A mouse event as opentui's Renderable delivers it (a structural subset of
+// `@opentui/core`'s MouseEvent — buttons: 0 left, 1 middle, 2 right).
+export interface SpriteMouse {
+	button: number;
+	x: number;
+	y: number;
+	modifiers?: { shift?: boolean; alt?: boolean; ctrl?: boolean };
+	scroll?: { direction: string };
 }
 
 export interface SpriteEditorOpts {
@@ -135,6 +156,9 @@ export interface SpriteEditorOpts {
 
 const CHROME_H = 3;
 const SCROLLOFF = 2;
+
+// The cursor ring glyph, drawn over each edge cell of the active Pixel's block.
+const CURSOR_GLYPH = '□';
 
 // What playback is currently animating.
 type PlayMode = 'none' | 'pose' | 'walk';
@@ -205,7 +229,17 @@ export class SpriteEditor extends Renderable {
 	playMode: PlayMode = 'none';
 	private playElapsedMs = 0;
 	private penDown = false;
+	// The fatbits zoom (×z on the ladder). Presentation only — never in the doc.
+	zoom = DEFAULT_ZOOM;
+	// The canvas camera in PIXEL coordinates (its top-left visible Pixel).
 	private cam: Cam = { x: 0, y: 0 };
+	// The canvas region's size in cells, captured each render so the mouse handler
+	// can resolve screen→Pixel and reject clicks outside the canvas.
+	private geom = { mainW: 0, viewH: 0 };
+	// An in-flight mouse paint stroke (down→drag→up coalesces to one undo step),
+	// and the button held for it (drag events don't reliably re-report the button).
+	private mouseStroke = false;
+	private mouseButton: RawMouse['button'] = 'left';
 	private savedDoc: SpriteDoc;
 	private saveDiags: readonly SpriteDiagnostic[] | null;
 	private saved = false;
@@ -229,6 +263,12 @@ export class SpriteEditor extends Renderable {
 		this.sceneStyle = buildSceneStyle((r, g, b, a) =>
 			RGBA.fromInts(r, g, b, a),
 		);
+		// Route the Renderable's pointer events into the pure paint seam: down/drag/
+		// up bracket one coalescing pencil stroke.
+		this.onMouseDown = (e) => this.mouseDown(e);
+		this.onMouseDrag = (e) => this.mouseDrag(e);
+		this.onMouseUp = () => this.mouseUp();
+		this.onMouseDragEnd = () => this.mouseUp();
 	}
 
 	attach(root: { add: (r: Renderable) => void }): void {
@@ -287,6 +327,88 @@ export class SpriteEditor extends Renderable {
 		const { x, y } = this.state.cursor;
 		this.state = moveCursor(this.state, x + dx, y + dy);
 		if (this.penDown) this.applyAtCursor();
+	}
+
+	// ---- zoom ----
+
+	private setZoom(z: number): void {
+		this.liftPen();
+		this.zoom = z;
+	}
+
+	// ---- mouse ----
+
+	// True while a modal (picker/menu/stamp-await) or playback owns input, so
+	// canvas mouse gestures stay inert.
+	private modalActive(): boolean {
+		return (
+			this.picker !== null ||
+			this.poseMenu !== null ||
+			this.anchorMenu !== null ||
+			this.awaitingStamp ||
+			this.playMode !== 'none'
+		);
+	}
+
+	// The Pixel a screen cell resolves to through the fatbits geometry, or null
+	// when the cell is outside the canvas region (a right-hand panel, the chrome).
+	private canvasPixel(x: number, y: number): { x: number; y: number } | null {
+		const { mainW, viewH } = this.geom;
+		if (x < 0 || x >= mainW || y < 0 || y >= viewH) return null;
+		return screenToPixel(x, y, this.cam, this.zoom);
+	}
+
+	// Feed a resolved mouse Pixel through the same normalized seam the keyboard
+	// uses (left → active ink, right → transparent ink), so both devices paint
+	// through one code path.
+	private paintMouse(
+		button: RawMouse['button'],
+		px: { x: number; y: number },
+		modifiers?: SpriteMouse['modifiers'],
+	): void {
+		const raw: RawMouse = {
+			pixel: px,
+			button,
+			shift: modifiers?.shift,
+			alt: modifiers?.alt,
+			ctrl: modifiers?.ctrl,
+		};
+		this.state = applyInput(this.state, normalizeMouse(raw));
+	}
+
+	// Left/right press: the pencil (and its transparent eraser spelling) opens a
+	// coalescing stroke and paints. Other tools take pointer input in later slices
+	// (spec #387), so a click with them only moves the cursor here.
+	mouseDown(e: SpriteMouse): void {
+		if (this.modalActive()) return;
+		const button = e.button === 0 ? 'left' : e.button === 2 ? 'right' : 'none';
+		if (button === 'none') return;
+		const px = this.canvasPixel(e.x, e.y);
+		if (!px) return;
+		if (this.state.tool !== 'paint' && this.state.tool !== 'erase') {
+			this.state = moveCursor(this.state, px.x, px.y);
+			return;
+		}
+		this.state = beginStroke(this.state);
+		this.mouseStroke = true;
+		this.mouseButton = button;
+		this.paintMouse(button, px, e.modifiers);
+	}
+
+	mouseDrag(e: SpriteMouse): void {
+		if (!this.mouseStroke) return;
+		const px = this.canvasPixel(e.x, e.y);
+		// A drag off the canvas edge simply paints nothing until it returns; the
+		// held button is remembered from mouseDown since drag reports vary by term.
+		if (!px) return;
+		this.paintMouse(this.mouseButton, px, e.modifiers);
+	}
+
+	mouseUp(): void {
+		if (this.mouseStroke) {
+			this.state = endStroke(this.state);
+			this.mouseStroke = false;
+		}
 	}
 
 	// ---- picker ----
@@ -674,6 +796,15 @@ export class SpriteEditor extends Renderable {
 			this.togglePlay('walk');
 			return;
 		}
+		// Zoom ladder: '+' (or '=') in, '-' out.
+		if (k.sequence === '+' || k.sequence === '=') {
+			this.setZoom(stepZoom(this.zoom, 1));
+			return;
+		}
+		if (k.sequence === '-' || k.name === 'minus') {
+			this.setZoom(stepZoom(this.zoom, -1));
+			return;
+		}
 
 		switch (k.name) {
 			case 'left':
@@ -781,52 +912,62 @@ export class SpriteEditor extends Renderable {
 				: 'none';
 		const mainW =
 			rightPanel === 'none' ? W : Math.max(1, Math.floor((W - 1) / 2));
+		this.geom = { mainW, viewH };
 
-		// Keep the cursor's cell within the canvas viewport.
-		const cursorCell = pixelToCell(this.state.cursor.x, this.state.cursor.y);
-		const cam = scrollViewport(
-			this.cam,
-			{ x: cursorCell.cellX, y: cursorCell.cellY },
-			mainW,
-			viewH,
-			SCROLLOFF,
-		);
+		// Fatbits camera: keep the cursor's PIXEL within the zoomed viewport. Each
+		// Pixel occupies zoom×zoom cells, so the viewport spans this many Pixels.
+		const z = this.zoom;
+		const spanX = visiblePixels(mainW, z);
+		const spanY = visiblePixels(viewH, z);
+		const cam: Cam = {
+			x: scrollAxis(this.cam.x, this.state.cursor.x, spanX, SCROLLOFF),
+			y: scrollAxis(this.cam.y, this.state.cursor.y, spanY, SCROLLOFF),
+		};
 		this.cam = cam;
 
-		for (let sy = 0; sy < viewH; sy++) {
-			const cellY = cam.y + sy;
-			for (let sx = 0; sx < mainW; sx++) {
-				const cellX = cam.x + sx;
-				const cell = cellAt(viewState, cellX, cellY);
+		// The background colour a Pixel magnifies to: a lit Pixel is its ink colour,
+		// an opaque unlit Pixel shows its cell-wide background colour, and a
+		// transparent Pixel is a per-cell checkerboard (spec #387). Shared by the
+		// canvas fill and the cursor ring so the cursor never hides the colour it
+		// sits on. `sx`/`sy` only pick the checkerboard phase (per terminal cell).
+		const pixelBg = (px: number, py: number, sx: number, sy: number): RGBA => {
+			const { cellX, cellY, bit } = pixelToCell(px, py);
+			const cell = cellAt(viewState, cellX, cellY);
+			const lit = cell.mask !== undefined && (cell.mask & (1 << bit)) !== 0;
+			if (lit) {
+				// A SENTINEL fg means "the frame's default key" (as the mirror does).
+				const fgKey = cell.fg === SENTINEL ? this.state.doc.key : cell.fg;
 				const fg = resolveColorKey(
-					cell.fg,
+					fgKey,
 					local,
 					this.globalPalette,
 					SPRITE_PREVIEWS,
 				);
-				const bg = resolveColorKey(
-					cell.bg,
-					local,
-					this.globalPalette,
-					SPRITE_PREVIEWS,
-				);
-				// Faint checkerboard on empty cells shows the 2×2 cell grid without
-				// being mistaken for art.
-				const checker = (cellX + cellY) % 2 === 0;
-				const bgColor = bg ? c(bg) : checker ? C.grid : C.bg;
-				if (cell.glyph === ' ') {
-					buf.setCell(sx, sy, ' ', C.dim, bgColor);
-				} else {
-					buf.setCell(sx, sy, cell.glyph, fg ? c(fg) : C.ink, bgColor);
-				}
+				return fg ? c(fg) : C.ink;
+			}
+			const bgKey = cell.bg === SENTINEL ? '' : cell.bg;
+			const bg =
+				cell.mask === undefined
+					? null
+					: resolveColorKey(bgKey, local, this.globalPalette, SPRITE_PREVIEWS);
+			if (bg) return c(bg);
+			const checker = (cam.x * z + sx + (cam.y * z + sy)) % 2 === 0;
+			return checker ? C.grid : C.bg;
+		};
+
+		// Draw every canvas cell as the z×z Pixel it magnifies. No half-blocks —
+		// each Pixel owns its own square, so this is faithful magnification.
+		for (let sy = 0; sy < viewH; sy++) {
+			for (let sx = 0; sx < mainW; sx++) {
+				const { x: px, y: py } = screenToPixel(sx, sy, cam, z);
+				buf.setCell(sx, sy, ' ', C.dim, pixelBg(px, py, sx, sy));
 			}
 		}
 
-		// Anchor markers overlay the art at their cells (frame overrides tinted
-		// differently from doc-level anchors), so the artist sees where they land.
+		// Anchor markers overlay the art at the top-left cell of their (2×,2×) Pixel
+		// block, so the artist sees where they land (overrides tinted apart).
 		for (const m of anchorMarkers(viewState)) {
-			const sx = m.x - cam.x;
-			const sy = m.y - cam.y;
+			const { x: sx, y: sy } = pixelToScreen(m.x * 2, m.y * 2, cam, z);
 			if (sx < 0 || sx >= mainW || sy < 0 || sy >= viewH) continue;
 			buf.setCell(
 				sx,
@@ -837,17 +978,20 @@ export class SpriteEditor extends Renderable {
 			);
 		}
 
-		// Cursor: highlight the cell and mark which quadrant the pixel sits on.
-		const curSx = cursorCell.cellX - cam.x;
-		const curSy = cursorCell.cellY - cam.y;
-		if (curSx >= 0 && curSx < mainW && curSy >= 0 && curSy < viewH) {
-			buf.setCell(
-				curSx,
-				curSy,
-				quadrantMarker(cursorCell.bit),
-				C.cursorFg,
-				C.cursorBg,
-			);
+		// Cursor: a bright ring on the active Pixel's z×z block, drawn as a glyph
+		// OVER the pixel's own colour (kept as the cell background) so the pixel
+		// under the cursor stays legible even at ×1/×2 where the ring fills it.
+		const cb = pixelToScreen(this.state.cursor.x, this.state.cursor.y, cam, z);
+		for (let dy = 0; dy < z; dy++) {
+			for (let dx = 0; dx < z; dx++) {
+				const edge = dx === 0 || dy === 0 || dx === z - 1 || dy === z - 1;
+				if (!edge) continue;
+				const sx = cb.x + dx;
+				const sy = cb.y + dy;
+				if (sx < 0 || sx >= mainW || sy < 0 || sy >= viewH) continue;
+				const under = pixelBg(this.state.cursor.x, this.state.cursor.y, sx, sy);
+				buf.setCell(sx, sy, CURSOR_GLYPH, C.cursorBg, under);
+			}
 		}
 
 		if (rightPanel === 'mirror') {
@@ -864,9 +1008,11 @@ export class SpriteEditor extends Renderable {
 			this.renderComposite(buf, mainW, W, viewH, displayFrame, C.dim, C.bg);
 		}
 
-		// Chrome: status, feedback/save, help.
+		// Chrome: status (with the coercion feedback right-aligned on it), then a
+		// mid row for save diagnostics / hints / playback, then the help line.
 		const names = frameNames(this.state);
-		const status = spriteStatusLine({
+		const cursorCell = pixelToCell(this.state.cursor.x, this.state.cursor.y);
+		const statusLeft = spriteStatusLine({
 			id: this.spriteId,
 			role: this.role,
 			frame: this.state.frame,
@@ -874,16 +1020,27 @@ export class SpriteEditor extends Renderable {
 			frameCount: names.length,
 			tool: this.state.tool,
 			ink: inkLabel(this.state.ink),
+			pixel: { x: this.state.cursor.x, y: this.state.cursor.y },
 			cell: { x: cursorCell.cellX, y: cursorCell.cellY },
 			bit: cursorCell.bit,
+			zoom: this.zoom,
 			dirty: this.dirty,
 			pose: this.state.pose,
 			anchorName: this.state.anchorName,
 			anchorScope: this.state.anchorScope,
 		});
+		// The coercion note rides the right of the status row (out of the mid row's
+		// save/hint/playback channel). Draw the composed line, then re-tint just the
+		// note when it made the cut so it stands out.
+		const feedback = this.state.feedback;
+		const status = composeStatusLine(statusLeft, feedback, W);
 		const statusRow = H - CHROME_H;
 		buf.fillRect(0, statusRow, W, 1, C.chromeBg);
-		buf.drawText(status.slice(0, W), 0, statusRow, C.text, C.chromeBg);
+		buf.drawText(status, 0, statusRow, C.text, C.chromeBg);
+		if (feedback && status.endsWith(feedback)) {
+			const rx = status.length - feedback.length;
+			buf.drawText(feedback, rx, statusRow, C.feedback, C.chromeBg);
+		}
 
 		const midRow = H - 2;
 		buf.fillRect(0, midRow, W, 1, C.chromeBg);
@@ -901,15 +1058,6 @@ export class SpriteEditor extends Renderable {
 				midRow,
 				C.hot,
 				C.chromeBg,
-			);
-		} else if (this.state.feedback) {
-			buf.fillRect(0, midRow, W, 1, C.feedbackBg);
-			buf.drawText(
-				`⚠ ${this.state.feedback}`.slice(0, W),
-				0,
-				midRow,
-				C.feedback,
-				C.feedbackBg,
 			);
 		} else if (this.saved && this.saveDiags) {
 			const summary = saveDiagSummary(

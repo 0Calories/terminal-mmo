@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { SCENE_PALETTE } from '@mmo/core';
 import { parseSpriteFile, type SpriteDoc } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
+import { resolveColorKey, SPRITE_PREVIEWS } from '../src/sprite-editor/view';
 
 const key = (name: string, extra: Partial<SpriteKey> = {}): SpriteKey => ({
 	name,
@@ -109,18 +111,38 @@ describe('anchor marker', () => {
 
 describe('mirror view', () => {
 	test('m toggles a mirror panel showing the mirrored glyph', async () => {
-		// ▐ (right half block) mirrors to ▌ (left half block).
+		// ▐ (right half block) mirrors to ▌ (left half block). The fatbits main
+		// canvas paints the art as colour blocks; the mirror panel still renders
+		// glyphs, so its mirrored art shows as the ▌ glyph.
 		const { doc } = parseSpriteFile('--- idle\n▐·\n··\n', 'flag');
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'flag', role: 'hat' });
 		expect(t.captureCharFrame()).not.toContain('▌');
-		// Move the cursor off cell (0,0) so the ▐ art isn't hidden by the cursor.
-		for (let i = 0; i < 4; i++) t.editor.key(key('right'));
 		t.editor.key(key('m'));
 		await t.renderOnce();
-		const frame = t.captureCharFrame();
-		expect(frame).toContain('▐'); // right-facing art on the main canvas
-		expect(frame).toContain('▌'); // mirrored art in the panel
+		// The mirrored ▌ glyph appears in the panel.
+		expect(t.captureCharFrame()).toContain('▌');
+		// The right-facing art is a colour block on the main (left) canvas region.
+		const fg = resolveColorKey(
+			doc.key,
+			doc.colors,
+			SCENE_PALETTE,
+			SPRITE_PREVIEWS,
+		);
+		if (!fg) throw new Error('fixture fg did not resolve');
+		const cap = t.captureSpans();
+		const dividerCol = Math.floor((100 - 1) / 2);
+		let found = false;
+		for (let y = 0; y < 20 && !found; y++) {
+			let col = 0;
+			for (const s of cap.lines[y].spans) {
+				const [r, g, b] = s.bg.toInts();
+				if (col < dividerCol && r === fg[0] && g === fg[1] && b === fg[2])
+					found = true;
+				col += s.width;
+			}
+		}
+		expect(found).toBe(true);
 	});
 });
 

@@ -1,6 +1,12 @@
 // Thin chrome smoke tests for the Sprite editor TUI. Logic is covered
-// headlessly in sprite-editor-state/view/picker tests; these only assert the
-// Renderable draws the right thing and keys reach the pure ops.
+// headlessly in sprite-editor-state/view/input tests; these only assert the
+// fatbits Renderable draws the right thing and that both devices (keyboard and
+// mouse) reach the pure paint ops through the normalized seam.
+//
+// The fatbits canvas paints each Pixel as a z×z block of colour (a space cell
+// whose *background* is the ink), so painted art is invisible to
+// `captureCharFrame` (which sees glyphs only). We assert it through
+// `captureSpans`, which carries each cell's background colour.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
 	existsSync,
@@ -12,16 +18,44 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { SCENE_PALETTE } from '@mmo/core';
 import { parseSpriteFile } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
+import { readPixel } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
+import { resolveColorKey, SPRITE_PREVIEWS } from '../src/sprite-editor/view';
 
 const key = (name: string, extra: Partial<SpriteKey> = {}): SpriteKey => ({
 	name,
 	sequence: extra.sequence ?? '',
 	...extra,
 });
+
+// The default-ink ('p') block colour the empty templates paint with.
+const INK_P: [number, number, number] = [
+	SPRITE_PREVIEWS.p[0],
+	SPRITE_PREVIEWS.p[1],
+	SPRITE_PREVIEWS.p[2],
+];
+
+// Whether any cell in the top `rowMax` rows (the canvas region, above the
+// 3-row chrome) has a background matching `[r,g,b]` — i.e. a painted Pixel.
+function canvasHasBg(
+	cap: ReturnType<
+		Awaited<ReturnType<typeof createTestRenderer>>['captureSpans']
+	>,
+	rgb: [number, number, number],
+	rowMax: number,
+): boolean {
+	for (let y = 0; y < Math.min(rowMax, cap.lines.length); y++) {
+		for (const s of cap.lines[y].spans) {
+			const [r, g, b] = s.bg.toInts();
+			if (r === rgb[0] && g === rgb[1] && b === rgb[2]) return true;
+		}
+	}
+	return false;
+}
 
 let root: string;
 beforeEach(() => {
@@ -34,8 +68,13 @@ async function mount(opts: {
 	id: string;
 	role: 'form' | 'weapon' | 'hat' | 'monster' | 'npc';
 	save?: (t: string) => void;
+	width?: number;
+	height?: number;
 }) {
-	const t = await createTestRenderer({ width: 100, height: 20 });
+	const t = await createTestRenderer({
+		width: opts.width ?? 100,
+		height: opts.height ?? 20,
+	});
 	const editor = new SpriteEditor(t.renderer, {
 		id: opts.id,
 		role: opts.role,
@@ -48,21 +87,29 @@ async function mount(opts: {
 }
 
 describe('Sprite editor TUI smoke', () => {
-	test('opens an existing sprite and renders its frame art', async () => {
+	test('opens an existing sprite and renders its frame art as a colour block', async () => {
 		// A tiny hat with one lit quadrant (▘) in the idle frame.
 		const text = '--- idle\n▘·\n··\n';
 		const { doc } = parseSpriteFile(text, 'cap');
 		if (!doc) throw new Error('fixture failed to parse');
-		const { captureCharFrame, editor } = await mount({
+		const { captureCharFrame, captureSpans, editor } = await mount({
 			doc,
 			id: 'cap',
 			role: 'hat',
 		});
-		const frame = captureCharFrame();
-		expect(frame).toContain('cap');
-		expect(frame).toContain('(hat)');
-		// The art glyph is on the canvas.
-		expect(frame).toContain('▘');
+		// Chrome carries the id + role.
+		const chars = captureCharFrame();
+		expect(chars).toContain('cap');
+		expect(chars).toContain('(hat)');
+		// The lit Pixel is a colour block on the canvas, in the frame's fg colour.
+		const fg = resolveColorKey(
+			doc.key,
+			doc.colors,
+			SCENE_PALETTE,
+			SPRITE_PREVIEWS,
+		);
+		if (!fg) throw new Error('fixture fg did not resolve');
+		expect(canvasHasBg(captureSpans(), [fg[0], fg[1], fg[2]], 17)).toBe(true);
 		expect(editor.state.frame).toBe('idle');
 	});
 
@@ -79,48 +126,77 @@ describe('Sprite editor TUI smoke', () => {
 		expect(frame).toContain('undo');
 	});
 
-	test('a paint keystroke lights a pixel on the canvas', async () => {
+	test('a keyboard pen stroke lights a Pixel block on the canvas', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('draw', 'hat'),
 			id: 'draw',
 			role: 'hat',
 		});
-		// A full block '█' is unambiguous (never a cursor quadrant marker).
-		expect(t.captureCharFrame()).not.toContain('█');
+		// Nothing is painted yet.
+		expect(canvasHasBg(t.captureSpans(), INK_P, 17)).toBe(false);
 		// Paint all four quadrants of cell (0,0) as one pen stroke.
 		t.editor.key(key('space')); // pen down, TL
 		t.editor.key(key('right')); // TR
 		t.editor.key(key('down')); // BR
 		t.editor.key(key('left')); // BL
 		t.editor.key(key('space')); // lift pen
-		// Move the cursor off the painted cell so its marker doesn't cover the art.
-		for (let i = 0; i < 6; i++) t.editor.key(key('right'));
 		await t.renderOnce();
-		expect(t.captureCharFrame()).toContain('█');
+		expect(canvasHasBg(t.captureSpans(), INK_P, 17)).toBe(true);
+		// The whole drag coalesced into a single undo step.
+		expect(t.editor.state.history.past.length).toBe(1);
 	});
 
-	test('a coercing paint surfaces its feedback note in the frame', async () => {
+	test('the status line shows the zoom and Pixel/cell coordinates', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('coords', 'hat'),
+			id: 'coords',
+			role: 'hat',
+		});
+		t.editor.key(key('right')); // cursor → pixel (1,0)
+		await t.renderOnce();
+		const frame = t.captureCharFrame();
+		expect(frame).toContain('×2'); // default zoom
+		expect(frame).toContain('px (1,0)');
+		expect(frame).toContain('cell (0,0)');
+	});
+
+	test('+ / - step the zoom ladder', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('zoomy', 'hat'),
+			id: 'zoomy',
+			role: 'hat',
+		});
+		expect(t.editor.zoom).toBe(2);
+		t.editor.key(key('+', { sequence: '+' }));
+		expect(t.editor.zoom).toBe(3);
+		t.editor.key(key('-', { sequence: '-' }));
+		t.editor.key(key('-', { sequence: '-' }));
+		expect(t.editor.zoom).toBe(1);
+		t.editor.key(key('-', { sequence: '-' })); // clamps at the bottom
+		expect(t.editor.zoom).toBe(1);
+	});
+
+	test('a coercing paint surfaces its feedback right-aligned on the status line', async () => {
+		// A wide terminal so the right-aligned coercion note has room to show.
 		const t = await mount({
 			doc: emptySpriteDoc('bad', 'hat'),
 			id: 'bad',
 			role: 'hat',
+			width: 140,
 		});
-		// Paint one pixel with the default ink 'p'.
-		t.editor.key(key('space'));
+		t.editor.key(key('space')); // paint 'p' at TL
 		t.editor.key(key('space')); // lift pen
-		// Switch ink to a different key via the picker (choose the first entry that
-		// isn't the current 'p').
-		t.editor.key(key('f')); // open the ink picker (lands on the current ink 'p')
-		t.editor.key(key('down')); // step to the next entry — a different colour key
+		// Switch ink to a different key via the picker.
+		t.editor.key(key('f'));
+		t.editor.key(key('down'));
 		t.editor.key(key('enter'));
 		expect(t.editor.picker).toBeNull();
-		t.editor.key(key('right')); // move to the TR quadrant of the same cell
+		t.editor.key(key('right')); // move to TR of the same cell
 		t.editor.key(key('space')); // overpaint a second colour → coerces, never refuses
 		await t.renderOnce();
-		const frame = t.captureCharFrame();
-		// The paint succeeded (the doc changed) and reported the coercion it made.
+		// The paint succeeded and reported the coercion it made.
 		expect(t.editor.state.feedback).not.toBe('');
-		expect(frame).toContain('⚠');
+		expect(t.captureCharFrame()).toContain(t.editor.state.feedback);
 	});
 
 	test('save writes the .sprite file and shows diagnostics inline', async () => {
@@ -153,5 +229,84 @@ describe('Sprite editor TUI smoke', () => {
 		const frame = t.captureCharFrame();
 		expect(frame).toContain('player hue');
 		expect(frame).toContain('weapon accent');
+	});
+});
+
+describe('Sprite editor mouse painting', () => {
+	// A left click-drag paints the active ink; screen cells resolve to Pixels
+	// through the fatbits geometry (×2 default: 2×2 cells per Pixel).
+	test('a left click-drag paints Pixels and coalesces into one undo step', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('m', 'hat'),
+			id: 'm',
+			role: 'hat',
+		});
+		// Down at screen (0,0) → Pixel (0,0); drag to screen (2,0) → Pixel (1,0).
+		t.editor.mouseDown({ button: 0, x: 0, y: 0 });
+		t.editor.mouseDrag({ button: 0, x: 2, y: 0 });
+		t.editor.mouseUp();
+		// Both touched Pixels are lit.
+		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
+		expect(readPixel(t.editor.state, 1, 0)).toBe(true);
+		// One stroke → one undo step.
+		expect(t.editor.state.history.past.length).toBe(1);
+	});
+
+	test('a drag keeps painting even when it does not re-report the button', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('drag', 'hat'),
+			id: 'drag',
+			role: 'hat',
+		});
+		// Some terminals report drags with button 'none' (button code > 2); the
+		// stroke's button is remembered from mouseDown so inking continues.
+		t.editor.mouseDown({ button: 0, x: 0, y: 0 });
+		t.editor.mouseDrag({ button: 99, x: 2, y: 2 });
+		t.editor.mouseUp();
+		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
+		expect(readPixel(t.editor.state, 1, 1)).toBe(true);
+	});
+
+	test('the right button paints transparent ink (erases)', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('erase', 'hat'),
+			id: 'erase',
+			role: 'hat',
+		});
+		t.editor.mouseDown({ button: 0, x: 0, y: 0 });
+		t.editor.mouseUp();
+		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
+		// Right-click the same Pixel: transparent ink clears it.
+		t.editor.mouseDown({ button: 2, x: 0, y: 0 });
+		t.editor.mouseUp();
+		expect(readPixel(t.editor.state, 0, 0)).toBe(false);
+	});
+
+	test('zoom changes the screen→Pixel mapping', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('z', 'hat'),
+			id: 'z',
+			role: 'hat',
+		});
+		t.editor.zoom = 4;
+		await t.renderOnce(); // capture geometry at the new zoom
+		// At ×4, screen cells 0..3 all map to Pixel 0.
+		t.editor.mouseDown({ button: 0, x: 3, y: 3 });
+		t.editor.mouseUp();
+		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
+		expect(readPixel(t.editor.state, 1, 1)).toBe(false);
+	});
+
+	test('a click outside the canvas region paints nothing', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('oob', 'hat'),
+			id: 'oob',
+			role: 'hat',
+		});
+		const before = t.editor.state.doc;
+		// Row 17 is the status chrome, not canvas.
+		t.editor.mouseDown({ button: 0, x: 0, y: 17 });
+		t.editor.mouseUp();
+		expect(t.editor.state.doc).toBe(before);
 	});
 });
