@@ -81,6 +81,13 @@ export function inkLabel(ink: Ink): string {
 	return ink.kind === 'color' ? ink.key : 'transparent';
 }
 
+// Whether two inks denote the same paint (a color key, or transparent). Used to
+// mark the active swatch and to locate the ink in the rail order for nudging.
+export function inkEquals(a: Ink, b: Ink): boolean {
+	if (a.kind === 'transparent') return b.kind === 'transparent';
+	return b.kind === 'color' && a.key === b.key;
+}
+
 export interface SpriteEditorState {
 	doc: SpriteDoc;
 	// Name of the frame currently being edited.
@@ -890,6 +897,70 @@ export function paletteEntries(
 		kind: 'dynamic',
 	});
 	return entries;
+}
+
+// ---------------------------------------------------------------------------
+// Eyedropper & ink nudge (spec #387) — sampling and stepping the active ink
+// ---------------------------------------------------------------------------
+
+// The rail's ink order: the palette entries as listed, then transparent. Both
+// the `c` quick-pick and the `;`/`'` nudge walk exactly this order, so they
+// agree with the swatches the rail draws.
+export function inkOrder(entries: readonly PaletteEntry[]): Ink[] {
+	return [...entries.map((e) => colorInk(e.key)), TRANSPARENT_INK];
+}
+
+function sampleKey(state: SpriteEditorState, key: string): SpriteEditorState {
+	const resolved = key === SENTINEL ? state.doc.key : key;
+	if (!validKey(resolved))
+		return { ...state, feedback: 'nothing to sample here' };
+	return {
+		...state,
+		ink: colorInk(resolved),
+		feedback: `sampled '${resolved}'`,
+	};
+}
+
+// Sample the colour KEY at the exact Pixel and make it the active ink (spec
+// #387: the eyedropper picks the palette key, never the RGBA, so a sampled ink
+// stays semantically linked to the palette). A lit Pixel yields its foreground
+// key; an unlit Pixel of an opaque cell yields the background key filling the
+// complement; a transparent Pixel yields the transparent ink. A SENTINEL key
+// resolves to the frame's default (as the renderer does). This is the shared
+// primitive behind the one-shot `i` key and the momentary alt-click.
+export function eyedropAt(
+	state: SpriteEditorState,
+	px: number,
+	py: number,
+): SpriteEditorState {
+	if (px < 0 || py < 0)
+		return { ...state, feedback: 'nothing to sample past the canvas edge' };
+	const { cellX, cellY, bit } = pixelToCell(px, py);
+	const cell = cellAt(state, cellX, cellY);
+	// A stamped (non-quadrant) cell: sample the glyph's colour key.
+	if (cell.mask === undefined) return sampleKey(state, cell.fg);
+	const lit = (cell.mask & (1 << bit)) !== 0;
+	if (lit) return sampleKey(state, cell.fg);
+	// Unlit: an opaque cell shows its background colour here; otherwise the Pixel
+	// is a transparent hole and transparent is itself a first-class ink.
+	if (cell.bg !== '' && cell.bg !== SENTINEL) return sampleKey(state, cell.bg);
+	return { ...state, ink: TRANSPARENT_INK, feedback: 'sampled transparent' };
+}
+
+// Step the active ink to the adjacent rail swatch (spec #387: `;` back, `'`
+// forward). Wraps at both ends so a nudge never dead-ends. `entries` comes from
+// paletteEntries() so the nudge walks exactly the rail's swatches.
+export function nudgeInk(
+	state: SpriteEditorState,
+	entries: readonly PaletteEntry[],
+	dir: 1 | -1,
+): SpriteEditorState {
+	const inks = inkOrder(entries);
+	if (inks.length === 0) return state;
+	const cur = inks.findIndex((i) => inkEquals(i, state.ink));
+	const from = cur < 0 ? 0 : cur;
+	const next = inks[(from + dir + inks.length) % inks.length];
+	return { ...state, ink: next, feedback: '' };
 }
 
 // ---------------------------------------------------------------------------

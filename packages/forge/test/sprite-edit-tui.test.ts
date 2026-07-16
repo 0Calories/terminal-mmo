@@ -18,11 +18,11 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SCENE_PALETTE } from '@mmo/core/entities';
+import { SCENE_PALETTE, STANDARD_PALETTE } from '@mmo/core/entities';
 import { parseSpriteFile } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
 import { RAIL_W } from '../src/sprite-editor/chrome';
-import { readPixel } from '../src/sprite-editor/state';
+import { colorInk, readPixel } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
 import { resolveColorKey, SPRITE_PREVIEWS } from '../src/sprite-editor/view';
@@ -322,6 +322,80 @@ describe('Sprite editor mouse painting', () => {
 		// Row 18 is the status chrome, not canvas.
 		t.editor.mouseDown({ button: 0, x: bx, y: 18 });
 		t.editor.mouseUp();
+		expect(t.editor.state.doc).toBe(before);
+	});
+});
+
+describe('Sprite editor palette rail: quick-pick, eyedrop, nudge (#397)', () => {
+	const bx = RAIL_W;
+	const by = 1;
+
+	test('c opens the quick-pick; typeahead selects a standard-only key and paints it', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('qp', 'hat'),
+			id: 'qp',
+			role: 'hat',
+		});
+		t.editor.key(key('c'));
+		expect(t.editor.quickPick).not.toBeNull();
+		// 'v' is a standard core key absent from SCENE_PALETTE — reaching it proves
+		// the rail defaults to the standard palette, and typeahead finds it.
+		t.editor.key(key('v', { sequence: 'v' }));
+		t.editor.key(key('enter'));
+		expect(t.editor.quickPick).toBeNull();
+		expect(t.editor.state.ink).toEqual(colorInk('v'));
+		t.editor.mouseDown({ button: 0, x: bx, y: by });
+		t.editor.mouseUp();
+		await t.renderOnce();
+		const [r, g, b] = STANDARD_PALETTE.v;
+		expect(canvasHasBg(t.captureSpans(), [r, g, b], 4)).toBe(true);
+	});
+
+	test('i eyedrops the key under the cursor, one-shot', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('eye', 'hat'),
+			id: 'eye',
+			role: 'hat',
+		});
+		const painted = t.editor.state.ink; // the doc's default key
+		t.editor.key(key('space')); // paint at cursor (0,0)
+		t.editor.key(key('space')); // lift pen
+		t.editor.key(key('t')); // move the active ink away (→ transparent)
+		t.editor.key(key('i')); // sample the lit Pixel at the cursor
+		expect(t.editor.state.ink).toEqual(painted);
+	});
+
+	test("; and ' nudge the active ink to the adjacent swatch, reversibly", async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('nudge', 'hat'),
+			id: 'nudge',
+			role: 'hat',
+		});
+		t.editor.key(key('c'));
+		t.editor.key(key('g', { sequence: 'g' }));
+		t.editor.key(key('enter'));
+		expect(t.editor.state.ink).toEqual(colorInk('g'));
+		t.editor.key(key("'", { sequence: "'" })); // forward
+		expect(t.editor.state.ink).not.toEqual(colorInk('g'));
+		t.editor.key(key(';', { sequence: ';' })); // back to where we were
+		expect(t.editor.state.ink).toEqual(colorInk('g'));
+	});
+
+	test('alt-click samples the key under the pointer without painting', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('alt', 'hat'),
+			id: 'alt',
+			role: 'hat',
+		});
+		const painted = t.editor.state.ink;
+		t.editor.mouseDown({ button: 0, x: bx, y: by }); // paint a Pixel
+		t.editor.mouseUp();
+		t.editor.key(key('t')); // ink → transparent
+		const before = t.editor.state.doc;
+		t.editor.mouseDown({ button: 0, x: bx, y: by, modifiers: { alt: true } });
+		t.editor.mouseUp();
+		expect(t.editor.state.ink).toEqual(painted); // sampled back
+		expect(readPixel(t.editor.state, 0, 0)).toBe(true); // art untouched
 		expect(t.editor.state.doc).toBe(before);
 	});
 });
