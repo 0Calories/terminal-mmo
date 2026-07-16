@@ -43,8 +43,9 @@ export interface RailRow {
 // (spec #387: tools live on the number row in rail order — pencil, fill, stamp,
 // line, rect, ellipse, select, move, paste; erase is demoted to the right
 // button, off the rail, and the anchor tool moved off the number row — it lives
-// in the playback box's `A anchor` and the `a` key. Select (7) and move (8) are
-// live (#399); paste (9) lands in a later slice).
+// in the playback box's `A anchor` and the `a` key. Select (7)/move (8) are live
+// (#399); paste (9) is a TRIGGER — clicking it or pressing 9 spawns a paste float
+// and hands off to move, never resting as the active tool (#400).
 export const RAIL_TOOLS: readonly {
 	key: string;
 	tool: SpriteTool;
@@ -58,6 +59,7 @@ export const RAIL_TOOLS: readonly {
 	{ key: '6', tool: 'ellipse', label: 'ellipse' },
 	{ key: '7', tool: 'select', label: 'select' },
 	{ key: '8', tool: 'move', label: 'move' },
+	{ key: '9', tool: 'paste', label: 'paste' },
 ];
 
 export interface RailInput {
@@ -316,8 +318,9 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 		title: 'Tools',
 		bindings: [
 			{
-				keys: '1-8',
-				label: 'pencil · fill · stamp · line · rect · ellipse · select · move',
+				keys: '1-9',
+				label:
+					'pencil · fill · stamp · line · rect · ellipse · select · move · paste',
 			},
 			{ keys: 'p s / a', label: 'pencil · stamp / anchor (letters)' },
 			{ keys: 'o', label: 'rect/ellipse outline ↔ filled' },
@@ -350,10 +353,11 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 	{
 		title: 'Selection & move',
 		bindings: [
-			{ keys: '7 / 8', label: 'select marquee / move (float)' },
+			{ keys: '7 / 8 / 9', label: 'select marquee / move (float) / paste' },
 			{ keys: 'drag / arrows', label: 'lift + float the selection' },
 			{ keys: 'enter / esc', label: 'drop float / cancel losslessly' },
-			{ keys: 'del / bksp', label: 'clear selection contents' },
+			{ keys: 'y / x', label: 'copy / cut selection' },
+			{ keys: 'del / bksp', label: 'clear selection contents (delete)' },
 			{ keys: 'shift-arrows', label: 'shift the whole Frame 1 Pixel' },
 		],
 	},
@@ -438,8 +442,9 @@ const TOOL_HINTS: Record<SpriteTool, string> = {
 	line: 'drag / enter·enter · esc cancel · rmb transparent',
 	rect: 'drag / enter·enter · o outline/fill · shift square',
 	ellipse: 'drag / enter·enter · o outline/fill · shift circle',
-	select: 'drag marquee · del clears · shift-arrows whole frame',
+	select: 'drag marquee · y copy · x cut · del clears · shift-arrows frame',
 	move: 'drag/arrows floats it · enter drops · esc cancels',
+	paste: '9 pastes a float at the source · drag/enter to place',
 };
 
 const GLOBAL_HINT = '? help · tab view · u undo · ^s save · q quit';

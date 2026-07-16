@@ -230,6 +230,39 @@ describe('Sprite editor TUI smoke', () => {
 		expect(readPixel(t.editor.state, 0, 1)).toBe(true);
 	});
 
+	test('y copies and 9 pastes a float at the source through the keyboard (spec #400)', async () => {
+		// A hat with a single lit Pixel at the top-left of the idle frame.
+		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'clip');
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'clip', role: 'hat' });
+
+		// Select the top-left Pixel (marquee via the select tool: 7).
+		t.editor.key(key('7', { sequence: '7' }));
+		t.editor.key(key('return')); // anchor at cursor (0,0)
+		t.editor.key(key('return')); // commit a 1-Pixel selection
+		expect(t.editor.state.selection).not.toBeNull();
+
+		// Copy it (y) — a pure read, no undo entry, buffer filled.
+		const beforeHist = t.editor.state.history.past.length;
+		t.editor.key(key('y', { sequence: 'y' }));
+		expect(t.editor.state.clipboard?.pixels).toHaveLength(1);
+		expect(t.editor.state.history.past.length).toBe(beforeHist);
+
+		// Paste (9) spawns a paste float at the source, handing off to the move tool.
+		t.editor.key(key('9', { sequence: '9' }));
+		expect(t.editor.state.float).not.toBeNull();
+		expect(t.editor.state.tool).toBe('move');
+
+		// Drag it right two Pixels (move-tool arrow nudge) and drop with Enter.
+		t.editor.key(key('right'));
+		t.editor.key(key('right'));
+		t.editor.key(key('return'));
+		expect(t.editor.state.float).toBeNull();
+		// The original art stays (paste never lifts) and a copy landed at +2.
+		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
+		expect(readPixel(t.editor.state, 2, 0)).toBe(true);
+	});
+
 	test('the status line shows the zoom and Pixel/cell coordinates', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('coords', 'hat'),

@@ -60,7 +60,11 @@ export type SpriteTool =
 	| 'rect'
 	| 'ellipse'
 	| 'select'
-	| 'move';
+	| 'move'
+	// `paste` is a rail/number-row TRIGGER, not a resting mode: selecting it spawns
+	// a paste float and drops the artist into `move` to place it (spec #400). It is
+	// never stored as `state.tool`.
+	| 'paste';
 
 // The three anchor-style geometry tools (spec #387, #394): they place an anchor
 // Pixel, drag/step a live preview to a second Pixel, and commit one rasterized
@@ -142,6 +146,22 @@ export interface Float {
 	readonly grab: Point;
 	readonly dx: number;
 	readonly dy: number;
+	// Whether this float LIFTED its content off the canvas (a move) or carries
+	// clipboard content that was never on this canvas (a paste). `undefined`/`true`
+	// means lifted: the source shows transparent and clears on drop. `false` means
+	// a paste — nothing is cleared, so pasting never erases the art it lands over.
+	readonly lifted?: boolean;
+}
+
+// The single in-editor clipboard buffer (spec #387, #400): the foreground Pixels
+// and fully-enclosed Glyph stamps a copy/cut captured, at their SOURCE positions,
+// plus the rectangle they came from. Editor-session-scoped — it survives Frame
+// and Pose switches (state is threaded through those) but is never persisted to
+// disk. A paste spawns a float from it at the source coordinates.
+export interface Clipboard {
+	readonly pixels: readonly FloatPixel[];
+	readonly stamps: readonly FloatStamp[];
+	readonly source: Selection;
 }
 
 // The two places an anchor can live: at the document level (shared by every
@@ -213,6 +233,9 @@ export interface SpriteEditorState {
 	selection: Selection | null;
 	// The floating move in flight, or null between lift and drop (spec #399).
 	float: Float | null;
+	// The in-editor clipboard buffer (spec #400), or null when nothing is copied.
+	// Survives Frame/Pose switches; never persisted to disk.
+	clipboard: Clipboard | null;
 }
 
 // A resolved view of one cell: `fg`/`bg` are '' when transparent, and `mask` is
@@ -270,6 +293,7 @@ export function initSpriteEditor(
 		lastPaint: null,
 		selection: null,
 		float: null,
+		clipboard: null,
 	};
 }
 
@@ -1500,11 +1524,16 @@ function bakeFloat(state: SpriteEditorState): {
 	if (!float) return { doc: state.doc, clipped: 0 };
 	const { w, h } = frameExtent(currentFrame(state));
 	let s: SpriteEditorState = state;
-	// 1. Clear the source. Only lifted Pixels/enclosed stamps are cleared, so a
-	//    partially-covered stamp (never lifted) is left exactly as it was.
-	for (const p of float.pixels) s = punchTransparent(s, p.x, p.y);
-	for (const st of float.stamps)
-		s = commitQuadrant(s, st.cellX, st.cellY, 0, '', '', '');
+	// 1. Clear the source — but only for a lifted move. A paste float (lifted ===
+	//    false) carries clipboard content that was never on this canvas, so it
+	//    never clears anything: pasting only ever adds art, never erases it. Only
+	//    lifted Pixels/enclosed stamps are cleared, so a partially-covered stamp
+	//    (never lifted) is left exactly as it was.
+	if (float.lifted !== false) {
+		for (const p of float.pixels) s = punchTransparent(s, p.x, p.y);
+		for (const st of float.stamps)
+			s = commitQuadrant(s, st.cellX, st.cellY, 0, '', '', '');
+	}
 	// 2. Land the float; out-of-bounds portions clip.
 	let clipped = 0;
 	for (const p of float.pixels) {
@@ -1545,7 +1574,10 @@ export function floatDisplayDoc(state: SpriteEditorState): SpriteDoc {
 export function commitFloat(state: SpriteEditorState): SpriteEditorState {
 	const float = state.float;
 	if (!float) return state;
-	if (float.dx === 0 && float.dy === 0)
+	// A zero-offset move drop is a no-op (the art returns to where it was lifted),
+	// but a zero-offset PASTE drop still lands its clipboard content at the source
+	// — the content is new, not a move returning to origin.
+	if (float.dx === 0 && float.dy === 0 && float.lifted !== false)
 		return { ...state, float: null, selection: float.source, feedback: '' };
 	const { doc, clipped } = bakeFloat(state);
 	const landed = makeSelection(
@@ -1591,6 +1623,74 @@ export function deleteSelection(state: SpriteEditorState): SpriteEditorState {
 		history: record(state.history, s.doc, tag),
 		strokeSeq: state.strokeSeq + 1,
 		feedback: 'cleared selection',
+	};
+}
+
+// ---------------------------------------------------------------------------
+// Clipboard — copy / cut / paste (spec #387, #400)
+//
+// The clipboard is a single in-editor buffer surviving Frame/Pose switches (it
+// rides SpriteEditorState, threaded through every switch) and is never persisted
+// to disk. Copy is a PURE READ — it captures the selection's lit Pixels and
+// fully-enclosed Glyph stamps and records no undo step. Cut = copy + clear as one
+// step; delete = clear as one step (deleteSelection above). Paste SPAWNS A FLOAT
+// at the source coordinates via the #399 float machinery (marked lifted=false so
+// it clears nothing), always valid under whole-file sizing — so cross-Frame
+// pastes arrive aligned for animation work.
+// ---------------------------------------------------------------------------
+
+// Copy the selection into the clipboard. A pure read: no doc or history change.
+// Only lit Pixels and fully-enclosed stamps are captured (the same rule the float
+// lift uses), so a copy travels exactly what a move would.
+export function copySelection(state: SpriteEditorState): SpriteEditorState {
+	const sel = state.selection;
+	if (!sel) return refuse(state, 'select something to copy first');
+	const { pixels, stamps } = liftContent(state, sel);
+	return {
+		...state,
+		clipboard: { pixels, stamps, source: sel },
+		feedback: 'copied selection',
+	};
+}
+
+// Cut = copy + clear as exactly ONE undo step. The copy is free (no history);
+// the clear records the single step deleteSelection would, so a cut retreats in
+// one undo. The selection survives for a follow-up paste.
+export function cutSelection(state: SpriteEditorState): SpriteEditorState {
+	const sel = state.selection;
+	if (!sel) return refuse(state, 'select something to cut first');
+	const { pixels, stamps } = liftContent(state, sel);
+	const copied: SpriteEditorState = {
+		...state,
+		clipboard: { pixels, stamps, source: sel },
+	};
+	return { ...deleteSelection(copied), feedback: 'cut selection' };
+}
+
+// Paste: spawn a float from the clipboard at the SOURCE coordinates (spec #400).
+// The float is a paste (lifted=false), so it clears nothing and behaves like a
+// move float otherwise — drag/arrows place it, Enter/drop commits through the
+// standard coercion with clipping, Esc cancels. A live float is left alone (the
+// TUI commits it before pasting).
+export function pasteFromClipboard(
+	state: SpriteEditorState,
+): SpriteEditorState {
+	if (state.float) return state;
+	const clip = state.clipboard;
+	if (!clip) return refuse(state, 'clipboard is empty — copy or cut first');
+	return {
+		...state,
+		selection: clip.source,
+		float: {
+			pixels: clip.pixels,
+			stamps: clip.stamps,
+			source: clip.source,
+			grab: { x: clip.source.x0, y: clip.source.y0 },
+			dx: 0,
+			dy: 0,
+			lifted: false,
+		},
+		feedback: 'pasted — drag or arrows to place, Enter to drop',
 	};
 }
 
