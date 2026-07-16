@@ -411,6 +411,12 @@ export class SpriteEditor extends Renderable {
 			this.state = { ...this.state, feedback: '' };
 			return;
 		}
+		// Fill is a single-shot flood at the cursor — no pen toggle. The apply key
+		// reaches floodFill through the same seam a left click uses.
+		if (this.state.tool === 'fill') {
+			this.applyAtCursor();
+			return;
+		}
 		if (!this.penDown) {
 			this.state = beginStroke(this.state);
 			this.penDown = true;
@@ -577,6 +583,12 @@ export class SpriteEditor extends Renderable {
 			px = this.focusPixel(e.x, e.y);
 		}
 		if (!px) return;
+		// Fill floods on a single press (left = active ink, right = transparent);
+		// no coalescing stroke, no drag.
+		if (this.state.tool === 'fill') {
+			this.paintMouse(button, px, e.modifiers);
+			return;
+		}
 		if (this.state.tool !== 'paint' && this.state.tool !== 'erase') {
 			this.state = moveCursor(this.state, px.x, px.y);
 			return;

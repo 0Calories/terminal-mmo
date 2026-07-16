@@ -50,7 +50,7 @@ import {
 	undo,
 } from '../history';
 
-export type SpriteTool = 'paint' | 'erase' | 'stamp' | 'anchor';
+export type SpriteTool = 'paint' | 'erase' | 'fill' | 'stamp' | 'anchor';
 
 // The two places an anchor can live: at the document level (shared by every
 // frame) or as a per-frame override on the current frame (ADR 0031).
@@ -794,6 +794,122 @@ function punchTransparent(
 	const newMask = cell.mask & ~t;
 	const note = cell.bg !== '' ? `punched background '${cell.bg}'` : '';
 	return commitQuadrant(state, cellX, cellY, newMask, cell.fg, '', note);
+}
+
+// ---------------------------------------------------------------------------
+// Flood fill (spec #387, rules #377)
+// ---------------------------------------------------------------------------
+
+// What a Pixel visually *shows* — the key fill's "same displayed key" test reads,
+// never raw storage. A lit Pixel shows its cell's fg key; an unlit Pixel shows the
+// bg key when the cell is opaque, or transparent ('') when it is not. A glyph-
+// stamped cell has no sub-Pixels: it is a wall the fill can neither enter nor cross.
+type PixelClass =
+	| { readonly wall: true }
+	| { readonly wall: false; readonly key: string };
+
+function pixelClass(
+	state: SpriteEditorState,
+	px: number,
+	py: number,
+): PixelClass {
+	const { cellX, cellY, bit } = pixelToCell(px, py);
+	const cell = cellAt(state, cellX, cellY);
+	if (cell.mask === undefined) return { wall: true };
+	const lit = (cell.mask & (1 << bit)) !== 0;
+	return { wall: false, key: lit ? cell.fg : cell.bg };
+}
+
+// Repaint (or clear) a fill region as one undo step. Region Pixels resolve through
+// the standard paint coercion; for transparent ink the border stamps clear too.
+// Nothing changed ⇒ no history entry and empty feedback (like a no-op paint).
+function applyFill(
+	state: SpriteEditorState,
+	region: readonly { x: number; y: number }[],
+	stampCells: ReadonlySet<string>,
+	ink: Ink,
+): SpriteEditorState {
+	// A stable order keeps coercion deterministic regardless of the flood's walk.
+	const pixels = [...region].sort((a, b) => a.y - b.y || a.x - b.x);
+	let s = beginStroke(state);
+	for (const { x, y } of pixels) s = paintWithInk(s, x, y, ink);
+	// Colour ink already skipped stamps by never queuing them; transparent ink
+	// clears each border stamp (any of its Pixels punches the whole cell).
+	if (ink.kind === 'transparent')
+		for (const id of stampCells) {
+			const [cx, cy] = id.split(',').map(Number);
+			s = paintWithInk(s, cx * 2, cy * 2, ink);
+		}
+	s = endStroke(s);
+	if (s.doc === state.doc) return { ...s, feedback: '' };
+	const parts: string[] = [];
+	if (pixels.length > 0)
+		parts.push(
+			`filled ${pixels.length} Pixel${pixels.length === 1 ? '' : 's'}`,
+		);
+	const stamps = ink.kind === 'transparent' ? stampCells.size : 0;
+	if (stamps > 0)
+		parts.push(`cleared ${stamps} stamp${stamps === 1 ? '' : 's'}`);
+	return { ...s, feedback: parts.join(', ') };
+}
+
+// Flood fill from a seed Pixel: recolour (or clear) every 4-connected Pixel that
+// shows the seed's displayed key, bounded to the current Frame. Glyph stamps are
+// walls — the region never spreads through one; colour ink leaves border stamps
+// untouched, transparent ink clears them. The whole fill is exactly one undo step.
+export function floodFill(
+	state: SpriteEditorState,
+	px: number,
+	py: number,
+	ink: Ink,
+): SpriteEditorState {
+	const { w, h } = frameExtent(currentFrame(state));
+	const pw = w * 2;
+	const ph = h * 2;
+	if (px < 0 || py < 0 || px >= pw || py >= ph)
+		return refuse(state, 'clipped — nothing to fill past the canvas edge');
+
+	const cellId = (cx: number, cy: number) => `${cx},${cy}`;
+	const seed = pixelClass(state, px, py);
+
+	// Seeding on a stamp: it is a wall with no Pixel region to flood. Colour ink
+	// skips it entirely; transparent ink clears just that one stamp.
+	if (seed.wall) {
+		if (ink.kind !== 'transparent')
+			return refuse(state, 'fill skipped the glyph stamp');
+		const { cellX, cellY } = pixelToCell(px, py);
+		return applyFill(state, [], new Set([cellId(cellX, cellY)]), ink);
+	}
+
+	const target = seed.key;
+	const visited = new Set<string>([`${px},${py}`]);
+	const region: { x: number; y: number }[] = [];
+	const stampCells = new Set<string>();
+	const stack: { x: number; y: number }[] = [{ x: px, y: py }];
+	while (stack.length > 0) {
+		const p = stack.pop() as { x: number; y: number };
+		region.push(p);
+		for (const [nx, ny] of [
+			[p.x - 1, p.y],
+			[p.x + 1, p.y],
+			[p.x, p.y - 1],
+			[p.x, p.y + 1],
+		] as const) {
+			if (nx < 0 || ny < 0 || nx >= pw || ny >= ph) continue;
+			const id = `${nx},${ny}`;
+			if (visited.has(id)) continue;
+			visited.add(id);
+			const cls = pixelClass(state, nx, ny);
+			if (cls.wall) {
+				// A stamp bounds the flood; note its cell for transparent-ink clearing.
+				const { cellX, cellY } = pixelToCell(nx, ny);
+				stampCells.add(cellId(cellX, cellY));
+				continue;
+			}
+			if (cls.key === target) stack.push({ x: nx, y: ny });
+		}
+	}
+	return applyFill(state, region, stampCells, ink);
 }
 
 // ---------------------------------------------------------------------------

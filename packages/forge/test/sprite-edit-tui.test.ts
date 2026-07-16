@@ -482,14 +482,14 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		const lines = t.captureCharFrame().split('\n');
 		const rowWith = (needle: string) =>
 			lines.findIndex((l) => l.slice(0, RAIL_W).includes(needle));
-		// Tool row.
-		const toolY = rowWith('erase');
+		// Tool row (erase is demoted to the right button, so the rail lists fill).
+		const toolY = rowWith('fill');
 		t.editor.mouseDown({
 			button: 0,
-			x: lines[toolY].indexOf('erase'),
+			x: lines[toolY].indexOf('fill'),
 			y: toolY,
 		});
-		expect(t.editor.state.tool).toBe('erase');
+		expect(t.editor.state.tool).toBe('fill');
 		// Ink row (the dynamic 'weapon accent' entry).
 		const inkY = rowWith('weapon accent');
 		t.editor.mouseDown({ button: 0, x: 5, y: inkY });
