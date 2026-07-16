@@ -1,7 +1,7 @@
 // The `@opentui/core` glue for the Sprite editor (ADR 0031): a single Renderable
 // that draws the pure editor state and a `key()` dispatcher that mutates it
 // through the pure ops in `state.ts`. All logic lives in the pure modules
-// (`state.ts`, `chrome.ts`, `strips.ts`, `picker.ts`, `view.ts`); this file only
+// (`state.ts`, `chrome.ts`, `strips.ts`, `colorPicker.ts`, `view.ts`); this file only
 // wires them to the screen buffer, keyboard and mouse, mirroring the zone
 // editor's `editor.ts` structure. The Renderable is exported so the TUI can be
 // smoke-tested headlessly with `@opentui/core/testing`.
@@ -43,6 +43,19 @@ import {
 	railActionAt,
 	railModel,
 } from './chrome';
+import {
+	backspaceHex,
+	type ColorPickerAction,
+	type ColorPickerState,
+	moveCursor as colorPickerMove,
+	commitColorPicker,
+	gridColor,
+	HUE_COLS,
+	openColorPicker,
+	pickCell,
+	SHADE_ROWS,
+	typeHex,
+} from './colorPicker';
 import { renderComposite, styleWithLocalColors } from './composite';
 import {
 	applyInput,
@@ -67,17 +80,6 @@ import {
 	syncPoseMenu,
 } from './menus';
 import { cycleOnionDepth, ghostColor, onionGhosts } from './onion';
-import {
-	formAdvance,
-	formBackspace,
-	formInput,
-	openPicker as openPickerState,
-	type PickerAction,
-	type PickerState,
-	pickerBack,
-	pickerChoose,
-	pickerMove,
-} from './picker';
 import { playbackFrame, poseFps, walkPreviewPose } from './playback';
 import {
 	openQuickPick,
@@ -95,6 +97,7 @@ import {
 	colorInk,
 	createPose,
 	currentFrame,
+	type DynamicPreviews,
 	defineLocalColor,
 	deletePose,
 	endStroke,
@@ -150,6 +153,7 @@ import {
 	composeStatusLine,
 	DEFAULT_ZOOM,
 	dirForRole,
+	dynamicPreviewsAt,
 	mirrorAnchorMarkers,
 	mirrorRender,
 	missingRequiredAnchors,
@@ -208,6 +212,10 @@ const SCROLLOFF = 2;
 // available so a narrow terminal never draws garbage (the ≥80×24 floor is #398).
 const PREVIEW_W = 34;
 const PREVIEW_H = 11;
+
+// How long each step of the dynamic p/a preview cycle holds before advancing to
+// the next core-palette variant (spec #401). Slow enough to read each colour.
+const PREVIEW_CYCLE_MS = 650;
 
 // The box-drawing glyph for one cell of the cursor's z×z outline ring, or '' for
 // an interior (non-edge) cell. All are unambiguous width-1 (unlike □/▫), so the
@@ -304,7 +312,9 @@ interface Palette {
 
 export class SpriteEditor extends Renderable {
 	state: SpriteEditorState;
-	picker: PickerState | null = null;
+	// The `e` file-local colour picker modal (spec #387, #401): define a new local
+	// colour or edit an existing one, over a hue/shade grid + hex entry.
+	colorPicker: ColorPickerState | null = null;
 	// The `c` ink quick-pick overlay (spec #387): random-access ink selection.
 	quickPick: QuickPickState | null = null;
 	poseMenu: PoseMenuState | null = null;
@@ -327,6 +337,9 @@ export class SpriteEditor extends Renderable {
 	// Animation playback is presentation only — it never touches the doc/history.
 	playMode: PlayMode = 'none';
 	private playElapsedMs = 0;
+	// The dynamic p/a preview clock (spec #401): advanced every tick even while
+	// idle so painted `p`/`a` Pixels step through every real core-palette variant.
+	private previewPhaseMs = 0;
 	private penDown = false;
 	// The fatbits zoom (×z on the ladder). Presentation only — never in the doc.
 	zoom = DEFAULT_ZOOM;
@@ -373,6 +386,13 @@ export class SpriteEditor extends Renderable {
 			flip: { x0: number; x1: number; y: number };
 			play: { x0: number; x1: number; y: number };
 		} | null;
+		// The colour picker's hue/shade grid rect, so a click resolves to a cell.
+		colorGrid: {
+			x0: number;
+			y0: number;
+			cellW: number;
+			cellH: number;
+		} | null;
 	} = {
 		viewH: 0,
 		viewW: 0,
@@ -380,6 +400,7 @@ export class SpriteEditor extends Renderable {
 		layout: null,
 		focus: null,
 		preview: null,
+		colorGrid: null,
 	};
 	// An in-flight mouse paint stroke (down→drag→up coalesces to one undo step),
 	// and the button held for it (drag events don't reliably re-report the button).
@@ -437,6 +458,16 @@ export class SpriteEditor extends Renderable {
 
 	private entries() {
 		return paletteEntries(this.state, this.globalPalette, SPRITE_PREVIEWS);
+	}
+
+	// The dynamic p/a preview colours for THIS render's phase (spec #401): the
+	// canvas, shape preview and mirror resolve painted `p`/`a` Pixels through these,
+	// so they cycle the real core palettes over time. The rail keeps the static
+	// representative (SPRITE_PREVIEWS) so its swatches don't flicker.
+	private dynamicPreviews(): DynamicPreviews {
+		return dynamicPreviewsAt(
+			Math.floor(this.previewPhaseMs / PREVIEW_CYCLE_MS),
+		);
 	}
 
 	// ---- pen / paint ----
@@ -527,7 +558,7 @@ export class SpriteEditor extends Renderable {
 	// so canvas mouse gestures stay inert.
 	private modalActive(): boolean {
 		return (
-			this.picker !== null ||
+			this.colorPicker !== null ||
 			this.quickPick !== null ||
 			this.poseMenu !== null ||
 			this.anchorMenu !== null ||
@@ -722,6 +753,12 @@ export class SpriteEditor extends Renderable {
 			this.helpOpen = false;
 			return;
 		}
+		// A click on the colour picker's grid lands the cursor on that swatch; the
+		// modal otherwise swallows the click (spec #401: the grid is mouse-operable).
+		if (this.colorPicker) {
+			if (e.button === 0) this.colorPickerClick(e);
+			return;
+		}
 		if (this.modalActive()) return;
 		// The floating preview pane swallows every click over it (never paint the
 		// canvas hidden beneath); a primary click on its flip/play controls actuates.
@@ -858,64 +895,75 @@ export class SpriteEditor extends Renderable {
 		};
 	}
 
-	// ---- picker ----
+	// ---- colour picker (`e`) ----
 
-	private openPicker(): void {
+	// Open the define/edit colour modal for the active ink (edits an existing
+	// file-local colour, else defines a fresh one under an auto-assigned key).
+	private openColorPickerModal(): void {
 		this.liftPen();
-		this.picker = openPickerState(this.entries(), this.state.ink);
+		this.colorPicker = openColorPicker(
+			this.state,
+			Object.keys(this.globalPalette),
+		);
 	}
 
-	private applyPickerAction(action: PickerAction): void {
-		switch (action.type) {
-			case 'setInk':
-				this.state = setInk(this.state, action.ink);
-				break;
-			case 'defineColor': {
-				this.state = defineLocalColor(this.state, action.key, action.rgba);
-				// Select the freshly defined color as the active ink.
-				this.state = setInk(this.state, colorInk(action.key));
-				break;
-			}
-			case 'close':
-				break;
-		}
+	private applyColorPickerAction(action: ColorPickerAction): void {
+		// One path for define and edit: (re)define the local colour, then make it
+		// the active ink. Editing an existing key overwrites it, so every Pixel
+		// already painted with that key repaints to the new colour (spec #401).
+		this.state = defineLocalColor(this.state, action.key, action.rgba);
+		if (this.state.doc.colors[action.key])
+			this.state = setInk(this.state, colorInk(action.key));
 	}
 
-	private pickerKey(k: SpriteKey): void {
-		const p = this.picker;
+	private colorPickerKey(k: SpriteKey): void {
+		const p = this.colorPicker;
 		if (!p) return;
-		if (p.form) {
-			if (k.name === 'escape') {
-				const res = pickerBack(p);
-				this.picker = res.picker;
-				if (res.action) this.applyPickerAction(res.action);
-			} else if (k.name === 'return' || k.name === 'enter') {
-				const res = formAdvance(p);
-				this.picker = res.picker;
-				if (res.action) this.applyPickerAction(res.action);
-			} else if (k.name === 'backspace') {
-				this.picker = formBackspace(p);
-			} else {
-				const ch = k.name === 'space' ? ' ' : (k.sequence ?? '');
-				if (ch.length === 1) this.picker = formInput(p, ch);
-			}
+		if (k.name === 'escape') {
+			this.colorPicker = null;
 			return;
 		}
-		if (k.name === 'escape') {
-			this.picker = null;
-		} else if (k.name === 'up' || k.name === 'k') {
-			this.picker = pickerMove(p, -1);
-		} else if (k.name === 'down' || k.name === 'j') {
-			this.picker = pickerMove(p, 1);
-		} else if (
-			k.name === 'return' ||
-			k.name === 'enter' ||
-			k.name === 'space'
-		) {
-			const res = pickerChoose(p);
-			this.picker = res.picker;
-			if (res.action) this.applyPickerAction(res.action);
+		if (k.name === 'return' || k.name === 'enter') {
+			const res = commitColorPicker(p);
+			this.colorPicker = res.picker;
+			if (res.action) this.applyColorPickerAction(res.action);
+			return;
 		}
+		if (k.name === 'backspace') {
+			this.colorPicker = backspaceHex(p);
+			return;
+		}
+		if (k.name === 'left') {
+			this.colorPicker = colorPickerMove(p, -1, 0);
+			return;
+		}
+		if (k.name === 'right') {
+			this.colorPicker = colorPickerMove(p, 1, 0);
+			return;
+		}
+		if (k.name === 'up') {
+			this.colorPicker = colorPickerMove(p, 0, -1);
+			return;
+		}
+		if (k.name === 'down') {
+			this.colorPicker = colorPickerMove(p, 0, 1);
+			return;
+		}
+		// Any other printable char is hex typeahead (digits + a–f; others ignored).
+		const ch = k.sequence ?? '';
+		if (ch.length === 1) this.colorPicker = typeHex(p, ch);
+	}
+
+	// Resolve a click over the colour picker's hue/shade grid to a cell and land
+	// the cursor there; clicks off the grid are ignored (the modal stays open).
+	private colorPickerClick(e: SpriteMouse): void {
+		const p = this.colorPicker;
+		const g = this.geom.colorGrid;
+		if (!p || !g) return;
+		const col = Math.floor((e.x - g.x0) / g.cellW);
+		const row = Math.floor((e.y - g.y0) / g.cellH);
+		if (col < 0 || col >= HUE_COLS || row < 0 || row >= SHADE_ROWS) return;
+		this.colorPicker = pickCell(p, col, row);
 	}
 
 	// ---- ink quick-pick (`c`) ----
@@ -1183,6 +1231,13 @@ export class SpriteEditor extends Renderable {
 	// time deterministically; the render loop calls it (via the renderer's frame
 	// callback in `runSpriteEdit`) with the real per-frame delta.
 	tick(deltaMs: number): void {
+		// Advance the dynamic p/a preview cycle even while idle so painted p/a Pixels
+		// step through every real core-palette variant (spec #401). Only repaint when
+		// the phase actually steps, so an idle editor isn't pegged at the frame rate.
+		const beforePhase = Math.floor(this.previewPhaseMs / PREVIEW_CYCLE_MS);
+		this.previewPhaseMs += deltaMs;
+		if (Math.floor(this.previewPhaseMs / PREVIEW_CYCLE_MS) !== beforePhase)
+			this.requestRender();
 		if (this.playMode === 'none') return;
 		this.playElapsedMs += deltaMs;
 		this.requestRender();
@@ -1219,8 +1274,8 @@ export class SpriteEditor extends Renderable {
 			return;
 		}
 		this.dismissSaveNotice();
-		if (this.picker) {
-			this.pickerKey(k);
+		if (this.colorPicker) {
+			this.colorPickerKey(k);
 			return;
 		}
 		if (this.quickPick) {
@@ -1403,16 +1458,13 @@ export class SpriteEditor extends Renderable {
 				this.switchTool('paint');
 				return;
 			case 'e':
-				this.switchTool('erase');
+				this.openColorPickerModal();
 				return;
 			case 's':
 				this.switchTool('stamp');
 				return;
 			case 'a':
 				this.switchTool('anchor');
-				return;
-			case 'f':
-				this.openPicker();
 				return;
 			case 't':
 				this.liftPen();
@@ -1493,25 +1545,21 @@ export class SpriteEditor extends Renderable {
 		onion = false,
 	): RGBA {
 		const local = this.state.doc.colors;
+		const previews = this.dynamicPreviews();
 		const { cellX, cellY, bit } = pixelToCell(px, py);
 		const cell = cellAt(st, cellX, cellY);
 		const lit = cell.mask !== undefined && (cell.mask & (1 << bit)) !== 0;
 		if (lit) {
 			// A SENTINEL fg means "the frame's default key" (as the mirror does).
 			const fgKey = cell.fg === SENTINEL ? this.state.doc.key : cell.fg;
-			const fg = resolveColorKey(
-				fgKey,
-				local,
-				this.globalPalette,
-				SPRITE_PREVIEWS,
-			);
+			const fg = resolveColorKey(fgKey, local, this.globalPalette, previews);
 			return fg ? SpriteEditor.rgba(fg) : C.ink;
 		}
 		const bgKey = cell.bg === SENTINEL ? '' : cell.bg;
 		const bg =
 			cell.mask === undefined
 				? null
-				: resolveColorKey(bgKey, local, this.globalPalette, SPRITE_PREVIEWS);
+				: resolveColorKey(bgKey, local, this.globalPalette, previews);
 		if (bg) return SpriteEditor.rgba(bg);
 		// Transparent Pixel: an onion ghost shows through it under the art (active
 		// Frame only), else the checkerboard.
@@ -1531,7 +1579,7 @@ export class SpriteEditor extends Renderable {
 			ink.key,
 			this.state.doc.colors,
 			this.globalPalette,
-			SPRITE_PREVIEWS,
+			this.dynamicPreviews(),
 		);
 		return rgba ? SpriteEditor.rgba(rgba) : C.ink;
 	}
@@ -2066,7 +2114,7 @@ export class SpriteEditor extends Renderable {
 		}
 
 		this.renderHelp(buf, W, H, C);
-		this.renderPicker(buf, W, H, C);
+		this.renderColorPicker(buf, W, H, C);
 		this.renderQuickPick(buf, W, H, C);
 		this.renderPoseMenu(buf, W, H, C);
 		this.renderAnchorMenu(buf, W, H, C);
@@ -2090,6 +2138,7 @@ export class SpriteEditor extends Renderable {
 
 		const m = mirrorRender(this.state.doc, frameName);
 		const local = this.state.doc.colors;
+		const previews = this.dynamicPreviews();
 		for (let sy = 0; sy < viewH && sy < m.rows.length; sy++) {
 			const row = m.rows[sy];
 			const colorRow = m.colors[sy] ?? '';
@@ -2107,13 +2156,13 @@ export class SpriteEditor extends Renderable {
 					fgKey === SENTINEL ? this.state.doc.key : fgKey,
 					local,
 					this.globalPalette,
-					SPRITE_PREVIEWS,
+					previews,
 				);
 				const bg = resolveColorKey(
 					bgKey === SENTINEL ? '' : bgKey,
 					local,
 					this.globalPalette,
-					SPRITE_PREVIEWS,
+					previews,
 				);
 				buf.setCell(
 					ox + sx,
@@ -2229,40 +2278,82 @@ export class SpriteEditor extends Renderable {
 		this.drawModal(buf, W, H, helpOverlayRows(H - 2), C);
 	}
 
-	private renderPicker(
+	// The `e` file-local colour picker modal (spec #387, #401): a hue/shade swatch
+	// grid plus a hex line, over a centred box. The selected cell is marked and the
+	// composed colour swatched next to the hex echo. The grid's screen rect is
+	// recorded in `geom.colorGrid` so a click resolves to a cell.
+	private renderColorPicker(
 		buf: OptimizedBuffer,
 		W: number,
 		H: number,
 		C: Palette,
 	): void {
-		const p = this.picker;
+		this.geom.colorGrid = null;
+		const p = this.colorPicker;
 		if (!p) return;
-		const rows: string[] = [];
-		if (p.form) {
-			const f = p.form;
-			const mark = (s: 'key' | 'r' | 'g' | 'b') => (f.stage === s ? '▸' : ' ');
-			rows.push('New file-local color');
-			rows.push(`${mark('key')} key: ${f.key || '_'}`);
-			rows.push(`${mark('r')} r: ${f.r || '_'}`);
-			rows.push(`${mark('g')} g: ${f.g || '_'}`);
-			rows.push(`${mark('b')} b: ${f.b || '_'}`);
-			if (p.error) rows.push(`⚠ ${p.error}`);
-			rows.push('Enter next · Esc back');
-		} else {
-			rows.push('Pick ink');
-			for (let i = 0; i < p.options.length; i++) {
-				const o = p.options[i];
-				const label =
-					o.kind === 'transparent'
-						? 'transparent'
-						: o.kind === 'new'
-							? '+ new file-local color'
-							: `${o.entry.key}  ${o.entry.label}${o.entry.kind === 'dynamic' ? ' (dynamic)' : ''}`;
-				rows.push(`${i === p.index ? '▸' : ' '} ${label}`);
+		const cellW = 2;
+		const cellH = 1;
+		const gridW = HUE_COLS * cellW;
+		const title =
+			p.mode === 'edit'
+				? `Edit file-local colour '${p.key}'`
+				: `Define file-local colour '${p.key}'`;
+		const hexLine = `hex #${p.hex.padEnd(6, '_')}`;
+		const hint = 'arrows/click grid · type hex · enter save · esc';
+		const contentW = Math.max(
+			gridW,
+			title.length,
+			hexLine.length + 3,
+			hint.length,
+		);
+		const boxW = Math.min(W, contentW + 2);
+		const bodyRows = 1 + SHADE_ROWS + 1 + (p.error ? 1 : 0) + 1;
+		const boxH = Math.min(H, bodyRows);
+		const ox = Math.max(0, Math.floor((W - boxW) / 2));
+		const oy = Math.max(0, Math.floor((H - boxH) / 2));
+		buf.fillRect(ox, oy, boxW, boxH, C.boxBg);
+
+		let y = oy;
+		buf.drawText(title.slice(0, boxW), ox + 1, y, C.text, C.boxBg);
+		y += 1;
+		const gx = ox + 1;
+		const gy = y;
+		this.geom.colorGrid = { x0: gx, y0: gy, cellW, cellH };
+		for (let row = 0; row < SHADE_ROWS; row++) {
+			for (let col = 0; col < HUE_COLS; col++) {
+				const color = SpriteEditor.rgba(gridColor(col, row));
+				const sel = col === p.col && row === p.row;
+				const sx = gx + col * cellW;
+				for (let dx = 0; dx < cellW; dx++)
+					buf.setCell(
+						sx + dx,
+						gy + row * cellH,
+						sel && dx === 0 ? '▸' : ' ',
+						C.cursorFg,
+						color,
+					);
 			}
-			rows.push('↑/↓ move · Enter pick · Esc close');
 		}
-		this.drawModal(buf, W, H, rows, C);
+		y = gy + SHADE_ROWS * cellH;
+		buf.drawText(hexLine.slice(0, boxW), ox + 1, y, C.text, C.boxBg);
+		const swatch = SpriteEditor.rgba(p.rgba);
+		const swx = ox + 1 + hexLine.length + 1;
+		if (swx + 1 < ox + boxW) {
+			buf.setCell(swx, y, ' ', C.text, swatch);
+			buf.setCell(swx + 1, y, ' ', C.text, swatch);
+		}
+		y += 1;
+		if (p.error) {
+			buf.drawText(
+				`⚠ ${p.error}`.slice(0, boxW),
+				ox + 1,
+				y,
+				C.feedback,
+				C.boxBg,
+			);
+			y += 1;
+		}
+		buf.drawText(hint.slice(0, boxW), ox + 1, y, C.dim, C.boxBg);
 	}
 
 	private renderQuickPick(

@@ -3,7 +3,8 @@
 // buffer and keyboard. Everything is a deterministic function over the pure
 // editor state so it is unit-testable headlessly, exactly like the zone editor's
 // `editor.ts` helpers.
-import type { Facing, RGBAQuad } from '@mmo/core/entities';
+import { type Facing, HUES, type RGBAQuad } from '@mmo/core/entities';
+import { RARITY_COLOR } from '@mmo/core/items';
 import { mirrorAnchorX } from '@mmo/core/sprites';
 import { ROLE_PROFILES, type SpriteDoc, spriteFromDoc } from '@mmo/render';
 import type { AnchorMarker, DynamicPreviews } from './state';
@@ -106,6 +107,31 @@ export const SPRITE_PREVIEWS: DynamicPreviews = {
 	p: [255, 150, 40, 255],
 	a: [120, 200, 255, 255],
 };
+
+// The real core palettes the dynamic p/a channels cycle through when previewing
+// painted art (spec #387/#401): `p` steps every player body HUE, `a` steps every
+// rarity accent, so the artist sees the art the way every player/weapon variant
+// will render it, rather than one frozen representative colour. Kept as arrays so
+// the cycle is a pure function of a phase index.
+export const PLAYER_HUE_CYCLE: readonly RGBAQuad[] = HUES;
+export const ACCENT_CYCLE: readonly RGBAQuad[] = Object.values(RARITY_COLOR);
+
+function cycleAt(cycle: readonly RGBAQuad[], phase: number): RGBAQuad {
+	const n = cycle.length;
+	return cycle[((phase % n) + n) % n];
+}
+
+// The p/a preview colours at animation phase `phase` (an integer step of the
+// editor's preview clock). Each channel indexes its own core palette and wraps —
+// a pure, deterministic function of the phase, so the cycling is headlessly
+// testable against the real `@mmo/core` palettes. Phase 0 reproduces the leading
+// palette entry (the player hue matches `SPRITE_PREVIEWS.p`, the first HUE).
+export function dynamicPreviewsAt(phase: number): DynamicPreviews {
+	return {
+		p: cycleAt(PLAYER_HUE_CYCLE, phase),
+		a: cycleAt(ACCENT_CYCLE, phase),
+	};
+}
 
 // ---------------------------------------------------------------------------
 // Color-key resolution

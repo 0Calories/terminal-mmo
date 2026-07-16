@@ -1,10 +1,14 @@
 import { describe, expect, test } from 'bun:test';
-import { SCENE_PALETTE } from '@mmo/core/entities';
+import { HUES, SCENE_PALETTE } from '@mmo/core/entities';
+import { RARITY_COLOR } from '@mmo/core/items';
 import {
+	ACCENT_CYCLE,
 	bitName,
 	composeStatusLine,
 	DEFAULT_ZOOM,
 	dirForRole,
+	dynamicPreviewsAt,
+	PLAYER_HUE_CYCLE,
 	parseEditArg,
 	pixelToScreen,
 	quadrantMarker,
@@ -237,5 +241,34 @@ describe('status + help chrome', () => {
 		expect(s).toContain('1 error');
 		expect(s).toContain('1 warning');
 		expect(s).toContain('boom');
+	});
+});
+
+describe('dynamic p/a preview cycling (spec #401)', () => {
+	test('the p/a cycles are the real core palettes', () => {
+		expect(PLAYER_HUE_CYCLE).toEqual(HUES);
+		expect(ACCENT_CYCLE).toEqual(Object.values(RARITY_COLOR));
+	});
+
+	test('phase 0 reproduces the leading palette entries', () => {
+		const p0 = dynamicPreviewsAt(0);
+		expect(p0.p).toEqual(HUES[0]);
+		expect(p0.a).toEqual(Object.values(RARITY_COLOR)[0]);
+		// The player-hue channel also matches the static representative preview.
+		expect(p0.p).toEqual(SPRITE_PREVIEWS.p);
+	});
+
+	test('each channel steps its own palette and wraps', () => {
+		for (let phase = 0; phase < HUES.length * 2 + 1; phase++) {
+			const d = dynamicPreviewsAt(phase);
+			expect(d.p).toEqual(HUES[phase % HUES.length]);
+			const accents = Object.values(RARITY_COLOR);
+			expect(d.a).toEqual(accents[phase % accents.length]);
+		}
+	});
+
+	test('negative phases wrap cleanly (no out-of-range index)', () => {
+		const d = dynamicPreviewsAt(-1);
+		expect(d.p).toEqual(HUES[HUES.length - 1]);
 	});
 });
