@@ -66,6 +66,7 @@ import {
 	poseMenuKey,
 	syncPoseMenu,
 } from './menus';
+import { cycleOnionDepth, ghostColor, onionGhosts } from './onion';
 import {
 	formAdvance,
 	formBackspace,
@@ -100,6 +101,7 @@ import {
 	placeAnchor,
 	poseFrames,
 	poseNames,
+	readPixel,
 	redoEdit,
 	removeAnchorOverride,
 	reorderFrame,
@@ -303,6 +305,14 @@ export class SpriteEditor extends Renderable {
 	private penDown = false;
 	// The fatbits zoom (×z on the ladder). Presentation only — never in the doc.
 	zoom = DEFAULT_ZOOM;
+	// Onion-skin depth (0 off, cycled by `O`). Presentation only. Ghosts are drawn
+	// only for the active Frame, and only while not playing (playback suspends
+	// them). `onionLayers` is the per-render, pre-pointed source built from it.
+	onionDepth = 0;
+	private onionLayers: {
+		read: (px: number, py: number) => boolean;
+		color: RGBA;
+	}[] = [];
 	// Focus-view camera in PIXEL coordinates (its top-left visible Pixel).
 	private cam: Cam = { x: 0, y: 0 };
 	// Strips-view scroll in screen cells over the layout's content coordinates.
@@ -974,6 +984,16 @@ export class SpriteEditor extends Renderable {
 		this.playElapsedMs = 0;
 	}
 
+	// Cycle the onion-skin depth 0 → 1 → 2 → 0 (spec #387). Presentation only.
+	private cycleOnion(): void {
+		this.onionDepth = cycleOnionDepth(this.onionDepth);
+		const label =
+			this.onionDepth === 0
+				? 'onion skin off'
+				: `onion skin depth ${this.onionDepth}`;
+		this.state = { ...this.state, feedback: label };
+	}
+
 	// Advance the playback clock and repaint. Public so tests can drive elapsed
 	// time deterministically; the render loop calls it (via the renderer's frame
 	// callback in `runSpriteEdit`) with the real per-frame delta.
@@ -1114,6 +1134,10 @@ export class SpriteEditor extends Renderable {
 			this.togglePlay('walk');
 			return;
 		}
+		if (k.sequence === 'O') {
+			this.cycleOnion();
+			return;
+		}
 		// Zoom ladder: '+' (or '=') in, '-' out.
 		if (k.sequence === '+' || k.sequence === '=') {
 			this.setZoom(stepZoom(this.zoom, 1));
@@ -1211,16 +1235,49 @@ export class SpriteEditor extends Renderable {
 		return RGBA.fromInts(q[0], q[1], q[2], q[3]);
 	}
 
+	// Rebuild the onion-skin ghost layers for this render: one pre-pointed reader +
+	// tint per neighbouring Frame the active Pose sources at the current depth,
+	// nearest first. Empty while playing (playback suspends ghosts, spec #387) or
+	// when onion is off, so `onionGhostRGBA` is a cheap no-op then.
+	private buildOnionLayers(C: Palette): void {
+		if (this.playMode !== 'none' || this.onionDepth <= 0) {
+			this.onionLayers = [];
+			return;
+		}
+		const frames = poseFrames(this.state, this.state.pose);
+		const ghosts = onionGhosts(frames, this.state.frame, this.onionDepth);
+		const bg = C.bg.toInts();
+		this.onionLayers = ghosts.map((g) => {
+			const ghostState: SpriteEditorState = { ...this.state, frame: g.frame };
+			return {
+				read: (px: number, py: number) => readPixel(ghostState, px, py),
+				color: SpriteEditor.rgba(ghostColor(g.tint, g.intensity, bg)),
+			};
+		});
+	}
+
+	// The ghost colour showing through a transparent Pixel of the active Frame, or
+	// null when no ghost lights it. The first (nearest) lit layer wins, so nearest
+	// Frames read strongest and prev (red) beats next (blue) at equal distance.
+	private onionGhostRGBA(px: number, py: number): RGBA | null {
+		for (const layer of this.onionLayers)
+			if (layer.read(px, py)) return layer.color;
+		return null;
+	}
+
 	// The background colour a Pixel magnifies to: a lit Pixel is its ink colour,
 	// an opaque unlit Pixel shows its cell-wide background colour, and a
-	// transparent Pixel is a per-cell checkerboard (spec #387). `phase` picks the
-	// checkerboard shade (it alternates per terminal cell of art).
+	// transparent Pixel is a per-cell checkerboard (spec #387) — or, when `onion`
+	// is set (the active Frame, not playing), an onion ghost showing UNDER the art
+	// through that transparency, replacing the checkerboard where a ghost lights
+	// it. `phase` picks the checkerboard shade (it alternates per art cell).
 	private pixelRGBA(
 		st: SpriteEditorState,
 		px: number,
 		py: number,
 		phase: number,
 		C: Palette,
+		onion = false,
 	): RGBA {
 		const local = this.state.doc.colors;
 		const { cellX, cellY, bit } = pixelToCell(px, py);
@@ -1243,6 +1300,12 @@ export class SpriteEditor extends Renderable {
 				? null
 				: resolveColorKey(bgKey, local, this.globalPalette, SPRITE_PREVIEWS);
 		if (bg) return SpriteEditor.rgba(bg);
+		// Transparent Pixel: an onion ghost shows through it under the art (active
+		// Frame only), else the checkerboard.
+		if (onion) {
+			const ghost = this.onionGhostRGBA(px, py);
+			if (ghost) return ghost;
+		}
 		return phase % 2 === 0 ? C.grid : C.bg;
 	}
 
@@ -1313,6 +1376,7 @@ export class SpriteEditor extends Renderable {
 			fps: poseFps(this.state.doc.fps, this.state.pose),
 			frameCount: poseFrames(this.state, this.state.pose).length,
 			playMode: this.playMode,
+			onionDepth: this.onionDepth,
 			height: viewH,
 		});
 		this.geom.rail = rows;
@@ -1372,10 +1436,8 @@ export class SpriteEditor extends Renderable {
 		}
 
 		for (const box of layout.frames) {
-			const st =
-				box.name === this.state.frame
-					? this.state
-					: { ...this.state, frame: box.name };
+			const active = box.name === this.state.frame;
+			const st = active ? this.state : { ...this.state, frame: box.name };
 			const cy0 = Math.max(box.y, this.scroll.y);
 			const cy1 = Math.min(box.y + box.h, this.scroll.y + viewH);
 			const cx0 = Math.max(box.x, this.scroll.x);
@@ -1389,7 +1451,7 @@ export class SpriteEditor extends Renderable {
 						syOf(cy),
 						' ',
 						C.dim,
-						this.pixelRGBA(st, px, py, cx + cy, C),
+						this.pixelRGBA(st, px, py, cx + cy, C, active),
 					);
 				}
 			}
@@ -1454,6 +1516,7 @@ export class SpriteEditor extends Renderable {
 					this.state.cursor.y,
 					sx - x0 + this.scroll.x + (sy + this.scroll.y),
 					C,
+					true,
 				),
 			C,
 		);
@@ -1531,6 +1594,9 @@ export class SpriteEditor extends Renderable {
 		};
 		this.geom.focus = { tabs, origin, top };
 
+		// Onion ghosts only source the active Frame; while playing the display
+		// frame is not it (and the layers are empty anyway).
+		const onion = viewState.frame === this.state.frame;
 		for (let sy = top; sy < viewH; sy++) {
 			for (let sx = RAIL_W; sx < RAIL_W + viewW; sx++) {
 				const px = this.cam.x + Math.floor((sx - origin.x) / z);
@@ -1540,7 +1606,7 @@ export class SpriteEditor extends Renderable {
 					sy,
 					' ',
 					C.dim,
-					this.pixelRGBA(viewState, px, py, sx + sy, C),
+					this.pixelRGBA(viewState, px, py, sx + sy, C, onion),
 				);
 			}
 		}
@@ -1573,6 +1639,7 @@ export class SpriteEditor extends Renderable {
 					this.state.cursor.y,
 					sx + sy,
 					C,
+					onion,
 				),
 			C,
 		);
@@ -1628,6 +1695,9 @@ export class SpriteEditor extends Renderable {
 		this.geom.viewW = viewW;
 
 		this.renderRail(buf, viewH, C);
+
+		// Source the onion ghosts for this frame (empty while playing / onion off).
+		this.buildOnionLayers(C);
 
 		// Playback reviews motion on the single-frame canvas whichever view is
 		// active — the strips grid is a poor movie screen.
