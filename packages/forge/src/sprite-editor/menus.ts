@@ -1,7 +1,7 @@
 // Pure state machines for the Sprite editor's modal overlays (ADR 0031, issue
 // #339): the pose menu (switch/create/delete/add-frame/reorder/fps) and the
 // anchor menu (pick which named anchor to place, at doc or frame scope). Same
-// reducer pattern as `picker.ts`: the TUI renders the state and feeds keys in;
+// reducer pattern as `colorPicker.ts`: the TUI renders the state and feeds keys in;
 // each key returns the next menu (or null to close) plus an optional action the
 // TUI applies to the pure editor state. No I/O, no `@opentui/core`.
 import type { AnchorScope } from './state';

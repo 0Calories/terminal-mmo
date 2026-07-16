@@ -18,7 +18,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SCENE_PALETTE, STANDARD_PALETTE } from '@mmo/core/entities';
+import { HUES, SCENE_PALETTE, STANDARD_PALETTE } from '@mmo/core/entities';
 import { parseSpriteFile } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
 import { RAIL_W } from '../src/sprite-editor/chrome';
@@ -197,11 +197,13 @@ describe('Sprite editor TUI smoke', () => {
 		});
 		t.editor.key(key('space')); // paint 'p' at TL
 		t.editor.key(key('space')); // lift pen
-		// Switch ink to a different key via the picker.
-		t.editor.key(key('f'));
-		t.editor.key(key('down'));
-		t.editor.key(key('enter'));
-		expect(t.editor.picker).toBeNull();
+		// Define a fresh file-local colour via the `e` modal; it becomes the active
+		// ink, so overpainting the same cell coerces rather than being a no-op.
+		t.editor.key(key('e'));
+		expect(t.editor.colorPicker).not.toBeNull();
+		t.editor.key(key('enter')); // commit the default colour under an auto key
+		expect(t.editor.colorPicker).toBeNull();
+		expect(t.editor.state.ink.kind).toBe('color');
 		t.editor.key(key('right')); // move to TR of the same cell
 		t.editor.key(key('space')); // overpaint a second colour → coerces, never refuses
 		await t.renderOnce();
@@ -228,18 +230,53 @@ describe('Sprite editor TUI smoke', () => {
 		expect(t.captureCharFrame().toLowerCase()).toContain('saved');
 	});
 
-	test('the color picker opens and lists the dynamic channels by meaning', async () => {
+	test('the c ink quick-pick lists the dynamic channels by meaning', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('pick', 'hat'),
 			id: 'pick',
 			role: 'hat',
 		});
-		t.editor.key(key('f'));
+		t.editor.key(key('c'));
 		await t.renderOnce();
-		expect(t.editor.picker).not.toBeNull();
+		expect(t.editor.quickPick).not.toBeNull();
 		const frame = t.captureCharFrame();
 		expect(frame).toContain('player hue');
 		expect(frame).toContain('weapon accent');
+	});
+
+	test('the e colour picker modal opens over a hue/shade grid + hex entry', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('def', 'hat'),
+			id: 'def',
+			role: 'hat',
+		});
+		t.editor.key(key('e'));
+		await t.renderOnce();
+		expect(t.editor.colorPicker).not.toBeNull();
+		expect(t.editor.colorPicker?.mode).toBe('define');
+		const frame = t.captureCharFrame();
+		expect(frame).toContain('Define file-local colour');
+		expect(frame).toContain('hex #');
+	});
+
+	test('a painted p Pixel cycles through the real player hues over time (spec #401)', async () => {
+		// A hat with one lit `p` (dynamic hue) Pixel in the idle frame.
+		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'cyc');
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'cyc', role: 'hat' });
+
+		const hue = (i: number): [number, number, number] => [
+			HUES[i][0],
+			HUES[i][1],
+			HUES[i][2],
+		];
+		// Phase 0: the Pixel renders the first player hue.
+		expect(canvasHasBg(t.captureSpans(), hue(0), 6)).toBe(true);
+
+		// Advance one cycle step; the same Pixel now renders the next hue.
+		t.editor.tick(700); // one PREVIEW_CYCLE_MS step
+		await t.renderOnce();
+		expect(canvasHasBg(t.captureSpans(), hue(1), 6)).toBe(true);
 	});
 });
 

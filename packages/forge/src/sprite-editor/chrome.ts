@@ -282,8 +282,8 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 	{
 		title: 'Tools',
 		bindings: [
-			{ keys: '1-6', label: 'pencil · erase · stamp · line · rect · ellipse' },
-			{ keys: 'p e s / a', label: 'pencil · erase · stamp / anchor' },
+			{ keys: '1-6', label: 'pencil · fill · stamp · line · rect · ellipse' },
+			{ keys: 'p s / a', label: 'pencil · stamp / anchor (letters)' },
 			{ keys: 'o', label: 'rect/ellipse outline ↔ filled' },
 		],
 	},
@@ -316,6 +316,7 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 	{
 		title: 'Color',
 		bindings: [
+			{ keys: 'e', label: 'define / edit file-local colour (modal)' },
 			{ keys: 'c', label: 'ink quick-pick (type / arrows / index → enter)' },
 			{ keys: "; / '", label: 'nudge ink to the adjacent swatch' },
 			{ keys: 't', label: 'set ink transparent' },
