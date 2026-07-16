@@ -1,7 +1,7 @@
-// Chrome smoke tests for the Composited preview (issue #340): the editor's `o`
-// panel and the standalone `forge sprite preview` TUI. The composition math is
-// covered pixel-exactly in sprite-composite.test.ts; these assert the keys reach
-// the pure ops and the Renderables draw the right thing.
+// Chrome smoke tests for the Composited preview (issues #340, #393): the editor's
+// always-on floating pane and the standalone `forge sprite preview` TUI. The
+// composition math is covered pixel-exactly in sprite-composite.test.ts; these
+// assert the keys reach the pure ops and the Renderables draw the right thing.
 
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
@@ -25,7 +25,7 @@ function loadDoc(rel: string, id: string): SpriteDoc {
 	return doc;
 }
 
-describe('editor o panel', () => {
+describe('editor floating preview pane', () => {
 	async function mountEditor(doc: SpriteDoc, role: 'form' | 'weapon' | 'hat') {
 		const t = await createTestRenderer({ width: 100, height: 24 });
 		const editor = new SpriteEditor(t.renderer, {
@@ -39,35 +39,90 @@ describe('editor o panel', () => {
 		return { ...t, editor };
 	}
 
-	test('o toggles the in-context panel on and off', async () => {
+	test('the preview is on by default and v toggles it off/on (#393)', async () => {
 		const t = await mountEditor(
 			loadDoc('sprites/forms/buddy.sprite', 'buddy'),
 			'form',
 		);
+		// Always-on: the pane and its controls render without any keypress.
+		expect(t.editor.composite).toBe(true);
+		expect(t.captureCharFrame()).toContain('preview');
+		// `v` is the rare degradation override: toggling off drops the pane.
+		t.editor.key(seq('v'));
 		expect(t.editor.composite).toBe(false);
+		await t.renderOnce();
+		const off = t.captureCharFrame();
+		expect(off).not.toContain('preview');
+		// And back on.
 		t.editor.key(seq('v'));
 		expect(t.editor.composite).toBe(true);
 		await t.renderOnce();
-		// The panel splits the screen with a divider column not present otherwise.
-		expect(t.captureCharFrame()).toContain('│');
-		t.editor.key(seq('v'));
-		expect(t.editor.composite).toBe(false);
+		expect(t.captureCharFrame()).toContain('preview');
 	});
 
-	test('the panel composites the WIP body (real art glyphs render)', async () => {
+	test('the pane carries flip + play controls', async () => {
 		const t = await mountEditor(
 			loadDoc('sprites/forms/buddy.sprite', 'buddy'),
 			'form',
 		);
-		const before = t.captureCharFrame();
-		t.editor.key(seq('v'));
-		await t.renderOnce();
-		const after = t.captureCharFrame();
-		// Turning the panel on changes the frame (avatar art drawn on the right).
-		expect(after).not.toBe(before);
+		const frame = t.captureCharFrame();
+		expect(frame).toContain('flip');
+		expect(frame).toContain('play');
 	});
 
-	test('the key map documents the in-context toggle on v (locked keymap #387)', () => {
+	test('turning the pane off changes the rendered frame', async () => {
+		const t = await mountEditor(
+			loadDoc('sprites/forms/buddy.sprite', 'buddy'),
+			'form',
+		);
+		const on = t.captureCharFrame();
+		t.editor.key(seq('v'));
+		await t.renderOnce();
+		const off = t.captureCharFrame();
+		// Dropping the floating pane (avatar art + border) changes the frame.
+		expect(off).not.toBe(on);
+	});
+
+	// The pane docks top-right at a fixed native size (PREVIEW_W=34), so at 100×24
+	// its bottom control row sits at y=10 and its controls start at x=68 (`flip …`)
+	// / x=76 (`▶ play`) — mirroring renderPreviewPane's layout.
+	const CONTROL_ROW = 10;
+	const FLIP_X = 69;
+	const PLAY_X = 78;
+
+	test('clicking the pane flip control flips the preview facing (mouse-clickable)', async () => {
+		const t = await mountEditor(
+			loadDoc('sprites/forms/buddy.sprite', 'buddy'),
+			'form',
+		);
+		expect(t.editor.previewFacing).toBe(1);
+		t.editor.mouseDown({ button: 0, x: FLIP_X, y: CONTROL_ROW });
+		expect(t.editor.previewFacing).toBe(-1);
+	});
+
+	test('clicking the pane play control toggles pose playback (mouse-clickable)', async () => {
+		const t = await mountEditor(
+			loadDoc('sprites/forms/buddy.sprite', 'buddy'),
+			'form',
+		);
+		expect(t.editor.playMode).toBe('none');
+		t.editor.mouseDown({ button: 0, x: PLAY_X, y: CONTROL_ROW });
+		expect(t.editor.playMode).toBe('pose');
+	});
+
+	test('a click on the pane body is swallowed — it never paints the canvas beneath', async () => {
+		const t = await mountEditor(
+			loadDoc('sprites/hats/wizard.sprite', 'wizard'),
+			'hat',
+		);
+		const before = t.editor.state;
+		// Interior of the floating pane (top-right), above the control row.
+		t.editor.mouseDown({ button: 0, x: 80, y: 4 });
+		t.editor.mouseUp();
+		expect(t.editor.state).toBe(before);
+	});
+
+	test('the key map documents the preview toggle on v (locked keymap #387)', () => {
 		const bindings = SPRITE_KEYMAP.flatMap((g) => g.bindings);
 		const v = bindings.find((b) => b.keys === 'v');
 		expect(v?.label.toLowerCase()).toContain('preview');

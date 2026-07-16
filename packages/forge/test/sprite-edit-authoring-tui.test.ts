@@ -117,6 +117,11 @@ describe('mirror view', () => {
 		const { doc } = parseSpriteFile('--- idle\n▐·\n··\n', 'flag');
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'flag', role: 'hat' });
+		// Isolate the mirror panel: the always-on floating preview (#393) otherwise
+		// docks over the top-right, covering the mirror panel it shares that side
+		// with. `v` drops the preview so this test exercises mirror alone.
+		t.editor.key(key('v'));
+		await t.renderOnce();
 		expect(t.captureCharFrame()).not.toContain('▌');
 		t.editor.key(key('m'));
 		await t.renderOnce();
