@@ -146,73 +146,88 @@ export function railModel(input: RailInput): RailRow[] {
 		0,
 		options.findIndex((o) => optionMatches(o, input.ink)),
 	);
-	// Rows left for inks after the fixed boxes: tools (1+2+1), ink title (1),
-	// blank (1), playback (1+4). At least one ink row always shows.
-	const fixed = rows.length + 1 + 5;
-	const avail = Math.max(1, input.height - fixed);
-	let start = 0;
+	// The playback box is built first so the ink window's row budget is derived
+	// from its real size, never a hand-counted constant.
+	const playback = playbackBox(input);
+	// Rows left for inks after everything fixed: the boxes above, the blank
+	// separating ink from playback, and the playback box itself.
+	const avail = Math.max(1, input.height - (rows.length + 1 + playback.length));
+	// The visible window [lo, hi) of the ink list, centred on the active ink.
+	// When clipped, the edge rows become markers stating exactly how many inks
+	// each hides; below 3 rows there is no room for honest markers, so the
+	// window clips silently (the small-terminal slice owns that regime).
+	let lo = 0;
+	let hi = options.length;
 	if (options.length > avail) {
-		start = Math.min(
+		lo = Math.min(
 			Math.max(0, activeIdx - Math.floor(avail / 2)),
 			options.length - avail,
 		);
+		hi = lo + avail;
+		if (avail >= 3) {
+			if (lo > 0) lo += 1;
+			if (hi < options.length) hi -= 1;
+			// Keep the active ink visible when it sat on a marker's row.
+			if (activeIdx < lo) {
+				lo -= 1;
+				hi -= 1;
+			} else if (activeIdx >= hi) {
+				lo += 1;
+				hi += 1;
+			}
+		}
 	}
-	const end = Math.min(options.length, start + avail);
-	if (start > 0)
-		rows.push({ spans: [{ text: `   ↑ ${start} more`, dim: true }] });
-	for (let i = start; i < end; i++) {
-		// The clipped-list markers each consume one of the window's rows.
-		if (i === start && start > 0) continue;
-		if (i === end - 1 && end < options.length) continue;
-		rows.push(inkRow(options[i], i === activeIdx));
-	}
-	if (end < options.length)
+	if (lo > 0) rows.push({ spans: [{ text: `   ↑ ${lo} more`, dim: true }] });
+	for (let i = lo; i < hi; i++) rows.push(inkRow(options[i], i === activeIdx));
+	if (hi < options.length)
 		rows.push({
-			spans: [{ text: `   ↓ ${options.length - end} more`, dim: true }],
+			spans: [{ text: `   ↓ ${options.length - hi} more`, dim: true }],
 		});
 	rows.push({ spans: [{ text: '' }] });
 
-	// --- playback box ---
-	rows.push({ spans: [{ text: ' playback', dim: true }], title: true });
-	rows.push({
-		spans: [
-			{
-				text: ` pose ${input.pose} · ${input.fps}fps · ${input.frameCount}f`,
-				dim: true,
-			},
-		],
-	});
-	rows.push({
-		spans: [
-			{ text: ' ' },
-			{
-				text: input.playMode === 'pose' ? '▶ . pose' : '  . pose',
-				hot: input.playMode === 'pose',
-				action: { type: 'play', mode: 'pose' },
-			},
-			{ text: '  ' },
-			{
-				text: input.playMode === 'walk' ? '▶ , walk' : '  , walk',
-				hot: input.playMode === 'walk',
-				action: { type: 'play', mode: 'walk' },
-			},
-		],
-	});
-	rows.push({
-		spans: [{ text: ' [ ] frame · { } pose', dim: true }],
-	});
-	rows.push({
-		spans: [
-			{ text: ' ' },
-			{ text: 'n +frame', dim: true, action: { type: 'addFrame' } },
-			{ text: ' · ' },
-			{ text: 'P pose', dim: true, action: { type: 'poseMenu' } },
-			{ text: ' · ' },
-			{ text: 'A anchor', dim: true, action: { type: 'anchorMenu' } },
-		],
-	});
-
+	rows.push(...playback);
 	return rows;
+}
+
+function playbackBox(input: RailInput): RailRow[] {
+	return [
+		{ spans: [{ text: ' playback', dim: true }], title: true },
+		{
+			spans: [
+				{
+					text: ` pose ${input.pose} · ${input.fps}fps · ${input.frameCount}f`,
+					dim: true,
+				},
+			],
+		},
+		{
+			spans: [
+				{ text: ' ' },
+				{
+					text: input.playMode === 'pose' ? '▶ . pose' : '  . pose',
+					hot: input.playMode === 'pose',
+					action: { type: 'play', mode: 'pose' },
+				},
+				{ text: '  ' },
+				{
+					text: input.playMode === 'walk' ? '▶ , walk' : '  , walk',
+					hot: input.playMode === 'walk',
+					action: { type: 'play', mode: 'walk' },
+				},
+			],
+		},
+		{ spans: [{ text: ' [ ] frame · { } pose', dim: true }] },
+		{
+			spans: [
+				{ text: ' ' },
+				{ text: 'n +frame', dim: true, action: { type: 'addFrame' } },
+				{ text: ' · ' },
+				{ text: 'P pose', dim: true, action: { type: 'poseMenu' } },
+				{ text: ' · ' },
+				{ text: 'A anchor', dim: true, action: { type: 'anchorMenu' } },
+			],
+		},
+	];
 }
 
 // The action a click at rail cell (x, y) triggers, if any. `y` indexes the
@@ -267,7 +282,7 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: 'U / ^r', label: 'redo' },
 			{ keys: '+ / -', label: 'zoom ladder (ctrl-wheel too)' },
 			{ keys: 'm', label: 'mirror facing' },
-			{ keys: 'o', label: 'composited preview' },
+			{ keys: 'v', label: 'composited preview' },
 			{ keys: 'q', label: 'quit' },
 		],
 	},

@@ -311,7 +311,8 @@ export class SpriteEditor extends Renderable {
 	// a wheel or pan gesture takes over the viewport and clears it.
 	private followCursor = true;
 	// An in-flight middle-drag pan: the last mouse cell it was seen at, plus the
-	// sub-Pixel remainder the focus view accumulates between whole-Pixel steps.
+	// leftover screen cells (short of a whole Pixel at the current zoom) the
+	// focus view accumulates between camera steps.
 	private panLast: { x: number; y: number } | null = null;
 	private panRem = { x: 0, y: 0 };
 	// The geometry of the last render, captured so the mouse handlers can invert
@@ -493,6 +494,37 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
+	// A screen cell in the strips view's content coordinates (the unscrolled
+	// grid stripsLayout lays out).
+	private stripsContentAt(e: { x: number; y: number }): {
+		cx: number;
+		cy: number;
+	} {
+		return { cx: e.x - RAIL_W + this.scroll.x, cy: e.y + this.scroll.y };
+	}
+
+	// Move the strips scroll by a delta, clamped to the layout's content.
+	private scrollStripsBy(dx: number, dy: number): void {
+		const layout = this.geom.layout;
+		if (!layout) return;
+		this.scroll.x = clampScroll(
+			this.scroll.x + dx,
+			layout.contentW,
+			this.geom.viewW,
+		);
+		this.scroll.y = clampScroll(
+			this.scroll.y + dy,
+			layout.contentH,
+			this.geom.viewH,
+		);
+	}
+
+	// Dismiss the post-save summary on the hint line: any further input means
+	// the artist has moved on.
+	private dismissSaveNotice(): void {
+		this.saved = false;
+	}
+
 	// The Pixel a canvas cell resolves to in the focus view (may be negative /
 	// past the frame; the pure layer clips), or null outside the canvas region.
 	private focusPixel(x: number, y: number): { x: number; y: number } | null {
@@ -516,8 +548,7 @@ export class SpriteEditor extends Renderable {
 		if (this.view === 'strips') {
 			const layout = this.geom.layout;
 			if (!layout) return;
-			const cx = e.x - RAIL_W + this.scroll.x;
-			const cy = e.y + this.scroll.y;
+			const { cx, cy } = this.stripsContentAt(e);
 			const hit = stripsHit(layout, cx, cy);
 			if (!hit) {
 				// A click on a strip's name row activates that Frame without painting.
@@ -557,7 +588,7 @@ export class SpriteEditor extends Renderable {
 	}
 
 	mouseDown(e: SpriteMouse): void {
-		this.saved = false;
+		this.dismissSaveNotice();
 		if (this.helpOpen) {
 			this.helpOpen = false;
 			return;
@@ -592,11 +623,8 @@ export class SpriteEditor extends Renderable {
 		if (this.view === 'strips') {
 			const layout = this.geom.layout;
 			if (!layout) return;
-			const hit = stripsHit(
-				layout,
-				e.x - RAIL_W + this.scroll.x,
-				e.y + this.scroll.y,
-			);
+			const { cx, cy } = this.stripsContentAt(e);
+			const hit = stripsHit(layout, cx, cy);
 			// A stroke stays in the Frame it started on — dragging across a
 			// neighbouring Frame's block must not silently switch and paint there.
 			if (!hit || hit.frame.name !== this.state.frame) return;
@@ -622,18 +650,7 @@ export class SpriteEditor extends Renderable {
 	private pan(dx: number, dy: number): void {
 		this.followCursor = false;
 		if (this.view === 'strips') {
-			const layout = this.geom.layout;
-			if (!layout) return;
-			this.scroll.x = clampScroll(
-				this.scroll.x - dx,
-				layout.contentW,
-				this.geom.viewW,
-			);
-			this.scroll.y = clampScroll(
-				this.scroll.y - dy,
-				layout.contentH,
-				this.geom.viewH,
-			);
+			this.scrollStripsBy(-dx, -dy);
 			return;
 		}
 		const z = this.zoom;
@@ -664,18 +681,7 @@ export class SpriteEditor extends Renderable {
 		}
 		this.followCursor = false;
 		if (this.view === 'strips') {
-			const layout = this.geom.layout;
-			if (!layout) return;
-			this.scroll.x = clampScroll(
-				this.scroll.x + route.dx,
-				layout.contentW,
-				this.geom.viewW,
-			);
-			this.scroll.y = clampScroll(
-				this.scroll.y + route.dy,
-				layout.contentH,
-				this.geom.viewH,
-			);
+			this.scrollStripsBy(route.dx, route.dy);
 			return;
 		}
 		// Focus view scrolls its Pixel camera; a wheel notch is ~one Pixel row at
@@ -1007,7 +1013,7 @@ export class SpriteEditor extends Renderable {
 				this.helpOpen = false;
 			return;
 		}
-		this.saved = false;
+		this.dismissSaveNotice();
 		if (this.picker) {
 			this.pickerKey(k);
 			return;
@@ -1040,7 +1046,7 @@ export class SpriteEditor extends Renderable {
 				this.mirror = !this.mirror;
 				return;
 			}
-			if (k.name === 'o') {
+			if (k.name === 'v') {
 				this.composite = !this.composite;
 				return;
 			}
@@ -1096,7 +1102,7 @@ export class SpriteEditor extends Renderable {
 			this.mirror = !this.mirror;
 			return;
 		}
-		if (k.name === 'o') {
+		if (k.name === 'v') {
 			this.composite = !this.composite;
 			return;
 		}
@@ -1506,16 +1512,19 @@ export class SpriteEditor extends Renderable {
 		const spanY = visiblePixels(availH, z);
 		const fitsX = pxW <= spanX;
 		const fitsY = pxH <= spanY;
-		if (this.followCursor) {
-			this.cam = {
-				x: fitsX
-					? 0
-					: scrollAxis(this.cam.x, this.state.cursor.x, spanX, SCROLLOFF),
-				y: fitsY
-					? 0
-					: scrollAxis(this.cam.y, this.state.cursor.y, spanY, SCROLLOFF),
-			};
-		}
+		// A fitting axis is always centred (wheel/pan cannot drift it off); a
+		// larger-than-view axis follows the cursor or keeps its scrolled camera,
+		// clamped to the frame.
+		const followed = this.followCursor
+			? {
+					x: scrollAxis(this.cam.x, this.state.cursor.x, spanX, SCROLLOFF),
+					y: scrollAxis(this.cam.y, this.state.cursor.y, spanY, SCROLLOFF),
+				}
+			: this.cam;
+		this.cam = {
+			x: fitsX ? 0 : clampScroll(followed.x, pxW, spanX),
+			y: fitsY ? 0 : clampScroll(followed.y, pxH, spanY),
+		};
 		const origin = {
 			x: RAIL_W + (fitsX ? centeredOrigin(pxW * z, viewW) : 0),
 			y: top + (fitsY ? centeredOrigin(pxH * z, availH) : 0),

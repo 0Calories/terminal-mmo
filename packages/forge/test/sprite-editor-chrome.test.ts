@@ -92,12 +92,23 @@ describe('railModel — tools · ink · playback boxes', () => {
 	});
 
 	test('windows a long ink list around the active ink', () => {
-		const rows = model({ ink: colorInk('k'), height: 16 });
+		const entries = entriesFor();
+		const rows = model({ ink: colorInk('k'), height: 16, entries });
 		const text = allText(rows);
 		// The active ink stays visible even in the shrunken window…
 		expect(text).toMatch(/▸.*k/);
 		// …and the clipping is announced, never silent.
 		expect(text).toContain('more');
+		// The markers state exactly how many inks they hide: shown + hidden
+		// covers the whole list (palette entries plus transparent).
+		const shown = rows.filter((r) =>
+			r.spans.some((s) => s.swatch !== undefined),
+		).length;
+		const hidden = [...text.matchAll(/[↑↓] (\d+) more/g)].reduce(
+			(sum, m) => sum + Number(m[1]),
+			0,
+		);
+		expect(shown + hidden).toBe(entries.length + 1);
 		// The playback box survives the squeeze.
 		expect(text).toContain('playback');
 		expect(rows.length).toBeLessThanOrEqual(16);

@@ -45,12 +45,12 @@ describe('editor o panel', () => {
 			'form',
 		);
 		expect(t.editor.composite).toBe(false);
-		t.editor.key(seq('o'));
+		t.editor.key(seq('v'));
 		expect(t.editor.composite).toBe(true);
 		await t.renderOnce();
 		// The panel splits the screen with a divider column not present otherwise.
 		expect(t.captureCharFrame()).toContain('│');
-		t.editor.key(seq('o'));
+		t.editor.key(seq('v'));
 		expect(t.editor.composite).toBe(false);
 	});
 
@@ -60,17 +60,17 @@ describe('editor o panel', () => {
 			'form',
 		);
 		const before = t.captureCharFrame();
-		t.editor.key(seq('o'));
+		t.editor.key(seq('v'));
 		await t.renderOnce();
 		const after = t.captureCharFrame();
 		// Turning the panel on changes the frame (avatar art drawn on the right).
 		expect(after).not.toBe(before);
 	});
 
-	test('the key map documents the in-context toggle', () => {
+	test('the key map documents the in-context toggle on v (locked keymap #387)', () => {
 		const bindings = SPRITE_KEYMAP.flatMap((g) => g.bindings);
-		const o = bindings.find((b) => b.keys === 'o');
-		expect(o?.label.toLowerCase()).toContain('preview');
+		const v = bindings.find((b) => b.keys === 'v');
+		expect(v?.label.toLowerCase()).toContain('preview');
 	});
 });
 
