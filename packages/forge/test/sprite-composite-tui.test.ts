@@ -8,13 +8,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseSpriteFile, type SpriteDoc } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
+import { SPRITE_KEYMAP } from '../src/sprite-editor/chrome';
 import { previewStances } from '../src/sprite-editor/composite';
 import {
 	preservedStanceIndex,
 	SpritePreview,
 } from '../src/sprite-editor/preview';
 import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
-import { spriteHelpLine } from '../src/sprite-editor/view';
 
 const seq = (s: string): SpriteKey => ({ name: s, sequence: s });
 
@@ -45,12 +45,12 @@ describe('editor o panel', () => {
 			'form',
 		);
 		expect(t.editor.composite).toBe(false);
-		t.editor.key(seq('o'));
+		t.editor.key(seq('v'));
 		expect(t.editor.composite).toBe(true);
 		await t.renderOnce();
 		// The panel splits the screen with a divider column not present otherwise.
 		expect(t.captureCharFrame()).toContain('│');
-		t.editor.key(seq('o'));
+		t.editor.key(seq('v'));
 		expect(t.editor.composite).toBe(false);
 	});
 
@@ -60,15 +60,17 @@ describe('editor o panel', () => {
 			'form',
 		);
 		const before = t.captureCharFrame();
-		t.editor.key(seq('o'));
+		t.editor.key(seq('v'));
 		await t.renderOnce();
 		const after = t.captureCharFrame();
 		// Turning the panel on changes the frame (avatar art drawn on the right).
 		expect(after).not.toBe(before);
 	});
 
-	test('help line advertises the in-context toggle', () => {
-		expect(spriteHelpLine()).toContain('o in-context');
+	test('the key map documents the in-context toggle on v (locked keymap #387)', () => {
+		const bindings = SPRITE_KEYMAP.flatMap((g) => g.bindings);
+		const v = bindings.find((b) => b.keys === 'v');
+		expect(v?.label.toLowerCase()).toContain('preview');
 	});
 });
 

@@ -344,36 +344,6 @@ export function composeStatusLine(
 	return l + ' '.repeat(pad) + r;
 }
 
-export interface KeyHint {
-	keys: string;
-	label: string;
-}
-
-// The canonical keybinding table — the single source for the help line and the
-// documentation of the editor's controls.
-export const SPRITE_KEY_HINTS: readonly KeyHint[] = [
-	{ keys: 'hjkl', label: 'move' },
-	{ keys: 'space', label: 'pen' },
-	{ keys: 'p/e/s/a', label: 'tools' },
-	{ keys: 'f', label: 'ink' },
-	{ keys: 't', label: 'transparent' },
-	{ keys: 'c', label: 'clear' },
-	{ keys: '[ ]', label: 'frame' },
-	{ keys: 'u/^r', label: 'undo' },
-	{ keys: '^s', label: 'save' },
-	{ keys: 'q', label: 'quit' },
-	{ keys: 'P', label: 'poses' },
-	{ keys: 'A', label: 'anchor' },
-	{ keys: 'm', label: 'mirror' },
-	{ keys: '+ -', label: 'zoom' },
-	{ keys: 'o', label: 'in-context' },
-	{ keys: '. ,', label: 'play' },
-];
-
-export function spriteHelpLine(): string {
-	return SPRITE_KEY_HINTS.map((h) => `${h.keys} ${h.label}`).join(' · ');
-}
-
 // A short summary of save diagnostics for the inline status area.
 export function saveDiagSummary(
 	diags: { severity: string; message: string }[],

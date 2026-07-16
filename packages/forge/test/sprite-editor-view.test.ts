@@ -10,13 +10,11 @@ import {
 	quadrantMarker,
 	resolveColorKey,
 	roleForDir,
-	SPRITE_KEY_HINTS,
 	SPRITE_PREVIEWS,
 	saveDiagSummary,
 	screenToPixel,
 	scrollAxis,
 	scrollViewport,
-	spriteHelpLine,
 	spriteStatusLine,
 	stepZoom,
 	visiblePixels,
@@ -228,11 +226,6 @@ describe('status + help chrome', () => {
 
 	test('composeStatusLine with no feedback is just the left, clipped', () => {
 		expect(composeStatusLine('hello', '', 3)).toBe('hel');
-	});
-
-	test('help line lists every hint', () => {
-		const help = spriteHelpLine();
-		for (const h of SPRITE_KEY_HINTS) expect(help).toContain(h.keys);
 	});
 
 	test('save diag summary — clean and dirty', () => {

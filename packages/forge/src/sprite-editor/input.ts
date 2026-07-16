@@ -111,6 +111,39 @@ export function normalizeKey(raw: RawKey): EditorInput {
 }
 
 // ---------------------------------------------------------------------------
+// Wheel routing (spec #387, locked #376): wheel scrolls, shift-wheel scrolls
+// horizontally, ctrl-wheel zooms. The route is pure grammar — what the scroll
+// or zoom *targets* (the strip stack, the focus camera, the zoom ladder) is the
+// caller's presentation state, so the deltas come back device-neutral.
+// ---------------------------------------------------------------------------
+
+export type WheelDirection = 'up' | 'down' | 'left' | 'right';
+
+export type WheelRoute =
+	| { readonly kind: 'scroll'; readonly dx: number; readonly dy: number }
+	| { readonly kind: 'zoom'; readonly dir: 1 | -1 };
+
+// Rows/columns one wheel notch scrolls (matches the zone editor's feel).
+export const WHEEL_STEP = 3;
+
+export function routeWheel(
+	direction: WheelDirection,
+	mods: InputMods,
+	step: number = WHEEL_STEP,
+): WheelRoute {
+	const horizontal = direction === 'left' || direction === 'right';
+	// Only a vertical ctrl-wheel zooms — a sideways notch has no in/out meaning.
+	if (mods.ctrl && !horizontal)
+		return { kind: 'zoom', dir: direction === 'up' ? 1 : -1 };
+	const back = direction === 'up' || direction === 'left';
+	const delta = back ? -step : step;
+	// Shift promotes a vertical wheel to the horizontal axis; a native
+	// horizontal wheel is already there.
+	if (mods.shift || horizontal) return { kind: 'scroll', dx: delta, dy: 0 };
+	return { kind: 'scroll', dx: 0, dy: delta };
+}
+
+// ---------------------------------------------------------------------------
 // The one reducer
 // ---------------------------------------------------------------------------
 

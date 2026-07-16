@@ -4,6 +4,7 @@ import {
 	type EditorInput,
 	normalizeKey,
 	normalizeMouse,
+	routeWheel,
 } from '../src/sprite-editor/input';
 import {
 	cellAt,
@@ -178,5 +179,49 @@ describe('applyInput — the single entry point into the pure layer', () => {
 		);
 		expect(s.doc).toBe(s0.doc);
 		expect(s.cursor).toEqual({ x: 1, y: 1 });
+	});
+});
+
+describe('routeWheel — spec #387 wheel grammar', () => {
+	const none = { shift: false, alt: false, ctrl: false };
+
+	test('a plain wheel scrolls vertically', () => {
+		expect(routeWheel('up', none)).toEqual({ kind: 'scroll', dx: 0, dy: -3 });
+		expect(routeWheel('down', none)).toEqual({ kind: 'scroll', dx: 0, dy: 3 });
+	});
+
+	test('shift-wheel scrolls horizontally', () => {
+		const shift = { ...none, shift: true };
+		expect(routeWheel('up', shift)).toEqual({ kind: 'scroll', dx: -3, dy: 0 });
+		expect(routeWheel('down', shift)).toEqual({ kind: 'scroll', dx: 3, dy: 0 });
+	});
+
+	test('a native horizontal wheel scrolls horizontally with or without shift', () => {
+		expect(routeWheel('left', none)).toEqual({ kind: 'scroll', dx: -3, dy: 0 });
+		expect(routeWheel('right', { ...none, shift: true })).toEqual({
+			kind: 'scroll',
+			dx: 3,
+			dy: 0,
+		});
+	});
+
+	test('ctrl-wheel zooms — up in, down out', () => {
+		const ctrl = { ...none, ctrl: true };
+		expect(routeWheel('up', ctrl)).toEqual({ kind: 'zoom', dir: 1 });
+		expect(routeWheel('down', ctrl)).toEqual({ kind: 'zoom', dir: -1 });
+		// A sideways ctrl-wheel has no zoom meaning; it stays a horizontal scroll.
+		expect(routeWheel('left', ctrl)).toEqual({
+			kind: 'scroll',
+			dx: -3,
+			dy: 0,
+		});
+	});
+
+	test('the scroll step is tunable', () => {
+		expect(routeWheel('down', none, 1)).toEqual({
+			kind: 'scroll',
+			dx: 0,
+			dy: 1,
+		});
 	});
 });
