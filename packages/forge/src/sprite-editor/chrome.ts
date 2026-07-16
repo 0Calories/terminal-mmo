@@ -62,6 +62,8 @@ export interface RailInput {
 	readonly fps: number;
 	readonly frameCount: number;
 	readonly playMode: 'none' | 'pose' | 'walk';
+	// Onion-skin depth (0 off), surfaced in the playback box.
+	readonly onionDepth: number;
 	// Rows available for the rail (the canvas region's height).
 	readonly height: number;
 }
@@ -214,6 +216,12 @@ function playbackBox(input: RailInput): RailRow[] {
 					hot: input.playMode === 'walk',
 					action: { type: 'play', mode: 'walk' },
 				},
+				{ text: '  ' },
+				{
+					text: `O ${input.onionDepth}`,
+					hot: input.onionDepth > 0,
+					dim: input.onionDepth === 0,
+				},
 			],
 		},
 		{ spans: [{ text: ' [ ] frame · { } pose', dim: true }] },
@@ -306,6 +314,7 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: 'n', label: 'add frame to current pose' },
 			{ keys: 'P / A', label: 'pose menu / anchor menu' },
 			{ keys: '. / ,', label: 'play pose / walk preview' },
+			{ keys: 'O', label: 'onion skin depth 0/1/2' },
 		],
 	},
 	{

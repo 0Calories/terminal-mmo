@@ -37,6 +37,7 @@ function model(overrides: Partial<Parameters<typeof railModel>[0]> = {}) {
 		fps: 8,
 		frameCount: 1,
 		playMode: 'none',
+		onionDepth: 0,
 		height: 22,
 		...overrides,
 	});
@@ -123,6 +124,21 @@ describe('railModel — tools · ink · playback boxes', () => {
 			.find((s) => s.text.includes(', walk'));
 		expect(walkSpan?.hot).toBe(true);
 		expect(walkSpan?.text).toContain('▶');
+	});
+
+	test('surfaces the onion-skin depth in the playback box', () => {
+		const off = model();
+		const offSpan = off
+			.flatMap((r) => r.spans)
+			.find((s) => s.text.startsWith('O '));
+		expect(offSpan?.text).toBe('O 0');
+		expect(offSpan?.hot).toBeFalsy();
+		const on = model({ onionDepth: 2 });
+		const onSpan = on
+			.flatMap((r) => r.spans)
+			.find((s) => s.text.startsWith('O '));
+		expect(onSpan?.text).toBe('O 2');
+		expect(onSpan?.hot).toBe(true);
 	});
 
 	test('ink rows and playback controls are click targets', () => {
