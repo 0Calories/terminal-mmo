@@ -94,7 +94,7 @@ describe('railModel — tools · ink · playback boxes', () => {
 
 	test('windows a long ink list around the active ink', () => {
 		const entries = entriesFor();
-		const rows = model({ ink: colorInk('k'), height: 16, entries });
+		const rows = model({ ink: colorInk('k'), height: 17, entries });
 		const text = allText(rows);
 		// The active ink stays visible even in the shrunken window…
 		expect(text).toMatch(/▸.*k/);
@@ -112,7 +112,7 @@ describe('railModel — tools · ink · playback boxes', () => {
 		expect(shown + hidden).toBe(entries.length + 1);
 		// The playback box survives the squeeze.
 		expect(text).toContain('playback');
-		expect(rows.length).toBeLessThanOrEqual(16);
+		expect(rows.length).toBeLessThanOrEqual(17);
 	});
 
 	test('shows the pose, fps and frame count, and lights the playing mode', () => {

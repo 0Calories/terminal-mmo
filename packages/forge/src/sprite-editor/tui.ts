@@ -106,8 +106,10 @@ import {
 	clearSelection,
 	colorInk,
 	commitFloat,
+	copySelection,
 	createPose,
 	currentFrame,
+	cutSelection,
 	type DynamicPreviews,
 	defineLocalColor,
 	deletePose,
@@ -125,6 +127,7 @@ import {
 	nudgeFloat,
 	nudgeInk,
 	paletteEntries,
+	pasteFromClipboard,
 	pixelToCell,
 	placeAnchor,
 	poseFrames,
@@ -1168,6 +1171,14 @@ export class SpriteEditor extends Renderable {
 		// move isn't silently lost; the selection survives the switch so a select →
 		// move handoff keeps the marquee (spec #399).
 		if (this.state.float) this.state = commitFloat(this.state);
+		// `paste` (rail 9) is a trigger, not a resting mode: hand off to move and
+		// spawn a paste float at the source coordinates (spec #400). If the
+		// clipboard is empty pasteFromClipboard refuses and move stays selected.
+		if (tool === 'paste') {
+			this.state = pasteFromClipboard(setTool(this.state, 'move'));
+			this.followCursor = true;
+			return;
+		}
 		this.state = setTool(this.state, tool);
 	}
 
@@ -1452,6 +1463,20 @@ export class SpriteEditor extends Renderable {
 		if (k.name === 'delete' || k.name === 'backspace') {
 			this.liftPen();
 			this.state = deleteSelection(this.state);
+			return;
+		}
+		// Copy / cut the selection to the in-editor clipboard (spec #400). `y` is a
+		// pure read; `x` copies then clears as one undo step. Both keep the
+		// selection so a paste can follow. (ctrl+y = redo is handled below and uses
+		// a control sequence, so a bare `y`/`x` never collides.)
+		if (k.sequence === 'y') {
+			this.liftPen();
+			this.state = copySelection(this.state);
+			return;
+		}
+		if (k.sequence === 'x') {
+			this.liftPen();
+			this.state = cutSelection(this.state);
 			return;
 		}
 		// Whole-Frame shift (spec #399): shift + an arrow = select-all + float,
