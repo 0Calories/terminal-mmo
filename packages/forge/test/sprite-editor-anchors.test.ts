@@ -27,9 +27,11 @@ describe('placeAnchor — doc scope', () => {
 		expect(s.doc.anchors.grip).toEqual({ x: 3, y: 1 });
 	});
 
-	test('allows an anchor outside the art grid (parser warns, not blocks)', () => {
+	test('allows an anchor outside the art grid, warning on the status line (#402)', () => {
 		const s = placeAnchor(formState(), 'grip', 99, 99, 'doc');
-		expect(s.feedback).toBe('');
+		// Out-of-bounds anchors WARN but are never rejected (ADR 0031, #402): the
+		// anchor still lands, and the status line explains it.
+		expect(s.feedback).toContain('outside the art bounds');
 		expect(s.doc.anchors.grip).toEqual({ x: 99, y: 99 });
 	});
 

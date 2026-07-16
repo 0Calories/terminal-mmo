@@ -96,18 +96,23 @@ import {
 	quickPickMove,
 	quickPickType,
 } from './quickPick';
+import { normalizeDoc } from './resize';
 import {
 	addFrameToPose,
 	anchorMarkers,
+	beginResize,
 	beginStroke,
 	cancelFloat,
+	cancelResize,
 	cancelShape,
 	cellAt,
 	clearSelection,
 	colorInk,
 	commitFloat,
+	commitResize,
 	copySelection,
 	createPose,
+	cropToSelection,
 	currentFrame,
 	cutSelection,
 	type DynamicPreviews,
@@ -135,6 +140,8 @@ import {
 	readPixel,
 	redoEdit,
 	reorderFrame,
+	resizeCycleEdge,
+	resizeNudge,
 	type SpriteEditorState,
 	type SpriteTool,
 	saveResult,
@@ -634,6 +641,7 @@ export class SpriteEditor extends Renderable {
 			this.anchorMenu !== null ||
 			this.awaitingStamp ||
 			this.helpOpen ||
+			this.state.resize !== null ||
 			this.playMode !== 'none'
 		);
 	}
@@ -1301,6 +1309,52 @@ export class SpriteEditor extends Renderable {
 		);
 	}
 
+	// ---- whole-file resize mode (spec #402) ----
+
+	// The arrow that grows the selected edge outward; its opposite shrinks it in.
+	private resizeArrowDir(name: string | undefined): 1 | -1 | 0 {
+		const edge = this.state.resize;
+		if (!edge) return 0;
+		switch (edge) {
+			case 'left':
+				if (name === 'left' || name === 'h') return 1;
+				if (name === 'right' || name === 'l') return -1;
+				return 0;
+			case 'right':
+				if (name === 'right' || name === 'l') return 1;
+				if (name === 'left' || name === 'h') return -1;
+				return 0;
+			case 'top':
+				if (name === 'up' || name === 'k') return 1;
+				if (name === 'down' || name === 'j') return -1;
+				return 0;
+			default:
+				if (name === 'down' || name === 'j') return 1;
+				if (name === 'up' || name === 'k') return -1;
+				return 0;
+		}
+	}
+
+	private resizeKeyDispatch(k: SpriteKey): void {
+		if (k.name === 'escape') {
+			this.state = cancelResize(this.state);
+			return;
+		}
+		if (k.name === 'return' || k.name === 'enter') {
+			this.state = commitResize(this.state);
+			return;
+		}
+		if (k.name === 'tab') {
+			this.state = resizeCycleEdge(this.state);
+			return;
+		}
+		const dir = this.resizeArrowDir(k.name);
+		if (dir !== 0) {
+			this.state = resizeNudge(this.state, dir);
+			this.followCursor = true;
+		}
+	}
+
 	// ---- playback (presentation only) ----
 
 	private togglePlay(mode: 'pose' | 'walk'): void {
@@ -1401,6 +1455,13 @@ export class SpriteEditor extends Renderable {
 		}
 		if (this.awaitingStamp) {
 			this.stampKey(k);
+			return;
+		}
+		// Whole-file resize mode (spec #402) owns the canvas: tab cycles the edge,
+		// arrows nudge the selected edge in/out, enter commits (one undo step), esc
+		// cancels losslessly.
+		if (this.state.resize) {
+			this.resizeKeyDispatch(k);
 			return;
 		}
 		if (k.sequence === '?') {
@@ -1528,6 +1589,19 @@ export class SpriteEditor extends Renderable {
 		}
 		if (k.sequence === 'A') {
 			this.openAnchorMenu();
+			return;
+		}
+		// Whole-file sizing (spec #402): `R` enters resize mode, `C` crops to the
+		// committed selection (both destructive edits are one undo step).
+		if (k.sequence === 'R') {
+			this.liftPen();
+			this.state = beginResize(this.state);
+			return;
+		}
+		if (k.sequence === 'C') {
+			this.liftPen();
+			this.state = cropToSelection(this.state);
+			this.followCursor = true;
 			return;
 		}
 		if (k.name === 'm') {
@@ -2760,7 +2834,11 @@ export async function runSpriteEdit(
 			process.exitCode = 1;
 			return;
 		}
-		doc = parsed.doc;
+		// Whole-file sizing (spec #402): a file whose Frames differ in size is
+		// normalized to the union bbox on load, so the editor's whole-file resize/
+		// crop operate on uniform Frames. Passing the normalized doc as the saved
+		// baseline keeps a freshly-loaded uniform file from reading as dirty.
+		doc = normalizeDoc(parsed.doc);
 		savePath = path;
 		role = roleForDir(basename(dirname(path))) ?? target.role ?? 'hat';
 	} else {

@@ -382,6 +382,13 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 		],
 	},
 	{
+		title: 'Resize & crop',
+		bindings: [
+			{ keys: 'R', label: 'resize mode (tab edge · arrows · enter/esc)' },
+			{ keys: 'C', label: 'crop to selection' },
+		],
+	},
+	{
 		title: 'Navigation',
 		bindings: [
 			{ keys: 'wheel', label: 'scroll strips' },
