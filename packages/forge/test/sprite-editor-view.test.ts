@@ -2,18 +2,25 @@ import { describe, expect, test } from 'bun:test';
 import { SCENE_PALETTE } from '@mmo/core';
 import {
 	bitName,
+	composeStatusLine,
+	DEFAULT_ZOOM,
 	dirForRole,
 	parseEditArg,
+	pixelToScreen,
 	quadrantMarker,
 	resolveColorKey,
 	roleForDir,
 	SPRITE_KEY_HINTS,
 	SPRITE_PREVIEWS,
 	saveDiagSummary,
+	screenToPixel,
 	scrollAxis,
 	scrollViewport,
 	spriteHelpLine,
 	spriteStatusLine,
+	stepZoom,
+	visiblePixels,
+	ZOOM_LADDER,
 } from '../src/sprite-editor/view';
 
 describe('role ⇄ directory mapping', () => {
@@ -108,6 +115,61 @@ describe('viewport scrolling', () => {
 	});
 });
 
+describe('fatbits zoom ladder', () => {
+	test('the ladder is ×1/×2/×3/×4/×6 and defaults to ×2', () => {
+		expect([...ZOOM_LADDER]).toEqual([1, 2, 3, 4, 6]);
+		expect(DEFAULT_ZOOM).toBe(2);
+	});
+
+	test('stepZoom walks the ladder and clamps at the ends', () => {
+		expect(stepZoom(2, 1)).toBe(3);
+		expect(stepZoom(2, -1)).toBe(1);
+		expect(stepZoom(1, -1)).toBe(1); // clamps at the bottom
+		expect(stepZoom(6, 1)).toBe(6); // clamps at the top
+		expect(stepZoom(4, 1)).toBe(6); // ×4 → ×6 (skips ×5, not on the ladder)
+	});
+
+	test('stepZoom snaps an off-ladder value onto the ladder first', () => {
+		// ×5 snaps to its nearest rung (×4) then steps from there.
+		expect(stepZoom(5, 1)).toBe(6);
+		expect(stepZoom(5, -1)).toBe(3);
+	});
+});
+
+describe('fatbits screen ⇄ pixel geometry', () => {
+	test('each Pixel occupies zoom×zoom cells; screenToPixel is the inverse', () => {
+		const cam = { x: 0, y: 0 };
+		// At ×3, canvas cells 0..2 all map to Pixel 0, 3..5 to Pixel 1.
+		expect(screenToPixel(0, 0, cam, 3)).toEqual({ x: 0, y: 0 });
+		expect(screenToPixel(2, 2, cam, 3)).toEqual({ x: 0, y: 0 });
+		expect(screenToPixel(3, 6, cam, 3)).toEqual({ x: 1, y: 2 });
+	});
+
+	test('the camera offsets in Pixel units', () => {
+		const cam = { x: 4, y: 2 };
+		expect(screenToPixel(0, 0, cam, 2)).toEqual({ x: 4, y: 2 });
+		expect(pixelToScreen(4, 2, cam, 2)).toEqual({ x: 0, y: 0 });
+		expect(pixelToScreen(6, 3, cam, 2)).toEqual({ x: 4, y: 2 });
+	});
+
+	test('pixelToScreen ∘ screenToPixel lands on the block top-left', () => {
+		const cam = { x: 1, y: 1 };
+		const px = screenToPixel(5, 7, cam, 2);
+		const back = pixelToScreen(px.x, px.y, cam, 2);
+		// The Pixel's top-left cell is within its own z×z block of cell (5,7).
+		expect(back.x).toBeLessThanOrEqual(5);
+		expect(back.y).toBeLessThanOrEqual(7);
+		expect(back.x + 2).toBeGreaterThan(5);
+		expect(back.y + 2).toBeGreaterThan(7);
+	});
+
+	test('visiblePixels floors the canvas span into whole Pixels', () => {
+		expect(visiblePixels(20, 2)).toBe(10);
+		expect(visiblePixels(21, 4)).toBe(5);
+		expect(visiblePixels(1, 4)).toBe(1); // always at least one
+	});
+});
+
 describe('quadrant markers', () => {
 	test('each bit gets a distinct corner block', () => {
 		expect(quadrantMarker(0)).toBe('▘');
@@ -122,7 +184,7 @@ describe('quadrant markers', () => {
 });
 
 describe('status + help chrome', () => {
-	test('status line surfaces id, role, frame, tool, ink, cursor', () => {
+	test('status line surfaces id, role, frame, tool, zoom, ink, coords', () => {
 		const line = spriteStatusLine({
 			id: 'buddy',
 			role: 'form',
@@ -131,8 +193,10 @@ describe('status + help chrome', () => {
 			frameCount: 3,
 			tool: 'paint',
 			ink: 'p',
+			pixel: { x: 5, y: 3 },
 			cell: { x: 2, y: 1 },
 			bit: 3,
+			zoom: 2,
 			dirty: true,
 		});
 		expect(line).toContain('buddy');
@@ -140,10 +204,30 @@ describe('status + help chrome', () => {
 		expect(line).toContain('idle');
 		expect(line).toContain('[1/3]');
 		expect(line).toContain('paint');
+		expect(line).toContain('×2');
 		expect(line).toContain('ink p');
-		expect(line).toContain('(2,1)');
+		expect(line).toContain('px (5,3)');
+		expect(line).toContain('cell (2,1)');
 		expect(line).toContain('BR');
+		// The save state ('*' when dirty) rides on the same line.
 		expect(line).toContain('*');
+	});
+
+	test('composeStatusLine right-aligns the coercion feedback', () => {
+		const line = composeStatusLine('left', 'punched bg', 20);
+		expect(line.length).toBe(20);
+		expect(line.startsWith('left')).toBe(true);
+		expect(line.endsWith('punched bg')).toBe(true);
+	});
+
+	test('composeStatusLine drops the feedback when it cannot fit', () => {
+		const line = composeStatusLine('a very long left side', 'note', 12);
+		expect(line).toBe('a very long ');
+		expect(line).not.toContain('note');
+	});
+
+	test('composeStatusLine with no feedback is just the left, clipped', () => {
+		expect(composeStatusLine('hello', '', 3)).toBe('hel');
 	});
 
 	test('help line lists every hint', () => {

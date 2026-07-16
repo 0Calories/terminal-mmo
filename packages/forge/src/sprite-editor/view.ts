@@ -168,6 +168,62 @@ export function scrollViewport(
 }
 
 // ---------------------------------------------------------------------------
+// Fatbits geometry (spec #387) — a Pixel renders as z×z terminal cells at zoom
+// ×z. The camera tracks the cursor in PIXEL coordinates (its top-left visible
+// Pixel); native aspect is 1:2 (half a cell each axis) so magnification stays
+// faithful — no aspect squaring. The same geometry drives both the cursor
+// highlight and the mouse's screen→Pixel resolution, so keyboard and mouse see
+// one canvas.
+// ---------------------------------------------------------------------------
+
+// The zoom ladder and its default (×2). Zoom is a presentation concern — it
+// never lives in the pure editor state.
+export const ZOOM_LADDER = [1, 2, 3, 4, 6] as const;
+export const DEFAULT_ZOOM = 2;
+
+// Step to the neighbouring zoom on the ladder (`dir` +1 zooms in, −1 out);
+// clamps at the ends and snaps an off-ladder value onto it first.
+export function stepZoom(zoom: number, dir: number): number {
+	let cur = ZOOM_LADDER.indexOf(zoom as (typeof ZOOM_LADDER)[number]);
+	if (cur < 0) {
+		// Snap to the nearest ladder rung, then step from there.
+		cur = ZOOM_LADDER.reduce(
+			(best, z, i) =>
+				Math.abs(z - zoom) < Math.abs(ZOOM_LADDER[best] - zoom) ? i : best,
+			0,
+		);
+	}
+	const next = Math.min(ZOOM_LADDER.length - 1, Math.max(0, cur + dir));
+	return ZOOM_LADDER[next];
+}
+
+// How many whole Pixels a canvas of `screenLen` terminal cells shows at `zoom`.
+export function visiblePixels(screenLen: number, zoom: number): number {
+	return Math.max(1, Math.floor(screenLen / zoom));
+}
+
+// The Pixel a canvas cell `(sx,sy)` shows, given the pixel-space camera and
+// zoom. The inverse of `pixelToScreen`.
+export function screenToPixel(
+	sx: number,
+	sy: number,
+	cam: Cam,
+	zoom: number,
+): { x: number; y: number } {
+	return { x: cam.x + Math.floor(sx / zoom), y: cam.y + Math.floor(sy / zoom) };
+}
+
+// The top-left canvas cell of a Pixel's z×z block (may be off-screen/negative).
+export function pixelToScreen(
+	px: number,
+	py: number,
+	cam: Cam,
+	zoom: number,
+): { x: number; y: number } {
+	return { x: (px - cam.x) * zoom, y: (py - cam.y) * zoom };
+}
+
+// ---------------------------------------------------------------------------
 // Mirror view — the true left-facing render of the current frame
 // ---------------------------------------------------------------------------
 
@@ -237,8 +293,12 @@ export interface SpriteStatusModel {
 	tool: string;
 	// The active ink label ('transparent', or a colour key).
 	ink: string;
+	// The cursor in both grains: the Pixel it sits on and the cell owning it.
+	pixel: { x: number; y: number };
 	cell: { x: number; y: number };
 	bit: number;
+	// The current fatbits zoom (the ×z on the ladder).
+	zoom: number;
 	dirty: boolean;
 	// Optional pose / anchor-tool context (issue #339).
 	pose?: string;
@@ -252,8 +312,9 @@ export function bitName(bit: number): string {
 	return BIT_NAMES[bit] ?? '?';
 }
 
-// The persistent status line (feedback + save diagnostics are drawn separately,
-// styled to stand out).
+// The persistent status line's LEFT content — tool, Pixel + cell coordinates,
+// zoom, ink, and save state. The coercion feedback is drawn right-aligned on the
+// same row (see `composeStatusLine`); save diagnostics render separately.
 export function spriteStatusLine(m: SpriteStatusModel): string {
 	const dirty = m.dirty ? ' *' : '';
 	const pose = m.pose ? ` · pose ${m.pose}` : '';
@@ -262,7 +323,25 @@ export function spriteStatusLine(m: SpriteStatusModel): string {
 		m.tool === 'anchor' && m.anchorName
 			? `anchor ${m.anchorName}@${m.anchorScope ?? 'doc'}`
 			: m.tool;
-	return `${m.id} (${m.role})${dirty}${pose} · frame ${m.frame} [${m.frameIdx + 1}/${m.frameCount}] · ${tool} · ink ${m.ink} · cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
+	return `${m.id} (${m.role})${dirty}${pose} · frame ${m.frame} [${m.frameIdx + 1}/${m.frameCount}] · ${tool} · ×${m.zoom} · ink ${m.ink} · px (${m.pixel.x},${m.pixel.y}) cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
+}
+
+// Compose the status row: `left` at column 0, `right` (the coercion feedback)
+// flush against the right edge of `width`, with at least one space between them.
+// When they cannot both fit, the left content wins and the right is dropped.
+export function composeStatusLine(
+	left: string,
+	right: string,
+	width: number,
+): string {
+	if (width <= 0) return '';
+	const l = left.slice(0, width);
+	if (!right) return l;
+	const r = right.slice(0, width);
+	// Need room for the left text, a gap, and the right text.
+	if (l.length + 1 + r.length > width) return l;
+	const pad = width - l.length - r.length;
+	return l + ' '.repeat(pad) + r;
 }
 
 export interface KeyHint {
@@ -274,7 +353,7 @@ export interface KeyHint {
 // documentation of the editor's controls.
 export const SPRITE_KEY_HINTS: readonly KeyHint[] = [
 	{ keys: 'hjkl', label: 'move' },
-	{ keys: 'space', label: 'paint' },
+	{ keys: 'space', label: 'pen' },
 	{ keys: 'p/e/s/a', label: 'tools' },
 	{ keys: 'f', label: 'ink' },
 	{ keys: 't', label: 'transparent' },
@@ -286,6 +365,7 @@ export const SPRITE_KEY_HINTS: readonly KeyHint[] = [
 	{ keys: 'P', label: 'poses' },
 	{ keys: 'A', label: 'anchor' },
 	{ keys: 'm', label: 'mirror' },
+	{ keys: '+ -', label: 'zoom' },
 	{ keys: 'o', label: 'in-context' },
 	{ keys: '. ,', label: 'play' },
 ];
