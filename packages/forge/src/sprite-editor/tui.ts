@@ -90,6 +90,7 @@ import {
 	addFrameToPose,
 	anchorMarkers,
 	beginStroke,
+	cancelShape,
 	cellAt,
 	colorInk,
 	createPose,
@@ -100,8 +101,10 @@ import {
 	eyedropAt,
 	frameExtent,
 	frameNames,
+	type Ink,
 	initSpriteEditor,
 	inkLabel,
+	isShapeTool,
 	moveCursor,
 	nudgeInk,
 	paletteEntries,
@@ -122,8 +125,10 @@ import {
 	setInk,
 	setPoseFps,
 	setTool,
+	shapePreviewPixels,
 	stampGlyph,
 	TRANSPARENT_INK,
+	toggleShapeMode,
 	undoEdit,
 } from './state';
 import {
@@ -380,6 +385,10 @@ export class SpriteEditor extends Renderable {
 	// and the button held for it (drag events don't reliably re-report the button).
 	private mouseStroke = false;
 	private mouseButton: RawMouse['button'] = 'left';
+	// An in-flight mouse shape gesture (down→drag→up) and the last Pixel it saw,
+	// so the release commits at the endpoint even when the up event omits it.
+	private mouseShape = false;
+	private shapePx = { x: 0, y: 0 };
 	private savedDoc: SpriteDoc;
 	private saveDiags: readonly SpriteDiagnostic[] | null;
 	private saved = false;
@@ -452,6 +461,17 @@ export class SpriteEditor extends Renderable {
 	}
 
 	private primary(): void {
+		// Geometry tools place the anchor on the first press and commit on the
+		// second, through the same normalized seam a mouse gesture uses (spec #387).
+		if (isShapeTool(this.state.tool)) {
+			const { x, y } = this.state.cursor;
+			this.state = applyInput(
+				this.state,
+				normalizeKey({ pixel: { x, y }, paint: 'ink', phase: 'toggle' }),
+			);
+			this.followCursor = true;
+			return;
+		}
 		if (this.state.tool === 'anchor') {
 			this.placeAnchorAtCursor();
 			return;
@@ -478,8 +498,19 @@ export class SpriteEditor extends Renderable {
 
 	private move(dx: number, dy: number): void {
 		const { x, y } = this.state.cursor;
-		this.state = moveCursor(this.state, x + dx, y + dy);
+		const nx = Math.max(0, x + dx);
+		const ny = Math.max(0, y + dy);
 		this.followCursor = true;
+		// A pending shape follows the cursor as a live preview; the seam's move
+		// phase both steps the cursor and updates the endpoint (spec #387).
+		if (isShapeTool(this.state.tool)) {
+			this.state = applyInput(
+				this.state,
+				normalizeKey({ pixel: { x: nx, y: ny }, paint: 'none', phase: 'move' }),
+			);
+			return;
+		}
+		this.state = moveCursor(this.state, nx, ny);
 		if (this.penDown) this.applyAtCursor();
 	}
 
@@ -517,6 +548,25 @@ export class SpriteEditor extends Renderable {
 		const raw: RawMouse = {
 			pixel: px,
 			button,
+			shift: modifiers?.shift,
+			alt: modifiers?.alt,
+			ctrl: modifiers?.ctrl,
+		};
+		this.state = applyInput(this.state, normalizeMouse(raw));
+	}
+
+	// Feed one stage of a mouse shape gesture through the same seam: press starts
+	// the shape, drag moves the endpoint, release commits (spec #387).
+	private shapeMouse(
+		phase: 'down' | 'drag' | 'up',
+		button: RawMouse['button'],
+		px: { x: number; y: number },
+		modifiers?: SpriteMouse['modifiers'],
+	): void {
+		const raw: RawMouse = {
+			pixel: px,
+			button,
+			phase,
 			shift: modifiers?.shift,
 			alt: modifiers?.alt,
 			ctrl: modifiers?.ctrl,
@@ -636,9 +686,18 @@ export class SpriteEditor extends Renderable {
 		if (!px) return;
 		// Momentary eyedrop (spec #387): an alt-click samples the key under the
 		// pointer through the normalized seam — whatever tool is in hand — and never
-		// opens a paint stroke.
+		// opens a paint stroke or a shape gesture.
 		if (e.modifiers?.alt) {
 			this.paintMouse(button, px, e.modifiers);
+			return;
+		}
+		// Geometry tools open a shape gesture instead of a paint stroke; the ink is
+		// captured now (right button → transparent), the endpoint tracks the drag.
+		if (isShapeTool(this.state.tool)) {
+			this.mouseShape = true;
+			this.mouseButton = button;
+			this.shapePx = px;
+			this.shapeMouse('down', button, px, e.modifiers);
 			return;
 		}
 		// Fill floods on a single press (left = active ink, right = transparent);
@@ -709,7 +768,7 @@ export class SpriteEditor extends Renderable {
 			this.panLast = { x: e.x, y: e.y };
 			return;
 		}
-		if (!this.mouseStroke) return;
+		if (!this.mouseStroke && !this.mouseShape) return;
 		// A drag off the canvas simply paints nothing until it returns; the held
 		// button is remembered from mouseDown since drag reports vary by terminal.
 		let px: { x: number; y: number } | null = null;
@@ -726,11 +785,22 @@ export class SpriteEditor extends Renderable {
 			px = this.focusPixel(e.x, e.y);
 		}
 		if (!px) return;
+		if (this.mouseShape) {
+			this.shapePx = px;
+			this.shapeMouse('drag', this.mouseButton, px, e.modifiers);
+			return;
+		}
 		this.paintMouse(this.mouseButton, px, e.modifiers);
 	}
 
 	mouseUp(_e?: unknown): void {
 		this.panLast = null;
+		if (this.mouseShape) {
+			// The release commits the shape at the last dragged Pixel as one undo
+			// step; a plain click (no drag) commits a one-Pixel degenerate shape.
+			this.shapeMouse('up', this.mouseButton, this.shapePx);
+			this.mouseShape = false;
+		}
 		if (this.mouseStroke) {
 			this.state = endStroke(this.state);
 			this.mouseStroke = false;
@@ -968,6 +1038,7 @@ export class SpriteEditor extends Renderable {
 
 	private switchTool(tool: SpriteTool): void {
 		this.liftPen();
+		this.state = cancelShape(this.state);
 		this.state = setTool(this.state, tool);
 	}
 
@@ -1203,6 +1274,18 @@ export class SpriteEditor extends Renderable {
 			return;
 		}
 
+		// Esc backs out an in-flight shape losslessly (spec #387); otherwise it is
+		// inert here (modals/help/stamp consume their own esc above).
+		if (k.name === 'escape') {
+			if (this.state.shape) this.state = cancelShape(this.state);
+			return;
+		}
+		// Toggle the active geometry tool's outline↔filled mode (spec #387).
+		if (k.name === 'o') {
+			this.liftPen();
+			this.state = toggleShapeMode(this.state);
+			return;
+		}
 		if (k.ctrl && k.name === 's') {
 			this.doSave();
 			return;
@@ -1439,6 +1522,45 @@ export class SpriteEditor extends Renderable {
 		return phase % 2 === 0 ? C.grid : C.bg;
 	}
 
+	// The colour a pending shape's preview Pixels tint to: the resolved ink, or a
+	// muted marker for the transparent ink (which paints no colour but must still
+	// show where the shape lands).
+	private previewRGBA(ink: Ink, C: Palette): RGBA {
+		if (ink.kind === 'transparent') return C.dim;
+		const rgba = resolveColorKey(
+			ink.key,
+			this.state.doc.colors,
+			this.globalPalette,
+			SPRITE_PREVIEWS,
+		);
+		return rgba ? SpriteEditor.rgba(rgba) : C.ink;
+	}
+
+	// Overlay the pending shape's live preview (spec #387): each in-bounds preview
+	// Pixel's z×z block, tinted by the shape's ink, mapped to the screen by the
+	// active view's geometry and clipped to the canvas region.
+	private drawShapePreview(
+		buf: OptimizedBuffer,
+		mapPx: (px: number, py: number) => { x: number; y: number },
+		clip: { x0: number; x1: number; y0: number; y1: number },
+		C: Palette,
+	): void {
+		if (!this.state.shape) return;
+		const z = this.zoom;
+		const color = this.previewRGBA(this.state.shape.ink, C);
+		for (const p of shapePreviewPixels(this.state)) {
+			const o = mapPx(p.x, p.y);
+			for (let dy = 0; dy < z; dy++)
+				for (let dx = 0; dx < z; dx++) {
+					const sx = o.x + dx;
+					const sy = o.y + dy;
+					if (sx < clip.x0 || sx >= clip.x1 || sy < clip.y0 || sy >= clip.y1)
+						continue;
+					buf.setCell(sx, sy, ' ', C.dim, color);
+				}
+		}
+	}
+
 	// Draw a piece of text at `sx`, clipped to the column range [x0, x1).
 	private drawClipped(
 		buf: OptimizedBuffer,
@@ -1632,6 +1754,17 @@ export class SpriteEditor extends Renderable {
 			);
 		}
 
+		// The pending shape's live preview overlays the active Frame's art.
+		this.drawShapePreview(
+			buf,
+			(px, py) => ({
+				x: sxOf(activeBox.x + px * z),
+				y: syOf(activeBox.y + py * z),
+			}),
+			{ x0, x1, y0: 0, y1: viewH },
+			C,
+		);
+
 		const bx = sxOf(activeBox.x + this.state.cursor.x * z);
 		const by = syOf(activeBox.y + this.state.cursor.y * z);
 		this.drawCursorRing(
@@ -1754,6 +1887,16 @@ export class SpriteEditor extends Renderable {
 				C.bg,
 			);
 		}
+
+		this.drawShapePreview(
+			buf,
+			(px, py) => ({
+				x: origin.x + (px - this.cam.x) * z,
+				y: origin.y + (py - this.cam.y) * z,
+			}),
+			{ x0: RAIL_W, x1: RAIL_W + viewW, y0: top, y1: viewH },
+			C,
+		);
 
 		const bx = origin.x + (this.state.cursor.x - this.cam.x) * z;
 		const by = origin.y + (this.state.cursor.y - this.cam.y) * z;
