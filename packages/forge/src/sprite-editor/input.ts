@@ -7,16 +7,25 @@
 // paint at the same Pixel produce the same `EditorInput` and the same next
 // state, testable by construction.
 //
-// Scope note (#390): the only tool that consumes pointer input today is the
-// pencil (with the eraser as its transparent-ink spelling), so `applyInput`
-// routes paint. Later slices add the anchor-tool suite (fill/line/rect/ellipse/
-// select/move/paste), wheel routing (scroll/zoom), and middle-drag pan on top
-// of this same event — the seam is shaped for them now, wired for paint now.
+// Scope note (#394): the pencil (with the eraser as its transparent-ink
+// spelling) and the geometry tools (line/rect/ellipse) consume pointer input
+// through this seam. The geometry tools drive ONE shared pending-shape anchor
+// state (spec #387): a mouse drag-commits (down→start, drag→move, up→commit) and
+// a keyboard click-clicks (enter→toggle, arrows→move, esc→cancel) over the same
+// state and the same reducer, so device parity is structural. Later slices add
+// select/move/paste, which share this same anchor grammar.
 import {
+	beginShape,
+	cancelShape,
+	commitShape,
+	isShapeTool,
 	moveCursor,
 	paintWithInk,
+	pencilLineTo,
+	type ShapeTool,
 	type SpriteEditorState,
 	TRANSPARENT_INK,
+	updateShape,
 } from './state';
 
 // The button role a normalized event carries. `primary` applies the active tool
@@ -30,6 +39,11 @@ export interface InputMods {
 	readonly ctrl: boolean;
 }
 
+// The gesture phase an anchor-tool event carries (spec #387). Mouse gestures map
+// down→start, drag→move, up→commit; keyboard maps enter→toggle (place anchor,
+// then commit), arrows→move, esc→cancel. The paint tools ignore it.
+export type InputPhase = 'start' | 'move' | 'commit' | 'toggle' | 'cancel';
+
 // One device-neutral input event. `pixel` is always in Pixel coordinates (the
 // mouse normalizer's caller resolves screen→Pixel through the canvas geometry;
 // the keyboard's Pixel is the cursor). `wheel` is a signed row delta, 0 for a
@@ -39,6 +53,9 @@ export interface EditorInput {
 	readonly button: InputButton;
 	readonly mods: InputMods;
 	readonly wheel: number;
+	// The anchor-tool gesture phase, when the event is part of a shape gesture;
+	// omitted for a plain paint/hover event.
+	readonly phase?: InputPhase;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +72,8 @@ export interface RawMouse {
 	readonly ctrl?: boolean;
 	// Signed wheel delta (negative up, positive down); omit / 0 when not a wheel.
 	readonly scroll?: number;
+	// The pointer gesture stage, for anchor tools: press → move → release.
+	readonly phase?: 'down' | 'drag' | 'up';
 }
 
 const MOUSE_BUTTON: Record<RawMouse['button'], InputButton> = {
@@ -62,6 +81,13 @@ const MOUSE_BUTTON: Record<RawMouse['button'], InputButton> = {
 	right: 'secondary',
 	middle: 'middle',
 	none: 'none',
+};
+
+// A mouse gesture stage maps onto the device-neutral anchor phase.
+const MOUSE_PHASE: Record<'down' | 'drag' | 'up', InputPhase> = {
+	down: 'start',
+	drag: 'move',
+	up: 'commit',
 };
 
 export function normalizeMouse(raw: RawMouse): EditorInput {
@@ -74,6 +100,7 @@ export function normalizeMouse(raw: RawMouse): EditorInput {
 			ctrl: raw.ctrl ?? false,
 		},
 		wheel: raw.scroll ?? 0,
+		...(raw.phase ? { phase: MOUSE_PHASE[raw.phase] } : {}),
 	};
 }
 
@@ -89,6 +116,9 @@ export interface RawKey {
 	readonly shift?: boolean;
 	readonly alt?: boolean;
 	readonly ctrl?: boolean;
+	// The anchor-tool gesture the key expressed: enter → toggle (place / commit),
+	// a cursor step → move, esc → cancel. Omitted for a plain paint/move key.
+	readonly phase?: InputPhase;
 }
 
 const KEY_BUTTON: Record<KeyPaint, InputButton> = {
@@ -107,6 +137,7 @@ export function normalizeKey(raw: RawKey): EditorInput {
 			ctrl: raw.ctrl ?? false,
 		},
 		wheel: 0,
+		...(raw.phase ? { phase: raw.phase } : {}),
 	};
 }
 
@@ -147,14 +178,17 @@ export function routeWheel(
 // The one reducer
 // ---------------------------------------------------------------------------
 
-// Drive the pure layer from a normalized event. Always moves the cursor to the
-// event's Pixel (both devices agree on this); then, for the paint tools, applies
-// the effective ink. The active tool is the pencil (`paint`) or its transparent
-// spelling (`erase`); other tools take pointer input in later slices.
+// Drive the pure layer from a normalized event. The geometry tools run the
+// shared pending-shape lifecycle; the pencil (`paint`) and its transparent
+// spelling (`erase`) paint the effective ink, with shift chaining a line from
+// the last painted Pixel (spec #387). Every event first moves the cursor — both
+// devices agree the cursor follows the event's Pixel.
 export function applyInput(
 	state: SpriteEditorState,
 	input: EditorInput,
 ): SpriteEditorState {
+	if (isShapeTool(state.tool)) return applyShapeInput(state, input);
+
 	const { x, y } = input.pixel;
 	const moved = moveCursor(state, x, y);
 	if (input.button === 'none' || input.button === 'middle') return moved;
@@ -166,5 +200,46 @@ export function applyInput(
 		input.button === 'secondary' || moved.tool === 'erase'
 			? TRANSPARENT_INK
 			: moved.ink;
-	return paintWithInk(moved, x, y, ink);
+	// Shift + a prior point chains a straight line from it (spec #387); a plain
+	// paint just lights the Pixel. Either way the Pixel becomes the last point.
+	if (input.mods.shift && moved.lastPaint)
+		return pencilLineTo(moved, x, y, ink);
+	const painted = paintWithInk(moved, x, y, ink);
+	return { ...painted, lastPaint: { x, y } };
+}
+
+// Drive the shared pending-shape lifecycle from a normalized event. Both devices
+// feed this one reducer: the phase (mouse press/move/release, keyboard toggle/
+// move/cancel) selects the transition, so drag-commit and click-click are the
+// same code path over the same state (spec #387).
+function applyShapeInput(
+	state: SpriteEditorState,
+	input: EditorInput,
+): SpriteEditorState {
+	const { x, y } = input.pixel;
+	const moved = moveCursor(state, x, y);
+	const tool = moved.tool as ShapeTool;
+	const constrain = input.mods.shift;
+	const ink = input.button === 'secondary' ? TRANSPARENT_INK : moved.ink;
+	// A phase-less event defaults by button: a bare move updates, a press toggles
+	// (the keyboard's enter grammar), so callers may omit the phase.
+	const phase: InputPhase =
+		input.phase ?? (input.button === 'none' ? 'move' : 'toggle');
+
+	switch (phase) {
+		case 'start':
+			return beginShape(moved, tool, x, y, ink, constrain);
+		case 'move':
+			return updateShape(moved, x, y, constrain);
+		case 'commit':
+			return moved.shape
+				? commitShape(updateShape(moved, x, y, constrain))
+				: moved;
+		case 'toggle':
+			return moved.shape
+				? commitShape(updateShape(moved, x, y, constrain))
+				: beginShape(moved, tool, x, y, ink, constrain);
+		case 'cancel':
+			return cancelShape(moved);
+	}
 }

@@ -40,8 +40,10 @@ export interface RailRow {
 }
 
 // The tools the rail offers today, in rail order with their number-row keys
-// (spec #387: tools live on the number row in rail order; later slices insert
-// fill/line/rect/ellipse/select/move/paste before anchor).
+// (spec #387: tools live on the number row in rail order — pencil, fill, stamp,
+// line, rect, ellipse, select, move, paste). Fill/select/move/paste land in
+// sibling slices; the anchor tool moved off the number row (it lives in the
+// playback box's `A anchor` and the `a` key).
 export const RAIL_TOOLS: readonly {
 	key: string;
 	tool: SpriteTool;
@@ -50,7 +52,9 @@ export const RAIL_TOOLS: readonly {
 	{ key: '1', tool: 'paint', label: 'pencil' },
 	{ key: '2', tool: 'erase', label: 'erase' },
 	{ key: '3', tool: 'stamp', label: 'stamp' },
-	{ key: '4', tool: 'anchor', label: 'anchor' },
+	{ key: '4', tool: 'line', label: 'line' },
+	{ key: '5', tool: 'rect', label: 'rect' },
+	{ key: '6', tool: 'ellipse', label: 'ellipse' },
 ];
 
 export interface RailInput {
@@ -269,7 +273,9 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 	{
 		title: 'Tools',
 		bindings: [
-			{ keys: '1-4 / p e s a', label: 'pencil · erase · stamp · anchor' },
+			{ keys: '1-6', label: 'pencil · erase · stamp · line · rect · ellipse' },
+			{ keys: 'p e s / a', label: 'pencil · erase · stamp / anchor' },
+			{ keys: 'o', label: 'rect/ellipse outline ↔ filled' },
 		],
 	},
 	{
@@ -292,10 +298,13 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: 'arrows / hjkl', label: 'move cursor 1 Pixel' },
 			{ keys: 'space', label: 'pen down/up (movement paints)' },
 			{ keys: 'left / right click', label: 'paint ink / paint transparent' },
+			{ keys: 'shift-click', label: 'pencil: line from last point' },
+			{ keys: 'enter', label: 'place shape anchor / commit shape' },
+			{ keys: 'drag / shift', label: 'draw shape / constrain square' },
 			{ keys: 't', label: 'set ink transparent' },
 			{ keys: 'f', label: 'ink picker' },
 			{ keys: 'c', label: 'clear cell (anchor: drop override)' },
-			{ keys: 'esc', label: 'cancel overlay / stamp' },
+			{ keys: 'esc', label: 'cancel shape / overlay / stamp' },
 		],
 	},
 	{
@@ -358,10 +367,13 @@ export function helpOverlayRows(maxRows: number): string[] {
 
 // The hint line's per-tool fragment — what the tool in hand responds to.
 const TOOL_HINTS: Record<SpriteTool, string> = {
-	paint: 'space pen · arrows paint · rmb erase',
+	paint: 'space pen · arrows paint · shift-click line · rmb erase',
 	erase: 'space pen · arrows erase',
 	stamp: 'space then a char stamps the cell',
 	anchor: 'space places · A pick · c drop override',
+	line: 'drag / enter·enter · esc cancel · rmb transparent',
+	rect: 'drag / enter·enter · o outline/fill · shift square',
+	ellipse: 'drag / enter·enter · o outline/fill · shift circle',
 };
 
 const GLOBAL_HINT = '? help · tab view · u undo · ^s save · q quit';

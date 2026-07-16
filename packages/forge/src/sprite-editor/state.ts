@@ -50,7 +50,47 @@ import {
 	undo,
 } from '../history';
 
-export type SpriteTool = 'paint' | 'erase' | 'stamp' | 'anchor';
+export type SpriteTool =
+	| 'paint'
+	| 'erase'
+	| 'stamp'
+	| 'anchor'
+	| 'line'
+	| 'rect'
+	| 'ellipse';
+
+// The three anchor-style geometry tools (spec #387, #394): they place an anchor
+// Pixel, drag/step a live preview to a second Pixel, and commit one rasterized
+// shape as a single undo step. `select`/`move` (later slices) share the same
+// pending-anchor grammar but land in their own machinery.
+export const SHAPE_TOOLS = ['line', 'rect', 'ellipse'] as const;
+export type ShapeTool = (typeof SHAPE_TOOLS)[number];
+
+export function isShapeTool(tool: SpriteTool): tool is ShapeTool {
+	return (SHAPE_TOOLS as readonly string[]).includes(tool);
+}
+
+// Rect and ellipse each carry a per-tool draw mode (spec #387): an outline ring
+// on the bounding box, or a filled solid. `o` toggles the active tool's mode.
+export type ShapeMode = 'outline' | 'filled';
+
+// A Pixel coordinate — the atomic unit of every shape's rasterization.
+export interface Point {
+	readonly x: number;
+	readonly y: number;
+}
+
+// The one shared pending-shape anchor state both devices drive (spec #387): the
+// anchor Pixel, the live endpoint, whether shift is constraining it to a visual
+// square/circle, and the ink the eventual commit paints (active ink, or
+// transparent for the right button). `null` between gestures.
+export interface PendingShape {
+	readonly tool: ShapeTool;
+	readonly anchor: Point;
+	readonly to: Point;
+	readonly constrain: boolean;
+	readonly ink: Ink;
+}
 
 // The two places an anchor can live: at the document level (shared by every
 // frame) or as a per-frame override on the current frame (ADR 0031).
@@ -101,6 +141,15 @@ export interface SpriteEditorState {
 	// The active coalescing stroke tag (null between strokes) and its counter.
 	stroke: string | null;
 	strokeSeq: number;
+	// The in-flight geometry shape (line/rect/ellipse) both devices drive, or null
+	// between gestures (spec #387, #394).
+	shape: PendingShape | null;
+	// Per-tool outline↔filled mode for the rect and ellipse tools.
+	rectMode: ShapeMode;
+	ellipseMode: ShapeMode;
+	// The last Pixel the pencil painted, so a shift-click strokes a line from it
+	// (spec #387). null until the pencil has painted since the last reset.
+	lastPaint: Point | null;
 }
 
 // A resolved view of one cell: `fg`/`bg` are '' when transparent, and `mask` is
@@ -152,6 +201,10 @@ export function initSpriteEditor(
 		history: initHistory(doc),
 		stroke: null,
 		strokeSeq: 0,
+		shape: null,
+		rectMode: 'outline',
+		ellipseMode: 'outline',
+		lastPaint: null,
 	};
 }
 
@@ -794,6 +847,270 @@ function punchTransparent(
 	const newMask = cell.mask & ~t;
 	const note = cell.bg !== '' ? `punched background '${cell.bg}'` : '';
 	return commitQuadrant(state, cellX, cellY, newMask, cell.fg, '', note);
+}
+
+// ---------------------------------------------------------------------------
+// Geometry shapes — line / rect / ellipse (spec #387, #394)
+//
+// Every shape rasterizes to a set of Pixels on a corner-to-corner bounding box,
+// then commits as a batch of ordinary Pixel paints resolved by the same coercion
+// rules as the pencil — one shape is exactly one undo step. Out-of-bounds Pixels
+// clip (no auto-grow); the artist never reasons about cells to draw geometry.
+// ---------------------------------------------------------------------------
+
+// The Pixels a straight line between two Pixels lights (integer Bresenham).
+export function linePixels(a: Point, b: Point): Point[] {
+	let x0 = a.x;
+	let y0 = a.y;
+	const dx = Math.abs(b.x - x0);
+	const dy = -Math.abs(b.y - y0);
+	const sx = x0 < b.x ? 1 : -1;
+	const sy = y0 < b.y ? 1 : -1;
+	let err = dx + dy;
+	const out: Point[] = [];
+	while (true) {
+		out.push({ x: x0, y: y0 });
+		if (x0 === b.x && y0 === b.y) break;
+		const e2 = 2 * err;
+		if (e2 >= dy) {
+			err += dy;
+			x0 += sx;
+		}
+		if (e2 <= dx) {
+			err += dx;
+			y0 += sy;
+		}
+	}
+	return out;
+}
+
+function bbox(
+	a: Point,
+	b: Point,
+): { x0: number; y0: number; x1: number; y1: number } {
+	return {
+		x0: Math.min(a.x, b.x),
+		y0: Math.min(a.y, b.y),
+		x1: Math.max(a.x, b.x),
+		y1: Math.max(a.y, b.y),
+	};
+}
+
+// The Pixels of an axis-aligned rectangle on the bounding box — the four edges
+// (`outline`) or every enclosed Pixel (`filled`).
+export function rectPixels(a: Point, b: Point, filled: boolean): Point[] {
+	const { x0, y0, x1, y1 } = bbox(a, b);
+	const out: Point[] = [];
+	for (let y = y0; y <= y1; y++)
+		for (let x = x0; x <= x1; x++) {
+			const edge = x === x0 || x === x1 || y === y0 || y === y1;
+			if (filled || edge) out.push({ x, y });
+		}
+	return out;
+}
+
+// The Pixels of an ellipse inscribed in the bounding box — the boundary ring
+// (`outline`) or the solid disc (`filled`). A Pixel is inside when its centre
+// lies within the normalized ellipse; the ring is inside Pixels touching an
+// outside neighbour. Small boxes degrade gracefully (a 3×3 box is a diamond, a
+// zero-width box a straight segment).
+export function ellipsePixels(a: Point, b: Point, filled: boolean): Point[] {
+	const { x0, y0, x1, y1 } = bbox(a, b);
+	const cx = (x0 + x1) / 2;
+	const cy = (y0 + y1) / 2;
+	const rx = (x1 - x0) / 2;
+	const ry = (y1 - y0) / 2;
+	// A collapsed axis has no area to inscribe — the shape is the segment itself.
+	if (rx === 0 || ry === 0) return rectPixels(a, b, true);
+	const inside = (x: number, y: number): boolean =>
+		((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2 <= 1 + 1e-9;
+	const out: Point[] = [];
+	for (let y = y0; y <= y1; y++)
+		for (let x = x0; x <= x1; x++) {
+			if (!inside(x, y)) continue;
+			if (filled) {
+				out.push({ x, y });
+				continue;
+			}
+			// A boundary Pixel has at least one 4-neighbour outside the disc.
+			if (
+				!inside(x - 1, y) ||
+				!inside(x + 1, y) ||
+				!inside(x, y - 1) ||
+				!inside(x, y + 1)
+			)
+				out.push({ x, y });
+		}
+	return out;
+}
+
+// Snap `to` so the bounding box is a VISUAL square/circle (spec #387): a Pixel's
+// native aspect is 1:2 (half a cell each axis, and a cell is twice as tall as
+// wide), so equal on-screen extent means width = 2×height in Pixels. The larger
+// visual side governs; the sign of each axis is preserved.
+export function constrainSquare(anchor: Point, to: Point): Point {
+	const dx = to.x - anchor.x;
+	const dy = to.y - anchor.y;
+	const sx = dx < 0 ? -1 : 1;
+	const sy = dy < 0 ? -1 : 1;
+	const h = Math.max(Math.abs(dy), Math.round(Math.abs(dx) / 2));
+	return { x: anchor.x + sx * 2 * h, y: anchor.y + sy * h };
+}
+
+function shapeMode(state: SpriteEditorState, tool: ShapeTool): ShapeMode {
+	if (tool === 'rect') return state.rectMode;
+	if (tool === 'ellipse') return state.ellipseMode;
+	return 'outline';
+}
+
+// The raw Pixels a shape would paint, before clipping — resolves the tool, the
+// shift constraint, and the per-tool fill mode.
+function rasterShape(
+	tool: ShapeTool,
+	anchor: Point,
+	to: Point,
+	filled: boolean,
+): Point[] {
+	if (tool === 'line') return linePixels(anchor, to);
+	if (tool === 'rect') return rectPixels(anchor, to, filled);
+	return ellipsePixels(anchor, to, filled);
+}
+
+// The Pixels the pending shape resolves to, split into those inside the current
+// Frame (paintable) and a count clipped past its edges (spec #394: no auto-grow).
+function resolveShape(state: SpriteEditorState): {
+	inside: Point[];
+	clipped: number;
+} {
+	const shape = state.shape;
+	if (!shape) return { inside: [], clipped: 0 };
+	const to = shape.constrain
+		? constrainSquare(shape.anchor, shape.to)
+		: shape.to;
+	const raw = rasterShape(
+		shape.tool,
+		shape.anchor,
+		to,
+		shapeMode(state, shape.tool) === 'filled',
+	);
+	const { w, h } = frameExtent(currentFrame(state));
+	const maxX = w * 2;
+	const maxY = h * 2;
+	const inside = raw.filter(
+		(p) => p.x >= 0 && p.y >= 0 && p.x < maxX && p.y < maxY,
+	);
+	return { inside, clipped: raw.length - inside.length };
+}
+
+// Paint a batch of Pixels with one ink, coalesced under a single tag so the
+// whole batch is one undo step. No-op Pixels grow no history (the primitive
+// already skips them). Used for shape commits and pencil shift-lines.
+function paintBatch(
+	state: SpriteEditorState,
+	pixels: readonly Point[],
+	ink: Ink,
+): SpriteEditorState {
+	const tag = state.stroke ?? `shape${state.strokeSeq + 1}`;
+	let s: SpriteEditorState = { ...state, stroke: tag };
+	for (const p of pixels) s = paintWithInk(s, p.x, p.y, ink);
+	return {
+		...s,
+		stroke: state.stroke,
+		strokeSeq: state.stroke ? state.strokeSeq : state.strokeSeq + 1,
+	};
+}
+
+// Begin a shape: drop the anchor Pixel and start a live preview collapsed onto
+// it. `ink` is the commit's ink (active, or transparent for the right button).
+export function beginShape(
+	state: SpriteEditorState,
+	tool: ShapeTool,
+	px: number,
+	py: number,
+	ink: Ink,
+	constrain = false,
+): SpriteEditorState {
+	const anchor = { x: px, y: py };
+	return {
+		...state,
+		cursor: { x: Math.max(0, px), y: Math.max(0, py) },
+		shape: { tool, anchor, to: anchor, constrain, ink },
+		feedback: '',
+	};
+}
+
+// Drag/step the pending shape's endpoint (and its shift constraint) for preview.
+// A no-op when no shape is pending.
+export function updateShape(
+	state: SpriteEditorState,
+	px: number,
+	py: number,
+	constrain = false,
+): SpriteEditorState {
+	if (!state.shape) return state;
+	return {
+		...state,
+		cursor: { x: Math.max(0, px), y: Math.max(0, py) },
+		shape: { ...state.shape, to: { x: px, y: py }, constrain },
+	};
+}
+
+// The Pixels the pending shape would light right now, in Frame bounds — what the
+// TUI draws as the live preview. Empty when nothing is pending.
+export function shapePreviewPixels(state: SpriteEditorState): Point[] {
+	return resolveShape(state).inside;
+}
+
+// Commit the pending shape: rasterize it, paint every in-bounds Pixel through
+// the standard coercion rules as one undo step, and clear the pending state.
+// Clipped Pixels are reported on the status line.
+export function commitShape(state: SpriteEditorState): SpriteEditorState {
+	if (!state.shape) return state;
+	const ink = state.shape.ink;
+	const { inside, clipped } = resolveShape(state);
+	const cleared: SpriteEditorState = { ...state, shape: null };
+	const painted = paintBatch(cleared, inside, ink);
+	const note = clipped > 0 ? `clipped ${clipped} px past the canvas edge` : '';
+	return { ...painted, feedback: note };
+}
+
+// Abandon the pending shape losslessly (esc / right-click-away).
+export function cancelShape(state: SpriteEditorState): SpriteEditorState {
+	if (!state.shape) return state;
+	return { ...state, shape: null, feedback: '' };
+}
+
+// Toggle the active tool's outline↔filled mode (spec #387: `o`). Line has no fill
+// mode; the call reports that rather than silently doing nothing.
+export function toggleShapeMode(state: SpriteEditorState): SpriteEditorState {
+	if (state.tool === 'rect')
+		return {
+			...state,
+			rectMode: state.rectMode === 'outline' ? 'filled' : 'outline',
+			feedback: '',
+		};
+	if (state.tool === 'ellipse')
+		return {
+			...state,
+			ellipseMode: state.ellipseMode === 'outline' ? 'filled' : 'outline',
+			feedback: '',
+		};
+	return { ...state, feedback: 'the line tool has no fill mode' };
+}
+
+// Stroke a straight line of the given ink from the pencil's last painted Pixel to
+// (px, py) as one undo step (spec #387: shift-click pencil). With no prior point
+// it paints just the endpoint. Either way (px, py) becomes the new last point.
+export function pencilLineTo(
+	state: SpriteEditorState,
+	px: number,
+	py: number,
+	ink: Ink,
+): SpriteEditorState {
+	const from = state.lastPaint;
+	const pixels = from ? linePixels(from, { x: px, y: py }) : [{ x: px, y: py }];
+	const painted = paintBatch(state, pixels, ink);
+	return { ...painted, lastPaint: { x: px, y: py } };
 }
 
 // ---------------------------------------------------------------------------

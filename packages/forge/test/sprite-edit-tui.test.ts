@@ -504,3 +504,100 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(t.editor.playMode).toBe('walk');
 	});
 });
+
+describe('Sprite editor shape tools (#394)', () => {
+	// Default ×2 zoom: the active block sits at (RAIL_W, 1); a Pixel is 2 cells.
+	const bx = RAIL_W;
+	const by = 1;
+	const at = (px: number, py: number) => ({ x: bx + px * 2, y: by + py * 2 });
+
+	test('the number row selects line/rect/ellipse in rail order', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('n', 'hat'),
+			id: 'n',
+			role: 'hat',
+		});
+		t.editor.key(key('4', { sequence: '4' }));
+		expect(t.editor.state.tool).toBe('line');
+		t.editor.key(key('5', { sequence: '5' }));
+		expect(t.editor.state.tool).toBe('rect');
+		t.editor.key(key('6', { sequence: '6' }));
+		expect(t.editor.state.tool).toBe('ellipse');
+	});
+
+	test('a mouse drag commits a line as one undo step', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('l', 'hat'),
+			id: 'l',
+			role: 'hat',
+		});
+		t.editor.key(key('4', { sequence: '4' }));
+		t.editor.mouseDown({ button: 0, ...at(0, 0) });
+		t.editor.mouseDrag({ button: 0, ...at(3, 0) });
+		t.editor.mouseUp();
+		for (let x = 0; x <= 3; x++)
+			expect(readPixel(t.editor.state, x, 0)).toBe(true);
+		expect(t.editor.state.shape).toBeNull();
+		expect(t.editor.state.history.past.length).toBe(1);
+	});
+
+	test('a pending shape shows a live preview before release, committing nothing', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('p', 'hat'),
+			id: 'p',
+			role: 'hat',
+		});
+		t.editor.key(key('5', { sequence: '5' })); // rect
+		const before = t.editor.state.doc;
+		t.editor.mouseDown({ button: 0, ...at(0, 0) });
+		t.editor.mouseDrag({ button: 0, ...at(3, 2) });
+		await t.renderOnce();
+		expect(t.editor.state.shape).not.toBeNull();
+		expect(t.editor.state.doc).toBe(before); // not committed
+		// The preview tints canvas blocks in the active ink ('p').
+		expect(canvasHasBg(t.captureSpans(), INK_P, 17)).toBe(true);
+	});
+
+	test('o toggles the rect/ellipse outline↔filled mode', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('o', 'hat'),
+			id: 'o',
+			role: 'hat',
+		});
+		t.editor.key(key('5', { sequence: '5' })); // rect
+		expect(t.editor.state.rectMode).toBe('outline');
+		t.editor.key(key('o'));
+		expect(t.editor.state.rectMode).toBe('filled');
+	});
+
+	test('keyboard click-click commits a shape over the same state', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('k', 'hat'),
+			id: 'k',
+			role: 'hat',
+		});
+		t.editor.key(key('4', { sequence: '4' })); // line
+		t.editor.key(key('return')); // place anchor at cursor (0,0)
+		for (let i = 0; i < 3; i++) t.editor.key(key('right')); // endpoint (3,0)
+		expect(t.editor.state.shape).not.toBeNull();
+		t.editor.key(key('return')); // commit
+		expect(t.editor.state.shape).toBeNull();
+		for (let x = 0; x <= 3; x++)
+			expect(readPixel(t.editor.state, x, 0)).toBe(true);
+	});
+
+	test('esc cancels a pending shape losslessly', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('c', 'hat'),
+			id: 'c',
+			role: 'hat',
+		});
+		t.editor.key(key('4', { sequence: '4' }));
+		const before = t.editor.state.doc;
+		t.editor.mouseDown({ button: 0, ...at(0, 0) });
+		t.editor.mouseDrag({ button: 0, ...at(3, 0) });
+		t.editor.key(key('escape'));
+		expect(t.editor.state.shape).toBeNull();
+		expect(t.editor.state.doc).toBe(before);
+	});
+});
