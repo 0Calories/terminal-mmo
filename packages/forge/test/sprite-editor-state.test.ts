@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { SCENE_PALETTE } from '@mmo/core/entities';
 import { parseSpriteFile, quadrantsFromGlyph } from '@mmo/render';
+import { trimDoc } from '../src/sprite-editor/resize';
 import {
 	beginStroke,
 	cellAt,
@@ -418,22 +419,18 @@ describe('saveResult round-trip', () => {
 		const { text, diagnostics } = saveResult(s);
 		const errors = diagnostics.filter((d) => d.severity === 'error');
 		expect(errors).toEqual([]);
-		// Round-trips: re-parsing yields the same frame art.
+		// Round-trips: re-parsing yields the same frame art the serializer wrote.
+		// Save trims to the union content bbox (#402), so the shipped art is the
+		// trimmed doc, not the roomier in-editor frame.
 		const { doc } = parseSpriteFile(text, 'hero');
 		expect(doc).not.toBeNull();
 		const idle = doc?.frames.find((f) => f.name === 'idle');
-		const editedIdle = currentFrameByName(s, 'idle');
-		expect(idle?.rows).toEqual(editedIdle.rows);
-		expect(idle?.colors).toEqual(editedIdle.colors);
-		expect(idle?.bg).toEqual(editedIdle.bg);
+		const savedIdle = trimDoc(s.doc).frames.find((f) => f.name === 'idle');
+		expect(idle?.rows).toEqual(savedIdle?.rows as string[]);
+		expect(idle?.colors).toEqual(savedIdle?.colors as string[]);
+		expect(idle?.bg).toEqual(savedIdle?.bg as string[]);
 	});
 });
-
-function currentFrameByName(s: SpriteEditorState, name: string) {
-	const f = s.doc.frames.find((fr) => fr.name === name);
-	if (!f) throw new Error(`no frame ${name}`);
-	return f;
-}
 
 describe('role templates', () => {
 	const roles: SpriteRole[] = ['form', 'weapon', 'hat', 'monster', 'npc'];

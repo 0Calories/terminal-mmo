@@ -49,6 +49,14 @@ import {
 	redo,
 	undo,
 } from '../history';
+import {
+	cropDocToCells,
+	normalizeDoc,
+	RESIZE_EDGES,
+	type ResizeEdge,
+	resizeDoc,
+	trimDoc,
+} from './resize';
 
 export type SpriteTool =
 	| 'paint'
@@ -213,6 +221,9 @@ export interface SpriteEditorState {
 	selection: Selection | null;
 	// The floating move in flight, or null between lift and drop (spec #399).
 	float: Float | null;
+	// The edge selected in whole-file resize mode (spec #402), or null when not
+	// resizing. Nudges apply live to `doc`; commit records ONE undo step.
+	resize: ResizeEdge | null;
 }
 
 // A resolved view of one cell: `fg`/`bg` are '' when transparent, and `mask` is
@@ -250,18 +261,22 @@ export function initSpriteEditor(
 	doc: SpriteDoc,
 	frame?: string,
 ): SpriteEditorState {
-	const name = frame ?? doc.frames[0]?.name ?? '';
+	// Whole-file sizing is an editor policy (spec #402): a file whose Frames differ
+	// in size is normalized to the union bounding box on load. Already-uniform docs
+	// pass through untouched (identity), so this is a no-op for shipped assets.
+	const normalized = normalizeDoc(doc);
+	const name = frame ?? normalized.frames[0]?.name ?? '';
 	return {
-		doc,
+		doc: normalized,
 		frame: name,
-		pose: poseContaining(doc, name) ?? name,
+		pose: poseContaining(normalized, name) ?? name,
 		cursor: { x: 0, y: 0 },
 		tool: 'paint',
-		ink: colorInk(doc.key),
-		anchorName: firstAnchorName(doc),
+		ink: colorInk(normalized.key),
+		anchorName: firstAnchorName(normalized),
 		anchorScope: 'doc',
 		feedback: '',
-		history: initHistory(doc),
+		history: initHistory(normalized),
 		stroke: null,
 		strokeSeq: 0,
 		shape: null,
@@ -270,6 +285,7 @@ export function initSpriteEditor(
 		lastPaint: null,
 		selection: null,
 		float: null,
+		resize: null,
 	};
 }
 
@@ -702,19 +718,25 @@ export function placeAnchor(
 		return refuse(state, `'${name}' is not a legal anchor name`);
 	if (cellX < 0 || cellY < 0)
 		return refuse(state, 'an anchor cannot sit at a negative cell');
+	// Anchors are offsets (ADR 0031): a cell outside the art WARNS on the status
+	// line — a typo guard grip-style weapon anchors legitimately trip — but is
+	// never rejected.
+	const { w, h } = frameExtent(currentFrame(state));
+	const oob = cellX >= w || cellY >= h;
+	const note = oob ? `anchor '${name}' is outside the art bounds` : '';
 	if (scope === 'doc') {
 		const nextDoc: SpriteDoc = {
 			...state.doc,
 			anchors: { ...state.doc.anchors, [name]: { x: cellX, y: cellY } },
 		};
-		return commitDoc(state, nextDoc);
+		return { ...commitDoc(state, nextDoc), feedback: note };
 	}
 	const frame = currentFrame(state);
 	const nextFrame: SpriteFrameDoc = {
 		...frame,
 		anchors: { ...frame.anchors, [name]: { x: cellX, y: cellY } },
 	};
-	return commitFrame(state, nextFrame);
+	return { ...commitFrame(state, nextFrame), feedback: note };
 }
 
 // Remove a per-frame anchor override; the anchor falls back to its doc-level
@@ -1755,6 +1777,107 @@ export function nudgeInk(
 }
 
 // ---------------------------------------------------------------------------
+// Whole-file resize & crop (spec #402). Resize/crop are pure doc transforms
+// (see ./resize) that grow or shrink every Frame together, compensating Anchors
+// and the baseline on each edge add/remove. Resize is a live mode whose commit is
+// ONE undo step; crop is a single destructive step with status feedback.
+// ---------------------------------------------------------------------------
+
+// Clamp the cursor into the current Frame's Pixel extent (after a resize/crop the
+// old cursor may sit past the new edge).
+function clampCursor(state: SpriteEditorState): SpriteEditorState {
+	const { w, h } = frameExtent(currentFrame(state));
+	const cx = Math.max(0, Math.min(Math.max(0, w * 2 - 1), state.cursor.x));
+	const cy = Math.max(0, Math.min(Math.max(0, h * 2 - 1), state.cursor.y));
+	if (cx === state.cursor.x && cy === state.cursor.y) return state;
+	return { ...state, cursor: { x: cx, y: cy } };
+}
+
+function resizeHint(state: SpriteEditorState, edge: ResizeEdge): string {
+	const { w, h } = frameExtent(currentFrame(state));
+	return `resize ▸${edge} · ${w}×${h} · tab edge · arrows · enter/esc`;
+}
+
+// Enter whole-file resize mode with the `right` edge selected. Any in-flight
+// float / shape / selection is dropped so the mode owns the canvas cleanly.
+export function beginResize(state: SpriteEditorState): SpriteEditorState {
+	const edge: ResizeEdge = 'right';
+	const s: SpriteEditorState = {
+		...state,
+		shape: null,
+		float: null,
+		selection: null,
+		resize: edge,
+	};
+	return { ...s, feedback: resizeHint(s, edge) };
+}
+
+// Cycle the selected edge (left → right → top → bottom → left).
+export function resizeCycleEdge(state: SpriteEditorState): SpriteEditorState {
+	if (!state.resize) return state;
+	const i = RESIZE_EDGES.indexOf(state.resize);
+	const edge = RESIZE_EDGES[(i + 1) % RESIZE_EDGES.length];
+	return { ...state, resize: edge, feedback: resizeHint(state, edge) };
+}
+
+// Nudge the selected edge: `dir` +1 grows it outward (adds a cell), -1 shrinks it
+// inward (removes a cell). Applies live to `doc` WITHOUT recording history, so the
+// whole mode collapses to one undo step on commit.
+export function resizeNudge(
+	state: SpriteEditorState,
+	dir: 1 | -1,
+): SpriteEditorState {
+	if (!state.resize) return state;
+	const next = resizeDoc(state.doc, state.resize, dir);
+	if (!next) return { ...state, feedback: 'cannot shrink below 1×1' };
+	const s = clampCursor({ ...state, doc: next });
+	return { ...s, feedback: resizeHint(s, state.resize) };
+}
+
+// Commit the accumulated resize as ONE undo step and leave the mode.
+export function commitResize(state: SpriteEditorState): SpriteEditorState {
+	if (!state.resize) return state;
+	const changed = state.doc !== state.history.present;
+	const history = changed ? record(state.history, state.doc) : state.history;
+	const { w, h } = frameExtent(currentFrame(state));
+	return {
+		...state,
+		resize: null,
+		history,
+		feedback: changed ? `resized to ${w}×${h}` : '',
+	};
+}
+
+// Abandon the mode, restoring the doc to its pre-resize state losslessly.
+export function cancelResize(state: SpriteEditorState): SpriteEditorState {
+	if (!state.resize) return state;
+	const s = clampCursor({
+		...state,
+		doc: state.history.present,
+		resize: null,
+	});
+	return { ...s, feedback: '' };
+}
+
+// Crop the whole file to the committed selection (spec #402): the selection's
+// Pixel bbox rounds OUTWARD to cell boundaries, then standard crop semantics
+// (Anchors/baseline compensate). Destructive, a single undo step. Refuses with
+// feedback when there is no selection.
+export function cropToSelection(state: SpriteEditorState): SpriteEditorState {
+	const sel = state.selection;
+	if (!sel) return refuse(state, 'no selection to crop');
+	// Round the Pixel bbox outward: any cell the selection touches is kept.
+	const cx0 = Math.floor(sel.x0 / 2);
+	const cy0 = Math.floor(sel.y0 / 2);
+	const cx1 = Math.floor(sel.x1 / 2);
+	const cy1 = Math.floor(sel.y1 / 2);
+	const nextDoc = cropDocToCells(state.doc, cx0, cy0, cx1, cy1);
+	const committed = commitDoc({ ...state, selection: null }, nextDoc);
+	const { w, h } = frameExtent(currentFrame(committed));
+	return { ...clampCursor(committed), feedback: `cropped to ${w}×${h}` };
+}
+
+// ---------------------------------------------------------------------------
 // Undo / redo
 // ---------------------------------------------------------------------------
 
@@ -1790,7 +1913,10 @@ export function saveResult(state: SpriteEditorState): {
 	text: string;
 	diagnostics: SpriteDiagnostic[];
 } {
-	const text = serializeSpriteFile(state.doc);
+	// Save trims to the union bounding box across Frames (spec #402), so workspace
+	// margins never leak into the shipped asset. A tight uniform doc trims to
+	// itself, keeping a load-normalize → save-trim round-trip a no-op.
+	const text = serializeSpriteFile(trimDoc(state.doc));
 	// Round-trip check: the diagnostics the artist would see on reload.
 	const { diagnostics } = parseSpriteFile(text, state.doc.id);
 	return { text, diagnostics };
