@@ -84,7 +84,9 @@ async function mount(opts: {
 }) {
 	const t = await createTestRenderer({
 		width: opts.width ?? 100,
-		height: opts.height ?? 20,
+		// The ≥80×24 floor (#398): mount at the floor by default so the editor UI
+		// renders (below it a placard replaces the whole UI).
+		height: opts.height ?? 24,
 	});
 	const editor = new SpriteEditor(t.renderer, {
 		id: opts.id,
@@ -319,8 +321,8 @@ describe('Sprite editor mouse painting', () => {
 			role: 'hat',
 		});
 		const before = t.editor.state.doc;
-		// Row 18 is the status chrome, not canvas.
-		t.editor.mouseDown({ button: 0, x: bx, y: 18 });
+		// Row 22 is the status chrome (H=24 → viewH=22), not canvas.
+		t.editor.mouseDown({ button: 0, x: bx, y: 22 });
 		t.editor.mouseUp();
 		expect(t.editor.state.doc).toBe(before);
 	});
@@ -423,10 +425,13 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 	}
 
 	test('the left rail carries the tools row, ink list and playback box', async () => {
+		// A tall terminal so the full playback box shows (rung 3 folds it when the
+		// rail can't fit the full ink list + playback — e.g. at the 24-row floor).
 		const t = await mount({
 			doc: emptySpriteDoc('rail', 'hat'),
 			id: 'rail',
 			role: 'hat',
+			height: 34,
 		});
 		const lines = t.captureCharFrame().split('\n');
 		const rail = lines.map((l) => l.slice(0, RAIL_W)).join('\n');
@@ -484,15 +489,16 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 			id: 'nav',
 			role: 'form',
 		});
-		// walkA's strip label sits at content row 19 — off-screen at first.
-		expect(t.captureCharFrame()).not.toContain('walkA ·');
+		// walkB's strip label sits at content row ~38 — off-screen at the 24-row
+		// floor (viewH=22), below both the idle and walkA strips.
+		expect(t.captureCharFrame()).not.toContain('walkB ·');
 		t.editor.wheel({ button: 0, x: 40, y: 5, scroll: { direction: 'down' } });
 		await t.renderOnce();
 		// One notch (3 rows) brings nothing yet; keep scrolling.
 		for (let i = 0; i < 5; i++)
 			t.editor.wheel({ button: 0, x: 40, y: 5, scroll: { direction: 'down' } });
 		await t.renderOnce();
-		expect(t.captureCharFrame()).toContain('walkA ·');
+		expect(t.captureCharFrame()).toContain('walkB ·');
 		// Middle-drag pans back up.
 		t.editor.mouseDown({ button: 1, x: 40, y: 2 });
 		t.editor.mouseDrag({ button: 1, x: 40, y: 20 });
@@ -548,10 +554,13 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 	});
 
 	test('rail clicks switch tools, pick inks and toggle playback', async () => {
+		// Tall enough that the playback box is unfolded (its ', walk' control is
+		// only present in the full box, not the folded one-row rung-3 hint).
 		const t = await mount({
 			doc: emptySpriteDoc('click', 'hat'),
 			id: 'click',
 			role: 'hat',
+			height: 34,
 		});
 		const lines = t.captureCharFrame().split('\n');
 		const rowWith = (needle: string) =>
