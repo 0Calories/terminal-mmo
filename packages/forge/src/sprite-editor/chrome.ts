@@ -43,8 +43,8 @@ export interface RailRow {
 // (spec #387: tools live on the number row in rail order — pencil, fill, stamp,
 // line, rect, ellipse, select, move, paste; erase is demoted to the right
 // button, off the rail, and the anchor tool moved off the number row — it lives
-// in the playback box's `A anchor` and the `a` key. Select/move/paste land in
-// later slices).
+// in the playback box's `A anchor` and the `a` key. Select (7) and move (8) are
+// live (#399); paste (9) lands in a later slice).
 export const RAIL_TOOLS: readonly {
 	key: string;
 	tool: SpriteTool;
@@ -56,6 +56,8 @@ export const RAIL_TOOLS: readonly {
 	{ key: '4', tool: 'line', label: 'line' },
 	{ key: '5', tool: 'rect', label: 'rect' },
 	{ key: '6', tool: 'ellipse', label: 'ellipse' },
+	{ key: '7', tool: 'select', label: 'select' },
+	{ key: '8', tool: 'move', label: 'move' },
 ];
 
 export interface RailInput {
@@ -282,7 +284,10 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 	{
 		title: 'Tools',
 		bindings: [
-			{ keys: '1-6', label: 'pencil · erase · stamp · line · rect · ellipse' },
+			{
+				keys: '1-8',
+				label: 'pencil · fill · stamp · line · rect · ellipse · select · move',
+			},
 			{ keys: 'p e s / a', label: 'pencil · erase · stamp / anchor' },
 			{ keys: 'o', label: 'rect/ellipse outline ↔ filled' },
 		],
@@ -293,8 +298,7 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: '?', label: 'this help' },
 			{ keys: 'tab', label: 'strips ↔ focus view' },
 			{ keys: '^s / w', label: 'save' },
-			{ keys: 'u / ^z', label: 'undo' },
-			{ keys: 'U / ^r', label: 'redo' },
+			{ keys: 'u / U', label: 'undo / redo (^z / ^r)' },
 			{ keys: '+ / -', label: 'zoom ladder (ctrl-wheel too)' },
 			{ keys: 'm', label: 'mirror facing' },
 			{ keys: 'v', label: 'composited preview' },
@@ -308,25 +312,33 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: 'space', label: 'pen down/up (movement paints)' },
 			{ keys: 'left / right click', label: 'paint ink / paint transparent' },
 			{ keys: 'shift-click', label: 'pencil: line from last point' },
-			{ keys: 'enter', label: 'place shape anchor / commit shape' },
-			{ keys: 'drag / shift', label: 'draw shape / constrain square' },
-			{ keys: 'esc', label: 'cancel shape / overlay / stamp' },
+			{ keys: 'enter / drag', label: 'shape anchor / commit (shift squares)' },
+			{ keys: 'esc', label: 'cancel shape / float / overlay / stamp' },
+		],
+	},
+	{
+		title: 'Selection & move',
+		bindings: [
+			{ keys: '7 / 8', label: 'select marquee / move (float)' },
+			{ keys: 'drag / arrows', label: 'lift + float the selection' },
+			{ keys: 'enter / esc', label: 'drop float / cancel losslessly' },
+			{ keys: 'del / bksp', label: 'clear selection contents' },
+			{ keys: 'shift-arrows', label: 'shift the whole Frame 1 Pixel' },
 		],
 	},
 	{
 		title: 'Color',
 		bindings: [
-			{ keys: 'c', label: 'ink quick-pick (type / arrows / index → enter)' },
+			{ keys: 'c', label: 'ink quick-pick (type / arrows / index)' },
 			{ keys: "; / '", label: 'nudge ink to the adjacent swatch' },
 			{ keys: 't', label: 'set ink transparent' },
-			{ keys: 'i', label: 'eyedrop key at Pixel (alt-click = momentary)' },
+			{ keys: 'i', label: 'eyedrop key (alt-click momentary)' },
 		],
 	},
 	{
 		title: 'Frames & poses',
 		bindings: [
-			{ keys: '[ / ]', label: 'previous / next frame' },
-			{ keys: '{ / }', label: 'previous / next pose' },
+			{ keys: '[ ] / { }', label: 'prev / next frame · pose' },
 			{ keys: 'n', label: 'add frame to current pose' },
 			{ keys: 'P / A', label: 'pose menu / anchor menu' },
 			{ keys: '. / ,', label: 'play pose / walk preview' },
@@ -339,8 +351,7 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: 'wheel', label: 'scroll strips' },
 			{ keys: 'shift-wheel', label: 'scroll horizontally' },
 			{ keys: 'ctrl-wheel', label: 'zoom' },
-			{ keys: 'middle-drag', label: 'pan' },
-			{ keys: 'click a frame', label: 'activate it (click-through)' },
+			{ keys: 'middle-drag', label: 'pan · click-through activates frame' },
 		],
 	},
 ];
@@ -363,14 +374,18 @@ export function helpRows(): string[] {
 	return rows;
 }
 
-// The overlay rows folded to fit `maxRows`: when the single column is too
-// tall, the body splits into two side-by-side columns so the complete map
-// stays visible on a 24-row terminal.
+// The overlay rows folded to fit `maxRows`: when the single column is too tall,
+// the body packs into as many side-by-side columns as it takes to fit the height,
+// so the complete map (now including the selection/move group, #399) stays visible
+// on a 24-row terminal. Blank group separators are dropped in the packed variant
+// to reclaim vertical space; a leading title row keeps the groups legible.
 export function helpOverlayRows(maxRows: number): string[] {
 	const rows = helpRows();
 	if (rows.length <= maxRows) return rows;
 	const head = rows.slice(0, 2);
-	const body = rows.slice(2);
+	// Drop the blank group separators in the packed variant to reclaim the rows
+	// the extra groups (selection/move, #399) need on a 24-row terminal.
+	const body = rows.slice(2).filter((r) => r.trim() !== '');
 	const half = Math.ceil(body.length / 2);
 	const left = body.slice(0, half);
 	const right = body.slice(half);
@@ -391,6 +406,8 @@ const TOOL_HINTS: Record<SpriteTool, string> = {
 	line: 'drag / enter·enter · esc cancel · rmb transparent',
 	rect: 'drag / enter·enter · o outline/fill · shift square',
 	ellipse: 'drag / enter·enter · o outline/fill · shift circle',
+	select: 'drag marquee · del clears · shift-arrows whole frame',
+	move: 'drag/arrows floats it · enter drops · esc cancels',
 };
 
 const GLOBAL_HINT = '? help · tab view · u undo · ^s save · q quit';

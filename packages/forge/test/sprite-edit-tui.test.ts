@@ -68,6 +68,29 @@ function canvasHasBg(
 	return false;
 }
 
+// The smallest canvas-region screen column (right of the rail) whose background
+// matches `rgb`, or -1 when the colour is absent. Used to prove the float's art
+// tracks its offset across the canvas.
+function minInkColumn(
+	cap: ReturnType<
+		Awaited<ReturnType<typeof createTestRenderer>>['captureSpans']
+	>,
+	rgb: [number, number, number],
+	rowMax: number,
+): number {
+	let min = -1;
+	for (let y = 0; y < Math.min(rowMax, cap.lines.length); y++) {
+		let col = 0;
+		for (const s of cap.lines[y].spans) {
+			const [r, g, b] = s.bg.toInts();
+			if (col >= RAIL_W && r === rgb[0] && g === rgb[1] && b === rgb[2])
+				if (min < 0 || col < min) min = col;
+			col += s.width;
+		}
+	}
+	return min;
+}
+
 let root: string;
 beforeEach(() => {
 	root = mkdtempSync(join(tmpdir(), 'forge-sprite-edit-'));
@@ -155,6 +178,54 @@ describe('Sprite editor TUI smoke', () => {
 		expect(canvasHasBg(t.captureSpans(), INK_P, 17)).toBe(true);
 		// The whole drag coalesced into a single undo step.
 		expect(t.editor.state.history.past.length).toBe(1);
+	});
+
+	test('a whole-Frame shift floats the art live on the canvas (spec #399)', async () => {
+		// A hat with a single lit Pixel at the top-left of the idle frame.
+		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'flo');
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'flo', role: 'hat' });
+		const fg = resolveColorKey(
+			doc.key,
+			doc.colors,
+			SCENE_PALETTE,
+			SPRITE_PREVIEWS,
+		);
+		if (!fg) throw new Error('fixture fg did not resolve');
+		const rgb: [number, number, number] = [fg[0], fg[1], fg[2]];
+
+		const before = minInkColumn(t.captureSpans(), rgb, 17);
+		expect(before).toBeGreaterThanOrEqual(0); // the art is on the canvas
+
+		// Shift the whole Frame right three Pixels (select-all + float, spec #399).
+		t.editor.key(key('right', { shift: true }));
+		t.editor.key(key('right', { shift: true }));
+		t.editor.key(key('right', { shift: true }));
+		await t.renderOnce();
+
+		// The TUI entered a live float, and the canvas draws the art at its offset —
+		// the same composite the preview pane renders (both read floatDisplayDoc).
+		expect(t.editor.state.float).not.toBeNull();
+		expect(t.editor.state.float?.dx).toBe(3);
+		const after = minInkColumn(t.captureSpans(), rgb, 17);
+		expect(after).toBeGreaterThan(before); // the art tracked the float right
+	});
+
+	test('Enter drops a whole-Frame-shift float from the pencil tool (spec #399)', async () => {
+		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'flo2');
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'flo2', role: 'hat' });
+		// A whole-Frame shift floats under the default pencil tool.
+		t.editor.key(key('down', { shift: true }));
+		expect(t.editor.state.float).not.toBeNull();
+		const before = t.editor.state.history.past.length;
+		// Enter commits the float as one undo step, even though the pencil is active.
+		t.editor.key(key('return'));
+		expect(t.editor.state.float).toBeNull();
+		expect(t.editor.state.history.past.length).toBe(before + 1);
+		// The art moved down one Pixel (into cell (0,0)'s lower quadrant).
+		expect(readPixel(t.editor.state, 0, 0)).toBe(false);
+		expect(readPixel(t.editor.state, 0, 1)).toBe(true);
 	});
 
 	test('the status line shows the zoom and Pixel/cell coordinates', async () => {
