@@ -7,13 +7,15 @@
 // paint at the same Pixel produce the same `EditorInput` and the same next
 // state, testable by construction.
 //
-// Scope note (#390, #395): the tools that consume pointer input today are the
-// pencil (with the eraser as its transparent-ink spelling) and the fill (#395),
-// so `applyInput` routes paint and flood fill. Later slices add the remaining
+// Scope note (#390, #395, #397): the tools that consume pointer input today
+// are the pencil (with the eraser as its transparent-ink spelling), the fill
+// (#395), and the momentary alt-click eyedrop (#397), so `applyInput` routes
+// paint, flood fill, or a key sample. Later slices add the remaining
 // anchor-tool suite (line/rect/ellipse/select/move/paste), wheel routing
 // (scroll/zoom), and middle-drag pan on top of this same event — the seam is
 // shaped for them now.
 import {
+	eyedropAt,
 	floodFill,
 	moveCursor,
 	paintWithInk,
@@ -160,6 +162,10 @@ export function applyInput(
 	const { x, y } = input.pixel;
 	const moved = moveCursor(state, x, y);
 	if (input.button === 'none' || input.button === 'middle') return moved;
+	// Momentary eyedrop (spec #387): alt + any paint button samples the colour
+	// key under the Pixel instead of painting, whatever tool is in hand. The
+	// keyboard `i` key is the one-shot spelling; both reach `eyedropAt`.
+	if (input.mods.alt) return eyedropAt(moved, x, y);
 
 	// `secondary` forces transparent ink; the eraser tool is transparent whatever
 	// the ink; otherwise the active ink wins.

@@ -182,6 +182,40 @@ describe('applyInput — the single entry point into the pure layer', () => {
 	});
 });
 
+describe('applyInput — momentary alt-click eyedrop (spec #397)', () => {
+	test('alt + a paint button samples the key under the Pixel instead of painting', () => {
+		// Light a 'g' Pixel, switch ink, then alt-click it: the ink becomes 'g'
+		// and no new paint lands.
+		let s = setInk(blankState(), colorInk('g'));
+		s = applyInput(
+			s,
+			normalizeMouse({ pixel: { x: 0, y: 0 }, button: 'left' }),
+		);
+		s = setInk(s, colorInk('m'));
+		const before = s.doc;
+		s = applyInput(
+			s,
+			normalizeMouse({ pixel: { x: 0, y: 0 }, button: 'left', alt: true }),
+		);
+		expect(s.ink).toEqual(colorInk('g'));
+		expect(s.doc).toBe(before); // sampling never mutates the art
+	});
+
+	test('alt-click eyedrops whatever tool is active', () => {
+		let s = setInk(blankState(), colorInk('y'));
+		s = applyInput(
+			s,
+			normalizeMouse({ pixel: { x: 2, y: 2 }, button: 'left' }),
+		);
+		s = setTool(setInk(s, colorInk('m')), 'stamp');
+		s = applyInput(
+			s,
+			normalizeMouse({ pixel: { x: 2, y: 2 }, button: 'right', alt: true }),
+		);
+		expect(s.ink).toEqual(colorInk('y'));
+	});
+});
+
 describe('routeWheel — spec #387 wheel grammar', () => {
 	const none = { shift: false, alt: false, ctrl: false };
 

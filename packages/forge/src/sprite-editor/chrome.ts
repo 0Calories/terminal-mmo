@@ -140,7 +140,7 @@ export function railModel(input: RailInput): RailRow[] {
 	rows.push({
 		spans: [
 			{ text: ' ink', dim: true },
-			{ text: '  f pick · t clear', dim: true, action: { type: 'pickInk' } },
+			{ text: '  c pick · i eye', dim: true, action: { type: 'pickInk' } },
 		],
 		title: true,
 	});
@@ -301,10 +301,16 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: 'arrows / hjkl', label: 'move cursor 1 Pixel' },
 			{ keys: 'space', label: 'pen down/up (movement paints)' },
 			{ keys: 'left / right click', label: 'paint ink / paint transparent' },
-			{ keys: 't', label: 'set ink transparent' },
-			{ keys: 'f', label: 'ink picker' },
-			{ keys: 'c', label: 'clear cell (anchor: drop override)' },
 			{ keys: 'esc', label: 'cancel overlay / stamp' },
+		],
+	},
+	{
+		title: 'Color',
+		bindings: [
+			{ keys: 'c', label: 'ink quick-pick (type / arrows / index → enter)' },
+			{ keys: "; / '", label: 'nudge ink to the adjacent swatch' },
+			{ keys: 't', label: 'set ink transparent' },
+			{ keys: 'i', label: 'eyedrop key at Pixel (alt-click = momentary)' },
 		],
 	},
 	{

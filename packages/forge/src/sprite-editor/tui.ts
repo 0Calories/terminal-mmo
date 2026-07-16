@@ -15,7 +15,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { RGBAQuad } from '@mmo/core/entities';
-import { SCENE_PALETTE } from '@mmo/core/entities';
+import { STANDARD_PALETTE } from '@mmo/core/entities';
 import {
 	buildSceneStyle,
 	type CellBuffer,
@@ -80,22 +80,30 @@ import {
 } from './picker';
 import { playbackFrame, poseFps, walkPreviewPose } from './playback';
 import {
+	openQuickPick,
+	type QuickPickState,
+	quickPickChoose,
+	quickPickMove,
+	quickPickType,
+} from './quickPick';
+import {
 	addFrameToPose,
 	anchorMarkers,
 	beginStroke,
 	cellAt,
-	clearCell,
 	colorInk,
 	createPose,
 	currentFrame,
 	defineLocalColor,
 	deletePose,
 	endStroke,
+	eyedropAt,
 	frameExtent,
 	frameNames,
 	initSpriteEditor,
 	inkLabel,
 	moveCursor,
+	nudgeInk,
 	paletteEntries,
 	pixelToCell,
 	placeAnchor,
@@ -103,7 +111,6 @@ import {
 	poseNames,
 	readPixel,
 	redoEdit,
-	removeAnchorOverride,
 	reorderFrame,
 	type SpriteEditorState,
 	type SpriteTool,
@@ -293,6 +300,8 @@ interface Palette {
 export class SpriteEditor extends Renderable {
 	state: SpriteEditorState;
 	picker: PickerState | null = null;
+	// The `c` ink quick-pick overlay (spec #387): random-access ink selection.
+	quickPick: QuickPickState | null = null;
 	poseMenu: PoseMenuState | null = null;
 	anchorMenu: AnchorMenuState | null = null;
 	mirror = false;
@@ -390,7 +399,10 @@ export class SpriteEditor extends Renderable {
 		this.saveDiags = opts.initialDiags ?? null;
 		this.save = opts.save;
 		this.onQuit = opts.onQuit;
-		this.globalPalette = opts.globalPalette ?? SCENE_PALETTE;
+		// The rail lists (and the canvas resolves) the standard core palette by
+		// default (spec #387, palette from #404): the single source of truth for
+		// every paintable key, plus file-local customs and the dynamic p/a keys.
+		this.globalPalette = opts.globalPalette ?? STANDARD_PALETTE;
 		this.sceneStyle = buildSceneStyle((r, g, b, a) =>
 			RGBA.fromInts(r, g, b, a),
 		);
@@ -485,6 +497,7 @@ export class SpriteEditor extends Renderable {
 	private modalActive(): boolean {
 		return (
 			this.picker !== null ||
+			this.quickPick !== null ||
 			this.poseMenu !== null ||
 			this.anchorMenu !== null ||
 			this.awaitingStamp ||
@@ -521,7 +534,7 @@ export class SpriteEditor extends Renderable {
 				this.state = setInk(this.state, action.ink);
 				return;
 			case 'pickInk':
-				this.openPicker();
+				this.openQuickPick();
 				return;
 			case 'play':
 				this.togglePlay(action.mode);
@@ -621,6 +634,13 @@ export class SpriteEditor extends Renderable {
 			px = this.focusPixel(e.x, e.y);
 		}
 		if (!px) return;
+		// Momentary eyedrop (spec #387): an alt-click samples the key under the
+		// pointer through the normalized seam — whatever tool is in hand — and never
+		// opens a paint stroke.
+		if (e.modifiers?.alt) {
+			this.paintMouse(button, px, e.modifiers);
+			return;
+		}
 		// Fill floods on a single press (left = active ink, right = transparent);
 		// no coalescing stroke, no drag.
 		if (this.state.tool === 'fill') {
@@ -828,6 +848,54 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
+	// ---- ink quick-pick (`c`) ----
+
+	private openQuickPick(): void {
+		this.liftPen();
+		this.quickPick = openQuickPick(this.entries(), this.state.ink);
+	}
+
+	private quickPickKey(k: SpriteKey): void {
+		const p = this.quickPick;
+		if (!p) return;
+		if (k.name === 'escape') {
+			this.quickPick = null;
+			return;
+		}
+		if (k.name === 'up' || k.name === 'k') {
+			this.quickPick = quickPickMove(p, -1);
+			return;
+		}
+		if (k.name === 'down' || k.name === 'j') {
+			this.quickPick = quickPickMove(p, 1);
+			return;
+		}
+		if (k.name === 'return' || k.name === 'enter' || k.name === 'space') {
+			this.state = setInk(this.state, quickPickChoose(p));
+			this.quickPick = null;
+			return;
+		}
+		// Typeahead (rail key char) or rail index (a digit) jumps the highlight.
+		const ch = k.sequence ?? '';
+		if (ch.length === 1) this.quickPick = quickPickType(p, ch);
+	}
+
+	// ---- eyedropper (`i` one-shot) & ink nudge (`;`/`'`) ----
+
+	private eyedropCursor(): void {
+		this.liftPen();
+		this.state = eyedropAt(
+			this.state,
+			this.state.cursor.x,
+			this.state.cursor.y,
+		);
+	}
+
+	private nudge(dir: 1 | -1): void {
+		this.liftPen();
+		this.state = nudgeInk(this.state, this.entries(), dir);
+	}
+
 	// ---- stamp ----
 
 	private stampKey(k: SpriteKey): void {
@@ -877,23 +945,6 @@ export class SpriteEditor extends Renderable {
 		this.liftPen();
 		this.view = this.view === 'strips' ? 'focus' : 'strips';
 		this.followCursor = true;
-	}
-
-	private clearAtCursor(): void {
-		this.liftPen();
-		// In the anchor tool, clear drops the current frame's override for the
-		// selected anchor (falling back to its doc-level position) rather than
-		// clearing a pixel cell.
-		if (this.state.tool === 'anchor') {
-			if (this.state.anchorName)
-				this.state = removeAnchorOverride(this.state, this.state.anchorName);
-			return;
-		}
-		const { cellX, cellY } = pixelToCell(
-			this.state.cursor.x,
-			this.state.cursor.y,
-		);
-		this.state = clearCell(this.state, cellX, cellY);
 	}
 
 	private doSave(): void {
@@ -1101,6 +1152,10 @@ export class SpriteEditor extends Renderable {
 			this.pickerKey(k);
 			return;
 		}
+		if (this.quickPick) {
+			this.quickPickKey(k);
+			return;
+		}
 		if (this.poseMenu) {
 			this.poseMenuKeyDispatch(k);
 			return;
@@ -1210,6 +1265,15 @@ export class SpriteEditor extends Renderable {
 			this.setZoom(stepZoom(this.zoom, -1));
 			return;
 		}
+		// Ink nudge (spec #387): `;` steps back a swatch, `'` steps forward.
+		if (k.sequence === ';') {
+			this.nudge(-1);
+			return;
+		}
+		if (k.sequence === "'") {
+			this.nudge(1);
+			return;
+		}
 		// Pose stepping and the strips ↔ focus toggle.
 		if (k.sequence === '{') {
 			this.stepPose(-1);
@@ -1272,7 +1336,10 @@ export class SpriteEditor extends Renderable {
 				this.state = setInk(this.state, TRANSPARENT_INK);
 				return;
 			case 'c':
-				this.clearAtCursor();
+				this.openQuickPick();
+				return;
+			case 'i':
+				this.eyedropCursor();
 				return;
 			case 'n':
 				this.addFrame();
@@ -1857,6 +1924,7 @@ export class SpriteEditor extends Renderable {
 
 		this.renderHelp(buf, W, H, C);
 		this.renderPicker(buf, W, H, C);
+		this.renderQuickPick(buf, W, H, C);
 		this.renderPoseMenu(buf, W, H, C);
 		this.renderAnchorMenu(buf, W, H, C);
 	}
@@ -2051,6 +2119,27 @@ export class SpriteEditor extends Renderable {
 			}
 			rows.push('↑/↓ move · Enter pick · Esc close');
 		}
+		this.drawModal(buf, W, H, rows, C);
+	}
+
+	private renderQuickPick(
+		buf: OptimizedBuffer,
+		W: number,
+		H: number,
+		C: Palette,
+	): void {
+		const p = this.quickPick;
+		if (!p) return;
+		const rows: string[] = [`Pick ink${p.query ? ` — ${p.query}` : ''}`];
+		for (let i = 0; i < p.options.length; i++) {
+			const o = p.options[i];
+			const label =
+				o.kind === 'transparent'
+					? 't  transparent'
+					: `${o.entry.key}  ${o.entry.label}${o.entry.kind === 'dynamic' ? ' (dynamic)' : ''}`;
+			rows.push(`${i === p.index ? '▸' : ' '} ${label}`);
+		}
+		rows.push('type/index/↑↓ · Enter pick · Esc close');
 		this.drawModal(buf, W, H, rows, C);
 	}
 
