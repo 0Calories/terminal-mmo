@@ -28,11 +28,13 @@ import {
 	type Entity,
 	type EntityType,
 	type Facing,
+	type RGBAQuad,
 } from '@mmo/core/entities';
 import { spriteMetaFor } from '@mmo/core/sprites';
 import {
 	type BodySprite,
 	type CellBuffer,
+	type ColorFactory,
 	compileBodySprite,
 	compileWeaponSprite,
 	drawEntitySprite,
@@ -360,6 +362,29 @@ export function buildComposite(
 		// preview panel shows a bare background until the artist supplies them.
 		return null;
 	}
+}
+
+// Merge a doc's file-local custom colours into a base render style so the
+// Composited preview renders them faithfully (#393). The shared renderer resolves
+// a colour key as `recolor?.[key] ?? style.palette[key] ?? style.paletteDefault`;
+// file-local keys live only on the doc, so without this merge they fall through to
+// `paletteDefault` and the preview lies about the artist's palette. Local keys win
+// over the global scene palette, matching the editor's own `resolveColorKey`
+// precedence. Returns the base style unchanged when the doc defines no customs, so
+// the common case allocates nothing.
+export function styleWithLocalColors<C>(
+	base: RenderStyle<C>,
+	colors: Readonly<Record<string, RGBAQuad>>,
+	toColor: ColorFactory<C>,
+): RenderStyle<C> {
+	const keys = Object.keys(colors);
+	if (keys.length === 0) return base;
+	const palette: Record<string, C> = { ...base.palette };
+	for (const key of keys) {
+		const q = colors[key];
+		if (q) palette[key] = toColor(q[0], q[1], q[2], q[3]);
+	}
+	return { ...base, palette };
 }
 
 // Render the composited preview into a cell buffer through the shared renderer,

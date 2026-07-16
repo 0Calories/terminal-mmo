@@ -21,6 +21,7 @@ import {
 	type PreviewStance,
 	previewStances,
 	renderComposite,
+	styleWithLocalColors,
 } from './composite';
 import type { SpriteRole } from './templates';
 import { roleForDir } from './view';
@@ -137,7 +138,14 @@ export class SpritePreview extends Renderable {
 	}
 
 	protected renderSelf(buf: OptimizedBuffer): void {
-		renderComposite(buf, this.doc, this.role, this.style, this.view());
+		// Merge the live doc's file-local colours into the render style so custom
+		// keys render faithfully rather than falling back to the default (#393).
+		const style = styleWithLocalColors(
+			this.style,
+			this.doc.colors,
+			(r, g, b, a) => RGBA.fromInts(r, g, b, a),
+		);
+		renderComposite(buf, this.doc, this.role, style, this.view());
 
 		const H = buf.height;
 		const W = buf.width;

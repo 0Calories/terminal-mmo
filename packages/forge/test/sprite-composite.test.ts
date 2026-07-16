@@ -21,6 +21,7 @@ import {
 import {
 	buildComposite,
 	renderComposite,
+	styleWithLocalColors,
 } from '../src/sprite-editor/composite';
 
 interface Cell {
@@ -176,6 +177,86 @@ test('editing the WIP doc changes the composite; the registry stays put', () => 
 		STYLE,
 	);
 	expect(dump(registry)).toBe(dump(before));
+});
+
+// --- (d) file-local colours render faithfully once merged (#393) ------------
+
+// A minimal monster doc whose 2×2 art paints an opaque block in a file-local
+// custom colour key 'z' — a key absent from the scene palette on purpose.
+function localColorDoc(): SpriteDoc {
+	return {
+		id: 'blob',
+		key: 'w',
+		baseline: 0,
+		anchors: {},
+		poses: { idle: ['m0'] },
+		fps: {},
+		colors: { z: [11, 22, 33, 255] },
+		frames: [
+			{
+				name: 'm0',
+				rows: ['██', '██'],
+				colors: ['zz', 'zz'],
+				bg: ['  ', '  '],
+				anchors: {},
+			},
+		],
+	};
+}
+
+function firstGlyph(buf: FakeBuffer, ch: string): Cell | undefined {
+	for (const cell of buf.cells.values()) if (cell.ch === ch) return cell;
+	return undefined;
+}
+
+test('styleWithLocalColors merges custom keys; local wins; empty is a no-op', () => {
+	// No customs ⇒ same reference, nothing allocated.
+	expect(
+		styleWithLocalColors(STYLE, {}, (r, g, b, a) => `${r},${g},${b},${a}`),
+	).toBe(STYLE);
+	const merged = styleWithLocalColors(
+		STYLE,
+		{ z: [11, 22, 33, 255], w: [1, 2, 3, 255] },
+		(r, g, b, a) => `${r},${g},${b},${a}`,
+	);
+	// A brand-new key is added…
+	expect(merged.palette.z).toBe('11,22,33,255');
+	// …and a file-local override of a global key wins over the scene palette.
+	expect(merged.palette.w).toBe('1,2,3,255');
+	expect(merged.palette.w).not.toBe(STYLE.palette.w);
+	// The base style is untouched.
+	expect(STYLE.palette.z).toBeUndefined();
+});
+
+test('file-local colours render in the composite once merged into the style (#393)', () => {
+	const doc = localColorDoc();
+	const W = 24;
+	const H = 16;
+	const view = { facing: 1 as const, stance: 'idle', elapsedS: 0 };
+
+	// Base style: the file-local key 'z' is absent from the scene palette, so the
+	// renderer falls through to paletteDefault — today's bug, the preview lies.
+	const fallback = new FakeBuffer(W, H);
+	expect(renderComposite(fallback, doc, 'monster', STYLE, view)).toBe(true);
+
+	// Merged style: the doc's local colour is injected, so 'z' renders its real RGBA.
+	const merged = styleWithLocalColors(
+		STYLE,
+		doc.colors,
+		(r, g, b, a) => `${r},${g},${b},${a}`,
+	);
+	const faithful = new FakeBuffer(W, H);
+	expect(renderComposite(faithful, doc, 'monster', merged, view)).toBe(true);
+
+	// The art lands in both (same glyphs, same positions) — only the colour differs.
+	expect(dump(fallback).replace(/\|[^ ]*/g, '')).toBe(
+		dump(faithful).replace(/\|[^ ]*/g, ''),
+	);
+	const before = firstGlyph(fallback, '█');
+	const after = firstGlyph(faithful, '█');
+	expect(before?.fg).toBe(STYLE.paletteDefault);
+	expect(after?.fg).toBe('11,22,33,255');
+	expect(after?.fg).not.toBe(before?.fg);
 });
 
 test('facing flips the composite (mirroring goes through the renderer)', () => {

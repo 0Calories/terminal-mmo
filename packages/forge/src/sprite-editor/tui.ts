@@ -43,7 +43,7 @@ import {
 	railActionAt,
 	railModel,
 } from './chrome';
-import { renderComposite } from './composite';
+import { renderComposite, styleWithLocalColors } from './composite';
 import {
 	applyInput,
 	type KeyPaint,
@@ -189,6 +189,12 @@ export interface SpriteEditorOpts {
 const CHROME_H = 2;
 const SCROLLOFF = 2;
 
+// The floating Composited preview pane's native size (#393): docked top-right over
+// the canvas, ~34×11 including its border and control row. Clamped to the space
+// available so a narrow terminal never draws garbage (the ≥80×24 floor is #398).
+const PREVIEW_W = 34;
+const PREVIEW_H = 11;
+
 // The box-drawing glyph for one cell of the cursor's z×z outline ring, or '' for
 // an interior (non-edge) cell. All are unambiguous width-1 (unlike □/▫), so the
 // ring never desyncs the terminal's mouse columns.
@@ -288,9 +294,14 @@ export class SpriteEditor extends Renderable {
 	poseMenu: PoseMenuState | null = null;
 	anchorMenu: AnchorMenuState | null = null;
 	mirror = false;
-	// The in-context Composited preview panel (toggle: `o`) — the WIP art rendered
-	// the way the game draws it, right beside the pixel canvas.
-	composite = false;
+	// The always-on floating Composited preview (#393): the WIP art rendered the way
+	// the game draws it, docked top-right over the canvas. `v` toggles it — the rare
+	// degradation override; it is on by default so the artist always draws against
+	// the truth.
+	composite = true;
+	// The preview pane's own facing, flipped by its flip control. Independent of the
+	// canvas `mirror` split so flipping the preview never opens the mirror panel.
+	previewFacing: 1 | -1 = 1;
 	// Which canvas view is active: strips (default) or focus (`tab`).
 	view: CanvasView = 'strips';
 	// Whether the `?` key-map overlay is open.
@@ -328,7 +339,24 @@ export class SpriteEditor extends Renderable {
 			origin: { x: number; y: number };
 			top: number;
 		} | null;
-	} = { viewH: 0, viewW: 0, rail: [], layout: null, focus: null };
+		// The floating preview pane's screen rect + its clickable control spans, so
+		// mouse handlers can swallow clicks over the pane and hit flip/play.
+		preview: {
+			x0: number;
+			y0: number;
+			w: number;
+			h: number;
+			flip: { x0: number; x1: number; y: number };
+			play: { x0: number; x1: number; y: number };
+		} | null;
+	} = {
+		viewH: 0,
+		viewW: 0,
+		rail: [],
+		layout: null,
+		focus: null,
+		preview: null,
+	};
 	// An in-flight mouse paint stroke (down→drag→up coalesces to one undo step),
 	// and the button held for it (drag events don't reliably re-report the button).
 	private mouseStroke = false;
@@ -594,6 +622,29 @@ export class SpriteEditor extends Renderable {
 			return;
 		}
 		if (this.modalActive()) return;
+		// The floating preview pane swallows every click over it (never paint the
+		// canvas hidden beneath); a primary click on its flip/play controls actuates.
+		const pane = this.geom.preview;
+		if (
+			pane &&
+			e.x >= pane.x0 &&
+			e.x < pane.x0 + pane.w &&
+			e.y >= pane.y0 &&
+			e.y < pane.y0 + pane.h
+		) {
+			if (e.button === 0) {
+				if (e.y === pane.flip.y && e.x >= pane.flip.x0 && e.x <= pane.flip.x1) {
+					this.previewFacing = this.previewFacing === 1 ? -1 : 1;
+				} else if (
+					e.y === pane.play.y &&
+					e.x >= pane.play.x0 &&
+					e.x <= pane.play.x1
+				) {
+					this.togglePlay('pose');
+				}
+			}
+			return;
+		}
 		// Middle button starts a pan (spec #387) in either view.
 		if (e.button === 1) {
 			this.panLast = { x: e.x, y: e.y };
@@ -1611,14 +1662,11 @@ export class SpriteEditor extends Renderable {
 				? this.state
 				: { ...this.state, frame: displayFrame };
 
-		// The canvas region sits right of the rail; a right-hand panel, when
-		// toggled, takes half of it with a one-column divider between. The
-		// Composited preview (`o`) wins the panel over the mirror when both are on.
-		const rightPanel = this.composite
-			? 'composite'
-			: this.mirror
-				? 'mirror'
-				: 'none';
+		// The canvas region sits right of the rail; the mirror panel, when toggled,
+		// takes half of it with a one-column divider between. The Composited preview
+		// no longer splits the canvas — it floats over the top-right (#393), so it is
+		// drawn last, after the canvas and mirror.
+		const rightPanel = this.mirror ? 'mirror' : 'none';
 		const canvasW = Math.max(1, W - RAIL_W);
 		const viewW =
 			rightPanel === 'none'
@@ -1641,8 +1689,14 @@ export class SpriteEditor extends Renderable {
 
 		if (rightPanel === 'mirror') {
 			this.renderMirror(buf, RAIL_W + viewW, W, viewH, displayFrame, C);
-		} else if (rightPanel === 'composite') {
-			this.renderComposite(buf, RAIL_W + viewW, W, viewH, displayFrame, C);
+		}
+
+		// The always-on floating Composited preview draws last, over the top-right of
+		// whatever the canvas rendered (overlapping the first strip's corner is
+		// accepted per the spec).
+		this.geom.preview = null;
+		if (this.composite) {
+			this.renderPreviewPane(buf, W, viewH, displayFrame, C);
 		}
 
 		// Chrome: the status line (with the coercion feedback right-aligned on
@@ -1790,43 +1844,85 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
-	// The in-context Composited preview drawn into the right-hand region, through
-	// the shared renderer (`renderComposite`) — pixel-identical to the game. Shows
-	// the CURRENT display frame: a hat on a body, a weapon in hand at its phase, a
-	// form wearing a hat + weapon, or a monster/npc plain. Animates during playback
-	// because `frameName` (the editor's display frame) advances with each tick.
-	private renderComposite(
+	// The always-on floating Composited preview (#393): a native-size, bordered pane
+	// docked top-right over the canvas, drawn through the shared renderer
+	// (`renderComposite`) — pixel-identical to the game. Shows the CURRENT display
+	// frame: a hat on a body, a weapon in hand at its phase, a form wearing a hat +
+	// weapon, or a monster/npc plain. Animates during playback because `frameName`
+	// (the editor's display frame) advances with each tick. Carries flip + play
+	// controls on its bottom border, both mouse-clickable; the pane's screen rect
+	// and control spans are recorded in `geom.preview` for hit-testing.
+	private renderPreviewPane(
 		buf: OptimizedBuffer,
-		dividerX: number,
 		W: number,
 		viewH: number,
 		frameName: string,
 		C: Palette,
 	): void {
-		for (let sy = 0; sy < viewH; sy++)
-			buf.setCell(dividerX, sy, '│', C.divider, C.bg);
-		const ox = dividerX + 1;
-		const panelW = W - ox;
-		if (panelW <= 0) return;
+		const paneW = Math.min(PREVIEW_W, W - RAIL_W);
+		const paneH = Math.min(PREVIEW_H, viewH);
+		// Too small to be legible: draw nothing (the ≥80×24 floor + degradation
+		// ladder are #398; this only guards against a garbage draw).
+		if (paneW < 10 || paneH < 5) return;
+		const x0 = W - paneW;
+		const y0 = 0;
+		const x1 = x0 + paneW - 1;
+		const y1 = y0 + paneH - 1;
 
-		const region = new RegionBuffer(buf, ox, 0, panelW, viewH);
-		const ok = renderComposite(
-			region,
-			this.state.doc,
-			this.role,
-			this.sceneStyle,
-			{
-				facing: this.mirror ? -1 : 1,
-				// The display frame is a concrete frame name; the composite maps it to
-				// the role-appropriate composition (weapon frame → swing phase, etc.).
-				stance: frameName,
-				elapsedS: 0,
-			},
-		);
-		if (!ok) {
-			const msg = 'keep drawing…';
-			buf.drawText(msg.slice(0, panelW), ox, 0, C.dim, C.bg);
+		// Occlude the canvas beneath, then frame the pane so it reads as floating.
+		buf.fillRect(x0, y0, paneW, paneH, C.boxBg);
+		for (let x = x0; x <= x1; x++) {
+			buf.setCell(x, y0, '─', C.divider, C.boxBg);
+			buf.setCell(x, y1, '─', C.divider, C.boxBg);
 		}
+		for (let y = y0; y <= y1; y++) {
+			buf.setCell(x0, y, '│', C.divider, C.boxBg);
+			buf.setCell(x1, y, '│', C.divider, C.boxBg);
+		}
+		buf.setCell(x0, y0, '╭', C.divider, C.boxBg);
+		buf.setCell(x1, y0, '╮', C.divider, C.boxBg);
+		buf.setCell(x0, y1, '╰', C.divider, C.boxBg);
+		buf.setCell(x1, y1, '╯', C.divider, C.boxBg);
+		buf.drawText(' preview ', x0 + 2, y0, C.dim, C.boxBg);
+
+		// Composite render into the interior, between the borders. Merge the doc's
+		// file-local colours into the style so custom keys render faithfully (#393).
+		const ix = x0 + 1;
+		const iy = y0 + 1;
+		const iw = paneW - 2;
+		const ih = paneH - 2;
+		const style = styleWithLocalColors(
+			this.sceneStyle,
+			this.state.doc.colors,
+			(r, g, b, a) => RGBA.fromInts(r, g, b, a),
+		);
+		const region = new RegionBuffer(buf, ix, iy, iw, ih);
+		const ok = renderComposite(region, this.state.doc, this.role, style, {
+			facing: this.previewFacing,
+			// The display frame is a concrete frame name; the composite maps it to the
+			// role-appropriate composition (weapon frame → swing phase, etc.).
+			stance: frameName,
+			elapsedS: 0,
+		});
+		if (!ok) buf.drawText('keep drawing…'.slice(0, iw), ix, iy, C.dim, C.bg);
+
+		// Flip + play controls on the bottom border, clickable via geom.preview.
+		const flipText = `flip ${this.previewFacing === 1 ? '→' : '←'}`;
+		const playing = this.playMode !== 'none';
+		const playText = playing ? '■ stop' : '▶ play';
+		const flipX = x0 + 2;
+		buf.drawText(flipText, flipX, y1, C.text, C.boxBg);
+		const playX = flipX + flipText.length + 2;
+		buf.drawText(playText, playX, y1, playing ? C.hot : C.text, C.boxBg);
+
+		this.geom.preview = {
+			x0,
+			y0,
+			w: paneW,
+			h: paneH,
+			flip: { x0: flipX, x1: flipX + flipText.length - 1, y: y1 },
+			play: { x0: playX, x1: playX + playText.length - 1, y: y1 },
+		};
 	}
 
 	// The `?` overlay: the complete grouped key map (spec #387).
