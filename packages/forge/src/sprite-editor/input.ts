@@ -7,12 +7,14 @@
 // paint at the same Pixel produce the same `EditorInput` and the same next
 // state, testable by construction.
 //
-// Scope note (#390): the only tool that consumes pointer input today is the
-// pencil (with the eraser as its transparent-ink spelling), so `applyInput`
-// routes paint. Later slices add the anchor-tool suite (fill/line/rect/ellipse/
-// select/move/paste), wheel routing (scroll/zoom), and middle-drag pan on top
-// of this same event — the seam is shaped for them now, wired for paint now.
+// Scope note (#390, #395): the tools that consume pointer input today are the
+// pencil (with the eraser as its transparent-ink spelling) and the fill (#395),
+// so `applyInput` routes paint and flood fill. Later slices add the remaining
+// anchor-tool suite (line/rect/ellipse/select/move/paste), wheel routing
+// (scroll/zoom), and middle-drag pan on top of this same event — the seam is
+// shaped for them now.
 import {
+	floodFill,
 	moveCursor,
 	paintWithInk,
 	type SpriteEditorState,
@@ -158,7 +160,6 @@ export function applyInput(
 	const { x, y } = input.pixel;
 	const moved = moveCursor(state, x, y);
 	if (input.button === 'none' || input.button === 'middle') return moved;
-	if (moved.tool !== 'paint' && moved.tool !== 'erase') return moved;
 
 	// `secondary` forces transparent ink; the eraser tool is transparent whatever
 	// the ink; otherwise the active ink wins.
@@ -166,5 +167,11 @@ export function applyInput(
 		input.button === 'secondary' || moved.tool === 'erase'
 			? TRANSPARENT_INK
 			: moved.ink;
+
+	// The fill tool floods from the cursor; the pencil/eraser paint one Pixel. Both
+	// share the effective-ink choice, so the two devices reach either through the
+	// same event. Other tools take pointer input in later slices.
+	if (moved.tool === 'fill') return floodFill(moved, x, y, ink);
+	if (moved.tool !== 'paint' && moved.tool !== 'erase') return moved;
 	return paintWithInk(moved, x, y, ink);
 }

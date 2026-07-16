@@ -40,15 +40,16 @@ export interface RailRow {
 }
 
 // The tools the rail offers today, in rail order with their number-row keys
-// (spec #387: tools live on the number row in rail order; later slices insert
-// fill/line/rect/ellipse/select/move/paste before anchor).
+// (spec #387: tools live on the number row in rail order — pencil, fill, stamp,
+// line, rect, ellipse, select, move, paste; erase is demoted to the right button,
+// off the rail. Later slices insert line/rect/ellipse/select/move/paste).
 export const RAIL_TOOLS: readonly {
 	key: string;
 	tool: SpriteTool;
 	label: string;
 }[] = [
 	{ key: '1', tool: 'paint', label: 'pencil' },
-	{ key: '2', tool: 'erase', label: 'erase' },
+	{ key: '2', tool: 'fill', label: 'fill' },
 	{ key: '3', tool: 'stamp', label: 'stamp' },
 	{ key: '4', tool: 'anchor', label: 'anchor' },
 ];
@@ -369,6 +370,7 @@ export function helpOverlayRows(maxRows: number): string[] {
 const TOOL_HINTS: Record<SpriteTool, string> = {
 	paint: 'space pen · arrows paint · rmb erase',
 	erase: 'space pen · arrows erase',
+	fill: 'space/lmb fills the region · rmb clears',
 	stamp: 'space then a char stamps the cell',
 	anchor: 'space places · A pick · c drop override',
 };
