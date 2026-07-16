@@ -1,10 +1,17 @@
 // The `@opentui/core` glue for the Sprite editor (ADR 0031): a single Renderable
 // that draws the pure editor state and a `key()` dispatcher that mutates it
 // through the pure ops in `state.ts`. All logic lives in the pure modules
-// (`state.ts`, `picker.ts`, `view.ts`); this file only wires them to the screen
-// buffer and the keyboard, mirroring the zone editor's `editor.ts` structure.
-// The Renderable is exported so the TUI can be smoke-tested headlessly with
-// `@opentui/core/testing`, exactly like the client's CharacterCreator.
+// (`state.ts`, `chrome.ts`, `strips.ts`, `picker.ts`, `view.ts`); this file only
+// wires them to the screen buffer, keyboard and mouse, mirroring the zone
+// editor's `editor.ts` structure. The Renderable is exported so the TUI can be
+// smoke-tested headlessly with `@opentui/core/testing`.
+//
+// Layout (spec #387, locked by prototype #375): a 30-column left rail (tools ·
+// ink · playback), the canvas region beside it in one of two views — STRIPS
+// (default; every Pose a labeled strip of editable Frames) and FOCUS (`tab`;
+// one Frame centred under a Frame-name tab row) — and a two-row bottom chrome:
+// the status line (coercion feedback right-aligned) over a context-sensitive
+// hint line. `?` opens the complete grouped key map.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { RGBAQuad } from '@mmo/core';
@@ -26,6 +33,16 @@ import {
 } from '@opentui/core';
 import type { CliDeps } from '../cli';
 import { findSpriteFile, formatSpriteDiagnostics } from '../sprite-cli';
+import {
+	helpOverlayRows,
+	hintLine,
+	RAIL_TOOLS,
+	RAIL_W,
+	type RailAction,
+	type RailRow,
+	railActionAt,
+	railModel,
+} from './chrome';
 import { renderComposite } from './composite';
 import {
 	applyInput,
@@ -33,6 +50,8 @@ import {
 	normalizeKey,
 	normalizeMouse,
 	type RawMouse,
+	routeWheel,
+	type WheelDirection,
 } from './input';
 import {
 	type AnchorMenuAction,
@@ -67,9 +86,11 @@ import {
 	clearCell,
 	colorInk,
 	createPose,
+	currentFrame,
 	defineLocalColor,
 	deletePose,
 	endStroke,
+	frameExtent,
 	frameNames,
 	initSpriteEditor,
 	inkLabel,
@@ -83,6 +104,7 @@ import {
 	removeAnchorOverride,
 	reorderFrame,
 	type SpriteEditorState,
+	type SpriteTool,
 	saveResult,
 	selectFrame,
 	selectPose,
@@ -95,6 +117,18 @@ import {
 	TRANSPARENT_INK,
 	undoEdit,
 } from './state';
+import {
+	centeredOrigin,
+	clampScroll,
+	type FocusTab,
+	focusTabAt,
+	focusTabs,
+	frameBoxOf,
+	type StripsLayout,
+	scrollIntoView,
+	stripsHit,
+	stripsLayout,
+} from './strips';
 import { emptySpriteDoc, type SpriteRole } from './templates';
 import {
 	ANCHOR_MARKER,
@@ -106,15 +140,12 @@ import {
 	mirrorRender,
 	missingRequiredAnchors,
 	parseEditArg,
-	pixelToScreen,
 	requiredHintLine,
 	resolveColorKey,
 	roleForDir,
 	SPRITE_PREVIEWS,
 	saveDiagSummary,
-	screenToPixel,
 	scrollAxis,
-	spriteHelpLine,
 	spriteStatusLine,
 	stepZoom,
 	visiblePixels,
@@ -154,7 +185,8 @@ export interface SpriteEditorOpts {
 	globalPalette?: Readonly<Record<string, RGBAQuad>>;
 }
 
-const CHROME_H = 3;
+// Two chrome rows: the status line and the hint line under it (spec #387).
+const CHROME_H = 2;
 const SCROLLOFF = 2;
 
 // The box-drawing glyph for one cell of the cursor's z×z outline ring, or '' for
@@ -176,6 +208,9 @@ function cursorRingGlyph(dx: number, dy: number, z: number): string {
 
 // What playback is currently animating.
 type PlayMode = 'none' | 'pose' | 'walk';
+
+// The two canvas views (spec #387): strips is the default; `tab` toggles.
+type CanvasView = 'strips' | 'focus';
 
 // Normalize an opentui key event into the modal reducers' MenuKey.
 function toMenuKey(k: SpriteKey): MenuKey {
@@ -228,6 +263,25 @@ class RegionBuffer implements CellBuffer<RGBA> {
 	}
 }
 
+// The colour bag renderSelf builds each frame and hands to the draw helpers.
+interface Palette {
+	bg: RGBA;
+	grid: RGBA;
+	chromeBg: RGBA;
+	text: RGBA;
+	dim: RGBA;
+	feedback: RGBA;
+	ok: RGBA;
+	cursorBg: RGBA;
+	cursorFg: RGBA;
+	ink: RGBA;
+	boxBg: RGBA;
+	hot: RGBA;
+	divider: RGBA;
+	anchorFg: RGBA;
+	overrideFg: RGBA;
+}
+
 export class SpriteEditor extends Renderable {
 	state: SpriteEditorState;
 	picker: PickerState | null = null;
@@ -237,6 +291,10 @@ export class SpriteEditor extends Renderable {
 	// The in-context Composited preview panel (toggle: `o`) — the WIP art rendered
 	// the way the game draws it, right beside the pixel canvas.
 	composite = false;
+	// Which canvas view is active: strips (default) or focus (`tab`).
+	view: CanvasView = 'strips';
+	// Whether the `?` key-map overlay is open.
+	helpOpen = false;
 	private readonly sceneStyle: RenderStyle<RGBA>;
 	awaitingStamp = false;
 	// Animation playback is presentation only — it never touches the doc/history.
@@ -245,11 +303,31 @@ export class SpriteEditor extends Renderable {
 	private penDown = false;
 	// The fatbits zoom (×z on the ladder). Presentation only — never in the doc.
 	zoom = DEFAULT_ZOOM;
-	// The canvas camera in PIXEL coordinates (its top-left visible Pixel).
+	// Focus-view camera in PIXEL coordinates (its top-left visible Pixel).
 	private cam: Cam = { x: 0, y: 0 };
-	// The canvas region's size in cells, captured each render so the mouse handler
-	// can resolve screen→Pixel and reject clicks outside the canvas.
-	private geom = { mainW: 0, viewH: 0 };
+	// Strips-view scroll in screen cells over the layout's content coordinates.
+	private scroll = { x: 0, y: 0 };
+	// While true the render keeps the cursor in view (cursor-driven navigation);
+	// a wheel or pan gesture takes over the viewport and clears it.
+	private followCursor = true;
+	// An in-flight middle-drag pan: the last mouse cell it was seen at, plus the
+	// sub-Pixel remainder the focus view accumulates between whole-Pixel steps.
+	private panLast: { x: number; y: number } | null = null;
+	private panRem = { x: 0, y: 0 };
+	// The geometry of the last render, captured so the mouse handlers can invert
+	// screen cells back to rail rows / Frames / Pixels.
+	private geom: {
+		viewH: number;
+		// Width of the canvas view sub-region (left of any mirror/composite panel).
+		viewW: number;
+		rail: readonly RailRow[];
+		layout: StripsLayout | null;
+		focus: {
+			tabs: readonly FocusTab[];
+			origin: { x: number; y: number };
+			top: number;
+		} | null;
+	} = { viewH: 0, viewW: 0, rail: [], layout: null, focus: null };
 	// An in-flight mouse paint stroke (down→drag→up coalesces to one undo step),
 	// and the button held for it (drag events don't reliably re-report the button).
 	private mouseStroke = false;
@@ -277,12 +355,16 @@ export class SpriteEditor extends Renderable {
 		this.sceneStyle = buildSceneStyle((r, g, b, a) =>
 			RGBA.fromInts(r, g, b, a),
 		);
-		// Route the Renderable's pointer events into the pure paint seam: down/drag/
-		// up bracket one coalescing pencil stroke.
+		// Route the Renderable's pointer events into the pure input seam: down/
+		// drag/up bracket one coalescing pencil stroke or a middle-drag pan, and
+		// bare scroll events carry the wheel.
 		this.onMouseDown = (e) => this.mouseDown(e);
 		this.onMouseDrag = (e) => this.mouseDrag(e);
-		this.onMouseUp = () => this.mouseUp();
-		this.onMouseDragEnd = () => this.mouseUp();
+		this.onMouseUp = (e) => this.mouseUp(e);
+		this.onMouseDragEnd = (e) => this.mouseUp(e);
+		this.onMouse = (e) => {
+			if (e.type === 'scroll' && e.scroll) this.wheel(e as SpriteMouse);
+		};
 	}
 
 	attach(root: { add: (r: Renderable) => void }): void {
@@ -340,6 +422,7 @@ export class SpriteEditor extends Renderable {
 	private move(dx: number, dy: number): void {
 		const { x, y } = this.state.cursor;
 		this.state = moveCursor(this.state, x + dx, y + dy);
+		this.followCursor = true;
 		if (this.penDown) this.applyAtCursor();
 	}
 
@@ -352,24 +435,17 @@ export class SpriteEditor extends Renderable {
 
 	// ---- mouse ----
 
-	// True while a modal (picker/menu/stamp-await) or playback owns input, so
-	// canvas mouse gestures stay inert.
+	// True while a modal (picker/menu/stamp-await/help) or playback owns input,
+	// so canvas mouse gestures stay inert.
 	private modalActive(): boolean {
 		return (
 			this.picker !== null ||
 			this.poseMenu !== null ||
 			this.anchorMenu !== null ||
 			this.awaitingStamp ||
+			this.helpOpen ||
 			this.playMode !== 'none'
 		);
-	}
-
-	// The Pixel a screen cell resolves to through the fatbits geometry, or null
-	// when the cell is outside the canvas region (a right-hand panel, the chrome).
-	private canvasPixel(x: number, y: number): { x: number; y: number } | null {
-		const { mainW, viewH } = this.geom;
-		if (x < 0 || x >= mainW || y < 0 || y >= viewH) return null;
-		return screenToPixel(x, y, this.cam, this.zoom);
 	}
 
 	// Feed a resolved mouse Pixel through the same normalized seam the keyboard
@@ -390,14 +466,85 @@ export class SpriteEditor extends Renderable {
 		this.state = applyInput(this.state, normalizeMouse(raw));
 	}
 
-	// Left/right press: the pencil (and its transparent eraser spelling) opens a
-	// coalescing stroke and paints. Other tools take pointer input in later slices
-	// (spec #387), so a click with them only moves the cursor here.
-	mouseDown(e: SpriteMouse): void {
-		if (this.modalActive()) return;
-		const button = e.button === 0 ? 'left' : e.button === 2 ? 'right' : 'none';
-		if (button === 'none') return;
-		const px = this.canvasPixel(e.x, e.y);
+	private applyRail(action: RailAction): void {
+		switch (action.type) {
+			case 'tool':
+				this.switchTool(action.tool);
+				return;
+			case 'ink':
+				this.liftPen();
+				this.state = setInk(this.state, action.ink);
+				return;
+			case 'pickInk':
+				this.openPicker();
+				return;
+			case 'play':
+				this.togglePlay(action.mode);
+				return;
+			case 'addFrame':
+				this.addFrame();
+				return;
+			case 'poseMenu':
+				this.openPoseMenu();
+				return;
+			case 'anchorMenu':
+				this.openAnchorMenu();
+				return;
+		}
+	}
+
+	// The Pixel a canvas cell resolves to in the focus view (may be negative /
+	// past the frame; the pure layer clips), or null outside the canvas region.
+	private focusPixel(x: number, y: number): { x: number; y: number } | null {
+		const f = this.geom.focus;
+		if (!f) return null;
+		const { viewH, viewW } = this.geom;
+		if (x < RAIL_W || x >= RAIL_W + viewW || y < f.top || y >= viewH)
+			return null;
+		const z = this.zoom;
+		return {
+			x: this.cam.x + Math.floor((x - f.origin.x) / z),
+			y: this.cam.y + Math.floor((y - f.origin.y) / z),
+		};
+	}
+
+	// A left/right press on the canvas region: resolve the Frame + Pixel under
+	// the pointer (activating the Frame click-through in strips / on a focus
+	// tab), then open a coalescing stroke for the paint tools.
+	private canvasDown(button: 'left' | 'right', e: SpriteMouse): void {
+		let px: { x: number; y: number } | null = null;
+		if (this.view === 'strips') {
+			const layout = this.geom.layout;
+			if (!layout) return;
+			const cx = e.x - RAIL_W + this.scroll.x;
+			const cy = e.y + this.scroll.y;
+			const hit = stripsHit(layout, cx, cy);
+			if (!hit) {
+				// A click on a strip's name row activates that Frame without painting.
+				const strip = layout.nameRows.indexOf(cy);
+				if (strip >= 0) {
+					const pose = layout.labels[strip].pose;
+					const box = layout.frames.find(
+						(f) => f.pose === pose && cx >= f.x && cx < f.x + f.w,
+					);
+					if (box) this.state = selectFrame(this.state, box.name);
+				}
+				return;
+			}
+			// Click-through activation: the click both activates the Frame and lands
+			// as the tool's application at the resolved Pixel (spec #387).
+			if (hit.frame.name !== this.state.frame)
+				this.state = selectFrame(this.state, hit.frame.name);
+			px = { x: hit.px, y: hit.py };
+		} else {
+			const f = this.geom.focus;
+			if (f && e.y < f.top) {
+				const tab = focusTabAt(f.tabs, e.x - RAIL_W);
+				if (tab) this.state = selectFrame(this.state, tab.name);
+				return;
+			}
+			px = this.focusPixel(e.x, e.y);
+		}
 		if (!px) return;
 		if (this.state.tool !== 'paint' && this.state.tool !== 'erase') {
 			this.state = moveCursor(this.state, px.x, px.y);
@@ -409,20 +556,137 @@ export class SpriteEditor extends Renderable {
 		this.paintMouse(button, px, e.modifiers);
 	}
 
+	mouseDown(e: SpriteMouse): void {
+		this.saved = false;
+		if (this.helpOpen) {
+			this.helpOpen = false;
+			return;
+		}
+		if (this.modalActive()) return;
+		// Middle button starts a pan (spec #387) in either view.
+		if (e.button === 1) {
+			this.panLast = { x: e.x, y: e.y };
+			return;
+		}
+		const button = e.button === 0 ? 'left' : e.button === 2 ? 'right' : 'none';
+		if (button === 'none') return;
+		if (e.y >= this.geom.viewH) return; // the chrome rows
+		if (e.x < RAIL_W) {
+			const action = railActionAt(this.geom.rail, e.x, e.y);
+			if (action) this.applyRail(action);
+			return;
+		}
+		this.canvasDown(button, e);
+	}
+
 	mouseDrag(e: SpriteMouse): void {
+		if (this.panLast) {
+			this.pan(e.x - this.panLast.x, e.y - this.panLast.y);
+			this.panLast = { x: e.x, y: e.y };
+			return;
+		}
 		if (!this.mouseStroke) return;
-		const px = this.canvasPixel(e.x, e.y);
-		// A drag off the canvas edge simply paints nothing until it returns; the
-		// held button is remembered from mouseDown since drag reports vary by term.
+		// A drag off the canvas simply paints nothing until it returns; the held
+		// button is remembered from mouseDown since drag reports vary by terminal.
+		let px: { x: number; y: number } | null = null;
+		if (this.view === 'strips') {
+			const layout = this.geom.layout;
+			if (!layout) return;
+			const hit = stripsHit(
+				layout,
+				e.x - RAIL_W + this.scroll.x,
+				e.y + this.scroll.y,
+			);
+			// A stroke stays in the Frame it started on — dragging across a
+			// neighbouring Frame's block must not silently switch and paint there.
+			if (!hit || hit.frame.name !== this.state.frame) return;
+			px = { x: hit.px, y: hit.py };
+		} else {
+			px = this.focusPixel(e.x, e.y);
+		}
 		if (!px) return;
 		this.paintMouse(this.mouseButton, px, e.modifiers);
 	}
 
-	mouseUp(): void {
+	mouseUp(_e?: unknown): void {
+		this.panLast = null;
 		if (this.mouseStroke) {
 			this.state = endStroke(this.state);
 			this.mouseStroke = false;
 		}
+	}
+
+	// Middle-drag pan: the content follows the pointer. Strips scroll in screen
+	// cells; the focus camera moves in whole Pixels, accumulating the sub-Pixel
+	// remainder so slow drags still pan at high zoom.
+	private pan(dx: number, dy: number): void {
+		this.followCursor = false;
+		if (this.view === 'strips') {
+			const layout = this.geom.layout;
+			if (!layout) return;
+			this.scroll.x = clampScroll(
+				this.scroll.x - dx,
+				layout.contentW,
+				this.geom.viewW,
+			);
+			this.scroll.y = clampScroll(
+				this.scroll.y - dy,
+				layout.contentH,
+				this.geom.viewH,
+			);
+			return;
+		}
+		const z = this.zoom;
+		this.panRem.x += dx;
+		this.panRem.y += dy;
+		const px = Math.trunc(this.panRem.x / z);
+		const py = Math.trunc(this.panRem.y / z);
+		this.panRem.x -= px * z;
+		this.panRem.y -= py * z;
+		this.cam = {
+			x: Math.max(0, this.cam.x - px),
+			y: Math.max(0, this.cam.y - py),
+		};
+	}
+
+	// Wheel routing (spec #387): wheel scrolls, shift-wheel scrolls horizontally,
+	// ctrl-wheel zooms — in both views.
+	wheel(e: SpriteMouse): void {
+		if (this.modalActive() || !e.scroll) return;
+		const route = routeWheel(e.scroll.direction as WheelDirection, {
+			shift: e.modifiers?.shift ?? false,
+			alt: e.modifiers?.alt ?? false,
+			ctrl: e.modifiers?.ctrl ?? false,
+		});
+		if (route.kind === 'zoom') {
+			this.setZoom(stepZoom(this.zoom, route.dir));
+			return;
+		}
+		this.followCursor = false;
+		if (this.view === 'strips') {
+			const layout = this.geom.layout;
+			if (!layout) return;
+			this.scroll.x = clampScroll(
+				this.scroll.x + route.dx,
+				layout.contentW,
+				this.geom.viewW,
+			);
+			this.scroll.y = clampScroll(
+				this.scroll.y + route.dy,
+				layout.contentH,
+				this.geom.viewH,
+			);
+			return;
+		}
+		// Focus view scrolls its Pixel camera; a wheel notch is ~one Pixel row at
+		// high zoom, more when zoomed out.
+		const z = this.zoom;
+		const step = (d: number) =>
+			d === 0 ? 0 : Math.sign(d) * Math.max(1, Math.round(Math.abs(d) / z));
+		this.cam = {
+			x: Math.max(0, this.cam.x + step(route.dx)),
+			y: Math.max(0, this.cam.y + step(route.dy)),
+		};
 	}
 
 	// ---- picker ----
@@ -503,7 +767,7 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
-	// ---- frames / edits ----
+	// ---- frames / poses / edits ----
 
 	private stepFrame(delta: number): void {
 		this.liftPen();
@@ -511,6 +775,29 @@ export class SpriteEditor extends Renderable {
 		const i = names.indexOf(this.state.frame);
 		const next = names[(i + delta + names.length) % names.length];
 		if (next) this.state = selectFrame(this.state, next);
+		this.followCursor = true;
+	}
+
+	private stepPose(delta: number): void {
+		this.liftPen();
+		const names = poseNames(this.state);
+		if (names.length === 0) return;
+		const i = Math.max(0, names.indexOf(this.state.pose));
+		const next = names[(i + delta + names.length) % names.length];
+		this.state = selectPose(this.state, next);
+		this.followCursor = true;
+	}
+
+	private addFrame(): void {
+		this.liftPen();
+		this.state = addFrameToPose(this.state, this.state.pose);
+		this.followCursor = true;
+	}
+
+	private toggleView(): void {
+		this.liftPen();
+		this.view = this.view === 'strips' ? 'focus' : 'strips';
+		this.followCursor = true;
 	}
 
 	private clearAtCursor(): void {
@@ -549,7 +836,7 @@ export class SpriteEditor extends Renderable {
 		this.state = redoEdit(this.state);
 	}
 
-	private switchTool(tool: 'paint' | 'erase' | 'stamp' | 'anchor'): void {
+	private switchTool(tool: SpriteTool): void {
 		this.liftPen();
 		this.state = setTool(this.state, tool);
 	}
@@ -715,6 +1002,12 @@ export class SpriteEditor extends Renderable {
 
 	// The single keyboard entry point.
 	key(k: SpriteKey): void {
+		if (this.helpOpen) {
+			if (k.sequence === '?' || k.name === 'escape' || k.name === 'q')
+				this.helpOpen = false;
+			return;
+		}
+		this.saved = false;
 		if (this.picker) {
 			this.pickerKey(k);
 			return;
@@ -729,6 +1022,11 @@ export class SpriteEditor extends Renderable {
 		}
 		if (this.awaitingStamp) {
 			this.stampKey(k);
+			return;
+		}
+		if (k.sequence === '?') {
+			this.liftPen();
+			this.helpOpen = true;
 			return;
 		}
 		// While playing, only playback/mirror/quit keys are honored; anything that
@@ -819,6 +1117,25 @@ export class SpriteEditor extends Renderable {
 			this.setZoom(stepZoom(this.zoom, -1));
 			return;
 		}
+		// Pose stepping and the strips ↔ focus toggle.
+		if (k.sequence === '{') {
+			this.stepPose(-1);
+			return;
+		}
+		if (k.sequence === '}') {
+			this.stepPose(1);
+			return;
+		}
+		if (k.name === 'tab') {
+			this.toggleView();
+			return;
+		}
+		// Tools also live on the number row, in rail order (spec #387).
+		const railTool = RAIL_TOOLS.find((t) => k.sequence === t.key);
+		if (railTool) {
+			this.switchTool(railTool.tool);
+			return;
+		}
 
 		switch (k.name) {
 			case 'left':
@@ -864,6 +1181,9 @@ export class SpriteEditor extends Renderable {
 			case 'c':
 				this.clearAtCursor();
 				return;
+			case 'n':
+				this.addFrame();
+				return;
 			case 'w':
 				this.doSave();
 				return;
@@ -881,32 +1201,398 @@ export class SpriteEditor extends Renderable {
 
 	// ---- rendering ----
 
+	private static rgba(q: RGBAQuad): RGBA {
+		return RGBA.fromInts(q[0], q[1], q[2], q[3]);
+	}
+
+	// The background colour a Pixel magnifies to: a lit Pixel is its ink colour,
+	// an opaque unlit Pixel shows its cell-wide background colour, and a
+	// transparent Pixel is a per-cell checkerboard (spec #387). `phase` picks the
+	// checkerboard shade (it alternates per terminal cell of art).
+	private pixelRGBA(
+		st: SpriteEditorState,
+		px: number,
+		py: number,
+		phase: number,
+		C: Palette,
+	): RGBA {
+		const local = this.state.doc.colors;
+		const { cellX, cellY, bit } = pixelToCell(px, py);
+		const cell = cellAt(st, cellX, cellY);
+		const lit = cell.mask !== undefined && (cell.mask & (1 << bit)) !== 0;
+		if (lit) {
+			// A SENTINEL fg means "the frame's default key" (as the mirror does).
+			const fgKey = cell.fg === SENTINEL ? this.state.doc.key : cell.fg;
+			const fg = resolveColorKey(
+				fgKey,
+				local,
+				this.globalPalette,
+				SPRITE_PREVIEWS,
+			);
+			return fg ? SpriteEditor.rgba(fg) : C.ink;
+		}
+		const bgKey = cell.bg === SENTINEL ? '' : cell.bg;
+		const bg =
+			cell.mask === undefined
+				? null
+				: resolveColorKey(bgKey, local, this.globalPalette, SPRITE_PREVIEWS);
+		if (bg) return SpriteEditor.rgba(bg);
+		return phase % 2 === 0 ? C.grid : C.bg;
+	}
+
+	// Draw a piece of text at `sx`, clipped to the column range [x0, x1).
+	private drawClipped(
+		buf: OptimizedBuffer,
+		text: string,
+		sx: number,
+		sy: number,
+		x0: number,
+		x1: number,
+		fg: RGBA,
+		bg: RGBA,
+	): void {
+		let s = text;
+		let x = sx;
+		if (x < x0) {
+			s = s.slice(x0 - x);
+			x = x0;
+		}
+		if (x + s.length > x1) s = s.slice(0, Math.max(0, x1 - x));
+		if (s) buf.drawText(s, x, sy, fg, bg);
+	}
+
+	// The cursor ring on the active Pixel's z×z block, drawn with box-drawing
+	// glyphs OVER the pixel's own colour (kept as the cell background) so the
+	// pixel under the cursor stays legible. The glyphs are unambiguous width-1 —
+	// an ambiguous-width marker (e.g. □) renders double-wide in some terminals
+	// and desyncs every mouse column to its right. At ×1 the single cell is
+	// reverse-highlighted instead (no room for a ring).
+	private drawCursorRing(
+		buf: OptimizedBuffer,
+		bx: number,
+		by: number,
+		clip: { x0: number; x1: number; y0: number; y1: number },
+		under: (sx: number, sy: number) => RGBA,
+		C: Palette,
+	): void {
+		const z = this.zoom;
+		const inside = (sx: number, sy: number) =>
+			sx >= clip.x0 && sx < clip.x1 && sy >= clip.y0 && sy < clip.y1;
+		if (z === 1) {
+			if (inside(bx, by)) buf.setCell(bx, by, ' ', C.cursorFg, C.cursorBg);
+			return;
+		}
+		for (let dy = 0; dy < z; dy++) {
+			for (let dx = 0; dx < z; dx++) {
+				const glyph = cursorRingGlyph(dx, dy, z);
+				if (!glyph) continue;
+				const sx = bx + dx;
+				const sy = by + dy;
+				if (!inside(sx, sy)) continue;
+				buf.setCell(sx, sy, glyph, C.cursorBg, under(sx, sy));
+			}
+		}
+	}
+
+	// The 30-column left rail: tools · ink · playback, with a divider column.
+	private renderRail(buf: OptimizedBuffer, viewH: number, C: Palette): void {
+		buf.fillRect(0, 0, RAIL_W - 1, viewH, C.chromeBg);
+		for (let y = 0; y < viewH; y++)
+			buf.setCell(RAIL_W - 1, y, '│', C.divider, C.bg);
+		const rows = railModel({
+			tool: this.state.tool,
+			ink: this.state.ink,
+			entries: this.entries(),
+			pose: this.state.pose,
+			fps: poseFps(this.state.doc.fps, this.state.pose),
+			frameCount: poseFrames(this.state, this.state.pose).length,
+			playMode: this.playMode,
+			height: viewH,
+		});
+		this.geom.rail = rows;
+		rows.slice(0, viewH).forEach((row, y) => {
+			let x = 0;
+			for (const span of row.spans) {
+				if (x >= RAIL_W - 1) break;
+				const text = span.text.slice(0, RAIL_W - 1 - x);
+				if (span.swatch === 'checker') {
+					buf.drawText(text, x, y, C.dim, C.chromeBg);
+				} else if (span.swatch) {
+					buf.drawText(text, x, y, C.text, SpriteEditor.rgba(span.swatch));
+				} else {
+					const fg = span.hot ? C.hot : span.dim ? C.dim : C.text;
+					buf.drawText(text, x, y, fg, C.chromeBg);
+				}
+				x += span.text.length;
+			}
+		});
+	}
+
+	// STRIPS: every Pose a labeled horizontal strip of its Frames, all editable
+	// in place, the active Frame underlined (spec #387).
+	private renderStrips(
+		buf: OptimizedBuffer,
+		viewW: number,
+		viewH: number,
+		C: Palette,
+	): void {
+		const z = this.zoom;
+		const layout = stripsLayout(this.state.doc, z);
+		this.geom.layout = layout;
+		this.geom.focus = null;
+		const x0 = RAIL_W;
+		const x1 = RAIL_W + viewW;
+
+		// Cursor-driven navigation keeps the cursor's Pixel block (and the strip
+		// label above it) in view; wheel/pan own the viewport otherwise.
+		if (this.followCursor) {
+			const box = frameBoxOf(layout, this.state.frame);
+			if (box) {
+				const bx = box.x + this.state.cursor.x * z;
+				const by = box.y + this.state.cursor.y * z;
+				this.scroll.x = scrollIntoView(this.scroll.x, bx, bx + z, viewW);
+				this.scroll.y = scrollIntoView(this.scroll.y, by - 1, by + z, viewH);
+			}
+		}
+		this.scroll.x = clampScroll(this.scroll.x, layout.contentW, viewW);
+		this.scroll.y = clampScroll(this.scroll.y, layout.contentH, viewH);
+		const sxOf = (cx: number) => x0 + cx - this.scroll.x;
+		const syOf = (cy: number) => cy - this.scroll.y;
+
+		for (const label of layout.labels) {
+			const sy = syOf(label.y);
+			if (sy < 0 || sy >= viewH) continue;
+			this.drawClipped(buf, label.text, sxOf(0), sy, x0, x1, C.dim, C.bg);
+		}
+
+		for (const box of layout.frames) {
+			const st =
+				box.name === this.state.frame
+					? this.state
+					: { ...this.state, frame: box.name };
+			const cy0 = Math.max(box.y, this.scroll.y);
+			const cy1 = Math.min(box.y + box.h, this.scroll.y + viewH);
+			const cx0 = Math.max(box.x, this.scroll.x);
+			const cx1 = Math.min(box.x + box.w, this.scroll.x + viewW);
+			for (let cy = cy0; cy < cy1; cy++) {
+				for (let cx = cx0; cx < cx1; cx++) {
+					const px = Math.floor((cx - box.x) / z);
+					const py = Math.floor((cy - box.y) / z);
+					buf.setCell(
+						sxOf(cx),
+						syOf(cy),
+						' ',
+						C.dim,
+						this.pixelRGBA(st, px, py, cx + cy, C),
+					);
+				}
+			}
+		}
+
+		// Frame-name rows: the active Frame's name is highlighted and its block
+		// width underlined.
+		layout.labels.forEach((label, i) => {
+			const sy = syOf(layout.nameRows[i]);
+			if (sy < 0 || sy >= viewH) return;
+			for (const box of layout.frames) {
+				if (box.pose !== label.pose) continue;
+				const active = box.name === this.state.frame;
+				const text = active
+					? (box.name + '▔'.repeat(Math.max(0, box.w - box.name.length))).slice(
+							0,
+							Math.max(box.w, box.name.length),
+						)
+					: box.name;
+				this.drawClipped(
+					buf,
+					text,
+					sxOf(box.x),
+					sy,
+					x0,
+					x1,
+					active ? C.hot : C.dim,
+					C.bg,
+				);
+			}
+		});
+
+		const activeBox = frameBoxOf(layout, this.state.frame);
+		if (!activeBox) return;
+
+		// Anchor markers overlay the ACTIVE Frame's art at the top-left cell of
+		// their (2×,2×) Pixel block (overrides tinted apart).
+		for (const m of anchorMarkers(this.state)) {
+			const sx = sxOf(activeBox.x + m.x * 2 * z);
+			const sy = syOf(activeBox.y + m.y * 2 * z);
+			if (sx < x0 || sx >= x1 || sy < 0 || sy >= viewH) continue;
+			buf.setCell(
+				sx,
+				sy,
+				ANCHOR_MARKER,
+				m.overridden ? C.overrideFg : C.anchorFg,
+				C.bg,
+			);
+		}
+
+		const bx = sxOf(activeBox.x + this.state.cursor.x * z);
+		const by = syOf(activeBox.y + this.state.cursor.y * z);
+		this.drawCursorRing(
+			buf,
+			bx,
+			by,
+			{ x0, x1, y0: 0, y1: viewH },
+			(sx, sy) =>
+				this.pixelRGBA(
+					this.state,
+					this.state.cursor.x,
+					this.state.cursor.y,
+					sx - x0 + this.scroll.x + (sy + this.scroll.y),
+					C,
+				),
+			C,
+		);
+	}
+
+	// FOCUS: one Frame centred (camera-scrolled when it doesn't fit) under a
+	// Frame-name tab row. Playback reuses this canvas with the tabs hidden.
+	private renderFocus(
+		buf: OptimizedBuffer,
+		viewW: number,
+		viewH: number,
+		viewState: SpriteEditorState,
+		showTabs: boolean,
+		C: Palette,
+	): void {
+		const z = this.zoom;
+		this.geom.layout = null;
+		let top = 0;
+		let tabs: readonly FocusTab[] = [];
+		if (showTabs) {
+			const frames = poseFrames(this.state, this.state.pose);
+			const list = frames.length > 0 ? frames : frameNames(this.state);
+			const ft = focusTabs(list, this.state.frame);
+			tabs = ft.tabs;
+			buf.fillRect(RAIL_W, 0, viewW, 1, C.chromeBg);
+			this.drawClipped(
+				buf,
+				ft.text,
+				RAIL_W,
+				0,
+				RAIL_W,
+				RAIL_W + viewW,
+				C.dim,
+				C.chromeBg,
+			);
+			const act = ft.tabs.find((t) => t.active);
+			if (act)
+				this.drawClipped(
+					buf,
+					ft.text.slice(act.x0, act.x1),
+					RAIL_W + act.x0,
+					0,
+					RAIL_W,
+					RAIL_W + viewW,
+					C.hot,
+					C.chromeBg,
+				);
+			top = 1;
+		}
+
+		const availH = Math.max(1, viewH - top);
+		const { w, h } = frameExtent(currentFrame(viewState));
+		const pxW = Math.max(1, w * 2);
+		const pxH = Math.max(1, h * 2);
+		const spanX = visiblePixels(viewW, z);
+		const spanY = visiblePixels(availH, z);
+		const fitsX = pxW <= spanX;
+		const fitsY = pxH <= spanY;
+		if (this.followCursor) {
+			this.cam = {
+				x: fitsX
+					? 0
+					: scrollAxis(this.cam.x, this.state.cursor.x, spanX, SCROLLOFF),
+				y: fitsY
+					? 0
+					: scrollAxis(this.cam.y, this.state.cursor.y, spanY, SCROLLOFF),
+			};
+		}
+		const origin = {
+			x: RAIL_W + (fitsX ? centeredOrigin(pxW * z, viewW) : 0),
+			y: top + (fitsY ? centeredOrigin(pxH * z, availH) : 0),
+		};
+		this.geom.focus = { tabs, origin, top };
+
+		for (let sy = top; sy < viewH; sy++) {
+			for (let sx = RAIL_W; sx < RAIL_W + viewW; sx++) {
+				const px = this.cam.x + Math.floor((sx - origin.x) / z);
+				const py = this.cam.y + Math.floor((sy - origin.y) / z);
+				buf.setCell(
+					sx,
+					sy,
+					' ',
+					C.dim,
+					this.pixelRGBA(viewState, px, py, sx + sy, C),
+				);
+			}
+		}
+
+		for (const m of anchorMarkers(viewState)) {
+			const sx = origin.x + (m.x * 2 - this.cam.x) * z;
+			const sy = origin.y + (m.y * 2 - this.cam.y) * z;
+			if (sx < RAIL_W || sx >= RAIL_W + viewW || sy < top || sy >= viewH)
+				continue;
+			buf.setCell(
+				sx,
+				sy,
+				ANCHOR_MARKER,
+				m.overridden ? C.overrideFg : C.anchorFg,
+				C.bg,
+			);
+		}
+
+		const bx = origin.x + (this.state.cursor.x - this.cam.x) * z;
+		const by = origin.y + (this.state.cursor.y - this.cam.y) * z;
+		this.drawCursorRing(
+			buf,
+			bx,
+			by,
+			{ x0: RAIL_W, x1: RAIL_W + viewW, y0: top, y1: viewH },
+			(sx, sy) =>
+				this.pixelRGBA(
+					this.state,
+					this.state.cursor.x,
+					this.state.cursor.y,
+					sx + sy,
+					C,
+				),
+			C,
+		);
+	}
+
 	protected renderSelf(buf: OptimizedBuffer): void {
 		const W = buf.width;
 		const H = buf.height;
 		const viewH = Math.max(1, H - CHROME_H);
-		const c = (q: RGBAQuad) => RGBA.fromInts(q[0], q[1], q[2], q[3]);
-		const C = {
+		const C: Palette = {
 			bg: RGBA.fromInts(16, 18, 26, 255),
 			grid: RGBA.fromInts(28, 32, 44, 255),
 			chromeBg: RGBA.fromInts(22, 25, 34, 255),
 			text: RGBA.fromInts(232, 232, 238, 255),
 			dim: RGBA.fromInts(140, 148, 164, 255),
 			feedback: RGBA.fromInts(255, 180, 80, 255),
-			feedbackBg: RGBA.fromInts(60, 36, 20, 255),
 			ok: RGBA.fromInts(140, 220, 150, 255),
 			cursorBg: RGBA.fromInts(245, 215, 95, 255),
 			cursorFg: RGBA.fromInts(20, 22, 30, 255),
 			ink: RGBA.fromInts(232, 232, 238, 255),
 			boxBg: RGBA.fromInts(30, 34, 48, 255),
 			hot: RGBA.fromInts(245, 215, 95, 255),
+			divider: RGBA.fromInts(48, 54, 72, 255),
+			anchorFg: RGBA.fromInts(120, 230, 255, 255),
+			overrideFg: RGBA.fromInts(255, 210, 120, 255),
 		};
 
 		buf.fillRect(0, 0, W, H, C.bg);
 
-		const anchorFg = RGBA.fromInts(120, 230, 255, 255);
-		const overrideFg = RGBA.fromInts(255, 210, 120, 255);
-		const local = this.state.doc.colors;
 		// The frame the canvas shows this instant (the edit frame, or the animated
 		// frame during playback). cellAt only reads doc + frame name, so a shallow
 		// state copy re-points it at the display frame without any mutation.
@@ -916,127 +1602,42 @@ export class SpriteEditor extends Renderable {
 				? this.state
 				: { ...this.state, frame: displayFrame };
 
-		// The main (right-facing) canvas fills the left region; a right-hand panel,
-		// when toggled, takes the right region with a one-column divider between.
-		// The Composited preview (`o`) wins the panel over the mirror when both are on.
+		// The canvas region sits right of the rail; a right-hand panel, when
+		// toggled, takes half of it with a one-column divider between. The
+		// Composited preview (`o`) wins the panel over the mirror when both are on.
 		const rightPanel = this.composite
 			? 'composite'
 			: this.mirror
 				? 'mirror'
 				: 'none';
-		const mainW =
-			rightPanel === 'none' ? W : Math.max(1, Math.floor((W - 1) / 2));
-		this.geom = { mainW, viewH };
+		const canvasW = Math.max(1, W - RAIL_W);
+		const viewW =
+			rightPanel === 'none'
+				? canvasW
+				: Math.max(1, Math.floor((canvasW - 1) / 2));
+		this.geom.viewH = viewH;
+		this.geom.viewW = viewW;
 
-		// Fatbits camera: keep the cursor's PIXEL within the zoomed viewport. Each
-		// Pixel occupies zoom×zoom cells, so the viewport spans this many Pixels.
-		const z = this.zoom;
-		const spanX = visiblePixels(mainW, z);
-		const spanY = visiblePixels(viewH, z);
-		const cam: Cam = {
-			x: scrollAxis(this.cam.x, this.state.cursor.x, spanX, SCROLLOFF),
-			y: scrollAxis(this.cam.y, this.state.cursor.y, spanY, SCROLLOFF),
-		};
-		this.cam = cam;
+		this.renderRail(buf, viewH, C);
 
-		// The background colour a Pixel magnifies to: a lit Pixel is its ink colour,
-		// an opaque unlit Pixel shows its cell-wide background colour, and a
-		// transparent Pixel is a per-cell checkerboard (spec #387). Shared by the
-		// canvas fill and the cursor ring so the cursor never hides the colour it
-		// sits on. `sx`/`sy` only pick the checkerboard phase (per terminal cell).
-		const pixelBg = (px: number, py: number, sx: number, sy: number): RGBA => {
-			const { cellX, cellY, bit } = pixelToCell(px, py);
-			const cell = cellAt(viewState, cellX, cellY);
-			const lit = cell.mask !== undefined && (cell.mask & (1 << bit)) !== 0;
-			if (lit) {
-				// A SENTINEL fg means "the frame's default key" (as the mirror does).
-				const fgKey = cell.fg === SENTINEL ? this.state.doc.key : cell.fg;
-				const fg = resolveColorKey(
-					fgKey,
-					local,
-					this.globalPalette,
-					SPRITE_PREVIEWS,
-				);
-				return fg ? c(fg) : C.ink;
-			}
-			const bgKey = cell.bg === SENTINEL ? '' : cell.bg;
-			const bg =
-				cell.mask === undefined
-					? null
-					: resolveColorKey(bgKey, local, this.globalPalette, SPRITE_PREVIEWS);
-			if (bg) return c(bg);
-			const checker = (cam.x * z + sx + (cam.y * z + sy)) % 2 === 0;
-			return checker ? C.grid : C.bg;
-		};
-
-		// Draw every canvas cell as the z×z Pixel it magnifies. No half-blocks —
-		// each Pixel owns its own square, so this is faithful magnification.
-		for (let sy = 0; sy < viewH; sy++) {
-			for (let sx = 0; sx < mainW; sx++) {
-				const { x: px, y: py } = screenToPixel(sx, sy, cam, z);
-				buf.setCell(sx, sy, ' ', C.dim, pixelBg(px, py, sx, sy));
-			}
-		}
-
-		// Anchor markers overlay the art at the top-left cell of their (2×,2×) Pixel
-		// block, so the artist sees where they land (overrides tinted apart).
-		for (const m of anchorMarkers(viewState)) {
-			const { x: sx, y: sy } = pixelToScreen(m.x * 2, m.y * 2, cam, z);
-			if (sx < 0 || sx >= mainW || sy < 0 || sy >= viewH) continue;
-			buf.setCell(
-				sx,
-				sy,
-				ANCHOR_MARKER,
-				m.overridden ? overrideFg : anchorFg,
-				C.bg,
-			);
-		}
-
-		// Cursor: a bright ring on the active Pixel's z×z block, drawn with
-		// box-drawing glyphs OVER the pixel's own colour (kept as the cell
-		// background) so the pixel under the cursor stays legible. The glyphs are
-		// unambiguous width-1 — an ambiguous-width marker (e.g. □) renders
-		// double-wide in some terminals and desyncs every mouse column to its right.
-		// At ×1 the single cell is reverse-highlighted instead (no room for a ring).
-		const cb = pixelToScreen(this.state.cursor.x, this.state.cursor.y, cam, z);
-		if (z === 1) {
-			if (cb.x >= 0 && cb.x < mainW && cb.y >= 0 && cb.y < viewH)
-				buf.setCell(cb.x, cb.y, ' ', C.cursorFg, C.cursorBg);
+		// Playback reviews motion on the single-frame canvas whichever view is
+		// active — the strips grid is a poor movie screen.
+		if (this.playMode !== 'none') {
+			this.renderFocus(buf, viewW, viewH, viewState, false, C);
+		} else if (this.view === 'focus') {
+			this.renderFocus(buf, viewW, viewH, viewState, true, C);
 		} else {
-			for (let dy = 0; dy < z; dy++) {
-				for (let dx = 0; dx < z; dx++) {
-					const glyph = cursorRingGlyph(dx, dy, z);
-					if (!glyph) continue;
-					const sx = cb.x + dx;
-					const sy = cb.y + dy;
-					if (sx < 0 || sx >= mainW || sy < 0 || sy >= viewH) continue;
-					const under = pixelBg(
-						this.state.cursor.x,
-						this.state.cursor.y,
-						sx,
-						sy,
-					);
-					buf.setCell(sx, sy, glyph, C.cursorBg, under);
-				}
-			}
+			this.renderStrips(buf, viewW, viewH, C);
 		}
 
 		if (rightPanel === 'mirror') {
-			this.renderMirror(buf, mainW, W, viewH, displayFrame, {
-				c,
-				grid: C.grid,
-				bg: C.bg,
-				ink: C.ink,
-				dim: C.dim,
-				anchorFg,
-				overrideFg,
-			});
+			this.renderMirror(buf, RAIL_W + viewW, W, viewH, displayFrame, C);
 		} else if (rightPanel === 'composite') {
-			this.renderComposite(buf, mainW, W, viewH, displayFrame, C.dim, C.bg);
+			this.renderComposite(buf, RAIL_W + viewW, W, viewH, displayFrame, C);
 		}
 
-		// Chrome: status (with the coercion feedback right-aligned on it), then a
-		// mid row for save diagnostics / hints / playback, then the help line.
+		// Chrome: the status line (with the coercion feedback right-aligned on
+		// it), then the context-sensitive hint line (spec #387).
 		const names = frameNames(this.state);
 		const cursorCell = pixelToCell(this.state.cursor.x, this.state.cursor.y);
 		const statusLeft = spriteStatusLine({
@@ -1056,9 +1657,8 @@ export class SpriteEditor extends Renderable {
 			anchorName: this.state.anchorName,
 			anchorScope: this.state.anchorScope,
 		});
-		// The coercion note rides the right of the status row (out of the mid row's
-		// save/hint/playback channel). Draw the composed line, then re-tint just the
-		// note when it made the cut so it stands out.
+		// The coercion note rides the right of the status row. Draw the composed
+		// line, then re-tint just the note when it made the cut so it stands out.
 		const feedback = this.state.feedback;
 		const status = composeStatusLine(statusLeft, feedback, W);
 		const statusRow = H - CHROME_H;
@@ -1069,20 +1669,22 @@ export class SpriteEditor extends Renderable {
 			buf.drawText(feedback, rx, statusRow, C.feedback, C.chromeBg);
 		}
 
-		const midRow = H - 2;
-		buf.fillRect(0, midRow, W, 1, C.chromeBg);
-		const hint = requiredHintLine(this.state.doc, this.role);
+		// The hint line: transient states (playback / stamp-await / a fresh save)
+		// take it over; otherwise the active tool's keys plus the globals, led by
+		// any role-required hint.
+		const hintRow = H - 1;
+		buf.fillRect(0, hintRow, W, 1, C.chromeBg);
 		if (this.playMode !== 'none') {
 			const label =
 				this.playMode === 'walk'
 					? `▶ walk preview (${displayFrame}) — . or , stops`
 					: `▶ playing ${this.state.pose} (${displayFrame}) — . or , stops`;
-			buf.drawText(label.slice(0, W), 0, midRow, C.hot, C.chromeBg);
+			buf.drawText(label.slice(0, W), 0, hintRow, C.hot, C.chromeBg);
 		} else if (this.awaitingStamp) {
 			buf.drawText(
 				'stamp: press a character to place (Esc cancels)'.slice(0, W),
 				0,
-				midRow,
+				hintRow,
 				C.hot,
 				C.chromeBg,
 			);
@@ -1097,40 +1699,36 @@ export class SpriteEditor extends Renderable {
 			buf.drawText(
 				summary.slice(0, W),
 				0,
-				midRow,
+				hintRow,
 				clean ? C.ok : C.feedback,
 				C.chromeBg,
 			);
-		} else if (hint) {
-			// Non-blocking role-required-pose/anchor hint.
-			buf.drawText(hint.slice(0, W), 0, midRow, C.dim, C.chromeBg);
+		} else {
+			const required = requiredHintLine(this.state.doc, this.role);
+			const hints = hintLine(this.state.tool);
+			const line = required ? `${required} ┃ ${hints}` : hints;
+			buf.drawText(line.slice(0, W), 0, hintRow, C.dim, C.chromeBg);
 		}
 
-		const helpRow = H - 1;
-		buf.fillRect(0, helpRow, W, 1, C.chromeBg);
-		buf.drawText(spriteHelpLine().slice(0, W), 0, helpRow, C.dim, C.chromeBg);
-
+		this.renderHelp(buf, W, H, C);
 		this.renderPicker(buf, W, H, C);
 		this.renderPoseMenu(buf, W, H, C);
 		this.renderAnchorMenu(buf, W, H, C);
 	}
 
 	// The read-only left-facing render of the current frame, drawn into the
-	// right-hand region [mainW+1, W).
+	// right-hand region [dividerX+1, W).
 	private renderMirror(
 		buf: OptimizedBuffer,
-		mainW: number,
+		dividerX: number,
 		W: number,
 		viewH: number,
 		frameName: string,
-		// biome-ignore lint/suspicious/noExplicitAny: local color bag
-		P: any,
+		C: Palette,
 	): void {
-		const divider = mainW;
-		const dividerColor = RGBA.fromInts(48, 54, 72, 255);
 		for (let sy = 0; sy < viewH; sy++)
-			buf.setCell(divider, sy, '│', dividerColor, P.bg);
-		const ox = mainW + 1;
+			buf.setCell(dividerX, sy, '│', C.divider, C.bg);
+		const ox = dividerX + 1;
 		const panelW = W - ox;
 		if (panelW <= 0) return;
 
@@ -1144,7 +1742,7 @@ export class SpriteEditor extends Renderable {
 				const glyph = row[sx];
 				if (glyph === ' ' || glyph === SENTINEL) {
 					const checker = (sx + sy) % 2 === 0;
-					buf.setCell(ox + sx, sy, ' ', P.dim, checker ? P.grid : P.bg);
+					buf.setCell(ox + sx, sy, ' ', C.dim, checker ? C.grid : C.bg);
 					continue;
 				}
 				const fgKey = colorRow[sx] ?? '';
@@ -1165,8 +1763,8 @@ export class SpriteEditor extends Renderable {
 					ox + sx,
 					sy,
 					glyph,
-					fg ? P.c(fg) : P.ink,
-					bg ? P.c(bg) : P.bg,
+					fg ? SpriteEditor.rgba(fg) : C.ink,
+					bg ? SpriteEditor.rgba(bg) : C.bg,
 				);
 			}
 		}
@@ -1177,8 +1775,8 @@ export class SpriteEditor extends Renderable {
 				ox + a.x,
 				a.y,
 				ANCHOR_MARKER,
-				a.overridden ? P.overrideFg : P.anchorFg,
-				P.bg,
+				a.overridden ? C.overrideFg : C.anchorFg,
+				C.bg,
 			);
 		}
 	}
@@ -1190,18 +1788,15 @@ export class SpriteEditor extends Renderable {
 	// because `frameName` (the editor's display frame) advances with each tick.
 	private renderComposite(
 		buf: OptimizedBuffer,
-		mainW: number,
+		dividerX: number,
 		W: number,
 		viewH: number,
 		frameName: string,
-		dim: RGBA,
-		bg: RGBA,
+		C: Palette,
 	): void {
-		const divider = mainW;
-		const dividerColor = RGBA.fromInts(48, 54, 72, 255);
 		for (let sy = 0; sy < viewH; sy++)
-			buf.setCell(divider, sy, '│', dividerColor, bg);
-		const ox = mainW + 1;
+			buf.setCell(dividerX, sy, '│', C.divider, C.bg);
+		const ox = dividerX + 1;
 		const panelW = W - ox;
 		if (panelW <= 0) return;
 
@@ -1221,16 +1816,26 @@ export class SpriteEditor extends Renderable {
 		);
 		if (!ok) {
 			const msg = 'keep drawing…';
-			buf.drawText(msg.slice(0, panelW), ox, 0, dim, bg);
+			buf.drawText(msg.slice(0, panelW), ox, 0, C.dim, C.bg);
 		}
+	}
+
+	// The `?` overlay: the complete grouped key map (spec #387).
+	private renderHelp(
+		buf: OptimizedBuffer,
+		W: number,
+		H: number,
+		C: Palette,
+	): void {
+		if (!this.helpOpen) return;
+		this.drawModal(buf, W, H, helpOverlayRows(H - 2), C);
 	}
 
 	private renderPicker(
 		buf: OptimizedBuffer,
 		W: number,
 		H: number,
-		// biome-ignore lint/suspicious/noExplicitAny: local color bag
-		C: any,
+		C: Palette,
 	): void {
 		const p = this.picker;
 		if (!p) return;
@@ -1263,14 +1868,14 @@ export class SpriteEditor extends Renderable {
 	}
 
 	// A centered modal box from pre-formatted rows; a row beginning with '▸' is
-	// highlighted. Shared by the picker and the pose/anchor menus.
+	// highlighted. Shared by the picker, the pose/anchor menus and the help
+	// overlay.
 	private drawModal(
 		buf: OptimizedBuffer,
 		W: number,
 		H: number,
 		rows: string[],
-		// biome-ignore lint/suspicious/noExplicitAny: local color bag
-		C: any,
+		C: Palette,
 	): void {
 		const boxW = Math.min(W, Math.max(20, ...rows.map((r) => r.length + 2)));
 		const boxH = Math.min(H - 1, rows.length);
@@ -1293,8 +1898,7 @@ export class SpriteEditor extends Renderable {
 		buf: OptimizedBuffer,
 		W: number,
 		H: number,
-		// biome-ignore lint/suspicious/noExplicitAny: local color bag
-		C: any,
+		C: Palette,
 	): void {
 		const menu = this.poseMenu;
 		if (!menu) return;
@@ -1330,8 +1934,7 @@ export class SpriteEditor extends Renderable {
 		buf: OptimizedBuffer,
 		W: number,
 		H: number,
-		// biome-ignore lint/suspicious/noExplicitAny: local color bag
-		C: any,
+		C: Palette,
 	): void {
 		const menu = this.anchorMenu;
 		if (!menu) return;

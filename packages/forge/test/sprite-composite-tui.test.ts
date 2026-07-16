@@ -8,13 +8,13 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseSpriteFile, type SpriteDoc } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
+import { SPRITE_KEYMAP } from '../src/sprite-editor/chrome';
 import { previewStances } from '../src/sprite-editor/composite';
 import {
 	preservedStanceIndex,
 	SpritePreview,
 } from '../src/sprite-editor/preview';
 import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
-import { spriteHelpLine } from '../src/sprite-editor/view';
 
 const seq = (s: string): SpriteKey => ({ name: s, sequence: s });
 
@@ -67,8 +67,10 @@ describe('editor o panel', () => {
 		expect(after).not.toBe(before);
 	});
 
-	test('help line advertises the in-context toggle', () => {
-		expect(spriteHelpLine()).toContain('o in-context');
+	test('the key map documents the in-context toggle', () => {
+		const bindings = SPRITE_KEYMAP.flatMap((g) => g.bindings);
+		const o = bindings.find((b) => b.keys === 'o');
+		expect(o?.label.toLowerCase()).toContain('preview');
 	});
 });
 

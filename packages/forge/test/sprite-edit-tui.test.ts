@@ -21,6 +21,7 @@ import { join } from 'node:path';
 import { SCENE_PALETTE } from '@mmo/core';
 import { parseSpriteFile } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
+import { RAIL_W } from '../src/sprite-editor/chrome';
 import { readPixel } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
@@ -39,8 +40,10 @@ const INK_P: [number, number, number] = [
 	SPRITE_PREVIEWS.p[2],
 ];
 
-// Whether any cell in the top `rowMax` rows (the canvas region, above the
-// 3-row chrome) has a background matching `[r,g,b]` — i.e. a painted Pixel.
+// Whether any cell in the top `rowMax` rows of the CANVAS REGION (right of the
+// 30-column rail, above the chrome) has a background matching `[r,g,b]` — i.e.
+// a painted Pixel. The rail is skipped because its ink swatches carry the same
+// colours as painted art.
 function canvasHasBg(
 	cap: ReturnType<
 		Awaited<ReturnType<typeof createTestRenderer>>['captureSpans']
@@ -49,9 +52,17 @@ function canvasHasBg(
 	rowMax: number,
 ): boolean {
 	for (let y = 0; y < Math.min(rowMax, cap.lines.length); y++) {
+		let col = 0;
 		for (const s of cap.lines[y].spans) {
 			const [r, g, b] = s.bg.toInts();
-			if (r === rgb[0] && g === rgb[1] && b === rgb[2]) return true;
+			if (
+				col + s.width > RAIL_W &&
+				r === rgb[0] &&
+				g === rgb[1] &&
+				b === rgb[2]
+			)
+				return true;
+			col += s.width;
 		}
 	}
 	return false;
@@ -233,17 +244,21 @@ describe('Sprite editor TUI smoke', () => {
 });
 
 describe('Sprite editor mouse painting', () => {
-	// A left click-drag paints the active ink; screen cells resolve to Pixels
-	// through the fatbits geometry (×2 default: 2×2 cells per Pixel).
+	// In the default strips view the active frame's block sits at screen
+	// (RAIL_W, 1): content row 0 is the strip's label. Screen cells resolve to
+	// Pixels through the fatbits geometry (×2 default: 2×2 cells per Pixel).
+	const bx = RAIL_W;
+	const by = 1;
+
 	test('a left click-drag paints Pixels and coalesces into one undo step', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('m', 'hat'),
 			id: 'm',
 			role: 'hat',
 		});
-		// Down at screen (0,0) → Pixel (0,0); drag to screen (2,0) → Pixel (1,0).
-		t.editor.mouseDown({ button: 0, x: 0, y: 0 });
-		t.editor.mouseDrag({ button: 0, x: 2, y: 0 });
+		// Down at the block's origin → Pixel (0,0); drag 2 cells right → Pixel (1,0).
+		t.editor.mouseDown({ button: 0, x: bx, y: by });
+		t.editor.mouseDrag({ button: 0, x: bx + 2, y: by });
 		t.editor.mouseUp();
 		// Both touched Pixels are lit.
 		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
@@ -260,8 +275,8 @@ describe('Sprite editor mouse painting', () => {
 		});
 		// Some terminals report drags with button 'none' (button code > 2); the
 		// stroke's button is remembered from mouseDown so inking continues.
-		t.editor.mouseDown({ button: 0, x: 0, y: 0 });
-		t.editor.mouseDrag({ button: 99, x: 2, y: 2 });
+		t.editor.mouseDown({ button: 0, x: bx, y: by });
+		t.editor.mouseDrag({ button: 99, x: bx + 2, y: by + 2 });
 		t.editor.mouseUp();
 		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
 		expect(readPixel(t.editor.state, 1, 1)).toBe(true);
@@ -273,11 +288,11 @@ describe('Sprite editor mouse painting', () => {
 			id: 'erase',
 			role: 'hat',
 		});
-		t.editor.mouseDown({ button: 0, x: 0, y: 0 });
+		t.editor.mouseDown({ button: 0, x: bx, y: by });
 		t.editor.mouseUp();
 		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
 		// Right-click the same Pixel: transparent ink clears it.
-		t.editor.mouseDown({ button: 2, x: 0, y: 0 });
+		t.editor.mouseDown({ button: 2, x: bx, y: by });
 		t.editor.mouseUp();
 		expect(readPixel(t.editor.state, 0, 0)).toBe(false);
 	});
@@ -290,8 +305,8 @@ describe('Sprite editor mouse painting', () => {
 		});
 		t.editor.zoom = 4;
 		await t.renderOnce(); // capture geometry at the new zoom
-		// At ×4, screen cells 0..3 all map to Pixel 0.
-		t.editor.mouseDown({ button: 0, x: 3, y: 3 });
+		// At ×4, the block's first 4 columns/rows all map to Pixel 0.
+		t.editor.mouseDown({ button: 0, x: bx + 3, y: by + 3 });
 		t.editor.mouseUp();
 		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
 		expect(readPixel(t.editor.state, 1, 1)).toBe(false);
@@ -304,9 +319,188 @@ describe('Sprite editor mouse painting', () => {
 			role: 'hat',
 		});
 		const before = t.editor.state.doc;
-		// Row 17 is the status chrome, not canvas.
-		t.editor.mouseDown({ button: 0, x: 0, y: 17 });
+		// Row 18 is the status chrome, not canvas.
+		t.editor.mouseDown({ button: 0, x: bx, y: 18 });
 		t.editor.mouseUp();
 		expect(t.editor.state.doc).toBe(before);
+	});
+});
+
+describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', () => {
+	// A two-frame pose: frames 'a' and 'b' side by side in one strip.
+	function twoFrameDoc(): ReturnType<typeof emptySpriteDoc> {
+		const frame = (name: string) => ({
+			name,
+			rows: ['  ', '  '],
+			colors: ['  ', '  '],
+			bg: ['  ', '  '],
+			anchors: {},
+		});
+		return {
+			id: 'duo',
+			key: 'p',
+			baseline: 0,
+			anchors: {},
+			poses: { idle: ['a', 'b'] },
+			fps: {},
+			colors: {},
+			frames: [frame('a'), frame('b')],
+		};
+	}
+
+	test('the left rail carries the tools row, ink list and playback box', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('rail', 'hat'),
+			id: 'rail',
+			role: 'hat',
+		});
+		const lines = t.captureCharFrame().split('\n');
+		const rail = lines.map((l) => l.slice(0, RAIL_W)).join('\n');
+		expect(rail).toContain('tools');
+		expect(rail).toContain('pencil');
+		expect(rail).toContain('ink');
+		expect(rail).toContain('transparent');
+		expect(rail).toContain('playback');
+		expect(rail).toContain('pose idle');
+	});
+
+	test('strips view labels every pose and underlines the active frame', async () => {
+		const t = await mount({
+			doc: twoFrameDoc(),
+			id: 'duo',
+			role: 'hat',
+		});
+		const frame = t.captureCharFrame();
+		expect(t.editor.view).toBe('strips');
+		expect(frame).toContain('idle · 2f');
+		// The active frame 'a' is underlined on the name row; 'b' is plain.
+		const nameRow = frame.split('\n').find((l) => l.includes('▔'));
+		expect(nameRow).toBeDefined();
+		expect(nameRow).toContain('a▔');
+	});
+
+	test('clicking another frame activates it AND applies the tool (click-through)', async () => {
+		const t = await mount({ doc: twoFrameDoc(), id: 'duo', role: 'hat' });
+		expect(t.editor.state.frame).toBe('a');
+		// Frame 'b' block: 2×2 cells → 4×4 Pixels → ×2 → 8 cols; gap 2 → x offset 10.
+		t.editor.mouseDown({ button: 0, x: RAIL_W + 10, y: 1 });
+		t.editor.mouseUp();
+		expect(t.editor.state.frame).toBe('b');
+		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
+	});
+
+	test('tab toggles focus mode with a frame-name tab row', async () => {
+		const t = await mount({ doc: twoFrameDoc(), id: 'duo', role: 'hat' });
+		t.editor.key(key('tab'));
+		await t.renderOnce();
+		expect(t.editor.view).toBe('focus');
+		const tabRow = t.captureCharFrame().split('\n')[0].slice(RAIL_W);
+		expect(tabRow).toContain('a │ b');
+		// Clicking a tab activates that frame.
+		const bCol = RAIL_W + tabRow.indexOf('b', tabRow.indexOf('│'));
+		t.editor.mouseDown({ button: 0, x: bCol, y: 0 });
+		expect(t.editor.state.frame).toBe('b');
+		t.editor.key(key('tab'));
+		expect(t.editor.view).toBe('strips');
+	});
+
+	test('wheel scrolls the strips; ctrl-wheel zooms; middle-drag pans', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('nav', 'form'),
+			id: 'nav',
+			role: 'form',
+		});
+		// walkA's strip label sits at content row 19 — off-screen at first.
+		expect(t.captureCharFrame()).not.toContain('walkA ·');
+		t.editor.wheel({ button: 0, x: 40, y: 5, scroll: { direction: 'down' } });
+		await t.renderOnce();
+		// One notch (3 rows) brings nothing yet; keep scrolling.
+		for (let i = 0; i < 5; i++)
+			t.editor.wheel({ button: 0, x: 40, y: 5, scroll: { direction: 'down' } });
+		await t.renderOnce();
+		expect(t.captureCharFrame()).toContain('walkA ·');
+		// Middle-drag pans back up.
+		t.editor.mouseDown({ button: 1, x: 40, y: 2 });
+		t.editor.mouseDrag({ button: 1, x: 40, y: 20 });
+		t.editor.mouseUp();
+		await t.renderOnce();
+		expect(t.captureCharFrame()).toContain('idle ·');
+		// ctrl-wheel rides the zoom ladder.
+		expect(t.editor.zoom).toBe(2);
+		t.editor.wheel({
+			button: 0,
+			x: 40,
+			y: 5,
+			modifiers: { ctrl: true },
+			scroll: { direction: 'up' },
+		});
+		expect(t.editor.zoom).toBe(3);
+	});
+
+	test('the hint line follows the active tool', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('hint', 'hat'),
+			id: 'hint',
+			role: 'hat',
+		});
+		const hintRowOf = (s: string) => s.trimEnd().split('\n').at(-1) ?? '';
+		expect(hintRowOf(t.captureCharFrame())).toContain('paint:');
+		t.editor.key(key('s'));
+		await t.renderOnce();
+		const hint = hintRowOf(t.captureCharFrame());
+		expect(hint).toContain('stamp:');
+		expect(hint).toContain('? help');
+	});
+
+	test('? opens the complete key-map overlay and esc closes it', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('help', 'hat'),
+			id: 'help',
+			role: 'hat',
+			width: 120,
+			height: 24,
+		});
+		t.editor.key(key('?', { sequence: '?' }));
+		await t.renderOnce();
+		expect(t.editor.helpOpen).toBe(true);
+		const frame = t.captureCharFrame();
+		expect(frame).toContain('Key map');
+		expect(frame).toContain('shift-wheel');
+		// Keys are inert while the overlay is up, except closing it.
+		t.editor.key(key('space'));
+		expect(t.editor.state.history.past.length).toBe(0);
+		t.editor.key(key('escape'));
+		expect(t.editor.helpOpen).toBe(false);
+	});
+
+	test('rail clicks switch tools, pick inks and toggle playback', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('click', 'hat'),
+			id: 'click',
+			role: 'hat',
+		});
+		const lines = t.captureCharFrame().split('\n');
+		const rowWith = (needle: string) =>
+			lines.findIndex((l) => l.slice(0, RAIL_W).includes(needle));
+		// Tool row.
+		const toolY = rowWith('erase');
+		t.editor.mouseDown({
+			button: 0,
+			x: lines[toolY].indexOf('erase'),
+			y: toolY,
+		});
+		expect(t.editor.state.tool).toBe('erase');
+		// Ink row (the dynamic 'weapon accent' entry).
+		const inkY = rowWith('weapon accent');
+		t.editor.mouseDown({ button: 0, x: 5, y: inkY });
+		expect(t.editor.state.ink).toEqual({ kind: 'color', key: 'a' });
+		// Playback box.
+		const playY = rowWith(', walk');
+		t.editor.mouseDown({
+			button: 0,
+			x: lines[playY].indexOf(', walk'),
+			y: playY,
+		});
+		expect(t.editor.playMode).toBe('walk');
 	});
 });
