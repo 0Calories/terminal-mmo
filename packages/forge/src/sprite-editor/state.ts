@@ -58,14 +58,23 @@ export type SpriteTool =
 	| 'anchor'
 	| 'line'
 	| 'rect'
-	| 'ellipse';
+	| 'ellipse'
+	| 'select'
+	| 'move';
 
 // The three anchor-style geometry tools (spec #387, #394): they place an anchor
 // Pixel, drag/step a live preview to a second Pixel, and commit one rasterized
-// shape as a single undo step. `select`/`move` (later slices) share the same
-// pending-anchor grammar but land in their own machinery.
+// shape as a single undo step. The `select` tool (spec #387, #399) shares the
+// same pending-anchor grammar — it drops an anchor, drags a marquee, and commits
+// a rectangular selection instead of paint — so it rides the same `PendingShape`
+// state and the same start/move/commit/toggle/cancel transitions.
 export const SHAPE_TOOLS = ['line', 'rect', 'ellipse'] as const;
 export type ShapeTool = (typeof SHAPE_TOOLS)[number];
+
+// Every tool that drives the shared pending-anchor gesture: the geometry shapes,
+// plus `select`. They differ only in what the commit produces (paint vs a
+// selection rectangle), never in the gesture grammar.
+export type AnchorTool = ShapeTool | 'select';
 
 export function isShapeTool(tool: SpriteTool): tool is ShapeTool {
 	return (SHAPE_TOOLS as readonly string[]).includes(tool);
@@ -86,11 +95,53 @@ export interface Point {
 // square/circle, and the ink the eventual commit paints (active ink, or
 // transparent for the right button). `null` between gestures.
 export interface PendingShape {
-	readonly tool: ShapeTool;
+	readonly tool: AnchorTool;
 	readonly anchor: Point;
 	readonly to: Point;
 	readonly constrain: boolean;
 	readonly ink: Ink;
+}
+
+// A rectangular, Pixel-granularity selection (spec #387, #399): inclusive Pixel
+// bounds a `select` gesture committed. `null` when nothing is selected.
+export interface Selection {
+	readonly x0: number;
+	readonly y0: number;
+	readonly x1: number;
+	readonly y1: number;
+}
+
+// One lifted foreground Pixel carried by a float — its SOURCE Pixel position (the
+// current offset is applied on landing) and the resolved colour key it paints.
+export interface FloatPixel {
+	readonly x: number;
+	readonly y: number;
+	readonly key: string;
+}
+
+// One Glyph stamp riding a float as an atomic passenger (spec #387, #399): its
+// SOURCE cell, the glyph, and its colour key. It travels only when its cell was
+// fully enclosed by the selection; on landing it rounds to the nearest cell.
+export interface FloatStamp {
+	readonly cellX: number;
+	readonly cellY: number;
+	readonly glyph: string;
+	readonly fg: string;
+}
+
+// A FLOATING move in flight (spec #387, #399). The selected art has been lifted
+// off the canvas: `pixels`/`stamps` are the lifted content at their source
+// positions, `source` is the rectangle they came from (shown transparent while
+// the float lives), `grab` is the Pixel a mouse drag grabbed, and `dx`/`dy` is
+// the current Pixel offset. Nothing is committed until drop/Enter; Esc drops the
+// float and the art returns exactly as it was.
+export interface Float {
+	readonly pixels: readonly FloatPixel[];
+	readonly stamps: readonly FloatStamp[];
+	readonly source: Selection;
+	readonly grab: Point;
+	readonly dx: number;
+	readonly dy: number;
 }
 
 // The two places an anchor can live: at the document level (shared by every
@@ -158,6 +209,10 @@ export interface SpriteEditorState {
 	// The last Pixel the pencil painted, so a shift-click strokes a line from it
 	// (spec #387). null until the pencil has painted since the last reset.
 	lastPaint: Point | null;
+	// The committed rectangular selection (spec #387, #399), or null.
+	selection: Selection | null;
+	// The floating move in flight, or null between lift and drop (spec #399).
+	float: Float | null;
 }
 
 // A resolved view of one cell: `fg`/`bg` are '' when transparent, and `mask` is
@@ -213,6 +268,8 @@ export function initSpriteEditor(
 		rectMode: 'outline',
 		ellipseMode: 'outline',
 		lastPaint: null,
+		selection: null,
+		float: null,
 	};
 }
 
@@ -722,9 +779,13 @@ export function paintWithInk(
 	py: number,
 	ink: Ink,
 ): SpriteEditorState {
-	// Off-canvas to the top/left has no cell to coerce; clip with feedback rather
-	// than grow into negative space (canvas growth is an explicit op, spec #379).
-	if (px < 0 || py < 0)
+	// Canvas growth is an explicit op (spec #387, #399): a paint that lands past
+	// ANY edge clips with feedback rather than auto-growing the Frame. This is the
+	// one seam the pencil, shift-lines, fills, shape commits, and float drops all
+	// pass through, so removing the grow here removes paint-past-the-edge grow for
+	// every tool at once.
+	const { w, h } = frameExtent(currentFrame(state));
+	if (px < 0 || py < 0 || px >= w * 2 || py >= h * 2)
 		return refuse(state, 'clipped — nothing painted past the canvas edge');
 	return ink.kind === 'transparent'
 		? punchTransparent(state, px, py)
@@ -1111,12 +1172,17 @@ function resolveShape(state: SpriteEditorState): {
 	const to = shape.constrain
 		? constrainSquare(shape.anchor, shape.to)
 		: shape.to;
-	const raw = rasterShape(
-		shape.tool,
-		shape.anchor,
-		to,
-		shapeMode(state, shape.tool) === 'filled',
-	);
+	// The `select` marquee previews as a hollow rectangle on the same bbox the
+	// geometry tools use; it never rasterizes a fill.
+	const raw =
+		shape.tool === 'select'
+			? rectPixels(shape.anchor, to, false)
+			: rasterShape(
+					shape.tool,
+					shape.anchor,
+					to,
+					shapeMode(state, shape.tool) === 'filled',
+				);
 	const { w, h } = frameExtent(currentFrame(state));
 	const maxX = w * 2;
 	const maxY = h * 2;
@@ -1148,7 +1214,7 @@ function paintBatch(
 // it. `ink` is the commit's ink (active, or transparent for the right button).
 export function beginShape(
 	state: SpriteEditorState,
-	tool: ShapeTool,
+	tool: AnchorTool,
 	px: number,
 	py: number,
 	ink: Ink,
@@ -1235,6 +1301,297 @@ export function pencilLineTo(
 	const pixels = from ? linePixels(from, { x: px, y: py }) : [{ x: px, y: py }];
 	const painted = paintBatch(state, pixels, ink);
 	return { ...painted, lastPaint: { x: px, y: py } };
+}
+
+// ---------------------------------------------------------------------------
+// Selection & floating move (spec #387, #399)
+//
+// A rectangular, Pixel-granularity selection is gestured as an anchor tool (the
+// shared PendingShape grammar). Dragging it (mouse) or nudging it (keyboard)
+// LIFTS the selected foreground Pixels into a float: the source shows transparent
+// and the float rides live at intermediate offsets, committing lift+drop as ONE
+// undo step; Esc cancels losslessly. Transparent Pixels of the float SKIP on
+// landing (only lit Pixels were lifted); a drop is a batch of Pixel paints
+// resolved by the standard coercion rules — out-of-bounds portions clip. Glyph
+// stamps travel as atomic passengers only when their cell is fully enclosed, and
+// land on the nearest cell (the Pixel offset rounds to the cell grid).
+// ---------------------------------------------------------------------------
+
+// Clamp two Pixels into an inclusive selection rectangle within the Frame.
+export function makeSelection(
+	state: SpriteEditorState,
+	a: Point,
+	b: Point,
+): Selection {
+	const { w, h } = frameExtent(currentFrame(state));
+	const clampX = (v: number) =>
+		Math.max(0, Math.min(Math.max(0, w * 2 - 1), v));
+	const clampY = (v: number) =>
+		Math.max(0, Math.min(Math.max(0, h * 2 - 1), v));
+	return {
+		x0: clampX(Math.min(a.x, b.x)),
+		y0: clampY(Math.min(a.y, b.y)),
+		x1: clampX(Math.max(a.x, b.x)),
+		y1: clampY(Math.max(a.y, b.y)),
+	};
+}
+
+export function setSelection(
+	state: SpriteEditorState,
+	sel: Selection | null,
+): SpriteEditorState {
+	return { ...state, selection: sel, feedback: '' };
+}
+
+// The whole current Frame as a selection (spec #399: whole-Frame shift =
+// select-all + float, no new machinery).
+export function selectAll(state: SpriteEditorState): SpriteEditorState {
+	const { w, h } = frameExtent(currentFrame(state));
+	if (w === 0 || h === 0) return { ...state, selection: null };
+	return {
+		...state,
+		selection: { x0: 0, y0: 0, x1: w * 2 - 1, y1: h * 2 - 1 },
+		feedback: '',
+	};
+}
+
+// Drop the committed selection (a live float owns it, so this is inert then).
+export function clearSelection(state: SpriteEditorState): SpriteEditorState {
+	if (state.float) return state;
+	return { ...state, selection: null, feedback: '' };
+}
+
+// Commit the pending `select` gesture into a committed selection rectangle. A
+// no-op for any other pending anchor (the geometry tools commit through
+// commitShape).
+export function commitSelection(state: SpriteEditorState): SpriteEditorState {
+	const shape = state.shape;
+	if (shape?.tool !== 'select') return state;
+	const selection = makeSelection(state, shape.anchor, shape.to);
+	return { ...state, shape: null, selection, feedback: '' };
+}
+
+export function selectionContains(
+	sel: Selection,
+	px: number,
+	py: number,
+): boolean {
+	return px >= sel.x0 && px <= sel.x1 && py >= sel.y0 && py <= sel.y1;
+}
+
+// The selection rectangle the canvas draws as a marquee: the float's rectangle at
+// its live offset while a float rides, else the committed selection.
+export function selectionOverlay(state: SpriteEditorState): Selection | null {
+	const f = state.float;
+	if (f)
+		return {
+			x0: f.source.x0 + f.dx,
+			y0: f.source.y0 + f.dy,
+			x1: f.source.x1 + f.dx,
+			y1: f.source.y1 + f.dy,
+		};
+	return state.selection;
+}
+
+// Capture the foreground Pixels and fully-enclosed Glyph stamps a selection would
+// lift. Only lit Pixels are captured (transparent/complement quadrants skip); a
+// stamp travels iff every one of its cell's Pixels lies inside the selection.
+function liftContent(
+	state: SpriteEditorState,
+	sel: Selection,
+): { pixels: FloatPixel[]; stamps: FloatStamp[] } {
+	const pixels: FloatPixel[] = [];
+	for (let y = sel.y0; y <= sel.y1; y++)
+		for (let x = sel.x0; x <= sel.x1; x++) {
+			const { cellX, cellY, bit } = pixelToCell(x, y);
+			const cell = cellAt(state, cellX, cellY);
+			if (cell.mask === undefined) continue; // stamp cell — no sub-Pixels
+			if ((cell.mask & (1 << bit)) === 0) continue; // unlit → skip
+			const key =
+				cell.fg === SENTINEL || cell.fg === '' ? state.doc.key : cell.fg;
+			pixels.push({ x, y, key });
+		}
+	const stamps: FloatStamp[] = [];
+	const { w, h } = frameExtent(currentFrame(state));
+	for (let cy = Math.floor(sel.y0 / 2); cy <= Math.floor(sel.y1 / 2); cy++)
+		for (let cx = Math.floor(sel.x0 / 2); cx <= Math.floor(sel.x1 / 2); cx++) {
+			if (cx < 0 || cy < 0 || cx >= w || cy >= h) continue;
+			// Fully enclosed: both Pixel columns and rows of the cell are inside.
+			if (2 * cx < sel.x0 || 2 * cx + 1 > sel.x1) continue;
+			if (2 * cy < sel.y0 || 2 * cy + 1 > sel.y1) continue;
+			const cell = cellAt(state, cx, cy);
+			if (cell.mask !== undefined || cell.glyph === ' ') continue; // stamps only
+			const fg = cell.fg === '' ? state.doc.key : cell.fg;
+			stamps.push({ cellX: cx, cellY: cy, glyph: cell.glyph, fg });
+		}
+	return { pixels, stamps };
+}
+
+// Lift the current selection into a float (spec #399). The source stays visually
+// transparent (via floatDisplayDoc) until the drop commits, so the lift records
+// no history of its own. `grab` is the Pixel a mouse drag grabbed.
+export function beginFloat(
+	state: SpriteEditorState,
+	grab?: Point,
+): SpriteEditorState {
+	if (state.float) return state;
+	const sel = state.selection;
+	if (!sel) return refuse(state, 'select something to move first');
+	const { pixels, stamps } = liftContent(state, sel);
+	return {
+		...state,
+		float: {
+			pixels,
+			stamps,
+			source: sel,
+			grab: grab ?? { x: sel.x0, y: sel.y0 },
+			dx: 0,
+			dy: 0,
+		},
+		feedback: '',
+	};
+}
+
+// Set the float's absolute offset from where a mouse drag grabbed it.
+export function moveFloatTo(
+	state: SpriteEditorState,
+	px: number,
+	py: number,
+): SpriteEditorState {
+	if (!state.float) return state;
+	return {
+		...state,
+		float: {
+			...state.float,
+			dx: px - state.float.grab.x,
+			dy: py - state.float.grab.y,
+		},
+	};
+}
+
+// Nudge the float by a Pixel delta (keyboard arrows / whole-Frame shift). Lifts
+// the current selection into a float first when none is riding yet.
+export function nudgeFloat(
+	state: SpriteEditorState,
+	dx: number,
+	dy: number,
+): SpriteEditorState {
+	let s = state;
+	if (!s.float) {
+		s = beginFloat(s);
+		if (!s.float) return s; // no selection to lift
+	}
+	return {
+		...s,
+		float: { ...s.float, dx: s.float.dx + dx, dy: s.float.dy + dy },
+		feedback: '',
+	};
+}
+
+// Bake a float into a fresh doc: clear the source (transparent), then land the
+// lifted content at its offset through the standard paint coercion, clipping
+// out-of-bounds Pixels/stamps. Returns the doc and the clipped count. Used both
+// for the live display composite and — recorded once — for the drop commit.
+function bakeFloat(state: SpriteEditorState): {
+	doc: SpriteDoc;
+	clipped: number;
+} {
+	const float = state.float;
+	if (!float) return { doc: state.doc, clipped: 0 };
+	const { w, h } = frameExtent(currentFrame(state));
+	let s: SpriteEditorState = state;
+	// 1. Clear the source. Only lifted Pixels/enclosed stamps are cleared, so a
+	//    partially-covered stamp (never lifted) is left exactly as it was.
+	for (const p of float.pixels) s = punchTransparent(s, p.x, p.y);
+	for (const st of float.stamps)
+		s = commitQuadrant(s, st.cellX, st.cellY, 0, '', '', '');
+	// 2. Land the float; out-of-bounds portions clip.
+	let clipped = 0;
+	for (const p of float.pixels) {
+		const lx = p.x + float.dx;
+		const ly = p.y + float.dy;
+		if (lx < 0 || ly < 0 || lx >= w * 2 || ly >= h * 2) {
+			clipped++;
+			continue;
+		}
+		s = paintColor(s, lx, ly, p.key);
+	}
+	for (const st of float.stamps) {
+		const cx = st.cellX + Math.round(float.dx / 2);
+		const cy = st.cellY + Math.round(float.dy / 2);
+		if (cx < 0 || cy < 0 || cx >= w || cy >= h) {
+			clipped++;
+			continue;
+		}
+		// A landed stamp owns its whole destination cell.
+		s = commitFrame(
+			s,
+			writeCell(currentFrame(s), cx, cy, st.glyph, st.fg, ' '),
+		);
+	}
+	return { doc: s.doc, clipped };
+}
+
+// The doc the canvas + Composited preview render while a float rides: the source
+// hole plus the float at its live offset, exactly as a drop would commit it.
+export function floatDisplayDoc(state: SpriteEditorState): SpriteDoc {
+	if (!state.float) return state.doc;
+	return bakeFloat(state).doc;
+}
+
+// Drop the float: bake lift+drop into the doc as ONE undo step, land the
+// selection on the moved rectangle, and report any clip. A zero-offset drop
+// (a click without a drag) makes no change and records nothing.
+export function commitFloat(state: SpriteEditorState): SpriteEditorState {
+	const float = state.float;
+	if (!float) return state;
+	if (float.dx === 0 && float.dy === 0)
+		return { ...state, float: null, selection: float.source, feedback: '' };
+	const { doc, clipped } = bakeFloat(state);
+	const landed = makeSelection(
+		state,
+		{ x: float.source.x0 + float.dx, y: float.source.y0 + float.dy },
+		{ x: float.source.x1 + float.dx, y: float.source.y1 + float.dy },
+	);
+	const tag = `float${state.strokeSeq + 1}`;
+	return {
+		...state,
+		doc,
+		history: record(state.history, doc, tag),
+		strokeSeq: state.strokeSeq + 1,
+		float: null,
+		selection: landed,
+		feedback: clipped > 0 ? `clipped ${clipped} past the canvas edge` : '',
+	};
+}
+
+// Cancel the float losslessly (Esc): drop it with the art untouched, keeping the
+// selection where it was lifted from. No doc/history change.
+export function cancelFloat(state: SpriteEditorState): SpriteEditorState {
+	if (!state.float) return state;
+	return { ...state, float: null, feedback: '' };
+}
+
+// Clear the selection's contents (delete/backspace) as one undo step: erase the
+// selected foreground Pixels and fully-enclosed stamps, keeping the selection.
+export function deleteSelection(state: SpriteEditorState): SpriteEditorState {
+	const sel = state.selection;
+	if (!sel) return refuse(state, 'nothing selected to delete');
+	const { pixels, stamps } = liftContent(state, sel);
+	if (pixels.length === 0 && stamps.length === 0)
+		return { ...state, feedback: '' };
+	let s: SpriteEditorState = state;
+	for (const p of pixels) s = punchTransparent(s, p.x, p.y);
+	for (const st of stamps)
+		s = commitQuadrant(s, st.cellX, st.cellY, 0, '', '', '');
+	const tag = `delete${state.strokeSeq + 1}`;
+	return {
+		...state,
+		doc: s.doc,
+		history: record(state.history, s.doc, tag),
+		strokeSeq: state.strokeSeq + 1,
+		feedback: 'cleared selection',
+	};
 }
 
 // ---------------------------------------------------------------------------

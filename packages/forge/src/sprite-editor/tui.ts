@@ -100,16 +100,21 @@ import {
 	addFrameToPose,
 	anchorMarkers,
 	beginStroke,
+	cancelFloat,
 	cancelShape,
 	cellAt,
+	clearSelection,
 	colorInk,
+	commitFloat,
 	createPose,
 	currentFrame,
 	type DynamicPreviews,
 	defineLocalColor,
 	deletePose,
+	deleteSelection,
 	endStroke,
 	eyedropAt,
+	floatDisplayDoc,
 	frameExtent,
 	frameNames,
 	type Ink,
@@ -117,6 +122,7 @@ import {
 	inkLabel,
 	isShapeTool,
 	moveCursor,
+	nudgeFloat,
 	nudgeInk,
 	paletteEntries,
 	pixelToCell,
@@ -129,7 +135,9 @@ import {
 	type SpriteEditorState,
 	type SpriteTool,
 	saveResult,
+	selectAll,
 	selectFrame,
+	selectionOverlay,
 	selectPose,
 	setAnchorName,
 	setAnchorScope,
@@ -224,6 +232,18 @@ const SCROLLOFF = 2;
 // How long each step of the dynamic p/a preview cycle holds before advancing to
 // the next core-palette variant (spec #401). Slow enough to read each colour.
 const PREVIEW_CYCLE_MS = 650;
+
+// The Pixel delta each arrow / vim key nudges by (used for whole-Frame shift).
+const ARROW_DELTA: Record<string, { dx: number; dy: number }> = {
+	left: { dx: -1, dy: 0 },
+	h: { dx: -1, dy: 0 },
+	right: { dx: 1, dy: 0 },
+	l: { dx: 1, dy: 0 },
+	up: { dx: 0, dy: -1 },
+	k: { dx: 0, dy: -1 },
+	down: { dx: 0, dy: 1 },
+	j: { dx: 0, dy: 1 },
+};
 
 // The box-drawing glyph for one cell of the cursor's z×z outline ring, or '' for
 // an interior (non-edge) cell. All are unambiguous width-1 (unlike □/▫), so the
@@ -520,9 +540,15 @@ export class SpriteEditor extends Renderable {
 	}
 
 	private primary(): void {
-		// Geometry tools place the anchor on the first press and commit on the
-		// second, through the same normalized seam a mouse gesture uses (spec #387).
-		if (isShapeTool(this.state.tool)) {
+		// Anchor gestures (geometry tools + the select marquee) place the anchor on
+		// the first press and commit on the second; the move tool's Enter lifts a
+		// float or drops a live one — all through the same normalized seam a mouse
+		// gesture uses (spec #387, #399).
+		if (
+			isShapeTool(this.state.tool) ||
+			this.state.tool === 'select' ||
+			this.state.tool === 'move'
+		) {
 			const { x, y } = this.state.cursor;
 			this.state = applyInput(
 				this.state,
@@ -531,6 +557,9 @@ export class SpriteEditor extends Renderable {
 			this.followCursor = true;
 			return;
 		}
+		// A non-anchor edit (paint/fill/stamp/anchor) drops any live whole-Frame
+		// float first, so the shift is baked before new ink lands (spec #399).
+		if (this.state.float) this.state = commitFloat(this.state);
 		if (this.state.tool === 'anchor') {
 			this.placeAnchorAtCursor();
 			return;
@@ -560,9 +589,19 @@ export class SpriteEditor extends Renderable {
 		const nx = Math.max(0, x + dx);
 		const ny = Math.max(0, y + dy);
 		this.followCursor = true;
-		// A pending shape follows the cursor as a live preview; the seam's move
-		// phase both steps the cursor and updates the endpoint (spec #387).
-		if (isShapeTool(this.state.tool)) {
+		// The move tool arrow-nudges the float (lifting the selection on the first
+		// nudge), leaving the cursor free of a paint stroke (spec #399).
+		if (
+			this.state.tool === 'move' &&
+			(this.state.float || this.state.selection)
+		) {
+			this.state = nudgeFloat(this.state, dx, dy);
+			return;
+		}
+		// A pending anchor gesture (shape or select marquee) follows the cursor as a
+		// live preview; the seam's move phase steps the cursor and the endpoint
+		// together (spec #387).
+		if (isShapeTool(this.state.tool) || this.state.tool === 'select') {
 			this.state = applyInput(
 				this.state,
 				normalizeKey({ pixel: { x: nx, y: ny }, paint: 'none', phase: 'move' }),
@@ -752,15 +791,24 @@ export class SpriteEditor extends Renderable {
 			this.paintMouse(button, px, e.modifiers);
 			return;
 		}
-		// Geometry tools open a shape gesture instead of a paint stroke; the ink is
-		// captured now (right button → transparent), the endpoint tracks the drag.
-		if (isShapeTool(this.state.tool)) {
+		// Anchor gestures open on press instead of a paint stroke: the geometry
+		// tools (ink captured now, right → transparent), the select marquee, and the
+		// move float (a grab inside the selection lifts it) all drive the same
+		// press→drag→release plumbing through the normalized seam (spec #387, #399).
+		if (
+			isShapeTool(this.state.tool) ||
+			this.state.tool === 'select' ||
+			this.state.tool === 'move'
+		) {
 			this.mouseShape = true;
 			this.mouseButton = button;
 			this.shapePx = px;
 			this.shapeMouse('down', button, px, e.modifiers);
 			return;
 		}
+		// A paint press with a live whole-Frame float drops it first, so new ink
+		// lands on the baked art (spec #399).
+		if (this.state.float) this.state = commitFloat(this.state);
 		// Fill floods on a single press (left = active ink, right = transparent);
 		// no coalescing stroke, no drag.
 		if (this.state.tool === 'fill') {
@@ -1116,6 +1164,10 @@ export class SpriteEditor extends Renderable {
 	private switchTool(tool: SpriteTool): void {
 		this.liftPen();
 		this.state = cancelShape(this.state);
+		// A live float is dropped (not discarded) when the tool changes, so the
+		// move isn't silently lost; the selection survives the switch so a select →
+		// move handoff keeps the marquee (spec #399).
+		if (this.state.float) this.state = commitFloat(this.state);
 		this.state = setTool(this.state, tool);
 	}
 
@@ -1303,6 +1355,15 @@ export class SpriteEditor extends Renderable {
 		return this.state.frame;
 	}
 
+	// The editing state the canvas + Composited preview render: while a float
+	// rides, its current Frame's doc is the source hole plus the float at its live
+	// offset, exactly as a drop would commit it (spec #399). Identity otherwise, so
+	// no float is a zero-cost passthrough.
+	private floatState(): SpriteEditorState {
+		if (!this.state.float) return this.state;
+		return { ...this.state, doc: floatDisplayDoc(this.state) };
+	}
+
 	// The single keyboard entry point.
 	key(k: SpriteKey): void {
 		if (this.helpOpen) {
@@ -1366,11 +1427,44 @@ export class SpriteEditor extends Renderable {
 			return;
 		}
 
-		// Esc backs out an in-flight shape losslessly (spec #387); otherwise it is
-		// inert here (modals/help/stamp consume their own esc above).
+		// Esc backs out an in-flight float, then a shape, then a committed selection,
+		// each losslessly (spec #387, #399); otherwise it is inert here (modals/help/
+		// stamp consume their own esc above).
 		if (k.name === 'escape') {
-			if (this.state.shape) this.state = cancelShape(this.state);
+			if (this.state.float) this.state = cancelFloat(this.state);
+			else if (this.state.shape) this.state = cancelShape(this.state);
+			else if (this.state.selection) this.state = clearSelection(this.state);
 			return;
+		}
+		// Enter drops a live float from any tool — a whole-Frame shift (which can
+		// float under the pencil or any tool) commits the same way a move-tool drop
+		// does (spec #399).
+		if (
+			(k.name === 'return' || k.name === 'enter') &&
+			this.state.float &&
+			this.state.tool !== 'move'
+		) {
+			this.liftPen();
+			this.state = commitFloat(this.state);
+			return;
+		}
+		// Delete / backspace clear the selection's contents as one undo step.
+		if (k.name === 'delete' || k.name === 'backspace') {
+			this.liftPen();
+			this.state = deleteSelection(this.state);
+			return;
+		}
+		// Whole-Frame shift (spec #399): shift + an arrow = select-all + float,
+		// nudged one Pixel. Reuses the float machinery, no new gesture.
+		if (k.shift) {
+			const d = ARROW_DELTA[k.name];
+			if (d) {
+				this.liftPen();
+				if (!this.state.float) this.state = selectAll(this.state);
+				this.state = nudgeFloat(this.state, d.dx, d.dy);
+				this.followCursor = true;
+				return;
+			}
 		}
 		// Toggle the active geometry tool's outline↔filled mode (spec #387).
 		if (k.name === 'o') {
@@ -1646,6 +1740,46 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
+	// Overlay the selection marquee (spec #387, #399): the border Pixels of the
+	// committed selection, or of the float's rectangle at its live offset while a
+	// float rides. Each border Pixel's z×z block is edged so the ants read at any
+	// zoom without occluding the art inside.
+	private drawSelectionMarquee(
+		buf: OptimizedBuffer,
+		disp: SpriteEditorState,
+		mapPx: (px: number, py: number) => { x: number; y: number },
+		clip: { x0: number; x1: number; y0: number; y1: number },
+		C: Palette,
+	): void {
+		const sel = selectionOverlay(this.state);
+		if (!sel) return;
+		const z = this.zoom;
+		const marquee = this.state.float ? C.hot : C.anchorFg;
+		for (let py = sel.y0; py <= sel.y1; py++)
+			for (let px = sel.x0; px <= sel.x1; px++) {
+				const border =
+					px === sel.x0 || px === sel.x1 || py === sel.y0 || py === sel.y1;
+				if (!border) continue;
+				const o = mapPx(px, py);
+				const under = this.pixelRGBA(disp, px, py, px + py, C, false);
+				for (let dy = 0; dy < z; dy++)
+					for (let dx = 0; dx < z; dx++) {
+						// Only the outermost ring of the block, so the art stays visible.
+						const edge =
+							(px === sel.x0 && dx === 0) ||
+							(px === sel.x1 && dx === z - 1) ||
+							(py === sel.y0 && dy === 0) ||
+							(py === sel.y1 && dy === z - 1);
+						if (!edge) continue;
+						const sx = o.x + dx;
+						const sy = o.y + dy;
+						if (sx < clip.x0 || sx >= clip.x1 || sy < clip.y0 || sy >= clip.y1)
+							continue;
+						buf.setCell(sx, sy, '·', marquee, under);
+					}
+			}
+	}
+
 	// Draw a piece of text at `sx`, clipped to the column range [x0, x1).
 	private drawClipped(
 		buf: OptimizedBuffer,
@@ -1775,9 +1909,10 @@ export class SpriteEditor extends Renderable {
 			this.drawClipped(buf, label.text, sxOf(0), sy, x0, x1, C.dim, C.bg);
 		}
 
+		const disp = this.floatState();
 		for (const box of layout.frames) {
 			const active = box.name === this.state.frame;
-			const st = active ? this.state : { ...this.state, frame: box.name };
+			const st = active ? disp : { ...this.state, frame: box.name };
 			const cy0 = Math.max(box.y, this.scroll.y);
 			const cy1 = Math.min(box.y + box.h, this.scroll.y + viewH);
 			const cx0 = Math.max(box.x, this.scroll.x);
@@ -1843,12 +1978,15 @@ export class SpriteEditor extends Renderable {
 		}
 
 		// The pending shape's live preview overlays the active Frame's art.
-		this.drawShapePreview(
+		const mapActive = (px: number, py: number) => ({
+			x: sxOf(activeBox.x + px * z),
+			y: syOf(activeBox.y + py * z),
+		});
+		this.drawShapePreview(buf, mapActive, { x0, x1, y0: 0, y1: viewH }, C);
+		this.drawSelectionMarquee(
 			buf,
-			(px, py) => ({
-				x: sxOf(activeBox.x + px * z),
-				y: syOf(activeBox.y + py * z),
-			}),
+			disp,
+			mapActive,
 			{ x0, x1, y0: 0, y1: viewH },
 			C,
 		);
@@ -1862,7 +2000,7 @@ export class SpriteEditor extends Renderable {
 			{ x0, x1, y0: 0, y1: viewH },
 			(sx, sy) =>
 				this.pixelRGBA(
-					this.state,
+					disp,
 					this.state.cursor.x,
 					this.state.cursor.y,
 					sx - x0 + this.scroll.x + (sy + this.scroll.y),
@@ -1976,15 +2114,16 @@ export class SpriteEditor extends Renderable {
 			);
 		}
 
-		this.drawShapePreview(
-			buf,
-			(px, py) => ({
-				x: origin.x + (px - this.cam.x) * z,
-				y: origin.y + (py - this.cam.y) * z,
-			}),
-			{ x0: RAIL_W, x1: RAIL_W + viewW, y0: top, y1: viewH },
-			C,
-		);
+		const mapFocus = (px: number, py: number) => ({
+			x: origin.x + (px - this.cam.x) * z,
+			y: origin.y + (py - this.cam.y) * z,
+		});
+		const focusClip = { x0: RAIL_W, x1: RAIL_W + viewW, y0: top, y1: viewH };
+		this.drawShapePreview(buf, mapFocus, focusClip, C);
+		// The marquee tracks the active edit Frame only (onion sourcing already
+		// gated `viewState` to it when editing).
+		if (onion)
+			this.drawSelectionMarquee(buf, viewState, mapFocus, focusClip, C);
 
 		const bx = origin.x + (this.state.cursor.x - this.cam.x) * z;
 		const by = origin.y + (this.state.cursor.y - this.cam.y) * z;
@@ -1995,7 +2134,7 @@ export class SpriteEditor extends Renderable {
 			{ x0: RAIL_W, x1: RAIL_W + viewW, y0: top, y1: viewH },
 			(sx, sy) =>
 				this.pixelRGBA(
-					this.state,
+					viewState,
 					this.state.cursor.x,
 					this.state.cursor.y,
 					sx + sy,
@@ -2059,7 +2198,7 @@ export class SpriteEditor extends Renderable {
 		const displayFrame = this.displayFrame;
 		const viewState =
 			displayFrame === this.state.frame
-				? this.state
+				? this.floatState()
 				: { ...this.state, frame: displayFrame };
 
 		// The canvas region sits right of the rail; the mirror panel, when toggled,
@@ -2310,7 +2449,10 @@ export class SpriteEditor extends Renderable {
 			(r, g, b, a) => RGBA.fromInts(r, g, b, a),
 		);
 		const region = new RegionBuffer(buf, ix, iy, iw, ih);
-		const ok = renderComposite(region, this.state.doc, this.role, style, {
+		// A live float tracks in the preview too: render the baked doc so the pane
+		// shows the art exactly as a drop would commit it (spec #399).
+		const previewDoc = floatDisplayDoc(this.state);
+		const ok = renderComposite(region, previewDoc, this.role, style, {
 			facing: this.previewFacing,
 			// The display frame is a concrete frame name; the composite maps it to the
 			// role-appropriate composition (weapon frame → swing phase, etc.).

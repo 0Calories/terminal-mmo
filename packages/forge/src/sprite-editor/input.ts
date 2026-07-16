@@ -14,21 +14,27 @@
 // The geometry tools drive ONE shared pending-shape anchor state (spec #387):
 // a mouse drag-commits (down→start, drag→move, up→commit) and a keyboard
 // click-clicks (enter→toggle, arrows→move, esc→cancel) over the same state and
-// the same reducer, so device parity is structural. Later slices add
-// select/move/paste (sharing this anchor grammar), wheel routing (scroll/zoom),
-// and middle-drag pan on top of this same event — the seam is shaped for them.
+// the same reducer, so device parity is structural. The `select` marquee + the
+// `move` float (#399) now ride this same grammar; a later slice adds paste (a
+// float spawned at the source coordinates) on top of the same event.
 import {
+	type AnchorTool,
+	beginFloat,
 	beginShape,
+	cancelFloat,
 	cancelShape,
+	commitFloat,
+	commitSelection,
 	commitShape,
 	eyedropAt,
 	floodFill,
 	isShapeTool,
 	moveCursor,
+	moveFloatTo,
 	paintWithInk,
 	pencilLineTo,
-	type ShapeTool,
 	type SpriteEditorState,
+	selectionContains,
 	TRANSPARENT_INK,
 	updateShape,
 } from './state';
@@ -200,7 +206,11 @@ export function applyInput(
 		const moved = moveCursor(state, input.pixel.x, input.pixel.y);
 		return eyedropAt(moved, input.pixel.x, input.pixel.y);
 	}
-	if (isShapeTool(state.tool)) return applyShapeInput(state, input);
+	// The `select` marquee rides the shared anchor gesture (spec #387, #399); the
+	// `move` tool drags a lifted float over the same phase grammar.
+	if (state.tool === 'select') return applyAnchorGesture(state, input);
+	if (isShapeTool(state.tool)) return applyAnchorGesture(state, input);
+	if (state.tool === 'move') return applyMoveInput(state, input);
 
 	const { x, y } = input.pixel;
 	const moved = moveCursor(state, x, y);
@@ -226,19 +236,26 @@ export function applyInput(
 	return { ...painted, lastPaint: { x, y } };
 }
 
-// Drive the shared pending-shape lifecycle from a normalized event. Both devices
-// feed this one reducer: the phase (mouse press/move/release, keyboard toggle/
-// move/cancel) selects the transition, so drag-commit and click-click are the
-// same code path over the same state (spec #387).
-function applyShapeInput(
+// Drive the shared pending-anchor lifecycle from a normalized event (spec #387).
+// Both devices feed this one reducer: the phase (mouse press/move/release,
+// keyboard toggle/move/cancel) selects the transition, so drag-commit and
+// click-click are the same code path over the same `PendingShape` state. The
+// geometry tools and the `select` marquee share every transition and diverge
+// only at the commit — a rasterized shape vs a committed selection rectangle.
+function applyAnchorGesture(
 	state: SpriteEditorState,
 	input: EditorInput,
 ): SpriteEditorState {
 	const { x, y } = input.pixel;
 	const moved = moveCursor(state, x, y);
-	const tool = moved.tool as ShapeTool;
+	const tool = moved.tool as AnchorTool;
 	const constrain = input.mods.shift;
 	const ink = input.button === 'secondary' ? TRANSPARENT_INK : moved.ink;
+	const finish =
+		tool === 'select'
+			? (s: SpriteEditorState) =>
+					commitSelection(updateShape(s, x, y, constrain))
+			: (s: SpriteEditorState) => commitShape(updateShape(s, x, y, constrain));
 	// A phase-less event defaults by button: a bare move updates, a press toggles
 	// (the keyboard's enter grammar), so callers may omit the phase.
 	const phase: InputPhase =
@@ -250,14 +267,43 @@ function applyShapeInput(
 		case 'move':
 			return updateShape(moved, x, y, constrain);
 		case 'commit':
-			return moved.shape
-				? commitShape(updateShape(moved, x, y, constrain))
-				: moved;
+			return moved.shape ? finish(moved) : moved;
 		case 'toggle':
 			return moved.shape
-				? commitShape(updateShape(moved, x, y, constrain))
+				? finish(moved)
 				: beginShape(moved, tool, x, y, ink, constrain);
 		case 'cancel':
 			return cancelShape(moved);
+	}
+}
+
+// Drive a floating move from a normalized event (spec #399). A mouse gesture that
+// grabs INSIDE the selection lifts the float (start), drags it (move), and drops
+// it (commit); the keyboard's Enter toggles lift/drop and Esc cancels. Arrow
+// nudges reach the float through `nudgeFloat` directly (see the TUI), so parity
+// with a mouse drag is structural — both end at the same float offset.
+function applyMoveInput(
+	state: SpriteEditorState,
+	input: EditorInput,
+): SpriteEditorState {
+	const { x, y } = input.pixel;
+	const moved = moveCursor(state, x, y);
+	const phase: InputPhase =
+		input.phase ?? (input.button === 'none' ? 'move' : 'toggle');
+	const grabbable =
+		moved.selection !== null && selectionContains(moved.selection, x, y);
+
+	switch (phase) {
+		case 'start':
+			return moved.float || !grabbable ? moved : beginFloat(moved, { x, y });
+		case 'move':
+			return moved.float ? moveFloatTo(moved, x, y) : moved;
+		case 'commit':
+			return moved.float ? commitFloat(moveFloatTo(moved, x, y)) : moved;
+		case 'toggle':
+			if (moved.float) return commitFloat(moved);
+			return grabbable ? beginFloat(moved, { x, y }) : moved;
+		case 'cancel':
+			return moved.float ? cancelFloat(moved) : moved;
 	}
 }

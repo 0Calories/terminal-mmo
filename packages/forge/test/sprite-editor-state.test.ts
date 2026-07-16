@@ -240,22 +240,15 @@ describe('glyph stamp + coercion', () => {
 	});
 });
 
-describe('auto-grow', () => {
-	test('painting outside the extent grows all grids, padded with sentinel', () => {
+describe('canvas growth is explicit-only (spec #399)', () => {
+	test('painting past the right/bottom edge is clipped, never grows the canvas', () => {
 		const s0 = blankState();
 		const ext0 = frameExtent(currentFrame(s0));
-		// Cell (10, 6) begins at pixel (20, 12) — well outside 6×4.
+		// Cell (10, 6) begins at pixel (20, 12) — well outside the 6×4 canvas.
 		const s = paintPixel(s0, 20, 12);
-		const frame = currentFrame(s);
-		const ext = frameExtent(frame);
-		expect(ext.w).toBe(11);
-		expect(ext.h).toBe(7);
-		expect(ext.w).toBeGreaterThan(ext0.w);
-		// Every grid row is padded to the new width, and untouched cells are blank.
-		for (const grid of [frame.rows, frame.colors, frame.bg])
-			for (const row of grid) expect(row.length).toBe(11);
-		expect(cellAt(s, 0, 0).glyph).toBe(' ');
-		expect(cellAt(s, 10, 6).glyph).toBe('▘');
+		expect(s.doc).toBe(s0.doc); // no doc change — no auto-grow
+		expect(frameExtent(currentFrame(s))).toEqual(ext0); // kept its size
+		expect(s.feedback).toContain('clipped');
 	});
 
 	test('painting past the top/left edge is clipped, not grown into negative space', () => {
