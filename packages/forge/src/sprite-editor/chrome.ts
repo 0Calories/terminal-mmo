@@ -71,6 +71,9 @@ export interface RailInput {
 	readonly onionDepth: number;
 	// Rows available for the rail (the canvas region's height).
 	readonly height: number;
+	// Small-terminal rung 3 (spec #387): fold the playback box to a single hint
+	// row so the ink list keeps room. Decided by the degradation solver.
+	readonly foldPlayback?: boolean;
 }
 
 // One ink the rail lists: a palette entry, or the transparent pseudo-entry.
@@ -154,8 +157,12 @@ export function railModel(input: RailInput): RailRow[] {
 		options.findIndex((o) => optionMatches(o, input.ink)),
 	);
 	// The playback box is built first so the ink window's row budget is derived
-	// from its real size, never a hand-counted constant.
-	const playback = playbackBox(input);
+	// from its real size, never a hand-counted constant. When the degradation
+	// solver folds it (rung 3), it is a single hint row and the freed rows fall
+	// to the ink list automatically through the budget below.
+	const playback = input.foldPlayback
+		? foldedPlaybackBox(input)
+		: playbackBox(input);
 	// Rows left for inks after everything fixed: the boxes above, the blank
 	// separating ink from playback, and the playback box itself.
 	const avail = Math.max(1, input.height - (rows.length + 1 + playback.length));
@@ -238,6 +245,30 @@ function playbackBox(input: RailInput): RailRow[] {
 				{ text: 'P pose', dim: true, action: { type: 'poseMenu' } },
 				{ text: ' · ' },
 				{ text: 'A anchor', dim: true, action: { type: 'anchorMenu' } },
+			],
+		},
+	];
+}
+
+// The folded playback box (spec #387 rung 3): one hint row standing in for the
+// full box when the rail can't fit both boxes. Keeps the most-used controls —
+// play and add-Frame — clickable; the fps/pose/onion detail is dropped until the
+// terminal grows back and the full box returns.
+function foldedPlaybackBox(input: RailInput): RailRow[] {
+	const playing = input.playMode === 'pose';
+	return [
+		{
+			title: true,
+			spans: [
+				{ text: ' playback', dim: true },
+				{ text: '  ' },
+				{
+					text: playing ? '▶ . play' : '. play',
+					hot: playing,
+					action: { type: 'play', mode: 'pose' },
+				},
+				{ text: ' · ' },
+				{ text: 'n +f', dim: true, action: { type: 'addFrame' } },
 			],
 		},
 	];

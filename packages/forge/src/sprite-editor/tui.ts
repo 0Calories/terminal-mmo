@@ -58,6 +58,14 @@ import {
 } from './colorPicker';
 import { renderComposite, styleWithLocalColors } from './composite';
 import {
+	CHROME_ROWS,
+	type DegradationLayout,
+	PREVIEW_H,
+	PREVIEW_W,
+	previewVisible,
+	solveDegradation,
+} from './degradation';
+import {
 	applyInput,
 	type KeyPaint,
 	normalizeKey,
@@ -204,14 +212,14 @@ export interface SpriteEditorOpts {
 }
 
 // Two chrome rows: the status line and the hint line under it (spec #387).
-const CHROME_H = 2;
+// Owned by the degradation solver so it and the renderer agree on the canvas
+// interior's height.
+const CHROME_H = CHROME_ROWS;
 const SCROLLOFF = 2;
 
-// The floating Composited preview pane's native size (#393): docked top-right over
-// the canvas, ~34×11 including its border and control row. Clamped to the space
-// available so a narrow terminal never draws garbage (the ≥80×24 floor is #398).
-const PREVIEW_W = 34;
-const PREVIEW_H = 11;
+// PREVIEW_W / PREVIEW_H (the floating Composited preview's native ~34×11) now
+// live in `degradation.ts` alongside the ≥80×24 floor, so the solver and the
+// renderer size the pane identically.
 
 // How long each step of the dynamic p/a preview cycle holds before advancing to
 // the next core-palette variant (spec #401). Slow enough to read each colour.
@@ -321,10 +329,24 @@ export class SpriteEditor extends Renderable {
 	anchorMenu: AnchorMenuState | null = null;
 	mirror = false;
 	// The always-on floating Composited preview (#393): the WIP art rendered the way
-	// the game draws it, docked top-right over the canvas. `v` toggles it — the rare
-	// degradation override; it is on by default so the artist always draws against
-	// the truth.
-	composite = true;
+	// the game draws it, docked top-right over the canvas. It is shown by default so
+	// the artist always draws against the truth. On a small terminal rung 1 (spec
+	// #398) auto-hides it; `v` sets a manual override that wins in BOTH directions
+	// (force it visible when auto-hidden, hidden when auto-shown). `previewOverride`
+	// is null when following the auto rung; `autoPreview` is the last render's
+	// automatic decision, so `composite` is legible between renders.
+	previewOverride: boolean | null = null;
+	private autoPreview = true;
+	// The last render's degradation-ladder decisions for the strips→focus rung and
+	// its status hint (spec #398). The preview rung reads through `composite`.
+	private forceFocus = false;
+	private foldPlayback = false;
+	private focusHint = '';
+	// The effective preview visibility (rung 1 + manual override). Read by the
+	// renderer and by tests right after a `v` press, before the next render.
+	get composite(): boolean {
+		return previewVisible(this.autoPreview, this.previewOverride);
+	}
 	// The preview pane's own facing, flipped by its flip control. Independent of the
 	// canvas `mirror` split so flipping the preview never opens the mirror panel.
 	previewFacing: 1 | -1 = 1;
@@ -468,6 +490,12 @@ export class SpriteEditor extends Renderable {
 		return dynamicPreviewsAt(
 			Math.floor(this.previewPhaseMs / PREVIEW_CYCLE_MS),
 		);
+	}
+
+	// The widest Frame's width in cells — the degradation solver scales it to
+	// decide whether two full Frames fit at the current zoom (spec #398 rung 2).
+	private maxFrameCellW(): number {
+		return Math.max(1, ...this.state.doc.frames.map((f) => frameExtent(f).w));
 	}
 
 	// ---- pen / paint ----
@@ -683,9 +711,11 @@ export class SpriteEditor extends Renderable {
 	// tab), then open a coalescing stroke for the paint tools.
 	private canvasDown(button: 'left' | 'right', e: SpriteMouse): void {
 		let px: { x: number; y: number } | null = null;
-		if (this.view === 'strips') {
+		// Follow the view actually rendered — rung 2 (spec #398) can force strips
+		// into focus, so `geom.layout` (set only by the strips render) is the truth,
+		// not `this.view`.
+		if (this.geom.layout) {
 			const layout = this.geom.layout;
-			if (!layout) return;
 			const { cx, cy } = this.stripsContentAt(e);
 			const hit = stripsHit(layout, cx, cy);
 			if (!hit) {
@@ -809,9 +839,8 @@ export class SpriteEditor extends Renderable {
 		// A drag off the canvas simply paints nothing until it returns; the held
 		// button is remembered from mouseDown since drag reports vary by terminal.
 		let px: { x: number; y: number } | null = null;
-		if (this.view === 'strips') {
+		if (this.geom.layout) {
 			const layout = this.geom.layout;
-			if (!layout) return;
 			const { cx, cy } = this.stripsContentAt(e);
 			const hit = stripsHit(layout, cx, cy);
 			// A stroke stays in the Frame it started on — dragging across a
@@ -1217,6 +1246,14 @@ export class SpriteEditor extends Renderable {
 		this.playElapsedMs = 0;
 	}
 
+	// The `v` degradation override (spec #398): set a manual preview preference
+	// that wins over the auto rung in both directions — flip whatever is showing
+	// now. Reading `composite` folds in the current auto decision, so pressing `v`
+	// while auto-hidden forces it visible, and while auto-shown forces it hidden.
+	private togglePreview(): void {
+		this.previewOverride = !this.composite;
+	}
+
 	// Cycle the onion-skin depth 0 → 1 → 2 → 0 (spec #387). Presentation only.
 	private cycleOnion(): void {
 		this.onionDepth = cycleOnionDepth(this.onionDepth);
@@ -1311,7 +1348,7 @@ export class SpriteEditor extends Renderable {
 				return;
 			}
 			if (k.name === 'v') {
-				this.composite = !this.composite;
+				this.togglePreview();
 				return;
 			}
 			if (k.sequence === '.') {
@@ -1379,7 +1416,7 @@ export class SpriteEditor extends Renderable {
 			return;
 		}
 		if (k.name === 'v') {
-			this.composite = !this.composite;
+			this.togglePreview();
 			return;
 		}
 		if (k.sequence === '.') {
@@ -1663,7 +1700,9 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
-	// The 30-column left rail: tools · ink · playback, with a divider column.
+	// The 30-column left rail: tools · ink · playback, with a divider column. The
+	// rail never hides (spec #398 rung 4); when the terminal is short its playback
+	// box folds (rung 3) so the ink list keeps room.
 	private renderRail(buf: OptimizedBuffer, viewH: number, C: Palette): void {
 		buf.fillRect(0, 0, RAIL_W - 1, viewH, C.chromeBg);
 		for (let y = 0; y < viewH; y++)
@@ -1678,6 +1717,7 @@ export class SpriteEditor extends Renderable {
 			playMode: this.playMode,
 			onionDepth: this.onionDepth,
 			height: viewH,
+			foldPlayback: this.foldPlayback,
 		});
 		this.geom.rail = rows;
 		rows.slice(0, viewH).forEach((row, y) => {
@@ -1990,6 +2030,29 @@ export class SpriteEditor extends Renderable {
 
 		buf.fillRect(0, 0, W, H, C.bg);
 
+		// Solve the small-terminal degradation ladder (spec #398) for this size.
+		// Below the ≥80×24 floor the editor shows only a live placard — it never
+		// exits and never touches state, so it recovers instantly on resize. Above
+		// the floor the solver's rungs (preview auto-hide, forced focus, folded
+		// playback) drive the layout below; the render layer only obeys them.
+		const layout = solveDegradation({
+			termW: W,
+			termH: H,
+			zoom: this.zoom,
+			maxFrameCellW: this.maxFrameCellW(),
+			frameCount: this.state.doc.frames.length,
+			inkCount: this.entries().length + 1,
+			previewOverride: this.previewOverride,
+		});
+		this.autoPreview = layout.previewAutoShow;
+		this.forceFocus = layout.forceFocus;
+		this.foldPlayback = layout.foldPlayback;
+		this.focusHint = layout.focusHint;
+		if (layout.placard !== null) {
+			this.renderPlacard(buf, W, H, layout, C);
+			return;
+		}
+
 		// The frame the canvas shows this instant (the edit frame, or the animated
 		// frame during playback). cellAt only reads doc + frame name, so a shallow
 		// state copy re-points it at the display frame without any mutation.
@@ -2018,10 +2081,14 @@ export class SpriteEditor extends Renderable {
 		this.buildOnionLayers(C);
 
 		// Playback reviews motion on the single-frame canvas whichever view is
-		// active — the strips grid is a poor movie screen.
+		// active — the strips grid is a poor movie screen. Rung 2 (spec #398) forces
+		// focus when fewer than two Frames fit; the user's own view choice is kept
+		// so growing the terminal back restores strips.
+		const effectiveView =
+			this.forceFocus && this.view === 'strips' ? 'focus' : this.view;
 		if (this.playMode !== 'none') {
 			this.renderFocus(buf, viewW, viewH, viewState, false, C);
-		} else if (this.view === 'focus') {
+		} else if (effectiveView === 'focus') {
 			this.renderFocus(buf, viewW, viewH, viewState, true, C);
 		} else {
 			this.renderStrips(buf, viewW, viewH, C);
@@ -2106,6 +2173,10 @@ export class SpriteEditor extends Renderable {
 				clean ? C.ok : C.feedback,
 				C.chromeBg,
 			);
+		} else if (this.focusHint) {
+			// Rung 2's status hint (spec #398): tell the artist the strips folded to
+			// focus and how to get them back.
+			buf.drawText(this.focusHint.slice(0, W), 0, hintRow, C.hot, C.chromeBg);
 		} else {
 			const required = requiredHintLine(this.state.doc, this.role);
 			const hints = hintLine(this.state.tool);
@@ -2265,6 +2336,30 @@ export class SpriteEditor extends Renderable {
 			flip: { x0: flipX, x1: flipX + flipText.length - 1, y: y1 },
 			play: { x0: playX, x1: playX + playText.length - 1, y: y1 },
 		};
+	}
+
+	// The below-floor placard (spec #398): a live centred "too small" notice shown
+	// instead of the editor UI when the terminal drops under 80×24. Draws nothing
+	// but this, mutates no state, and clears the stale geometry so a click on the
+	// placard can't reach a canvas that isn't drawn — the editor recovers the
+	// instant the terminal grows back.
+	private renderPlacard(
+		buf: OptimizedBuffer,
+		W: number,
+		H: number,
+		layout: DegradationLayout,
+		C: Palette,
+	): void {
+		this.geom.viewH = 0;
+		this.geom.viewW = 0;
+		this.geom.layout = null;
+		this.geom.focus = null;
+		this.geom.preview = null;
+		buf.fillRect(0, 0, W, H, C.bg);
+		const text = layout.placard ?? '';
+		const row = Math.floor((H - 1) / 2);
+		const col = Math.max(0, Math.floor((W - text.length) / 2));
+		buf.drawText(text.slice(0, W), col, row, C.hot, C.bg);
 	}
 
 	// The `?` overlay: the complete grouped key map (spec #387).
