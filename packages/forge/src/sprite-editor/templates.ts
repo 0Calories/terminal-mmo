@@ -3,7 +3,7 @@
 // sentinel-filled (fully transparent) canvas — a blank slate the editor grows
 // as the artist paints. The templates parse cleanly (no diagnostics) so a
 // just-created sprite is immediately valid.
-import type { RGBAQuad } from '@mmo/core';
+import type { RGBAQuad } from '@mmo/core/entities';
 import type { SpriteDoc, SpriteFrameDoc } from '@mmo/render';
 
 export type SpriteRole = 'form' | 'weapon' | 'hat' | 'monster' | 'npc';

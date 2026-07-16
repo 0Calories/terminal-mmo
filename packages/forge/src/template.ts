@@ -1,4 +1,4 @@
-import type { ZoneType } from '@mmo/core';
+import type { ZoneType } from '@mmo/core/zones';
 
 const SIZE: Record<ZoneType, { w: number; h: number }> = {
 	field: { w: 60, h: 16 },

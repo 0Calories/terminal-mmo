@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { DEFAULT_COSMETICS, HUE_COUNT } from '@mmo/core';
+import { DEFAULT_COSMETICS, HUE_COUNT } from '@mmo/core/entities';
 import { HAT_IDS } from '@mmo/render';
 import {
 	CUSTOMIZE_FIELDS,

@@ -3,7 +3,7 @@
 // optional `@colors`/`@bg` grids) and a SpriteDoc. Grammar errors are
 // diagnostics, never throws. Parse <-> serialize round-trips losslessly for
 // any diagnostics-free document.
-import { type RGBAQuad, SCENE_PALETTE } from '@mmo/core';
+import { type RGBAQuad, SCENE_PALETTE } from '@mmo/core/entities';
 import { SENTINEL } from './sprite';
 
 // The dynamic recolor keys, reserved because their meaning is assigned at

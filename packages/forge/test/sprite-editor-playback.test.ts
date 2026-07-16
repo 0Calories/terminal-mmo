@@ -1,6 +1,6 @@
 // Headless tests for the pure animation-playback math (issue #339).
 import { describe, expect, test } from 'bun:test';
-import { EMOTE_FPS } from '@mmo/core';
+import { EMOTE_FPS } from '@mmo/core/sprites';
 import {
 	playbackFrame,
 	poseFps,

@@ -52,11 +52,18 @@ two, so animating is redrawing the grid. Every Body sprite must author the core
 _Avoid_: Body model, rig, skeleton (poses are whole frames, there is no rig)
 
 **Pose**:
-One selectable whole frame of a **Body sprite** (or **Weapon sprite**), chosen each
-render by a pure, shared function of replicated state so owner and observers agree.
-Body-pose priority is a fixed ladder — `hurt/stagger > combat > airborne > walk >
-emote > idle` — where, deliberately, walking cancels an **Emote**.
-_Avoid_: Frame (reserve for an individual grid), stance, animation state
+A named, selectable animation unit of the player's **Body sprite** — Poses exist
+specifically for players, handling the special frames and animations of states
+(`walk`, `jump`, attack) and **Emote**s. An ordered list of **Frame**s played at
+a per-Pose fps, where a single Frame is the common case and a Frame belonging to
+no Pose is its own implicit single-frame Pose. Which Pose shows is chosen each
+render by a pure, shared function of replicated state so owner and observers
+agree. Body-pose priority is a fixed ladder — `hurt/stagger > combat > airborne >
+walk > emote > idle` — where, deliberately, walking cancels an **Emote**. Other
+roles' multi-frame art (a **Weapon sprite**'s swing phases) is plain Frames
+selected by that role's own logic, not Poses.
+_Avoid_: Frame (a Pose *contains* Frames; reserve Frame for one grid), stance
+(see **Preview stance**), animation state
 
 **Walk cycle**:
 The `walkA↔walkB` alternation that animates a moving Avatar, flipped every stride of
@@ -232,7 +239,7 @@ _Avoid_: Emoji, reaction, gesture (one word — an emote is a body pose, not a p
 The resolved, *semantic* fact of a combat interaction — "target T was **hit** /
 **broke** (poise) / **died** / **swatted**, at (x,y), facing →, intensity
 N." It is what Combat resolution produces; a **VisualEffect** is its client-side
-presentation projection (via `effectsOf`), and a **Particle** is that VisualEffect's
+presentation projection (via the `present` routing layer), and a **Particle** is that VisualEffect's
 realization. The authority *produces* a CombatEvent by applying damage/poise (the poise
 result is what makes a contact a hit vs a break vs a death); the local Player *predicts*
 only the optimistic `hit` event from its own outgoing swing, for zero-latency feedback.
@@ -241,7 +248,7 @@ Avatar-target `hit` is never predicted (ADR 0013 §3). The kinds map `hit → bl
 `break → impact` (heavier), `death → gore` (tinted), `swat → impact` (a light clink — a
 melee frame shattering a shot, ADR 0017 §8 — at the shot's own damage, no poise bump).
 It **is** the wire payload (ADR 0029, superseding ADR 0019 §B): the server broadcasts
-CombatEvents and each client runs `effectsOf` locally to project them to
+CombatEvents and each client runs the `present` routing layer locally to project them to
 VisualEffects/SoundEffects — no site emits presentation inline, and the server holds no
 presentation knowledge. The originator is suppressed from its own broadcast (it already
 predicted its `hit`). Modeled as a discriminated union on `kind`, so each kind carries
@@ -252,10 +259,12 @@ _Avoid_: Effect (retired — see VisualEffect), HitEvent, Outcome
 **VisualEffect**:
 The client-side *visual* realization of a **CombatEvent** (later: other event kinds) —
 e.g. "a blood-hit at (x,y), facing →, intensity N." Produced by the client-side
-projection `effectsOf` the moment a CombatEvent arrives from the wire *or* is predicted
+`present` routing layer (ADR 0013 amendment — the one stateless place projection and
+realization meet) the moment a CombatEvent arrives from the wire *or* is predicted
 locally; it is **not** authoritative and **never on the wire** (ADR 0029 — the shared,
 authoritative thing is the CombatEvent). One VisualEffect realizes into **Particle**s
-(via **ParticleType**), plus **Camera-kick** and **Hitstop**; its audio twin is the
+(a named effect through the particle engine's spawn door), and the same routing decides
+when a moment also carries a **Camera-kick** and **Hitstop**; its audio twin is the
 **SoundEffect**. The visual half of presentation, owned entirely by the client — the
 server has no concept of it. Replaces the retired on-wire **Effect** (ADR 0013/0019, now
 0029).
@@ -269,18 +278,20 @@ velocity, and lifetime — simulated locally at render framerate. A client turns
 one VisualEffect into many Particles using local randomness, so the exact specks
 differ harmlessly between clients; only the CombatEvent (and thus the VisualEffect it
 projects to) is shared. Each Particle's motion and look (gravity, bounce, whether it
-rests, glyphs, color-over-life) come from its **ParticleType**, not from hardcoded
-blood behavior. Purely decorative and client-side, like a Sprite.
+rests, glyphs, color-over-life) come from its named effect's **ParticleType** profile,
+not from hardcoded blood behavior. Purely decorative and client-side, like a Sprite.
 _Avoid_: VisualEffect (that's the descriptor a Particle realizes), sprite, pixel (ambiguous), FX
 
 **ParticleType**:
-The visual profile a Particle belongs to (`blood`, later `dust`, `sparkle`,
-`spark`…) — a declarative data entry defining its whole behavior: gravity,
+The visual profile a Particle belongs to (`blood`, `gore`, `impact`, `levelup`, later
+`dust`, `sparkle`…) — a declarative data entry defining its whole behavior: gravity,
 bounce, terrain collision, rest and fade durations, glyph sets, color-over-life,
-z-layer. One generic client simulator reads the profile, so a new look is a new
-data entry, not new code. Distinct from a **CombatEvent**'s `kind`: that is the
-*semantic game event* (`hit`), mapped client-side (via a **VisualEffect**) to one or
-more ParticleTypes — the indirection that lets one event spawn several looks.
+count-from-intensity. One generic client simulator reads the profile, so a new look is
+a new definition file, not new code — and since the ADR 0013 amendment the profile is
+**engine-internal**: the particle engine's only public surface is the *named effect*
+(`spawn('blood', at, dir, intensity)`); no caller can construct or pass a raw profile.
+Distinct from a **CombatEvent**'s `kind`: that is the *semantic game event* (`hit`),
+mapped client-side (via a **VisualEffect**) to a named effect.
 _Avoid_: CombatEvent.kind, ParticleKind, sprite
 
 **Hitstop**:
@@ -305,7 +316,7 @@ The client-side *audible* realization of a moment — the audio twin of a Partic
 Where a Particle answers *what it looks like*, a SoundEffect answers *what it
 sounds like*. Two sources feed it: an authoritative **CombatEvent** (so a
 nearby Avatar's hit or death is heard, spatialized by position — realized by the same
-client `effectsOf` that produces VisualEffects) and a purely local interaction (your
+client `present` routing that produces VisualEffects) and a purely local interaction (your
 own jump, a menu blip — never on the wire). Always
 best-effort and non-authoritative: if there is no audio device, every SoundEffect
 is a silent no-op and the World behaves identically. The shared sim never
@@ -322,6 +333,18 @@ _Avoid_: Mob, enemy, NPC, creature
 A non-hostile, server-controlled character (shopkeeper, quest-giver, etc.).
 Distinct from Monster — NPCs are never fought.
 _Avoid_: Vendor, bot
+
+**Brain**:
+The decision function that controls a **Monster** each tick: it perceives a
+limited view of its Zone and produces a **Drive** — including whether to commit
+an attack — and nothing else. A Brain never applies damage, never moves
+anything, and never touches another entity; every consequence it initiates
+flows through the same **Strike** resolution as a Player's. Each Monster
+archetype (chaser, **Brute**, **Ranged poker**, the **Boss**) is one Brain, and
+a Brain may keep private memory that the rest of the simulation — and the wire
+— never sees.
+_Avoid_: AI (too generic), behavior script, controller (reserve for the
+Player-side input path)
 
 **Melee committer**:
 A Monster archetype that deals damage *only* through a telegraphed melee **Attack
@@ -464,6 +487,15 @@ impulse fed into it, so a shove decays under drag and a launch arcs under gravit
 on the same path that walks and jumps. Monsters are airborne-capable on it with no
 special case (`stepEntity` in `physics.ts`).
 _Avoid_: Rigidbody, actor, character controller
+
+**Drive**:
+The per-tick movement decision an entity's controller feeds into the physics
+step — move direction, jump, and optionally an attack commit. Produced from the
+Player's **Intent** for an Avatar and by a **Brain** for a Monster; the
+simulation consumes Drives without knowing or caring who is driving. The seam
+that makes Avatars and Monsters move through one shared path.
+_Avoid_: Input (raw client keys), Intent (the client→server bundle a Drive is
+derived from), command, controls
 
 **Super-armor**:
 The temporary **Poise** spike an entity holds during a wind-up, letting a heavy
@@ -690,6 +722,21 @@ jumping up through a platform while moving left/right feels smooth. Authored per
 distinct from a Wall so a structure can mix posts (walls) and ledges (platforms).
 _Avoid_: Ledge, floor, semisolid
 
+**Sweep**:
+The physics module's terrain-collision primitive: what does a point travelling
+from A to B hit? Bidirectional and axis-separated (x leg, then y leg), it checks
+every cell crossed so fast travel cannot tunnel, and it carries the global
+one-way rule — a One-way platform stops only descending travel; a Wall blocks
+point travel in every direction. The ascending leg exists for point travellers:
+rising Particle specks used to embed inside thick solids (ADR 0013 amendment).
+Rising *bodies* still pass any solid vertically — the **Momentum body** step
+keeps ADR 0026's no-head-bonk by never sweeping upward. Both integrators (the
+Momentum-body step and the projectile step) resolve terrain through it, and the
+client **Particle** simulation rebuilds on it, so "what blocks a moving point"
+has exactly one answer (ADR 0032).
+_Avoid_: Raycast, trace, sweep test (physics-engine jargon; this is cell-grid
+point travel)
+
 **Interact edge**:
 The `interact` intent as a one-shot **edge**, not a held flag (ADR 0027): a single
 physical press of the interact key yields exactly one true reading, used to enter a
@@ -744,7 +791,8 @@ the game-world language above.
 **Sprite file**:
 The `.sprite` asset file that *is* a sprite's source of truth — human-readable
 art (glyph grids you can see in a text editor, zone-style) plus its metadata:
-named Pose frames, **Anchor**s, colors, per-pose animation speed. One format
+**Frame**s grouped into named **Pose**s, **Anchor**s, colors, per-Pose animation
+speed. One format
 covers every sprite shape (a hat is the degenerate single-frame case; a Form and
 a Weapon are richer profiles of the same format). Identity is the filename
 (cf. Zone id), and the containing directory names its **Sprite role**. Consumed
@@ -766,9 +814,18 @@ the author paints sub-cell pixel art and the editor compiles it to half-block
 glyph grids, so nobody hand-XORs quadrant glyphs. WYSIWYG against the shared
 renderer: mirrored facing, animation playback, and the **Composited preview**
 are part of drawing, not a separate check. An **inexpressible cell** (more
-colors than a terminal cell can carry) is blocked at paint time — unrepresentable,
-not merely validated (cf. Placeable).
+colors than a terminal cell can carry) is auto-resolved at paint time — the ink
+wins the touched Pixel and the cell coerces to the nearest legal state, with
+status-line feedback; never refused, never merely validated after the fact
+(cf. Placeable).
 _Avoid_: Paint program, pixel editor (it edits Sprite files, pixels are the means)
+
+**Frame**:
+One named glyph grid in a Sprite file — the unit the Sprite editor paints and the
+thing a **Pose** orders into an animation. A Frame referenced by no Pose is its
+own implicit single-frame Pose, which is how bare frame names (`walkA`) stay
+selectable at render time.
+_Avoid_: Cel, image, page
 
 **Pixel**:
 The Sprite editor's atomic unit — one quadrant sub-cell, four per terminal cell
@@ -803,3 +860,9 @@ its swing, a Form wearing hat and weapon — against the game's real background,
 through the shared renderer. The forge analogue of the Zone editor's "faithful
 render" promise.
 _Avoid_: Mannequin, dress-up view, test render
+
+**Preview stance**:
+The **Composited preview**'s scenario — the facing plus what the mannequin is
+doing (which body Pose, which weapon swing phase). A selection *across* multiple
+sprites at once, which is why it is not itself a **Pose**.
+_Avoid_: Pose (a stance picks poses, plural), preview mode

@@ -1,10 +1,12 @@
+import { loadCatalogs, loadZoneSet } from '@mmo/assets';
+import { BOX, type Input } from '@mmo/core/entities';
 import {
-	BOX,
-	createGameFromZones,
-	type GameState,
-	type Input,
-	step,
-} from '@mmo/core';
+	createLocalWorld,
+	type LocalWorld,
+	localAvatar,
+	localZoneState,
+	stepLocalWorld,
+} from '@mmo/core/world';
 import {
 	buildSceneStyle,
 	drawEntitySprite,
@@ -13,12 +15,11 @@ import {
 } from '@mmo/render';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
-import { loadCatalogs, loadZoneSet } from './io';
 import { type Cam, clampPreviewCam } from './preview';
 
 // Avatar is drawn on top by the shell, so it's not in `entities` here.
-export function playSceneOf(game: GameState): ZoneScene {
-	const zone = game.world.zones[game.player.zoneId];
+export function playSceneOf(lw: LocalWorld): ZoneScene {
+	const zone = mustZoneState(lw).zone;
 	return {
 		terrain: zone.terrain,
 		portals: zone.portals,
@@ -44,11 +45,24 @@ export function followCam(
 	);
 }
 
-export function playStatusLine(game: GameState): string {
-	const z = game.world.zones[game.player.zoneId];
-	const a = game.player.avatar;
-	const p = game.player.progress;
+export function playStatusLine(lw: LocalWorld): string {
+	const z = mustZoneState(lw).zone;
+	const me = mustAvatar(lw);
+	const a = me.avatar;
+	const p = me.progress;
 	return `zone ${z.id}  hp ${Math.ceil(a.hp)}/${a.maxHp}  lv ${p.level}  gold ${p.gold}  ·  arrows/ad move · up/space jump · j attack · e portal · q quit`;
+}
+
+function mustZoneState(lw: LocalWorld) {
+	const zs = localZoneState(lw);
+	if (!zs) throw new Error('local session is not placed in any Zone');
+	return zs;
+}
+
+function mustAvatar(lw: LocalWorld) {
+	const me = localAvatar(lw);
+	if (!me) throw new Error('local session has no Avatar');
+	return me;
 }
 
 // Terminals without Kitty release events: a held key sticks, so drop it after this idle.
@@ -134,7 +148,9 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 
 	const { createCliRenderer, Renderable, RGBA } = await import('@opentui/core');
 	const style = buildSceneStyle((r, g, b, a) => RGBA.fromInts(r, g, b, a));
-	let game = createGameFromZones(zones, id);
+	// The real server world with one synthetic local session (ADR 0032):
+	// portals, deaths, and Dungeon instances behave exactly as they do live.
+	let lw = createLocalWorld(zones, id);
 	const input = new PlayInput();
 
 	class PlayRenderable extends Renderable {
@@ -144,19 +160,19 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 		}
 
 		protected renderSelf(buf: OptimizedBuffer): void {
-			const a = game.player.avatar;
+			const a = mustAvatar(lw).avatar;
+			const scene = playSceneOf(lw);
 			const cam = followCam(
 				a.x + BOX.w / 2,
 				a.y + BOX.h / 2,
-				game.world.zones[game.player.zoneId].terrain.w,
-				game.world.zones[game.player.zoneId].terrain.h,
+				scene.terrain.w,
+				scene.terrain.h,
 				buf.width,
 				buf.height,
 			);
-			const scene = playSceneOf(game);
 			renderZoneScene(buf, scene, cam, style);
 			drawEntitySprite(buf, a, cam, style, scene.terrain);
-			const status = playStatusLine(game);
+			const status = playStatusLine(lw);
 			for (let x = 0; x < buf.width; x++)
 				buf.setCell(x, 0, ' ', style.paletteDefault, style.terrainBg);
 			for (let i = 0; i < status.length && i < buf.width; i++)
@@ -184,7 +200,7 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 	);
 
 	renderer.setFrameCallback(async (dt: number) => {
-		game = step(game, input.poll(performance.now()), dt);
+		lw = stepLocalWorld(lw, input.poll(performance.now()), dt);
 	});
 
 	renderer.start();

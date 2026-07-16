@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
-import type { Entity, Input } from '@mmo/core';
-import { COMBAT, DEFAULT_WEAPON, EMOTES, SPAWN } from '@mmo/core';
+import { COMBAT, DEFAULT_WEAPON } from '@mmo/core/combat';
+import { EMOTES, type Entity, type Input } from '@mmo/core/entities';
+import { SPAWN } from '@mmo/core/zones';
 import {
 	applyEmote,
 	arriveInZone,
@@ -23,12 +24,15 @@ const IDLE: Input = {
 	interact: false,
 };
 
+// Feet flush on TERRAIN's ground top (row 22, body height 5): the old y=20
+// embedded the body 3 rows into the floor, which only "worked" because the
+// pre-sweep collision checked destination cells alone.
 function grounded(over: Partial<Entity> = {}): Entity {
 	return entity({
 		id: 1,
 		type: 'player',
 		x: 10,
-		y: 20,
+		y: 17,
 		onGround: true,
 		...over,
 	});

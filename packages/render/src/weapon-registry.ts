@@ -6,9 +6,9 @@
 // any more. A dangling/unknown sprite id (or an out-of-range catalog index)
 // resolves to `undefined`, so the renderer safely draws no weapon.
 
-import { weaponById } from '@mmo/core';
+import { loadSpriteSources, type SpriteSource } from '@mmo/assets';
+import { weaponById } from '@mmo/core/combat';
 import { compileWeaponSprite } from './sprite-compile';
-import { loadSpriteSources, type SpriteSource } from './sprite-sources';
 import { acceptSprite } from './sprite-validate';
 import type { WeaponSprite } from './weapon-sprite';
 

@@ -1,4 +1,4 @@
-import { type Portal, SPAWN } from '@mmo/core';
+import { type Portal, SPAWN } from '@mmo/core/zones';
 
 export type Arrival = [number, number];
 

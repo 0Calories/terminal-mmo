@@ -1,4 +1,6 @@
-import { DEFAULT_WEAPON, loadZones, WEAPONS, type Zone } from '@mmo/core';
+import { loadZones } from '@mmo/assets';
+import { DEFAULT_WEAPON, WEAPONS } from '@mmo/core/combat';
+import type { Zone } from '@mmo/core/zones';
 import { createCliRenderer, type TerminalCapabilities } from '@opentui/core';
 import { ConfigStore } from './config';
 import { runSession } from './game/session';

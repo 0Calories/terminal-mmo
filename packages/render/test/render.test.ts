@@ -1,15 +1,13 @@
 import { expect, test } from 'bun:test';
+import { bladeEdgeArc, meleeHitbox, sweepIndex } from '@mmo/core/combat';
 import {
 	BOX,
-	bladeEdgeArc,
 	type Entity,
 	type EntityType,
 	type Facing,
-	meleeHitbox,
-	parseTerrain,
-	STRIDE,
-	sweepIndex,
-} from '@mmo/core';
+} from '@mmo/core/entities';
+import { parseTerrain } from '@mmo/core/physics';
+import { STRIDE } from '@mmo/core/sprites';
 import {
 	type CellBuffer,
 	drawEntitySprite,

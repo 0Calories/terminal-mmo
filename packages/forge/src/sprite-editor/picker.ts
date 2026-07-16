@@ -4,7 +4,7 @@
 // color" sub-flow (pick an unused single char, then enter r,g,b). No I/O, no
 // `@opentui/core`: the TUI renders the `PickerState` and feeds keys through the
 // reducers, applying any emitted action to the underlying editor state.
-import type { RGBAQuad } from '@mmo/core';
+import type { RGBAQuad } from '@mmo/core/entities';
 import {
 	colorInk,
 	type Ink,

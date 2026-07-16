@@ -1,4 +1,4 @@
-import type { Entity } from '@mmo/core';
+import type { Entity } from '@mmo/core/entities';
 
 export function jumpStarted(
 	prev: Pick<Entity, 'onGround'>,

@@ -18,7 +18,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SCENE_PALETTE } from '@mmo/core';
+import { SCENE_PALETTE } from '@mmo/core/entities';
 import { parseSpriteFile } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
 import { RAIL_W } from '../src/sprite-editor/chrome';

@@ -8,18 +8,13 @@
 // compiled sprite) falls back to a placeholder guard so rendering never crashes;
 // a diagnostic for such a dangling reference is `forge sprite check`'s job.
 
-import {
-	DEFAULT_FORM_ID,
-	type EntityType,
-	MONSTER_SPRITE_REF,
-	NPC_SPRITE_REF,
-	type Npc,
-} from '@mmo/core';
+import { loadSpriteSources, type SpriteSource } from '@mmo/assets';
+import { DEFAULT_FORM_ID, type EntityType, type Npc } from '@mmo/core/entities';
+import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
 import { formFrame } from './body-sprite';
 import { formById } from './forms';
 import { Sprite } from './sprite';
 import { spriteFromDoc } from './sprite-compile';
-import { loadSpriteSources, type SpriteSource } from './sprite-sources';
 import { acceptSprite } from './sprite-validate';
 
 // A guard sprite used only when a reference is dangling (its id has no compiled

@@ -1,22 +1,26 @@
-import type { Box, CombatEvent, Entity, Input, Terrain } from '@mmo/core';
 import {
-	applyImpulse,
 	COMBAT,
+	type CombatEvent,
 	canStartDodge,
-	capabilityUnlocked,
-	clientStepAvatar,
-	emoteById,
-	initialEmoteT,
-	PHYS,
 	predictHits,
-	SPAWN,
-	spawnAvatar,
 	stepAvatarCombat,
 	weaponById,
-} from '@mmo/core';
+} from '@mmo/core/combat';
+import {
+	type Box,
+	type Entity,
+	emoteById,
+	type Input,
+	initialEmoteT,
+	spawnAvatar,
+	type Terrain,
+} from '@mmo/core/entities';
+import { applyImpulse, PHYS } from '@mmo/core/physics';
+import { capabilityUnlocked } from '@mmo/core/progression';
+import { clientStepAvatar, SPAWN } from '@mmo/core/zones';
 
 export function spawnPredicted(weapon: number): Entity {
-	return { ...spawnAvatar(SPAWN.x, SPAWN.y), weapon };
+	return spawnAvatar(SPAWN.x, SPAWN.y, { weapon });
 }
 
 // A zone change teleports the Avatar: take the server's arrival point and kill inherited velocity.
@@ -109,8 +113,8 @@ export function reconcileHealth(
 /**
  * Show this swing's hits immediately rather than waiting a round trip. Records the
  * targets on `predicted.swingHits` so one swing can't hit the same monster twice.
- * Returns the optimistic `hit` CombatEvents; projection into VisualEffects happens
- * where they're consumed (see effects/project.ts, ADR 0029).
+ * Returns the optimistic `hit` CombatEvents; routing into presentation happens
+ * where they're consumed (see render/present.ts, ADR 0029).
  */
 export function predictSwingEvents(
 	predicted: Entity,

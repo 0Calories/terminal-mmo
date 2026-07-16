@@ -3,7 +3,11 @@ import { generateKeyPairSync } from 'node:crypto';
 import { existsSync, mkdtempSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { encodePublicKeyLine, SshBlobWriter, verifyChallenge } from '@mmo/core';
+import {
+	encodePublicKeyLine,
+	SshBlobWriter,
+	verifyChallenge,
+} from '@mmo/core/persistence';
 import { ConfigStore } from '../src/config';
 import {
 	discoverSshIdentity,

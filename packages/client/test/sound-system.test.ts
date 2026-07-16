@@ -1,13 +1,9 @@
 import { expect, test } from 'bun:test';
 import { SoundSystem } from '../src/sound/system';
 
-test('without a TTY the system stays disabled and never touches audio', () => {
+test('without a TTY the audio facade stays disabled and safe to use', () => {
 	const sound = new SoundSystem({ isTTY: false });
 	expect(sound.enabled).toBe(false);
-});
-
-test('play() and dispose() are safe no-ops when disabled', () => {
-	const sound = new SoundSystem({ isTTY: false });
 	expect(() => sound.play('jump')).not.toThrow();
 	expect(() => sound.play('jump', { volume: 0.5, pan: -1 })).not.toThrow();
 	expect(() => sound.dispose()).not.toThrow();
@@ -40,16 +36,6 @@ test('master and per-bus volumes are settable and clamped to 0..1', () => {
 	expect(sound.busVolume('combat')).toBe(1);
 });
 
-test('mixer setters never throw when disabled', () => {
-	const sound = new SoundSystem({ isTTY: false });
-	expect(() => {
-		sound.setMuted(true);
-		sound.setMasterVolume(0.3);
-		sound.setBusVolume('movement', 0.7);
-		sound.toggleMute();
-	}).not.toThrow();
-});
-
 test('applyAudioPrefs restores saved state and round-trips through audioPrefs', () => {
 	const sound = new SoundSystem({ isTTY: false });
 	const saved = {
@@ -77,36 +63,6 @@ test('applyAudioPrefs clamps stored values and does not fire onChange', () => {
 	expect(sound.busVolume('combat')).toBe(0);
 	expect(sound.busVolume('ui')).toBe(1);
 	expect(changes).toBe(0);
-});
-
-test('a single transient engine error does not permanently disable audio', () => {
-	const sound = new SoundSystem({ isTTY: false });
-	sound.enabled = true;
-	let degraded = 0;
-	sound.onDegraded = () => degraded++;
-	(sound as unknown as { handleEngineError(e: Error): void }).handleEngineError(
-		new Error('voice pool exhausted'),
-	);
-	expect(sound.enabled).toBe(true);
-	expect(degraded).toBe(0);
-});
-
-test('audio degrades to silence and surfaces once after a sustained burst of engine errors', () => {
-	const sound = new SoundSystem({ isTTY: false });
-	sound.enabled = true;
-	let degraded = 0;
-	sound.onDegraded = () => degraded++;
-	const fire = (
-		sound as unknown as { handleEngineError(e: Error): void }
-	).handleEngineError.bind(sound);
-	for (let i = 0; i < 8; i++) fire(new Error('glitch'));
-	expect(sound.enabled).toBe(true);
-	expect(degraded).toBe(0);
-	fire(new Error('glitch'));
-	expect(sound.enabled).toBe(false);
-	expect(degraded).toBe(1);
-	fire(new Error('glitch'));
-	expect(degraded).toBe(1);
 });
 
 test('every user-facing mixer change notifies onChange for write-through', () => {

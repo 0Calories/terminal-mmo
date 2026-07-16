@@ -1,0 +1,179 @@
+export type Facing = 1 | -1;
+
+export interface Terrain {
+	w: number;
+	h: number;
+	cells: Uint8Array; // row-major: y * w + x
+}
+
+export interface Control {
+	moveX: -1 | 0 | 1;
+	jump: boolean;
+}
+
+export interface Input extends Control {
+	attack: boolean;
+	guard?: boolean;
+	interact?: boolean;
+	dodge?: boolean;
+	skill?: number;
+}
+
+export type EntityType = 'player' | 'chaser' | 'shooter' | 'brute';
+
+/** The Monster archetypes — every EntityType except the player-controlled Avatar. */
+export type MonsterType = Exclude<EntityType, 'player'>;
+
+export type AttackPhase = 'windup' | 'active' | 'recovery';
+
+export type MoveId = 'idle' | 'basic' | 'dodge';
+
+export interface ActionState {
+	move: MoveId;
+	phase: AttackPhase;
+	progress: number;
+	flags: number;
+	emote: string | null;
+	emoteT: number;
+}
+
+export interface Cosmetics {
+	hue: number;
+	/** Sprite id from sprites/hats/*.sprite (scanned by the server); '' = no hat. */
+	hat: string;
+	nameplate: number;
+	/** Sprite id from sprites/forms/*.sprite (scanned by the server); never empty. */
+	form: string;
+}
+
+export interface Entity {
+	id: number;
+	type: EntityType;
+	x: number;
+	y: number;
+	vx: number;
+	vy: number;
+	speed: number;
+	facing: Facing;
+	onGround: boolean;
+	hp: number;
+	maxHp: number;
+	hurtT: number;
+	attackT: number;
+	attackCdT?: number;
+	mass?: number;
+	// Impulse velocity kept apart from input velocity (recomputed each tick), else a shove is erased.
+	ivx?: number;
+	poise?: number;
+	poiseMax?: number;
+	poiseT?: number;
+	stunT?: number;
+	dodgeT?: number;
+	dodgeCdT?: number;
+	guardT?: number;
+	swingHits?: number[];
+	/**
+	 * Brain-private memory (ADR 0034): read and written ONLY by this entity's
+	 * own Brain. Opaque to the tick and combat, and NEVER in snapshots/wire.
+	 */
+	ai?: unknown;
+	skillCooldowns?: Record<string, number>;
+	spawnIndex?: number;
+	contributors?: number[];
+	name?: string;
+	cosmetics?: Cosmetics;
+	weapon?: number;
+	bubble?: string;
+	emoteId?: string;
+	emoteT?: number;
+	action?: ActionState;
+}
+
+export interface Tint {
+	r: number;
+	g: number;
+	b: number;
+}
+
+export interface SpawnPoint {
+	type: MonsterType;
+	x: number;
+	y: number;
+}
+
+export interface PendingRespawn {
+	spawnIndex: number;
+	remaining: number;
+}
+
+export interface Box {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+}
+
+// A Strike lands only on opposing-Faction victims; two Avatars share `players`, so PvE holds.
+export type Faction = 'players' | 'monsters';
+
+export interface Strike {
+	attackerId: number;
+	attackerKind: 'avatar' | 'monster' | 'projectile';
+	hitbox: Box;
+	damage: number;
+	poiseDamage: number;
+	facing: Facing;
+	faction: Faction;
+	/**
+	 * Attacker origin at projection time — Guard's frontal-arc check faces this
+	 * x. Absent on a Projectile Strike: a shot always reads as frontal from its
+	 * travel direction (`facing`), whatever column its body occupies.
+	 */
+	attackerX?: number;
+	/** Impulse applied along `facing` when this Strike lands a Poise break. */
+	knockback: number;
+	knockbackUp: number;
+}
+
+export interface Projectile {
+	id: number;
+	x: number;
+	y: number;
+	vx: number;
+	vy: number;
+	life: number;
+	damage: number;
+	poiseDamage: number;
+	knockback: number;
+	knockbackUp: number;
+}
+
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+export type Slot = 'weapon' | 'armor' | 'accessory';
+
+export interface ItemAffix {
+	stat: string;
+	value: number;
+}
+
+export interface Item {
+	id: number;
+	base: string;
+	slot: Slot;
+	rarity: Rarity;
+	affixes: ItemAffix[];
+}
+
+export interface PlayerProgress {
+	level: number;
+	xp: number;
+	gold: number;
+}
+
+// Instanced loot: only `owner` sees or picks it up (snapshotFor streams each its own Drops).
+export interface Drop extends Box {
+	id: number;
+	owner: number;
+	item: Item;
+	ttl: number;
+}

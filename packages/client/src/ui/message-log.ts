@@ -1,4 +1,5 @@
-import { CHAT_MAX_LEN, type Rarity } from '@mmo/core';
+import type { Rarity } from '@mmo/core/entities';
+import { CHAT_MAX_LEN } from '@mmo/core/protocol';
 import {
 	BoxRenderable,
 	fg,

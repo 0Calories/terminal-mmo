@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { type Catalogs, findOrphanGlyphs, NPC_BOX, ZONE_MAX } from '@mmo/core';
+import {
+	type Catalogs,
+	findOrphanGlyphs,
+	NPC_BOX,
+	ZONE_MAX,
+} from '@mmo/core/zones';
 import { cellAt, type EditorDoc, serializeDoc } from '../src/doc';
 import {
 	clampDiagIndex,

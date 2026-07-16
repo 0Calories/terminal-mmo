@@ -1,18 +1,16 @@
+import { loadCatalogs, loadZone, loadZoneSet } from '@mmo/assets';
+import { BOX, type Entity, type Npc, spawnMonster } from '@mmo/core/entities';
 import {
-	BOX,
 	type Catalogs,
 	type Diagnostic,
-	type Entity,
 	findOrphanGlyphs,
 	NPC_BOX,
-	type Npc,
 	PORTAL_BOX,
 	parseZone,
-	spawnMonster,
 	validateZone,
 	ZONE_MAX,
 	type Zone,
-} from '@mmo/core';
+} from '@mmo/core/zones';
 import {
 	buildSceneStyle,
 	drawEntitySprite,
@@ -34,7 +32,7 @@ import {
 	zoneType,
 } from './doc';
 import { canRedo, canUndo, initHistory, record, redo, undo } from './history';
-import { loadCatalogs, loadZone, loadZoneSet, writeZone } from './io';
+import { writeZone } from './io';
 import { buildPalette, erase, type Placeable, place } from './placeable';
 import {
 	type Arrival,

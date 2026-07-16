@@ -8,7 +8,8 @@
 //   2. Passing DIFFERENT art actually swaps the piece — and per-field presence is
 //      deliberate: `{ weapon }` never strips the hat; `{ hat: null }` does.
 import { expect, test } from 'bun:test';
-import { BOX, type Entity, type EntityType, parseTerrain } from '@mmo/core';
+import { BOX, type Entity, type EntityType } from '@mmo/core/entities';
+import { parseTerrain } from '@mmo/core/physics';
 import {
 	type CellBuffer,
 	drawEntitySprite,

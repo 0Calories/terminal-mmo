@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { BOX } from '@mmo/core';
+import { BOX } from '@mmo/core/entities';
 import {
 	CAMERA,
 	type CameraState,
@@ -95,10 +95,12 @@ test('the Avatar screen column never bounces while walking (no double-round shim
 import {
 	applyKick,
 	CAMERA_KICK,
+	inView,
 	type Kick,
 	NO_KICK,
+	SPAWN_MARGIN,
 	stepKick,
-} from '../src/effects/camera-kick';
+} from '../src/render/camera';
 
 const mag = (k: Kick) => Math.max(Math.abs(k.x), Math.abs(k.y));
 
@@ -133,25 +135,12 @@ test('stepKick clamps the decremented value at zero (never overshoots past 0)', 
 	expect(k).toEqual({ x: 0, y: 0 });
 });
 
-import {
-	HITSTOP_MS,
-	isFrozen,
-	NO_HITSTOP,
-	stepHitstop,
-	triggerHitstop,
-} from '../src/effects/hitstop';
-
-test('hitstop freezes on trigger and drains to unfrozen over its duration', () => {
-	expect(isFrozen(NO_HITSTOP)).toBe(false);
-	let h = triggerHitstop(NO_HITSTOP);
-	expect(isFrozen(h)).toBe(true);
-	h = stepHitstop(h, HITSTOP_MS);
-	expect(isFrozen(h)).toBe(false);
-});
-
-test('a re-trigger mid-freeze cannot shorten the remaining freeze', () => {
-	let h = triggerHitstop(NO_HITSTOP, 100);
-	h = stepHitstop(h, 30);
-	h = triggerHitstop(h, 50);
-	expect(h.remainingMs).toBe(70);
+test('inView pads the view by the spawn margin: a just-off-screen effect still spawns', () => {
+	const view = { x: 10, y: 5, w: 60, h: 20 };
+	expect(inView(view, 40, 15)).toBe(true);
+	expect(inView(view, 10 - SPAWN_MARGIN, 5)).toBe(true);
+	expect(inView(view, 10 + 60 + SPAWN_MARGIN, 25)).toBe(true);
+	expect(inView(view, 10 - SPAWN_MARGIN - 1, 15)).toBe(false);
+	expect(inView(view, 40, 5 + 20 + SPAWN_MARGIN + 1)).toBe(false);
+	expect(inView(view, 500, 500)).toBe(false);
 });

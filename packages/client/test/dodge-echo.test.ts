@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import type { Entity } from '@mmo/core';
-import { DODGE_TOTAL, IDLE_ACTION } from '@mmo/core';
+import { DODGE_TOTAL, IDLE_ACTION } from '@mmo/core/combat';
+import type { Entity } from '@mmo/core/entities';
 import {
 	DODGE_ECHO_LIFE_MS,
 	type DodgeEcho,
@@ -8,7 +8,7 @@ import {
 	isDodging,
 	spawnDodgeEcho,
 	stepDodgeEchoes,
-} from '../src/effects/dodge-echo';
+} from '../src/render/dodge-echo';
 
 function avatar(over: Partial<Entity> = {}): Entity {
 	return {
@@ -67,4 +67,26 @@ test('the planted echo captures the pre-hop origin and the hop facing', () => {
 	const echoes: DodgeEcho[] = [];
 	spawnDodgeEcho(echoes, { x: 42, y: 7, facing: -1, type: 'player' });
 	expect(echoes[0]).toMatchObject({ x: 42, y: 7, facing: -1, ageMs: 0 });
+});
+
+import type { OptimizedBuffer } from '@opentui/core';
+import { DodgeTracker } from '../src/render/dodge-echo';
+
+test('the tracker turns a dodge rising edge into a drawn echo — an idle entity leaves none', () => {
+	const cells: { x: number; y: number }[] = [];
+	const buf = {
+		setCellWithAlphaBlending(x: number, y: number) {
+			cells.push({ x, y });
+		},
+	} as unknown as OptimizedBuffer;
+
+	const tracker = new DodgeTracker();
+	const still = avatar({ dodgeT: 0 });
+	tracker.update([still], 16);
+	tracker.draw(buf, { x: 0, y: 0 }, 64, 24);
+	expect(cells.length).toBe(0);
+
+	tracker.update([{ ...still, dodgeT: 0.2 }], 16);
+	tracker.draw(buf, { x: 0, y: 0 }, 64, 24);
+	expect(cells.length).toBeGreaterThan(0);
 });

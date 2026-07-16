@@ -2,7 +2,7 @@
 // Playback is presentation — it never mutates the doc or history. The TUI holds
 // the wall-clock elapsed time and asks these functions which frame/pose to show
 // this tick, so the logic stays deterministic and unit-testable without a clock.
-import { EMOTE_FPS } from '@mmo/core';
+import { EMOTE_FPS } from '@mmo/core/sprites';
 
 // Which frame of a `frameCount`-long pose is showing after `elapsedS` seconds at
 // `fps`. A single-frame (or empty) pose is always frame 0; a non-positive fps

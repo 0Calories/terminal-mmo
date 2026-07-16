@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SCENE_PALETTE } from '@mmo/core';
+import { SCENE_PALETTE } from '@mmo/core/entities';
 import { parseSpriteFile, type SpriteDoc } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';

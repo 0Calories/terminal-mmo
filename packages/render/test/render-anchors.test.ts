@@ -3,7 +3,8 @@
 // with no anchors falls back to the BodySprite's grip. Plain assertions over a
 // FakeBuffer (see golden-frames.test.ts for the pattern) rather than snapshots.
 import { expect, test } from 'bun:test';
-import type { Entity, EntityType } from '@mmo/core';
+import type { SpriteSource } from '@mmo/assets';
+import type { Entity, EntityType } from '@mmo/core/entities';
 import {
 	type BodySprite,
 	buildFormRegistry,
@@ -12,7 +13,6 @@ import {
 	formFrame,
 	type RenderStyle,
 } from '../src';
-import type { SpriteSource } from '../src/sprite-sources';
 
 interface Cell {
 	ch: string;

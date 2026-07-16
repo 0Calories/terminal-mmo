@@ -1,18 +1,20 @@
 import {
-	type AvatarSnapshot,
-	type ClientMessage,
 	type Cosmetics,
 	DEFAULT_COSMETICS,
-	decodeServerMessage,
 	type Entity,
+	type Item,
+} from '@mmo/core/entities';
+import {
+	type AvatarSnapshot,
+	type ClientMessage,
+	decodeServerMessage,
 	encodeClientMessage,
 	type GameState,
-	type Item,
 	type MonsterSnapshot,
 	type PlayerState,
 	type ServerMessage,
-	type Zone,
-} from '@mmo/core';
+} from '@mmo/core/protocol';
+import type { Zone } from '@mmo/core/zones';
 import type { SshIdentity } from '../ssh-auth';
 import { bubbleTtl } from '../ui/bubble';
 import { CLIENT_VERSION } from '../version';

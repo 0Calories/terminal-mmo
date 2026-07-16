@@ -20,6 +20,7 @@
 //
 // This module is pure (no `@opentui/core`, no I/O): the TUI glue passes a cell
 // buffer + style and a `CompositeView` selecting the pose/phase/facing/elapsed.
+import { SWING_TOTAL, swingPhase, swingProgress } from '@mmo/core/combat';
 import {
 	type ActionState,
 	BOX,
@@ -27,11 +28,8 @@ import {
 	type Entity,
 	type EntityType,
 	type Facing,
-	SWING_TOTAL,
-	spriteMetaFor,
-	swingPhase,
-	swingProgress,
-} from '@mmo/core';
+} from '@mmo/core/entities';
+import { spriteMetaFor } from '@mmo/core/sprites';
 import {
 	type BodySprite,
 	type CellBuffer,

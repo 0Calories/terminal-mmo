@@ -6,7 +6,7 @@ import {
 	HUES,
 	NAMEPLATE_COLORS,
 	SCENE_PALETTE,
-} from '@mmo/core';
+} from '@mmo/core/entities';
 import {
 	type CellBuffer,
 	drawNameplates,

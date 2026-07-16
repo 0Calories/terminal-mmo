@@ -14,8 +14,8 @@
 // hint line. `?` opens the complete grouped key map.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import type { RGBAQuad } from '@mmo/core';
-import { SCENE_PALETTE } from '@mmo/core';
+import type { RGBAQuad } from '@mmo/core/entities';
+import { SCENE_PALETTE } from '@mmo/core/entities';
 import {
 	buildSceneStyle,
 	type CellBuffer,

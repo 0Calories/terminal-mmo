@@ -1,18 +1,20 @@
 import { expect, test } from 'bun:test';
+import { loadZones } from '@mmo/assets/meta';
+import type { Item } from '@mmo/core/entities';
 import {
-	addSession,
-	createServerWorld,
-	type Item,
-	loadZones,
 	type PlayerSave,
 	registryFromSaves,
 	restoredFromSave,
-	type ServerWorld,
 	saveFromAvatar,
+} from '@mmo/core/persistence';
+import {
+	addSession,
+	createServerWorld,
+	type ServerWorld,
 	stepServerWorld,
 	zoneOf,
 	zoneStateOf,
-} from '@mmo/core';
+} from '@mmo/core/world';
 import { openPlayerStore } from '../src/store';
 
 const KEY = 'ssh-ed25519 AAAAtestkeyblob';

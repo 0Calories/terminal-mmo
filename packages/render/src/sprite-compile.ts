@@ -1,6 +1,6 @@
 // Pure compiler from a parsed `.sprite` document frame (see `sprite-file.ts`)
 // to a runtime `Sprite` (see `sprite.ts`).
-import type { PoseId } from '@mmo/core';
+import type { PoseId } from '@mmo/core/sprites';
 import type { BodySprite } from './body-sprite';
 import { SENTINEL, Sprite } from './sprite';
 import type { SpriteDoc, SpriteFrameDoc } from './sprite-file';

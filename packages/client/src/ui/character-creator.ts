@@ -1,5 +1,10 @@
-import type { Cosmetics, Entity } from '@mmo/core';
-import { BOX, DEFAULT_FORM_ID, maxHpForLevel } from '@mmo/core';
+import {
+	BOX,
+	type Cosmetics,
+	DEFAULT_FORM_ID,
+	type Entity,
+} from '@mmo/core/entities';
+import { maxHpForLevel } from '@mmo/core/progression';
 import {
 	buildSceneStyle,
 	drawNameplates,

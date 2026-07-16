@@ -3,8 +3,8 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { SpriteSource } from '@mmo/assets';
 import { buildHatRegistry, HAT_IDS, hatById } from '../src/hats';
-import type { SpriteSource } from '../src/sprite-sources';
 
 const SPRITES_DIR = join(import.meta.dir, '../../../sprites/hats');
 

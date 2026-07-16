@@ -5,7 +5,10 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEFAULT_WEAPON, type Entity, parseTerrain, WEAPONS } from '@mmo/core';
+import type { SpriteSource } from '@mmo/assets';
+import { DEFAULT_WEAPON, WEAPONS } from '@mmo/core/combat';
+import type { Entity } from '@mmo/core/entities';
+import { parseTerrain } from '@mmo/core/physics';
 import {
 	buildWeaponRegistry,
 	type CellBuffer,
@@ -14,7 +17,6 @@ import {
 	WEAPON_SPRITE_IDS,
 	weaponSpriteById,
 } from '../src';
-import type { SpriteSource } from '../src/sprite-sources';
 
 const SWORD_TEXT = readFileSync(
 	join(import.meta.dir, '../../../sprites/weapons/sword.sprite'),

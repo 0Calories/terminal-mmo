@@ -15,6 +15,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@mmo/assets": "workspace:*",
 		"@mmo/core": "workspace:*",
 		"@mmo/render": "workspace:*",
 		"@opentui/core": "^0.4.1"

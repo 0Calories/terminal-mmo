@@ -1,4 +1,4 @@
-import type { VisualEffect, VisualEffectKind } from '../effects/project';
+import type { VisualEffect, VisualEffectKind } from '../render/present';
 import type { SoundKind } from './registry';
 
 export const EFFECT_SOUND_MAP: Record<VisualEffectKind, SoundKind> = {

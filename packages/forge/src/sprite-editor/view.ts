@@ -3,8 +3,8 @@
 // buffer and keyboard. Everything is a deterministic function over the pure
 // editor state so it is unit-testable headlessly, exactly like the zone editor's
 // `editor.ts` helpers.
-import type { Facing, RGBAQuad } from '@mmo/core';
-import { mirrorAnchorX } from '@mmo/core';
+import type { Facing, RGBAQuad } from '@mmo/core/entities';
+import { mirrorAnchorX } from '@mmo/core/sprites';
 import { ROLE_PROFILES, type SpriteDoc, spriteFromDoc } from '@mmo/render';
 import type { AnchorMarker, DynamicPreviews } from './state';
 import type { SpriteRole } from './templates';

@@ -7,10 +7,12 @@
 // silent-default hazard, surfaced as an error), and reserved `p`/`a` redefinition
 // (aggregated from the parser). Missing requirements are `error` diagnostics.
 
-import { EMOTES, MONSTER_SPRITE_REF, NPC_SPRITE_REF, WEAPONS } from '@mmo/core';
+import type { SpriteSource } from '@mmo/assets';
+import { WEAPONS } from '@mmo/core/combat';
+import { EMOTES } from '@mmo/core/entities';
+import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
 import type { SpriteDiagnostic, SpriteDoc } from './sprite-file';
 import { parseSpriteFile } from './sprite-file';
-import type { SpriteSource } from './sprite-sources';
 
 // The emote ids the sim knows about (core's registry). A Form pose named
 // `emote:<x>` is only meaningful if `<x>` is one of these.

@@ -1,46 +1,52 @@
 import { randomBytes } from 'node:crypto';
+// The server's sole door into asset content (ADR 0033): ids/roles/zone-list.
+// Sprite text and art code stay unreachable; depcruise enforces the boundary.
+import { loadZones, spriteIds } from '@mmo/assets/meta';
 import {
-	type AvatarIntent,
-	addSession,
-	applyBuy,
-	applyCosmetics,
-	applySell,
-	CHAT_MAX_LEN,
-	type ClientMessage,
 	type Cosmetics,
+	emoteById,
+	sanitizeFormId,
+	sanitizeHatId,
+} from '@mmo/core/entities';
+import {
 	canonicalPublicKey,
 	claimHandle,
-	createServerWorld,
-	decodeClientMessage,
-	emoteById,
-	encodeServerMessage,
-	handleOf,
-	isReleaseVersion,
-	loadZones,
 	NONCE_LEN,
 	parsePublicKeyLine,
 	registryFromSaves,
-	removeSession,
 	resolveAuth,
 	restoredFromSave,
-	type ServerWorld,
-	sanitizeFormId,
-	sanitizeHatId,
 	saveFromAvatar,
+	validHandle,
+} from '@mmo/core/persistence';
+import {
+	CHAT_MAX_LEN,
+	type ClientMessage,
+	decodeClientMessage,
+	encodeServerMessage,
+	isReleaseVersion,
+} from '@mmo/core/protocol';
+import {
+	addSession,
+	createServerWorld,
+	handleOf,
+	removeSession,
+	type ServerWorld,
 	sessionByHandle,
 	sessionsInZone,
 	spawnNewAvatar,
 	stepServerWorld,
-	validHandle,
 	worldSnapshotFor,
 	zoneOf,
 	zoneStateOf,
-} from '@mmo/core';
+} from '@mmo/core/world';
+import type { AvatarIntent } from '@mmo/core/zones';
 import type { ServerWebSocket } from 'bun';
+import { applyCosmetics } from './cosmetics';
 import { foldPendingEdges } from './intents';
 import { installShutdownHooks } from './shutdown';
-import { scanFormIds, scanHatIds } from './sprites';
 import { openPlayerStore } from './store';
+import { applyBuy, applySell } from './vendor';
 
 const PORT = Number(process.env.PORT) || Number(process.env.MMO_PORT) || 8080;
 
@@ -76,11 +82,11 @@ function reject(ws: ServerWebSocket<WsData>, reason: string) {
 }
 
 // Set-membership validation is the server's job (core only shapes the type);
-// computed once at startup by scanning sprites/hats and sprites/forms. Any hat
-// or form id not in the scanned set sanitizes to the default; the default Form
-// ('buddy') ships as sprites/forms/buddy.sprite, so it is a member of the set.
-const validHatIds: ReadonlySet<string> = scanHatIds();
-const validFormIds: ReadonlySet<string> = scanFormIds();
+// computed once at startup from @mmo/assets/meta. Any hat or form id not in
+// the set sanitizes to the default; the default Form ('buddy') ships as
+// sprites/forms/buddy.sprite, so it is a member of the set.
+const validHatIds: ReadonlySet<string> = spriteIds('hats');
+const validFormIds: ReadonlySet<string> = spriteIds('forms');
 
 function withValidCosmetics(c: Cosmetics): Cosmetics {
 	return {

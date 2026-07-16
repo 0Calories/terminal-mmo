@@ -29,7 +29,7 @@
 //     cell-wide, so the cell can never hold two colors plus a hole.
 // The fg/bg split survives only as a half-block compilation detail of the
 // `.sprite` grids; the artist never selects a bg.
-import type { RGBAQuad } from '@mmo/core';
+import type { RGBAQuad } from '@mmo/core/entities';
 import {
 	glyphFromQuadrants,
 	parseSpriteFile,

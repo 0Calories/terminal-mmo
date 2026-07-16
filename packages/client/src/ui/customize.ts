@@ -1,15 +1,17 @@
 import {
 	type Cosmetics,
 	clampCosmetics,
-	HANDLE_CHAR_RE,
-	HANDLE_MAX_LEN,
 	HUE_COUNT,
 	NAMEPLATE_COUNT,
+} from '@mmo/core/entities';
+import {
+	HANDLE_CHAR_RE,
+	HANDLE_MAX_LEN,
 	validHandle,
-} from '@mmo/core';
+} from '@mmo/core/persistence';
 import { FORM_IDS, HAT_IDS } from '@mmo/render';
 
-export { HANDLE_MAX_LEN } from '@mmo/core';
+export { HANDLE_MAX_LEN } from '@mmo/core/persistence';
 
 export function filterHandleDraft(raw: string): string {
 	const kept = Array.from(raw).filter((ch) => HANDLE_CHAR_RE.test(ch));

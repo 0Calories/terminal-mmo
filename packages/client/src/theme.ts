@@ -1,4 +1,5 @@
-import { RARITY_COLOR, type Rarity } from '@mmo/core';
+import type { Rarity } from '@mmo/core/entities';
+import { RARITY_COLOR } from '@mmo/core/items';
 import { RGBA } from '@opentui/core';
 
 export const COLORS = {
@@ -28,10 +29,8 @@ export const COLORS = {
 };
 
 export const RARITY_RGBA: Record<Rarity, RGBA> = Object.fromEntries(
-	(
-		Object.entries(RARITY_COLOR) as [
-			Rarity,
-			{ r: number; g: number; b: number },
-		][]
-	).map(([rarity, c]) => [rarity, RGBA.fromInts(c.r, c.g, c.b, 255)]),
+	Object.entries(RARITY_COLOR).map(([rarity, [r, g, b, a]]) => [
+		rarity,
+		RGBA.fromInts(r, g, b, a),
+	]),
 ) as Record<Rarity, RGBA>;

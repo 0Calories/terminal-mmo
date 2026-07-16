@@ -5,7 +5,7 @@ import {
 	type RGBAQuad,
 	SCENE_COLORS,
 	SCENE_PALETTE,
-} from '@mmo/core';
+} from '@mmo/core/entities';
 import type { RenderStyle } from './render';
 
 // Realizes the @mmo/core scene palette (plain RGBA data the sim references for tint)

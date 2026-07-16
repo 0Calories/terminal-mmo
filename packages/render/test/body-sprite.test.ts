@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { BOX, DEFAULT_FORM_ID } from '@mmo/core';
+import { BOX, DEFAULT_FORM_ID } from '@mmo/core/entities';
 import { type BodySprite, FORM_IDS, formById, formFrame, Sprite } from '../src';
 
 describe('the Form registry (directory scan, ADR 0031)', () => {

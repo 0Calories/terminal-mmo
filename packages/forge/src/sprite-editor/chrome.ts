@@ -4,7 +4,7 @@
 // deterministic function of the pure editor state — `tui.ts` only draws the
 // rows and routes clicks back through the returned actions, so the rail's
 // content and hit-targets are unit-testable without a screen.
-import type { RGBAQuad } from '@mmo/core';
+import type { RGBAQuad } from '@mmo/core/entities';
 import type { Ink, PaletteEntry, SpriteTool } from './state';
 
 // The rail's total width in columns, divider included (locked by #375).

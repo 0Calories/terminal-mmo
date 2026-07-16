@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { SCENE_PALETTE } from '@mmo/core';
+import { SCENE_PALETTE } from '@mmo/core/entities';
 import {
 	bitName,
 	composeStatusLine,
