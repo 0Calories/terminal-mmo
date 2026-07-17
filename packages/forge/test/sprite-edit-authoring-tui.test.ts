@@ -224,6 +224,51 @@ describe('playback', () => {
 		};
 	}
 
+	test('playback is not a trap: rail stop, pane stop and esc all end it; painting stays gated (ADR 0036)', async () => {
+		// Rail play button toggles off again.
+		const t1 = await mount({ doc: animDoc(), id: 'anim', role: 'hat' });
+		await clickRail(t1, /\bplay\b/);
+		expect(t1.editor.playing).toBe(true);
+		await clickRail(t1, /\bplay\b/);
+		expect(t1.editor.playing).toBe(false);
+
+		// esc stops playback.
+		const t2 = await mount({ doc: animDoc(), id: 'anim2', role: 'hat' });
+		await clickRail(t2, /\bplay\b/);
+		expect(t2.editor.playing).toBe(true);
+		t2.editor.key(key('escape'));
+		expect(t2.editor.playing).toBe(false);
+
+		// The preview pane's ■ stop control stops it.
+		const t3 = await mount({ doc: animDoc(), id: 'anim3', role: 'hat' });
+		await clickRail(t3, /\bplay\b/);
+		expect(t3.editor.playing).toBe(true);
+		await t3.renderOnce();
+		const rows = t3.captureCharFrame().split('\n');
+		let stop: { x: number; y: number } | null = null;
+		for (let y = 0; y < rows.length; y++) {
+			const x = rows[y].indexOf('■ stop');
+			if (x >= 0) {
+				stop = { x, y };
+				break;
+			}
+		}
+		if (!stop) throw new Error('no ■ stop control on screen');
+		t3.editor.mouseDown({ button: 0, x: stop.x, y: stop.y });
+		t3.editor.mouseUp();
+		expect(t3.editor.playing).toBe(false);
+
+		// While playing, a canvas click paints nothing (playback gates paint only).
+		const t4 = await mount({ doc: animDoc(), id: 'anim4', role: 'hat' });
+		await clickRail(t4, /\bplay\b/);
+		const docBefore = t4.editor.state.doc;
+		t4.editor.mouseDown({ button: 0, x: 45, y: 5 });
+		t4.editor.mouseUp();
+		expect(t4.editor.state.doc).toBe(docBefore);
+		expect(t4.editor.state.history.past.length).toBe(0);
+		expect(t4.editor.playing).toBe(true);
+	});
+
 	test('a tick advances the displayed frame without mutating the doc', async () => {
 		const t = await mount({ doc: animDoc(), id: 'anim', role: 'hat' });
 		expect(t.editor.displayFrame).toBe('a');

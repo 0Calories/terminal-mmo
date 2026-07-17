@@ -641,8 +641,10 @@ export class SpriteEditor extends Renderable {
 
 	// ---- mouse ----
 
-	// True while a modal (picker/menu/stamp-await/help) or playback owns input,
-	// so canvas mouse gestures stay inert.
+	// True while a modal (picker/menu/stamp-await/help) owns input, so canvas
+	// mouse gestures stay inert. Playback is NOT a modal (ADR 0036): it gates
+	// only canvas paint gestures — the chrome (pane controls, rail buttons)
+	// stays live, which is what makes its stop button clickable.
 	private modalActive(): boolean {
 		return (
 			this.colorPicker !== null ||
@@ -650,8 +652,7 @@ export class SpriteEditor extends Renderable {
 			this.anchorMenu !== null ||
 			this.awaitingStamp ||
 			this.helpOpen ||
-			this.state.resize !== null ||
-			this.playMode !== 'none'
+			this.state.resize !== null
 		);
 	}
 
@@ -801,6 +802,9 @@ export class SpriteEditor extends Renderable {
 	// the pointer (activating the Frame click-through in strips / on a focus
 	// tab), then open a coalescing stroke for the paint tools.
 	private canvasDown(button: 'left' | 'right', e: SpriteMouse): void {
+		// Playback suppresses painting, nothing else (ADR 0036): a canvas press
+		// while playing edits nothing — the chrome routes handled above stay live.
+		if (this.playMode !== 'none') return;
 		let px: { x: number; y: number } | null = null;
 		// Follow the view actually rendered — rung 2 (spec #398) can force strips
 		// into focus, so `geom.layout` (set only by the strips render) is the truth,
@@ -1462,17 +1466,22 @@ export class SpriteEditor extends Renderable {
 			this.helpOpen = true;
 			return;
 		}
-		// While playing, only quit is honored on the keyboard; anything that would
-		// edit is refused so the doc/history stay untouched. The rail/preview-pane
-		// buttons (stop, mirror, preview) stay live — they route via the mouse.
+		// While playing, quit and esc are honored on the keyboard (esc stops the
+		// playback, ADR 0036); anything that would edit is refused so the doc and
+		// history stay untouched. The rail/preview-pane buttons stay live via the
+		// mouse — playback gates painting only.
 		if (this.playMode !== 'none') {
 			if (k.name === 'q') {
 				this.onQuit?.();
 				return;
 			}
+			if (k.name === 'escape') {
+				this.togglePlay(this.playMode);
+				return;
+			}
 			this.state = {
 				...this.state,
-				feedback: 'playback active — click ▶ to stop',
+				feedback: 'playback active — esc or click ▶ to stop',
 			};
 			return;
 		}
