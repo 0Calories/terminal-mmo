@@ -918,6 +918,21 @@ function paintColor(
 		return commitQuadrant(state, cellX, cellY, newMask, key, bg, note);
 	}
 
+	// The touched Pixel is the cell's ONLY lit Pixel: replacing it preserves no
+	// other art, so the nearest legal state is a plain recolor in place — the
+	// complement stays transparent. Demoting the old fg to bg here would flood
+	// the transparent quadrants with the old colour (the fatbits "blot").
+	if ((cell.mask & ~t) === 0)
+		return commitQuadrant(
+			state,
+			cellX,
+			cellY,
+			t,
+			key,
+			'',
+			`recoloured '${cell.fg}' → '${key}'`,
+		);
+
 	// One-colour + transparent cell, different fg: overpaint. The ink wins the
 	// touched Pixel as the lone fg; the old fg demotes into the bg slot, filling
 	// the complement, so the cell goes fully opaque.

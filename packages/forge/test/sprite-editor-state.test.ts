@@ -120,6 +120,22 @@ describe('paintPixel — coercion (auto-resolve, never refuse)', () => {
 		expect(s.feedback).toContain('overpainted');
 	});
 
+	test('overpainting the lone lit Pixel recolours in place — no demote, no blot', () => {
+		// The touched Pixel is the cell's ONLY lit Pixel: replacing it preserves no
+		// other art, so the nearest legal state is a plain recolor. Demoting the old
+		// fg to bg here would flood the cell's three transparent quadrants with the
+		// old colour (the "blot" bug).
+		let s = paintPixel(blankState(), 0, 0); // 'p' at TL, rest transparent
+		s = setInk(s, colorInk('g'));
+		s = paintPixel(s, 0, 0); // the SAME Pixel, different colour
+		const cell = cellAt(s, 0, 0);
+		expect(cell.fg).toBe('g'); // the new ink wins the touched Pixel
+		expect(cell.bg).toBe(''); // the complement stays transparent
+		expect(cell.mask).toBe(0b0001); // only TL is lit
+		expect(cell.glyph).toBe('▘');
+		expect(s.feedback).toContain('recoloured');
+	});
+
 	test('recolor: painting a different colour into an opaque two-colour cell recolours the fg', () => {
 		let s = opaqueCell(); // fg 'g' @ BR, bg 'p'
 		s = setInk(s, colorInk('w'));
