@@ -7,7 +7,7 @@ import {
 	validateSpriteSet,
 } from '@mmo/render';
 import type { CliDeps } from './cli';
-import { RAIL_TOOLS, TOOL_GLYPH_FALLBACKS } from './sprite-editor/chrome';
+import { RAIL_TOOLS, TOOL_GLYPH_FALLBACKS } from './sprite-editor';
 
 const USAGE = [
 	'usage:',

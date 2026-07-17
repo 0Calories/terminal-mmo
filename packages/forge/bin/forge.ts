@@ -2,12 +2,11 @@
 import { join } from 'node:path';
 import { run } from '../src/cli';
 import { runEdit } from '../src/editor';
-import { runPicker } from '../src/picker/tui';
+import { runPicker } from '../src/picker';
 import { runPlay } from '../src/play';
 import { runPreview } from '../src/preview';
 import { runSprite } from '../src/sprite-cli';
-import { runSpritePreview } from '../src/sprite-editor/preview';
-import { runSpriteEdit } from '../src/sprite-editor/tui';
+import { runSpriteEdit, runSpritePreview } from '../src/sprite-editor';
 
 const zonesRoot = join(process.cwd(), 'zones');
 const spritesRoot = join(process.cwd(), 'sprites');
