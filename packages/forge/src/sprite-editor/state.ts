@@ -1438,6 +1438,18 @@ export function clearSelection(state: SpriteEditorState): SpriteEditorState {
 // Commit the pending `select` gesture into a committed selection rectangle. A
 // no-op for any other pending anchor (the geometry tools commit through
 // commitShape).
+// The rectangle an in-progress select drag spans right now, clamped to the
+// Frame — what the canvas draws as a live marquee (ADR 0036: the drag shows
+// the same dotted ants as a committed selection, never ink). Null unless a
+// select shape is pending.
+export function pendingSelectionRect(
+	state: SpriteEditorState,
+): Selection | null {
+	const shape = state.shape;
+	if (shape?.tool !== 'select') return null;
+	return makeSelection(state, shape.anchor, shape.to);
+}
+
 export function commitSelection(state: SpriteEditorState): SpriteEditorState {
 	const shape = state.shape;
 	if (shape?.tool !== 'select') return state;

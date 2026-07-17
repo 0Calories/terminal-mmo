@@ -250,7 +250,12 @@ function applyAnchorGesture(
 	const moved = moveCursor(state, x, y);
 	const tool = moved.tool as AnchorTool;
 	const constrain = input.mods.shift;
-	const ink = input.button === 'secondary' ? TRANSPARENT_INK : moved.ink;
+	// Select never paints, so its pending shape carries no captured ink (ADR
+	// 0036); the geometry tools capture the press-time ink (right → transparent).
+	const ink =
+		tool === 'select' || input.button === 'secondary'
+			? TRANSPARENT_INK
+			: moved.ink;
 	const finish =
 		tool === 'select'
 			? (s: SpriteEditorState) =>

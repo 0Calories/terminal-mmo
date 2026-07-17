@@ -1108,6 +1108,45 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 	});
 });
 
+describe('select drag renders the dotted marquee, never ink (ADR 0036)', () => {
+	test('an in-progress select drag draws · marquee cells, not ink-tinted blocks', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('marq', 'hat'),
+			id: 'marq',
+			role: 'hat',
+		});
+		t.editor.key(key('7', { sequence: '7' })); // select tool
+		// Drag from the block origin (RAIL_W, 1) — in-progress, not released.
+		t.editor.mouseDown({ button: 0, x: RAIL_W, y: 1 });
+		t.editor.mouseDrag({ button: 0, x: RAIL_W + 6, y: 5 });
+		await t.renderOnce();
+		const cap = t.captureSpans();
+		const cellAt = (x: number, y: number) => {
+			let col = 0;
+			for (const sp of cap.lines[y].spans) {
+				if (x < col + sp.width)
+					return { ch: sp.text[x - col] ?? ' ', bg: sp.bg.toInts() };
+				col += sp.width;
+			}
+			return null;
+		};
+		const origin = cellAt(RAIL_W, 1);
+		// The dotted ants, not a blank ink block.
+		expect(origin?.ch).toBe('·');
+		// And nowhere does the drag paint the active ink colour (p) as a block.
+		expect(
+			canvasHasBg(
+				t.captureSpans(),
+				[STANDARD_PALETTE.p[0], STANDARD_PALETTE.p[1], STANDARD_PALETTE.p[2]],
+				10,
+			),
+		).toBe(false);
+		// The pending select shape carries no captured ink at all.
+		expect(t.editor.state.shape?.tool).toBe('select');
+		expect(t.editor.state.shape?.ink).toEqual(TRANSPARENT_INK);
+	});
+});
+
 describe('Sprite editor shape tools (#394)', () => {
 	// Default ×2 zoom: the active block sits at (RAIL_W, 1); a Pixel is 2 cells.
 	const bx = RAIL_W;

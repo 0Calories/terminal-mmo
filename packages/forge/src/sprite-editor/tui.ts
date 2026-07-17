@@ -126,6 +126,7 @@ import {
 	nudgeFloat,
 	paletteEntries,
 	pasteFromClipboard,
+	pendingSelectionRect,
 	pixelToCell,
 	placeAnchor,
 	readPixel,
@@ -1728,6 +1729,21 @@ export class SpriteEditor extends Renderable {
 		C: Palette,
 	): void {
 		if (!this.state.shape) return;
+		// The select drag is a marquee, not a paint preview (ADR 0036): draw the
+		// same dotted ants a committed selection shows, in the marquee colour.
+		const pending = pendingSelectionRect(this.state);
+		if (pending) {
+			this.drawMarqueeRing(
+				buf,
+				pending,
+				this.state,
+				mapPx,
+				clip,
+				C.anchorFg,
+				C,
+			);
+			return;
+		}
 		const z = this.zoom;
 		const color = this.previewRGBA(this.state.shape.ink, C);
 		for (const p of shapePreviewPixels(this.state)) {
@@ -1756,8 +1772,23 @@ export class SpriteEditor extends Renderable {
 	): void {
 		const sel = selectionOverlay(this.state);
 		if (!sel) return;
-		const z = this.zoom;
 		const marquee = this.state.float ? C.hot : C.anchorFg;
+		this.drawMarqueeRing(buf, sel, disp, mapPx, clip, marquee, C);
+	}
+
+	// The dotted marching-ants ring shared by the committed selection and the
+	// in-progress select drag (ADR 0036): each border Pixel's z×z block is edged
+	// with '·' cells over the art's own background, never occluding the inside.
+	private drawMarqueeRing(
+		buf: OptimizedBuffer,
+		sel: { x0: number; y0: number; x1: number; y1: number },
+		disp: SpriteEditorState,
+		mapPx: (px: number, py: number) => { x: number; y: number },
+		clip: { x0: number; x1: number; y0: number; y1: number },
+		color: RGBA,
+		C: Palette,
+	): void {
+		const z = this.zoom;
 		for (let py = sel.y0; py <= sel.y1; py++)
 			for (let px = sel.x0; px <= sel.x1; px++) {
 				const border =
@@ -1778,7 +1809,7 @@ export class SpriteEditor extends Renderable {
 						const sy = o.y + dy;
 						if (sx < clip.x0 || sx >= clip.x1 || sy < clip.y0 || sy >= clip.y1)
 							continue;
-						buf.setCell(sx, sy, '·', marquee, under);
+						buf.setCell(sx, sy, '·', color, under);
 					}
 			}
 	}
