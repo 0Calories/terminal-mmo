@@ -1,31 +1,23 @@
 // Pure state seam (spec #397): the eyedropper samples the colour KEY at a
-// Pixel, and `;`/`'` nudge the active ink along the rail order. Asserted as
-// state → action → next ink + feedback, never internal representation.
+// Pixel. Asserted as state → action → next ink + feedback, never internal
+// representation. (The `;`/`'` ink nudge was retired with the swatch grid —
+// ink selection is mouse-only.)
 import { describe, expect, test } from 'bun:test';
-import { STANDARD_PALETTE } from '@mmo/core/entities';
 import {
 	colorInk,
 	eyedropAt,
 	initSpriteEditor,
-	inkLabel,
 	moveCursor,
-	nudgeInk,
 	paintPixel,
-	paletteEntries,
 	type SpriteEditorState,
 	setInk,
 	stampGlyph,
 	TRANSPARENT_INK,
 } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
-import { SPRITE_PREVIEWS } from '../src/sprite-editor/view';
 
 function blankState(): SpriteEditorState {
 	return initSpriteEditor(emptySpriteDoc('test', 'hat'));
-}
-
-function entriesFor(state: SpriteEditorState) {
-	return paletteEntries(state, STANDARD_PALETTE, SPRITE_PREVIEWS);
 }
 
 describe('eyedropAt — sample the key, not the RGBA (spec #397)', () => {
@@ -79,39 +71,5 @@ describe('eyedropAt — sample the key, not the RGBA (spec #397)', () => {
 		s = moveCursor(s, 5, 1);
 		const picked = eyedropAt(s, s.cursor.x, s.cursor.y);
 		expect(picked.ink).toEqual(colorInk('c'));
-	});
-});
-
-describe('nudgeInk — step to the adjacent rail swatch (spec #397)', () => {
-	test('steps forward and back through the rail order', () => {
-		const s = blankState();
-		const entries = entriesFor(s);
-		const first = colorInk(entries[0].key);
-		const fromFirst = nudgeInk(setInk(s, first), entries, 1);
-		expect(fromFirst.ink).toEqual(colorInk(entries[1].key));
-		const back = nudgeInk(fromFirst, entries, -1);
-		expect(back.ink).toEqual(first);
-	});
-
-	test('transparent is the last swatch — forward from it wraps to the first', () => {
-		const s = setInk(blankState(), TRANSPARENT_INK);
-		const entries = entriesFor(s);
-		const wrapped = nudgeInk(s, entries, 1);
-		expect(wrapped.ink).toEqual(colorInk(entries[0].key));
-	});
-
-	test('stepping back from the first swatch wraps to transparent', () => {
-		const s = blankState();
-		const entries = entriesFor(s);
-		const at0 = setInk(s, colorInk(entries[0].key));
-		const wrapped = nudgeInk(at0, entries, -1);
-		expect(inkLabel(wrapped.ink)).toBe('transparent');
-	});
-
-	test('an ink not in the rail nudges from the start rather than dead-ending', () => {
-		const s = setInk(blankState(), colorInk('§')); // not a rail swatch
-		const entries = entriesFor(s);
-		const nudged = nudgeInk(s, entries, 1);
-		expect(nudged.ink).toEqual(colorInk(entries[1].key));
 	});
 });

@@ -21,8 +21,12 @@ import { join } from 'node:path';
 import { HUES, SCENE_PALETTE, STANDARD_PALETTE } from '@mmo/core/entities';
 import { parseSpriteFile } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
-import { RAIL_W } from '../src/sprite-editor/chrome';
-import { colorInk, readPixel } from '../src/sprite-editor/state';
+import { RAIL_W, railModel } from '../src/sprite-editor/chrome';
+import {
+	colorInk,
+	paletteEntries,
+	readPixel,
+} from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
 import { resolveColorKey, SPRITE_PREVIEWS } from '../src/sprite-editor/view';
@@ -527,20 +531,16 @@ describe('Sprite editor palette rail: quick-pick, eyedrop, nudge (#397)', () => 
 		expect(t.editor.state.ink).toEqual(painted);
 	});
 
-	test("; and ' nudge the active ink to the adjacent swatch, reversibly", async () => {
+	test("ink selection is mouse-only: ; and ' no longer nudge the ink", async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('nudge', 'hat'),
 			id: 'nudge',
 			role: 'hat',
 		});
-		t.editor.key(key('c'));
-		t.editor.key(key('g', { sequence: 'g' }));
-		t.editor.key(key('enter'));
-		expect(t.editor.state.ink).toEqual(colorInk('g'));
-		t.editor.key(key("'", { sequence: "'" })); // forward
-		expect(t.editor.state.ink).not.toEqual(colorInk('g'));
-		t.editor.key(key(';', { sequence: ';' })); // back to where we were
-		expect(t.editor.state.ink).toEqual(colorInk('g'));
+		const before = t.editor.state.ink;
+		t.editor.key(key("'", { sequence: "'" }));
+		t.editor.key(key(';', { sequence: ';' }));
+		expect(t.editor.state.ink).toEqual(before);
 	});
 
 	test('alt-click samples the key under the pointer without painting', async () => {
@@ -598,7 +598,7 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(rail).toContain('tools');
 		expect(rail).toContain('pencil');
 		expect(rail).toContain('ink');
-		expect(rail).toContain('transparent');
+		expect(rail).toContain('▚▚'); // the transparent swatch in the grid
 		expect(rail).toContain('playback');
 		expect(rail).toContain('pose idle');
 	});
@@ -733,9 +733,37 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 			y: toolY,
 		});
 		expect(t.editor.state.tool).toBe('fill');
-		// Ink row (the dynamic 'weapon accent' entry).
-		const inkY = rowWith('weapon accent');
-		t.editor.mouseDown({ button: 0, x: 5, y: inkY });
+		// Ink grid swatch (the dynamic 'a' entry): locate it by rebuilding the
+		// same pure rail model the editor renders and walking to its span.
+		const rows = railModel({
+			tool: t.editor.state.tool,
+			ink: t.editor.state.ink,
+			entries: paletteEntries(t.editor.state, STANDARD_PALETTE, {
+				p: SPRITE_PREVIEWS.p,
+				a: SPRITE_PREVIEWS.a,
+			}),
+			pose: t.editor.state.pose,
+			fps: 8,
+			frameCount: 1,
+			playMode: 'none',
+			onionDepth: 0,
+			height: 32,
+		});
+		let swatch: { x: number; y: number } | null = null;
+		for (let y = 0; y < rows.length; y++) {
+			let x0 = 0;
+			for (const s of rows[y].spans) {
+				if (
+					s.action?.type === 'ink' &&
+					s.action.ink.kind === 'color' &&
+					s.action.ink.key === 'a'
+				)
+					swatch = { x: x0, y };
+				x0 += s.text.length;
+			}
+		}
+		if (!swatch) throw new Error("no 'a' swatch in the rail grid");
+		t.editor.mouseDown({ button: 0, x: swatch.x, y: swatch.y });
 		expect(t.editor.state.ink).toEqual({ kind: 'color', key: 'a' });
 		// Playback box.
 		const playY = rowWith(', walk');

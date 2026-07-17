@@ -130,7 +130,6 @@ import {
 	isShapeTool,
 	moveCursor,
 	nudgeFloat,
-	nudgeInk,
 	paletteEntries,
 	pasteFromClipboard,
 	pixelToCell,
@@ -1091,7 +1090,7 @@ export class SpriteEditor extends Renderable {
 		if (ch.length === 1) this.quickPick = quickPickType(p, ch);
 	}
 
-	// ---- eyedropper (`i` one-shot) & ink nudge (`;`/`'`) ----
+	// ---- eyedropper (`i` one-shot) ----
 
 	private eyedropCursor(): void {
 		this.liftPen();
@@ -1100,11 +1099,6 @@ export class SpriteEditor extends Renderable {
 			this.state.cursor.x,
 			this.state.cursor.y,
 		);
-	}
-
-	private nudge(dir: 1 | -1): void {
-		this.liftPen();
-		this.state = nudgeInk(this.state, this.entries(), dir);
 	}
 
 	// ---- stamp ----
@@ -1636,15 +1630,6 @@ export class SpriteEditor extends Renderable {
 		}
 		if (k.sequence === '-' || k.name === 'minus') {
 			this.setZoom(stepZoom(this.zoom, -1));
-			return;
-		}
-		// Ink nudge (spec #387): `;` steps back a swatch, `'` steps forward.
-		if (k.sequence === ';') {
-			this.nudge(-1);
-			return;
-		}
-		if (k.sequence === "'") {
-			this.nudge(1);
 			return;
 		}
 		// Pose stepping and the strips ↔ focus toggle.

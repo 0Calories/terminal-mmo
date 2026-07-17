@@ -1828,15 +1828,8 @@ export function paletteEntries(
 }
 
 // ---------------------------------------------------------------------------
-// Eyedropper & ink nudge (spec #387) — sampling and stepping the active ink
+// Eyedropper (spec #387) — sampling the active ink from the art
 // ---------------------------------------------------------------------------
-
-// The rail's ink order: the palette entries as listed, then transparent. Both
-// the `c` quick-pick and the `;`/`'` nudge walk exactly this order, so they
-// agree with the swatches the rail draws.
-export function inkOrder(entries: readonly PaletteEntry[]): Ink[] {
-	return [...entries.map((e) => colorInk(e.key)), TRANSPARENT_INK];
-}
 
 function sampleKey(state: SpriteEditorState, key: string): SpriteEditorState {
 	const resolved = key === SENTINEL ? state.doc.key : key;
@@ -1873,22 +1866,6 @@ export function eyedropAt(
 	// is a transparent hole and transparent is itself a first-class ink.
 	if (cell.bg !== '' && cell.bg !== SENTINEL) return sampleKey(state, cell.bg);
 	return { ...state, ink: TRANSPARENT_INK, feedback: 'sampled transparent' };
-}
-
-// Step the active ink to the adjacent rail swatch (spec #387: `;` back, `'`
-// forward). Wraps at both ends so a nudge never dead-ends. `entries` comes from
-// paletteEntries() so the nudge walks exactly the rail's swatches.
-export function nudgeInk(
-	state: SpriteEditorState,
-	entries: readonly PaletteEntry[],
-	dir: 1 | -1,
-): SpriteEditorState {
-	const inks = inkOrder(entries);
-	if (inks.length === 0) return state;
-	const cur = inks.findIndex((i) => inkEquals(i, state.ink));
-	const from = cur < 0 ? 0 : cur;
-	const next = inks[(from + dir + inks.length) % inks.length];
-	return { ...state, ink: next, feedback: '' };
 }
 
 // ---------------------------------------------------------------------------

@@ -112,37 +112,55 @@ function optionMatches(o: InkOption, ink: Ink): boolean {
 	return ink.kind === 'color' && ink.key === o.entry.key;
 }
 
-function inkRow(o: InkOption, active: boolean): RailRow {
-	const mark = active ? '▸' : ' ';
-	if (o.kind === 'transparent') {
-		const action: RailAction = { type: 'ink', ink: { kind: 'transparent' } };
-		return {
-			spans: [
-				{ text: `${mark} `, hot: active, action },
-				{ text: '▚▚', swatch: 'checker', action },
-				{ text: ' t transparent', hot: active, dim: !active, action },
-			],
-		};
-	}
-	const e = o.entry;
-	const action: RailAction = {
-		type: 'ink',
-		ink: { kind: 'color', key: e.key },
-	};
-	const tag =
-		e.kind === 'dynamic' ? ` ${e.label}` : e.kind === 'local' ? ' local' : '';
+// The ink grid's shape: unlabeled 2-column swatches, 8 to a row, in
+// paletteEntries order (locals · palette · dynamics) with transparent last.
+export const INKS_PER_ROW = 8;
+export const INK_SWATCH_W = 2;
+
+function inkAction(o: InkOption): RailAction {
 	return {
-		spans: [
-			{ text: `${mark} `, hot: active, action },
-			{ text: '  ', swatch: e.rgba, action },
-			{ text: ` ${e.key}${tag}`, hot: active, dim: !active, action },
-		],
+		type: 'ink',
+		ink:
+			o.kind === 'transparent'
+				? { kind: 'transparent' }
+				: { kind: 'color', key: o.entry.key },
 	};
 }
 
+// The grid rows: every option always visible (no windowing — the grid packs the
+// whole palette into a couple of rows). The active swatch is marked visually
+// with a [] bracket pair drawn over its colour; the transparent swatch shows
+// the checker.
+function inkGridRows(options: readonly InkOption[], ink: Ink): RailRow[] {
+	const rows: RailRow[] = [];
+	for (let i = 0; i < options.length; i += INKS_PER_ROW) {
+		const spans: RailSpan[] = [{ text: ' ' }];
+		for (const o of options.slice(i, i + INKS_PER_ROW)) {
+			const active = optionMatches(o, ink);
+			spans.push({
+				text: active ? '[]' : o.kind === 'transparent' ? '▚▚' : '  ',
+				swatch: o.kind === 'transparent' ? 'checker' : o.entry.rgba,
+				hot: active,
+				action: inkAction(o),
+			});
+		}
+		rows.push({ spans });
+	}
+	return rows;
+}
+
+// The active-colour section: the current ink as a plain colour square (a 2×1
+// cell block ≈ square at the terminal's 1:2 cell aspect). Deliberately carries
+// NO key/name/hex text and no action — it is a readout, not a control.
+function activeInkRow(options: readonly InkOption[], ink: Ink): RailRow {
+	const active = options.find((o) => optionMatches(o, ink));
+	if (!active || active.kind === 'transparent')
+		return { spans: [{ text: ' ' }, { text: '▚▚', swatch: 'checker' }] };
+	return { spans: [{ text: ' ' }, { text: '  ', swatch: active.entry.rgba }] };
+}
+
 // Build the rail's rows for the given editor moment. Rows beyond `height` are
-// the caller's to clip; the ink list windows itself around the active ink so
-// the playback box always fits (small-terminal folding is a later slice).
+// the caller's to clip.
 export function railModel(input: RailInput): RailRow[] {
 	const rows: RailRow[] = [];
 
@@ -162,63 +180,22 @@ export function railModel(input: RailInput): RailRow[] {
 	}
 	rows.push({ spans: [{ text: '' }] });
 
-	// --- ink box: a window of the ink list centred on the active ink ---
+	// --- ink box: the unlabeled swatch grid, then the active colour square ---
 	rows.push({
 		spans: [
 			{ text: ' ink', dim: true },
-			{ text: '  c pick · i eye', dim: true, action: { type: 'pickInk' } },
+			{ text: '  i eye', dim: true },
 		],
 		title: true,
 	});
 	const options = inkOptions(input.entries);
-	const activeIdx = Math.max(
-		0,
-		options.findIndex((o) => optionMatches(o, input.ink)),
-	);
-	// The playback box is built first so the ink window's row budget is derived
-	// from its real size, never a hand-counted constant. When the degradation
-	// solver folds it (rung 3), it is a single hint row and the freed rows fall
-	// to the ink list automatically through the budget below.
-	const playback = input.foldPlayback
-		? foldedPlaybackBox(input)
-		: playbackBox(input);
-	// Rows left for inks after everything fixed: the boxes above, the blank
-	// separating ink from playback, and the playback box itself.
-	const avail = Math.max(1, input.height - (rows.length + 1 + playback.length));
-	// The visible window [lo, hi) of the ink list, centred on the active ink.
-	// When clipped, the edge rows become markers stating exactly how many inks
-	// each hides; below 3 rows there is no room for honest markers, so the
-	// window clips silently (the small-terminal slice owns that regime).
-	let lo = 0;
-	let hi = options.length;
-	if (options.length > avail) {
-		lo = Math.min(
-			Math.max(0, activeIdx - Math.floor(avail / 2)),
-			options.length - avail,
-		);
-		hi = lo + avail;
-		if (avail >= 3) {
-			if (lo > 0) lo += 1;
-			if (hi < options.length) hi -= 1;
-			// Keep the active ink visible when it sat on a marker's row.
-			if (activeIdx < lo) {
-				lo -= 1;
-				hi -= 1;
-			} else if (activeIdx >= hi) {
-				lo += 1;
-				hi += 1;
-			}
-		}
-	}
-	if (lo > 0) rows.push({ spans: [{ text: `   ↑ ${lo} more`, dim: true }] });
-	for (let i = lo; i < hi; i++) rows.push(inkRow(options[i], i === activeIdx));
-	if (hi < options.length)
-		rows.push({
-			spans: [{ text: `   ↓ ${options.length - hi} more`, dim: true }],
-		});
+	rows.push(...inkGridRows(options, input.ink));
+	rows.push(activeInkRow(options, input.ink));
 	rows.push({ spans: [{ text: '' }] });
 
-	rows.push(...playback);
+	rows.push(
+		...(input.foldPlayback ? foldedPlaybackBox(input) : playbackBox(input)),
+	);
 	return rows;
 }
 

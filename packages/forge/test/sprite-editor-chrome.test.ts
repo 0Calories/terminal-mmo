@@ -86,34 +86,62 @@ describe('railModel — tools · ink · playback boxes', () => {
 		expect(hit).toEqual({ type: 'tool', tool: 'stamp' });
 	});
 
-	test('marks the active ink and lists transparent as an ink', () => {
-		const rows = model({ ink: TRANSPARENT_INK });
-		const active = rows.filter((r) => rowText(r).startsWith('▸'));
-		expect(active).toHaveLength(1);
-		expect(rowText(active[0])).toContain('transparent');
+	test('the ink grid lists every entry as an unlabeled swatch, transparent last', () => {
+		const entries = entriesFor();
+		const rows = model({ entries });
+		// Grid rows only (exclude the active-colour square section): rows whose
+		// swatch spans carry ink actions.
+		const gridSpans = rows
+			.flatMap((r) => r.spans)
+			.filter((s) => s.swatch !== undefined && s.action?.type === 'ink');
+		// Every palette entry plus the transparent pseudo-ink, in entry order.
+		expect(gridSpans.length).toBe(entries.length + 1);
+		const last = gridSpans[gridSpans.length - 1];
+		expect(last.swatch).toBe('checker');
+		expect(last.action).toEqual({ type: 'ink', ink: { kind: 'transparent' } });
+		// Unlabeled: each swatch is exactly 2 columns, no key/name text rides it.
+		for (const s of gridSpans) expect(s.text.length).toBe(2);
+		// 8 swatches per row.
+		for (const row of rows) {
+			const n = row.spans.filter(
+				(s) => s.swatch !== undefined && s.action?.type === 'ink',
+			).length;
+			expect(n).toBeLessThanOrEqual(8);
+		}
+		// The whole list is always visible — no windowing, no 'more' markers.
+		expect(allText(rows)).not.toContain('more');
 	});
 
-	test('windows a long ink list around the active ink', () => {
+	test('marks the active swatch and renders the active colour as a plain square', () => {
 		const entries = entriesFor();
-		const rows = model({ ink: colorInk('k'), height: 17, entries });
-		const text = allText(rows);
-		// The active ink stays visible even in the shrunken window…
-		expect(text).toMatch(/▸.*k/);
-		// …and the clipping is announced, never silent.
-		expect(text).toContain('more');
-		// The markers state exactly how many inks they hide: shown + hidden
-		// covers the whole list (palette entries plus transparent).
-		const shown = rows.filter((r) =>
-			r.spans.some((s) => s.swatch !== undefined),
-		).length;
-		const hidden = [...text.matchAll(/[↑↓] (\d+) more/g)].reduce(
-			(sum, m) => sum + Number(m[1]),
-			0,
-		);
-		expect(shown + hidden).toBe(entries.length + 1);
-		// The playback box survives the squeeze.
-		expect(text).toContain('playback');
-		expect(rows.length).toBeLessThanOrEqual(17);
+		const rows = model({ ink: colorInk('g'), entries });
+		const active = rows
+			.flatMap((r) => r.spans)
+			.filter((s) => s.action?.type === 'ink' && s.hot);
+		expect(active).toHaveLength(1);
+		expect(active[0].action).toEqual({ type: 'ink', ink: colorInk('g') });
+		// The active-colour section: a bare swatch with NO action and NO text
+		// label (no key, no name, no hex).
+		const squares = rows
+			.flatMap((r) => r.spans)
+			.filter((s) => s.swatch !== undefined && s.action === undefined);
+		expect(squares).toHaveLength(1);
+		const g = entries.find((e) => e.key === 'g');
+		expect(squares[0].swatch).toEqual(g?.rgba);
+		expect(squares[0].text.trim()).toBe('');
+	});
+
+	test('a transparent active ink marks the checker swatch and squares to checker', () => {
+		const rows = model({ ink: TRANSPARENT_INK });
+		const active = rows
+			.flatMap((r) => r.spans)
+			.filter((s) => s.action?.type === 'ink' && s.hot);
+		expect(active).toHaveLength(1);
+		expect(active[0].swatch).toBe('checker');
+		const square = rows
+			.flatMap((r) => r.spans)
+			.find((s) => s.swatch !== undefined && s.action === undefined);
+		expect(square?.swatch).toBe('checker');
 	});
 
 	test('shows the pose, fps and frame count, and lights the playing mode', () => {
@@ -142,17 +170,26 @@ describe('railModel — tools · ink · playback boxes', () => {
 		expect(onSpan?.hot).toBe(true);
 	});
 
-	test('ink rows and playback controls are click targets', () => {
+	test('ink swatches and playback controls are click targets', () => {
 		const rows = model();
+		// The first grid swatch sits one column in on the first grid row; walk the
+		// spans to its rendered x and hit it.
 		let inkHit: ReturnType<typeof railActionAt>;
 		let playHit: ReturnType<typeof railActionAt>;
 		rows.forEach((row, y) => {
+			let x0 = 0;
+			for (const s of row.spans) {
+				if (inkHit === undefined && s.action?.type === 'ink')
+					inkHit = railActionAt(rows, x0, y);
+				x0 += s.text.length;
+			}
 			const text = rowText(row);
-			if (text.startsWith('▸')) inkHit = railActionAt(rows, 4, y);
 			if (text.includes('. pose'))
 				playHit = railActionAt(rows, text.indexOf('. pose'), y);
 		});
-		expect(inkHit).toEqual({ type: 'ink', ink: colorInk('p') });
+		// entriesFor() lists the palette in paletteEntries order; the first grid
+		// swatch is its first entry.
+		expect(inkHit).toEqual({ type: 'ink', ink: colorInk(entriesFor()[0].key) });
 		expect(playHit).toEqual({ type: 'play', mode: 'pose' });
 	});
 
