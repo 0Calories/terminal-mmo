@@ -43,6 +43,38 @@ test('compiles a single frame doc with transparency, custom key, colors, bg, bas
 	expect(sprite.grip).toEqual({ x: 0, y: 1 });
 });
 
+const ANCHORED = `{
+	"anchors": { "grip": [1, 0], "head": [1, 1], "tail": [0, 1] },
+	"frames": { "sit": { "anchors": { "head": [0, 0] } } }
+}
+--- idle
+AB
+CD
+--- sit
+XY
+ZW
+`;
+
+test('spriteFromDoc carries the full effective anchor map, not just grip (#351 QA round 5)', () => {
+	const { doc, diagnostics } = parseSpriteFile(ANCHORED, 'anchored');
+	expect(diagnostics).toEqual([]);
+	// Default frame: doc-level anchors flow through untouched.
+	const idle = spriteFromDoc(doc as SpriteDoc, 'idle');
+	expect(idle.anchors).toEqual({
+		grip: { x: 1, y: 0 },
+		head: { x: 1, y: 1 },
+		tail: { x: 0, y: 1 },
+	});
+	// Overriding frame: its head override wins; every other anchor falls
+	// back to the doc level — exactly compileFrameSprite's overlay rule.
+	const sit = spriteFromDoc(doc as SpriteDoc, 'sit');
+	expect(sit.anchors).toEqual({
+		grip: { x: 1, y: 0 },
+		head: { x: 0, y: 0 },
+		tail: { x: 0, y: 1 },
+	});
+});
+
 const EDGE_TRANSPARENCY = `--- idle
 ·AB·
 ·CD·

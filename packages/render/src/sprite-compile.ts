@@ -35,14 +35,19 @@ function selectFrame(doc: SpriteDoc, frameName: string): SpriteFrameDoc {
 export function spriteFromDoc(doc: SpriteDoc, frameName = 'idle'): Sprite {
 	const frame = selectFrame(doc, frameName);
 
-	const grip = frame.anchors.grip ?? doc.anchors.grip;
+	// The full effective anchor map — doc-level overlaid with the frame's own
+	// overrides, frame wins — same rule as compileFrameSprite. Carrying only
+	// grip here silently dropped every other frame-level override (e.g. a
+	// head override never moved the hat in the composited preview).
+	const anchors = { ...doc.anchors, ...frame.anchors };
 
 	return new Sprite(toGlyphText(frame.rows), {
 		defaultKey: doc.key,
 		colors: toGridText(frame.colors),
 		bg: toGridText(frame.bg),
 		baseline: doc.baseline,
-		grip,
+		grip: anchors.grip,
+		anchors,
 	});
 }
 

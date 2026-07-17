@@ -326,6 +326,62 @@ test('facing flips the composite (mirroring goes through the renderer)', () => {
 	expect(dump(left)).not.toBe(dump(right));
 });
 
+// --- frame-level anchor overrides drive the composite (#351 QA round 5) -----
+
+// A minimal form doc with a Default frame plus a non-default frame; the
+// factory takes the non-default frame's anchor overrides so tests can compare
+// override vs no-override renders of the same art.
+function overrideFormDoc(
+	sitAnchors: Record<string, { x: number; y: number }>,
+): SpriteDoc {
+	const art = {
+		rows: ['███', '███'],
+		colors: ['ppp', 'ppp'],
+		bg: ['   ', '   '],
+	};
+	return {
+		id: 'stick',
+		key: 'p',
+		baseline: 0,
+		anchors: { grip: { x: 2, y: 1 }, head: { x: 1, y: 0 } },
+		animations: { idle: ['idle'] },
+		fps: {},
+		colors: {},
+		frames: [
+			{ name: 'idle', ...art, anchors: {} },
+			{ name: 'emote:sit', ...art, anchors: sitAnchors },
+		],
+	};
+}
+
+test('a frame-level head override moves the hat in the form composite, exactly like grip (#351 QA round 5)', () => {
+	const W = 24;
+	const H = 16;
+	const view = { facing: 1 as const, stance: 'emote:sit', elapsedS: 0 };
+	const render = (doc: SpriteDoc) => {
+		const buf = new FakeBuffer(W, H);
+		renderComposite(buf, doc, 'form', STYLE, view);
+		return dump(buf);
+	};
+
+	const base = render(overrideFormDoc({}));
+
+	// The override must show through — for head just as for grip.
+	const headMoved = render(overrideFormDoc({ head: { x: 0, y: 2 } }));
+	expect(headMoved).not.toBe(base);
+	const gripMoved = render(overrideFormDoc({ grip: { x: 0, y: 2 } }));
+	expect(gripMoved).not.toBe(base);
+
+	// And it must land the hat exactly where the same value at the doc level
+	// would — the override IS the effective head for the displayed frame.
+	const doc = overrideFormDoc({});
+	const docLevel: SpriteDoc = {
+		...doc,
+		anchors: { ...doc.anchors, head: { x: 0, y: 2 } },
+	};
+	expect(headMoved).toBe(render(docLevel));
+});
+
 // --- session dynamic variant → composite agreement (spec #401 amendment) ----
 
 test('the view hue drives the composite body hue; omitted → canonical 0', () => {
