@@ -26,7 +26,7 @@ interface RoleProfile {
 }
 
 export const ROLE_PROFILES: Readonly<Record<string, RoleProfile>> = {
-	forms: { animations: ['idle', 'walkA', 'walkB'], anchors: ['grip', 'head'] },
+	forms: { animations: ['idle', 'walk'], anchors: ['grip', 'head'] },
 	// `recovery` is optional for weapons, so it is not required here.
 	weapons: { animations: ['idle', 'windup', 'active'], anchors: ['grip'] },
 	hats: { animations: ['idle'], anchors: [] },

@@ -26,15 +26,19 @@ export function animationFps(
 	return fpsMap[animation] ?? EMOTE_FPS;
 }
 
-// Walk-cycle preview alternates walkA/walkB so the artist sees the gait. STRIDE
-// governs *sim* distance-per-swap, not wall-clock cadence, so the preview uses a
-// fixed brisk rate rather than deriving from STRIDE.
+// Walk-cycle preview simulates stride against the `walk` animation the same way
+// the sim does (ADR 0035): each preview step advances one stride, indexing
+// `step % frameCount`. STRIDE governs *sim* distance-per-step, not wall-clock
+// cadence, so the preview uses a fixed brisk rate rather than deriving from
+// STRIDE.
 export const WALK_PREVIEW_FPS = 4;
 
-export function walkPreviewAnimation(
+export function walkPreviewIndex(
+	frameCount: number,
 	elapsedS: number,
 	fps: number = WALK_PREVIEW_FPS,
-): 'walkA' | 'walkB' {
+): number {
+	if (frameCount <= 1) return 0;
 	const step = Math.floor(Math.max(0, elapsedS) * fps);
-	return step % 2 === 0 ? 'walkA' : 'walkB';
+	return step % frameCount;
 }

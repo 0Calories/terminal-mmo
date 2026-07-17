@@ -19,13 +19,17 @@ function blankFrame(name: string): SpriteFrameDoc {
 
 interface RoleTemplate {
 	frames: string[];
+	// Explicit multi-frame animations; frames not consumed by one become
+	// implicit single-frame animations (parser convention, ADR 0031).
+	animations?: Record<string, readonly string[]>;
 	anchors: Record<string, [number, number]>;
 }
 
 // Anchors sit inside the canvas so a fresh template parses without warnings.
 const ROLE_TEMPLATES: Record<SpriteRole, RoleTemplate> = {
 	form: {
-		frames: ['idle', 'walkA', 'walkB'],
+		frames: ['idle', 'walk-0', 'walk-1'],
+		animations: { walk: ['walk-0', 'walk-1'] },
 		anchors: { grip: [4, 2], head: [2, 0] },
 	},
 	weapon: { frames: ['idle', 'windup', 'active'], anchors: { grip: [1, 2] } },
@@ -41,7 +45,11 @@ export function emptySpriteDoc(id: string, role: SpriteRole): SpriteDoc {
 		anchors[name] = { x, y };
 	const frames = template.frames.map(blankFrame);
 	const animations: Record<string, readonly string[]> = {};
-	for (const f of frames) animations[f.name] = [f.name];
+	const consumed = new Set(Object.values(template.animations ?? {}).flat());
+	for (const f of frames)
+		if (!consumed.has(f.name)) animations[f.name] = [f.name];
+	for (const [name, list] of Object.entries(template.animations ?? {}))
+		animations[name] = list;
 	return {
 		id,
 		key: DEFAULT_KEY,

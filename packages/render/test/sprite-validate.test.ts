@@ -18,20 +18,20 @@ function docOf(text: string, id = 's'): SpriteDoc {
 
 const FORMS_OK = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"animations": { "walkA": ["wa"], "walkB": ["wb"] }
+	"animations": { "walk": ["walk-0", "walk-1"] }
 }
 --- idle
 AB
 CD
---- wa
+--- walk-0
 AB
 CD
---- wb
+--- walk-1
 AB
 CD
 `;
 
-test('validateSpriteRole: forms passes with idle/walkA/walkB and grip/head', () => {
+test('validateSpriteRole: forms passes with idle/walk and grip/head', () => {
 	expect(validateSpriteRole(docOf(FORMS_OK, 'buddy'), 'forms')).toEqual([]);
 });
 
@@ -41,9 +41,6 @@ const FORMS_BAD = `{
 --- idle
 AB
 CD
---- walkA
-AB
-CD
 `;
 
 test('validateSpriteRole: forms fails naming missing animation and anchor', () => {
@@ -51,17 +48,17 @@ test('validateSpriteRole: forms fails naming missing animation and anchor', () =
 	expect(diags.every((d) => d.severity === 'error')).toBe(true);
 	expect(diags.every((d) => d.spriteId === 'buddy')).toBe(true);
 	const joined = diags.map((d) => d.message).join('\n');
-	expect(joined).toContain('walkB');
+	expect(joined).toContain("'walk'");
 	expect(joined).toContain('head');
 	expect(joined).toContain('buddy');
 	expect(joined).toContain('forms');
-	// grip and walkA are present, so must not be reported
-	expect(joined).not.toContain('walkA');
+	// grip and idle are present, so must not be reported
+	expect(joined).not.toContain("'idle'");
 });
 
 const FORMS_KNOWN_EMOTE = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"animations": { "walkA": ["wa"], "walkB": ["wb"], "emote:wave": ["ev"] }
+	"animations": { "walk": ["wa", "wb"], "emote:wave": ["ev"] }
 }
 --- idle
 AB
@@ -81,7 +78,7 @@ test('validateSpriteRole: forms accepts an emote animation for a registered emot
 
 const FORMS_UNKNOWN_EMOTE = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"animations": { "walkA": ["wa"], "walkB": ["wb"], "emote:boogie": ["bg"] }
+	"animations": { "walk": ["wa", "wb"], "emote:boogie": ["bg"] }
 }
 --- idle
 AB

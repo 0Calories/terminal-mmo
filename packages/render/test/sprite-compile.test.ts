@@ -112,8 +112,8 @@ test('omitted colors/bg default to doc key on inked cells', () => {
 const BODY = `{
 	"baseline": 1,
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"animations": { "walkA": ["fa", "fb"] },
-	"fps": { "walkA": 8 },
+	"animations": { "walk": ["fa", "fb"] },
+	"fps": { "walk": 8 },
 	"frames": { "fb": { "anchors": { "grip": [1, 1] } } }
 }
 --- idle
@@ -133,7 +133,7 @@ test('compileBodySprite: multi-frame animation is an array, single-frame is a Sp
 	const body = compileBodySprite(doc as SpriteDoc);
 
 	// multi-frame animation -> array
-	const walk = body.frames.walkA;
+	const walk = body.frames.walk;
 	expect(Array.isArray(walk)).toBe(true);
 	const walkArr = walk as readonly Sprite[];
 	expect(walkArr.length).toBe(2);
@@ -154,7 +154,7 @@ test('compileBodySprite: doc-level anchors seed body grip/head and frame anchors
 	expect(body.head).toEqual({ x: 0, y: 0 });
 	expect(body.baseline).toBe(1);
 
-	const walkArr = body.frames.walkA as readonly Sprite[];
+	const walkArr = body.frames.walk as readonly Sprite[];
 	// fa inherits doc anchors; fb overrides grip (frame wins), keeps head
 	expect(walkArr[0].anchors.grip).toEqual({ x: 1, y: 0 });
 	expect(walkArr[0].anchors.head).toEqual({ x: 0, y: 0 });
@@ -165,7 +165,7 @@ test('compileBodySprite: doc-level anchors seed body grip/head and frame anchors
 test('compileBodySprite: fps is carried from the doc', () => {
 	const { doc } = parseSpriteFile(BODY, 'buddy');
 	const body = compileBodySprite(doc as SpriteDoc);
-	expect(body.fps).toEqual({ walkA: 8 });
+	expect(body.fps).toEqual({ walk: 8 });
 });
 
 test('compileBodySprite: throws when doc-level grip/head anchors are missing', () => {

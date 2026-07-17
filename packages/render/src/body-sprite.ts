@@ -14,6 +14,13 @@ export interface BodySprite {
 	fps?: Readonly<Record<string, number>>;
 }
 
+// How many frames this body's `walk` animation carries — the sim distance-
+// indexes the gait into them (ADR 0035). A missing or single-frame walk is 1.
+export function walkFrameCount(body: BodySprite): number {
+	const walk = body.frames.walk;
+	return Array.isArray(walk) ? walk.length : 1;
+}
+
 export function formFrame(
 	body: BodySprite,
 	animationId: AnimationId,

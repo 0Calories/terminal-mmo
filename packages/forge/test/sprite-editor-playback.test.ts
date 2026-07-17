@@ -5,7 +5,7 @@ import {
 	animationFps,
 	playbackFrame,
 	WALK_PREVIEW_FPS,
-	walkPreviewAnimation,
+	walkPreviewIndex,
 } from '../src/sprite-editor/playback';
 
 describe('playbackFrame', () => {
@@ -43,10 +43,20 @@ describe('animationFps', () => {
 	});
 });
 
-describe('walkPreviewAnimation', () => {
-	test('alternates walkA/walkB at the preview cadence', () => {
-		expect(walkPreviewAnimation(0)).toBe('walkA');
-		expect(walkPreviewAnimation(1 / WALK_PREVIEW_FPS)).toBe('walkB');
-		expect(walkPreviewAnimation(2 / WALK_PREVIEW_FPS)).toBe('walkA');
+describe('walkPreviewIndex', () => {
+	test('simulates stride against the walk animation at the preview cadence', () => {
+		expect(walkPreviewIndex(2, 0)).toBe(0);
+		expect(walkPreviewIndex(2, 1 / WALK_PREVIEW_FPS)).toBe(1);
+		expect(walkPreviewIndex(2, 2 / WALK_PREVIEW_FPS)).toBe(0);
+	});
+
+	test('a longer walk cycle uses every frame', () => {
+		expect(walkPreviewIndex(3, 2 / WALK_PREVIEW_FPS)).toBe(2);
+		expect(walkPreviewIndex(3, 3 / WALK_PREVIEW_FPS)).toBe(0);
+	});
+
+	test('a single-frame (or empty) walk freezes on frame 0', () => {
+		expect(walkPreviewIndex(1, 5)).toBe(0);
+		expect(walkPreviewIndex(0, 5)).toBe(0);
 	});
 });

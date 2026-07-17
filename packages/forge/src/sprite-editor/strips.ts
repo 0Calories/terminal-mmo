@@ -173,7 +173,7 @@ export interface FocusTab {
 	readonly active: boolean;
 }
 
-// The tab row: ` idle │ walkA │ walkB ` with each name's rendered extent as a
+// The tab row: ` idle │ walk │ jump ` with each name's rendered extent as a
 // click target.
 export function focusTabs(
 	frames: readonly string[],

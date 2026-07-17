@@ -15,17 +15,13 @@ import {
 } from '../src/sprite-editor/strips';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
-// A form template: animations idle/walkA/walkB, one 6×4-cell frame each.
+// A form template: animations idle (one frame) + walk (walk-0/walk-1).
 const doc = emptySpriteDoc('buddy', 'form');
 
 describe('stripsLayout — every Animation a labeled strip of its Frames', () => {
 	test('lays one labeled strip per animation, in doc order', () => {
 		const l = stripsLayout(doc, 2);
-		expect(l.labels.map((s) => s.animation)).toEqual([
-			'idle',
-			'walkA',
-			'walkB',
-		]);
+		expect(l.labels.map((s) => s.animation)).toEqual(['idle', 'walk']);
 		expect(l.labels[0].text).toContain('idle');
 		expect(l.labels[0].text).toContain('1f');
 	});
@@ -46,15 +42,8 @@ describe('stripsLayout — every Animation a labeled strip of its Frames', () =>
 	});
 
 	test('frames of one animation sit side by side with a gap', () => {
-		const two = {
-			...doc,
-			animations: {
-				idle: ['idle', 'walkA'] as const,
-				walkB: ['walkB'] as const,
-			},
-		};
-		const l = stripsLayout(two, 1);
-		const [a, b] = l.frames.filter((f) => f.animation === 'idle');
+		const l = stripsLayout(doc, 1);
+		const [a, b] = l.frames.filter((f) => f.animation === 'walk');
 		expect(b.x).toBe(a.x + a.w + FRAME_GAP);
 		expect(b.y).toBe(a.y);
 	});
@@ -62,13 +51,13 @@ describe('stripsLayout — every Animation a labeled strip of its Frames', () =>
 	test('a frame referenced by no animation still gets a strip (implicit animation)', () => {
 		const orphan = {
 			...doc,
-			animations: { idle: ['idle'] as const },
+			animations: { idle: ['idle'] as const, walk: ['walk-0'] as const },
 		};
 		const l = stripsLayout(orphan, 1);
 		expect(l.labels.map((s) => s.animation)).toEqual([
 			'idle',
-			'walkA',
-			'walkB',
+			'walk',
+			'walk-1',
 		]);
 	});
 
@@ -84,11 +73,11 @@ describe('stripsHit — click-through resolution', () => {
 	const l = stripsLayout(doc, 2);
 
 	test('a cell inside a block resolves to that frame and the Pixel under it', () => {
-		// walkA's block; ×2 means screen (2,3) inside it is Pixel (1,1).
-		const walkA = frameBoxOf(l, 'walkA');
-		if (!walkA) throw new Error('walkA missing');
+		// walk-0's block; ×2 means screen (2,3) inside it is Pixel (1,1).
+		const walkA = frameBoxOf(l, 'walk-0');
+		if (!walkA) throw new Error('walk-0 missing');
 		const hit = stripsHit(l, walkA.x + 2, walkA.y + 3);
-		expect(hit?.frame.name).toBe('walkA');
+		expect(hit?.frame.name).toBe('walk-0');
 		expect(hit).toMatchObject({ px: 1, py: 1 });
 	});
 
@@ -117,11 +106,11 @@ describe('scrolling helpers', () => {
 
 describe('focus mode — tab row + centring', () => {
 	test('tabs carry each frame name with its click extent, active marked', () => {
-		const { text, tabs } = focusTabs(['idle', 'walkA', 'walkB'], 'walkA');
-		expect(text).toBe(' idle │ walkA │ walkB');
-		expect(tabs.find((t) => t.active)?.name).toBe('walkA');
-		const hit = focusTabAt(tabs, text.indexOf('walkB') + 1);
-		expect(hit?.name).toBe('walkB');
+		const { text, tabs } = focusTabs(['idle', 'walk', 'jump'], 'walk');
+		expect(text).toBe(' idle │ walk │ jump');
+		expect(tabs.find((t) => t.active)?.name).toBe('walk');
+		const hit = focusTabAt(tabs, text.indexOf('jump') + 1);
+		expect(hit?.name).toBe('jump');
 		expect(focusTabAt(tabs, text.indexOf('│'))).toBeUndefined();
 	});
 

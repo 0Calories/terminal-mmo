@@ -387,11 +387,11 @@ describe('selectFrame & cursor', () => {
 		const doc = emptySpriteDoc('hero', 'form');
 		let s = initSpriteEditor(doc);
 		expect(s.frame).toBe('idle');
-		s = selectFrame(s, 'walkA');
-		expect(s.frame).toBe('walkA');
+		s = selectFrame(s, 'walk-0');
+		expect(s.frame).toBe('walk-0');
 		const before = s;
 		s = selectFrame(s, 'nope');
-		expect(s.frame).toBe('walkA');
+		expect(s.frame).toBe('walk-0');
 		expect(s.feedback).toContain('no such frame');
 		expect(before.doc).toBe(s.doc);
 	});
@@ -399,8 +399,8 @@ describe('selectFrame & cursor', () => {
 	test('painting affects only the current frame', () => {
 		let s = initSpriteEditor(emptySpriteDoc('hero', 'form'));
 		s = paintPixel(s, 0, 0); // in idle
-		s = selectFrame(s, 'walkA');
-		expect(readPixel(s, 0, 0)).toBe(false); // walkA untouched
+		s = selectFrame(s, 'walk-0');
+		expect(readPixel(s, 0, 0)).toBe(false); // walk-0 untouched
 	});
 
 	test('moveCursor clamps to non-negative pixels', () => {
@@ -458,9 +458,13 @@ describe('role templates', () => {
 		expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
 	});
 
-	test('form has idle/walkA/walkB frames and grip/head anchors', () => {
+	test('form has idle + walk-0/walk-1 frames (one walk animation) and grip/head anchors', () => {
 		const doc = emptySpriteDoc('hero', 'form');
-		expect(doc.frames.map((f) => f.name)).toEqual(['idle', 'walkA', 'walkB']);
+		expect(doc.frames.map((f) => f.name)).toEqual(['idle', 'walk-0', 'walk-1']);
+		expect(doc.animations).toEqual({
+			idle: ['idle'],
+			walk: ['walk-0', 'walk-1'],
+		});
 		expect(Object.keys(doc.anchors).sort()).toEqual(['grip', 'head']);
 	});
 

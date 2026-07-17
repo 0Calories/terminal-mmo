@@ -88,7 +88,7 @@ import {
 	syncAnimationMenu,
 } from './menus';
 import { cycleOnionDepth, ghostColor, onionGhosts } from './onion';
-import { animationFps, playbackFrame, walkPreviewAnimation } from './playback';
+import { animationFps, playbackFrame, walkPreviewIndex } from './playback';
 import { normalizeDoc } from './resize';
 import {
 	addFrameToAnimation,
@@ -1386,9 +1386,9 @@ export class SpriteEditor extends Renderable {
 	// or the animated frame while playing. Never mutates state.
 	get displayFrame(): string {
 		if (this.playMode === 'walk') {
-			const animation = walkPreviewAnimation(this.playElapsedMs / 1000);
-			const frames = animationFrames(this.state, animation);
-			return frames[0] ?? this.state.frame;
+			const frames = animationFrames(this.state, 'walk');
+			const idx = walkPreviewIndex(frames.length, this.playElapsedMs / 1000);
+			return frames[idx] ?? this.state.frame;
 		}
 		if (this.playMode === 'animation') {
 			const frames = animationFrames(this.state, this.state.animation);

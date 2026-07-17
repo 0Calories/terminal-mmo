@@ -50,11 +50,11 @@ describe('placeAnchor — doc scope', () => {
 
 describe('placeAnchor — per-frame override', () => {
 	test('sets an override on the current frame only', () => {
-		let s = selectFrame(formState(), 'walkA');
+		let s = selectFrame(formState(), 'walk-0');
 		s = placeAnchor(s, 'grip', 5, 2, 'frame');
 		expect(s.feedback).toBe('');
-		const walkA = s.doc.frames.find((f) => f.name === 'walkA');
-		expect(walkA?.anchors.grip).toEqual({ x: 5, y: 2 });
+		const walk0 = s.doc.frames.find((f) => f.name === 'walk-0');
+		expect(walk0?.anchors.grip).toEqual({ x: 5, y: 2 });
 		// idle keeps only the doc-level anchor, no override.
 		const idle = s.doc.frames.find((f) => f.name === 'idle');
 		expect(idle?.anchors.grip).toBeUndefined();
@@ -63,13 +63,13 @@ describe('placeAnchor — per-frame override', () => {
 
 describe('removeAnchorOverride', () => {
 	test('drops the override, falling back to the doc position', () => {
-		let s = selectFrame(formState(), 'walkA');
+		let s = selectFrame(formState(), 'walk-0');
 		const docGrip = s.doc.anchors.grip;
 		s = placeAnchor(s, 'grip', 5, 2, 'frame');
 		s = removeAnchorOverride(s, 'grip');
 		expect(s.feedback).toBe('');
-		const walkA = s.doc.frames.find((f) => f.name === 'walkA');
-		expect(walkA?.anchors.grip).toBeUndefined();
+		const walk0 = s.doc.frames.find((f) => f.name === 'walk-0');
+		expect(walk0?.anchors.grip).toBeUndefined();
 		// The effective marker is back to the doc-level position.
 		const grip = anchorMarkers(s).find((m) => m.name === 'grip');
 		expect(grip).toEqual({
@@ -86,21 +86,21 @@ describe('removeAnchorOverride', () => {
 	});
 
 	test('is undoable', () => {
-		let s = selectFrame(formState(), 'walkA');
+		let s = selectFrame(formState(), 'walk-0');
 		s = placeAnchor(s, 'grip', 5, 2, 'frame');
 		const withOverride = s;
 		s = removeAnchorOverride(s, 'grip');
 		s = undoEdit(s);
-		const walkA = s.doc.frames.find((f) => f.name === 'walkA');
-		expect(walkA?.anchors.grip).toEqual(
-			withOverride.doc.frames.find((f) => f.name === 'walkA')?.anchors.grip,
+		const walk0 = s.doc.frames.find((f) => f.name === 'walk-0');
+		expect(walk0?.anchors.grip).toEqual(
+			withOverride.doc.frames.find((f) => f.name === 'walk-0')?.anchors.grip,
 		);
 	});
 });
 
 describe('anchorMarkers', () => {
 	test('overlays frame overrides over doc anchors, frame wins + tagged', () => {
-		let s = selectFrame(formState(), 'walkA');
+		let s = selectFrame(formState(), 'walk-0');
 		s = placeAnchor(s, 'grip', 5, 2, 'frame');
 		const markers = anchorMarkers(s);
 		const grip = markers.find((m) => m.name === 'grip');

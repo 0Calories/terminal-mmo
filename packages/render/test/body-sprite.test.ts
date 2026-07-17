@@ -19,14 +19,14 @@ describe('the Form registry (directory scan, ADR 0031)', () => {
 describe('the default Form honours the authoring contract (ADR 0020 §5)', () => {
 	const form = formById(DEFAULT_FORM_ID);
 
-	test('authors the required idle / walkA / walkB core as distinct grids', () => {
+	test('authors the required idle / walk core, the walk frames distinct grids', () => {
 		const idle = formFrame(form, 'idle');
-		const walkA = formFrame(form, 'walkA');
-		const walkB = formFrame(form, 'walkB');
+		const walk0 = formFrame(form, 'walk', 0);
+		const walk1 = formFrame(form, 'walk', 1);
 		expect(idle).toBeInstanceOf(Sprite);
-		expect(walkA).not.toBe(idle);
-		expect(walkB).not.toBe(idle);
-		expect(walkA.rows(1)).not.toEqual(walkB.rows(1));
+		expect(walk0).not.toBe(idle);
+		expect(walk1).not.toBe(idle);
+		expect(walk0.rows(1)).not.toEqual(walk1.rows(1));
 	});
 
 	test('authors a distinct airborne jump Animation', () => {
@@ -38,16 +38,25 @@ describe('the default Form honours the authoring contract (ADR 0020 §5)', () =>
 
 	test('shares one footprint across the whole frame set', () => {
 		const idle = formFrame(form, 'idle');
-		for (const animation of ['walkA', 'walkB', 'jump'] as const) {
-			const grid = formFrame(form, animation);
+		for (const [animation, i] of [
+			['walk', 0],
+			['walk', 1],
+			['jump', 0],
+		] as const) {
+			const grid = formFrame(form, animation, i);
 			expect(grid.w).toBe(idle.w);
 			expect(grid.h).toBe(idle.h);
 		}
 	});
 
 	test('every authored Animation mirrors left/right by facing', () => {
-		for (const animation of ['idle', 'walkA', 'walkB', 'jump'] as const) {
-			const grid = formFrame(form, animation);
+		for (const [animation, i] of [
+			['idle', 0],
+			['walk', 0],
+			['walk', 1],
+			['jump', 0],
+		] as const) {
+			const grid = formFrame(form, animation, i);
 			expect(grid.rows(-1)[0].length).toBe(grid.w);
 		}
 	});

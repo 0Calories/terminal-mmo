@@ -125,13 +125,13 @@ describe('delete clears the selection contents without touching the clipboard', 
 
 describe('the clipboard buffer is editor-session-scoped', () => {
 	test('a copied buffer survives a Frame switch', () => {
-		let s = multiFrame(); // frames idle / walkA / walkB
+		let s = multiFrame(); // frames idle / walk-0 / walk-1
 		s = setInk(s, colorInk('g'));
 		s = paintPixel(s, 0, 0);
 		s = setSelection(s, { x0: 0, y0: 0, x1: 0, y1: 0 });
 		s = copySelection(s);
-		s = selectFrame(s, 'walkA');
-		expect(s.frame).toBe('walkA');
+		s = selectFrame(s, 'walk-0');
+		expect(s.frame).toBe('walk-0');
 		expect(s.clipboard?.pixels).toHaveLength(1); // still there
 	});
 });
@@ -211,7 +211,7 @@ describe('cross-Frame paste arrives at the source coordinates', () => {
 		s = paintPixel(s, 4, 1);
 		s = setSelection(s, { x0: 3, y0: 1, x1: 4, y1: 1 });
 		s = copySelection(s);
-		s = selectFrame(s, 'walkA'); // a different, empty Frame
+		s = selectFrame(s, 'walk-0'); // a different, empty Frame
 		s = pasteFromClipboard(s);
 		s = commitFloat(s); // zero-offset drop → lands at the source coords
 		expect(readPixel(s, 3, 1)).toBe(true);

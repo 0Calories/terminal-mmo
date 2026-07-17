@@ -552,10 +552,10 @@ function expectBodyAnimation(over: Partial<Entity>, sprite: Sprite) {
 
 test('a moving Avatar animates the distance-driven walk cycle; standing freezes to idle (ADR 0020 §7)', () => {
 	const idle = formFrame(FORMS[0], 'idle');
-	const walkA = formFrame(FORMS[0], 'walkA');
-	const walkB = formFrame(FORMS[0], 'walkB');
+	const walkA = formFrame(FORMS[0], 'walk', 0);
+	const walkB = formFrame(FORMS[0], 'walk', 1);
 
-	// 2·STRIDE+3 is an even stride (walkA); 3·STRIDE+3 the next, odd one (walkB).
+	// 2·STRIDE+3 is an even stride (walk frame 0); 3·STRIDE+3 the next, odd one (frame 1).
 	expectBodyAnimation({ x: 2 * STRIDE + 3, vx: 3 }, walkA);
 	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 3 }, walkB);
 
@@ -584,7 +584,7 @@ test('an observer renders the same walk frame as the owner for a given position 
 		drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE);
 		return buf;
 	};
-	const walkB = formFrame(FORMS[0], 'walkB');
+	const walkB = formFrame(FORMS[0], 'walk', 1);
 	const ax = Math.round(3 * STRIDE + 3 - Math.floor((walkB.w - BOX.w) / 2));
 	const ay = Math.round(7 + BOX.h - walkB.h + (FORMS[0].baseline ?? 0));
 	expectSpriteAt(render(owner), walkB, ax, ay, 1, fgFor);
@@ -883,9 +883,9 @@ function expectPlantedFeet(buf: FakeBuffer, e: Entity, sprite: Sprite) {
 }
 
 test('the walk frames plant on the same general over-solid rule, no animation-specific code (ADR 0021)', () => {
-	for (const [x, animation] of [
-		[2 * STRIDE + 3, 'walkA'],
-		[3 * STRIDE + 3, 'walkB'],
+	for (const [x, frameIndex] of [
+		[2 * STRIDE + 3, 0],
+		[3 * STRIDE + 3, 1],
 	] as const) {
 		const buf = new FakeBuffer(40, 16);
 		const e = makeEntity({ type: 'player', x, y: 7, vx: 3 });
@@ -895,7 +895,7 @@ test('the walk frames plant on the same general over-solid rule, no animation-sp
 			{ x: 0, y: 0 },
 			STYLE,
 		);
-		expectPlantedFeet(buf, e, formFrame(FORMS[0], animation));
+		expectPlantedFeet(buf, e, formFrame(FORMS[0], 'walk', frameIndex));
 	}
 });
 

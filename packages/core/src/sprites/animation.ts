@@ -8,8 +8,7 @@ import type { AttackPhase, Facing, MoveId } from '../entities/types';
 export type EmoteAnimationId = `emote:${string}`;
 export type AnimationId =
 	| 'idle'
-	| 'walkA'
-	| 'walkB'
+	| 'walk'
 	| 'jump'
 	| 'windup'
 	| 'active'
@@ -42,6 +41,11 @@ export function bodyFrame(
 	// is emoteT × the animation's fps. An animation absent from the map uses EMOTE_FPS, so a
 	// body that declares no custom rate animates exactly as before.
 	fps?: Readonly<Record<string, number>>,
+	// How many frames the body's `walk` animation carries (ADR 0035): the gait is
+	// distance-indexed into them, so an artist adding a third walk frame extends
+	// the cycle with no type change. Replicated art data, so owner and observers
+	// agree. Defaults to the canonical two-frame gait.
+	walkFrameCount = 2,
 ): {
 	animationId: AnimationId;
 	frameIndex: number;
@@ -52,7 +56,8 @@ export function bodyFrame(
 	if (s.airborne) return { animationId: 'jump', frameIndex: 0 };
 	if (s.moving) {
 		const stride = Math.floor(Math.abs(s.distanceX) / STRIDE);
-		return { animationId: stride % 2 === 0 ? 'walkA' : 'walkB', frameIndex: 0 };
+		const count = Math.max(1, Math.floor(walkFrameCount));
+		return { animationId: 'walk', frameIndex: stride % count };
 	}
 	if (s.emote) {
 		const animationId: EmoteAnimationId = `emote:${s.emote}`;

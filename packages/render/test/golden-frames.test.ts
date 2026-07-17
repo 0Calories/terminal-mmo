@@ -283,8 +283,8 @@ test('golden scene: ghost shooter', () => {
 
 test('golden scene: walk frames', () => {
 	for (const [x, label] of [
-		[2 * STRIDE + 3, 'walkA'],
-		[3 * STRIDE + 3, 'walkB'],
+		[2 * STRIDE + 3, 'walk-0'],
+		[3 * STRIDE + 3, 'walk-1'],
 	] as const) {
 		const buf = new FakeBuffer(40, 16);
 		const e = makeEntity({ type: 'player', x, y: 7, vx: 3 });

@@ -55,7 +55,7 @@ describe('animation menu', () => {
 		expect(t.editor.animationMenu).not.toBeNull();
 		const frame = t.captureCharFrame();
 		expect(frame).toContain('Animations');
-		expect(frame).toContain('walkA');
+		expect(frame).toContain('walk');
 	});
 
 	test('creating an animation reflects in the doc and chrome', async () => {

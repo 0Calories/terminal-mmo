@@ -45,22 +45,32 @@ describe('bodyFrame (pure Animation selector / precedence ladder)', () => {
 		).toBe('windup');
 	});
 
-	test('walking flips walkA/walkB every STRIDE cells of travelled distance', () => {
-		expect(bodyFrame({ ...REST, moving: true, distanceX: 0 }).animationId).toBe(
-			'walkA',
-		);
+	test('walking distance-indexes the walk animation every STRIDE cells (ADR 0035)', () => {
+		expect(bodyFrame({ ...REST, moving: true, distanceX: 0 })).toEqual({
+			animationId: 'walk',
+			frameIndex: 0,
+		});
 		expect(
-			bodyFrame({ ...REST, moving: true, distanceX: STRIDE - 0.1 }).animationId,
-		).toBe('walkA');
+			bodyFrame({ ...REST, moving: true, distanceX: STRIDE - 0.1 }).frameIndex,
+		).toBe(0);
 		expect(
-			bodyFrame({ ...REST, moving: true, distanceX: STRIDE }).animationId,
-		).toBe('walkB');
+			bodyFrame({ ...REST, moving: true, distanceX: STRIDE }).frameIndex,
+		).toBe(1);
 		expect(
-			bodyFrame({ ...REST, moving: true, distanceX: 2 * STRIDE }).animationId,
-		).toBe('walkA');
+			bodyFrame({ ...REST, moving: true, distanceX: 2 * STRIDE }).frameIndex,
+		).toBe(0);
 		expect(
-			bodyFrame({ ...REST, moving: true, distanceX: -STRIDE }).animationId,
-		).toBe('walkB');
+			bodyFrame({ ...REST, moving: true, distanceX: -STRIDE }).frameIndex,
+		).toBe(1);
+	});
+
+	test('the gait generalizes: a third walk frame extends the cycle, no type change', () => {
+		const at = (distanceX: number) =>
+			bodyFrame({ ...REST, moving: true, distanceX }, undefined, 3).frameIndex;
+		expect(at(0)).toBe(0);
+		expect(at(STRIDE)).toBe(1);
+		expect(at(2 * STRIDE)).toBe(2);
+		expect(at(3 * STRIDE)).toBe(0);
 	});
 
 	test('an emote animations below walk: walking cancels it (ADR 0020 §6)', () => {
@@ -70,7 +80,7 @@ describe('bodyFrame (pure Animation selector / precedence ladder)', () => {
 		expect(
 			bodyFrame({ ...REST, emote: 'wave', moving: true, distanceX: 0 })
 				.animationId,
-		).toBe('walkA');
+		).toBe('walk');
 		expect(
 			bodyFrame({ ...REST, emote: 'wave', move: 'basic', phase: 'active' })
 				.animationId,

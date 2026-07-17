@@ -776,21 +776,25 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 	});
 
 	test('wheel scrolls the strips; ctrl-wheel zooms; middle-drag pans', async () => {
-		const t = await mount({
-			doc: emptySpriteDoc('nav', 'form'),
-			id: 'nav',
-			role: 'form',
-		});
-		// walkB's strip label sits at content row ~38 — off-screen at the 24-row
-		// floor (viewH=22), below both the idle and walkA strips.
-		expect(t.captureCharFrame()).not.toContain('walkB ·');
+		// A form doc with a third (jump) strip so there is content below the fold.
+		const base = emptySpriteDoc('nav', 'form');
+		const jump = { ...base.frames[0], name: 'jump' };
+		const navDoc = {
+			...base,
+			frames: [...base.frames, jump],
+			animations: { ...base.animations, jump: ['jump'] },
+		};
+		const t = await mount({ doc: navDoc, id: 'nav', role: 'form' });
+		// jump's strip label sits at content row ~38 — off-screen at the 24-row
+		// floor (viewH=22), below both the idle and walk strips.
+		expect(t.captureCharFrame()).not.toContain('jump ·');
 		t.editor.wheel({ button: 0, x: 40, y: 5, scroll: { direction: 'down' } });
 		await t.renderOnce();
 		// One notch (3 rows) brings nothing yet; keep scrolling.
 		for (let i = 0; i < 5; i++)
 			t.editor.wheel({ button: 0, x: 40, y: 5, scroll: { direction: 'down' } });
 		await t.renderOnce();
-		expect(t.captureCharFrame()).toContain('walkB ·');
+		expect(t.captureCharFrame()).toContain('jump ·');
 		// Middle-drag pans back up.
 		t.editor.mouseDown({ button: 1, x: 40, y: 2 });
 		t.editor.mouseDrag({ button: 1, x: 40, y: 20 });

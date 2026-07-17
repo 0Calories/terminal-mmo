@@ -18,7 +18,7 @@ import {
 import { isSolid } from '@mmo/core/physics';
 import { bodyFrame, mirrorAnchorX, spriteMetaFor } from '@mmo/core/sprites';
 import type { Portal } from '@mmo/core/zones';
-import { type BodySprite, formFrame } from './body-sprite';
+import { type BodySprite, formFrame, walkFrameCount } from './body-sprite';
 import { formById } from './forms';
 import { hatById } from './hats';
 import { spriteFor, spriteForNpc } from './registry';
@@ -237,6 +237,7 @@ export function drawEntitySprite<C>(
 				staggered,
 			},
 			body.fps,
+			walkFrameCount(body),
 		);
 		sprite = formFrame(body, animation.animationId, animation.frameIndex);
 		baseline = body.baseline ?? 0;

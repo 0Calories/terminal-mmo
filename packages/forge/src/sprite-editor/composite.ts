@@ -47,7 +47,7 @@ import {
 	type SpriteOverrides,
 	spriteFromDoc,
 } from '@mmo/render';
-import { animationFps, playbackFrame, walkPreviewAnimation } from './playback';
+import { animationFps, playbackFrame, walkPreviewIndex } from './playback';
 import type { SpriteRole } from './templates';
 
 // The base entity type used to render monster/npc art plainly. Its only effect is
@@ -117,15 +117,9 @@ export function previewStances(
 	}
 	if (role === 'form') {
 		const out: PreviewStance[] = [{ id: 'idle', fps: 0 }];
-		if (doc.animations.walkA || doc.animations.walkB)
-			out.push({ id: 'walk', fps: 0 });
+		if (doc.animations.walk) out.push({ id: 'walk', fps: 0 });
 		for (const animation of Object.keys(doc.animations)) {
-			if (
-				animation === 'idle' ||
-				animation === 'walkA' ||
-				animation === 'walkB'
-			)
-				continue;
+			if (animation === 'idle' || animation === 'walk') continue;
 			out.push({ id: animation, fps: animationFps(doc.fps, animation) });
 		}
 		return out;
@@ -144,23 +138,20 @@ export function previewStances(
 // Frame / action resolution
 // ---------------------------------------------------------------------------
 
-// Resolve a stance + elapsed time to the concrete frame name to show. Accepts a
-// animation id (sampled by its fps), the synthetic 'walk' (alternating gait), or a
-// bare frame name (shown as-is — how the editor pins the exact edited frame).
+// Resolve a stance + elapsed time to the concrete frame name to show. Accepts
+// an animation id (sampled by its fps), 'walk' (stride-simulated gait, ADR
+// 0035), or a bare frame name (shown as-is — how the editor pins the exact
+// edited frame).
 function resolveFrame(
 	doc: SpriteDoc,
 	stance: string,
 	elapsedS: number,
 ): string {
 	const fallback = doc.frames[0]?.name ?? 'idle';
-	if (stance === 'walk' && (doc.animations.walkA || doc.animations.walkB)) {
-		const animation = walkPreviewAnimation(elapsedS);
-		const frames =
-			doc.animations[animation] ??
-			doc.animations.walkA ??
-			doc.animations.walkB ??
-			[];
-		return frames[0] ?? fallback;
+	if (stance === 'walk' && doc.animations.walk) {
+		const frames = doc.animations.walk;
+		const idx = walkPreviewIndex(frames.length, elapsedS);
+		return frames[idx] ?? fallback;
 	}
 	const animationFrames = doc.animations[stance];
 	if (animationFrames && animationFrames.length > 0) {

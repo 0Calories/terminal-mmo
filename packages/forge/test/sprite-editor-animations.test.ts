@@ -95,11 +95,12 @@ describe('addFrameToAnimation', () => {
 
 describe('deleteAnimation', () => {
 	test('removes the animation entry and garbage-collects its orphaned frames', () => {
-		const s = deleteAnimation(formState(), 'walkB');
+		const s = deleteAnimation(formState(), 'walk');
 		expect(s.feedback).toBe('');
-		expect(animationNames(s)).not.toContain('walkB');
-		// walkB's frame was referenced by no other animation, so its section is gone too.
-		expect(frameNames(s)).not.toContain('walkB');
+		expect(animationNames(s)).not.toContain('walk');
+		// walk's frames were referenced by no other animation, so their sections go too.
+		expect(frameNames(s)).not.toContain('walk-0');
+		expect(frameNames(s)).not.toContain('walk-1');
 	});
 
 	test('keeps a frame that another animation still references', () => {
@@ -117,9 +118,9 @@ describe('deleteAnimation', () => {
 	});
 
 	test('moves off a deleted current animation', () => {
-		let s = selectAnimation(formState(), 'walkB');
-		expect(s.animation).toBe('walkB');
-		s = deleteAnimation(s, 'walkB');
+		let s = selectAnimation(formState(), 'walk');
+		expect(s.animation).toBe('walk');
+		s = deleteAnimation(s, 'walk');
 		expect(animationNames(s)).toContain(s.animation);
 		expect(frameNames(s)).toContain(s.frame);
 	});
@@ -132,18 +133,18 @@ describe('deleteAnimation', () => {
 	});
 
 	test('is undoable', () => {
-		const s = deleteAnimation(formState(), 'walkB');
+		const s = deleteAnimation(formState(), 'walk');
 		const back = undoEdit(s);
-		expect(animationNames(back)).toContain('walkB');
-		expect(frameNames(back)).toContain('walkB');
+		expect(animationNames(back)).toContain('walk');
+		expect(frameNames(back)).toContain('walk-0');
 	});
 });
 
 describe('selectAnimation', () => {
 	test('switches current animation and lands on its first frame', () => {
-		const s = selectAnimation(formState(), 'walkA');
-		expect(s.animation).toBe('walkA');
-		expect(s.frame).toBe('walkA');
+		const s = selectAnimation(formState(), 'walk');
+		expect(s.animation).toBe('walk');
+		expect(s.frame).toBe('walk-0');
 	});
 
 	test('refuses an unknown animation', () => {
@@ -179,19 +180,19 @@ describe('reorderFrame', () => {
 
 describe('setAnimationFps', () => {
 	test('sets a positive fps', () => {
-		const s = setAnimationFps(formState(), 'walkA', 8);
+		const s = setAnimationFps(formState(), 'walk', 8);
 		expect(s.feedback).toBe('');
-		expect(s.doc.fps.walkA).toBe(8);
+		expect(s.doc.fps.walk).toBe(8);
 	});
 
 	test('null clears the fps back to the default', () => {
-		let s = setAnimationFps(formState(), 'walkA', 8);
-		s = setAnimationFps(s, 'walkA', null);
-		expect(s.doc.fps.walkA).toBeUndefined();
+		let s = setAnimationFps(formState(), 'walk', 8);
+		s = setAnimationFps(s, 'walk', null);
+		expect(s.doc.fps.walk).toBeUndefined();
 	});
 
 	test('refuses a non-positive fps', () => {
-		const s = setAnimationFps(formState(), 'walkA', 0);
+		const s = setAnimationFps(formState(), 'walk', 0);
 		expect(s.feedback).not.toBe('');
 	});
 
@@ -201,9 +202,9 @@ describe('setAnimationFps', () => {
 	});
 
 	test('is undoable', () => {
-		const s = setAnimationFps(formState(), 'walkA', 8);
+		const s = setAnimationFps(formState(), 'walk', 8);
 		const back = undoEdit(s);
-		expect(back.doc.fps.walkA).toBeUndefined();
+		expect(back.doc.fps.walk).toBeUndefined();
 	});
 });
 
@@ -215,9 +216,9 @@ describe('required-animation/anchor hints', () => {
 	});
 
 	test('deleting a required animation surfaces it as missing (allowed, hinted)', () => {
-		const s = deleteAnimation(formState(), 'walkB');
+		const s = deleteAnimation(formState(), 'walk');
 		expect(s.feedback).toBe(''); // allowed, not refused
-		expect(missingRequiredAnimations(s.doc, 'form')).toContain('walkB');
+		expect(missingRequiredAnimations(s.doc, 'form')).toContain('walk');
 	});
 
 	test('a doc missing a required anchor reports it', () => {
