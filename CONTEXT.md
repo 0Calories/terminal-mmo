@@ -60,8 +60,10 @@ to no Animation is its own implicit single-frame Animation. Which Animation show
 is chosen each render by a pure, shared function of replicated state so owner and
 observers agree. Body-animation priority is a fixed ladder — `hurt/stagger >
 combat > airborne > walk > emote > idle` — where, deliberately, walking cancels an
-**Emote**. Other roles' multi-frame art (a **Weapon sprite**'s swing phases) is
-plain Frames selected by that role's own logic, not Animations.
+**Emote**. Other roles' multi-frame art can also be Animations with their own
+selection logic — a **Weapon sprite**'s `swing` Animation is indexed by the
+replicated **Attack phase** (wind-up→0, active→1, recovery→2), never by fps
+(ADR 0036).
 _Avoid_: Pose (retired term, ADR 0035), Frame (an Animation *contains* Frames;
 reserve Frame for one grid), stance (see **Preview stance**), animation state
 
@@ -805,8 +807,9 @@ _Avoid_: Asset (too generic), art file, sprite sheet (there is no atlas)
 **Sprite role**:
 What a Sprite file is *for* — form, hat, weapon, monster — named by the
 directory it lives in, and driving which validation profile applies (a form must
-author `idle`/`walk` and `grip`/`head`; a weapon its phase frames and
-grip). Cosmetic roles (form, hat) are registered by scan — the file existing is
+author `idle`/`walk` and `grip`/`head`; a weapon a **Default frame** plus an
+exactly-3-frame `swing` Animation and grip). Cosmetic roles (form, hat) are
+registered by scan — the file existing is
 what makes it pickable; combat-entity roles (weapon, monster) are the *art half*
 of a catalog entry that references the Sprite file by id.
 _Avoid_: Type, kind, category
@@ -830,6 +833,15 @@ its own implicit single-frame Animation, which is how bare frame names (`jump`)
 stay selectable at render time.
 _Avoid_: Cel, image, page
 
+**Default frame**:
+The first Frame in a Sprite file — every sprite's first-class citizen, one
+universal rule for all roles (a form's `idle`, a weapon's rest/hold frame, a
+hat's only frame; canonical file order makes it so by construction). It is where
+the file-level **Anchor**s are authored: anchor edits on the Default frame set
+the file's defaults, anchor edits on any other Frame author that frame's
+override (ADR 0036). The editor badges it.
+_Avoid_: Base frame, master frame, rest frame (a role concept, not a format one)
+
 **Pixel**:
 The Sprite editor's atomic unit — one quadrant sub-cell, four per terminal cell
 (2×2), each either a color or transparent. What the artist paints; the glyph is
@@ -846,9 +858,11 @@ _Avoid_: Text tool, character brush
 **Anchor**:
 A named cell a Sprite file declares for attaching overlays — `grip` hangs the
 Weapon sprite, `head` seats the hat; names are open, so new overlay kinds are
-new names, not a format change. Declared per file with optional per-frame
-overrides (an Animation that raises the arm carries the weapon with it). Mirrors with
-facing. Generalizes the **Grip anchor**.
+new names, not a format change. The file-level anchors live on the **Default
+frame**: editing an anchor there edits the file's default; editing one on any
+other Frame authors a per-frame override (an Animation that raises the arm
+carries the weapon with it), cleared back to the default per frame (ADR 0036).
+Mirrors with facing. Generalizes the **Grip anchor**.
 An anchor is an **offset**, not an in-bounds cell reference: any integer is
 valid, including negatives, so a weapon grip legitimately sits one cell left of
 its art (`grip: [-1, 2]` on the sword). A value outside the art bounds (either

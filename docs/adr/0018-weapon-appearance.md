@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: accepted, amended by ADR 0036 (windup/active/recovery named frames →
+  one exactly-3-frame `swing` animation indexed by attack phase)
 ---
 
 # Weapon appearance: always-anchored animated weapon sprites
