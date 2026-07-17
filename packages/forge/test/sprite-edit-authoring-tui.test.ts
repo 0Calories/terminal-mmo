@@ -43,6 +43,26 @@ async function mount(opts: {
 	return { ...t, editor };
 }
 
+// Click the rail button whose label matches `re` in the rendered frame's rail
+// region (mouse-primary, QA round 3: the P/A/v/m/. keys died).
+async function clickRail(
+	t: Awaited<ReturnType<typeof mount>>,
+	re: RegExp,
+): Promise<void> {
+	await t.renderOnce();
+	const rows = t.captureCharFrame().split('\n');
+	for (let y = 0; y < rows.length; y++) {
+		const rail = rows[y].slice(0, 30);
+		const m = re.exec(rail);
+		if (m) {
+			t.editor.mouseDown({ button: 0, x: m.index + 1, y });
+			t.editor.mouseUp();
+			return;
+		}
+	}
+	throw new Error(`no rail button matching ${re}`);
+}
+
 describe('animation menu', () => {
 	test('P opens the menu and shows the animations', async () => {
 		const t = await mount({
@@ -50,7 +70,7 @@ describe('animation menu', () => {
 			id: 'buddy',
 			role: 'form',
 		});
-		t.editor.key(seq('P'));
+		await clickRail(t, /\banimation\b/);
 		await t.renderOnce();
 		expect(t.editor.animationMenu).not.toBeNull();
 		const frame = t.captureCharFrame();
@@ -64,7 +84,7 @@ describe('animation menu', () => {
 			id: 'buddy',
 			role: 'form',
 		});
-		t.editor.key(seq('P'));
+		await clickRail(t, /\banimation\b/);
 		t.editor.key(seq('c')); // create
 		for (const ch of 'wave') t.editor.key(seq(ch));
 		t.editor.key(key('return')); // confirm — action applied, menu stays open
@@ -125,7 +145,7 @@ describe('anchor marker', () => {
 		});
 		expect(t.captureCharFrame()).not.toContain('✛');
 		// Open the anchor menu, add a new anchor name, place it at the cursor.
-		t.editor.key(seq('A'));
+		await clickRail(t, /\banchor\b/);
 		t.editor.key(key('down')); // move to "+ new" (hat has no candidates)
 		t.editor.key(key('return')); // open name input
 		for (const ch of 'grip') t.editor.key(seq(ch));
@@ -151,10 +171,10 @@ describe('mirror view', () => {
 		// Isolate the mirror panel: the always-on floating preview (#393) otherwise
 		// docks over the top-right, covering the mirror panel it shares that side
 		// with. `v` drops the preview so this test exercises mirror alone.
-		t.editor.key(key('v'));
+		await clickRail(t, /\bpreview\b/);
 		await t.renderOnce();
 		expect(t.captureCharFrame()).not.toContain('▌');
-		t.editor.key(key('m'));
+		await clickRail(t, /\bmirror\b/);
 		await t.renderOnce();
 		// The mirrored ▌ glyph appears in the panel.
 		expect(t.captureCharFrame()).toContain('▌');
@@ -210,7 +230,7 @@ describe('playback', () => {
 		const docBefore = t.editor.state.doc;
 		const histBefore = t.editor.state.history;
 
-		t.editor.key(seq('.')); // start animation playback
+		await clickRail(t, /\bplay\b/); // start animation playback
 		expect(t.editor.playing).toBe(true);
 		// 260ms at 4fps → floor(0.26*4)=1 → frame 'b'.
 		t.editor.tick(260);
@@ -224,7 +244,7 @@ describe('playback', () => {
 
 	test('editing is refused while playing', async () => {
 		const t = await mount({ doc: animDoc(), id: 'anim', role: 'hat' });
-		t.editor.key(seq('.'));
+		await clickRail(t, /\bplay\b/);
 		const docBefore = t.editor.state.doc;
 		t.editor.key(key('space')); // would paint — refused during playback
 		expect(t.editor.state.doc).toBe(docBefore);
@@ -237,7 +257,7 @@ describe('playback', () => {
 			id: 'cap',
 			role: 'hat',
 		});
-		t.editor.key(seq('.'));
+		await clickRail(t, /\bplay\b/);
 		t.editor.tick(5000);
 		expect(t.editor.displayFrame).toBe('idle');
 	});

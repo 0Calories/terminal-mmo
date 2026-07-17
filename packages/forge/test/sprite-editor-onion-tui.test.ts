@@ -92,6 +92,25 @@ function canvasHasBg(cap: Spans, rgb: readonly number[]): boolean {
 	return false;
 }
 
+// Click the rail button whose label matches `re` (QA round 3: the O and .
+// keys died; onion cycling and playback are rail buttons).
+async function clickRail(
+	t: Awaited<ReturnType<typeof mount>>,
+	re: RegExp,
+): Promise<void> {
+	await t.renderOnce();
+	const rows = t.captureCharFrame().split('\n');
+	for (let y = 0; y < rows.length; y++) {
+		const m = re.exec(rows[y].slice(0, RAIL_W));
+		if (m) {
+			t.editor.mouseDown({ button: 0, x: m.index + 1, y });
+			t.editor.mouseUp();
+			return;
+		}
+	}
+	throw new Error(`no rail button matching ${re}`);
+}
+
 describe('onion skinning — ghosts through the active Frame', () => {
 	test('depth 0 (default) shows no ghosts, only the checkerboard', async () => {
 		const t = await mount('focus');
@@ -100,9 +119,9 @@ describe('onion skinning — ghosts through the active Frame', () => {
 		expect(canvasHasBg(t.captureSpans(), NEXT)).toBe(false);
 	});
 
-	test('O cycles depth and the previous/next neighbours ghost red/blue (focus)', async () => {
+	test('the onion button cycles depth and the previous/next neighbours ghost red/blue (focus)', async () => {
 		const t = await mount('focus');
-		t.editor.key(key('O', { sequence: 'O' })); // depth → 1
+		await clickRail(t, /\bonion\b/); // depth → 1
 		expect(t.editor.onionDepth).toBe(1);
 		await t.renderOnce();
 		const cap = t.captureSpans();
@@ -113,7 +132,7 @@ describe('onion skinning — ghosts through the active Frame', () => {
 
 	test('ghosts also render in the strips view', async () => {
 		const t = await mount('strips');
-		t.editor.key(key('O', { sequence: 'O' }));
+		await clickRail(t, /\bonion\b/);
 		await t.renderOnce();
 		const cap = t.captureSpans();
 		expect(canvasHasBg(cap, PREV)).toBe(true);
@@ -122,22 +141,21 @@ describe('onion skinning — ghosts through the active Frame', () => {
 
 	test('playback suspends the ghosts', async () => {
 		const t = await mount('focus');
-		t.editor.key(key('O', { sequence: 'O' })); // onion on
-		t.editor.key(key('.', { sequence: '.' })); // play the animation
+		await clickRail(t, /\bonion\b/); // onion on
+		await clickRail(t, /\bplay\b/); // play the animation
 		await t.renderOnce();
 		const cap = t.captureSpans();
 		expect(canvasHasBg(cap, PREV)).toBe(false);
 		expect(canvasHasBg(cap, NEXT)).toBe(false);
 	});
 
-	test('O wraps 0 → 1 → 2 → 0', async () => {
+	test('the onion button wraps 0 → 1 → 2 → 0', async () => {
 		const t = await mount('focus');
-		const press = () => t.editor.key(key('O', { sequence: 'O' }));
-		press();
+		await clickRail(t, /\bonion\b/);
 		expect(t.editor.onionDepth).toBe(1);
-		press();
+		await clickRail(t, /\bonion\b/);
 		expect(t.editor.onionDepth).toBe(2);
-		press();
+		await clickRail(t, /\bonion\b/);
 		expect(t.editor.onionDepth).toBe(0);
 	});
 });

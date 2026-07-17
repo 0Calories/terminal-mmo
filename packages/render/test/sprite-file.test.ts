@@ -95,6 +95,19 @@ test('serializer emits canonical animation order: idle, walk, jump, then existin
 	expect(reparsed.doc?.frames.map((f) => f.name)).toEqual(sections);
 });
 
+test('serializer omits fps entries equal to the default 5 (ADR 0035)', () => {
+	const { doc } = parseSpriteFile(
+		'{ "animations": { "walk": ["w0", "w1"] }, "fps": { "walk": 5 } }\n--- idle\nAB\n--- w0\nCD\n--- w1\nEF\n',
+		'dflt',
+	);
+	expect(serializeSpriteFile(doc as SpriteDoc)).not.toContain('"fps"');
+	const { doc: fast } = parseSpriteFile(
+		'{ "animations": { "walk": ["w0", "w1"] }, "fps": { "walk": 12 } }\n--- idle\nAB\n--- w0\nCD\n--- w1\nEF\n',
+		'fast',
+	);
+	expect(serializeSpriteFile(fast as SpriteDoc)).toContain('"fps"');
+});
+
 test('headerless minimal file: defaults, implicit animation, zero diagnostics', () => {
 	const { doc, diagnostics } = parseSpriteFile(MINIMAL, 'minimal');
 	expect(diagnostics).toEqual([]);

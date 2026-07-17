@@ -39,25 +39,51 @@ describe('editor floating preview pane', () => {
 		return { ...t, editor };
 	}
 
-	test('the preview is on by default and v toggles it off/on (#393)', async () => {
+	// Whether the floating pane renders: its bordered ' preview ' title shows in
+	// the canvas region (right of the rail — the rail's own 'preview' button
+	// always shows and must not count).
+	function paneShown(t: Awaited<ReturnType<typeof mountEditor>>): boolean {
+		return t
+			.captureCharFrame()
+			.split('\n')
+			.some((r) => r.slice(30).includes('preview'));
+	}
+
+	// Click the rail's preview toggle button (QA round 3: the v key died).
+	async function clickPreviewButton(
+		t: Awaited<ReturnType<typeof mountEditor>>,
+	): Promise<void> {
+		await t.renderOnce();
+		const rows = t.captureCharFrame().split('\n');
+		for (let y = 0; y < rows.length; y++) {
+			const m = /\bpreview\b/.exec(rows[y].slice(0, 30));
+			if (m) {
+				t.editor.mouseDown({ button: 0, x: m.index + 1, y });
+				t.editor.mouseUp();
+				return;
+			}
+		}
+		throw new Error('no preview button in the rail');
+	}
+
+	test('the preview is on by default and the rail button toggles it off/on (#393, QA round 3)', async () => {
 		const t = await mountEditor(
 			loadDoc('sprites/forms/buddy.sprite', 'buddy'),
 			'form',
 		);
 		// Always-on: the pane and its controls render without any keypress.
 		expect(t.editor.composite).toBe(true);
-		expect(t.captureCharFrame()).toContain('preview');
-		// `v` is the rare degradation override: toggling off drops the pane.
-		t.editor.key(seq('v'));
+		expect(paneShown(t)).toBe(true);
+		// The rail button is the degradation override: toggling off drops the pane.
+		await clickPreviewButton(t);
 		expect(t.editor.composite).toBe(false);
 		await t.renderOnce();
-		const off = t.captureCharFrame();
-		expect(off).not.toContain('preview');
+		expect(paneShown(t)).toBe(false);
 		// And back on.
-		t.editor.key(seq('v'));
+		await clickPreviewButton(t);
 		expect(t.editor.composite).toBe(true);
 		await t.renderOnce();
-		expect(t.captureCharFrame()).toContain('preview');
+		expect(paneShown(t)).toBe(true);
 	});
 
 	test('the pane carries flip + play controls', async () => {
@@ -76,7 +102,7 @@ describe('editor floating preview pane', () => {
 			'form',
 		);
 		const on = t.captureCharFrame();
-		t.editor.key(seq('v'));
+		await clickPreviewButton(t);
 		await t.renderOnce();
 		const off = t.captureCharFrame();
 		// Dropping the floating pane (avatar art + border) changes the frame.
@@ -122,10 +148,13 @@ describe('editor floating preview pane', () => {
 		expect(t.editor.state).toBe(before);
 	});
 
-	test('the key map documents the preview toggle on v (locked keymap #387)', () => {
+	test('the key map documents the preview toggle as a rail button (QA round 3)', () => {
 		const bindings = SPRITE_KEYMAP.flatMap((g) => g.bindings);
-		const v = bindings.find((b) => b.keys === 'v');
-		expect(v?.label.toLowerCase()).toContain('preview');
+		expect(
+			bindings.some((b) => b.keys === 'buttons' && b.label.includes('preview')),
+		).toBe(true);
+		// No v binding survives.
+		expect(bindings.some((b) => b.keys === 'v')).toBe(false);
 	});
 });
 

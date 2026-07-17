@@ -10,6 +10,7 @@ import {
 	focusTabs,
 	frameBoxOf,
 	scrollIntoView,
+	stepperHit,
 	stripsHit,
 	stripsLayout,
 } from '../src/sprite-editor/strips';
@@ -66,6 +67,39 @@ describe('stripsLayout — every Animation a labeled strip of its Frames', () =>
 		expect(l.contentW).toBeGreaterThanOrEqual(24);
 		const last = l.frames[l.frames.length - 1];
 		expect(l.contentH).toBe(last.y + last.h + 1);
+	});
+});
+
+describe('fps stepper — multi-frame strips only (QA round 3)', () => {
+	test('a multi-frame strip carries a ‹ Nfps › stepper on its name row; single-frame strips none', () => {
+		const l = stripsLayout(doc, 2);
+		expect(l.steppers).toHaveLength(1);
+		const st = l.steppers[0];
+		expect(st.animation).toBe('walk');
+		expect(st.text).toBe('‹ 5fps ›');
+		// It sits on walk's name row, after the frames' extent.
+		const walkIdx = l.labels.findIndex((lb) => lb.animation === 'walk');
+		expect(st.y).toBe(l.nameRows[walkIdx]);
+	});
+
+	test('an authored fps shows in the stepper text', () => {
+		const l = stripsLayout({ ...doc, fps: { walk: 12 } }, 2);
+		expect(l.steppers[0].text).toBe('‹ 12fps ›');
+	});
+
+	test('stepperHit resolves the chevrons to ±1 and the number to dead space', () => {
+		const l = stripsLayout(doc, 2);
+		const st = l.steppers[0];
+		expect(stepperHit(l, st.x, st.y)).toEqual({
+			animation: 'walk',
+			delta: -1,
+		});
+		expect(stepperHit(l, st.x + st.text.length - 1, st.y)).toEqual({
+			animation: 'walk',
+			delta: 1,
+		});
+		expect(stepperHit(l, st.x + 3, st.y)).toBeNull();
+		expect(stepperHit(l, st.x, st.y + 1)).toBeNull();
 	});
 });
 

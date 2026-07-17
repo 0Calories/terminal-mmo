@@ -32,6 +32,8 @@ import {
 	frameExtent,
 	paletteEntries,
 	readPixel,
+	setInk,
+	TRANSPARENT_INK,
 } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
@@ -141,6 +143,43 @@ async function mount(opts: {
 	return { ...t, editor };
 }
 
+// Click the rail button whose label matches `re` in the rendered rail region
+// (mouse-primary, QA round 3).
+async function clickRail(
+	t: Awaited<ReturnType<typeof mount>>,
+	re: RegExp,
+): Promise<void> {
+	await t.renderOnce();
+	const rows = t.captureCharFrame().split('\n');
+	for (let y = 0; y < rows.length; y++) {
+		const m = re.exec(rows[y].slice(0, RAIL_W));
+		if (m) {
+			t.editor.mouseDown({ button: 0, x: m.index + 1, y });
+			t.editor.mouseUp();
+			return;
+		}
+	}
+	throw new Error(`no rail button matching ${re}`);
+}
+
+// Double-click the first ink grid swatch (row under the ' ink' title). The
+// editor's real clock is fine: two immediate calls land well inside the window.
+async function dblClickFirstSwatch(
+	t: Awaited<ReturnType<typeof mount>>,
+): Promise<void> {
+	await t.renderOnce();
+	const rows = t.captureCharFrame().split('\n');
+	const inkY = rows.findIndex(
+		(r) => r.slice(0, RAIL_W - 1).trimEnd() === ' ink',
+	);
+	if (inkY < 0) throw new Error('no ink box title in the rail');
+	const y = inkY + 1;
+	for (const _ of [0, 1]) {
+		t.editor.mouseDown({ button: 0, x: 1, y });
+		t.editor.mouseUp();
+	}
+}
+
 describe('Sprite editor TUI smoke', () => {
 	test('opens an existing sprite and renders its frame art as a colour block', async () => {
 		// A tiny hat with one lit quadrant (▘) in the idle frame.
@@ -194,8 +233,8 @@ describe('Sprite editor TUI smoke', () => {
 		const frame = captureCharFrame();
 		expect(frame).toContain('newhat');
 		expect(editor.state.frame).toBe('idle');
-		// Help line is present.
-		expect(frame).toContain('undo');
+		// The status readout is present (the persistent hint line is retired).
+		expect(frame).toContain('px (');
 	});
 
 	test('a keyboard pen stroke lights a Pixel block on the canvas', async () => {
@@ -339,9 +378,10 @@ describe('Sprite editor TUI smoke', () => {
 		});
 		t.editor.key(key('space')); // paint 'p' at TL
 		t.editor.key(key('space')); // lift pen
-		// Define a fresh file-local colour via the `e` modal; it becomes the active
-		// ink, so overpainting the same cell coerces rather than being a no-op.
-		t.editor.key(key('e'));
+		// Define a fresh file-local colour via the modal (double-click a swatch,
+		// QA round 3); it becomes the active ink, so overpainting the same cell
+		// coerces rather than being a no-op.
+		await dblClickFirstSwatch(t);
 		expect(t.editor.colorPicker).not.toBeNull();
 		t.editor.key(key('enter')); // commit the default colour under an auto key
 		expect(t.editor.colorPicker).toBeNull();
@@ -364,7 +404,7 @@ describe('Sprite editor TUI smoke', () => {
 			save: (text) => writeFileSync(savePath, text),
 		});
 		t.editor.key(key('space')); // paint something
-		t.editor.key(key('w')); // save
+		t.editor.key(key('s', { ctrl: true })); // save (^s)
 		await t.renderOnce();
 		expect(existsSync(savePath)).toBe(true);
 		expect(readFileSync(savePath, 'utf8')).toContain('--- idle');
@@ -372,19 +412,56 @@ describe('Sprite editor TUI smoke', () => {
 		expect(t.captureCharFrame().toLowerCase()).toContain('saved');
 	});
 
-	test('the e colour picker modal opens over a hue/shade grid + hex entry', async () => {
+	test('double-clicking a rail swatch opens the colour modal over a hue/shade grid + hex entry', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('def', 'hat'),
 			id: 'def',
 			role: 'hat',
 		});
-		t.editor.key(key('e'));
+		await dblClickFirstSwatch(t);
 		await t.renderOnce();
 		expect(t.editor.colorPicker).not.toBeNull();
 		expect(t.editor.colorPicker?.mode).toBe('define');
 		const frame = t.captureCharFrame();
 		expect(frame).toContain('Define file-local colour');
 		expect(frame).toContain('hex #');
+		// The retired e key no longer opens it.
+		t.editor.key(key('escape'));
+		expect(t.editor.colorPicker).toBeNull();
+		t.editor.key(key('e'));
+		expect(t.editor.colorPicker).toBeNull();
+	});
+
+	test('double-click detection is clock-driven: two slow clicks never open the modal', async () => {
+		let nowMs = 0;
+		const clock = () => nowMs;
+		const t0 = await createTestRenderer({ width: 100, height: 24 });
+		const editor = new SpriteEditor(t0.renderer, {
+			id: 'slow',
+			role: 'hat',
+			doc: emptySpriteDoc('slow', 'hat'),
+			save: () => {},
+			now: clock,
+		});
+		editor.attach(t0.renderer.root);
+		await t0.renderOnce();
+		const rows = t0.captureCharFrame().split('\n');
+		const inkY = rows.findIndex(
+			(r) => r.slice(0, RAIL_W - 1).trimEnd() === ' ink',
+		);
+		const y = inkY + 1;
+		editor.mouseDown({ button: 0, x: 1, y });
+		editor.mouseUp();
+		nowMs += 1000; // beyond the double-click window
+		editor.mouseDown({ button: 0, x: 1, y });
+		editor.mouseUp();
+		expect(editor.colorPicker).toBeNull();
+		// Two quick clicks (same fake clock instant) do open it.
+		editor.mouseDown({ button: 0, x: 1, y });
+		editor.mouseUp();
+		editor.mouseDown({ button: 0, x: 1, y });
+		editor.mouseUp();
+		expect(editor.colorPicker).not.toBeNull();
 	});
 
 	test('idle time never recolors dynamic ink — p stays at the selected variant (spec #401 amendment)', async () => {
@@ -675,7 +752,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 		t.editor.mouseDrag({ button: 0, x: bx + 3, y: by + 1 });
 		t.editor.mouseUp();
 		expect(t.editor.state.selection).not.toBeNull();
-		t.editor.key(key('c'));
+		await clickRail(t, /\bcrop\b/);
 		const after = frameExtent(currentFrame(t.editor.state));
 		expect(after.w).toBeLessThan(frameExtent(before).w);
 	});
@@ -703,7 +780,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 		const painted = t.editor.state.ink; // the doc's default key
 		t.editor.key(key('space')); // paint at cursor (0,0)
 		t.editor.key(key('space')); // lift pen
-		t.editor.key(key('t')); // move the active ink away (→ transparent)
+		t.editor.state = setInk(t.editor.state, TRANSPARENT_INK); // move ink away
 		t.editor.key(key('i')); // retired: must NOT eyedrop (QA round 3)
 		expect(t.editor.state.ink).toEqual({ kind: 'transparent' });
 		// The momentary alt-click spelling still samples the lit Pixel. The
@@ -739,7 +816,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 		const painted = t.editor.state.ink;
 		t.editor.mouseDown({ button: 0, x: bx, y: by }); // paint a Pixel
 		t.editor.mouseUp();
-		t.editor.key(key('t')); // ink → transparent
+		t.editor.state = setInk(t.editor.state, TRANSPARENT_INK); // ink → transparent
 		const before = t.editor.state.doc;
 		t.editor.mouseDown({ button: 0, x: bx, y: by, modifiers: { alt: true } });
 		t.editor.mouseUp();
@@ -868,19 +945,83 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(t.editor.zoom).toBe(3);
 	});
 
-	test('the hint line follows the active tool', async () => {
+	test('the fps stepper on a multi-frame strip steps the animation fps, clamped (QA round 3)', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('fps', 'form'),
+			id: 'fps',
+			role: 'form',
+		});
+		// Zoom out so the walk strip's name row (carrying ‹ 5fps ›) is on screen.
+		t.editor.key(key('-', { sequence: '-' }));
+		await t.renderOnce();
+		const find = (glyph: string) => {
+			const rows = t.captureCharFrame().split('\n');
+			for (let y = 0; y < rows.length; y++) {
+				const x = rows[y].indexOf(glyph, RAIL_W);
+				if (x >= 0) return { x, y };
+			}
+			throw new Error(`no ${glyph} on screen`);
+		};
+		const dec = find('‹');
+		t.editor.mouseDown({ button: 0, x: dec.x, y: dec.y });
+		t.editor.mouseUp();
+		expect(t.editor.state.doc.fps.walk).toBe(4);
+		// Down to the floor: clamped at 1.
+		for (let i = 0; i < 6; i++) {
+			const d = find('‹');
+			t.editor.mouseDown({ button: 0, x: d.x, y: d.y });
+			t.editor.mouseUp();
+			await t.renderOnce();
+		}
+		expect(t.editor.state.doc.fps.walk).toBe(1);
+		// The › chevron steps back up.
+		const inc = find('›');
+		t.editor.mouseDown({ button: 0, x: inc.x, y: inc.y });
+		t.editor.mouseUp();
+		expect(t.editor.state.doc.fps.walk).toBe(2);
+		// A stepper edit is undoable like any doc mutation.
+		t.editor.key(key('u'));
+		expect(t.editor.state.doc.fps.walk).toBe(1);
+	});
+
+	test('the bottom row is the status readout — the persistent hint line is gone (QA round 3)', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('hint', 'hat'),
 			id: 'hint',
 			role: 'hat',
 		});
-		const hintRowOf = (s: string) => s.trimEnd().split('\n').at(-1) ?? '';
-		expect(hintRowOf(t.captureCharFrame())).toContain('paint:');
+		const rows = t.captureCharFrame().trimEnd().split('\n');
+		const last = rows[rows.length - 1];
+		expect(last).toContain('px (');
+		expect(last).not.toContain('paint:');
+		// The freed row belongs to the canvas: only ONE chrome row at the bottom.
+		expect(rows[rows.length - 2]).not.toContain('px (');
+	});
+
+	test('wasd moves the cursor; hjkl and the dead letter keys are inert', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('wasd', 'hat'),
+			id: 'wasd',
+			role: 'hat',
+		});
+		t.editor.key(key('d'));
 		t.editor.key(key('s'));
-		await t.renderOnce();
-		const hint = hintRowOf(t.captureCharFrame());
-		expect(hint).toContain('stamp:');
-		expect(hint).toContain('? help');
+		expect(t.editor.state.cursor).toEqual({ x: 1, y: 1 });
+		t.editor.key(key('a'));
+		t.editor.key(key('w'));
+		expect(t.editor.state.cursor).toEqual({ x: 0, y: 0 });
+		// hjkl are dead: the cursor stays put.
+		for (const k of ['h', 'j', 'k', 'l']) t.editor.key(key(k));
+		expect(t.editor.state.cursor).toEqual({ x: 0, y: 0 });
+		// The dead letters neither move nor mutate: n/m/v/t/e/o/R/P/A/O and the
+		// frame-step brackets are inert.
+		const before = t.editor.state;
+		for (const kk of ['n', 'm', 'v', 't', 'e', 'o']) t.editor.key(key(kk));
+		for (const sq of ['[', ']', '{', '}', 'P', 'A', 'R', 'O', '.', ','])
+			t.editor.key(key(sq, { sequence: sq }));
+		expect(t.editor.state.doc).toBe(before.doc);
+		expect(t.editor.state.frame).toBe(before.frame);
+		expect(t.editor.playMode).toBe('none');
 	});
 
 	test('? opens the complete key-map overlay and esc closes it', async () => {
@@ -896,7 +1037,7 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(t.editor.helpOpen).toBe(true);
 		const frame = t.captureCharFrame();
 		expect(frame).toContain('Key map');
-		expect(frame).toContain('shift-wheel');
+		expect(frame).toContain('dbl-click swatch');
 		// Keys are inert while the overlay is up, except closing it.
 		t.editor.key(key('space'));
 		expect(t.editor.state.history.past.length).toBe(0);
@@ -957,10 +1098,10 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		t.editor.mouseDown({ button: 0, x: swatch.x, y: swatch.y });
 		expect(t.editor.state.ink).toEqual({ kind: 'color', key: 'a' });
 		// Playback box.
-		const playY = rowWith(', walk');
+		const playY = rowWith(' walk');
 		t.editor.mouseDown({
 			button: 0,
-			x: lines[playY].indexOf(', walk'),
+			x: lines[playY].indexOf('walk'),
 			y: playY,
 		});
 		expect(t.editor.playMode).toBe('walk');
@@ -1020,7 +1161,7 @@ describe('Sprite editor shape tools (#394)', () => {
 		expect(canvasHasBg(t.captureSpans(), INK_P, 17)).toBe(true);
 	});
 
-	test('o toggles the rect/ellipse outline↔filled mode', async () => {
+	test('clicking the active rect tool button toggles outline↔filled (QA round 3: o is retired)', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('o', 'hat'),
 			id: 'o',
@@ -1028,7 +1169,9 @@ describe('Sprite editor shape tools (#394)', () => {
 		});
 		t.editor.key(key('5', { sequence: '5' })); // rect
 		expect(t.editor.state.rectMode).toBe('outline');
-		t.editor.key(key('o'));
+		await clickRail(t, /\brect\b/); // already active → toggles mode
+		expect(t.editor.state.rectMode).toBe('filled');
+		t.editor.key(key('o')); // retired: inert
 		expect(t.editor.state.rectMode).toBe('filled');
 	});
 

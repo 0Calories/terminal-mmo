@@ -120,15 +120,21 @@ describe('rung 1 — preview auto-hide + override (#398)', () => {
 			width: 80,
 			height: 24,
 		});
-		// At 80 wide the float would cover more than half — auto-hidden.
+		// At 80 wide the float would cover more than half — auto-hidden. (The
+		// canvas region only: the rail's own 'preview' button always shows.)
+		const paneShown = () =>
+			t
+				.captureCharFrame()
+				.split('\n')
+				.some((r) => r.slice(30).includes('preview'));
 		expect(t.editor.composite).toBe(false);
-		expect(t.captureCharFrame()).not.toContain('preview');
+		expect(paneShown()).toBe(false);
 
 		// Widen: the pane comes back on its own (reversible).
 		t.resize(100, 24);
 		await t.renderOnce();
 		expect(t.editor.composite).toBe(true);
-		expect(t.captureCharFrame()).toContain('preview');
+		expect(paneShown()).toBe(true);
 	});
 
 	test('the manual v override forces the pane visible while auto-hidden', async () => {
@@ -140,10 +146,23 @@ describe('rung 1 — preview auto-hide + override (#398)', () => {
 			height: 24,
 		});
 		expect(t.editor.composite).toBe(false); // auto-hidden at the floor
-		t.editor.key(seq('v')); // force it visible
+		// The rail's preview button is the manual override (QA round 3: no v key).
+		await t.renderOnce();
+		const rows = t.captureCharFrame().split('\n');
+		const y = rows.findIndex((r) => /\bpreview\b/.test(r.slice(0, 30)));
+		if (y < 0) throw new Error('no preview button in the rail');
+		const x = (/\bpreview\b/.exec(rows[y].slice(0, 30)) as RegExpExecArray)
+			.index;
+		t.editor.mouseDown({ button: 0, x: x + 1, y });
+		t.editor.mouseUp();
 		await t.renderOnce();
 		expect(t.editor.composite).toBe(true);
-		expect(t.captureCharFrame()).toContain('preview');
+		expect(
+			t
+				.captureCharFrame()
+				.split('\n')
+				.some((r) => r.slice(30).includes('preview')),
+		).toBe(true);
 	});
 });
 
@@ -174,7 +193,9 @@ describe('rung 2 — strips force focus (#398)', () => {
 });
 
 describe('rung 3 — folded playback box (#398)', () => {
-	test('folds to one hint row at the floor and unfolds when the terminal grows tall', async () => {
+	test('the full box (the mouse-primary buttons) fits at the 80×24 floor; a huge palette folds it', async () => {
+		// Mouse-primary (ADR 0035): the playback box carries the only path to
+		// mirror/preview/resize/crop, so a standard doc keeps it whole at floor.
 		const t = await mount({
 			doc: emptySpriteDoc('fold', 'hat'),
 			id: 'fold',
@@ -182,17 +203,35 @@ describe('rung 3 — folded playback box (#398)', () => {
 			width: 80,
 			height: 24,
 		});
-		// Folded: the box collapses to a single 'playback' hint; its full-box
-		// controls (', walk', 'animation idle') are gone, but the rail itself stays.
-		const folded = railText(t.captureCharFrame());
-		expect(folded).toContain('playback');
-		expect(folded).not.toContain(', walk');
-
-		// Grow tall: the full playback box returns with its detail (reversible).
-		t.resize(80, 40);
-		await t.renderOnce();
 		const full = railText(t.captureCharFrame());
-		expect(full).toContain(', walk');
-		expect(full).toContain('animation idle');
+		expect(full).toContain('walk');
+		expect(full).toContain('mirror');
+		expect(full).toContain('crop');
+
+		// A palette long enough to overflow the rail folds the box (and the fold
+		// reverses when the terminal grows tall).
+		const colors = Object.fromEntries(
+			Array.from({ length: 60 }, (_, i) => [
+				String.fromCharCode(0x0100 + i),
+				[i, i, i, 255] as [number, number, number, number],
+			]),
+		);
+		const bigDoc = {
+			...emptySpriteDoc('fold2', 'hat'),
+			colors,
+		} as ReturnType<typeof emptySpriteDoc>;
+		const t2 = await mount({
+			doc: bigDoc,
+			id: 'fold2',
+			role: 'hat',
+			width: 80,
+			height: 24,
+		});
+		const folded = railText(t2.captureCharFrame());
+		expect(folded).toContain('playback');
+		expect(folded).not.toContain('mirror');
+		t2.resize(80, 45);
+		await t2.renderOnce();
+		expect(railText(t2.captureCharFrame())).toContain('mirror');
 	});
 });

@@ -307,3 +307,31 @@ function applyMoveInput(
 			return moved.float ? cancelFloat(moved) : moved;
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Double-click detection (QA round 3): double-clicking a rail ink swatch opens
+// the define/edit colour modal. Deterministic — the clock is injected, so a
+// test drives time explicitly.
+// ---------------------------------------------------------------------------
+
+export const DOUBLE_CLICK_MS = 400;
+
+// A stateful detector: feed it every candidate click's screen cell; it reports
+// whether that click completes a double (same cell, within the window). A
+// completed double resets, so a triple-click does not read as two doubles.
+export function createDoubleClickDetector(
+	now: () => number,
+	thresholdMs: number = DOUBLE_CLICK_MS,
+): (x: number, y: number) => boolean {
+	let last: { x: number; y: number; t: number } | null = null;
+	return (x, y) => {
+		const t = now();
+		const double =
+			last !== null &&
+			last.x === x &&
+			last.y === y &&
+			t - last.t <= thresholdMs;
+		last = double ? null : { x, y, t };
+		return double;
+	};
+}

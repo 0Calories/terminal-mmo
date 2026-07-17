@@ -35,7 +35,6 @@ import type { CliDeps } from '../cli';
 import { findSpriteFile, formatSpriteDiagnostics } from '../sprite-cli';
 import {
 	helpOverlayRows,
-	hintLine,
 	RAIL_TOOLS,
 	RAIL_W,
 	type RailAction,
@@ -67,6 +66,7 @@ import {
 } from './degradation';
 import {
 	applyInput,
+	createDoubleClickDetector,
 	type KeyPaint,
 	normalizeKey,
 	normalizeMouse,
@@ -147,19 +147,22 @@ import {
 	setTool,
 	shapePreviewPixels,
 	stampGlyph,
-	TRANSPARENT_INK,
 	toggleShapeMode,
 	undoEdit,
 } from './state';
 import {
 	centeredOrigin,
 	clampScroll,
+	DEFAULT_FPS,
 	type FocusTab,
+	FPS_MAX,
+	FPS_MIN,
 	focusTabAt,
 	focusTabs,
 	frameBoxOf,
 	type StripsLayout,
 	scrollIntoView,
+	stepperHit,
 	stripsHit,
 	stripsLayout,
 } from './strips';
@@ -222,12 +225,18 @@ export interface SpriteEditorOpts {
 	// Shown in the status line's feedback slot on open (e.g. "creating new
 	// sprite …"), so a fresh-template open is never mistaken for a loaded file.
 	initialFeedback?: string;
+	// Injectable clock for double-click detection (tests pass a fake).
+	now?: () => number;
 }
 
-// Two chrome rows: the status line and the hint line under it (spec #387).
-// Owned by the degradation solver so it and the renderer agree on the canvas
-// interior's height.
+// One chrome row: the status line (QA round 3 dropped the hint line). Owned by
+// the degradation solver so it and the renderer agree on the canvas height.
 const CHROME_H = CHROME_ROWS;
+
+// How many rail rows the session variant options occupy (one per channel).
+function variantRowCountOf(options: readonly { channel: 'p' | 'a' }[]): number {
+	return new Set(options.map((o) => o.channel)).size;
+}
 const SCROLLOFF = 2;
 
 // PREVIEW_W / PREVIEW_H (the floating Composited preview's native ~34×11) now
@@ -406,6 +415,9 @@ export class SpriteEditor extends Renderable {
 	// leftover screen cells (short of a whole Pixel at the current zoom) the
 	// focus view accumulates between camera steps.
 	private panLast: { x: number; y: number } | null = null;
+	// Rail-swatch double-click detector (QA round 3): the second click on the
+	// same ink swatch opens the define/edit colour modal. Injected clock.
+	private isSwatchDoubleClick: (x: number, y: number) => boolean;
 	private panRem = { x: 0, y: 0 };
 	// The geometry of the last render, captured so the mouse handlers can invert
 	// screen cells back to rail rows / Frames / Pixels.
@@ -479,6 +491,7 @@ export class SpriteEditor extends Renderable {
 		// default (spec #387, palette from #404): the single source of truth for
 		// every paintable key, plus file-local customs and the dynamic p/a keys.
 		this.globalPalette = opts.globalPalette ?? STANDARD_PALETTE;
+		this.isSwatchDoubleClick = createDoubleClickDetector(opts.now ?? Date.now);
 		this.sceneStyle = buildSceneStyle((r, g, b, a) =>
 			RGBA.fromInts(r, g, b, a),
 		);
@@ -681,6 +694,16 @@ export class SpriteEditor extends Renderable {
 	private applyRail(action: RailAction): void {
 		switch (action.type) {
 			case 'tool':
+				// Clicking the already-active rect/ellipse button toggles its
+				// outline ↔ filled mode (QA round 3: the o key is retired).
+				if (
+					action.tool === this.state.tool &&
+					(action.tool === 'rect' || action.tool === 'ellipse')
+				) {
+					this.liftPen();
+					this.state = toggleShapeMode(this.state);
+					return;
+				}
 				this.switchTool(action.tool);
 				return;
 			case 'ink':
@@ -698,6 +721,24 @@ export class SpriteEditor extends Renderable {
 				return;
 			case 'anchorMenu':
 				this.openAnchorMenu();
+				return;
+			case 'onionCycle':
+				this.cycleOnion();
+				return;
+			case 'mirror':
+				this.mirror = !this.mirror;
+				return;
+			case 'resize':
+				this.liftPen();
+				this.state = beginResize(this.state);
+				return;
+			case 'crop':
+				this.liftPen();
+				this.state = cropToSelection(this.state);
+				this.followCursor = true;
+				return;
+			case 'previewToggle':
+				this.togglePreview();
 				return;
 			case 'variant':
 				// Session-only: recolors previews, never the doc (spec #401 amendment).
@@ -768,6 +809,17 @@ export class SpriteEditor extends Renderable {
 			const { cx, cy } = this.stripsContentAt(e);
 			const hit = stripsHit(layout, cx, cy);
 			if (!hit) {
+				// The name row's fps stepper (QA round 3): ‹ steps down, › up,
+				// clamped 1–30. An undoable doc edit via setAnimationFps.
+				const step = stepperHit(layout, cx, cy);
+				if (step && button === 'left') {
+					this.liftPen();
+					const cur = this.state.doc.fps[step.animation] ?? DEFAULT_FPS;
+					const next = Math.max(FPS_MIN, Math.min(FPS_MAX, cur + step.delta));
+					if (next !== cur)
+						this.state = setAnimationFps(this.state, step.animation, next);
+					return;
+				}
 				// A click on a strip's name row activates that Frame without painting.
 				const strip = layout.nameRows.indexOf(cy);
 				if (strip >= 0) {
@@ -881,6 +933,17 @@ export class SpriteEditor extends Renderable {
 		if (e.y >= this.geom.viewH) return; // the chrome rows
 		if (e.x < RAIL_W) {
 			const action = railActionAt(this.geom.rail, e.x, e.y);
+			// Double-clicking an ink swatch opens the define/edit colour modal for
+			// it (QA round 3: the e key is retired). The first click selected it.
+			if (
+				action?.type === 'ink' &&
+				button === 'left' &&
+				this.isSwatchDoubleClick(e.x, e.y)
+			) {
+				this.applyRail(action);
+				this.openColorPickerModal();
+				return;
+			}
 			if (action) this.applyRail(action);
 			return;
 		}
@@ -1072,25 +1135,6 @@ export class SpriteEditor extends Renderable {
 	}
 
 	// ---- frames / animations / edits ----
-
-	private stepFrame(delta: number): void {
-		this.liftPen();
-		const names = frameNames(this.state);
-		const i = names.indexOf(this.state.frame);
-		const next = names[(i + delta + names.length) % names.length];
-		if (next) this.state = selectFrame(this.state, next);
-		this.followCursor = true;
-	}
-
-	private stepAnimation(delta: number): void {
-		this.liftPen();
-		const names = animationNames(this.state);
-		if (names.length === 0) return;
-		const i = Math.max(0, names.indexOf(this.state.animation));
-		const next = names[(i + delta + names.length) % names.length];
-		this.state = selectAnimation(this.state, next);
-		this.followCursor = true;
-	}
 
 	private addFrame(): void {
 		this.liftPen();
@@ -1417,32 +1461,17 @@ export class SpriteEditor extends Renderable {
 			this.helpOpen = true;
 			return;
 		}
-		// While playing, only playback/mirror/quit keys are honored; anything that
-		// would edit is refused so the doc/history stay untouched.
+		// While playing, only quit is honored on the keyboard; anything that would
+		// edit is refused so the doc/history stay untouched. The rail/preview-pane
+		// buttons (stop, mirror, preview) stay live — they route via the mouse.
 		if (this.playMode !== 'none') {
 			if (k.name === 'q') {
 				this.onQuit?.();
 				return;
 			}
-			if (k.name === 'm') {
-				this.mirror = !this.mirror;
-				return;
-			}
-			if (k.name === 'v') {
-				this.togglePreview();
-				return;
-			}
-			if (k.sequence === '.') {
-				this.togglePlay('animation');
-				return;
-			}
-			if (k.sequence === ',') {
-				this.togglePlay('walk');
-				return;
-			}
 			this.state = {
 				...this.state,
-				feedback: 'playback active — press . or , to stop',
+				feedback: 'playback active — click ▶ to stop',
 			};
 			return;
 		}
@@ -1506,12 +1535,6 @@ export class SpriteEditor extends Renderable {
 				return;
 			}
 		}
-		// Toggle the active geometry tool's outline↔filled mode (spec #387).
-		if (k.name === 'o') {
-			this.liftPen();
-			this.state = toggleShapeMode(this.state);
-			return;
-		}
 		if (k.ctrl && k.name === 's') {
 			this.doSave();
 			return;
@@ -1535,43 +1558,6 @@ export class SpriteEditor extends Renderable {
 			this.redo();
 			return;
 		}
-		// Animations / anchors / mirror / playback (checked by sequence so shift/plain
-		// variants are unambiguous).
-		if (k.sequence === 'P') {
-			this.openAnimationMenu();
-			return;
-		}
-		if (k.sequence === 'A') {
-			this.openAnchorMenu();
-			return;
-		}
-		// Whole-file sizing (spec #402): `R` enters resize mode; crop lives on
-		// plain `c` (see the switch below — C is unbound).
-		if (k.sequence === 'R') {
-			this.liftPen();
-			this.state = beginResize(this.state);
-			return;
-		}
-		if (k.name === 'm') {
-			this.mirror = !this.mirror;
-			return;
-		}
-		if (k.name === 'v') {
-			this.togglePreview();
-			return;
-		}
-		if (k.sequence === '.') {
-			this.togglePlay('animation');
-			return;
-		}
-		if (k.sequence === ',') {
-			this.togglePlay('walk');
-			return;
-		}
-		if (k.sequence === 'O') {
-			this.cycleOnion();
-			return;
-		}
 		// Zoom ladder: '+' (or '=') in, '-' out.
 		if (k.sequence === '+' || k.sequence === '=') {
 			this.setZoom(stepZoom(this.zoom, 1));
@@ -1579,15 +1565,6 @@ export class SpriteEditor extends Renderable {
 		}
 		if (k.sequence === '-' || k.name === 'minus') {
 			this.setZoom(stepZoom(this.zoom, -1));
-			return;
-		}
-		// Animation stepping and the strips ↔ focus toggle.
-		if (k.sequence === '{') {
-			this.stepAnimation(-1);
-			return;
-		}
-		if (k.sequence === '}') {
-			this.stepAnimation(1);
 			return;
 		}
 		if (k.name === 'tab') {
@@ -1603,19 +1580,19 @@ export class SpriteEditor extends Renderable {
 
 		switch (k.name) {
 			case 'left':
-			case 'h':
+			case 'a':
 				this.move(-1, 0);
 				return;
 			case 'right':
-			case 'l':
+			case 'd':
 				this.move(1, 0);
 				return;
 			case 'up':
-			case 'k':
+			case 'w':
 				this.move(0, -1);
 				return;
 			case 'down':
-			case 'j':
+			case 's':
 				this.move(0, 1);
 				return;
 			case 'space':
@@ -1644,39 +1621,6 @@ export class SpriteEditor extends Renderable {
 				return;
 			case 'p':
 				this.switchTool('paint');
-				return;
-			case 'e':
-				this.openColorPickerModal();
-				return;
-			case 's':
-				this.switchTool('stamp');
-				return;
-			case 'a':
-				this.switchTool('anchor');
-				return;
-			case 't':
-				this.liftPen();
-				this.state = setInk(this.state, TRANSPARENT_INK);
-				return;
-			case 'c':
-				// Crop to the committed selection (rebound from the retired ink
-				// quick-pick; C stays unbound). Plain c only — shift-c is inert.
-				if (k.shift || k.sequence === 'C') return;
-				this.liftPen();
-				this.state = cropToSelection(this.state);
-				this.followCursor = true;
-				return;
-			case 'n':
-				this.addFrame();
-				return;
-			case 'w':
-				this.doSave();
-				return;
-			case '[':
-				this.stepFrame(-1);
-				return;
-			case ']':
-				this.stepFrame(1);
 				return;
 			case 'q':
 				this.onQuit?.();
@@ -1912,6 +1856,8 @@ export class SpriteEditor extends Renderable {
 			height: viewH,
 			foldPlayback: this.foldPlayback,
 			variants: variantOptions(docDynamicUsage(this.state.doc), this.variant),
+			mirrorOn: this.mirror,
+			previewOn: this.composite,
 		});
 		this.geom.rail = rows;
 		rows.slice(0, viewH).forEach((row, y) => {
@@ -2018,6 +1964,13 @@ export class SpriteEditor extends Renderable {
 				);
 			}
 		});
+
+		// Multi-frame strips carry their fps stepper on the name row (QA round 3).
+		for (const st of layout.steppers) {
+			const sy = syOf(st.y);
+			if (sy < 0 || sy >= viewH) continue;
+			this.drawClipped(buf, st.text, sxOf(st.x), sy, x0, x1, C.dim, C.bg);
+		}
 
 		const activeBox = frameBoxOf(layout, this.state.frame);
 		if (!activeBox) return;
@@ -2246,6 +2199,9 @@ export class SpriteEditor extends Renderable {
 			maxFrameCellW: this.maxFrameCellW(),
 			frameCount: this.state.doc.frames.length,
 			inkCount: this.entries().length + 1,
+			variantRowCount: variantRowCountOf(
+				variantOptions(docDynamicUsage(this.state.doc), this.variant),
+			),
 			previewOverride: this.previewOverride,
 		});
 		this.autoPreview = layout.previewAutoShow;
@@ -2331,61 +2287,54 @@ export class SpriteEditor extends Renderable {
 			anchorName: this.state.anchorName,
 			anchorScope: this.state.anchorScope,
 		});
-		// The coercion note rides the right of the status row. Draw the composed
-		// line, then re-tint just the note when it made the cut so it stands out.
-		const feedback = this.state.feedback;
+		// The persistent hint line is gone (QA round 3: the keymap is culled and
+		// the rail is self-labeling) — the canvas gained its row. Transient notes
+		// (playback / stamp-await / save summary / fold hint / required hints)
+		// ride the status row's right-hand feedback slot instead; the hottest
+		// transient wins over the state's own feedback.
+		const transient =
+			this.playMode !== 'none'
+				? this.playMode === 'walk'
+					? `▶ walk preview (${displayFrame})`
+					: `▶ playing ${this.state.animation} (${displayFrame})`
+				: this.awaitingStamp
+					? 'stamp: press a character (Esc cancels)'
+					: this.saved && this.saveDiags
+						? saveDiagSummary(
+								this.saveDiags.map((d) => ({
+									severity: d.severity,
+									message: d.message,
+								})),
+							)
+						: (this.focusHint ?? requiredHintLine(this.state.doc, this.role));
+		const feedback = transient || this.state.feedback;
 		const status = comanimationStatusLine(statusLeft, feedback, W);
 		const statusRow = H - CHROME_H;
 		buf.fillRect(0, statusRow, W, 1, C.chromeBg);
 		buf.drawText(status, 0, statusRow, C.text, C.chromeBg);
+		const hotNote =
+			this.playMode !== 'none' || this.awaitingStamp || this.focusHint;
 		if (feedback && status.endsWith(feedback)) {
 			const rx = status.length - feedback.length;
-			buf.drawText(feedback, rx, statusRow, C.feedback, C.chromeBg);
-		}
-
-		// The hint line: transient states (playback / stamp-await / a fresh save)
-		// take it over; otherwise the active tool's keys plus the globals, led by
-		// any role-required hint.
-		const hintRow = H - 1;
-		buf.fillRect(0, hintRow, W, 1, C.chromeBg);
-		if (this.playMode !== 'none') {
-			const label =
-				this.playMode === 'walk'
-					? `▶ walk preview (${displayFrame}) — . or , stops`
-					: `▶ playing ${this.state.animation} (${displayFrame}) — . or , stops`;
-			buf.drawText(label.slice(0, W), 0, hintRow, C.hot, C.chromeBg);
-		} else if (this.awaitingStamp) {
 			buf.drawText(
-				'stamp: press a character to place (Esc cancels)'.slice(0, W),
-				0,
-				hintRow,
-				C.hot,
+				feedback,
+				rx,
+				statusRow,
+				hotNote ? C.hot : C.feedback,
 				C.chromeBg,
 			);
-		} else if (this.saved && this.saveDiags) {
-			const summary = saveDiagSummary(
-				this.saveDiags.map((d) => ({
-					severity: d.severity,
-					message: d.message,
-				})),
-			);
-			const clean = this.saveDiags.length === 0;
+		} else if (transient) {
+			// A transient the left-wins composition dropped still matters (it is
+			// the fold hint / playback banner) — overlay it right-aligned, clipped,
+			// clobbering the status tail rather than vanishing.
+			const text = transient.slice(0, W);
 			buf.drawText(
-				summary.slice(0, W),
-				0,
-				hintRow,
-				clean ? C.ok : C.feedback,
+				text,
+				Math.max(0, W - text.length),
+				statusRow,
+				hotNote ? C.hot : C.feedback,
 				C.chromeBg,
 			);
-		} else if (this.focusHint) {
-			// Rung 2's status hint (spec #398): tell the artist the strips folded to
-			// focus and how to get them back.
-			buf.drawText(this.focusHint.slice(0, W), 0, hintRow, C.hot, C.chromeBg);
-		} else {
-			const required = requiredHintLine(this.state.doc, this.role);
-			const hints = hintLine(this.state.tool);
-			const line = required ? `${required} ┃ ${hints}` : hints;
-			buf.drawText(line.slice(0, W), 0, hintRow, C.dim, C.chromeBg);
 		}
 
 		this.renderHelp(buf, W, H, C);

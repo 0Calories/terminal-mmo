@@ -14,6 +14,9 @@ const RESERVED_KEYS = new Set(['p', 'a']);
 // The default color key applied to inked cells when a file declares none.
 const DEFAULT_KEY = 'p';
 const FRAME_NAME_RE = /^[A-Za-z0-9:_-]+$/;
+// The implied per-animation playback rate (EMOTE_FPS in @mmo/core): serialized
+// files omit fps entries equal to it.
+const DEFAULT_ANIMATION_FPS = 5;
 const SECTION_RE = /^---\s+(\S+)\s*$/;
 
 export type SpriteSeverity = 'error' | 'warning';
@@ -703,7 +706,12 @@ export function serializeSpriteFile(doc: SpriteDoc): string {
 	);
 	if (Object.keys(explicitAnimations).length > 0)
 		header.animations = explicitAnimations;
-	if (Object.keys(doc.fps).length > 0) header.fps = doc.fps;
+	// The default rate is implied — an entry equal to it is dropped so files
+	// stay clean under the editor's fps stepper (ADR 0035; EMOTE_FPS in core).
+	const fps = Object.fromEntries(
+		Object.entries(doc.fps).filter(([, v]) => v !== DEFAULT_ANIMATION_FPS),
+	);
+	if (Object.keys(fps).length > 0) header.fps = fps;
 	if (Object.keys(doc.colors).length > 0) {
 		header.colors = Object.fromEntries(
 			Object.entries(doc.colors).map(([k, q]) => [k, [q[0], q[1], q[2], q[3]]]),

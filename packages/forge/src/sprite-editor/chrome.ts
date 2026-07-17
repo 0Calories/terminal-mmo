@@ -1,7 +1,7 @@
 // The editor chrome's pure models (spec #387, layout locked by prototype #375):
-// the 30-column left rail (tools · ink · playback boxes), the context-sensitive
-// bottom hint line, and the `?` overlay's grouped key map. Everything here is a
-// deterministic function of the pure editor state — `tui.ts` only draws the
+// the 30-column left rail (tools · ink · playback boxes) and the `?` overlay's
+// grouped key map. Everything here is a deterministic function of the pure
+// editor state — `tui.ts` only draws the
 // rows and routes clicks back through the returned actions, so the rail's
 // content and hit-targets are unit-testable without a screen.
 import type { RGBAQuad } from '@mmo/core/entities';
@@ -21,6 +21,11 @@ export type RailAction =
 	| { readonly type: 'addFrame' }
 	| { readonly type: 'animationMenu' }
 	| { readonly type: 'anchorMenu' }
+	| { readonly type: 'onionCycle' }
+	| { readonly type: 'mirror' }
+	| { readonly type: 'resize' }
+	| { readonly type: 'crop' }
+	| { readonly type: 'previewToggle' }
 	| {
 			readonly type: 'variant';
 			readonly channel: 'p' | 'a';
@@ -47,7 +52,7 @@ export interface RailRow {
 // (spec #387: tools live on the number row in rail order — pencil, fill, stamp,
 // line, rect, ellipse, select, move, paste; erase is demoted to the right
 // button, off the rail, and the anchor tool moved off the number row — it lives
-// in the playback box's `A anchor` and the `a` key. Select (7)/move (8) are live
+// on the playback box's `anchor` button. Select (7)/move (8) are live
 // (#399); paste (9) is a TRIGGER — clicking it or pressing 9 spawns a paste float
 // and hands off to move, never resting as the active tool (#400).
 // Every glyph must be ONE code unit and ONE terminal column: the rail's
@@ -100,6 +105,10 @@ export interface RailInput {
 	// The session p/a variant options (view.ts `variantOptions`): empty/absent
 	// when the art paints no dynamic key, so the rows simply don't render.
 	readonly variants?: readonly RailVariant[];
+	// Mirror-panel and composite-preview toggles, surfaced as rail buttons
+	// (QA round 3: their m/v keys are retired).
+	readonly mirrorOn?: boolean;
+	readonly previewOn?: boolean;
 }
 
 // One selectable session-variant swatch the rail lists beside the ink grid.
@@ -232,13 +241,15 @@ export function railModel(input: RailInput): RailRow[] {
 	return rows;
 }
 
+// Every control is a self-labeled button (QA round 3: the editor is
+// mouse-primary — no key glyphs in the labels; the keys they mirrored died).
 function playbackBox(input: RailInput): RailRow[] {
 	return [
 		{ spans: [{ text: ' playback', dim: true }], title: true },
 		{
 			spans: [
 				{
-					text: ` animation ${input.animation} · ${input.fps}fps · ${input.frameCount}f`,
+					text: ` ${input.animation} · ${input.fps}fps · ${input.frameCount}f`,
 					dim: true,
 				},
 			],
@@ -247,38 +258,59 @@ function playbackBox(input: RailInput): RailRow[] {
 			spans: [
 				{ text: ' ' },
 				{
-					text:
-						input.playMode === 'animation' ? '▶ . animation' : '  . animation',
+					text: input.playMode === 'animation' ? '▶ play' : '  play',
 					hot: input.playMode === 'animation',
 					action: { type: 'play', mode: 'animation' },
 				},
 				{ text: '  ' },
 				{
-					text: input.playMode === 'walk' ? '▶ , walk' : '  , walk',
+					text: input.playMode === 'walk' ? '▶ walk' : '  walk',
 					hot: input.playMode === 'walk',
 					action: { type: 'play', mode: 'walk' },
 				},
 				{ text: '  ' },
 				{
-					text: `O ${input.onionDepth}`,
+					text: `onion ${input.onionDepth}`,
 					hot: input.onionDepth > 0,
 					dim: input.onionDepth === 0,
+					action: { type: 'onionCycle' },
 				},
 			],
 		},
-		{ spans: [{ text: ' [ ] frame · { } animation', dim: true }] },
 		{
 			spans: [
 				{ text: ' ' },
-				{ text: 'n +frame', dim: true, action: { type: 'addFrame' } },
+				{ text: '+frame', dim: true, action: { type: 'addFrame' } },
 				{ text: ' · ' },
-				{ text: 'P animation', dim: true, action: { type: 'animationMenu' } },
+				{ text: 'animation', dim: true, action: { type: 'animationMenu' } },
+				{ text: ' · ' },
+				{ text: 'anchor', dim: true, action: { type: 'anchorMenu' } },
 			],
 		},
 		{
 			spans: [
 				{ text: ' ' },
-				{ text: 'A anchor', dim: true, action: { type: 'anchorMenu' } },
+				{
+					text: 'mirror',
+					dim: !input.mirrorOn,
+					hot: input.mirrorOn,
+					action: { type: 'mirror' },
+				},
+				{ text: ' · ' },
+				{
+					text: 'preview',
+					dim: !input.previewOn,
+					hot: input.previewOn,
+					action: { type: 'previewToggle' },
+				},
+			],
+		},
+		{
+			spans: [
+				{ text: ' ' },
+				{ text: 'resize', dim: true, action: { type: 'resize' } },
+				{ text: ' · ' },
+				{ text: 'crop', dim: true, action: { type: 'crop' } },
 			],
 		},
 	];
@@ -297,12 +329,12 @@ function foldedPlaybackBox(input: RailInput): RailRow[] {
 				{ text: ' playback', dim: true },
 				{ text: '  ' },
 				{
-					text: playing ? '▶ . play' : '. play',
+					text: playing ? '▶ play' : 'play',
 					hot: playing,
 					action: { type: 'play', mode: 'animation' },
 				},
 				{ text: ' · ' },
-				{ text: 'n +f', dim: true, action: { type: 'addFrame' } },
+				{ text: '+frame', dim: true, action: { type: 'addFrame' } },
 			],
 		},
 	];
@@ -327,8 +359,8 @@ export function railActionAt(
 }
 
 // ---------------------------------------------------------------------------
-// Help surface (spec #387): a context-sensitive hint line — the globals plus
-// the active tool's keys — and the `?` overlay's complete grouped map.
+// Help surface (spec #387, culled by ADR 0035): the `?` overlay's complete
+// grouped map — keyboard survivors plus every mouse affordance.
 // ---------------------------------------------------------------------------
 
 export interface KeyBinding {
@@ -348,71 +380,48 @@ export interface KeymapGroup {
 // <= 40 and no keys/label pair should push a packed row past 120 columns.
 export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 	{
-		title: 'Tools',
-		bindings: [
-			{ keys: '1-9', label: 'tools in rail order (pencil → paste)' },
-			{ keys: 'p s / a', label: 'pencil · stamp / anchor (letters)' },
-			{ keys: 'o', label: 'rect/ellipse outline ↔ filled' },
-		],
-	},
-	{
 		title: 'Global',
 		bindings: [
 			{ keys: 'tab', label: 'strips ↔ focus view' },
 			{ keys: 'enter / esc', label: 'focus frame / back to strips' },
-			{ keys: '^s / w · q', label: 'save · quit' },
+			{ keys: '^s · q', label: 'save · quit' },
 			{ keys: 'u / U', label: 'undo / redo (^z / ^r)' },
 			{ keys: '+ / -', label: 'zoom ladder (ctrl-wheel too)' },
-			{ keys: 'm', label: 'mirror facing' },
-			{ keys: 'v', label: 'composited preview' },
+			{ keys: '?', label: 'this help' },
 		],
 	},
 	{
 		title: 'Cursor & paint',
 		bindings: [
-			{ keys: 'arrows/hjkl', label: 'move cursor 1 Pixel' },
+			{ keys: 'arrows / wasd', label: 'move cursor 1 Pixel' },
 			{ keys: 'space', label: 'pen down/up (movement paints)' },
-			{ keys: 'click / rmb', label: 'paint ink / transparent (shift: line)' },
-			{ keys: 'enter / drag', label: 'shape anchor / commit (shift squares)' },
-			{ keys: 'esc', label: 'cancel shape / float / overlay / stamp' },
-		],
-	},
-	{
-		title: 'Selection, move & crop',
-		bindings: [
-			{ keys: '7 / 8 / 9', label: 'select marquee / move (float) / paste' },
-			{ keys: 'drag / arrows', label: 'lift + float the selection' },
-			{ keys: 'enter / esc', label: 'drop float / cancel losslessly' },
-			{ keys: 'y / x / del', label: 'copy / cut / clear selection' },
 			{ keys: 'shift-arrows', label: 'shift the whole Frame 1 Pixel' },
-			{ keys: 'R', label: 'resize mode (tab edge · arrows · enter)' },
-			{ keys: 'c', label: 'crop to selection' },
+			{ keys: 'p / 1-9', label: 'pencil · tools in rail order' },
+			{ keys: 'y / x / del', label: 'copy / cut / clear selection' },
+			{ keys: 'enter / esc', label: 'shape·float commit / cancel' },
 		],
 	},
 	{
-		title: 'Color',
+		title: 'Mouse — canvas',
 		bindings: [
-			{ keys: 'click', label: 'ink swatch grid · p/a variants (rail)' },
-			{ keys: 'e', label: 'define / edit file-local colour' },
-			{ keys: 't', label: 'set ink transparent' },
+			{ keys: 'click / rmb', label: 'paint ink / transparent (shift: line)' },
 			{ keys: 'alt-click', label: 'eyedrop (momentary)' },
+			{ keys: 'drag', label: 'shapes · select marquee · move float' },
+			{ keys: 'click strip', label: 'activate frame (animation nav)' },
+			{ keys: '‹ fps ›', label: "strip name row steps the animation's fps" },
+			{ keys: 'wheel', label: 'scroll strips (shift: horizontal)' },
+			{ keys: 'ctrl-wheel', label: 'zoom · middle-drag pans' },
 		],
 	},
 	{
-		title: 'Frames & animations',
+		title: 'Mouse — rail & preview',
 		bindings: [
-			{ keys: '[ ] / { }', label: 'prev / next frame · animation' },
-			{ keys: 'n', label: 'add frame to current animation' },
-			{ keys: 'P / A / O', label: 'animation menu / anchor menu / onion 0-2' },
-			{ keys: '. / ,', label: 'play animation / walk preview' },
-		],
-	},
-	{
-		title: 'Navigation',
-		bindings: [
-			{ keys: 'wheel/shift', label: 'scroll strips (shift-wheel: horizontal)' },
-			{ keys: 'ctrl-wheel', label: 'zoom' },
-			{ keys: 'middle-drag', label: 'pan · click-through activates frame' },
+			{ keys: 'click', label: 'tools · ink swatches · p/a variants' },
+			{ keys: 'dbl-click swatch', label: 'define / edit file-local colour' },
+			{ keys: 'active rect/○', label: 'click again: outline ↔ filled' },
+			{ keys: 'playback box', label: 'play · walk · onion · +frame · menus' },
+			{ keys: 'buttons', label: 'mirror · preview · resize · crop' },
+			{ keys: 'preview pane', label: 'flip · play controls' },
 		],
 	},
 ];
@@ -455,26 +464,4 @@ export function helpOverlayRows(maxRows: number): string[] {
 		...head,
 		...left.map((r, i) => (r.padEnd(colW) + (right[i] ?? '')).trimEnd()),
 	];
-}
-
-// The hint line's per-tool fragment — what the tool in hand responds to.
-const TOOL_HINTS: Record<SpriteTool, string> = {
-	paint: 'space pen · arrows paint · shift-click line · rmb erase',
-	erase: 'space pen · arrows erase',
-	fill: 'space/lmb fills the region · rmb clears',
-	stamp: 'space then a char stamps the cell',
-	anchor: 'space places · A pick',
-	line: 'drag / enter·enter · esc cancel · rmb transparent',
-	rect: 'drag / enter·enter · o outline/fill · shift square',
-	ellipse: 'drag / enter·enter · o outline/fill · shift circle',
-	select: 'drag marquee · y copy · x cut · del clears · shift-arrows frame',
-	move: 'drag/arrows floats it · enter drops · esc cancels',
-	paste: '9 pastes a float at the source · drag/enter to place',
-};
-
-const GLOBAL_HINT = '? help · tab view · u undo · ^s save · q quit';
-
-// The persistent bottom hint line: the active tool's keys, then the globals.
-export function hintLine(tool: SpriteTool): string {
-	return `${tool}: ${TOOL_HINTS[tool]} ┃ ${GLOBAL_HINT}`;
 }

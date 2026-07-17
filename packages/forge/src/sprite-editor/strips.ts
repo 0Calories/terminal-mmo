@@ -12,6 +12,13 @@ import { frameExtent } from './state';
 export const FRAME_GAP = 2;
 export const STRIP_GAP = 1;
 
+// The default per-animation playback rate (EMOTE_FPS in @mmo/core): what an
+// animation with no authored fps entry plays at, and what the stepper shows.
+export const DEFAULT_FPS = 5;
+// The author-editable fps range the stepper clamps to (QA round 3).
+export const FPS_MIN = 1;
+export const FPS_MAX = 30;
+
 // One Frame's block: its screen-cell rect in content coordinates. A frame of
 // w×h cells is 2w×2h Pixels, each Pixel zoom×zoom cells on screen.
 export interface StripFrameBox {
@@ -32,10 +39,22 @@ export interface StripLabel {
 	readonly text: string;
 }
 
+// A multi-frame strip's fps stepper on its name row (QA round 3): `‹ 5fps ›`
+// with the chevrons as click targets stepping the animation's fps by ±1
+// (clamped 1–30 by the caller). Single-frame strips carry none.
+export interface StripFpsStepper {
+	readonly animation: string;
+	// Content row (the strip's name row) and the stepper text's extent.
+	readonly y: number;
+	readonly x: number;
+	readonly text: string;
+}
+
 export interface StripsLayout {
 	readonly zoom: number;
 	readonly labels: readonly StripLabel[];
 	readonly frames: readonly StripFrameBox[];
+	readonly steppers: readonly StripFpsStepper[];
 	// Row carrying each strip's frame names (the active frame is underlined
 	// there); one per strip, aligned with `labels` by index.
 	readonly nameRows: readonly number[];
@@ -61,6 +80,7 @@ export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 	const labels: StripLabel[] = [];
 	const frames: StripFrameBox[] = [];
 	const nameRows: number[] = [];
+	const steppers: StripFpsStepper[] = [];
 	let y = 0;
 	let contentW = 0;
 
@@ -96,6 +116,17 @@ export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 		contentW = Math.max(contentW, Math.max(0, x - FRAME_GAP));
 		const nameRow = rowY + stripH;
 		nameRows.push(nameRow);
+		// The fps stepper rides the name row, after the frames' extent.
+		if (spec.frames.length > 1) {
+			const stepper: StripFpsStepper = {
+				animation: spec.animation,
+				y: nameRow,
+				x,
+				text: `‹ ${fps ?? DEFAULT_FPS}fps ›`,
+			};
+			steppers.push(stepper);
+			contentW = Math.max(contentW, stepper.x + stepper.text.length);
+		}
 		y = nameRow + 1 + STRIP_GAP;
 	}
 
@@ -104,9 +135,28 @@ export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 		labels,
 		frames,
 		nameRows,
+		steppers,
 		contentW,
 		contentH: Math.max(0, y - STRIP_GAP),
 	};
+}
+
+// The fps step a click at content cell (cx, cy) means: the `‹` chevron (and the
+// cell after it) steps down, the `›` (and the cell before it) steps up; the
+// number between is dead space. Null anywhere else.
+export function stepperHit(
+	layout: StripsLayout,
+	cx: number,
+	cy: number,
+): { animation: string; delta: -1 | 1 } | null {
+	for (const st of layout.steppers) {
+		if (cy !== st.y || cx < st.x || cx >= st.x + st.text.length) continue;
+		const rel = cx - st.x;
+		if (rel <= 1) return { animation: st.animation, delta: -1 };
+		if (rel >= st.text.length - 2) return { animation: st.animation, delta: 1 };
+		return null;
+	}
+	return null;
 }
 
 export function frameBoxOf(

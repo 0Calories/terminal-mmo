@@ -15,7 +15,7 @@
 //   3. the playback box folds to a single hint row when the rail can't fit the
 //      full ink list and the playback box together;
 //   4. the rail never hides (there is no rung that removes it).
-import { RAIL_TOOLS, RAIL_W } from './chrome';
+import { INKS_PER_ROW, RAIL_TOOLS, RAIL_W } from './chrome';
 import { FRAME_GAP } from './strips';
 
 // The hard floor: below EITHER dimension the editor shows a placard instead of
@@ -23,10 +23,10 @@ import { FRAME_GAP } from './strips';
 export const FLOOR_W = 80;
 export const FLOOR_H = 24;
 
-// The two chrome rows (status + hint) the canvas region sits above — mirrors
-// `tui.ts`'s CHROME_H. Owned here so the solver and the renderer agree on the
-// canvas interior's height.
-export const CHROME_ROWS = 2;
+// The one chrome row (the status readout) under the canvas region — mirrors
+// `tui.ts`'s CHROME_H. The old persistent hint line died with the keymap cull
+// (QA round 3); the canvas gained its row.
+export const CHROME_ROWS = 1;
 
 // The floating Composited preview pane's native size (#393): ~34×11 including
 // its border + control row. Docked top-right, it floats over the canvas.
@@ -40,10 +40,15 @@ export const PREVIEW_H = 11;
 // fit?" without rendering.
 const TOOLS_ROWS = 1 + Math.ceil(RAIL_TOOLS.length / 2) + 1;
 const INK_TITLE_ROWS = 1;
+// The active-colour readout row under the swatch grid.
+const INK_ACTIVE_ROWS = 1;
 const BLANK_ROWS = 1;
-// The full playback box's height (matches playbackBox() in chrome.ts). When the
-// rung folds it, it collapses to a single hint row.
-const PLAYBACK_FULL_ROWS = 5;
+// The full playback box's height (matches playbackBox() in chrome.ts): title,
+// info, play/walk/onion, +frame/animation/anchor, mirror/preview, resize/crop.
+// When the rung folds it, it collapses to a single hint row. Mouse-primary
+// (ADR 0035) leans on this box, so the accounting must be honest: at the
+// ≥80×24 floor the full box fits.
+const PLAYBACK_FULL_ROWS = 6;
 
 export interface DegradationInput {
 	// The terminal's size in cells.
@@ -59,8 +64,11 @@ export interface DegradationInput {
 	readonly frameCount: number;
 	// The inks the rail would list (locals + palette + dynamics + transparent).
 	// Rung 3's fold is content-aware on this: a long palette is what makes the
-	// full ink list and the playback box unable to share the rail.
+	// full ink swatch grid (8 per row) and the playback box unable to share the
+	// rail.
 	readonly inkCount: number;
+	// Session p/a variant rows currently shown in the ink box (0–2).
+	readonly variantRowCount: number;
 	// The user's manual preview override (the `v` key): null follows the auto
 	// rung; true forces the pane visible; false forces it hidden.
 	readonly previewOverride: boolean | null;
@@ -138,12 +146,12 @@ export function solveDegradation(input: DegradationInput): DegradationLayout {
 	// The rail wants tools + the full ink list + the playback box. When they do
 	// not all fit its height, the playback box folds to one hint row (the ink
 	// list keeps windowing beyond that); the rail itself never hides (rung 4).
+	const inkRows =
+		Math.ceil(input.inkCount / INKS_PER_ROW) +
+		INK_ACTIVE_ROWS +
+		input.variantRowCount;
 	const desiredRail =
-		TOOLS_ROWS +
-		INK_TITLE_ROWS +
-		input.inkCount +
-		BLANK_ROWS +
-		PLAYBACK_FULL_ROWS;
+		TOOLS_ROWS + INK_TITLE_ROWS + inkRows + BLANK_ROWS + PLAYBACK_FULL_ROWS;
 	const foldPlayback = viewH < desiredRail;
 
 	return {

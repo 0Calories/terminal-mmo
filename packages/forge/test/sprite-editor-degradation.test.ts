@@ -21,6 +21,7 @@ function input(overrides: Partial<DegradationInput> = {}): DegradationInput {
 		maxFrameCellW: 6,
 		frameCount: 1,
 		inkCount: 8,
+		variantRowCount: 0,
 		previewOverride: null,
 		...overrides,
 	};
@@ -103,18 +104,21 @@ describe('rung 2 — strips force focus (spec #398)', () => {
 });
 
 describe('rung 3 — playback box folds (spec #398)', () => {
-	test('folds when the rail cannot fit the full ink list and the playback box, and unfolds when it can', () => {
-		// A long ink list at the short floor cannot share the rail with the box.
-		const short = input({ termW: 100, termH: 24, inkCount: 20 });
+	test('folds when the rail cannot fit the full ink grid and the playback box, and unfolds when it can', () => {
+		// An absurdly long palette (many grid rows) at a squat height cannot
+		// share the rail with the box; taller terminals fit both — reversible.
+		const short = input({ termW: 100, termH: 24, inkCount: 60 });
 		expect(solveDegradation(short).foldPlayback).toBe(true);
-		// A taller terminal fits both — reversible.
 		expect(solveDegradation({ ...short, termH: 40 }).foldPlayback).toBe(false);
 	});
 
-	test('is content-aware: a short ink list keeps the box even at the floor', () => {
+	test('the standard palette + variants keep the full box at the 80×24 floor (mouse-primary, ADR 0035)', () => {
+		// The playback box now carries the mouse-only buttons, so the honest grid
+		// accounting must keep it unfolded for a real doc at the floor.
 		expect(
-			solveDegradation(input({ termW: 100, termH: 24, inkCount: 4 }))
-				.foldPlayback,
+			solveDegradation(
+				input({ termW: 80, termH: 24, inkCount: 17, variantRowCount: 2 }),
+			).foldPlayback,
 		).toBe(false);
 	});
 });

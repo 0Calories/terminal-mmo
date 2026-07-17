@@ -7,7 +7,6 @@ import { SCENE_PALETTE } from '@mmo/core/entities';
 import {
 	helpOverlayRows,
 	helpRows,
-	hintLine,
 	RAIL_TOOLS,
 	RAIL_W,
 	type RailRow,
@@ -187,28 +186,51 @@ describe('railModel — tools · ink · playback boxes', () => {
 
 	test('shows the animation, fps and frame count, and lights the playing mode', () => {
 		const idle = model({ animation: 'walkA', fps: 6, frameCount: 3 });
-		expect(allText(idle)).toContain('animation walkA · 6fps · 3f');
+		expect(allText(idle)).toContain('walkA · 6fps · 3f');
 		const playing = model({ playMode: 'walk' });
 		const walkSpan = playing
 			.flatMap((r) => r.spans)
-			.find((s) => s.text.includes(', walk'));
+			.find((s) => s.text.includes('walk') && s.action?.type === 'play');
 		expect(walkSpan?.hot).toBe(true);
 		expect(walkSpan?.text).toContain('▶');
 	});
 
-	test('surfaces the onion-skin depth in the playback box', () => {
+	test('surfaces the onion-skin depth as a cycling button in the playback box', () => {
 		const off = model();
 		const offSpan = off
 			.flatMap((r) => r.spans)
-			.find((s) => s.text.startsWith('O '));
-		expect(offSpan?.text).toBe('O 0');
+			.find((s) => s.text.startsWith('onion '));
+		expect(offSpan?.text).toBe('onion 0');
 		expect(offSpan?.hot).toBeFalsy();
+		expect(offSpan?.action).toEqual({ type: 'onionCycle' });
 		const on = model({ onionDepth: 2 });
 		const onSpan = on
 			.flatMap((r) => r.spans)
-			.find((s) => s.text.startsWith('O '));
-		expect(onSpan?.text).toBe('O 2');
+			.find((s) => s.text.startsWith('onion '));
+		expect(onSpan?.text).toBe('onion 2');
 		expect(onSpan?.hot).toBe(true);
+	});
+
+	test('the mouse-primary buttons: mirror · preview · resize · crop, self-labeled (QA round 3)', () => {
+		const rows = model({ mirrorOn: true, previewOn: false });
+		const spans = rows.flatMap((r) => r.spans);
+		const byAction = (type: string) =>
+			spans.find((s) => s.action?.type === type);
+		expect(byAction('mirror')?.text).toBe('mirror');
+		expect(byAction('mirror')?.hot).toBe(true);
+		expect(byAction('previewToggle')?.text).toBe('preview');
+		expect(byAction('previewToggle')?.hot).toBeFalsy();
+		expect(byAction('resize')?.text).toBe('resize');
+		expect(byAction('crop')?.text).toBe('crop');
+		expect(byAction('addFrame')?.text).toBe('+frame');
+		expect(byAction('animationMenu')?.text).toBe('animation');
+		expect(byAction('anchorMenu')?.text).toBe('anchor');
+		// No key glyphs ride any button label — the keys they mirrored died.
+		const buttonTexts = spans
+			.filter((s) => s.action && s.action.type !== 'tool')
+			.map((s) => s.text)
+			.join(' ');
+		expect(buttonTexts).not.toMatch(/\bn \+frame|P animation|A anchor|O \d/);
 	});
 
 	test('ink swatches and playback controls are click targets', () => {
@@ -225,8 +247,8 @@ describe('railModel — tools · ink · playback boxes', () => {
 				x0 += s.text.length;
 			}
 			const text = rowText(row);
-			if (text.includes('. animation'))
-				playHit = railActionAt(rows, text.indexOf('. animation'), y);
+			if (text.includes(' play') && playHit === undefined)
+				playHit = railActionAt(rows, text.indexOf('play'), y);
 		});
 		// entriesFor() lists the palette in paletteEntries order; the first grid
 		// swatch is its first entry.
@@ -275,18 +297,7 @@ describe('rail tool icons', () => {
 	});
 });
 
-describe('help surface — hint line + ? overlay', () => {
-	test('the hint line is context-sensitive: tool keys plus the globals', () => {
-		const pencil = hintLine('paint');
-		expect(pencil).toContain('pen');
-		expect(pencil).toContain('? help');
-		expect(pencil).toContain('q quit');
-		const stamp = hintLine('stamp');
-		expect(stamp).toContain('stamp');
-		expect(stamp).not.toContain('rmb erase');
-		expect(stamp).toContain('? help');
-	});
-
+describe('help surface — ? overlay (the hint line is retired, QA round 3)', () => {
 	test('the overlay rows carry every group and every binding', () => {
 		const rows = helpRows();
 		const text = rows.join('\n');
@@ -299,34 +310,40 @@ describe('help surface — hint line + ? overlay', () => {
 	test('the overlay documents the locked navigation gestures', () => {
 		const text = helpRows().join('\n');
 		expect(text).toContain('wheel');
-		expect(text).toContain('shift-wheel');
 		expect(text).toContain('ctrl-wheel');
 		expect(text).toContain('middle-drag');
-		expect(text).toContain('click-through');
 	});
 
-	test('the keymap tracks the retired and rebound keys', () => {
+	test('the keymap is the culled mouse-primary set (ADR 0035)', () => {
+		const allKeys = SPRITE_KEYMAP.flatMap((g) => g.bindings)
+			.map((b) => b.keys)
+			.join(' ');
+		// The keyboard survivors.
+		for (const kept of ['wasd', 'space', 'u / U', '^s', 'q', '?', 'p', 'tab'])
+			expect(allKeys).toContain(kept);
+		// The dead keys never appear as bindings.
+		for (const dead of [
+			'[ ]',
+			'{ }',
+			'hjkl',
+			'P /',
+			'A /',
+			'R',
+			'O',
+			'. /',
+			', /',
+		])
+			expect(allKeys).not.toContain(dead);
+		// Every mouse affordance the cull leans on is documented.
 		const text = helpRows().join('\n');
-		// Retired: the c quick-pick and the ;/' ink nudge (ink is mouse-only).
-		expect(text).not.toContain('quick-pick');
-		expect(text).not.toContain('nudge');
-		// Crop moved to plain c.
-		const crop = SPRITE_KEYMAP.flatMap((g) => g.bindings).find((b) =>
-			b.label.includes('crop'),
-		);
-		expect(crop?.keys).toBe('c');
-		// Focus navigation is documented.
-		expect(text).toContain('focus');
-		const nav = SPRITE_KEYMAP.flatMap((g) => g.bindings).find((b) =>
-			b.label.includes('focus frame'),
-		);
-		expect(nav?.keys).toContain('enter');
-		// Mouse-only ink selection is documented.
-		expect(text).toContain('swatch');
-	});
-
-	test('the anchor tool hint no longer claims c drops an override', () => {
-		expect(hintLine('anchor')).not.toContain('c drop');
+		expect(text).toContain('eyedrop');
+		expect(text).toContain('dbl-click swatch');
+		expect(text).toContain('outline ↔ filled');
+		expect(text).toContain('fps');
+		expect(text).toContain('mirror');
+		expect(text).toContain('resize');
+		expect(text).toContain('crop');
+		expect(text).toContain('flip');
 	});
 
 	test('the ? overlay fits a 120×24 terminal', () => {
