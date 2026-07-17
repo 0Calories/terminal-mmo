@@ -252,21 +252,21 @@ export function resolveGuard(
 	};
 }
 
-export function guardPoseCell(e: Entity): { x: number; y: number } {
+export function guardOverlayCell(e: Entity): { x: number; y: number } {
 	return { x: e.facing === 1 ? e.x + BOX.w : e.x - 1, y: e.y + 1 };
 }
 
-export function guardPoseGlyph(): string {
+export function guardOverlayGlyph(): string {
 	return '┃';
 }
 
-export function swingPoseGlyph(phase: AttackPhase, facing: Facing): string {
+export function swingOverlayGlyph(phase: AttackPhase, facing: Facing): string {
 	const right = phase === 'windup' ? '╲' : phase === 'active' ? '─' : '╱';
 	if (facing === 1) return right;
 	return right === '╲' ? '╱' : right === '╱' ? '╲' : right;
 }
 
-export function swingPoseCell(
+export function swingOverlayCell(
 	e: Entity,
 	phase: AttackPhase,
 ): { x: number; y: number } {
@@ -276,15 +276,15 @@ export function swingPoseCell(
 	return { x: lead, y: row };
 }
 
-export interface SwingPose {
+export interface SwingOverlay {
 	glyph: string;
 	arc: string | null;
 }
-export function swingPose(
+export function swingOverlay(
 	move: MoveId,
 	phase: AttackPhase,
 	facing: Facing,
-): SwingPose | null {
+): SwingOverlay | null {
 	if (move !== 'basic') return null;
 	const glyph = facing === 1 ? '╱' : '╲';
 	const arc = phase === 'active' ? (facing === 1 ? '╱' : '╲') : null;
