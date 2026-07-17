@@ -7,6 +7,7 @@ import {
 	validateSpriteSet,
 } from '@mmo/render';
 import type { CliDeps } from './cli';
+import { RAIL_TOOLS, TOOL_GLYPH_FALLBACKS } from './sprite-editor/chrome';
 
 const USAGE = [
 	'usage:',
@@ -14,6 +15,7 @@ const USAGE = [
 	'  forge sprite check [dir]          whole-set validation (CI; non-zero on error)',
 	'  forge sprite edit <role>/<id>     open the pixel Sprite editor (a fresh template if the id is new)',
 	'  forge sprite preview <id>         live Composited preview: the art rendered the way the game draws it',
+	'  forge sprite glyphs               print the rail tool glyphs + fallbacks (eyeball tofu/width here)',
 ].join('\n');
 
 export function runSprite(argv: string[], deps: CliDeps): number {
@@ -23,10 +25,24 @@ export function runSprite(argv: string[], deps: CliDeps): number {
 			return cmdRender(rest, deps);
 		case 'check':
 			return cmdCheck(rest, deps);
+		case 'glyphs':
+			return cmdGlyphs(deps);
 		default:
 			deps.log(USAGE);
 			return cmd ? 1 : 0;
 	}
+}
+
+// One row of every rail tool glyph (with its fallback where one exists), so an
+// artist can eyeball tofu or double-width rendering in their own terminal
+// before the rail commits to a glyph.
+function cmdGlyphs(deps: CliDeps): number {
+	const row = RAIL_TOOLS.map((t) => {
+		const fb = TOOL_GLYPH_FALLBACKS[t.tool];
+		return `${t.label} ${t.glyph}${fb ? ` (fb ${fb})` : ''}`;
+	}).join(' · ');
+	deps.log(row);
+	return 0;
 }
 
 const hasError = (diags: SpriteDiagnostic[]) =>

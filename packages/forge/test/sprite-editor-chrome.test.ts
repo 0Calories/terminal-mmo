@@ -13,6 +13,7 @@ import {
 	railActionAt,
 	railModel,
 	SPRITE_KEYMAP,
+	TOOL_GLYPH_FALLBACKS,
 } from '../src/sprite-editor/chrome';
 import {
 	colorInk,
@@ -160,6 +161,39 @@ describe('railModel — tools · ink · playback boxes', () => {
 		expect(railActionAt(rows, 0, 0)).toBeUndefined();
 		expect(railActionAt(rows, 200, 1)).toBeUndefined();
 		expect(railActionAt(rows, 1, 999)).toBeUndefined();
+	});
+});
+
+describe('rail tool icons', () => {
+	test('each tool row renders number · glyph · label', () => {
+		const text = allText(model());
+		for (const t of RAIL_TOOLS)
+			expect(text).toContain(`${t.key} ${t.glyph} ${t.label}`);
+	});
+
+	test('the active tool row leads with the ▸ marker before its number', () => {
+		const rows = model({ tool: 'paint' });
+		const pencil = rows
+			.flatMap((r) => r.spans)
+			.find((s) => s.text.includes('pencil'));
+		expect(pencil?.text).toContain('▸1 ✎ pencil');
+	});
+
+	test('every glyph and fallback is one column by the renderer/hit-test width rules', () => {
+		// The rail's hit-testing (railActionAt) walks span.text.length and the
+		// buffer draws one cell per UTF-16 unit, so a rail glyph must be exactly
+		// one code unit AND one terminal column — anything else desyncs every
+		// mouse column to its right (see the cursor-ring width note in tui.ts).
+		const glyphs = [
+			...RAIL_TOOLS.map((t) => t.glyph),
+			...Object.values(TOOL_GLYPH_FALLBACKS),
+		];
+		expect(glyphs.length).toBeGreaterThan(0);
+		for (const g of glyphs) {
+			expect([...g].length).toBe(1); // one code point
+			expect(g.length).toBe(1); // one UTF-16 unit (hit-testing measure)
+			expect(Bun.stringWidth(g)).toBe(1); // one terminal column
+		}
 	});
 });
 

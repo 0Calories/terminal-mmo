@@ -46,21 +46,36 @@ export interface RailRow {
 // in the playback box's `A anchor` and the `a` key. Select (7)/move (8) are live
 // (#399); paste (9) is a TRIGGER — clicking it or pressing 9 spawns a paste float
 // and hands off to move, never resting as the active tool (#400).
+// Every glyph must be ONE code unit and ONE terminal column: the rail's
+// hit-testing walks span.text.length, so a double-width (or ambiguous-width)
+// glyph would desync every mouse column to its right. ○ is U+25CB (never the
+// ambiguous-width ◯ U+25EF) and ✜ is distinct from the anchor marker ✛.
+// Eyeball the set in a real terminal with `forge sprite glyphs`.
 export const RAIL_TOOLS: readonly {
 	key: string;
 	tool: SpriteTool;
+	glyph: string;
 	label: string;
 }[] = [
-	{ key: '1', tool: 'paint', label: 'pencil' },
-	{ key: '2', tool: 'fill', label: 'fill' },
-	{ key: '3', tool: 'stamp', label: 'stamp' },
-	{ key: '4', tool: 'line', label: 'line' },
-	{ key: '5', tool: 'rect', label: 'rect' },
-	{ key: '6', tool: 'ellipse', label: 'ellipse' },
-	{ key: '7', tool: 'select', label: 'select' },
-	{ key: '8', tool: 'move', label: 'move' },
-	{ key: '9', tool: 'paste', label: 'paste' },
+	{ key: '1', tool: 'paint', glyph: '✎', label: 'pencil' },
+	{ key: '2', tool: 'fill', glyph: '▓', label: 'fill' },
+	{ key: '3', tool: 'stamp', glyph: '▣', label: 'stamp' },
+	{ key: '4', tool: 'line', glyph: '╱', label: 'line' },
+	{ key: '5', tool: 'rect', glyph: '▭', label: 'rect' },
+	{ key: '6', tool: 'ellipse', glyph: '○', label: 'ellipse' },
+	{ key: '7', tool: 'select', glyph: '↖', label: 'select' },
+	{ key: '8', tool: 'move', glyph: '✜', label: 'move' },
+	{ key: '9', tool: 'paste', glyph: '⧉', label: 'paste' },
 ];
+
+// Substitutes for the glyphs most likely to render as tofu in a spartan font,
+// kept width-safe under the same rules. Swap one in by editing RAIL_TOOLS after
+// checking `forge sprite glyphs` in the target terminal.
+export const TOOL_GLYPH_FALLBACKS: Readonly<Record<string, string>> = {
+	select: '⌖',
+	move: '⇄',
+	paste: '▤',
+};
 
 export interface RailInput {
 	readonly tool: SpriteTool;
@@ -138,7 +153,7 @@ export function railModel(input: RailInput): RailRow[] {
 		for (const t of RAIL_TOOLS.slice(i, i + 2)) {
 			const active = t.tool === input.tool;
 			spans.push({
-				text: `${active ? '▸' : ' '}${t.key} ${t.label}`.padEnd(12),
+				text: `${active ? '▸' : ' '}${t.key} ${t.glyph} ${t.label}`.padEnd(14),
 				hot: active,
 				action: { type: 'tool', tool: t.tool },
 			});

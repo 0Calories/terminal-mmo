@@ -273,3 +273,15 @@ describe('findSpriteFile', () => {
 		expect(findSpriteFile(root, 'forms/nope')).toBeUndefined();
 	});
 });
+
+describe('sprite glyphs — rail icon eyeball check', () => {
+	test('prints every tool glyph with its fallback in one row, exit 0', () => {
+		expect(runSprite(['glyphs'], deps())).toBe(0);
+		const row = output();
+		expect(row).toContain('✎'); // pencil candidate
+		expect(row).toContain('⌖'); // select fallback
+		expect(row).toContain('pencil');
+		// One row: the whole point is a single glance in the terminal.
+		expect(row.trim()).not.toContain('\n');
+	});
+});
