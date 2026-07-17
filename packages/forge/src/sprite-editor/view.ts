@@ -6,7 +6,12 @@
 import { type Facing, HUES, type RGBAQuad } from '@mmo/core/entities';
 import { RARITY_COLOR } from '@mmo/core/items';
 import { mirrorAnchorX } from '@mmo/core/sprites';
-import { ROLE_PROFILES, type SpriteDoc, spriteFromDoc } from '@mmo/render';
+import {
+	ROLE_PROFILES,
+	SENTINEL,
+	type SpriteDoc,
+	spriteFromDoc,
+} from '@mmo/render';
 import type { AnchorMarker, DynamicPreviews } from './state';
 import type { SpriteRole } from './templates';
 
@@ -121,16 +126,107 @@ function cycleAt(cycle: readonly RGBAQuad[], phase: number): RGBAQuad {
 	return cycle[((phase % n) + n) % n];
 }
 
-// The p/a preview colours at animation phase `phase` (an integer step of the
-// editor's preview clock). Each channel indexes its own core palette and wraps —
-// a pure, deterministic function of the phase, so the cycling is headlessly
-// testable against the real `@mmo/core` palettes. Phase 0 reproduces the leading
-// palette entry (the player hue matches `SPRITE_PREVIEWS.p`, the first HUE).
-export function dynamicPreviewsAt(phase: number): DynamicPreviews {
+// The p/a preview colours for a session-selected variant pair (spec #401 as
+// amended: no clock — the artist picks the variant on the strip and every
+// surface resolves dynamics through it). Each channel indexes its own core
+// palette and wraps; (0,0) is the canonical representative (the first HUE,
+// matching `SPRITE_PREVIEWS.p`, and the first rarity accent).
+export function variantPreviews(p: number, a: number): DynamicPreviews {
 	return {
-		p: cycleAt(PLAYER_HUE_CYCLE, phase),
-		a: cycleAt(ACCENT_CYCLE, phase),
+		p: cycleAt(PLAYER_HUE_CYCLE, p),
+		a: cycleAt(ACCENT_CYCLE, a),
 	};
+}
+
+// ---------------------------------------------------------------------------
+// Variant strip (spec #401 amendment) — the one-row hue/accent selector shown
+// over the strips canvas when the doc's art actually paints a dynamic key.
+// ---------------------------------------------------------------------------
+
+export interface DynamicUsage {
+	p: boolean;
+	a: boolean;
+}
+
+// Whether any Frame's art paints the dynamic p/a keys: fg keys count (a
+// SENTINEL fg resolves to the doc default key), and so do opaque bg keys
+// (a SENTINEL/blank bg is transparency, never a key).
+export function docDynamicUsage(doc: SpriteDoc): DynamicUsage {
+	const usage = { p: false, a: false };
+	const mark = (key: string) => {
+		if (key === 'p') usage.p = true;
+		else if (key === 'a') usage.a = true;
+	};
+	for (const f of doc.frames) {
+		for (const row of f.colors)
+			for (const ch of row) mark(ch === SENTINEL ? doc.key : ch);
+		for (const row of f.bg) for (const ch of row) if (ch !== SENTINEL) mark(ch);
+	}
+	return usage;
+}
+
+// One clickable 2-column swatch on the strip, positioned in strip-local columns.
+export interface VariantSwatch {
+	channel: 'p' | 'a';
+	index: number;
+	rgba: RGBAQuad;
+	active: boolean;
+	// Column extent [x0, x1) within the strip.
+	x0: number;
+	x1: number;
+}
+
+export interface VariantStripModel {
+	swatches: VariantSwatch[];
+	labels: { text: string; x: number }[];
+	width: number;
+}
+
+const VARIANT_SWATCH_W = 2;
+
+// The strip's layout: a `p` label + one swatch per player hue, then an `a`
+// label + one per rarity accent — each channel present only when the art uses
+// it, the whole strip null when neither does. Click-only (no key binding);
+// the active pair is marked.
+export function variantStripModel(
+	usage: DynamicUsage,
+	active: { p: number; a: number },
+): VariantStripModel | null {
+	if (!usage.p && !usage.a) return null;
+	const swatches: VariantSwatch[] = [];
+	const labels: { text: string; x: number }[] = [];
+	let x = 0;
+	const channel = (
+		name: 'p' | 'a',
+		cycle: readonly RGBAQuad[],
+		current: number,
+	) => {
+		labels.push({ text: name, x });
+		x += 2;
+		cycle.forEach((rgba, index) => {
+			swatches.push({
+				channel: name,
+				index,
+				rgba,
+				active: index === current,
+				x0: x,
+				x1: x + VARIANT_SWATCH_W,
+			});
+			x += VARIANT_SWATCH_W;
+		});
+		x += 2; // gap before the next channel
+	};
+	if (usage.p) channel('p', PLAYER_HUE_CYCLE, active.p);
+	if (usage.a) channel('a', ACCENT_CYCLE, active.a);
+	return { swatches, labels, width: x - 2 };
+}
+
+// The swatch under a strip-local column, if any.
+export function variantAt(
+	strip: VariantStripModel,
+	x: number,
+): VariantSwatch | undefined {
+	return strip.swatches.find((s) => x >= s.x0 && x < s.x1);
 }
 
 // ---------------------------------------------------------------------------

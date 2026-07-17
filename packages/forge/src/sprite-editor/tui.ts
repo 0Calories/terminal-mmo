@@ -171,7 +171,7 @@ import {
 	composeStatusLine,
 	DEFAULT_ZOOM,
 	dirForRole,
-	dynamicPreviewsAt,
+	docDynamicUsage,
 	mirrorAnchorMarkers,
 	mirrorRender,
 	missingRequiredAnchors,
@@ -179,11 +179,14 @@ import {
 	requiredHintLine,
 	resolveColorKey,
 	roleForDir,
-	SPRITE_PREVIEWS,
 	saveDiagSummary,
 	scrollAxis,
 	spriteStatusLine,
 	stepZoom,
+	type VariantStripModel,
+	variantAt,
+	variantPreviews,
+	variantStripModel,
 	visiblePixels,
 } from './view';
 
@@ -233,10 +236,6 @@ const SCROLLOFF = 2;
 // PREVIEW_W / PREVIEW_H (the floating Composited preview's native ~34×11) now
 // live in `degradation.ts` alongside the ≥80×24 floor, so the solver and the
 // renderer size the pane identically.
-
-// How long each step of the dynamic p/a preview cycle holds before advancing to
-// the next core-palette variant (spec #401). Slow enough to read each colour.
-const PREVIEW_CYCLE_MS = 650;
 
 // The Pixel delta each arrow / vim key nudges by (used for whole-Frame shift).
 const ARROW_DELTA: Record<string, { dx: number; dy: number }> = {
@@ -383,9 +382,11 @@ export class SpriteEditor extends Renderable {
 	// Animation playback is presentation only — it never touches the doc/history.
 	playMode: PlayMode = 'none';
 	private playElapsedMs = 0;
-	// The dynamic p/a preview clock (spec #401): advanced every tick even while
-	// idle so painted `p`/`a` Pixels step through every real core-palette variant.
-	private previewPhaseMs = 0;
+	// The session-selected dynamic variant (spec #401 as amended): indices into
+	// the player-hue and rarity-accent cycles. Presentation only, never
+	// persisted; every surface that resolves p/a reads it, so canvas, rail
+	// swatches and composited preview always agree.
+	private variant = { p: 0, a: 0 };
 	private penDown = false;
 	// The fatbits zoom (×z on the ladder). Presentation only — never in the doc.
 	zoom = DEFAULT_ZOOM;
@@ -432,6 +433,12 @@ export class SpriteEditor extends Renderable {
 			flip: { x0: number; x1: number; y: number };
 			play: { x0: number; x1: number; y: number };
 		} | null;
+		// The variant strip drawn over the strips canvas (row `y`, starting at
+		// RAIL_W), or null when hidden — the mouse resolves clicks through it.
+		variant: { strip: VariantStripModel; y: number } | null;
+		// Rows the strips content is shifted down by (1 while the variant strip
+		// is shown), so screen→content mapping stays in sync with the render.
+		stripsTop: number;
 		// The colour picker's hue/shade grid rect, so a click resolves to a cell.
 		colorGrid: {
 			x0: number;
@@ -446,6 +453,8 @@ export class SpriteEditor extends Renderable {
 		layout: null,
 		focus: null,
 		preview: null,
+		variant: null,
+		stripsTop: 0,
 		colorGrid: null,
 	};
 	// An in-flight mouse paint stroke (down→drag→up coalesces to one undo step),
@@ -505,17 +514,19 @@ export class SpriteEditor extends Renderable {
 	}
 
 	private entries() {
-		return paletteEntries(this.state, this.globalPalette, SPRITE_PREVIEWS);
+		return paletteEntries(
+			this.state,
+			this.globalPalette,
+			this.dynamicPreviews(),
+		);
 	}
 
-	// The dynamic p/a preview colours for THIS render's phase (spec #401): the
-	// canvas, shape preview and mirror resolve painted `p`/`a` Pixels through these,
-	// so they cycle the real core palettes over time. The rail keeps the static
-	// representative (SPRITE_PREVIEWS) so its swatches don't flicker.
+	// The dynamic p/a colours for the session-selected variant (spec #401 as
+	// amended): the canvas, shape preview, mirror AND the rail's swatches all
+	// resolve painted `p`/`a` through these, so every surface agrees. Nothing
+	// advances them but a click on the variant strip.
 	private dynamicPreviews(): DynamicPreviews {
-		return dynamicPreviewsAt(
-			Math.floor(this.previewPhaseMs / PREVIEW_CYCLE_MS),
-		);
+		return variantPreviews(this.variant.p, this.variant.a);
 	}
 
 	// The widest Frame's width in cells — the degradation solver scales it to
@@ -708,7 +719,10 @@ export class SpriteEditor extends Renderable {
 		cx: number;
 		cy: number;
 	} {
-		return { cx: e.x - RAIL_W + this.scroll.x, cy: e.y + this.scroll.y };
+		return {
+			cx: e.x - RAIL_W + this.scroll.x,
+			cy: e.y - this.geom.stripsTop + this.scroll.y,
+		};
 	}
 
 	// Move the strips scroll by a delta, clamped to the layout's content.
@@ -875,6 +889,16 @@ export class SpriteEditor extends Renderable {
 		if (e.x < RAIL_W) {
 			const action = railActionAt(this.geom.rail, e.x, e.y);
 			if (action) this.applyRail(action);
+			return;
+		}
+		// The variant strip's row is chrome: a left click selects the swatch's
+		// hue/accent for the session; any click there never reaches the canvas.
+		const vs = this.geom.variant;
+		if (vs && e.y === vs.y) {
+			if (button === 'left') {
+				const hit = variantAt(vs.strip, e.x - RAIL_W);
+				if (hit) this.variant = { ...this.variant, [hit.channel]: hit.index };
+			}
 			return;
 		}
 		this.canvasDown(button, e);
@@ -1340,13 +1364,6 @@ export class SpriteEditor extends Renderable {
 	// time deterministically; the render loop calls it (via the renderer's frame
 	// callback in `runSpriteEdit`) with the real per-frame delta.
 	tick(deltaMs: number): void {
-		// Advance the dynamic p/a preview cycle even while idle so painted p/a Pixels
-		// step through every real core-palette variant (spec #401). Only repaint when
-		// the phase actually steps, so an idle editor isn't pegged at the frame rate.
-		const beforePhase = Math.floor(this.previewPhaseMs / PREVIEW_CYCLE_MS);
-		this.previewPhaseMs += deltaMs;
-		if (Math.floor(this.previewPhaseMs / PREVIEW_CYCLE_MS) !== beforePhase)
-			this.requestRender();
 		if (this.playMode === 'none') return;
 		this.playElapsedMs += deltaMs;
 		this.requestRender();
@@ -1937,6 +1954,31 @@ export class SpriteEditor extends Renderable {
 		});
 	}
 
+	// The one-row dynamic variant selector (spec #401 amendment): channel labels
+	// + 2-column swatches over the strips canvas' top row, click-only, active
+	// pair bracket-marked (the same mark the ink grid uses).
+	private renderVariantStrip(
+		buf: OptimizedBuffer,
+		strip: VariantStripModel,
+		x0: number,
+		x1: number,
+		C: Palette,
+	): void {
+		buf.fillRect(x0, 0, Math.max(0, x1 - x0), 1, C.bg);
+		for (const l of strip.labels) {
+			const sx = x0 + l.x;
+			if (sx < x1) buf.drawText(l.text, sx, 0, C.dim, C.bg);
+		}
+		for (const sw of strip.swatches) {
+			for (let x = sw.x0; x < sw.x1; x++) {
+				const sx = x0 + x;
+				if (sx >= x1) break;
+				const mark = sw.active ? (x === sw.x0 ? '[' : ']') : ' ';
+				buf.setCell(sx, 0, mark, C.cursorFg, SpriteEditor.rgba(sw.rgba));
+			}
+		}
+	}
+
 	// STRIPS: every Pose a labeled horizontal strip of its Frames, all editable
 	// in place, the active Frame underlined (spec #387).
 	private renderStrips(
@@ -1952,6 +1994,18 @@ export class SpriteEditor extends Renderable {
 		const x0 = RAIL_W;
 		const x1 = RAIL_W + viewW;
 
+		// The variant strip (spec #401 amendment) claims the canvas region's top
+		// row when the art uses dynamic ink; the strips content starts one row
+		// lower while it shows.
+		const strip = variantStripModel(
+			docDynamicUsage(this.state.doc),
+			this.variant,
+		);
+		const top = strip ? 1 : 0;
+		this.geom.variant = strip ? { strip, y: 0 } : null;
+		this.geom.stripsTop = top;
+		if (strip) this.renderVariantStrip(buf, strip, x0, x1, C);
+
 		// Cursor-driven navigation keeps the cursor's Pixel block (and the strip
 		// label above it) in view; wheel/pan own the viewport otherwise.
 		if (this.followCursor) {
@@ -1960,17 +2014,22 @@ export class SpriteEditor extends Renderable {
 				const bx = box.x + this.state.cursor.x * z;
 				const by = box.y + this.state.cursor.y * z;
 				this.scroll.x = scrollIntoView(this.scroll.x, bx, bx + z, viewW);
-				this.scroll.y = scrollIntoView(this.scroll.y, by - 1, by + z, viewH);
+				this.scroll.y = scrollIntoView(
+					this.scroll.y,
+					by - 1,
+					by + z,
+					viewH - top,
+				);
 			}
 		}
 		this.scroll.x = clampScroll(this.scroll.x, layout.contentW, viewW);
-		this.scroll.y = clampScroll(this.scroll.y, layout.contentH, viewH);
+		this.scroll.y = clampScroll(this.scroll.y, layout.contentH, viewH - top);
 		const sxOf = (cx: number) => x0 + cx - this.scroll.x;
-		const syOf = (cy: number) => cy - this.scroll.y;
+		const syOf = (cy: number) => top + cy - this.scroll.y;
 
 		for (const label of layout.labels) {
 			const sy = syOf(label.y);
-			if (sy < 0 || sy >= viewH) continue;
+			if (sy < top || sy >= viewH) continue;
 			this.drawClipped(buf, label.text, sxOf(0), sy, x0, x1, C.dim, C.bg);
 		}
 
@@ -1979,7 +2038,7 @@ export class SpriteEditor extends Renderable {
 			const active = box.name === this.state.frame;
 			const st = active ? disp : { ...this.state, frame: box.name };
 			const cy0 = Math.max(box.y, this.scroll.y);
-			const cy1 = Math.min(box.y + box.h, this.scroll.y + viewH);
+			const cy1 = Math.min(box.y + box.h, this.scroll.y + viewH - top);
 			const cx0 = Math.max(box.x, this.scroll.x);
 			const cx1 = Math.min(box.x + box.w, this.scroll.x + viewW);
 			for (let cy = cy0; cy < cy1; cy++) {
@@ -2001,7 +2060,7 @@ export class SpriteEditor extends Renderable {
 		// width underlined.
 		layout.labels.forEach((label, i) => {
 			const sy = syOf(layout.nameRows[i]);
-			if (sy < 0 || sy >= viewH) return;
+			if (sy < top || sy >= viewH) return;
 			for (const box of layout.frames) {
 				if (box.pose !== label.pose) continue;
 				const active = box.name === this.state.frame;
@@ -2032,7 +2091,7 @@ export class SpriteEditor extends Renderable {
 		for (const m of anchorMarkers(this.state)) {
 			const sx = sxOf(activeBox.x + m.x * 2 * z);
 			const sy = syOf(activeBox.y + m.y * 2 * z);
-			if (sx < x0 || sx >= x1 || sy < 0 || sy >= viewH) continue;
+			if (sx < x0 || sx >= x1 || sy < top || sy >= viewH) continue;
 			buf.setCell(
 				sx,
 				sy,
@@ -2047,12 +2106,12 @@ export class SpriteEditor extends Renderable {
 			x: sxOf(activeBox.x + px * z),
 			y: syOf(activeBox.y + py * z),
 		});
-		this.drawShapePreview(buf, mapActive, { x0, x1, y0: 0, y1: viewH }, C);
+		this.drawShapePreview(buf, mapActive, { x0, x1, y0: top, y1: viewH }, C);
 		this.drawSelectionMarquee(
 			buf,
 			disp,
 			mapActive,
-			{ x0, x1, y0: 0, y1: viewH },
+			{ x0, x1, y0: top, y1: viewH },
 			C,
 		);
 
@@ -2062,7 +2121,7 @@ export class SpriteEditor extends Renderable {
 			buf,
 			bx,
 			by,
-			{ x0, x1, y0: 0, y1: viewH },
+			{ x0, x1, y0: top, y1: viewH },
 			(sx, sy) =>
 				this.pixelRGBA(
 					disp,
@@ -2088,6 +2147,8 @@ export class SpriteEditor extends Renderable {
 	): void {
 		const z = this.zoom;
 		this.geom.layout = null;
+		this.geom.variant = null;
+		this.geom.stripsTop = 0;
 		let top = 0;
 		let tabs: readonly FocusTab[] = [];
 		if (showTabs) {
@@ -2507,10 +2568,17 @@ export class SpriteEditor extends Renderable {
 		const iy = y0 + 1;
 		const iw = paneW - 2;
 		const ih = paneH - 2;
+		const toRGBA = (r: number, g: number, b: number, a: number) =>
+			RGBA.fromInts(r, g, b, a);
+		// Merge the file-local colours, then the session dynamic variant (spec
+		// #401 amendment): p/a keys that resolve through the style's palette now
+		// carry the same colours the canvas and rail show, and the entity's hue
+		// (below) recolors the body through the real game machinery.
+		const previews = this.dynamicPreviews();
 		const style = styleWithLocalColors(
-			this.sceneStyle,
-			this.state.doc.colors,
-			(r, g, b, a) => RGBA.fromInts(r, g, b, a),
+			styleWithLocalColors(this.sceneStyle, this.state.doc.colors, toRGBA),
+			{ p: previews.p, a: previews.a },
+			toRGBA,
 		);
 		const region = new RegionBuffer(buf, ix, iy, iw, ih);
 		// A live float tracks in the preview too: render the baked doc so the pane
@@ -2522,6 +2590,7 @@ export class SpriteEditor extends Renderable {
 			// role-appropriate composition (weapon frame → swing phase, etc.).
 			stance: frameName,
 			elapsedS: 0,
+			hue: this.variant.p,
 		});
 		if (!ok) buf.drawText('keep drawing…'.slice(0, iw), ix, iy, C.dim, C.bg);
 
@@ -2561,6 +2630,8 @@ export class SpriteEditor extends Renderable {
 		this.geom.layout = null;
 		this.geom.focus = null;
 		this.geom.preview = null;
+		this.geom.variant = null;
+		this.geom.stripsTop = 0;
 		buf.fillRect(0, 0, W, H, C.bg);
 		const text = layout.placard ?? '';
 		const row = Math.floor((H - 1) / 2);

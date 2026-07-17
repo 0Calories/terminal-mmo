@@ -30,7 +30,11 @@ import {
 } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
-import { resolveColorKey, SPRITE_PREVIEWS } from '../src/sprite-editor/view';
+import {
+	resolveColorKey,
+	SPRITE_PREVIEWS,
+	variantStripModel,
+} from '../src/sprite-editor/view';
 
 const key = (name: string, extra: Partial<SpriteKey> = {}): SpriteKey => ({
 	name,
@@ -82,9 +86,12 @@ function minInkColumn(
 	>,
 	rgb: [number, number, number],
 	rowMax: number,
+	// Skip rows above this (row 0 carries the variant strip for dynamic-ink
+	// docs, whose swatches share the art's colours).
+	rowMin = 0,
 ): number {
 	let min = -1;
-	for (let y = 0; y < Math.min(rowMax, cap.lines.length); y++) {
+	for (let y = rowMin; y < Math.min(rowMax, cap.lines.length); y++) {
 		let col = 0;
 		for (const s of cap.lines[y].spans) {
 			const [r, g, b] = s.bg.toInts();
@@ -220,7 +227,7 @@ describe('Sprite editor TUI smoke', () => {
 		if (!fg) throw new Error('fixture fg did not resolve');
 		const rgb: [number, number, number] = [fg[0], fg[1], fg[2]];
 
-		const before = minInkColumn(t.captureSpans(), rgb, 17);
+		const before = minInkColumn(t.captureSpans(), rgb, 17, 1);
 		expect(before).toBeGreaterThanOrEqual(0); // the art is on the canvas
 
 		// Shift the whole Frame right three Pixels (select-all + float, spec #399).
@@ -233,7 +240,7 @@ describe('Sprite editor TUI smoke', () => {
 		// the same composite the preview pane renders (both read floatDisplayDoc).
 		expect(t.editor.state.float).not.toBeNull();
 		expect(t.editor.state.float?.dx).toBe(3);
-		const after = minInkColumn(t.captureSpans(), rgb, 17);
+		const after = minInkColumn(t.captureSpans(), rgb, 17, 1);
 		expect(after).toBeGreaterThan(before); // the art tracked the float right
 	});
 
@@ -375,24 +382,68 @@ describe('Sprite editor TUI smoke', () => {
 		expect(frame).toContain('hex #');
 	});
 
-	test('a painted p Pixel cycles through the real player hues over time (spec #401)', async () => {
+	test('idle time never recolors dynamic ink — p stays at the selected variant (spec #401 amendment)', async () => {
 		// A hat with one lit `p` (dynamic hue) Pixel in the idle frame.
-		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'cyc');
+		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'stat');
 		if (!doc) throw new Error('fixture failed to parse');
-		const t = await mount({ doc, id: 'cyc', role: 'hat' });
-
+		const t = await mount({ doc, id: 'stat', role: 'hat' });
 		const hue = (i: number): [number, number, number] => [
 			HUES[i][0],
 			HUES[i][1],
 			HUES[i][2],
 		];
-		// Phase 0: the Pixel renders the first player hue.
+		// The canonical representative (variant 0) renders…
 		expect(canvasHasBg(t.captureSpans(), hue(0), 6)).toBe(true);
-
-		// Advance one cycle step; the same Pixel now renders the next hue.
-		t.editor.tick(700); // one PREVIEW_CYCLE_MS step
+		// …and stays put through idle time: no clock advances the variant.
+		t.editor.tick(5000);
 		await t.renderOnce();
-		expect(canvasHasBg(t.captureSpans(), hue(1), 6)).toBe(true);
+		expect(canvasHasBg(t.captureSpans(), hue(0), 6)).toBe(true);
+		// No other hue anywhere below the variant strip row (the strip itself
+		// legitimately shows every hue as a swatch).
+		expect(minInkColumn(t.captureSpans(), hue(1), 6, 1)).toBe(-1);
+	});
+
+	test('clicking a hue swatch on the variant strip recolors the p art', async () => {
+		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'var');
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'var', role: 'hat' });
+		const strip = variantStripModel({ p: true, a: false }, { p: 0, a: 0 });
+		if (!strip) throw new Error('expected a strip');
+		const target = strip.swatches[2]; // the third player hue
+		t.editor.mouseDown({ button: 0, x: RAIL_W + target.x0, y: 0 });
+		t.editor.mouseUp();
+		await t.renderOnce();
+		const hue = (i: number): [number, number, number] => [
+			HUES[i][0],
+			HUES[i][1],
+			HUES[i][2],
+		];
+		// The art now renders the selected hue — scanned below the strip row so
+		// the strip's own swatches don't count.
+		expect(minInkColumn(t.captureSpans(), hue(2), 6, 1)).toBeGreaterThanOrEqual(
+			RAIL_W,
+		);
+		// The click was chrome, not paint: the doc is untouched.
+		expect(t.editor.state.history.past.length).toBe(0);
+	});
+
+	test('the variant strip appears only when the art uses dynamic ink', async () => {
+		// Static-key art: no strip, so the first strips label sits on row 0.
+		const staticDoc = parseSpriteFile(
+			'{"key": "g"}\n--- idle\n▘·\n··\n',
+			'stat2',
+		).doc;
+		if (!staticDoc) throw new Error('fixture failed to parse');
+		const t1 = await mount({ doc: staticDoc, id: 'stat2', role: 'hat' });
+		const rows1 = t1.captureCharFrame().split('\n');
+		expect(rows1[0].slice(RAIL_W)).toContain('idle');
+		// Dynamic-key art: the strip claims row 0 and the labels shift down one.
+		const pDoc = parseSpriteFile('--- idle\n▘·\n··\n', 'dyn').doc;
+		if (!pDoc) throw new Error('fixture failed to parse');
+		const t2 = await mount({ doc: pDoc, id: 'dyn', role: 'hat' });
+		const rows2 = t2.captureCharFrame().split('\n');
+		expect(rows2[0].slice(RAIL_W)).not.toContain('idle');
+		expect(rows2[1].slice(RAIL_W)).toContain('idle');
 	});
 });
 

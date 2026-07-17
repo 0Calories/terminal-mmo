@@ -277,3 +277,24 @@ test('facing flips the composite (mirroring goes through the renderer)', () => {
 	});
 	expect(dump(left)).not.toBe(dump(right));
 });
+
+// --- session dynamic variant → composite agreement (spec #401 amendment) ----
+
+test('the view hue drives the composite body hue; omitted → canonical 0', () => {
+	const doc = loadDoc('sprites/hats/cap.sprite', 'cap');
+	const dims = { width: 24, height: 16 };
+	const picked = buildComposite(
+		doc,
+		'hat',
+		{ facing: 1, stance: 'idle', elapsedS: 0, hue: 3 },
+		dims,
+	);
+	expect(picked?.entity.cosmetics?.hue).toBe(3);
+	const canonical = buildComposite(
+		doc,
+		'hat',
+		{ facing: 1, stance: 'idle', elapsedS: 0 },
+		dims,
+	);
+	expect(canonical?.entity.cosmetics?.hue).toBe(0);
+});

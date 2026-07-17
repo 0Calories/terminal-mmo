@@ -55,8 +55,10 @@ import type { SpriteRole } from './templates';
 // sprite lands exactly where we position it regardless of the type chosen.
 const PLAIN_TYPE: EntityType = 'chaser';
 
-// A neutral player entity the hat/weapon/form compositions dress up.
-function baseAvatar(facing: Facing): Entity {
+// A neutral player entity the hat/weapon/form compositions dress up. `hue` is
+// the session-selected dynamic `p` variant (spec #401 amendment) — the wire hue
+// id the real renderer recolors the body with, 0 = canonical.
+function baseAvatar(facing: Facing, hue = 0): Entity {
 	return {
 		id: 1,
 		type: 'player',
@@ -71,7 +73,7 @@ function baseAvatar(facing: Facing): Entity {
 		maxHp: 10,
 		hurtT: 0,
 		attackT: 0,
-		cosmetics: { hue: 0, hat: '', nameplate: 0, form: DEFAULT_FORM_ID },
+		cosmetics: { hue, hat: '', nameplate: 0, form: DEFAULT_FORM_ID },
 	};
 }
 
@@ -238,6 +240,9 @@ export interface CompositeView {
 	stance: string;
 	// Seconds of playback elapsed; drives multi-frame poses and the swing loop.
 	elapsedS: number;
+	// The session-selected dynamic `p` variant (spec #401 amendment): the body
+	// hue index the composite avatar wears. Omitted → the canonical hue 0.
+	hue?: number;
 }
 
 export interface CompositeBuild {
@@ -286,7 +291,7 @@ export function buildComposite(
 		if (role === 'hat') {
 			const body = defaultBody();
 			const sprite = primary(body);
-			const e = baseAvatar(facing);
+			const e = baseAvatar(facing, view.hue ?? 0);
 			const pos = placeCentered(
 				sprite.w,
 				sprite.h,
@@ -303,7 +308,7 @@ export function buildComposite(
 		if (role === 'weapon') {
 			const body = defaultBody();
 			const sprite = primary(body);
-			const e = baseAvatar(facing);
+			const e = baseAvatar(facing, view.hue ?? 0);
 			e.weapon = 0;
 			const action = weaponAction(doc, view.stance, view.elapsedS);
 			if (action) e.action = action;
@@ -326,7 +331,7 @@ export function buildComposite(
 			const frame = resolveFrame(doc, view.stance, view.elapsedS);
 			const body = bodyShowingFrame(doc, frame);
 			const sprite = primary(body);
-			const e = baseAvatar(facing);
+			const e = baseAvatar(facing, view.hue ?? 0);
 			e.weapon = 0;
 			if (e.cosmetics) e.cosmetics.hat = defaultHatId();
 			const pos = placeCentered(

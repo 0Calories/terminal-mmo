@@ -7,7 +7,7 @@ import {
 	composeStatusLine,
 	DEFAULT_ZOOM,
 	dirForRole,
-	dynamicPreviewsAt,
+	docDynamicUsage,
 	PLAYER_HUE_CYCLE,
 	parseEditArg,
 	pixelToScreen,
@@ -21,6 +21,9 @@ import {
 	scrollViewport,
 	spriteStatusLine,
 	stepZoom,
+	variantAt,
+	variantPreviews,
+	variantStripModel,
 	visiblePixels,
 	ZOOM_LADDER,
 } from '../src/sprite-editor/view';
@@ -244,31 +247,98 @@ describe('status + help chrome', () => {
 	});
 });
 
-describe('dynamic p/a preview cycling (spec #401)', () => {
+describe('dynamic p/a variants (spec #401, amended: session-selected, no clock)', () => {
 	test('the p/a cycles are the real core palettes', () => {
 		expect(PLAYER_HUE_CYCLE).toEqual(HUES);
 		expect(ACCENT_CYCLE).toEqual(Object.values(RARITY_COLOR));
 	});
 
-	test('phase 0 reproduces the leading palette entries', () => {
-		const p0 = dynamicPreviewsAt(0);
-		expect(p0.p).toEqual(HUES[0]);
-		expect(p0.a).toEqual(Object.values(RARITY_COLOR)[0]);
+	test('variant (0,0) is the canonical representative', () => {
+		const v = variantPreviews(0, 0);
+		expect(v.p).toEqual(HUES[0]);
+		expect(v.a).toEqual(Object.values(RARITY_COLOR)[0]);
 		// The player-hue channel also matches the static representative preview.
-		expect(p0.p).toEqual(SPRITE_PREVIEWS.p);
+		expect(v.p).toEqual(SPRITE_PREVIEWS.p);
 	});
 
-	test('each channel steps its own palette and wraps', () => {
-		for (let phase = 0; phase < HUES.length * 2 + 1; phase++) {
-			const d = dynamicPreviewsAt(phase);
-			expect(d.p).toEqual(HUES[phase % HUES.length]);
-			const accents = Object.values(RARITY_COLOR);
-			expect(d.a).toEqual(accents[phase % accents.length]);
-		}
+	test('each channel indexes its own palette independently and wraps', () => {
+		const accents = Object.values(RARITY_COLOR);
+		expect(variantPreviews(3, 1).p).toEqual(HUES[3]);
+		expect(variantPreviews(3, 1).a).toEqual(accents[1]);
+		expect(variantPreviews(HUES.length, accents.length).p).toEqual(HUES[0]);
+		expect(variantPreviews(-1, -1).p).toEqual(HUES[HUES.length - 1]);
+	});
+});
+
+describe('variant strip — session hue/accent selector (spec #401 amendment)', () => {
+	function docWith(
+		colors: string,
+		bg = '  ',
+	): Parameters<typeof docDynamicUsage>[0] {
+		return {
+			id: 't',
+			key: 'g',
+			baseline: 0,
+			anchors: {},
+			poses: {},
+			fps: {},
+			colors: {},
+			frames: [
+				{ name: 'idle', rows: ['▘▘'], colors: [colors], bg: [bg], anchors: {} },
+			],
+		} as unknown as Parameters<typeof docDynamicUsage>[0];
+	}
+
+	test('usage scans fg and bg grids for the dynamic keys', () => {
+		expect(docDynamicUsage(docWith('gg'))).toEqual({ p: false, a: false });
+		expect(docDynamicUsage(docWith('pg'))).toEqual({ p: true, a: false });
+		expect(docDynamicUsage(docWith('ga'))).toEqual({ p: false, a: true });
+		expect(docDynamicUsage(docWith('gg', 'a·'))).toEqual({
+			p: false,
+			a: true,
+		});
 	});
 
-	test('negative phases wrap cleanly (no out-of-range index)', () => {
-		const d = dynamicPreviewsAt(-1);
-		expect(d.p).toEqual(HUES[HUES.length - 1]);
+	test('a SENTINEL fg counts as the doc default key', () => {
+		const doc = docWith('··');
+		(doc as { key: string }).key = 'p';
+		expect(docDynamicUsage(doc)).toEqual({ p: true, a: false });
+	});
+
+	test('no dynamic usage → no strip; p-only shows only the hue swatches', () => {
+		expect(
+			variantStripModel({ p: false, a: false }, { p: 0, a: 0 }),
+		).toBeNull();
+		const pOnly = variantStripModel({ p: true, a: false }, { p: 0, a: 0 });
+		expect(pOnly).not.toBeNull();
+		expect(pOnly?.swatches.every((s) => s.channel === 'p')).toBe(true);
+		expect(pOnly?.swatches.length).toBe(HUES.length);
+	});
+
+	test('the full strip lists 8 hue then 5 accent swatches with the active marked', () => {
+		const strip = variantStripModel({ p: true, a: true }, { p: 2, a: 1 });
+		if (!strip) throw new Error('expected a strip');
+		const ps = strip.swatches.filter((s) => s.channel === 'p');
+		const as = strip.swatches.filter((s) => s.channel === 'a');
+		expect(ps.length).toBe(HUES.length); // 8
+		expect(as.length).toBe(Object.values(RARITY_COLOR).length); // 5
+		expect(ps[2].active).toBe(true);
+		expect(ps.filter((s) => s.active).length).toBe(1);
+		expect(as[1].active).toBe(true);
+		expect(ps[2].rgba).toEqual(HUES[2]);
+		// Swatches are laid out left→right without overlap.
+		for (let i = 1; i < strip.swatches.length; i++)
+			expect(strip.swatches[i].x0).toBeGreaterThanOrEqual(
+				strip.swatches[i - 1].x1,
+			);
+	});
+
+	test('variantAt resolves a strip column to its swatch (and misses to undefined)', () => {
+		const strip = variantStripModel({ p: true, a: true }, { p: 0, a: 0 });
+		if (!strip) throw new Error('expected a strip');
+		const target = strip.swatches[3];
+		expect(variantAt(strip, target.x0)).toBe(target);
+		expect(variantAt(strip, target.x1 - 1)).toBe(target);
+		expect(variantAt(strip, strip.width + 5)).toBeUndefined();
 	});
 });
