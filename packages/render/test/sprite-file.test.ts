@@ -81,6 +81,20 @@ test('animations vocabulary: the header key is animations, the doc field is .ani
 	).toBe(true);
 });
 
+test('serializer emits canonical animation order: idle, walk, jump, then existing order (ADR 0035)', () => {
+	// A doc authored out of order: jump and walk sections before idle.
+	const { doc } = parseSpriteFile(
+		'{ "animations": { "walk": ["walk-0", "walk-1"] } }\n--- jump\nAB\n--- walk-0\nCD\n--- walk-1\nEF\n--- extra\nGH\n--- idle\nIJ\n',
+		'ooo',
+	);
+	const text = serializeSpriteFile(doc as SpriteDoc);
+	const sections = [...text.matchAll(/^--- (\S+)$/gm)].map((m) => m[1]);
+	expect(sections).toEqual(['idle', 'walk-0', 'walk-1', 'jump', 'extra']);
+	// The canonical file round-trips into canonical frame order.
+	const reparsed = parseSpriteFile(text, 'ooo');
+	expect(reparsed.doc?.frames.map((f) => f.name)).toEqual(sections);
+});
+
 test('headerless minimal file: defaults, implicit animation, zero diagnostics', () => {
 	const { doc, diagnostics } = parseSpriteFile(MINIMAL, 'minimal');
 	expect(diagnostics).toEqual([]);

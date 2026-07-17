@@ -654,6 +654,38 @@ function toGlyphRow(row: string): string {
 	return row.replaceAll(' ', SENTINEL);
 }
 
+// Canonical animation order (ADR 0035): idle, walk, jump surface first so every
+// form's file (and the strips view mirroring it) leads with its required core;
+// everything else keeps its existing relative order.
+const CANONICAL_LEADS = ['idle', 'walk', 'jump'] as const;
+
+function canonicalAnimationNames(doc: SpriteDoc): string[] {
+	const names = Object.keys(doc.animations);
+	const leads = CANONICAL_LEADS.filter((n) => names.includes(n));
+	return [...leads, ...names.filter((n) => !leads.includes(n as never))];
+}
+
+// Frame sections in canonical order: each animation's frames in list order,
+// deduped (a frame shared by two animations serializes once, at its first use).
+// A frame referenced by no animation cannot occur (the parser makes it an
+// implicit single-frame animation), but keep any stragglers at the tail.
+function canonicalFrames(doc: SpriteDoc): SpriteFrameDoc[] {
+	const byName = new Map(doc.frames.map((f) => [f.name, f]));
+	const out: SpriteFrameDoc[] = [];
+	const seen = new Set<string>();
+	for (const animation of canonicalAnimationNames(doc)) {
+		for (const name of doc.animations[animation]) {
+			const frame = byName.get(name);
+			if (frame !== undefined && !seen.has(name)) {
+				seen.add(name);
+				out.push(frame);
+			}
+		}
+	}
+	for (const f of doc.frames) if (!seen.has(f.name)) out.push(f);
+	return out;
+}
+
 export function serializeSpriteFile(doc: SpriteDoc): string {
 	const header: Record<string, unknown> = {};
 	if (doc.key !== DEFAULT_KEY) header.key = doc.key;
@@ -665,9 +697,9 @@ export function serializeSpriteFile(doc: SpriteDoc): string {
 		);
 	}
 	const explicitAnimations = Object.fromEntries(
-		Object.entries(doc.animations).filter(
-			([name, list]) => !(list.length === 1 && list[0] === name),
-		),
+		canonicalAnimationNames(doc)
+			.map((name) => [name, doc.animations[name]] as const)
+			.filter(([name, list]) => !(list.length === 1 && list[0] === name)),
 	);
 	if (Object.keys(explicitAnimations).length > 0)
 		header.animations = explicitAnimations;
@@ -696,7 +728,7 @@ export function serializeSpriteFile(doc: SpriteDoc): string {
 		lines.push(...JSON.stringify(header, null, '\t').split('\n'));
 	}
 
-	for (const frame of doc.frames) {
+	for (const frame of canonicalFrames(doc)) {
 		lines.push(`--- ${frame.name}`);
 		for (const row of frame.rows) lines.push(toGlyphRow(row));
 
