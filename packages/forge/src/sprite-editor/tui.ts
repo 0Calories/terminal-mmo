@@ -227,6 +227,9 @@ export interface SpriteEditorOpts {
 	onQuit?: () => void;
 	initialDiags?: readonly SpriteDiagnostic[];
 	globalPalette?: Readonly<Record<string, RGBAQuad>>;
+	// Shown in the status line's feedback slot on open (e.g. "creating new
+	// sprite …"), so a fresh-template open is never mistaken for a loaded file.
+	initialFeedback?: string;
 }
 
 // Two chrome rows: the status line and the hint line under it (spec #387).
@@ -477,6 +480,8 @@ export class SpriteEditor extends Renderable {
 		this.spriteId = opts.id;
 		this.role = opts.role;
 		this.state = initSpriteEditor(opts.doc, opts.frame);
+		if (opts.initialFeedback)
+			this.state = { ...this.state, feedback: opts.initialFeedback };
 		this.savedDoc = opts.doc;
 		this.saveDiags = opts.initialDiags ?? null;
 		this.save = opts.save;
@@ -2822,6 +2827,7 @@ export async function runSpriteEdit(
 	let role: SpriteRole;
 	let savePath: string;
 	let initialDiags: readonly SpriteDiagnostic[] = [];
+	let initialFeedback: string | undefined;
 
 	if (path) {
 		const { readFileSync } = await import('node:fs');
@@ -2852,6 +2858,9 @@ export async function runSpriteEdit(
 		role = target.role;
 		doc = emptySpriteDoc(target.id, role);
 		savePath = join(deps.root, dirForRole(role), `${target.id}.sprite`);
+		// Surface the fresh-template open in the status line: a load that failed
+		// to resolve a file must never silently masquerade as an existing sprite.
+		initialFeedback = `creating new sprite ${dirForRole(role)}/${target.id}`;
 	}
 
 	const { createCliRenderer } = await import('@opentui/core');
@@ -2870,6 +2879,7 @@ export async function runSpriteEdit(
 		role,
 		doc,
 		initialDiags,
+		initialFeedback,
 		save: (text: string) => {
 			mkdirSync(dirname(savePath), { recursive: true });
 			writeFileSync(savePath, text);

@@ -45,11 +45,19 @@ export function formatSpriteDiagnostics(diags: SpriteDiagnostic[]): string {
 
 export function findSpriteFile(root: string, id: string): string | undefined {
 	if (id.includes('/') || id.endsWith('.sprite')) {
-		const candidate = isAbsolute(id) ? id : resolve(process.cwd(), id);
-		if (existsSync(candidate)) return candidate;
-		if (!candidate.endsWith('.sprite')) {
-			const withExt = `${candidate}.sprite`;
-			if (existsSync(withExt)) return withExt;
+		// A slash id is tried as a filesystem path first (cwd-relative or
+		// absolute), then against the sprites root — `forms/buddy` and the
+		// picker's `dirForRole(role)/id` launch form both mean "under root"
+		// when no such path exists where the tool was run.
+		const candidates = isAbsolute(id)
+			? [id]
+			: [resolve(process.cwd(), id), join(root, id)];
+		for (const candidate of candidates) {
+			if (existsSync(candidate)) return candidate;
+			if (!candidate.endsWith('.sprite')) {
+				const withExt = `${candidate}.sprite`;
+				if (existsSync(withExt)) return withExt;
+			}
 		}
 		return undefined;
 	}

@@ -104,6 +104,7 @@ async function mount(opts: {
 	save?: (t: string) => void;
 	width?: number;
 	height?: number;
+	initialFeedback?: string;
 }) {
 	const t = await createTestRenderer({
 		width: opts.width ?? 100,
@@ -116,6 +117,7 @@ async function mount(opts: {
 		role: opts.role,
 		doc: opts.doc,
 		save: opts.save ?? (() => {}),
+		initialFeedback: opts.initialFeedback,
 	});
 	editor.attach(t.renderer.root);
 	await t.renderOnce();
@@ -147,6 +149,23 @@ describe('Sprite editor TUI smoke', () => {
 		if (!fg) throw new Error('fixture fg did not resolve');
 		expect(canvasHasBg(captureSpans(), [fg[0], fg[1], fg[2]], 17)).toBe(true);
 		expect(editor.state.frame).toBe('idle');
+	});
+
+	test('a fresh-template open surfaces its initial feedback in the status line', async () => {
+		// The CLI passes "creating new sprite …" when no existing file resolved, so
+		// a failed load can never silently masquerade as a fresh file.
+		const t = await mount({
+			doc: emptySpriteDoc('newhat', 'hat'),
+			id: 'newhat',
+			role: 'hat',
+			initialFeedback: 'creating new sprite hats/newhat',
+			// Wide enough for the status row's right-aligned feedback slot to fit
+			// next to the full left status content (narrow widths drop the note by
+			// composeStatusLine's left-wins rule, covered in sprite-editor-view).
+			width: 140,
+		});
+		expect(t.editor.state.feedback).toBe('creating new sprite hats/newhat');
+		expect(t.captureCharFrame()).toContain('creating new sprite hats/newhat');
 	});
 
 	test('opens a missing id from its role template', async () => {

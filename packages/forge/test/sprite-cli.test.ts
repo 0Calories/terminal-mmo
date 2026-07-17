@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runSprite } from '../src/sprite-cli';
+import { findSpriteFile, runSprite } from '../src/sprite-cli';
+import { dirForRole } from '../src/sprite-editor/view';
 
 let root: string;
 let lines: string[];
@@ -231,5 +232,44 @@ AB
 		);
 		expect(runSprite(['check'], deps())).toBe(1);
 		expect(output()).toContain('unknown color key');
+	});
+});
+
+describe('findSpriteFile', () => {
+	// The launch forms `forge sprite edit <dir>/<id>` and the unified picker's
+	// reconstructed `dirForRole(role)/id` argument must resolve against the
+	// sprites root, not only cwd — a slash id that silently missed the root used
+	// to fall through to "create a fresh empty template" (the empty-canvas bug).
+	test('a role/id slash form resolves under the sprites root when cwd is elsewhere', () => {
+		mkdirSync(join(root, 'forms'), { recursive: true });
+		const path = join(root, 'forms', 'buddy.sprite');
+		writeFileSync(path, VALID);
+		expect(findSpriteFile(root, 'forms/buddy')).toBe(path);
+		expect(findSpriteFile(root, 'forms/buddy.sprite')).toBe(path);
+	});
+
+	test("the picker's dirForRole(role)/id launch form finds the existing file", () => {
+		mkdirSync(join(root, 'forms'), { recursive: true });
+		const path = join(root, 'forms', 'buddy.sprite');
+		writeFileSync(path, VALID);
+		expect(findSpriteFile(root, `${dirForRole('form')}/buddy`)).toBe(path);
+	});
+
+	test('a bare id still searches the root recursively', () => {
+		mkdirSync(join(root, 'hats'), { recursive: true });
+		const path = join(root, 'hats', 'cap.sprite');
+		writeFileSync(path, VALID);
+		expect(findSpriteFile(root, 'cap')).toBe(path);
+	});
+
+	test('an absolute path is honoured as-is', () => {
+		mkdirSync(join(root, 'forms'), { recursive: true });
+		const path = join(root, 'forms', 'buddy.sprite');
+		writeFileSync(path, VALID);
+		expect(findSpriteFile(root, path)).toBe(path);
+	});
+
+	test('a missing slash id returns undefined (the caller creates from template)', () => {
+		expect(findSpriteFile(root, 'forms/nope')).toBeUndefined();
 	});
 });
