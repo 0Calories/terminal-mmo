@@ -21,7 +21,12 @@ import { join } from 'node:path';
 import { HUES, SCENE_PALETTE, STANDARD_PALETTE } from '@mmo/core/entities';
 import { parseSpriteFile } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
-import { RAIL_W, railModel } from '../src/sprite-editor/chrome';
+import {
+	RAIL_W,
+	type RailRow,
+	railActionAt,
+	railModel,
+} from '../src/sprite-editor/chrome';
 import {
 	currentFrame,
 	frameExtent,
@@ -33,7 +38,7 @@ import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
 import {
 	resolveColorKey,
 	SPRITE_PREVIEWS,
-	variantStripModel,
+	variantOptions,
 } from '../src/sprite-editor/view';
 
 const key = (name: string, extra: Partial<SpriteKey> = {}): SpriteKey => ({
@@ -398,19 +403,58 @@ describe('Sprite editor TUI smoke', () => {
 		t.editor.tick(5000);
 		await t.renderOnce();
 		expect(canvasHasBg(t.captureSpans(), hue(0), 6)).toBe(true);
-		// No other hue anywhere below the variant strip row (the strip itself
-		// legitimately shows every hue as a swatch).
-		expect(minInkColumn(t.captureSpans(), hue(1), 6, 1)).toBe(-1);
+		// No other hue anywhere on the canvas (the rail's variant swatches sit
+		// left of RAIL_W and are excluded by the scan).
+		expect(minInkColumn(t.captureSpans(), hue(1), 6)).toBe(-1);
 	});
 
-	test('clicking a hue swatch on the variant strip recolors the p art', async () => {
+	// The rail rows the editor renders for a mounted hat doc, rebuilt through the
+	// same pure model, so a test can locate a variant swatch's screen cell.
+	function railRowsFor(
+		t: Awaited<ReturnType<typeof mount>>,
+		usage: { p: boolean; a: boolean },
+		active: { p: number; a: number },
+	): RailRow[] {
+		return railModel({
+			tool: t.editor.state.tool,
+			ink: t.editor.state.ink,
+			entries: paletteEntries(
+				t.editor.state,
+				STANDARD_PALETTE,
+				SPRITE_PREVIEWS,
+			),
+			animation: t.editor.state.animation,
+			fps: 5,
+			frameCount: 1,
+			playMode: 'none',
+			onionDepth: 0,
+			height: 22,
+			variants: variantOptions(usage, active),
+		});
+	}
+
+	// The screen cell of the variant swatch for `channel`/`index` in the rail.
+	function variantCell(
+		rows: RailRow[],
+		channel: 'p' | 'a',
+		index: number,
+	): { x: number; y: number } {
+		for (let y = 0; y < rows.length; y++)
+			for (let x = 0; x < RAIL_W; x++) {
+				const a = railActionAt(rows, x, y);
+				if (a?.type === 'variant' && a.channel === channel && a.index === index)
+					return { x, y };
+			}
+		throw new Error(`no variant swatch for ${channel}[${index}] in the rail`);
+	}
+
+	test('clicking a hue swatch on the rail variant rows recolors the p art', async () => {
 		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'var');
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'var', role: 'hat' });
-		const strip = variantStripModel({ p: true, a: false }, { p: 0, a: 0 });
-		if (!strip) throw new Error('expected a strip');
-		const target = strip.swatches[2]; // the third player hue
-		t.editor.mouseDown({ button: 0, x: RAIL_W + target.x0, y: 0 });
+		const rows = railRowsFor(t, { p: true, a: false }, { p: 0, a: 0 });
+		const cell = variantCell(rows, 'p', 2); // the third player hue
+		t.editor.mouseDown({ button: 0, x: cell.x, y: cell.y });
 		t.editor.mouseUp();
 		await t.renderOnce();
 		const hue = (i: number): [number, number, number] => [
@@ -418,17 +462,16 @@ describe('Sprite editor TUI smoke', () => {
 			HUES[i][1],
 			HUES[i][2],
 		];
-		// The art now renders the selected hue — scanned below the strip row so
-		// the strip's own swatches don't count.
-		expect(minInkColumn(t.captureSpans(), hue(2), 6, 1)).toBeGreaterThanOrEqual(
+		// The art now renders the selected hue on the canvas (right of the rail).
+		expect(minInkColumn(t.captureSpans(), hue(2), 6)).toBeGreaterThanOrEqual(
 			RAIL_W,
 		);
 		// The click was chrome, not paint: the doc is untouched.
 		expect(t.editor.state.history.past.length).toBe(0);
 	});
 
-	test('the variant strip appears only when the art uses dynamic ink', async () => {
-		// Static-key art: no strip, so the first strips label sits on row 0.
+	test('the variant rows live in the rail and only for dynamic-ink art; the canvas never shifts', async () => {
+		// Static-key art: no variant rows, and the first strips label on row 0.
 		const staticDoc = parseSpriteFile(
 			'{"key": "g"}\n--- idle\n▘·\n··\n',
 			'stat2',
@@ -437,13 +480,15 @@ describe('Sprite editor TUI smoke', () => {
 		const t1 = await mount({ doc: staticDoc, id: 'stat2', role: 'hat' });
 		const rows1 = t1.captureCharFrame().split('\n');
 		expect(rows1[0].slice(RAIL_W)).toContain('idle');
-		// Dynamic-key art: the strip claims row 0 and the labels shift down one.
+		expect(rows1.some((r) => / p \[\]/.test(r.slice(0, RAIL_W)))).toBe(false);
+		// Dynamic-key art: the rail gains the p variant row; the canvas stays
+		// put — the strips label still sits on row 0, no layout jump.
 		const pDoc = parseSpriteFile('--- idle\n▘·\n··\n', 'dyn').doc;
 		if (!pDoc) throw new Error('fixture failed to parse');
 		const t2 = await mount({ doc: pDoc, id: 'dyn', role: 'hat' });
 		const rows2 = t2.captureCharFrame().split('\n');
-		expect(rows2[0].slice(RAIL_W)).not.toContain('idle');
-		expect(rows2[1].slice(RAIL_W)).toContain('idle');
+		expect(rows2[0].slice(RAIL_W)).toContain('idle');
+		expect(rows2.some((r) => / p \[\]/.test(r.slice(0, RAIL_W)))).toBe(true);
 	});
 });
 
@@ -649,7 +694,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 		);
 	});
 
-	test('i eyedrops the key under the cursor, one-shot', async () => {
+	test('alt-click eyedrops the key under the pointer; the i key is retired', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('eye', 'hat'),
 			id: 'eye',
@@ -659,7 +704,17 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 		t.editor.key(key('space')); // paint at cursor (0,0)
 		t.editor.key(key('space')); // lift pen
 		t.editor.key(key('t')); // move the active ink away (→ transparent)
-		t.editor.key(key('i')); // sample the lit Pixel at the cursor
+		t.editor.key(key('i')); // retired: must NOT eyedrop (QA round 3)
+		expect(t.editor.state.ink).toEqual({ kind: 'transparent' });
+		// The momentary alt-click spelling still samples the lit Pixel. The
+		// active frame's block starts at (RAIL_W, 1) in the strips view.
+		t.editor.mouseDown({
+			button: 0,
+			x: RAIL_W,
+			y: 1,
+			modifiers: { alt: true },
+		});
+		t.editor.mouseUp();
 		expect(t.editor.state.ink).toEqual(painted);
 	});
 

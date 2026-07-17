@@ -62,6 +62,46 @@ describe('railModel — tools · ink · playback boxes', () => {
 		for (const t of RAIL_TOOLS) expect(text).toContain(t.label);
 	});
 
+	test('the ink title no longer advertises the retired i eyedrop key', () => {
+		expect(allText(model())).not.toContain('i eye');
+	});
+
+	test('variant rows sit in the rail: per-channel swatches, active bracketed, clicks select', () => {
+		const rows = model({
+			variants: [
+				{ channel: 'p', index: 0, rgba: [1, 2, 3, 255], active: false },
+				{ channel: 'p', index: 1, rgba: [4, 5, 6, 255], active: true },
+				{ channel: 'a', index: 0, rgba: [7, 8, 9, 255], active: true },
+			],
+		});
+		// One labeled row per channel, and every row still fits the rail.
+		const texts = rows.map(rowText);
+		expect(texts.some((t) => t.startsWith(' p '))).toBe(true);
+		expect(texts.some((t) => t.startsWith(' a '))).toBe(true);
+		for (const row of rows)
+			expect(rowText(row).length).toBeLessThanOrEqual(RAIL_W - 1);
+		// The active swatch is bracket-marked; clicking a swatch selects it.
+		const pRowY = rows.findIndex((r) => rowText(r).startsWith(' p '));
+		const pRow = rows[pRowY];
+		const active = pRow.spans.find((s) => s.text === '[]');
+		expect(active?.action).toEqual({ type: 'variant', channel: 'p', index: 1 });
+		let x = 0;
+		let hit: unknown = null;
+		for (const s of pRow.spans) {
+			if (s.action?.type === 'variant' && s.action.index === 0)
+				hit = railActionAt(rows, x, pRowY);
+			x += s.text.length;
+		}
+		expect(hit).toEqual({ type: 'variant', channel: 'p', index: 0 });
+	});
+
+	test('no variants → no variant rows', () => {
+		const texts = model().map(rowText);
+		expect(texts.some((t) => t.startsWith(' p ') || t.startsWith(' a '))).toBe(
+			false,
+		);
+	});
+
 	test('every row fits inside the rail width', () => {
 		for (const row of model()) {
 			expect(rowText(row).length).toBeLessThanOrEqual(RAIL_W - 1);

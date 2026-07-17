@@ -165,68 +165,36 @@ export function docDynamicUsage(doc: SpriteDoc): DynamicUsage {
 	return usage;
 }
 
-// One clickable 2-column swatch on the strip, positioned in strip-local columns.
-export interface VariantSwatch {
+// One selectable variant swatch: a hue (p) or rarity accent (a) the session can
+// wear. Flat data — the rail lays them out (QA round 3: the variant strip lives
+// in the rail beside the ink grid, so the canvas never layout-jumps).
+export interface VariantOption {
 	channel: 'p' | 'a';
 	index: number;
 	rgba: RGBAQuad;
 	active: boolean;
-	// Column extent [x0, x1) within the strip.
-	x0: number;
-	x1: number;
 }
 
-export interface VariantStripModel {
-	swatches: VariantSwatch[];
-	labels: { text: string; x: number }[];
-	width: number;
-}
-
-const VARIANT_SWATCH_W = 2;
-
-// The strip's layout: a `p` label + one swatch per player hue, then an `a`
-// label + one per rarity accent — each channel present only when the art uses
-// it, the whole strip null when neither does. Click-only (no key binding);
-// the active pair is marked.
-export function variantStripModel(
+// The selectable variants: one option per player hue, then one per rarity
+// accent — each channel present only when the art paints its key; empty when
+// neither does. Click-only (no key binding); the active pair is marked.
+export function variantOptions(
 	usage: DynamicUsage,
 	active: { p: number; a: number },
-): VariantStripModel | null {
-	if (!usage.p && !usage.a) return null;
-	const swatches: VariantSwatch[] = [];
-	const labels: { text: string; x: number }[] = [];
-	let x = 0;
+): VariantOption[] {
+	const out: VariantOption[] = [];
 	const channel = (
 		name: 'p' | 'a',
 		cycle: readonly RGBAQuad[],
 		current: number,
 	) => {
-		labels.push({ text: name, x });
-		x += 2;
 		cycle.forEach((rgba, index) => {
-			swatches.push({
-				channel: name,
-				index,
-				rgba,
-				active: index === current,
-				x0: x,
-				x1: x + VARIANT_SWATCH_W,
-			});
-			x += VARIANT_SWATCH_W;
+			out.push({ channel: name, index, rgba, active: index === current });
 		});
-		x += 2; // gap before the next channel
 	};
 	if (usage.p) channel('p', PLAYER_HUE_CYCLE, active.p);
 	if (usage.a) channel('a', ACCENT_CYCLE, active.a);
-	return { swatches, labels, width: x - 2 };
-}
-
-// The swatch under a strip-local column, if any.
-export function variantAt(
-	strip: VariantStripModel,
-	x: number,
-): VariantSwatch | undefined {
-	return strip.swatches.find((s) => x >= s.x0 && x < s.x1);
+	return out;
 }
 
 // ---------------------------------------------------------------------------

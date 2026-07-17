@@ -115,7 +115,6 @@ import {
 	deleteAnimation,
 	deleteSelection,
 	endStroke,
-	eyedropAt,
 	floatDisplayDoc,
 	frameExtent,
 	frameNames,
@@ -183,10 +182,8 @@ import {
 	scrollAxis,
 	spriteStatusLine,
 	stepZoom,
-	type VariantStripModel,
-	variantAt,
+	variantOptions,
 	variantPreviews,
-	variantStripModel,
 	visiblePixels,
 } from './view';
 
@@ -433,12 +430,6 @@ export class SpriteEditor extends Renderable {
 			flip: { x0: number; x1: number; y: number };
 			play: { x0: number; x1: number; y: number };
 		} | null;
-		// The variant strip drawn over the strips canvas (row `y`, starting at
-		// RAIL_W), or null when hidden — the mouse resolves clicks through it.
-		variant: { strip: VariantStripModel; y: number } | null;
-		// Rows the strips content is shifted down by (1 while the variant strip
-		// is shown), so screen→content mapping stays in sync with the render.
-		stripsTop: number;
 		// The colour picker's hue/shade grid rect, so a click resolves to a cell.
 		colorGrid: {
 			x0: number;
@@ -453,8 +444,6 @@ export class SpriteEditor extends Renderable {
 		layout: null,
 		focus: null,
 		preview: null,
-		variant: null,
-		stripsTop: 0,
 		colorGrid: null,
 	};
 	// An in-flight mouse paint stroke (down→drag→up coalesces to one undo step),
@@ -710,6 +699,10 @@ export class SpriteEditor extends Renderable {
 			case 'anchorMenu':
 				this.openAnchorMenu();
 				return;
+			case 'variant':
+				// Session-only: recolors previews, never the doc (spec #401 amendment).
+				this.variant = { ...this.variant, [action.channel]: action.index };
+				return;
 		}
 	}
 
@@ -721,7 +714,7 @@ export class SpriteEditor extends Renderable {
 	} {
 		return {
 			cx: e.x - RAIL_W + this.scroll.x,
-			cy: e.y - this.geom.stripsTop + this.scroll.y,
+			cy: e.y + this.scroll.y,
 		};
 	}
 
@@ -891,16 +884,6 @@ export class SpriteEditor extends Renderable {
 			if (action) this.applyRail(action);
 			return;
 		}
-		// The variant strip's row is chrome: a left click selects the swatch's
-		// hue/accent for the session; any click there never reaches the canvas.
-		const vs = this.geom.variant;
-		if (vs && e.y === vs.y) {
-			if (button === 'left') {
-				const hit = variantAt(vs.strip, e.x - RAIL_W);
-				if (hit) this.variant = { ...this.variant, [hit.channel]: hit.index };
-			}
-			return;
-		}
 		this.canvasDown(button, e);
 	}
 
@@ -1068,17 +1051,6 @@ export class SpriteEditor extends Renderable {
 		const row = Math.floor((e.y - g.y0) / g.cellH);
 		if (col < 0 || col >= HUE_COLS || row < 0 || row >= SHADE_ROWS) return;
 		this.colorPicker = pickCell(p, col, row);
-	}
-
-	// ---- eyedropper (`i` one-shot) ----
-
-	private eyedropCursor(): void {
-		this.liftPen();
-		this.state = eyedropAt(
-			this.state,
-			this.state.cursor.x,
-			this.state.cursor.y,
-		);
 	}
 
 	// ---- stamp ----
@@ -1694,9 +1666,6 @@ export class SpriteEditor extends Renderable {
 				this.state = cropToSelection(this.state);
 				this.followCursor = true;
 				return;
-			case 'i':
-				this.eyedropCursor();
-				return;
 			case 'n':
 				this.addFrame();
 				return;
@@ -1942,6 +1911,7 @@ export class SpriteEditor extends Renderable {
 			onionDepth: this.onionDepth,
 			height: viewH,
 			foldPlayback: this.foldPlayback,
+			variants: variantOptions(docDynamicUsage(this.state.doc), this.variant),
 		});
 		this.geom.rail = rows;
 		rows.slice(0, viewH).forEach((row, y) => {
@@ -1962,31 +1932,6 @@ export class SpriteEditor extends Renderable {
 		});
 	}
 
-	// The one-row dynamic variant selector (spec #401 amendment): channel labels
-	// + 2-column swatches over the strips canvas' top row, click-only, active
-	// pair bracket-marked (the same mark the ink grid uses).
-	private renderVariantStrip(
-		buf: OptimizedBuffer,
-		strip: VariantStripModel,
-		x0: number,
-		x1: number,
-		C: Palette,
-	): void {
-		buf.fillRect(x0, 0, Math.max(0, x1 - x0), 1, C.bg);
-		for (const l of strip.labels) {
-			const sx = x0 + l.x;
-			if (sx < x1) buf.drawText(l.text, sx, 0, C.dim, C.bg);
-		}
-		for (const sw of strip.swatches) {
-			for (let x = sw.x0; x < sw.x1; x++) {
-				const sx = x0 + x;
-				if (sx >= x1) break;
-				const mark = sw.active ? (x === sw.x0 ? '[' : ']') : ' ';
-				buf.setCell(sx, 0, mark, C.cursorFg, SpriteEditor.rgba(sw.rgba));
-			}
-		}
-	}
-
 	// STRIPS: every Animation a labeled horizontal strip of its Frames, all editable
 	// in place, the active Frame underlined (spec #387).
 	private renderStrips(
@@ -2002,18 +1947,6 @@ export class SpriteEditor extends Renderable {
 		const x0 = RAIL_W;
 		const x1 = RAIL_W + viewW;
 
-		// The variant strip (spec #401 amendment) claims the canvas region's top
-		// row when the art uses dynamic ink; the strips content starts one row
-		// lower while it shows.
-		const strip = variantStripModel(
-			docDynamicUsage(this.state.doc),
-			this.variant,
-		);
-		const top = strip ? 1 : 0;
-		this.geom.variant = strip ? { strip, y: 0 } : null;
-		this.geom.stripsTop = top;
-		if (strip) this.renderVariantStrip(buf, strip, x0, x1, C);
-
 		// Cursor-driven navigation keeps the cursor's Pixel block (and the strip
 		// label above it) in view; wheel/pan own the viewport otherwise.
 		if (this.followCursor) {
@@ -2022,22 +1955,17 @@ export class SpriteEditor extends Renderable {
 				const bx = box.x + this.state.cursor.x * z;
 				const by = box.y + this.state.cursor.y * z;
 				this.scroll.x = scrollIntoView(this.scroll.x, bx, bx + z, viewW);
-				this.scroll.y = scrollIntoView(
-					this.scroll.y,
-					by - 1,
-					by + z,
-					viewH - top,
-				);
+				this.scroll.y = scrollIntoView(this.scroll.y, by - 1, by + z, viewH);
 			}
 		}
 		this.scroll.x = clampScroll(this.scroll.x, layout.contentW, viewW);
-		this.scroll.y = clampScroll(this.scroll.y, layout.contentH, viewH - top);
+		this.scroll.y = clampScroll(this.scroll.y, layout.contentH, viewH);
 		const sxOf = (cx: number) => x0 + cx - this.scroll.x;
-		const syOf = (cy: number) => top + cy - this.scroll.y;
+		const syOf = (cy: number) => cy - this.scroll.y;
 
 		for (const label of layout.labels) {
 			const sy = syOf(label.y);
-			if (sy < top || sy >= viewH) continue;
+			if (sy < 0 || sy >= viewH) continue;
 			this.drawClipped(buf, label.text, sxOf(0), sy, x0, x1, C.dim, C.bg);
 		}
 
@@ -2046,7 +1974,7 @@ export class SpriteEditor extends Renderable {
 			const active = box.name === this.state.frame;
 			const st = active ? disp : { ...this.state, frame: box.name };
 			const cy0 = Math.max(box.y, this.scroll.y);
-			const cy1 = Math.min(box.y + box.h, this.scroll.y + viewH - top);
+			const cy1 = Math.min(box.y + box.h, this.scroll.y + viewH);
 			const cx0 = Math.max(box.x, this.scroll.x);
 			const cx1 = Math.min(box.x + box.w, this.scroll.x + viewW);
 			for (let cy = cy0; cy < cy1; cy++) {
@@ -2068,7 +1996,7 @@ export class SpriteEditor extends Renderable {
 		// width underlined.
 		layout.labels.forEach((label, i) => {
 			const sy = syOf(layout.nameRows[i]);
-			if (sy < top || sy >= viewH) return;
+			if (sy < 0 || sy >= viewH) return;
 			for (const box of layout.frames) {
 				if (box.animation !== label.animation) continue;
 				const active = box.name === this.state.frame;
@@ -2099,7 +2027,7 @@ export class SpriteEditor extends Renderable {
 		for (const m of anchorMarkers(this.state)) {
 			const sx = sxOf(activeBox.x + m.x * 2 * z);
 			const sy = syOf(activeBox.y + m.y * 2 * z);
-			if (sx < x0 || sx >= x1 || sy < top || sy >= viewH) continue;
+			if (sx < x0 || sx >= x1 || sy < 0 || sy >= viewH) continue;
 			buf.setCell(
 				sx,
 				sy,
@@ -2114,12 +2042,12 @@ export class SpriteEditor extends Renderable {
 			x: sxOf(activeBox.x + px * z),
 			y: syOf(activeBox.y + py * z),
 		});
-		this.drawShapePreview(buf, mapActive, { x0, x1, y0: top, y1: viewH }, C);
+		this.drawShapePreview(buf, mapActive, { x0, x1, y0: 0, y1: viewH }, C);
 		this.drawSelectionMarquee(
 			buf,
 			disp,
 			mapActive,
-			{ x0, x1, y0: top, y1: viewH },
+			{ x0, x1, y0: 0, y1: viewH },
 			C,
 		);
 
@@ -2129,7 +2057,7 @@ export class SpriteEditor extends Renderable {
 			buf,
 			bx,
 			by,
-			{ x0, x1, y0: top, y1: viewH },
+			{ x0, x1, y0: 0, y1: viewH },
 			(sx, sy) =>
 				this.pixelRGBA(
 					disp,
@@ -2155,8 +2083,6 @@ export class SpriteEditor extends Renderable {
 	): void {
 		const z = this.zoom;
 		this.geom.layout = null;
-		this.geom.variant = null;
-		this.geom.stripsTop = 0;
 		let top = 0;
 		let tabs: readonly FocusTab[] = [];
 		if (showTabs) {
@@ -2638,8 +2564,6 @@ export class SpriteEditor extends Renderable {
 		this.geom.layout = null;
 		this.geom.focus = null;
 		this.geom.preview = null;
-		this.geom.variant = null;
-		this.geom.stripsTop = 0;
 		buf.fillRect(0, 0, W, H, C.bg);
 		const text = layout.placard ?? '';
 		const row = Math.floor((H - 1) / 2);

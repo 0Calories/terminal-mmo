@@ -20,7 +20,12 @@ export type RailAction =
 	| { readonly type: 'play'; readonly mode: 'animation' | 'walk' }
 	| { readonly type: 'addFrame' }
 	| { readonly type: 'animationMenu' }
-	| { readonly type: 'anchorMenu' };
+	| { readonly type: 'anchorMenu' }
+	| {
+			readonly type: 'variant';
+			readonly channel: 'p' | 'a';
+			readonly index: number;
+	  };
 
 // One styled run of text on a rail row. `swatch` colours the run's BACKGROUND
 // (an ink sample); 'checker' is the transparent swatch. A run with an action is
@@ -92,6 +97,38 @@ export interface RailInput {
 	// Small-terminal rung 3 (spec #387): fold the playback box to a single hint
 	// row so the ink list keeps room. Decided by the degradation solver.
 	readonly foldPlayback?: boolean;
+	// The session p/a variant options (view.ts `variantOptions`): empty/absent
+	// when the art paints no dynamic key, so the rows simply don't render.
+	readonly variants?: readonly RailVariant[];
+}
+
+// One selectable session-variant swatch the rail lists beside the ink grid.
+export interface RailVariant {
+	readonly channel: 'p' | 'a';
+	readonly index: number;
+	readonly rgba: RGBAQuad;
+	readonly active: boolean;
+}
+
+// One row per dynamic channel: a dim `p`/`a` label, then that channel's
+// swatches in the ink grid's visual language (2-column, active bracketed).
+function variantRows(variants: readonly RailVariant[]): RailRow[] {
+	const rows: RailRow[] = [];
+	for (const channel of ['p', 'a'] as const) {
+		const options = variants.filter((v) => v.channel === channel);
+		if (options.length === 0) continue;
+		const spans: RailSpan[] = [{ text: ` ${channel} `, dim: true }];
+		for (const v of options) {
+			spans.push({
+				text: v.active ? '[]' : '  ',
+				swatch: v.rgba,
+				hot: v.active,
+				action: { type: 'variant', channel: v.channel, index: v.index },
+			});
+		}
+		rows.push({ spans });
+	}
+	return rows;
 }
 
 // One ink the rail lists: a palette entry, or the transparent pseudo-entry.
@@ -180,16 +217,13 @@ export function railModel(input: RailInput): RailRow[] {
 	rows.push({ spans: [{ text: '' }] });
 
 	// --- ink box: the unlabeled swatch grid, then the active colour square ---
-	rows.push({
-		spans: [
-			{ text: ' ink', dim: true },
-			{ text: '  i eye', dim: true },
-		],
-		title: true,
-	});
+	rows.push({ spans: [{ text: ' ink', dim: true }], title: true });
 	const options = inkOptions(input.entries);
 	rows.push(...inkGridRows(options, input.ink));
 	rows.push(activeInkRow(options, input.ink));
+	// The session p/a variant selector (QA round 3: lives in the rail beside the
+	// ink grid — click-only, shown only when the art paints a dynamic key).
+	rows.push(...variantRows(input.variants ?? []));
 	rows.push({ spans: [{ text: '' }] });
 
 	rows.push(
@@ -358,10 +392,10 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 	{
 		title: 'Color',
 		bindings: [
-			{ keys: 'click', label: 'ink swatch grid · p/a variant strip' },
+			{ keys: 'click', label: 'ink swatch grid · p/a variants (rail)' },
 			{ keys: 'e', label: 'define / edit file-local colour' },
 			{ keys: 't', label: 'set ink transparent' },
-			{ keys: 'i', label: 'eyedrop key (alt-click momentary)' },
+			{ keys: 'alt-click', label: 'eyedrop (momentary)' },
 		],
 	},
 	{

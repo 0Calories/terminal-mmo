@@ -21,9 +21,8 @@ import {
 	scrollViewport,
 	spriteStatusLine,
 	stepZoom,
-	variantAt,
+	variantOptions,
 	variantPreviews,
-	variantStripModel,
 	visiblePixels,
 	ZOOM_LADDER,
 } from '../src/sprite-editor/view';
@@ -270,7 +269,7 @@ describe('dynamic p/a variants (spec #401, amended: session-selected, no clock)'
 	});
 });
 
-describe('variant strip — session hue/accent selector (spec #401 amendment)', () => {
+describe('variant options — session hue/accent selector (spec #401, in the rail)', () => {
 	function docWith(
 		colors: string,
 		bg = '  ',
@@ -305,40 +304,22 @@ describe('variant strip — session hue/accent selector (spec #401 amendment)', 
 		expect(docDynamicUsage(doc)).toEqual({ p: true, a: false });
 	});
 
-	test('no dynamic usage → no strip; p-only shows only the hue swatches', () => {
-		expect(
-			variantStripModel({ p: false, a: false }, { p: 0, a: 0 }),
-		).toBeNull();
-		const pOnly = variantStripModel({ p: true, a: false }, { p: 0, a: 0 });
-		expect(pOnly).not.toBeNull();
-		expect(pOnly?.swatches.every((s) => s.channel === 'p')).toBe(true);
-		expect(pOnly?.swatches.length).toBe(HUES.length);
+	test('no dynamic usage → no options; p-only lists only the hue swatches', () => {
+		expect(variantOptions({ p: false, a: false }, { p: 0, a: 0 })).toEqual([]);
+		const pOnly = variantOptions({ p: true, a: false }, { p: 0, a: 0 });
+		expect(pOnly.every((s) => s.channel === 'p')).toBe(true);
+		expect(pOnly.length).toBe(HUES.length);
 	});
 
-	test('the full strip lists 8 hue then 5 accent swatches with the active marked', () => {
-		const strip = variantStripModel({ p: true, a: true }, { p: 2, a: 1 });
-		if (!strip) throw new Error('expected a strip');
-		const ps = strip.swatches.filter((s) => s.channel === 'p');
-		const as = strip.swatches.filter((s) => s.channel === 'a');
+	test('the full set lists 8 hue then 5 accent options with the active marked', () => {
+		const options = variantOptions({ p: true, a: true }, { p: 2, a: 1 });
+		const ps = options.filter((s) => s.channel === 'p');
+		const as = options.filter((s) => s.channel === 'a');
 		expect(ps.length).toBe(HUES.length); // 8
 		expect(as.length).toBe(Object.values(RARITY_COLOR).length); // 5
 		expect(ps[2].active).toBe(true);
 		expect(ps.filter((s) => s.active).length).toBe(1);
 		expect(as[1].active).toBe(true);
 		expect(ps[2].rgba).toEqual(HUES[2]);
-		// Swatches are laid out left→right without overlap.
-		for (let i = 1; i < strip.swatches.length; i++)
-			expect(strip.swatches[i].x0).toBeGreaterThanOrEqual(
-				strip.swatches[i - 1].x1,
-			);
-	});
-
-	test('variantAt resolves a strip column to its swatch (and misses to undefined)', () => {
-		const strip = variantStripModel({ p: true, a: true }, { p: 0, a: 0 });
-		if (!strip) throw new Error('expected a strip');
-		const target = strip.swatches[3];
-		expect(variantAt(strip, target.x0)).toBe(target);
-		expect(variantAt(strip, target.x1 - 1)).toBe(target);
-		expect(variantAt(strip, strip.width + 5)).toBeUndefined();
 	});
 });
