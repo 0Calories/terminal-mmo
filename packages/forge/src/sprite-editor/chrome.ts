@@ -303,16 +303,15 @@ export interface KeymapGroup {
 }
 
 // The complete key map, grouped for the `?` overlay. This is the single source
-// of truth for what the editor binds; the hint line draws from it too.
+// of truth for what the editor binds; the hint line draws from it too. Kept
+// consolidated so the packed two-column overlay genuinely fits 120x24 (the
+// fit is pinned by a chrome test): body rows (titles + bindings) must stay
+// <= 40 and no keys/label pair should push a packed row past 120 columns.
 export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 	{
 		title: 'Tools',
 		bindings: [
-			{
-				keys: '1-9',
-				label:
-					'pencil · fill · stamp · line · rect · ellipse · select · move · paste',
-			},
+			{ keys: '1-9', label: 'tools in rail order (pencil → paste)' },
 			{ keys: 'p s / a', label: 'pencil · stamp / anchor (letters)' },
 			{ keys: 'o', label: 'rect/ellipse outline ↔ filled' },
 		],
@@ -320,44 +319,42 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 	{
 		title: 'Global',
 		bindings: [
-			{ keys: '?', label: 'this help' },
 			{ keys: 'tab', label: 'strips ↔ focus view' },
-			{ keys: '^s / w', label: 'save' },
+			{ keys: 'enter / esc', label: 'focus frame / back to strips' },
+			{ keys: '^s / w · q', label: 'save · quit' },
 			{ keys: 'u / U', label: 'undo / redo (^z / ^r)' },
 			{ keys: '+ / -', label: 'zoom ladder (ctrl-wheel too)' },
 			{ keys: 'm', label: 'mirror facing' },
 			{ keys: 'v', label: 'composited preview' },
-			{ keys: 'q', label: 'quit' },
 		],
 	},
 	{
 		title: 'Cursor & paint',
 		bindings: [
-			{ keys: 'arrows / hjkl', label: 'move cursor 1 Pixel' },
+			{ keys: 'arrows/hjkl', label: 'move cursor 1 Pixel' },
 			{ keys: 'space', label: 'pen down/up (movement paints)' },
-			{ keys: 'left / right click', label: 'paint ink / paint transparent' },
-			{ keys: 'shift-click', label: 'pencil: line from last point' },
+			{ keys: 'click / rmb', label: 'paint ink / transparent (shift: line)' },
 			{ keys: 'enter / drag', label: 'shape anchor / commit (shift squares)' },
 			{ keys: 'esc', label: 'cancel shape / float / overlay / stamp' },
 		],
 	},
 	{
-		title: 'Selection & move',
+		title: 'Selection, move & crop',
 		bindings: [
 			{ keys: '7 / 8 / 9', label: 'select marquee / move (float) / paste' },
 			{ keys: 'drag / arrows', label: 'lift + float the selection' },
 			{ keys: 'enter / esc', label: 'drop float / cancel losslessly' },
-			{ keys: 'y / x', label: 'copy / cut selection' },
-			{ keys: 'del / bksp', label: 'clear selection contents (delete)' },
+			{ keys: 'y / x / del', label: 'copy / cut / clear selection' },
 			{ keys: 'shift-arrows', label: 'shift the whole Frame 1 Pixel' },
+			{ keys: 'R', label: 'resize mode (tab edge · arrows · enter)' },
+			{ keys: 'c', label: 'crop to selection' },
 		],
 	},
 	{
 		title: 'Color',
 		bindings: [
-			{ keys: 'e', label: 'define / edit file-local colour (modal)' },
-			{ keys: 'c', label: 'ink quick-pick (type / arrows / index)' },
-			{ keys: "; / '", label: 'nudge ink to the adjacent swatch' },
+			{ keys: 'click', label: 'ink swatch grid · p/a variant strip' },
+			{ keys: 'e', label: 'define / edit file-local colour' },
 			{ keys: 't', label: 'set ink transparent' },
 			{ keys: 'i', label: 'eyedrop key (alt-click momentary)' },
 		],
@@ -367,23 +364,14 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 		bindings: [
 			{ keys: '[ ] / { }', label: 'prev / next frame · pose' },
 			{ keys: 'n', label: 'add frame to current pose' },
-			{ keys: 'P / A', label: 'pose menu / anchor menu' },
+			{ keys: 'P / A / O', label: 'pose menu / anchor menu / onion 0-2' },
 			{ keys: '. / ,', label: 'play pose / walk preview' },
-			{ keys: 'O', label: 'onion skin depth 0/1/2' },
-		],
-	},
-	{
-		title: 'Resize & crop',
-		bindings: [
-			{ keys: 'R', label: 'resize mode (tab edge · arrows · enter/esc)' },
-			{ keys: 'C', label: 'crop to selection' },
 		],
 	},
 	{
 		title: 'Navigation',
 		bindings: [
-			{ keys: 'wheel', label: 'scroll strips' },
-			{ keys: 'shift-wheel', label: 'scroll horizontally' },
+			{ keys: 'wheel/shift', label: 'scroll strips (shift-wheel: horizontal)' },
 			{ keys: 'ctrl-wheel', label: 'zoom' },
 			{ keys: 'middle-drag', label: 'pan · click-through activates frame' },
 		],
@@ -436,7 +424,7 @@ const TOOL_HINTS: Record<SpriteTool, string> = {
 	erase: 'space pen · arrows erase',
 	fill: 'space/lmb fills the region · rmb clears',
 	stamp: 'space then a char stamps the cell',
-	anchor: 'space places · A pick · c drop override',
+	anchor: 'space places · A pick',
 	line: 'drag / enter·enter · esc cancel · rmb transparent',
 	rect: 'drag / enter·enter · o outline/fill · shift square',
 	ellipse: 'drag / enter·enter · o outline/fill · shift circle',

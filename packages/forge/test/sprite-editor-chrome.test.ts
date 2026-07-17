@@ -5,6 +5,7 @@
 import { describe, expect, test } from 'bun:test';
 import { SCENE_PALETTE } from '@mmo/core/entities';
 import {
+	helpOverlayRows,
 	helpRows,
 	hintLine,
 	RAIL_TOOLS,
@@ -262,5 +263,36 @@ describe('help surface — hint line + ? overlay', () => {
 		expect(text).toContain('ctrl-wheel');
 		expect(text).toContain('middle-drag');
 		expect(text).toContain('click-through');
+	});
+
+	test('the keymap tracks the retired and rebound keys', () => {
+		const text = helpRows().join('\n');
+		// Retired: the c quick-pick and the ;/' ink nudge (ink is mouse-only).
+		expect(text).not.toContain('quick-pick');
+		expect(text).not.toContain('nudge');
+		// Crop moved to plain c.
+		const crop = SPRITE_KEYMAP.flatMap((g) => g.bindings).find((b) =>
+			b.label.includes('crop'),
+		);
+		expect(crop?.keys).toBe('c');
+		// Focus navigation is documented.
+		expect(text).toContain('focus');
+		const nav = SPRITE_KEYMAP.flatMap((g) => g.bindings).find((b) =>
+			b.label.includes('focus frame'),
+		);
+		expect(nav?.keys).toContain('enter');
+		// Mouse-only ink selection is documented.
+		expect(text).toContain('swatch');
+	});
+
+	test('the anchor tool hint no longer claims c drops an override', () => {
+		expect(hintLine('anchor')).not.toContain('c drop');
+	});
+
+	test('the ? overlay fits a 120×24 terminal', () => {
+		// The modal budget at H=24 is helpOverlayRows(22) (see tui renderHelp).
+		const rows = helpOverlayRows(22);
+		expect(rows.length).toBeLessThanOrEqual(22);
+		for (const r of rows) expect(r.length).toBeLessThanOrEqual(120);
 	});
 });
