@@ -479,6 +479,89 @@ describe('Sprite editor mouse painting', () => {
 	});
 });
 
+describe('Focus navigation: enter dives into a frame, esc surfaces to strips', () => {
+	const bx = RAIL_W;
+	const by = 1;
+
+	test('enter in strips focuses the active frame; esc returns to strips', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('nav', 'hat'),
+			id: 'nav',
+			role: 'hat',
+		});
+		expect(t.editor.view).toBe('strips');
+		t.editor.key(key('enter'));
+		expect(t.editor.view).toBe('focus');
+		t.editor.key(key('escape'));
+		expect(t.editor.view).toBe('strips');
+	});
+
+	test('tab still toggles the views both ways', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('tab', 'hat'),
+			id: 'tab',
+			role: 'hat',
+		});
+		t.editor.key(key('tab'));
+		expect(t.editor.view).toBe('focus');
+		t.editor.key(key('tab'));
+		expect(t.editor.view).toBe('strips');
+	});
+
+	test('a live float claims enter (drops it) before the view changes', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('flt', 'hat'),
+			id: 'flt',
+			role: 'hat',
+		});
+		t.editor.key(key('space')); // paint so the shift has art to move
+		t.editor.key(key('space'));
+		t.editor.key(key('right', { shift: true })); // whole-Frame shift → float
+		expect(t.editor.state.float).not.toBeNull();
+		t.editor.key(key('enter'));
+		expect(t.editor.state.float).toBeNull(); // dropped, not a view switch
+		expect(t.editor.view).toBe('strips');
+		t.editor.key(key('enter')); // nothing pending now → dive
+		expect(t.editor.view).toBe('focus');
+	});
+
+	test('esc first clears a selection, then surfaces to strips', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('sel', 'hat'),
+			id: 'sel',
+			role: 'hat',
+		});
+		t.editor.key(key('7', { sequence: '7' })); // select tool
+		t.editor.mouseDown({ button: 0, x: bx, y: by });
+		t.editor.mouseDrag({ button: 0, x: bx + 3, y: by + 1 });
+		t.editor.mouseUp();
+		expect(t.editor.state.selection).not.toBeNull();
+		t.editor.key(key('tab')); // dive with the selection alive
+		expect(t.editor.view).toBe('focus');
+		t.editor.key(key('escape')); // esc clears the selection first…
+		expect(t.editor.state.selection).toBeNull();
+		expect(t.editor.view).toBe('focus');
+		t.editor.key(key('escape')); // …then surfaces
+		expect(t.editor.view).toBe('strips');
+	});
+
+	test('the shape gesture keeps claiming enter (anchor then commit, no view switch)', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('shp', 'hat'),
+			id: 'shp',
+			role: 'hat',
+		});
+		t.editor.key(key('4', { sequence: '4' })); // line tool
+		t.editor.key(key('enter')); // places the shape anchor
+		expect(t.editor.state.shape).not.toBeNull();
+		expect(t.editor.view).toBe('strips');
+		t.editor.key(key('right'));
+		t.editor.key(key('enter')); // commits the shape
+		expect(t.editor.state.shape).toBeNull();
+		expect(t.editor.view).toBe('strips');
+	});
+});
+
 describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 	const bx = RAIL_W;
 	const by = 1;

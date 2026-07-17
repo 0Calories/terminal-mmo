@@ -1451,12 +1451,18 @@ export class SpriteEditor extends Renderable {
 		}
 
 		// Esc backs out an in-flight float, then a shape, then a committed selection,
-		// each losslessly (spec #387, #399); otherwise it is inert here (modals/help/
-		// stamp consume their own esc above).
+		// each losslessly (spec #387, #399); with nothing pending it surfaces the
+		// focus view back to the strips overview (modals/help/stamp consume their
+		// own esc above).
 		if (k.name === 'escape') {
 			if (this.state.float) this.state = cancelFloat(this.state);
 			else if (this.state.shape) this.state = cancelShape(this.state);
 			else if (this.state.selection) this.state = clearSelection(this.state);
+			else if (this.view === 'focus') {
+				this.liftPen();
+				this.view = 'strips';
+				this.followCursor = true;
+			}
 			return;
 		}
 		// Enter drops a live float from any tool — a whole-Frame shift (which can
@@ -1616,8 +1622,27 @@ export class SpriteEditor extends Renderable {
 				this.move(0, 1);
 				return;
 			case 'space':
+				this.primary();
+				return;
 			case 'return':
 			case 'enter':
+				// Focus navigation: a bare enter in the strips overview dives into
+				// the active frame. Gesture claims come first — a float drop was
+				// handled above, and the gesture tools (shape/select/move) keep
+				// enter as their anchor/commit/lift key via primary().
+				if (
+					this.view === 'strips' &&
+					!this.state.shape &&
+					!this.state.float &&
+					!isShapeTool(this.state.tool) &&
+					this.state.tool !== 'select' &&
+					this.state.tool !== 'move'
+				) {
+					this.liftPen();
+					this.view = 'focus';
+					this.followCursor = true;
+					return;
+				}
 				this.primary();
 				return;
 			case 'p':
