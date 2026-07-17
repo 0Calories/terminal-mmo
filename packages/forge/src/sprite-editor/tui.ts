@@ -2023,17 +2023,21 @@ export class SpriteEditor extends Renderable {
 		if (!activeBox) return;
 
 		// Anchor markers overlay the ACTIVE Frame's art at the top-left cell of
-		// their (2×,2×) Pixel block (overrides tinted apart).
+		// their (2×,2×) Pixel block (overrides tinted apart). The background is
+		// whatever that cell renders without the marker — the art's colour, or
+		// the transparency checker — never an opaque stamp (QA round 3).
 		for (const m of anchorMarkers(this.state)) {
-			const sx = sxOf(activeBox.x + m.x * 2 * z);
-			const sy = syOf(activeBox.y + m.y * 2 * z);
+			const ccx = activeBox.x + m.x * 2 * z;
+			const ccy = activeBox.y + m.y * 2 * z;
+			const sx = sxOf(ccx);
+			const sy = syOf(ccy);
 			if (sx < x0 || sx >= x1 || sy < 0 || sy >= viewH) continue;
 			buf.setCell(
 				sx,
 				sy,
 				ANCHOR_MARKER,
 				m.overridden ? C.overrideFg : C.anchorFg,
-				C.bg,
+				this.pixelRGBA(disp, m.x * 2, m.y * 2, ccx + ccy, C, true),
 			);
 		}
 
@@ -2170,7 +2174,8 @@ export class SpriteEditor extends Renderable {
 				sy,
 				ANCHOR_MARKER,
 				m.overridden ? C.overrideFg : C.anchorFg,
-				C.bg,
+				// The cell's own rendered background — art or checker, never opaque.
+				this.pixelRGBA(viewState, m.x * 2, m.y * 2, sx + sy, C, onion),
 			);
 		}
 
@@ -2442,15 +2447,31 @@ export class SpriteEditor extends Renderable {
 				);
 			}
 		}
-		// Mirrored anchor markers, reflected across the rendered width.
+		// Mirrored anchor markers, reflected across the rendered width. Each keeps
+		// the background its cell rendered without the marker — the art's bg key,
+		// or the transparency checker where empty (QA round 3).
 		for (const a of mirrorAnchorMarkers(anchorMarkers(this.state), m.width)) {
 			if (a.x < 0 || a.x >= panelW || a.y < 0 || a.y >= viewH) continue;
+			const glyph = m.rows[a.y]?.[a.x] ?? ' ';
+			let cellBg: RGBA;
+			if (glyph === ' ' || glyph === SENTINEL) {
+				cellBg = (a.x + a.y) % 2 === 0 ? C.grid : C.bg;
+			} else {
+				const bgKey = m.bg[a.y]?.[a.x] ?? '';
+				const bg = resolveColorKey(
+					bgKey === SENTINEL ? '' : bgKey,
+					local,
+					this.globalPalette,
+					previews,
+				);
+				cellBg = bg ? SpriteEditor.rgba(bg) : C.bg;
+			}
 			buf.setCell(
 				ox + a.x,
 				a.y,
 				ANCHOR_MARKER,
 				a.overridden ? C.overrideFg : C.anchorFg,
-				C.bg,
+				cellBg,
 			);
 		}
 	}

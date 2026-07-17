@@ -86,6 +86,37 @@ describe('anchor marker', () => {
 		expect(t.captureCharFrame()).toContain('✛');
 	});
 
+	test('the marker overlays the art: its cell keeps the art colour, no opaque bg stamp (QA round 3)', async () => {
+		// A hat whose art fully lights the anchor cell — the marker at (0,0) sits
+		// over painted 'p' pixels, so its background must be the art's colour.
+		const { doc } = parseSpriteFile(
+			'{ "anchors": { "grip": [0, 0] } }\n--- idle\n██\n██\n',
+			'lit',
+		);
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'lit', role: 'hat' });
+		// Move the cursor off the marker cell so its ring doesn't cover it.
+		for (let i = 0; i < 4; i++) t.editor.key(key('right'));
+		await t.renderOnce();
+		// The active frame's block starts at (RAIL_W=30, 1) in the strips view;
+		// anchor (0,0)'s marker sits at its origin cell.
+		const cap = t.captureSpans();
+		const cell = (x: number, y: number) => {
+			let col = 0;
+			for (const s of cap.lines[y].spans) {
+				if (x < col + s.width)
+					return { ch: s.text[x - col] ?? ' ', bg: s.bg.toInts() };
+				col += s.width;
+			}
+			return null;
+		};
+		const marker = cell(30, 1);
+		expect(marker?.ch).toBe('✛');
+		const p = resolveColorKey('p', doc.colors, SCENE_PALETTE, SPRITE_PREVIEWS);
+		if (!p) throw new Error('p did not resolve');
+		expect(marker?.bg.slice(0, 3)).toEqual([p[0], p[1], p[2]]);
+	});
+
 	test('the anchor menu picks a name and the tool places one', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('cap', 'hat'),
