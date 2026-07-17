@@ -456,9 +456,21 @@ export function helpOverlayRows(maxRows: number): string[] {
 	// Drop the blank group separators in the packed variant to reclaim the rows
 	// the extra groups (selection/move, #399) need on a 24-row terminal.
 	const body = rows.slice(2).filter((r) => r.trim() !== '');
+	// Split on a GROUP boundary (a title row is unindented) nearest the middle,
+	// so no group's title strands apart from its bindings.
 	const half = Math.ceil(body.length / 2);
-	const left = body.slice(0, half);
-	const right = body.slice(half);
+	let split = half;
+	let best = Number.POSITIVE_INFINITY;
+	body.forEach((r, i) => {
+		if (i === 0 || r.startsWith('  ')) return; // bindings are indented
+		const d = Math.abs(i - half);
+		if (d < best) {
+			best = d;
+			split = i;
+		}
+	});
+	const left = body.slice(0, split);
+	const right = body.slice(split);
 	const colW = Math.max(...left.map((r) => r.length)) + 4;
 	return [
 		...head,
