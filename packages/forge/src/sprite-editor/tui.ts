@@ -401,7 +401,8 @@ export class SpriteEditor extends Renderable {
 	private penDown = false;
 	// The fatbits zoom (×z on the ladder). Presentation only — never in the doc.
 	zoom = DEFAULT_ZOOM;
-	// Onion-skin depth (0 off, cycled by `O`). Presentation only. Ghosts are drawn
+	// Onion-skin depth (0 off, cycled by the rail's onion button — mouse-only,
+	// ADR 0035). Presentation only. Ghosts are drawn
 	// only for the active Frame, and only while not playing (playback suspends
 	// them). `onionLayers` is the per-render, pre-pointed source built from it.
 	onionDepth = 0;
@@ -1441,20 +1442,20 @@ export class SpriteEditor extends Renderable {
 		if (!edge) return 0;
 		switch (edge) {
 			case 'left':
-				if (name === 'left' || name === 'h') return 1;
-				if (name === 'right' || name === 'l') return -1;
+				if (name === 'left' || name === 'a') return 1;
+				if (name === 'right' || name === 'd') return -1;
 				return 0;
 			case 'right':
-				if (name === 'right' || name === 'l') return 1;
-				if (name === 'left' || name === 'h') return -1;
+				if (name === 'right' || name === 'd') return 1;
+				if (name === 'left' || name === 'a') return -1;
 				return 0;
 			case 'top':
-				if (name === 'up' || name === 'k') return 1;
-				if (name === 'down' || name === 'j') return -1;
+				if (name === 'up' || name === 'w') return 1;
+				if (name === 'down' || name === 's') return -1;
 				return 0;
 			default:
-				if (name === 'down' || name === 'j') return 1;
-				if (name === 'up' || name === 'k') return -1;
+				if (name === 'down' || name === 's') return 1;
+				if (name === 'up' || name === 'w') return -1;
 				return 0;
 		}
 	}

@@ -826,6 +826,46 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 	});
 });
 
+describe('resize mode nudge keys follow the wasd ruling (ADR 0035)', () => {
+	test('a/d nudge the selected horizontal edge; h/l are retired', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('rz', 'hat'),
+			id: 'rz',
+			role: 'hat',
+		});
+		await clickRail(t, /\bresize\b/);
+		expect(t.editor.state.resize).toBe('right');
+		const w0 = frameExtent(currentFrame(t.editor.state)).w;
+		t.editor.key(key('d')); // grow the right edge out
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0 + 1);
+		t.editor.key(key('a')); // shrink it back in
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0);
+		t.editor.key(key('l')); // retired vim spellings: no nudge
+		t.editor.key(key('h'));
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0);
+	});
+
+	test('w/s nudge a vertical edge; j/k are retired', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('rzv', 'hat'),
+			id: 'rzv',
+			role: 'hat',
+		});
+		await clickRail(t, /\bresize\b/);
+		for (let i = 0; i < 4 && t.editor.state.resize !== 'bottom'; i++)
+			t.editor.key(key('tab'));
+		expect(t.editor.state.resize).toBe('bottom');
+		const h0 = frameExtent(currentFrame(t.editor.state)).h;
+		t.editor.key(key('s')); // grow the bottom edge down
+		expect(frameExtent(currentFrame(t.editor.state)).h).toBe(h0 + 1);
+		t.editor.key(key('w')); // shrink it back up
+		expect(frameExtent(currentFrame(t.editor.state)).h).toBe(h0);
+		t.editor.key(key('j')); // retired vim spellings: no nudge
+		t.editor.key(key('k'));
+		expect(frameExtent(currentFrame(t.editor.state)).h).toBe(h0);
+	});
+});
+
 describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', () => {
 	// A two-frame animation: frames 'a' and 'b' side by side in one strip.
 	function twoFrameDoc(): ReturnType<typeof emptySpriteDoc> {
