@@ -23,7 +23,8 @@ import { parseSpriteFile } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
 import { RAIL_W, railModel } from '../src/sprite-editor/chrome';
 import {
-	colorInk,
+	currentFrame,
+	frameExtent,
 	paletteEntries,
 	readPixel,
 } from '../src/sprite-editor/state';
@@ -359,20 +360,6 @@ describe('Sprite editor TUI smoke', () => {
 		expect(t.captureCharFrame().toLowerCase()).toContain('saved');
 	});
 
-	test('the c ink quick-pick lists the dynamic channels by meaning', async () => {
-		const t = await mount({
-			doc: emptySpriteDoc('pick', 'hat'),
-			id: 'pick',
-			role: 'hat',
-		});
-		t.editor.key(key('c'));
-		await t.renderOnce();
-		expect(t.editor.quickPick).not.toBeNull();
-		const frame = t.captureCharFrame();
-		expect(frame).toContain('player hue');
-		expect(frame).toContain('weapon accent');
-	});
-
 	test('the e colour picker modal opens over a hue/shade grid + hex entry', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('def', 'hat'),
@@ -492,29 +479,40 @@ describe('Sprite editor mouse painting', () => {
 	});
 });
 
-describe('Sprite editor palette rail: quick-pick, eyedrop, nudge (#397)', () => {
+describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 	const bx = RAIL_W;
 	const by = 1;
 
-	test('c opens the quick-pick; typeahead selects a standard-only key and paints it', async () => {
+	test('c crops to the committed selection (the quick-pick is retired)', async () => {
 		const t = await mount({
-			doc: emptySpriteDoc('qp', 'hat'),
-			id: 'qp',
+			doc: emptySpriteDoc('crop', 'hat'),
+			id: 'crop',
 			role: 'hat',
 		});
-		t.editor.key(key('c'));
-		expect(t.editor.quickPick).not.toBeNull();
-		// 'v' is a standard core key absent from SCENE_PALETTE — reaching it proves
-		// the rail defaults to the standard palette, and typeahead finds it.
-		t.editor.key(key('v', { sequence: 'v' }));
-		t.editor.key(key('enter'));
-		expect(t.editor.quickPick).toBeNull();
-		expect(t.editor.state.ink).toEqual(colorInk('v'));
+		const before = currentFrame(t.editor.state);
+		// Marquee cells (0,0)-(1,0) with the select tool, then crop with plain c.
+		t.editor.key(key('7', { sequence: '7' }));
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
+		t.editor.mouseDrag({ button: 0, x: bx + 3, y: by + 1 });
 		t.editor.mouseUp();
-		await t.renderOnce();
-		const [r, g, b] = STANDARD_PALETTE.v;
-		expect(canvasHasBg(t.captureSpans(), [r, g, b], 4)).toBe(true);
+		expect(t.editor.state.selection).not.toBeNull();
+		t.editor.key(key('c'));
+		const after = frameExtent(currentFrame(t.editor.state));
+		expect(after.w).toBeLessThan(frameExtent(before).w);
+	});
+
+	test('C is unbound: shift-c neither crops nor changes state', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('bigc', 'hat'),
+			id: 'bigc',
+			role: 'hat',
+		});
+		const before = t.editor.state;
+		t.editor.key(key('c', { sequence: 'C', shift: true }));
+		expect(t.editor.state.doc).toBe(before.doc);
+		expect(frameExtent(currentFrame(t.editor.state))).toEqual(
+			frameExtent(currentFrame(before)),
+		);
 	});
 
 	test('i eyedrops the key under the cursor, one-shot', async () => {

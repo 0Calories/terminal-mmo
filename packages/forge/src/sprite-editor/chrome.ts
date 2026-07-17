@@ -17,7 +17,6 @@ export const RAIL_W = 30;
 export type RailAction =
 	| { readonly type: 'tool'; readonly tool: SpriteTool }
 	| { readonly type: 'ink'; readonly ink: Ink }
-	| { readonly type: 'pickInk' }
 	| { readonly type: 'play'; readonly mode: 'pose' | 'walk' }
 	| { readonly type: 'addFrame' }
 	| { readonly type: 'poseMenu' }

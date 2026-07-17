@@ -89,13 +89,6 @@ import {
 } from './menus';
 import { cycleOnionDepth, ghostColor, onionGhosts } from './onion';
 import { playbackFrame, poseFps, walkPreviewPose } from './playback';
-import {
-	openQuickPick,
-	type QuickPickState,
-	quickPickChoose,
-	quickPickMove,
-	quickPickType,
-} from './quickPick';
 import { normalizeDoc } from './resize';
 import {
 	addFrameToPose,
@@ -356,7 +349,6 @@ export class SpriteEditor extends Renderable {
 	// colour or edit an existing one, over a hue/shade grid + hex entry.
 	colorPicker: ColorPickerState | null = null;
 	// The `c` ink quick-pick overlay (spec #387): random-access ink selection.
-	quickPick: QuickPickState | null = null;
 	poseMenu: PoseMenuState | null = null;
 	anchorMenu: AnchorMenuState | null = null;
 	mirror = false;
@@ -640,7 +632,6 @@ export class SpriteEditor extends Renderable {
 	private modalActive(): boolean {
 		return (
 			this.colorPicker !== null ||
-			this.quickPick !== null ||
 			this.poseMenu !== null ||
 			this.anchorMenu !== null ||
 			this.awaitingStamp ||
@@ -695,9 +686,6 @@ export class SpriteEditor extends Renderable {
 			case 'ink':
 				this.liftPen();
 				this.state = setInk(this.state, action.ink);
-				return;
-			case 'pickInk':
-				this.openQuickPick();
 				return;
 			case 'play':
 				this.togglePlay(action.mode);
@@ -1058,38 +1046,6 @@ export class SpriteEditor extends Renderable {
 		this.colorPicker = pickCell(p, col, row);
 	}
 
-	// ---- ink quick-pick (`c`) ----
-
-	private openQuickPick(): void {
-		this.liftPen();
-		this.quickPick = openQuickPick(this.entries(), this.state.ink);
-	}
-
-	private quickPickKey(k: SpriteKey): void {
-		const p = this.quickPick;
-		if (!p) return;
-		if (k.name === 'escape') {
-			this.quickPick = null;
-			return;
-		}
-		if (k.name === 'up' || k.name === 'k') {
-			this.quickPick = quickPickMove(p, -1);
-			return;
-		}
-		if (k.name === 'down' || k.name === 'j') {
-			this.quickPick = quickPickMove(p, 1);
-			return;
-		}
-		if (k.name === 'return' || k.name === 'enter' || k.name === 'space') {
-			this.state = setInk(this.state, quickPickChoose(p));
-			this.quickPick = null;
-			return;
-		}
-		// Typeahead (rail key char) or rail index (a digit) jumps the highlight.
-		const ch = k.sequence ?? '';
-		if (ch.length === 1) this.quickPick = quickPickType(p, ch);
-	}
-
 	// ---- eyedropper (`i` one-shot) ----
 
 	private eyedropCursor(): void {
@@ -1440,10 +1396,6 @@ export class SpriteEditor extends Renderable {
 			this.colorPickerKey(k);
 			return;
 		}
-		if (this.quickPick) {
-			this.quickPickKey(k);
-			return;
-		}
 		if (this.poseMenu) {
 			this.poseMenuKeyDispatch(k);
 			return;
@@ -1590,17 +1542,11 @@ export class SpriteEditor extends Renderable {
 			this.openAnchorMenu();
 			return;
 		}
-		// Whole-file sizing (spec #402): `R` enters resize mode, `C` crops to the
-		// committed selection (both destructive edits are one undo step).
+		// Whole-file sizing (spec #402): `R` enters resize mode; crop lives on
+		// plain `c` (see the switch below — C is unbound).
 		if (k.sequence === 'R') {
 			this.liftPen();
 			this.state = beginResize(this.state);
-			return;
-		}
-		if (k.sequence === 'C') {
-			this.liftPen();
-			this.state = cropToSelection(this.state);
-			this.followCursor = true;
 			return;
 		}
 		if (k.name === 'm') {
@@ -1691,7 +1637,12 @@ export class SpriteEditor extends Renderable {
 				this.state = setInk(this.state, TRANSPARENT_INK);
 				return;
 			case 'c':
-				this.openQuickPick();
+				// Crop to the committed selection (rebound from the retired ink
+				// quick-pick; C stays unbound). Plain c only — shift-c is inert.
+				if (k.shift || k.sequence === 'C') return;
+				this.liftPen();
+				this.state = cropToSelection(this.state);
+				this.followCursor = true;
 				return;
 			case 'i':
 				this.eyedropCursor();
@@ -2414,7 +2365,6 @@ export class SpriteEditor extends Renderable {
 
 		this.renderHelp(buf, W, H, C);
 		this.renderColorPicker(buf, W, H, C);
-		this.renderQuickPick(buf, W, H, C);
 		this.renderPoseMenu(buf, W, H, C);
 		this.renderAnchorMenu(buf, W, H, C);
 	}
@@ -2680,27 +2630,6 @@ export class SpriteEditor extends Renderable {
 			y += 1;
 		}
 		buf.drawText(hint.slice(0, boxW), ox + 1, y, C.dim, C.boxBg);
-	}
-
-	private renderQuickPick(
-		buf: OptimizedBuffer,
-		W: number,
-		H: number,
-		C: Palette,
-	): void {
-		const p = this.quickPick;
-		if (!p) return;
-		const rows: string[] = [`Pick ink${p.query ? ` — ${p.query}` : ''}`];
-		for (let i = 0; i < p.options.length; i++) {
-			const o = p.options[i];
-			const label =
-				o.kind === 'transparent'
-					? 't  transparent'
-					: `${o.entry.key}  ${o.entry.label}${o.entry.kind === 'dynamic' ? ' (dynamic)' : ''}`;
-			rows.push(`${i === p.index ? '▸' : ' '} ${label}`);
-		}
-		rows.push('type/index/↑↓ · Enter pick · Esc close');
-		this.drawModal(buf, W, H, rows, C);
 	}
 
 	// A centered modal box from pre-formatted rows; a row beginning with '▸' is
