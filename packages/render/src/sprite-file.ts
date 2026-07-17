@@ -657,6 +657,56 @@ function toGlyphRow(row: string): string {
 	return row.replaceAll(' ', SENTINEL);
 }
 
+// ---------------------------------------------------------------------------
+// Header formatting (ADR 0036): saves must not churn hand-compacted headers.
+// The emitted style is deterministic: the header object lists one field per
+// tab-indented line; every VALUE renders inline when its whole line fits the
+// width budget, otherwise its object expands one entry per line (recursively);
+// arrays — anchor coordinates, frame lists, colours — are ALWAYS single-line.
+// ---------------------------------------------------------------------------
+
+const HEADER_LINE_BUDGET = 78;
+
+function inlineJson(value: unknown): string {
+	if (Array.isArray(value))
+		return `[${value.map((v) => JSON.stringify(v)).join(', ')}]`;
+	if (typeof value === 'object' && value !== null) {
+		const entries = Object.entries(value as Record<string, unknown>);
+		if (entries.length === 0) return '{}';
+		const body = entries
+			.map(([k, v]) => `${JSON.stringify(k)}: ${inlineJson(v)}`)
+			.join(', ');
+		return `{ ${body} }`;
+	}
+	return JSON.stringify(value);
+}
+
+function headerValue(value: unknown, indent: string): string {
+	const inline = inlineJson(value);
+	if (
+		indent.length + inline.length <= HEADER_LINE_BUDGET ||
+		Array.isArray(value)
+	)
+		return inline;
+	if (typeof value === 'object' && value !== null) {
+		const entries = Object.entries(value as Record<string, unknown>);
+		if (entries.length === 0) return '{}';
+		const inner = `${indent}\t`;
+		const body = entries
+			.map(([k, v]) => `${inner}${JSON.stringify(k)}: ${headerValue(v, inner)}`)
+			.join(',\n');
+		return `{\n${body}\n${indent}}`;
+	}
+	return inline;
+}
+
+function formatHeader(header: Record<string, unknown>): string {
+	const body = Object.entries(header)
+		.map(([k, v]) => `\t${JSON.stringify(k)}: ${headerValue(v, '\t')}`)
+		.join(',\n');
+	return `{\n${body}\n}`;
+}
+
 // Canonical animation order (ADR 0035): idle, walk, jump surface first so every
 // form's file (and the strips view mirroring it) leads with its required core;
 // everything else keeps its existing relative order.
@@ -733,7 +783,7 @@ export function serializeSpriteFile(doc: SpriteDoc): string {
 
 	const lines: string[] = [];
 	if (Object.keys(header).length > 0) {
-		lines.push(...JSON.stringify(header, null, '\t').split('\n'));
+		lines.push(...formatHeader(header).split('\n'));
 	}
 
 	for (const frame of canonicalFrames(doc)) {

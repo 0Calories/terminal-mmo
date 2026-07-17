@@ -95,6 +95,41 @@ test('serializer emits canonical animation order: idle, walk, jump, then existin
 	expect(reparsed.doc?.frames.map((f) => f.name)).toEqual(sections);
 });
 
+test('serializer emits compact headers: values inline where they fit, arrays always single-line (ADR 0036)', () => {
+	// The checked-in buddy header style: anchors inline, long animations map
+	// expanded one entry per line, every array single-line.
+	const text = `{
+	"baseline": 1,
+	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"animations": {
+		"walk": ["walk-0", "walk-1"],
+		"emote:wave": ["wave-0", "wave-1"],
+		"emote:dance": ["dance-0", "dance-1"]
+	}
+}
+--- idle
+AB
+--- walk-0
+AB
+--- walk-1
+AB
+--- jump
+AB
+--- wave-0
+AB
+--- wave-1
+AB
+--- dance-0
+AB
+--- dance-1
+AB
+`;
+	const { doc, diagnostics } = parseSpriteFile(text, 'buddy');
+	expect(diagnostics).toEqual([]);
+	// A save of an untouched doc reproduces the hand-compacted header verbatim.
+	expect(serializeSpriteFile(doc as SpriteDoc)).toBe(text);
+});
+
 test('serializer omits fps entries equal to the default 5 (ADR 0035)', () => {
 	const { doc } = parseSpriteFile(
 		'{ "animations": { "walk": ["w0", "w1"] }, "fps": { "walk": 5 } }\n--- idle\nAB\n--- w0\nCD\n--- w1\nEF\n',
