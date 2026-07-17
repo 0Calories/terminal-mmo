@@ -1,10 +1,10 @@
 // Pure state machines for the Sprite editor's modal overlays (ADR 0031, issue
 // #339): the animation menu (switch/create/delete/add-frame/reorder/fps) and the
-// anchor menu (pick which named anchor to place, at doc or frame scope). Same
+// anchor menu (pick which named anchor to arm — scope is the current frame's
+// identity, ADR 0036). Same
 // reducer pattern as `colorPicker.ts`: the TUI renders the state and feeds keys in;
 // each key returns the next menu (or null to close) plus an optional action the
 // TUI applies to the pure editor state. No I/O, no `@opentui/core`.
-import type { AnchorScope } from './state';
 
 // A normalized key event — the TUI maps opentui's keypress onto this so the
 // reducers stay free of keyboard-library detail.
@@ -254,14 +254,16 @@ export interface AnchorMenuState {
 	// implicit "+ new" row appended by the reducer's option list.
 	names: readonly string[];
 	index: number;
-	scope: AnchorScope;
+	// Role-required names — listed, movable, never deletable (ADR 0036).
+	required: readonly string[];
 	// Non-null while typing a new anchor name.
 	input: { buffer: string } | null;
 	error: string;
 }
 
 export type AnchorMenuAction =
-	| { type: 'select'; name: string; scope: AnchorScope }
+	| { type: 'select'; name: string }
+	| { type: 'delete'; name: string }
 	| { type: 'close' };
 
 export interface AnchorMenuResult {
@@ -272,10 +274,12 @@ export interface AnchorMenuResult {
 export function openAnchorMenu(
 	names: readonly string[],
 	current: string,
-	scope: AnchorScope,
+	// Role-required anchor names: never deletable (ADR 0036) — the delete zone
+	// is inert on them.
+	required: readonly string[],
 ): AnchorMenuState {
 	const index = Math.max(0, names.indexOf(current));
-	return { names, index, scope, input: null, error: '' };
+	return { names, index, required, input: null, error: '' };
 }
 
 // The rows shown: every candidate name plus a trailing "+ new" entry.
@@ -304,19 +308,31 @@ export function anchorMenuKey(
 				return { menu: { ...menu, input: { buffer: '' }, error: '' } };
 			return {
 				menu: null,
-				action: {
-					type: 'select',
-					name: menu.names[menu.index],
-					scope: menu.scope,
-				},
+				action: { type: 'select', name: menu.names[menu.index] },
 			};
 		}
 	}
-	if (k.name === 'char' && k.char === 's')
-		return {
-			menu: { ...menu, scope: menu.scope === 'doc' ? 'frame' : 'doc' },
-		};
 	return { menu };
+}
+
+// A mouse click on the menu (ADR 0036: the menu is mouse-native): `row` counts
+// the name rows then the trailing "+ new"; `deleteZone` is a hit on the row's
+// ✕ affordance, live only for deletable (non-required) names.
+export function anchorMenuClick(
+	menu: AnchorMenuState,
+	row: number,
+	deleteZone: boolean,
+): AnchorMenuResult {
+	if (menu.input) return { menu };
+	if (row < 0 || row > menu.names.length) return { menu };
+	if (row === menu.names.length)
+		return { menu: { ...menu, index: row, input: { buffer: '' }, error: '' } };
+	const name = menu.names[row];
+	if (deleteZone) {
+		if (menu.required.includes(name)) return { menu };
+		return { menu: { ...menu, index: row }, action: { type: 'delete', name } };
+	}
+	return { menu: null, action: { type: 'select', name } };
 }
 
 function anchorInputKey(menu: AnchorMenuState, k: MenuKey): AnchorMenuResult {
@@ -330,7 +346,7 @@ function anchorInputKey(menu: AnchorMenuState, k: MenuKey): AnchorMenuResult {
 			return { menu: { ...menu, error: 'enter a legal anchor name' } };
 		return {
 			menu: null,
-			action: { type: 'select', name: inp.buffer, scope: menu.scope },
+			action: { type: 'select', name: inp.buffer },
 		};
 	}
 	if (k.name === 'char' && k.char && NAME_CHAR_RE.test(k.char))

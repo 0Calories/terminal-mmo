@@ -409,7 +409,6 @@ describe('placeAnchor — out-of-bounds warns, never rejects', () => {
 			'grip',
 			1,
 			1,
-			'doc',
 		);
 		expect(s.feedback).toBe('');
 		expect(s.doc.anchors.grip).toEqual({ x: 1, y: 1 });
@@ -421,7 +420,6 @@ describe('placeAnchor — out-of-bounds warns, never rejects', () => {
 			'grip',
 			99,
 			99,
-			'doc',
 		);
 		expect(s.doc.anchors.grip).toEqual({ x: 99, y: 99 });
 		expect(s.feedback).toContain('outside the art bounds');

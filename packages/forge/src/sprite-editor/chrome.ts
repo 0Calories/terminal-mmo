@@ -407,6 +407,7 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: 'click / rmb', label: 'paint ink / transparent (shift: line)' },
 			{ keys: 'alt-click', label: 'eyedrop (momentary)' },
 			{ keys: 'drag', label: 'shapes · select marquee · move float' },
+			{ keys: 'drag ✛ / rmb ✛', label: 'move anchor (◈ = file level) / clear' },
 			{ keys: 'click strip', label: 'activate frame (animation nav)' },
 			{ keys: '‹ fps ›', label: "strip name row steps the animation's fps" },
 			{ keys: 'wheel', label: 'scroll strips (shift: horizontal)' },
@@ -420,6 +421,10 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: 'dbl-click swatch', label: 'define / edit file-local colour' },
 			{ keys: 'active rect/○', label: 'click again: outline ↔ filled' },
 			{ keys: 'playback box', label: 'play · walk · onion · +frame · menus' },
+			{
+				keys: 'anchor menu',
+				label: 'click picks (next click places) · ✕ deletes',
+			},
 			{ keys: 'buttons', label: 'mirror · preview · resize · crop' },
 			{ keys: 'preview pane', label: 'flip · play controls' },
 		],

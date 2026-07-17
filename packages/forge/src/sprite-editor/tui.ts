@@ -80,6 +80,7 @@ import {
 	type AnimationMenuAction,
 	type AnimationMenuState,
 	type AnimationRow,
+	anchorMenuClick,
 	anchorMenuKey,
 	animationMenuKey,
 	type MenuKey,
@@ -93,6 +94,7 @@ import { normalizeDoc } from './resize';
 import {
 	addFrameToAnimation,
 	anchorMarkers,
+	anchorScopeFor,
 	animationFrames,
 	animationNames,
 	beginResize,
@@ -112,6 +114,7 @@ import {
 	cutSelection,
 	type DynamicPreviews,
 	defineLocalColor,
+	deleteAnchor,
 	deleteAnimation,
 	deleteSelection,
 	endStroke,
@@ -131,6 +134,7 @@ import {
 	placeAnchor,
 	readPixel,
 	redoEdit,
+	removeAnchorOverride,
 	reorderFrame,
 	resizeCycleEdge,
 	resizeNudge,
@@ -142,7 +146,6 @@ import {
 	selectFrame,
 	selectionOverlay,
 	setAnchorName,
-	setAnchorScope,
 	setAnimationFps,
 	setInk,
 	setTool,
@@ -179,6 +182,7 @@ import {
 	mirrorRender,
 	missingRequiredAnchors,
 	parseEditArg,
+	requiredAnchors,
 	requiredHintLine,
 	resolveColorKey,
 	roleForDir,
@@ -416,6 +420,13 @@ export class SpriteEditor extends Renderable {
 	// leftover screen cells (short of a whole Pixel at the current zoom) the
 	// focus view accumulates between camera steps.
 	private panLast: { x: number; y: number } | null = null;
+	// An in-flight ✛ marker drag (ADR 0036): the marker follows the pointer and
+	// a single placeAnchor commits on release (scope = the current frame's
+	// identity). `cell` is the latest hovered cell, null until the drag moves.
+	private anchorDrag: {
+		name: string;
+		cell: { x: number; y: number } | null;
+	} | null = null;
 	// Rail-swatch double-click detector (QA round 3): the second click on the
 	// same ink swatch opens the define/edit colour modal. Injected clock.
 	private isSwatchDoubleClick: (x: number, y: number) => boolean;
@@ -450,6 +461,11 @@ export class SpriteEditor extends Renderable {
 			cellW: number;
 			cellH: number;
 		} | null;
+		// Screen cells carrying a ✛ anchor marker this render (active frame only),
+		// so a press can start a marker drag / a right-click can clear an override.
+		anchorCells: { x: number; y: number; name: string; overridden: boolean }[];
+		// The anchor menu's modal box this render (mouse-native menu, ADR 0036).
+		anchorMenuBox: { ox: number; oy: number; w: number; h: number } | null;
 	} = {
 		viewH: 0,
 		viewW: 0,
@@ -458,6 +474,8 @@ export class SpriteEditor extends Renderable {
 		focus: null,
 		preview: null,
 		colorGrid: null,
+		anchorCells: [],
+		anchorMenuBox: null,
 	};
 	// An in-flight mouse paint stroke (down→drag→up coalesces to one undo step),
 	// and the button held for it (drag events don't reliably re-report the button).
@@ -805,6 +823,24 @@ export class SpriteEditor extends Renderable {
 		// Playback suppresses painting, nothing else (ADR 0036): a canvas press
 		// while playing edits nothing — the chrome routes handled above stay live.
 		if (this.playMode !== 'none') return;
+		// Direct anchor manipulation (ADR 0036): a press on a ✛ marker cell
+		// starts a drag (commit on release, scope = frame identity); a
+		// right-click on an amber override marker clears it back to the default.
+		const marker = this.geom.anchorCells.find(
+			(m) => m.x === e.x && m.y === e.y,
+		);
+		if (marker) {
+			if (button === 'left') {
+				this.liftPen();
+				this.anchorDrag = { name: marker.name, cell: null };
+				return;
+			}
+			if (marker.overridden) {
+				this.liftPen();
+				this.state = removeAnchorOverride(this.state, marker.name);
+				return;
+			}
+		}
 		let px: { x: number; y: number } | null = null;
 		// Follow the view actually rendered — rung 2 (spec #398) can force strips
 		// into focus, so `geom.layout` (set only by the strips render) is the truth,
@@ -882,6 +918,15 @@ export class SpriteEditor extends Renderable {
 			this.paintMouse(button, px, e.modifiers);
 			return;
 		}
+		if (this.state.tool === 'anchor') {
+			// Armed placement (ADR 0036): the click itself places the anchor at
+			// the clicked cell — no spacebar step. Scope is the frame identity.
+			if (button === 'left') {
+				this.state = moveCursor(this.state, px.x, px.y);
+				this.placeAnchorAtCursor();
+			}
+			return;
+		}
 		if (this.state.tool !== 'paint' && this.state.tool !== 'erase') {
 			this.state = moveCursor(this.state, px.x, px.y);
 			return;
@@ -902,6 +947,26 @@ export class SpriteEditor extends Renderable {
 		// modal otherwise swallows the click (spec #401: the grid is mouse-operable).
 		if (this.colorPicker) {
 			if (e.button === 0) this.colorPickerClick(e);
+			return;
+		}
+		// The anchor menu is mouse-native (ADR 0036): clicks resolve to rows —
+		// select / delete (✕ zone) / "+ new" — through the pure menu reducer.
+		if (this.anchorMenu) {
+			const box = this.geom.anchorMenuBox;
+			if (e.button === 0 && box && !this.anchorMenu.input) {
+				const inside =
+					e.x >= box.ox &&
+					e.x < box.ox + box.w &&
+					e.y >= box.oy &&
+					e.y < box.oy + box.h;
+				if (inside) {
+					const row = e.y - box.oy - 1; // row 0 is the title
+					const deleteZone = e.x >= box.ox + box.w - 3;
+					const res = anchorMenuClick(this.anchorMenu, row, deleteZone);
+					this.anchorMenu = res.menu;
+					if (res.action) this.applyAnchorAction(res.action);
+				}
+			}
 			return;
 		}
 		if (this.modalActive()) return;
@@ -961,21 +1026,23 @@ export class SpriteEditor extends Renderable {
 			this.panLast = { x: e.x, y: e.y };
 			return;
 		}
+		// A ✛ marker drag: the marker follows the hovered cell of the ACTIVE
+		// frame; nothing commits until release (one undo step).
+		if (this.anchorDrag) {
+			const px = this.dragPixelAt(e);
+			if (px) {
+				const { cellX, cellY } = pixelToCell(px.x, px.y);
+				this.anchorDrag = {
+					name: this.anchorDrag.name,
+					cell: { x: cellX, y: cellY },
+				};
+			}
+			return;
+		}
 		if (!this.mouseStroke && !this.mouseShape) return;
 		// A drag off the canvas simply paints nothing until it returns; the held
 		// button is remembered from mouseDown since drag reports vary by terminal.
-		let px: { x: number; y: number } | null = null;
-		if (this.geom.layout) {
-			const layout = this.geom.layout;
-			const { cx, cy } = this.stripsContentAt(e);
-			const hit = stripsHit(layout, cx, cy);
-			// A stroke stays in the Frame it started on — dragging across a
-			// neighbouring Frame's block must not silently switch and paint there.
-			if (!hit || hit.frame.name !== this.state.frame) return;
-			px = { x: hit.px, y: hit.py };
-		} else {
-			px = this.focusPixel(e.x, e.y);
-		}
+		const px = this.dragPixelAt(e);
 		if (!px) return;
 		if (this.mouseShape) {
 			this.shapePx = px;
@@ -985,8 +1052,32 @@ export class SpriteEditor extends Renderable {
 		this.paintMouse(this.mouseButton, px, e.modifiers);
 	}
 
+	// The ACTIVE frame's Pixel under a drag position, whichever view renders:
+	// the strips block (a gesture never crosses into a neighbour's block) or the
+	// focus canvas. Null on dead space.
+	private dragPixelAt(e: { x: number; y: number }): {
+		x: number;
+		y: number;
+	} | null {
+		if (this.geom.layout) {
+			const { cx, cy } = this.stripsContentAt(e);
+			const hit = stripsHit(this.geom.layout, cx, cy);
+			if (!hit || hit.frame.name !== this.state.frame) return null;
+			return { x: hit.px, y: hit.py };
+		}
+		return this.focusPixel(e.x, e.y);
+	}
+
 	mouseUp(_e?: unknown): void {
 		this.panLast = null;
+		if (this.anchorDrag) {
+			// Commit the marker's new cell as ONE placeAnchor (scope = frame
+			// identity); a press with no movement is a no-op.
+			const { name, cell } = this.anchorDrag;
+			this.anchorDrag = null;
+			if (cell) this.state = placeAnchor(this.state, name, cell.x, cell.y);
+			return;
+		}
 		if (this.mouseShape) {
 			// The release commits the shape at the last dragged Pixel as one undo
 			// step; a plain click (no drag) commits a one-Pixel degenerate shape.
@@ -1279,15 +1370,31 @@ export class SpriteEditor extends Renderable {
 		this.anchorMenu = openAnchorMenu(
 			this.anchorCandidates(),
 			this.state.anchorName,
-			this.state.anchorScope,
+			requiredAnchors(this.role),
 		);
 	}
 
 	private applyAnchorAction(action: AnchorMenuAction): void {
 		if (action.type === 'select') {
+			// Arm placement (ADR 0036): the next canvas click places this anchor;
+			// scope is decided by the frame the click lands on, not a toggle.
 			this.state = setAnchorName(this.state, action.name);
-			this.state = setAnchorScope(this.state, action.scope);
 			this.state = setTool(this.state, 'anchor');
+		}
+		if (action.type === 'delete') {
+			this.state = deleteAnchor(
+				this.state,
+				action.name,
+				requiredAnchors(this.role),
+			);
+			// Reopen with the updated candidate list so the menu never shows a
+			// deleted name.
+			if (this.anchorMenu)
+				this.anchorMenu = openAnchorMenu(
+					this.anchorCandidates(),
+					this.state.anchorName,
+					requiredAnchors(this.role),
+				);
 		}
 	}
 
@@ -1299,22 +1406,31 @@ export class SpriteEditor extends Renderable {
 		if (res.action) this.applyAnchorAction(res.action);
 	}
 
+	// The markers the canvas shows this instant: the doc's effective markers,
+	// with an in-flight ✛ drag's marker following the pointer.
+	private displayMarkers(): ReturnType<typeof anchorMarkers> {
+		const markers = anchorMarkers(this.state);
+		const d = this.anchorDrag;
+		if (!d?.cell) return markers;
+		const cell = d.cell;
+		return markers.map((m) =>
+			m.name === d.name ? { ...m, x: cell.x, y: cell.y } : m,
+		);
+	}
+
 	private placeAnchorAtCursor(): void {
 		const { cellX, cellY } = pixelToCell(
 			this.state.cursor.x,
 			this.state.cursor.y,
 		);
 		if (!this.state.anchorName) {
-			this.state = { ...this.state, feedback: 'pick an anchor first (A)' };
+			this.state = {
+				...this.state,
+				feedback: 'pick an anchor first (rail: anchor)',
+			};
 			return;
 		}
-		this.state = placeAnchor(
-			this.state,
-			this.state.anchorName,
-			cellX,
-			cellY,
-			this.state.anchorScope,
-		);
+		this.state = placeAnchor(this.state, this.state.anchorName, cellX, cellY);
 	}
 
 	// ---- whole-file resize mode (spec #402) ----
@@ -1980,18 +2096,22 @@ export class SpriteEditor extends Renderable {
 
 		// Frame-name rows: the active Frame's name is highlighted and its block
 		// width underlined.
+		const defaultFrame = this.state.doc.frames[0]?.name;
 		layout.labels.forEach((label, i) => {
 			const sy = syOf(layout.nameRows[i]);
 			if (sy < 0 || sy >= viewH) return;
 			for (const box of layout.frames) {
 				if (box.animation !== label.animation) continue;
 				const active = box.name === this.state.frame;
+				// The Default frame is badged (ADR 0036): its name carries ◈ so the
+				// canvas says where file-level anchors (and defaults) live.
+				const name = box.name === defaultFrame ? `◈${box.name}` : box.name;
 				const text = active
-					? (box.name + '▔'.repeat(Math.max(0, box.w - box.name.length))).slice(
+					? (name + '▔'.repeat(Math.max(0, box.w - name.length))).slice(
 							0,
-							Math.max(box.w, box.name.length),
+							Math.max(box.w, name.length),
 						)
-					: box.name;
+					: name;
 				this.drawClipped(
 					buf,
 					text,
@@ -2019,12 +2139,18 @@ export class SpriteEditor extends Renderable {
 		// their (2×,2×) Pixel block (overrides tinted apart). The background is
 		// whatever that cell renders without the marker — the art's colour, or
 		// the transparency checker — never an opaque stamp (QA round 3).
-		for (const m of anchorMarkers(this.state)) {
+		for (const m of this.displayMarkers()) {
 			const ccx = activeBox.x + m.x * 2 * z;
 			const ccy = activeBox.y + m.y * 2 * z;
 			const sx = sxOf(ccx);
 			const sy = syOf(ccy);
 			if (sx < x0 || sx >= x1 || sy < 0 || sy >= viewH) continue;
+			this.geom.anchorCells.push({
+				x: sx,
+				y: sy,
+				name: m.name,
+				overridden: m.overridden,
+			});
 			buf.setCell(
 				sx,
 				sy,
@@ -2157,11 +2283,17 @@ export class SpriteEditor extends Renderable {
 			}
 		}
 
-		for (const m of anchorMarkers(viewState)) {
+		for (const m of this.displayMarkers()) {
 			const sx = origin.x + (m.x * 2 - this.cam.x) * z;
 			const sy = origin.y + (m.y * 2 - this.cam.y) * z;
 			if (sx < RAIL_W || sx >= RAIL_W + viewW || sy < top || sy >= viewH)
 				continue;
+			this.geom.anchorCells.push({
+				x: sx,
+				y: sy,
+				name: m.name,
+				overridden: m.overridden,
+			});
 			buf.setCell(
 				sx,
 				sy,
@@ -2286,6 +2418,7 @@ export class SpriteEditor extends Renderable {
 		// so growing the terminal back restores strips.
 		const effectiveView =
 			this.forceFocus && this.view === 'strips' ? 'focus' : this.view;
+		this.geom.anchorCells = [];
 		if (this.playMode !== 'none') {
 			this.renderFocus(buf, viewW, viewH, viewState, false, C);
 		} else if (effectiveView === 'focus') {
@@ -2325,7 +2458,7 @@ export class SpriteEditor extends Renderable {
 			dirty: this.dirty,
 			animation: this.state.animation,
 			anchorName: this.state.anchorName,
-			anchorScope: this.state.anchorScope,
+			anchorScope: anchorScopeFor(this.state),
 		});
 		// The persistent hint line is gone (QA round 3: the keymap is culled and
 		// the rail is self-labeling) — the canvas gained its row. Transient notes
@@ -2439,7 +2572,7 @@ export class SpriteEditor extends Renderable {
 		// Mirrored anchor markers, reflected across the rendered width. Each keeps
 		// the background its cell rendered without the marker — the art's bg key,
 		// or the transparency checker where empty (QA round 3).
-		for (const a of mirrorAnchorMarkers(anchorMarkers(this.state), m.width)) {
+		for (const a of mirrorAnchorMarkers(this.displayMarkers(), m.width)) {
 			if (a.x < 0 || a.x >= panelW || a.y < 0 || a.y >= viewH) continue;
 			const glyph = m.rows[a.y]?.[a.x] ?? ' ';
 			let cellBg: RGBA;
@@ -2679,7 +2812,7 @@ export class SpriteEditor extends Renderable {
 		H: number,
 		rows: string[],
 		C: Palette,
-	): void {
+	): { ox: number; oy: number; w: number; h: number } {
 		const boxW = Math.min(W, Math.max(20, ...rows.map((r) => r.length + 2)));
 		const boxH = Math.min(H - 1, rows.length);
 		const ox = Math.max(0, Math.floor((W - boxW) / 2));
@@ -2695,6 +2828,7 @@ export class SpriteEditor extends Renderable {
 				C.boxBg,
 			);
 		}
+		return { ox, oy, w: boxW, h: boxH };
 	}
 
 	private renderAnimationMenu(
@@ -2741,22 +2875,36 @@ export class SpriteEditor extends Renderable {
 		C: Palette,
 	): void {
 		const menu = this.anchorMenu;
+		this.geom.anchorMenuBox = null;
 		if (!menu) return;
 		const rows: string[] = [];
 		if (menu.input) {
 			rows.push('New anchor name');
 			rows.push(`▸ ${menu.input.buffer || '_'}`);
 			if (menu.error) rows.push(`⚠ ${menu.error}`);
-			rows.push(`scope: ${menu.scope} · Enter confirm · Esc back`);
-		} else {
-			rows.push(`Place anchor (scope: ${menu.scope})`);
-			for (let i = 0; i < menu.names.length; i++)
-				rows.push(`${i === menu.index ? '▸' : ' '} ${menu.names[i]}`);
-			const newSel = menu.index >= menu.names.length ? '▸' : ' ';
-			rows.push(`${newSel} + new anchor`);
-			rows.push('Enter pick · s toggle scope · Esc');
+			rows.push('Enter confirm · Esc back');
+			this.drawModal(buf, W, H, rows, C);
+			return;
 		}
-		this.drawModal(buf, W, H, rows, C);
+		// Mouse-native rows (ADR 0036): click a name to arm it, ✕ (right-aligned
+		// into the click's delete zone) deletes a non-required anchor, "+ new"
+		// opens the name input. Scope is the frame identity — the Default frame
+		// edits file-level anchors.
+		rows.push('Pick anchor (click · Enter)');
+		for (let i = 0; i < menu.names.length; i++) {
+			const name = menu.names[i];
+			rows.push(`${i === menu.index ? '▸' : ' '} ${name}`);
+		}
+		const newSel = menu.index >= menu.names.length ? '▸' : ' ';
+		rows.push(`${newSel} + new anchor`);
+		rows.push('click place next · Esc close');
+		// Right-align each deletable row's ✕ to the box edge (the delete zone).
+		const boxW = Math.min(W, Math.max(20, ...rows.map((r) => r.length + 2)));
+		for (let i = 0; i < menu.names.length; i++) {
+			if (menu.required.includes(menu.names[i])) continue;
+			rows[i + 1] = `${rows[i + 1].padEnd(boxW - 2)}✕`;
+		}
+		this.geom.anchorMenuBox = this.drawModal(buf, W, H, rows, C);
 	}
 }
 

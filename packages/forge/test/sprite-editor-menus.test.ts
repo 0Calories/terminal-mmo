@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	type AnimationRow,
+	anchorMenuClick,
 	anchorMenuKey,
 	animationMenuKey,
 	type MenuKey,
@@ -92,31 +93,50 @@ describe('animation menu', () => {
 	});
 });
 
-describe('anchor menu', () => {
-	const NAMES = ['grip', 'head'];
+describe('anchor menu — mouse-native (ADR 0036)', () => {
+	const NAMES = ['grip', 'head', 'tail'];
+	const REQUIRED = ['grip', 'head'];
 
-	test('enter on a name emits select with the current scope', () => {
-		const m = openAnchorMenu(NAMES, 'grip', 'doc');
+	test('enter on a name emits select (scope died with the s toggle)', () => {
+		const m = openAnchorMenu(NAMES, 'grip', REQUIRED);
 		const r = anchorMenuKey(m, k('enter'));
-		expect(r.action).toEqual({ type: 'select', name: 'grip', scope: 'doc' });
+		expect(r.action).toEqual({ type: 'select', name: 'grip' });
 	});
 
-	test('s toggles scope', () => {
-		let m = openAnchorMenu(NAMES, 'grip', 'doc');
-		m = open(anchorMenuKey(m, ch('s')).menu);
-		expect(m.scope).toBe('frame');
+	test('s no longer toggles anything', () => {
+		const m = openAnchorMenu(NAMES, 'grip', REQUIRED);
+		const r = anchorMenuKey(m, ch('s'));
+		expect(r.menu).toEqual(m);
+		expect(r.action).toBeUndefined();
 	});
 
-	test('the trailing + new row opens a name input', () => {
-		let m = openAnchorMenu(NAMES, 'grip', 'doc');
+	test('clicking a row selects it; clicking + new opens the name input', () => {
+		const m = openAnchorMenu(NAMES, 'grip', REQUIRED);
+		const r = anchorMenuClick(m, 1, false);
+		expect(r.action).toEqual({ type: 'select', name: 'head' });
+		const rNew = anchorMenuClick(m, NAMES.length, false);
+		expect(rNew.menu?.input).not.toBeNull();
+	});
+
+	test('the delete zone deletes a non-required anchor and is inert on required ones', () => {
+		const m = openAnchorMenu(NAMES, 'grip', REQUIRED);
+		const rDel = anchorMenuClick(m, 2, true); // 'tail'
+		expect(rDel.action).toEqual({ type: 'delete', name: 'tail' });
+		const rReq = anchorMenuClick(m, 0, true); // 'grip' is required
+		expect(rReq.action).toBeUndefined();
+	});
+
+	test('the trailing + new row opens a name input (keyboard path)', () => {
+		let m = openAnchorMenu(NAMES, 'grip', REQUIRED);
 		m = open(anchorMenuKey(m, k('down')).menu); // head
-		m = open(anchorMenuKey(m, k('down')).menu); // + new (index 2)
-		expect(m.index).toBe(2);
+		m = open(anchorMenuKey(m, k('down')).menu); // tail
+		m = open(anchorMenuKey(m, k('down')).menu); // + new (index 3)
+		expect(m.index).toBe(3);
 		m = open(anchorMenuKey(m, k('enter')).menu);
 		expect(m.input).not.toBeNull();
 		m = open(anchorMenuKey(m, ch('m')).menu);
 		m = open(anchorMenuKey(m, ch('u')).menu);
 		const r = anchorMenuKey(m, k('enter'));
-		expect(r.action).toEqual({ type: 'select', name: 'mu', scope: 'doc' });
+		expect(r.action).toEqual({ type: 'select', name: 'mu' });
 	});
 });

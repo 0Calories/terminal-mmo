@@ -56,6 +56,11 @@ export function missingRequiredAnimations(
 	return profile.animations.filter((p) => !(p in doc.animations));
 }
 
+// The role's full required-anchor list (movable, never deletable — ADR 0036).
+export function requiredAnchors(role: SpriteRole): readonly string[] {
+	return ROLE_PROFILES[dirForRole(role)]?.anchors ?? [];
+}
+
 // Required doc-level anchors this doc is missing.
 export function missingRequiredAnchors(
 	doc: SpriteDoc,

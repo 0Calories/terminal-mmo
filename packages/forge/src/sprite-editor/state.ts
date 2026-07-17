@@ -221,7 +221,6 @@ export interface SpriteEditorState {
 	ink: Ink;
 	// The anchor name the anchor tool places, and whether at doc or frame scope.
 	anchorName: string;
-	anchorScope: AnchorScope;
 	// The human-readable reason the last operation was refused; '' on success.
 	feedback: string;
 	history: History<SpriteDoc>;
@@ -297,7 +296,6 @@ export function initSpriteEditor(
 		tool: 'paint',
 		ink: colorInk(normalized.key),
 		anchorName: firstAnchorName(normalized),
-		anchorScope: 'doc',
 		feedback: '',
 		history: initHistory(normalized),
 		stroke: null,
@@ -735,22 +733,24 @@ export function setAnchorName(
 	return { ...state, anchorName: name, feedback: '' };
 }
 
-export function setAnchorScope(
-	state: SpriteEditorState,
-	scope: AnchorScope,
-): SpriteEditorState {
-	return { ...state, anchorScope: scope, feedback: '' };
+// The scope an anchor edit lands at, decided by FRAME IDENTITY (ADR 0036):
+// the Default frame — the first frame in the file — owns the file-level
+// anchors; any other frame authors its own override. No stored toggle.
+export function anchorScopeFor(state: SpriteEditorState): AnchorScope {
+	return state.frame === state.doc.frames[0]?.name ? 'doc' : 'frame';
 }
 
-// Place (or move) a named anchor at a cell. `scope` chooses doc level or a
-// per-frame override on the current frame. Out-of-grid cells are allowed.
+// Place (or move) a named anchor at a cell. The scope is derived from the
+// current frame's identity (`anchorScopeFor`, ADR 0036): the Default frame
+// edits the doc level, any other frame its own override. Out-of-grid cells
+// are allowed.
 export function placeAnchor(
 	state: SpriteEditorState,
 	name: string,
 	cellX: number,
 	cellY: number,
-	scope: AnchorScope,
 ): SpriteEditorState {
+	const scope = anchorScopeFor(state);
 	if (!NAME_RE.test(name))
 		return refuse(state, `'${name}' is not a legal anchor name`);
 	if (cellX < 0 || cellY < 0)
@@ -774,6 +774,36 @@ export function placeAnchor(
 		anchors: { ...frame.anchors, [name]: { x: cellX, y: cellY } },
 	};
 	return { ...commitFrame(state, nextFrame), feedback: note };
+}
+
+// Delete a doc-level anchor and every per-frame override of it, as one undo
+// step (ADR 0036). Role-required anchors (`required`) can be moved but never
+// deleted, and an undeclared name is refused.
+export function deleteAnchor(
+	state: SpriteEditorState,
+	name: string,
+	required: readonly string[],
+): SpriteEditorState {
+	if (required.includes(name))
+		return refuse(
+			state,
+			`'${name}' is required for this role — move it instead`,
+		);
+	if (!(name in state.doc.anchors))
+		return refuse(state, `no such anchor '${name}'`);
+	const anchors = { ...state.doc.anchors };
+	delete anchors[name];
+	const frames = state.doc.frames.map((f) => {
+		if (!(name in f.anchors)) return f;
+		const fa = { ...f.anchors };
+		delete fa[name];
+		return { ...f, anchors: fa };
+	});
+	const nextDoc: SpriteDoc = { ...state.doc, anchors, frames };
+	const committed = commitDoc(state, nextDoc);
+	// Keep the armed anchor name valid.
+	if (committed.anchorName !== name) return committed;
+	return { ...committed, anchorName: firstAnchorName(nextDoc) };
 }
 
 // Remove a per-frame anchor override; the anchor falls back to its doc-level
