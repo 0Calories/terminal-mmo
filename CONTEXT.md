@@ -42,35 +42,37 @@ static frame; the animated, multi-frame body is a **Body sprite**.
 _Avoid_: Art, model, skin
 
 **Body sprite**:
-The animated ASCII-art of an entity's body — a named set of whole-frame **Pose**s
-(`idle`, `walkA`/`walkB`, `jump`, the emote frames, …), the body's analogue of the
-**Weapon sprite** (ADR 0020). Each Avatar **Form** is one Body sprite; the type is
-entity-agnostic, so Monsters become a consumer when they animate later. A pose is a
-*whole frame*, not a composited skeleton — at terminal fidelity a limb is a cell or
-two, so animating is redrawing the grid. Every Body sprite must author the core
-`idle`, `walkA`, `walkB`; any missing pose falls back to `idle`.
-_Avoid_: Body model, rig, skeleton (poses are whole frames, there is no rig)
+The animated ASCII-art of an entity's body — a named set of whole-frame
+**Animation**s (`idle`, `walk`, `jump`, the emote frames, …), the body's analogue
+of the **Weapon sprite** (ADR 0020). Each Avatar **Form** is one Body sprite; the
+type is entity-agnostic, so Monsters become a consumer when they animate later. An
+animation frame is a *whole grid*, not a composited skeleton — at terminal fidelity
+a limb is a cell or two, so animating is redrawing the grid. Every Body sprite must
+author the core `idle` and `walk`; any missing animation falls back to `idle`.
+_Avoid_: Body model, rig, skeleton (frames are whole grids, there is no rig)
 
-**Pose**:
-A named, selectable animation unit of the player's **Body sprite** — Poses exist
-specifically for players, handling the special frames and animations of states
+**Animation**:
+A named, selectable unit of the player's **Body sprite** — Animations exist
+specifically for players, handling the special frames of states
 (`walk`, `jump`, attack) and **Emote**s. An ordered list of **Frame**s played at
-a per-Pose fps, where a single Frame is the common case and a Frame belonging to
-no Pose is its own implicit single-frame Pose. Which Pose shows is chosen each
-render by a pure, shared function of replicated state so owner and observers
-agree. Body-pose priority is a fixed ladder — `hurt/stagger > combat > airborne >
-walk > emote > idle` — where, deliberately, walking cancels an **Emote**. Other
-roles' multi-frame art (a **Weapon sprite**'s swing phases) is plain Frames
-selected by that role's own logic, not Poses.
-_Avoid_: Frame (a Pose *contains* Frames; reserve Frame for one grid), stance
-(see **Preview stance**), animation state
+a per-Animation fps, where a single Frame is the common case and a Frame belonging
+to no Animation is its own implicit single-frame Animation. Which Animation shows
+is chosen each render by a pure, shared function of replicated state so owner and
+observers agree. Body-animation priority is a fixed ladder — `hurt/stagger >
+combat > airborne > walk > emote > idle` — where, deliberately, walking cancels an
+**Emote**. Other roles' multi-frame art (a **Weapon sprite**'s swing phases) is
+plain Frames selected by that role's own logic, not Animations.
+_Avoid_: Pose (retired term, ADR 0035), Frame (an Animation *contains* Frames;
+reserve Frame for one grid), stance (see **Preview stance**), animation state
 
 **Walk cycle**:
-The `walkA↔walkB` alternation that animates a moving Avatar, flipped every stride of
-**accumulated horizontal distance travelled** (not a clock), so it costs no wire data,
-quickens with speed, and stays identical for owner and observers (ADR 0020). Freezes
+The `walk` **Animation** advanced by **accumulated horizontal distance travelled**
+(not a clock) — the shown frame is `stride % frameCount`, so it costs no wire
+data, quickens with speed, stays identical for owner and observers, and an artist
+can author any number of gait frames (ADR 0020, generalized by ADR 0035). Freezes
 when idle or airborne.
-_Avoid_: Walk animation, gait timer (it is distance-driven, not timed)
+_Avoid_: walkA/walkB (retired split, ADR 0035), gait timer (it is
+distance-driven, not timed)
 
 **World**:
 The single, persistent, shared space that all Players inhabit. There is one
@@ -226,14 +228,15 @@ timer — the chat log stays the durable record.
 _Avoid_: Chat bubble, balloon, callout, tooltip
 
 **Emote**:
-A pose the Avatar's own body performs to express itself (e.g. `wave`, `dance`,
-`sit`) — a **Pose** played on the **Body sprite**, triggered by the `/em`/`/emote`
+A motion the Avatar's own body performs to express itself (e.g. `wave`, `dance`,
+`sit`) — an **Animation** played on the **Body sprite**, triggered by the `/em`/`/emote`
 chat command (ADR 0020). Each emote has a **lifetime mode**: `oneshot` (plays once,
 then returns to idle), `loop` (cycles until interrupted), or `hold` (one sustained
-pose). The active emote is replicated in the per-entity action-state, so a late
+frame). The active emote is replicated in the per-entity action-state, so a late
 arrival still sees a held or looping emote; movement or combat clears it. *Not* the
 retired overhead face-glyph popup, which it replaced.
-_Avoid_: Emoji, reaction, gesture (one word — an emote is a body pose, not a popup icon)
+_Avoid_: Emoji, reaction, gesture (one word — an emote is a body animation, not a
+popup icon)
 
 **CombatEvent**:
 The resolved, *semantic* fact of a combat interaction — "target T was **hit** /
@@ -791,8 +794,8 @@ the game-world language above.
 **Sprite file**:
 The `.sprite` asset file that *is* a sprite's source of truth — human-readable
 art (glyph grids you can see in a text editor, zone-style) plus its metadata:
-**Frame**s grouped into named **Pose**s, **Anchor**s, colors, per-Pose animation
-speed. One format
+**Frame**s grouped into named **Animation**s, **Anchor**s, colors, per-Animation
+fps. One format
 covers every sprite shape (a hat is the degenerate single-frame case; a Form and
 a Weapon are richer profiles of the same format). Identity is the filename
 (cf. Zone id), and the containing directory names its **Sprite role**. Consumed
@@ -802,7 +805,7 @@ _Avoid_: Asset (too generic), art file, sprite sheet (there is no atlas)
 **Sprite role**:
 What a Sprite file is *for* — form, hat, weapon, monster — named by the
 directory it lives in, and driving which validation profile applies (a form must
-author `idle`/`walkA`/`walkB` and `grip`/`head`; a weapon its phase frames and
+author `idle`/`walk` and `grip`/`head`; a weapon its phase frames and
 grip). Cosmetic roles (form, hat) are registered by scan — the file existing is
 what makes it pickable; combat-entity roles (weapon, monster) are the *art half*
 of a catalog entry that references the Sprite file by id.
@@ -822,9 +825,9 @@ _Avoid_: Paint program, pixel editor (it edits Sprite files, pixels are the mean
 
 **Frame**:
 One named glyph grid in a Sprite file — the unit the Sprite editor paints and the
-thing a **Pose** orders into an animation. A Frame referenced by no Pose is its
-own implicit single-frame Pose, which is how bare frame names (`walkA`) stay
-selectable at render time.
+thing an **Animation** orders into playback. A Frame referenced by no Animation is
+its own implicit single-frame Animation, which is how bare frame names (`jump`)
+stay selectable at render time.
 _Avoid_: Cel, image, page
 
 **Pixel**:
@@ -844,7 +847,7 @@ _Avoid_: Text tool, character brush
 A named cell a Sprite file declares for attaching overlays — `grip` hangs the
 Weapon sprite, `head` seats the hat; names are open, so new overlay kinds are
 new names, not a format change. Declared per file with optional per-frame
-overrides (a Pose that raises the arm carries the weapon with it). Mirrors with
+overrides (an Animation that raises the arm carries the weapon with it). Mirrors with
 facing. Generalizes the **Grip anchor**.
 An anchor is an **offset**, not an in-bounds cell reference: any integer is
 valid, including negatives, so a weapon grip legitimately sits one cell left of
@@ -863,6 +866,6 @@ _Avoid_: Mannequin, dress-up view, test render
 
 **Preview stance**:
 The **Composited preview**'s scenario — the facing plus what the mannequin is
-doing (which body Pose, which weapon swing phase). A selection *across* multiple
-sprites at once, which is why it is not itself a **Pose**.
-_Avoid_: Pose (a stance picks poses, plural), preview mode
+doing (which body Animation, which weapon swing phase). A selection *across*
+multiple sprites at once, which is why it is not itself an **Animation**.
+_Avoid_: Animation (a stance picks animations, plural), preview mode
