@@ -59,13 +59,28 @@ export function validateSpriteRole(
 	}
 	// A weapon's swing is phase-indexed (ADR 0036): each of the exactly three
 	// frames maps to a replicated attack phase, so any other count is an error.
+	// The same ADR also requires a rest Default frame: the file's FIRST frame is
+	// what the weapon shows outside a swing, so it must not belong to the swing
+	// animation — a file opening with a swing frame authored no rest art at all.
 	if (role === 'weapons') {
 		const swing = doc.animations.swing;
 		if (swing !== undefined && swing.length !== 3) {
 			diagnostics.push({
 				severity: 'error',
 				spriteId: doc.id,
-				message: `sprite '${doc.id}' (role 'weapons') must author exactly 3 swing frames (windup/active/recovery), found ${swing.length}`,
+				message: `sprite '${doc.id}' (role 'weapons') must author exactly 3 swing frames, one per attack phase, found ${swing.length}`,
+			});
+		}
+		const first = doc.frames[0];
+		if (
+			swing !== undefined &&
+			first !== undefined &&
+			swing.includes(first.name)
+		) {
+			diagnostics.push({
+				severity: 'error',
+				spriteId: doc.id,
+				message: `sprite '${doc.id}' (role 'weapons') must open with a rest Default frame — its first frame '${first.name}' belongs to the swing animation`,
 			});
 		}
 	}

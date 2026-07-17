@@ -159,6 +159,35 @@ test('validateSpriteRole: a swing of other than exactly 3 frames is an error (AD
 	expect(diags[0].message).toContain('exactly 3');
 });
 
+const WEAPON_NO_REST = `{
+	"anchors": { "grip": [0, 0] },
+	"animations": { "swing": ["swing-0", "swing-1", "swing-2"] }
+}
+--- swing-0
+AB
+--- swing-1
+AB
+--- swing-2
+AB
+`;
+
+test('validateSpriteRole: a weapon whose first frame belongs to swing has no rest Default frame — error (ADR 0036)', () => {
+	const diags = validateSpriteRole(docOf(WEAPON_NO_REST, 'sword'), 'weapons');
+	expect(diags.length).toBe(1);
+	expect(diags[0].severity).toBe('error');
+	expect(diags[0].message).toContain('rest');
+	expect(diags[0].message).toContain('swing-0');
+});
+
+test('validateSpriteRole: the swing-count error speaks in attack phases, not retired frame names', () => {
+	const diags = validateSpriteRole(
+		docOf(WEAPON_SHORT_SWING, 'sword'),
+		'weapons',
+	);
+	expect(diags[0].message).toContain('attack phase');
+	expect(diags[0].message).not.toContain('windup');
+});
+
 test('validateSpriteRole: hats/monsters/npcs require only idle', () => {
 	const okText = `--- idle\nAB\n`;
 	const badText = `--- x\nAB\n`;
