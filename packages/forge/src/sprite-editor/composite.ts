@@ -254,11 +254,95 @@ export interface CompositeBuild {
 	overrides: SpriteOverrides;
 }
 
+// A CellBuffer that draws nothing and records the painted bounding box — how
+// `centerByBounds` measures the ACTUAL composed extent (body + hat + weapon)
+// through the real renderer, with no per-piece anchor math to drift.
+class BoundsBuffer implements CellBuffer<null> {
+	readonly width: number;
+	readonly height: number;
+	minX = Number.POSITIVE_INFINITY;
+	minY = Number.POSITIVE_INFINITY;
+	maxX = Number.NEGATIVE_INFINITY;
+	maxY = Number.NEGATIVE_INFINITY;
+	constructor(w: number, h: number) {
+		this.width = w;
+		this.height = h;
+	}
+	get any(): boolean {
+		return this.maxX >= this.minX;
+	}
+	clear(): void {}
+	setCell(x: number, y: number, ch: string): void {
+		if (ch === ' ') return;
+		this.minX = Math.min(this.minX, x);
+		this.minY = Math.min(this.minY, y);
+		this.maxX = Math.max(this.maxX, x);
+		this.maxY = Math.max(this.maxY, y);
+	}
+	setCellWithAlphaBlending(x: number, y: number, ch: string): void {
+		this.setCell(x, y, ch);
+	}
+}
+
+// Colours never matter for measuring; every slot is the null colour.
+const MEASURE_STYLE: RenderStyle<null> = {
+	bg: null,
+	terrainFg: null,
+	terrainBg: null,
+	portal: null,
+	transparent: null,
+	hurt: null,
+	nameplate: null,
+	nameplateBg: null,
+	palette: {},
+	paletteDefault: null,
+	cosmetics: { hues: [], nameplates: [], nameplateBgs: [] },
+};
+
+// Margin around the measuring buffer so art hanging above/left of the initial
+// placement (a tall hat, a raised sword) still lands in-bounds and is counted.
+const MEASURE_MARGIN = 16;
+
+// Re-place a built composite so its ACTUAL composed bounds — body plus hat plus
+// weapon, whatever the pieces add above or beside the body — center in the
+// destination buffer (QA round 3: `placeCentered`'s hat-headroom bias pushed
+// the body below the fold of the ~9-row preview pane).
+function centerByBounds(
+	build: CompositeBuild,
+	dims: { width: number; height: number },
+): CompositeBuild {
+	const measure = new BoundsBuffer(
+		dims.width + 2 * MEASURE_MARGIN,
+		dims.height + 2 * MEASURE_MARGIN,
+	);
+	drawEntitySprite(
+		measure,
+		build.entity,
+		{ x: -MEASURE_MARGIN, y: -MEASURE_MARGIN },
+		MEASURE_STYLE,
+		undefined,
+		undefined,
+		build.overrides,
+	);
+	if (!measure.any) return build;
+	const bw = measure.maxX - measure.minX + 1;
+	const bh = measure.maxY - measure.minY + 1;
+	// Where the bbox currently sits in destination coordinates, and where a
+	// centered bbox would sit; shift the entity by the difference.
+	const atX = measure.minX - MEASURE_MARGIN;
+	const atY = measure.minY - MEASURE_MARGIN;
+	const wantX = Math.floor((dims.width - bw) / 2);
+	const wantY = Math.floor((dims.height - bh) / 2);
+	build.entity.x += wantX - atX;
+	build.entity.y += wantY - atY;
+	return build;
+}
+
 // Center a sprite of the given dimensions in a `w`×`h` buffer, returning the
 // entity world position that lands it there under `drawEntitySprite`'s placement
 // (`sx = e.x - floor((w-BOX.w)/2)`, `sy = e.y + BOX.h - h + baseline`). The
-// baseline cancels, so its exact value never matters. Biased down a few rows to
-// leave headroom for a hat above the head.
+// baseline cancels, so its exact value never matters. Only a first guess:
+// `centerByBounds` re-places the build by what actually got drawn.
 function placeCentered(
 	w: number,
 	h: number,
@@ -306,7 +390,10 @@ export function buildComposite(
 			e.x = pos.x;
 			e.y = pos.y;
 			const frame = resolveFrame(doc, view.stance, view.elapsedS);
-			return { entity: e, overrides: { body, hat: spriteFromDoc(doc, frame) } };
+			return centerByBounds(
+				{ entity: e, overrides: { body, hat: spriteFromDoc(doc, frame) } },
+				dims,
+			);
 		}
 
 		if (role === 'weapon') {
@@ -325,10 +412,10 @@ export function buildComposite(
 			);
 			e.x = pos.x;
 			e.y = pos.y;
-			return {
-				entity: e,
-				overrides: { body, weapon: compileWeaponSprite(doc) },
-			};
+			return centerByBounds(
+				{ entity: e, overrides: { body, weapon: compileWeaponSprite(doc) } },
+				dims,
+			);
 		}
 
 		if (role === 'form') {
@@ -347,7 +434,7 @@ export function buildComposite(
 			);
 			e.x = pos.x;
 			e.y = pos.y;
-			return { entity: e, overrides: { body } };
+			return centerByBounds({ entity: e, overrides: { body } }, dims);
 		}
 
 		// monster / npc — plain single-sprite render via the `base` override.
@@ -365,7 +452,7 @@ export function buildComposite(
 		);
 		e.x = pos.x;
 		e.y = pos.y;
-		return { entity: e, overrides: { base } };
+		return centerByBounds({ entity: e, overrides: { base } }, dims);
 	} catch {
 		// The live doc cannot compile yet (missing required anchors/animations); the
 		// preview panel shows a bare background until the artist supplies them.

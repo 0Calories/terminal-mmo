@@ -112,6 +112,54 @@ test('a hat doc composites pixel-identically to the registry hat', () => {
 	expect(dump(composite)).toBe(dump(direct));
 });
 
+// --- the composite centers by its actual composed bounds --------------------
+
+test('a form composite fits its whole dressed avatar in a preview-pane-sized buffer (QA round 3)', () => {
+	const doc = loadDoc('sprites/forms/buddy.sprite', 'buddy');
+	// The floating preview pane's interior: (PREVIEW_W-2)×(PREVIEW_H-2) = 32×9.
+	const buf = new FakeBuffer(32, 9);
+	const ok = renderComposite(buf, doc, 'form', STYLE, {
+		facing: 1,
+		stance: 'idle',
+		elapsedS: 0,
+	});
+	expect(ok).toBe(true);
+	// The buddy body must be visible — torso blocks and the feet row — not
+	// pushed below the fold with only the hat and sword tip showing.
+	const glyphs = new Set<string>();
+	for (let y = 0; y < buf.height; y++)
+		for (let x = 0; x < buf.width; x++) {
+			const c = buf.at(x, y);
+			if (c && c.ch !== ' ') glyphs.add(c.ch);
+		}
+	expect(glyphs).toContain('█'); // torso
+	expect(glyphs).toContain('▀'); // feet
+});
+
+test('the composed bounds center within the buffer (no edge-flush art)', () => {
+	const doc = loadDoc('sprites/forms/buddy.sprite', 'buddy');
+	const buf = new FakeBuffer(32, 9);
+	renderComposite(buf, doc, 'form', STYLE, {
+		facing: 1,
+		stance: 'idle',
+		elapsedS: 0,
+	});
+	let minY = Number.POSITIVE_INFINITY;
+	let maxY = Number.NEGATIVE_INFINITY;
+	for (let y = 0; y < buf.height; y++)
+		for (let x = 0; x < buf.width; x++) {
+			const c = buf.at(x, y);
+			if (c && c.ch !== ' ') {
+				minY = Math.min(minY, y);
+				maxY = Math.max(maxY, y);
+			}
+		}
+	// Vertically centered: the top and bottom margins differ by at most one row.
+	const top = minY;
+	const bottom = buf.height - 1 - maxY;
+	expect(Math.abs(top - bottom)).toBeLessThanOrEqual(1);
+});
+
 // --- (b) weapon phases match the golden scene path --------------------------
 
 test('a weapon phase composites pixel-identically to the registry weapon', () => {
