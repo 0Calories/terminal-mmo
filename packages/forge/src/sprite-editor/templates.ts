@@ -40,14 +40,14 @@ export function emptySpriteDoc(id: string, role: SpriteRole): SpriteDoc {
 	for (const [name, [x, y]] of Object.entries(template.anchors))
 		anchors[name] = { x, y };
 	const frames = template.frames.map(blankFrame);
-	const poses: Record<string, readonly string[]> = {};
-	for (const f of frames) poses[f.name] = [f.name];
+	const animations: Record<string, readonly string[]> = {};
+	for (const f of frames) animations[f.name] = [f.name];
 	return {
 		id,
 		key: DEFAULT_KEY,
 		baseline: 0,
 		anchors,
-		poses,
+		animations,
 		fps: {},
 		colors: {} as Readonly<Record<string, RGBAQuad>>,
 		frames,

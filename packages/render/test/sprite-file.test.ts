@@ -5,7 +5,7 @@ const RICH = `{
 	"key": "e",
 	"baseline": 2,
 	"anchors": { "grip": [1, 0] },
-	"poses": { "wave": ["waveA", "waveB"] },
+	"animations": { "wave": ["waveA", "waveB"] },
 	"fps": { "wave": 6 },
 	"colors": { "q": [10, 20, 30, 255] }
 }
@@ -40,7 +40,7 @@ test('happy path: rich file parses with zero diagnostics and precise doc fields'
 	expect(d.key).toBe('e');
 	expect(d.baseline).toBe(2);
 	expect(d.anchors).toEqual({ grip: { x: 1, y: 0 } });
-	expect(d.poses).toEqual({ wave: ['waveA', 'waveB'], idle: ['idle'] });
+	expect(d.animations).toEqual({ wave: ['waveA', 'waveB'], idle: ['idle'] });
 	expect(d.fps).toEqual({ wave: 6 });
 	expect(d.colors).toEqual({ q: [10, 20, 30, 255] });
 	expect(d.frames.map((f) => f.name)).toEqual(['idle', 'waveA', 'waveB']);
@@ -62,7 +62,26 @@ test('happy path: rich file parses with zero diagnostics and precise doc fields'
 	expect(waveB.bg).toEqual(['  ', '  ']);
 });
 
-test('headerless minimal file: defaults, implicit pose, zero diagnostics', () => {
+test('animations vocabulary: the header key is animations, the doc field is .animations, and legacy poses is unknown', () => {
+	const { doc, diagnostics } = parseSpriteFile(
+		'{ "animations": { "wave": ["waveA", "waveB"] } }\n--- idle\nAB\n--- waveA\nCD\n--- waveB\nEF\n',
+		'anim',
+	);
+	expect(diagnostics).toEqual([]);
+	expect(doc?.animations).toEqual({
+		wave: ['waveA', 'waveB'],
+		idle: ['idle'],
+	});
+	expect(serializeSpriteFile(doc as SpriteDoc)).toContain('"animations"');
+
+	// No back-compat alias: a legacy `poses:` key is just an unknown field.
+	const legacy = parseSpriteFile('{ "poses": {} }\n--- idle\nAB\n', 'legacy');
+	expect(
+		legacy.diagnostics.some((d) => d.message.includes('unknown header field')),
+	).toBe(true);
+});
+
+test('headerless minimal file: defaults, implicit animation, zero diagnostics', () => {
 	const { doc, diagnostics } = parseSpriteFile(MINIMAL, 'minimal');
 	expect(diagnostics).toEqual([]);
 	expect(doc).not.toBeNull();
@@ -70,7 +89,7 @@ test('headerless minimal file: defaults, implicit pose, zero diagnostics', () =>
 	expect(d.key).toBe('p');
 	expect(d.baseline).toBe(0);
 	expect(d.anchors).toEqual({});
-	expect(d.poses).toEqual({ idle: ['idle'] });
+	expect(d.animations).toEqual({ idle: ['idle'] });
 	expect(d.fps).toEqual({});
 	expect(d.colors).toEqual({});
 	expect(d.frames).toHaveLength(1);
@@ -303,12 +322,12 @@ test('duplicate @colors marker -> error, later grid ignored', () => {
 	).toBe(true);
 });
 
-test('pose referencing missing frame -> error, name removed', () => {
+test('animation referencing missing frame -> error, name removed', () => {
 	const { doc, diagnostics } = parseSpriteFile(
-		'{ "poses": { "wave": ["idle", "ghost"] } }\n--- idle\nAB\n',
+		'{ "animations": { "wave": ["idle", "ghost"] } }\n--- idle\nAB\n',
 		'x',
 	);
-	expect(doc?.poses).toEqual({ wave: ['idle'] });
+	expect(doc?.animations).toEqual({ wave: ['idle'] });
 	expect(
 		diagnostics.some(
 			(d) => d.severity === 'error' && /missing frame 'ghost'/.test(d.message),
@@ -316,18 +335,18 @@ test('pose referencing missing frame -> error, name removed', () => {
 	).toBe(true);
 });
 
-test('pose that empties entirely is dropped', () => {
+test('animation that empties entirely is dropped', () => {
 	const { doc, diagnostics } = parseSpriteFile(
-		'{ "poses": { "wave": ["ghost"] } }\n--- idle\nAB\n',
+		'{ "animations": { "wave": ["ghost"] } }\n--- idle\nAB\n',
 		'x',
 	);
-	expect(doc?.poses).toEqual({ idle: ['idle'] });
+	expect(doc?.animations).toEqual({ idle: ['idle'] });
 	expect(diagnostics.some((d) => /missing frame 'ghost'/.test(d.message))).toBe(
 		true,
 	);
 });
 
-test('fps for unknown pose -> warning, dropped', () => {
+test('fps for unknown animation -> warning, dropped', () => {
 	const { doc, diagnostics } = parseSpriteFile(
 		'{ "fps": { "ghost": 5 } }\n--- idle\nAB\n',
 		'x',
@@ -335,7 +354,8 @@ test('fps for unknown pose -> warning, dropped', () => {
 	expect(doc?.fps).toEqual({});
 	expect(
 		diagnostics.some(
-			(d) => d.severity === 'warning' && /fps for unknown pose/.test(d.message),
+			(d) =>
+				d.severity === 'warning' && /fps for unknown animation/.test(d.message),
 		),
 	).toBe(true);
 });
@@ -445,12 +465,12 @@ test('bad frame-name charset -> error diagnostic, still parsed', () => {
 	).toBe(true);
 });
 
-test('implicit-pose resolution: frames consumed by explicit pose get no implicit pose', () => {
+test('implicit-animation resolution: frames consumed by explicit animation get no implicit animation', () => {
 	const { doc } = parseSpriteFile(
-		'{ "poses": { "emote:wave": ["waveA", "waveB"] } }\n--- idle\nAB\n--- waveA\nCD\n--- waveB\nEF\n',
+		'{ "animations": { "emote:wave": ["waveA", "waveB"] } }\n--- idle\nAB\n--- waveA\nCD\n--- waveB\nEF\n',
 		'x',
 	);
-	expect(doc?.poses).toEqual({
+	expect(doc?.animations).toEqual({
 		idle: ['idle'],
 		'emote:wave': ['waveA', 'waveB'],
 	});

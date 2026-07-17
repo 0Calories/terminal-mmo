@@ -164,7 +164,7 @@ export interface Float {
 // The single in-editor clipboard buffer (spec #387, #400): the foreground Pixels
 // and fully-enclosed Glyph stamps a copy/cut captured, at their SOURCE positions,
 // plus the rectangle they came from. Editor-session-scoped — it survives Frame
-// and Pose switches (state is threaded through those) but is never persisted to
+// and Animation switches (state is threaded through those) but is never persisted to
 // disk. A paste spawns a float from it at the source coordinates.
 export interface Clipboard {
 	readonly pixels: readonly FloatPixel[];
@@ -176,7 +176,7 @@ export interface Clipboard {
 // frame) or as a per-frame override on the current frame (ADR 0031).
 export type AnchorScope = 'doc' | 'frame';
 
-// Anchor + frame/pose names share the parser's identifier charset.
+// Anchor + frame/animation names share the parser's identifier charset.
 const NAME_RE = /^[A-Za-z0-9:_-]+$/;
 
 // The single active ink (spec #387): a color key painting lit Pixels, or
@@ -212,8 +212,8 @@ export interface SpriteEditorState {
 	doc: SpriteDoc;
 	// Name of the frame currently being edited.
 	frame: string;
-	// Name of the pose the current frame belongs to (drives playback + pose ops).
-	pose: string;
+	// Name of the animation the current frame belongs to (drives playback + animation ops).
+	animation: string;
 	// Cursor in PIXEL coordinates (2× the cell resolution on each axis).
 	cursor: { x: number; y: number };
 	tool: SpriteTool;
@@ -242,7 +242,7 @@ export interface SpriteEditorState {
 	// The floating move in flight, or null between lift and drop (spec #399).
 	float: Float | null;
 	// The in-editor clipboard buffer (spec #400), or null when nothing is copied.
-	// Survives Frame/Pose switches; never persisted to disk.
+	// Survives Frame/Animation switches; never persisted to disk.
 	clipboard: Clipboard | null;
 	// The edge selected in whole-file resize mode (spec #402), or null when not
 	// resizing. Nudges apply live to `doc`; commit records ONE undo step.
@@ -292,7 +292,7 @@ export function initSpriteEditor(
 	return {
 		doc: normalized,
 		frame: name,
-		pose: poseContaining(normalized, name) ?? name,
+		animation: animationContaining(normalized, name) ?? name,
 		cursor: { x: 0, y: 0 },
 		tool: 'paint',
 		ink: colorInk(normalized.key),
@@ -313,11 +313,14 @@ export function initSpriteEditor(
 	};
 }
 
-// The pose whose frame list contains `frame`, if any (the parser also treats a
-// frame referenced by no pose as its own implicit single-frame pose).
-function poseContaining(doc: SpriteDoc, frame: string): string | undefined {
-	for (const [pose, frames] of Object.entries(doc.poses))
-		if (frames.includes(frame)) return pose;
+// The animation whose frame list contains `frame`, if any (the parser also treats a
+// frame referenced by no animation as its own implicit single-frame animation).
+function animationContaining(
+	doc: SpriteDoc,
+	frame: string,
+): string | undefined {
+	for (const [animation, frames] of Object.entries(doc.animations))
+		if (frames.includes(frame)) return animation;
 	return undefined;
 }
 
@@ -518,21 +521,24 @@ export function selectFrame(
 ): SpriteEditorState {
 	if (!state.doc.frames.some((f) => f.name === name))
 		return refuse(state, `no such frame '${name}'`);
-	const pose = poseContaining(state.doc, name) ?? state.pose;
-	return { ...state, frame: name, pose, stroke: null, feedback: '' };
+	const animation = animationContaining(state.doc, name) ?? state.animation;
+	return { ...state, frame: name, animation, stroke: null, feedback: '' };
 }
 
 // ---------------------------------------------------------------------------
-// Poses — named ordered frame lists (ADR 0031). All mutations are undoable;
+// Animations — named ordered frame lists (ADR 0031). All mutations are undoable;
 // illegal names / missing targets refuse with `feedback`.
 // ---------------------------------------------------------------------------
 
-export function poseNames(state: SpriteEditorState): string[] {
-	return Object.keys(state.doc.poses);
+export function animationNames(state: SpriteEditorState): string[] {
+	return Object.keys(state.doc.animations);
 }
 
-export function poseFrames(state: SpriteEditorState, pose: string): string[] {
-	return [...(state.doc.poses[pose] ?? [])];
+export function animationFrames(
+	state: SpriteEditorState,
+	animation: string,
+): string[] {
+	return [...(state.doc.animations[animation] ?? [])];
 }
 
 // A fresh, fully-transparent frame sized to the current canvas so new frames
@@ -546,41 +552,42 @@ function newBlankFrame(state: SpriteEditorState, name: string): SpriteFrameDoc {
 	return { name, rows, colors: rows.slice(), bg: rows.slice(), anchors: {} };
 }
 
-// Create a named pose backed by one fresh blank frame of the same name; switch
+// Create a named animation backed by one fresh blank frame of the same name; switch
 // to it. Refuses illegal/duplicate names or a name colliding with a frame.
-export function createPose(
+export function createAnimation(
 	state: SpriteEditorState,
 	name: string,
 ): SpriteEditorState {
 	if (!NAME_RE.test(name))
 		return refuse(
 			state,
-			`'${name}' is not a legal pose name (${NAME_RE.source})`,
+			`'${name}' is not a legal animation name (${NAME_RE.source})`,
 		);
-	if (name in state.doc.poses)
-		return refuse(state, `pose '${name}' already exists`);
+	if (name in state.doc.animations)
+		return refuse(state, `animation '${name}' already exists`);
 	if (state.doc.frames.some((f) => f.name === name))
 		return refuse(state, `a frame named '${name}' already exists`);
 	const frame = newBlankFrame(state, name);
 	const nextDoc: SpriteDoc = {
 		...state.doc,
 		frames: [...state.doc.frames, frame],
-		poses: { ...state.doc.poses, [name]: [name] },
+		animations: { ...state.doc.animations, [name]: [name] },
 	};
 	const committed = commitDoc(state, nextDoc);
-	return { ...committed, pose: name, frame: name };
+	return { ...committed, animation: name, frame: name };
 }
 
-// Append a fresh blank frame to an existing pose and select it. Without a name,
-// one is derived (`<pose>-2`, `<pose>-3`, …) avoiding collisions.
-export function addFrameToPose(
+// Append a fresh blank frame to an existing animation and select it. Without a name,
+// one is derived (`<animation>-2`, `<animation>-3`, …) avoiding collisions.
+export function addFrameToAnimation(
 	state: SpriteEditorState,
-	pose: string,
+	animation: string,
 	frameName?: string,
 ): SpriteEditorState {
-	const list = state.doc.poses[pose];
-	if (list === undefined) return refuse(state, `no such pose '${pose}'`);
-	const name = frameName ?? autoFrameName(state, pose);
+	const list = state.doc.animations[animation];
+	if (list === undefined)
+		return refuse(state, `no such animation '${animation}'`);
+	const name = frameName ?? autoFrameName(state, animation);
 	if (!NAME_RE.test(name))
 		return refuse(state, `'${name}' is not a legal frame name`);
 	if (state.doc.frames.some((f) => f.name === name))
@@ -589,73 +596,79 @@ export function addFrameToPose(
 	const nextDoc: SpriteDoc = {
 		...state.doc,
 		frames: [...state.doc.frames, frame],
-		poses: { ...state.doc.poses, [pose]: [...list, name] },
+		animations: { ...state.doc.animations, [animation]: [...list, name] },
 	};
 	const committed = commitDoc(state, nextDoc);
-	return { ...committed, pose, frame: name };
+	return { ...committed, animation, frame: name };
 }
 
-function autoFrameName(state: SpriteEditorState, pose: string): string {
+function autoFrameName(state: SpriteEditorState, animation: string): string {
 	for (let n = 2; ; n++) {
-		const candidate = `${pose}-${n}`;
+		const candidate = `${animation}-${n}`;
 		if (!state.doc.frames.some((f) => f.name === candidate)) return candidate;
 	}
 }
 
-// Delete a pose entry and garbage-collect any frame sections it orphaned (a
-// frame referenced by no remaining pose is removed, so it does not silently
-// become an implicit single-frame pose). Refuses removing the last pose.
-export function deletePose(
+// Delete an animation entry and garbage-collect any frame sections it orphaned (a
+// frame referenced by no remaining animation is removed, so it does not silently
+// become an implicit single-frame animation). Refuses removing the last animation.
+export function deleteAnimation(
 	state: SpriteEditorState,
-	pose: string,
+	animation: string,
 ): SpriteEditorState {
-	if (!(pose in state.doc.poses))
-		return refuse(state, `no such pose '${pose}'`);
-	if (Object.keys(state.doc.poses).length <= 1)
-		return refuse(state, 'cannot delete the last pose');
-	const nextPoses: Record<string, readonly string[]> = {};
-	for (const [name, frames] of Object.entries(state.doc.poses))
-		if (name !== pose) nextPoses[name] = frames;
-	const referenced = new Set(Object.values(nextPoses).flat());
+	if (!(animation in state.doc.animations))
+		return refuse(state, `no such animation '${animation}'`);
+	if (Object.keys(state.doc.animations).length <= 1)
+		return refuse(state, 'cannot delete the last animation');
+	const nextAnimations: Record<string, readonly string[]> = {};
+	for (const [name, frames] of Object.entries(state.doc.animations))
+		if (name !== animation) nextAnimations[name] = frames;
+	const referenced = new Set(Object.values(nextAnimations).flat());
 	const nextFrames = state.doc.frames.filter((f) => referenced.has(f.name));
 	const nextDoc: SpriteDoc = {
 		...state.doc,
-		poses: nextPoses,
+		animations: nextAnimations,
 		frames: nextFrames,
 	};
 	const committed = commitDoc(state, nextDoc);
-	// Keep the cursor on a live pose/frame.
-	if (nextPoses[state.pose] !== undefined) return committed;
-	const nextPose = Object.keys(nextPoses)[0];
-	return { ...committed, pose: nextPose, frame: nextPoses[nextPose][0] };
+	// Keep the cursor on a live animation/frame.
+	if (nextAnimations[state.animation] !== undefined) return committed;
+	const nextAnimation = Object.keys(nextAnimations)[0];
+	return {
+		...committed,
+		animation: nextAnimation,
+		frame: nextAnimations[nextAnimation][0],
+	};
 }
 
-// Switch the current pose, landing on its first frame. Not a doc mutation, so
+// Switch the current animation, landing on its first frame. Not a doc mutation, so
 // it is not recorded in history.
-export function selectPose(
+export function selectAnimation(
 	state: SpriteEditorState,
-	pose: string,
+	animation: string,
 ): SpriteEditorState {
-	const list = state.doc.poses[pose];
-	if (list === undefined) return refuse(state, `no such pose '${pose}'`);
+	const list = state.doc.animations[animation];
+	if (list === undefined)
+		return refuse(state, `no such animation '${animation}'`);
 	return {
 		...state,
-		pose,
+		animation,
 		frame: list[0] ?? state.frame,
 		stroke: null,
 		feedback: '',
 	};
 }
 
-// Swap the frame at `index` with the one at `index + delta` within a pose.
+// Swap the frame at `index` with the one at `index + delta` within an animation.
 export function reorderFrame(
 	state: SpriteEditorState,
-	pose: string,
+	animation: string,
 	index: number,
 	delta: number,
 ): SpriteEditorState {
-	const list = state.doc.poses[pose];
-	if (list === undefined) return refuse(state, `no such pose '${pose}'`);
+	const list = state.doc.animations[animation];
+	if (list === undefined)
+		return refuse(state, `no such animation '${animation}'`);
 	const to = index + delta;
 	if (index < 0 || index >= list.length || to < 0 || to >= list.length)
 		return refuse(state, 'cannot move that frame — out of range');
@@ -663,27 +676,27 @@ export function reorderFrame(
 	[next[index], next[to]] = [next[to], next[index]];
 	const nextDoc: SpriteDoc = {
 		...state.doc,
-		poses: { ...state.doc.poses, [pose]: next },
+		animations: { ...state.doc.animations, [animation]: next },
 	};
 	return commitDoc(state, nextDoc);
 }
 
-// Set (positive number) or clear (`null`/non-positive) a pose's playback fps.
-// A cleared pose animates at the default EMOTE_FPS.
-export function setPoseFps(
+// Set (positive number) or clear (`null`/non-positive) an animation's playback fps.
+// A cleared animation animates at the default EMOTE_FPS.
+export function setAnimationFps(
 	state: SpriteEditorState,
-	pose: string,
+	animation: string,
 	fps: number | null,
 ): SpriteEditorState {
-	if (!(pose in state.doc.poses))
-		return refuse(state, `no such pose '${pose}'`);
+	if (!(animation in state.doc.animations))
+		return refuse(state, `no such animation '${animation}'`);
 	const nextFps: Record<string, number> = { ...state.doc.fps };
 	if (fps === null) {
-		delete nextFps[pose];
+		delete nextFps[animation];
 	} else if (!Number.isFinite(fps) || fps <= 0) {
 		return refuse(state, 'fps must be a positive number');
 	} else {
-		nextFps[pose] = fps;
+		nextFps[animation] = fps;
 	}
 	return commitDoc(state, { ...state.doc, fps: nextFps });
 }
@@ -1666,7 +1679,7 @@ export function deleteSelection(state: SpriteEditorState): SpriteEditorState {
 // ---------------------------------------------------------------------------
 // Clipboard — copy / cut / paste (spec #387, #400)
 //
-// The clipboard is a single in-editor buffer surviving Frame/Pose switches (it
+// The clipboard is a single in-editor buffer surviving Frame/Animation switches (it
 // rides SpriteEditorState, threaded through every switch) and is never persisted
 // to disk. Copy is a PURE READ — it captures the selection's lit Pixels and
 // fully-enclosed Glyph stamps and records no undo step. Cut = copy + clear as one

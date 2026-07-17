@@ -17,9 +17,9 @@ export const RAIL_W = 30;
 export type RailAction =
 	| { readonly type: 'tool'; readonly tool: SpriteTool }
 	| { readonly type: 'ink'; readonly ink: Ink }
-	| { readonly type: 'play'; readonly mode: 'pose' | 'walk' }
+	| { readonly type: 'play'; readonly mode: 'animation' | 'walk' }
 	| { readonly type: 'addFrame' }
-	| { readonly type: 'poseMenu' }
+	| { readonly type: 'animationMenu' }
 	| { readonly type: 'anchorMenu' };
 
 // One styled run of text on a rail row. `swatch` colours the run's BACKGROUND
@@ -81,10 +81,10 @@ export interface RailInput {
 	readonly ink: Ink;
 	// Everything paintable, from paletteEntries() — locals, palette, dynamics.
 	readonly entries: readonly PaletteEntry[];
-	readonly pose: string;
+	readonly animation: string;
 	readonly fps: number;
 	readonly frameCount: number;
-	readonly playMode: 'none' | 'pose' | 'walk';
+	readonly playMode: 'none' | 'animation' | 'walk';
 	// Onion-skin depth (0 off), surfaced in the playback box.
 	readonly onionDepth: number;
 	// Rows available for the rail (the canvas region's height).
@@ -204,7 +204,7 @@ function playbackBox(input: RailInput): RailRow[] {
 		{
 			spans: [
 				{
-					text: ` pose ${input.pose} · ${input.fps}fps · ${input.frameCount}f`,
+					text: ` animation ${input.animation} · ${input.fps}fps · ${input.frameCount}f`,
 					dim: true,
 				},
 			],
@@ -213,9 +213,10 @@ function playbackBox(input: RailInput): RailRow[] {
 			spans: [
 				{ text: ' ' },
 				{
-					text: input.playMode === 'pose' ? '▶ . pose' : '  . pose',
-					hot: input.playMode === 'pose',
-					action: { type: 'play', mode: 'pose' },
+					text:
+						input.playMode === 'animation' ? '▶ . animation' : '  . animation',
+					hot: input.playMode === 'animation',
+					action: { type: 'play', mode: 'animation' },
 				},
 				{ text: '  ' },
 				{
@@ -231,14 +232,18 @@ function playbackBox(input: RailInput): RailRow[] {
 				},
 			],
 		},
-		{ spans: [{ text: ' [ ] frame · { } pose', dim: true }] },
+		{ spans: [{ text: ' [ ] frame · { } animation', dim: true }] },
 		{
 			spans: [
 				{ text: ' ' },
 				{ text: 'n +frame', dim: true, action: { type: 'addFrame' } },
 				{ text: ' · ' },
-				{ text: 'P pose', dim: true, action: { type: 'poseMenu' } },
-				{ text: ' · ' },
+				{ text: 'P animation', dim: true, action: { type: 'animationMenu' } },
+			],
+		},
+		{
+			spans: [
+				{ text: ' ' },
 				{ text: 'A anchor', dim: true, action: { type: 'anchorMenu' } },
 			],
 		},
@@ -247,10 +252,10 @@ function playbackBox(input: RailInput): RailRow[] {
 
 // The folded playback box (spec #387 rung 3): one hint row standing in for the
 // full box when the rail can't fit both boxes. Keeps the most-used controls —
-// play and add-Frame — clickable; the fps/pose/onion detail is dropped until the
+// play and add-Frame — clickable; the fps/animation/onion detail is dropped until the
 // terminal grows back and the full box returns.
 function foldedPlaybackBox(input: RailInput): RailRow[] {
-	const playing = input.playMode === 'pose';
+	const playing = input.playMode === 'animation';
 	return [
 		{
 			title: true,
@@ -260,7 +265,7 @@ function foldedPlaybackBox(input: RailInput): RailRow[] {
 				{
 					text: playing ? '▶ . play' : '. play',
 					hot: playing,
-					action: { type: 'play', mode: 'pose' },
+					action: { type: 'play', mode: 'animation' },
 				},
 				{ text: ' · ' },
 				{ text: 'n +f', dim: true, action: { type: 'addFrame' } },
@@ -360,12 +365,12 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 		],
 	},
 	{
-		title: 'Frames & poses',
+		title: 'Frames & animations',
 		bindings: [
-			{ keys: '[ ] / { }', label: 'prev / next frame · pose' },
-			{ keys: 'n', label: 'add frame to current pose' },
-			{ keys: 'P / A / O', label: 'pose menu / anchor menu / onion 0-2' },
-			{ keys: '. / ,', label: 'play pose / walk preview' },
+			{ keys: '[ ] / { }', label: 'prev / next frame · animation' },
+			{ keys: 'n', label: 'add frame to current animation' },
+			{ keys: 'P / A / O', label: 'animation menu / anchor menu / onion 0-2' },
+			{ keys: '. / ,', label: 'play animation / walk preview' },
 		],
 	},
 	{

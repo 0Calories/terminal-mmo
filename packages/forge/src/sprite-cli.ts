@@ -129,9 +129,9 @@ function cmdRender(args: string[], deps: CliDeps): number {
 		return 1;
 	}
 
-	const poseCount = Object.keys(doc.poses).length;
+	const animationCount = Object.keys(doc.animations).length;
 	deps.log(
-		`${doc.id}  ${doc.frames.length} frame(s)  ${poseCount} pose(s)  baseline ${doc.baseline}`,
+		`${doc.id}  ${doc.frames.length} frame(s)  ${animationCount} animation(s)  baseline ${doc.baseline}`,
 	);
 
 	for (const frame of doc.frames) {

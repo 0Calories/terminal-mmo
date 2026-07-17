@@ -42,18 +42,18 @@ export function roleForDir(dir: string): SpriteRole | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Role-required-pose / anchor hints (ROLE_PROFILES is keyed by directory name)
+// Role-required-animation / anchor hints (ROLE_PROFILES is keyed by directory name)
 // ---------------------------------------------------------------------------
 
-// Required poses a doc of this role is missing — a non-blocking authoring hint,
-// not a refusal (deleting a required pose is allowed, just surfaced here).
-export function missingRequiredPoses(
+// Required animations a doc of this role is missing — a non-blocking authoring hint,
+// not a refusal (deleting a required animation is allowed, just surfaced here).
+export function missingRequiredAnimations(
 	doc: SpriteDoc,
 	role: SpriteRole,
 ): string[] {
 	const profile = ROLE_PROFILES[dirForRole(role)];
 	if (!profile) return [];
-	return profile.poses.filter((p) => !(p in doc.poses));
+	return profile.animations.filter((p) => !(p in doc.animations));
 }
 
 // Required doc-level anchors this doc is missing.
@@ -68,11 +68,11 @@ export function missingRequiredAnchors(
 
 // One-line hint of what a role still needs (empty when the doc is complete).
 export function requiredHintLine(doc: SpriteDoc, role: SpriteRole): string {
-	const poses = missingRequiredPoses(doc, role);
+	const animations = missingRequiredAnimations(doc, role);
 	const anchors = missingRequiredAnchors(doc, role);
-	if (poses.length === 0 && anchors.length === 0) return '';
+	if (animations.length === 0 && anchors.length === 0) return '';
 	const parts: string[] = [];
-	if (poses.length) parts.push(`poses: ${poses.join(', ')}`);
+	if (animations.length) parts.push(`animations: ${animations.join(', ')}`);
 	if (anchors.length) parts.push(`anchors: ${anchors.join(', ')}`);
 	return `needs ${parts.join(' · ')}`;
 }
@@ -422,8 +422,8 @@ export interface SpriteStatusModel {
 	// The current fatbits zoom (the ×z on the ladder).
 	zoom: number;
 	dirty: boolean;
-	// Optional pose / anchor-tool context (issue #339).
-	pose?: string;
+	// Optional animation / anchor-tool context (issue #339).
+	animation?: string;
 	anchorName?: string;
 	anchorScope?: string;
 }
@@ -436,22 +436,22 @@ export function bitName(bit: number): string {
 
 // The persistent status line's LEFT content — tool, Pixel + cell coordinates,
 // zoom, ink, and save state. The coercion feedback is drawn right-aligned on the
-// same row (see `composeStatusLine`); save diagnostics render separately.
+// same row (see `comanimationStatusLine`); save diagnostics render separately.
 export function spriteStatusLine(m: SpriteStatusModel): string {
 	const dirty = m.dirty ? ' *' : '';
-	const pose = m.pose ? ` · pose ${m.pose}` : '';
+	const animation = m.animation ? ` · animation ${m.animation}` : '';
 	// In the anchor tool, surface which anchor + scope the next placement targets.
 	const tool =
 		m.tool === 'anchor' && m.anchorName
 			? `anchor ${m.anchorName}@${m.anchorScope ?? 'doc'}`
 			: m.tool;
-	return `${m.id} (${m.role})${dirty}${pose} · frame ${m.frame} [${m.frameIdx + 1}/${m.frameCount}] · ${tool} · ×${m.zoom} · ink ${m.ink} · px (${m.pixel.x},${m.pixel.y}) cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
+	return `${m.id} (${m.role})${dirty}${animation} · frame ${m.frame} [${m.frameIdx + 1}/${m.frameCount}] · ${tool} · ×${m.zoom} · ink ${m.ink} · px (${m.pixel.x},${m.pixel.y}) cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
 }
 
 // Compose the status row: `left` at column 0, `right` (the coercion feedback)
 // flush against the right edge of `width`, with at least one space between them.
 // When they cannot both fit, the left content wins and the right is dropped.
-export function composeStatusLine(
+export function comanimationStatusLine(
 	left: string,
 	right: string,
 	width: number,

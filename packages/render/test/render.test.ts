@@ -490,7 +490,7 @@ function avatarTopLeft(e: Entity) {
 	return { sprite, ax, ay, grip: form.grip, head: form.head };
 }
 
-test("an Avatar renders its Form's idle Pose as its body, through the bodyFrame selector (ADR 0020)", () => {
+test("an Avatar renders its Form's idle Animation as its body, through the bodyFrame selector (ADR 0020)", () => {
 	const buf = new FakeBuffer(20, 16);
 	for (const facing of [1, -1] as Facing[]) {
 		buf.clear('BG');
@@ -541,7 +541,7 @@ test('each Avatar Form renders its own idle body through the shared render path 
 	}
 });
 
-function expectBodyPose(over: Partial<Entity>, sprite: Sprite) {
+function expectBodyAnimation(over: Partial<Entity>, sprite: Sprite) {
 	const buf = new FakeBuffer(40, 16);
 	const e = makeEntity({ type: 'player', y: 7, facing: 1, ...over });
 	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE);
@@ -556,10 +556,10 @@ test('a moving Avatar animates the distance-driven walk cycle; standing freezes 
 	const walkB = formFrame(FORMS[0], 'walkB');
 
 	// 2·STRIDE+3 is an even stride (walkA); 3·STRIDE+3 the next, odd one (walkB).
-	expectBodyPose({ x: 2 * STRIDE + 3, vx: 3 }, walkA);
-	expectBodyPose({ x: 3 * STRIDE + 3, vx: 3 }, walkB);
+	expectBodyAnimation({ x: 2 * STRIDE + 3, vx: 3 }, walkA);
+	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 3 }, walkB);
 
-	expectBodyPose({ x: 3 * STRIDE + 3, vx: 0 }, idle);
+	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 0 }, idle);
 });
 
 test('an observer renders the same walk frame as the owner for a given position (ADR 0020 §7)', () => {
@@ -593,7 +593,7 @@ test('an observer renders the same walk frame as the owner for a given position 
 
 test('an airborne Avatar does not walk even while moving horizontally (ADR 0020 ladder)', () => {
 	const jump = formFrame(FORMS[0], 'jump');
-	expectBodyPose({ x: 3 * STRIDE + 3, vx: 3, onGround: false }, jump);
+	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 3, onGround: false }, jump);
 });
 
 test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouched", () => {
@@ -882,8 +882,8 @@ function expectPlantedFeet(buf: FakeBuffer, e: Entity, sprite: Sprite) {
 	expect(feet).toBeGreaterThan(0);
 }
 
-test('the walk frames plant on the same general over-solid rule, no pose-specific code (ADR 0021)', () => {
-	for (const [x, pose] of [
+test('the walk frames plant on the same general over-solid rule, no animation-specific code (ADR 0021)', () => {
+	for (const [x, animation] of [
 		[2 * STRIDE + 3, 'walkA'],
 		[3 * STRIDE + 3, 'walkB'],
 	] as const) {
@@ -895,7 +895,7 @@ test('the walk frames plant on the same general over-solid rule, no pose-specifi
 			{ x: 0, y: 0 },
 			STYLE,
 		);
-		expectPlantedFeet(buf, e, formFrame(FORMS[0], pose));
+		expectPlantedFeet(buf, e, formFrame(FORMS[0], animation));
 	}
 });
 

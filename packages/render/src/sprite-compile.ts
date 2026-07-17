@@ -1,6 +1,6 @@
 // Pure compiler from a parsed `.sprite` document frame (see `sprite-file.ts`)
 // to a runtime `Sprite` (see `sprite.ts`).
-import type { PoseId } from '@mmo/core/sprites';
+import type { AnimationId } from '@mmo/core/sprites';
 import type { BodySprite } from './body-sprite';
 import { SENTINEL, Sprite } from './sprite';
 import type { SpriteDoc, SpriteFrameDoc } from './sprite-file';
@@ -52,11 +52,11 @@ function compileFrameSprite(doc: SpriteDoc, frameName: string): Sprite {
 	const frame = doc.frames.find((f) => f.name === frameName);
 	if (frame === undefined)
 		throw new Error(
-			`sprite doc '${doc.id}' pose references missing frame '${frameName}'`,
+			`sprite doc '${doc.id}' animation references missing frame '${frameName}'`,
 		);
 	const anchors = { ...doc.anchors, ...frame.anchors };
 	// A body's baseline is a whole-form property carried on BodySprite, not on
-	// each pose frame — leaving the per-frame Sprite baseline at its 0 default
+	// each animation frame — leaving the per-frame Sprite baseline at its 0 default
 	// keeps compiled frames byte-identical to hand-authored ones.
 	return new Sprite(toGlyphText(frame.rows), {
 		defaultKey: doc.key,
@@ -66,7 +66,7 @@ function compileFrameSprite(doc: SpriteDoc, frameName: string): Sprite {
 	});
 }
 
-// Compile a full-body sprite: every pose becomes a Sprite (single frame) or a
+// Compile a full-body sprite: every animation becomes a Sprite (single frame) or a
 // readonly Sprite[] (>1 frame). Assumes the doc passed `forms` role validation;
 // still throws (rather than emitting NaN) if the required grip/head anchors are
 // absent. `fps` is carried through for a later animation slice to consume.
@@ -78,10 +78,11 @@ export function compileBodySprite(doc: SpriteDoc): BodySprite {
 			`sprite doc '${doc.id}' (role 'forms') requires doc-level anchors 'grip' and 'head'`,
 		);
 
-	const frames: Partial<Record<PoseId, Sprite | readonly Sprite[]>> = {};
-	for (const [poseName, frameList] of Object.entries(doc.poses)) {
+	const frames: Partial<Record<AnimationId, Sprite | readonly Sprite[]>> = {};
+	for (const [animationName, frameList] of Object.entries(doc.animations)) {
 		const compiled = frameList.map((name) => compileFrameSprite(doc, name));
-		frames[poseName as PoseId] = compiled.length === 1 ? compiled[0] : compiled;
+		frames[animationName as AnimationId] =
+			compiled.length === 1 ? compiled[0] : compiled;
 	}
 
 	return {
@@ -93,7 +94,7 @@ export function compileBodySprite(doc: SpriteDoc): BodySprite {
 	};
 }
 
-// Compile a weapon sprite (ADR 0031): phase poses `idle`/`windup`/`recovery`
+// Compile a weapon sprite (ADR 0031): phase animations `idle`/`windup`/`recovery`
 // each compile to a single Sprite, `active` to the swing sweep (readonly
 // Sprite[]) the renderer samples by Attack progress. The grip is a doc-level
 // anchor (an offset, so it may be negative); the accent is the palette key the
@@ -107,12 +108,16 @@ export function compileWeaponSprite(doc: SpriteDoc): WeaponSprite {
 		);
 
 	const frames: WeaponSprite['frames'] = {};
-	if (doc.poses.idle) frames.idle = spriteFromDoc(doc, doc.poses.idle[0]);
-	if (doc.poses.windup) frames.windup = spriteFromDoc(doc, doc.poses.windup[0]);
-	if (doc.poses.recovery)
-		frames.recovery = spriteFromDoc(doc, doc.poses.recovery[0]);
-	if (doc.poses.active)
-		frames.active = doc.poses.active.map((name) => spriteFromDoc(doc, name));
+	if (doc.animations.idle)
+		frames.idle = spriteFromDoc(doc, doc.animations.idle[0]);
+	if (doc.animations.windup)
+		frames.windup = spriteFromDoc(doc, doc.animations.windup[0]);
+	if (doc.animations.recovery)
+		frames.recovery = spriteFromDoc(doc, doc.animations.recovery[0]);
+	if (doc.animations.active)
+		frames.active = doc.animations.active.map((name) =>
+			spriteFromDoc(doc, name),
+		);
 
 	return {
 		frames,

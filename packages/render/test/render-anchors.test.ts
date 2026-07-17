@@ -83,7 +83,7 @@ function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
 	};
 }
 
-// A `forms` source with a per-frame `grip` override on one pose. Bodies now
+// A `forms` source with a per-frame `grip` override on one animation. Bodies now
 // come only from the directory-scan registry, so a per-frame override is
 // authored as a `.sprite` document (via buildFormRegistry) rather than by
 // mutating an array. idle/walkA/walkB satisfy the forms role profile.
@@ -113,12 +113,12 @@ function overrideBody() {
 
 // Reproduces drawEntitySprite's seat rule verbatim (render.ts): a frame's own
 // grip anchor wins, otherwise the BodySprite's grip.
-function resolvedGripX(body: BodySprite, pose: 'idle' | 'walkB') {
-	const frame = formFrame(body, pose);
+function resolvedGripX(body: BodySprite, animation: 'idle' | 'walkB') {
+	const frame = formFrame(body, animation);
 	return frame.anchors.grip?.x ?? body.grip.x;
 }
 
-test('a per-frame grip override wins over the doc grip; a plain pose inherits it (end-to-end from a .sprite source)', () => {
+test('a per-frame grip override wins over the doc grip; a plain animation inherits it (end-to-end from a .sprite source)', () => {
 	const body = overrideBody();
 	// idle authors no override -> the renderer resolves the doc/body grip (x=2)
 	expect(resolvedGripX(body, 'idle')).toBe(2);

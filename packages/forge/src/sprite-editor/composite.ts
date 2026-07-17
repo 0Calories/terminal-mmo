@@ -19,7 +19,7 @@
 //   npc     → same plain single-sprite render
 //
 // This module is pure (no `@opentui/core`, no I/O): the TUI glue passes a cell
-// buffer + style and a `CompositeView` selecting the pose/phase/facing/elapsed.
+// buffer + style and a `CompositeView` selecting the animation/phase/facing/elapsed.
 import { SWING_TOTAL, swingPhase, swingProgress } from '@mmo/core/combat';
 import {
 	type ActionState,
@@ -47,7 +47,7 @@ import {
 	type SpriteOverrides,
 	spriteFromDoc,
 } from '@mmo/render';
-import { playbackFrame, poseFps, walkPreviewPose } from './playback';
+import { animationFps, playbackFrame, walkPreviewAnimation } from './playback';
 import type { SpriteRole } from './templates';
 
 // The base entity type used to render monster/npc art plainly. Its only effect is
@@ -90,11 +90,11 @@ function defaultHatId(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Stances — the selectable poses/phases `[`/`]` cycle in `forge sprite preview`.
+// Stances — the selectable animations/phases `[`/`]` cycle in `forge sprite preview`.
 // ---------------------------------------------------------------------------
 
 export interface PreviewStance {
-	// Selection key + label. For non-weapon roles a pose id or the synthetic
+	// Selection key + label. For non-weapon roles an animation id or the synthetic
 	// 'walk'; for weapons a swing phase.
 	id: string;
 	// Playback rate for a multi-frame stance (0 = single frame / static).
@@ -111,23 +111,32 @@ export function previewStances(
 		const out: PreviewStance[] = [{ id: 'idle', fps: 0 }];
 		for (const ph of WEAPON_PHASES) {
 			if (ph === 'idle') continue;
-			if (doc.poses[ph]) out.push({ id: ph, fps: 0 });
+			if (doc.animations[ph]) out.push({ id: ph, fps: 0 });
 		}
 		return out;
 	}
 	if (role === 'form') {
 		const out: PreviewStance[] = [{ id: 'idle', fps: 0 }];
-		if (doc.poses.walkA || doc.poses.walkB) out.push({ id: 'walk', fps: 0 });
-		for (const pose of Object.keys(doc.poses)) {
-			if (pose === 'idle' || pose === 'walkA' || pose === 'walkB') continue;
-			out.push({ id: pose, fps: poseFps(doc.fps, pose) });
+		if (doc.animations.walkA || doc.animations.walkB)
+			out.push({ id: 'walk', fps: 0 });
+		for (const animation of Object.keys(doc.animations)) {
+			if (
+				animation === 'idle' ||
+				animation === 'walkA' ||
+				animation === 'walkB'
+			)
+				continue;
+			out.push({ id: animation, fps: animationFps(doc.fps, animation) });
 		}
 		return out;
 	}
-	// hat / monster / npc: one stance per pose (usually just 'idle').
-	return Object.keys(doc.poses).map((pose) => ({
-		id: pose,
-		fps: (doc.poses[pose]?.length ?? 1) > 1 ? poseFps(doc.fps, pose) : 0,
+	// hat / monster / npc: one stance per animation (usually just 'idle').
+	return Object.keys(doc.animations).map((animation) => ({
+		id: animation,
+		fps:
+			(doc.animations[animation]?.length ?? 1) > 1
+				? animationFps(doc.fps, animation)
+				: 0,
 	}));
 }
 
@@ -136,7 +145,7 @@ export function previewStances(
 // ---------------------------------------------------------------------------
 
 // Resolve a stance + elapsed time to the concrete frame name to show. Accepts a
-// pose id (sampled by its fps), the synthetic 'walk' (alternating gait), or a
+// animation id (sampled by its fps), the synthetic 'walk' (alternating gait), or a
 // bare frame name (shown as-is — how the editor pins the exact edited frame).
 function resolveFrame(
 	doc: SpriteDoc,
@@ -144,26 +153,30 @@ function resolveFrame(
 	elapsedS: number,
 ): string {
 	const fallback = doc.frames[0]?.name ?? 'idle';
-	if (stance === 'walk' && (doc.poses.walkA || doc.poses.walkB)) {
-		const pose = walkPreviewPose(elapsedS);
-		const frames = doc.poses[pose] ?? doc.poses.walkA ?? doc.poses.walkB ?? [];
+	if (stance === 'walk' && (doc.animations.walkA || doc.animations.walkB)) {
+		const animation = walkPreviewAnimation(elapsedS);
+		const frames =
+			doc.animations[animation] ??
+			doc.animations.walkA ??
+			doc.animations.walkB ??
+			[];
 		return frames[0] ?? fallback;
 	}
-	const poseFrames = doc.poses[stance];
-	if (poseFrames && poseFrames.length > 0) {
+	const animationFrames = doc.animations[stance];
+	if (animationFrames && animationFrames.length > 0) {
 		const idx = playbackFrame(
-			poseFrames.length,
+			animationFrames.length,
 			elapsedS,
-			poseFps(doc.fps, stance),
+			animationFps(doc.fps, stance),
 		);
-		return poseFrames[idx] ?? fallback;
+		return animationFrames[idx] ?? fallback;
 	}
 	if (doc.frames.some((f) => f.name === stance)) return stance;
 	return fallback;
 }
 
 // Which swing phase a weapon stance denotes: a phase id directly, or the phase
-// whose pose contains the given frame name.
+// whose animation contains the given frame name.
 function weaponPhaseOf(
 	doc: SpriteDoc,
 	stance: string,
@@ -171,14 +184,14 @@ function weaponPhaseOf(
 	if ((WEAPON_PHASES as readonly string[]).includes(stance))
 		return stance as (typeof WEAPON_PHASES)[number];
 	for (const ph of ['windup', 'active', 'recovery'] as const)
-		if (doc.poses[ph]?.includes(stance)) return ph;
+		if (doc.animations[ph]?.includes(stance)) return ph;
 	return 'idle';
 }
 
 // Progress within the active sweep for a given stance (mid-sweep by default, or
 // the position of an explicitly-named active sub-frame).
 function activeProgress(doc: SpriteDoc, stance: string): number {
-	const active = doc.poses.active;
+	const active = doc.animations.active;
 	if (!active || active.length <= 1) return 0.5;
 	const i = active.indexOf(stance);
 	if (i < 0) return 0.5;
@@ -219,7 +232,7 @@ function weaponAction(
 	};
 }
 
-// A body whose `idle` pose is re-pointed at `frameName` so a static avatar shows
+// A body whose `idle` animation is re-pointed at `frameName` so a static avatar shows
 // exactly that frame — how the preview pins the edited/animated frame — while
 // keeping the doc's real grip/head/baseline so a hat and weapon seat correctly.
 function bodyShowingFrame(doc: SpriteDoc, frameName: string): BodySprite {
@@ -236,9 +249,9 @@ function bodyShowingFrame(doc: SpriteDoc, frameName: string): BodySprite {
 
 export interface CompositeView {
 	facing: Facing;
-	// Pose / phase / frame selector (see resolveFrame / weaponPhaseOf).
+	// Animation / phase / frame selector (see resolveFrame / weaponPhaseOf).
 	stance: string;
-	// Seconds of playback elapsed; drives multi-frame poses and the swing loop.
+	// Seconds of playback elapsed; drives multi-frame animations and the swing loop.
 	elapsedS: number;
 	// The session-selected dynamic `p` variant (spec #401 amendment): the body
 	// hue index the composite avatar wears. Omitted → the canonical hue 0.
@@ -363,7 +376,7 @@ export function buildComposite(
 		e.y = pos.y;
 		return { entity: e, overrides: { base } };
 	} catch {
-		// The live doc cannot compile yet (missing required anchors/poses); the
+		// The live doc cannot compile yet (missing required anchors/animations); the
 		// preview panel shows a bare background until the artist supplies them.
 		return null;
 	}

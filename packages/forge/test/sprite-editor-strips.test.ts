@@ -15,13 +15,17 @@ import {
 } from '../src/sprite-editor/strips';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
-// A form template: poses idle/walkA/walkB, one 6×4-cell frame each.
+// A form template: animations idle/walkA/walkB, one 6×4-cell frame each.
 const doc = emptySpriteDoc('buddy', 'form');
 
-describe('stripsLayout — every Pose a labeled strip of its Frames', () => {
-	test('lays one labeled strip per pose, in doc order', () => {
+describe('stripsLayout — every Animation a labeled strip of its Frames', () => {
+	test('lays one labeled strip per animation, in doc order', () => {
 		const l = stripsLayout(doc, 2);
-		expect(l.labels.map((s) => s.pose)).toEqual(['idle', 'walkA', 'walkB']);
+		expect(l.labels.map((s) => s.animation)).toEqual([
+			'idle',
+			'walkA',
+			'walkB',
+		]);
 		expect(l.labels[0].text).toContain('idle');
 		expect(l.labels[0].text).toContain('1f');
 	});
@@ -41,24 +45,31 @@ describe('stripsLayout — every Pose a labeled strip of its Frames', () => {
 		expect(l.labels[1].y).toBe(1 + 16 + 1 + 1);
 	});
 
-	test('frames of one pose sit side by side with a gap', () => {
+	test('frames of one animation sit side by side with a gap', () => {
 		const two = {
 			...doc,
-			poses: { idle: ['idle', 'walkA'] as const, walkB: ['walkB'] as const },
+			animations: {
+				idle: ['idle', 'walkA'] as const,
+				walkB: ['walkB'] as const,
+			},
 		};
 		const l = stripsLayout(two, 1);
-		const [a, b] = l.frames.filter((f) => f.pose === 'idle');
+		const [a, b] = l.frames.filter((f) => f.animation === 'idle');
 		expect(b.x).toBe(a.x + a.w + FRAME_GAP);
 		expect(b.y).toBe(a.y);
 	});
 
-	test('a frame referenced by no pose still gets a strip (implicit pose)', () => {
+	test('a frame referenced by no animation still gets a strip (implicit animation)', () => {
 		const orphan = {
 			...doc,
-			poses: { idle: ['idle'] as const },
+			animations: { idle: ['idle'] as const },
 		};
 		const l = stripsLayout(orphan, 1);
-		expect(l.labels.map((s) => s.pose)).toEqual(['idle', 'walkA', 'walkB']);
+		expect(l.labels.map((s) => s.animation)).toEqual([
+			'idle',
+			'walkA',
+			'walkB',
+		]);
 	});
 
 	test('content extent covers the widest strip and the last name row', () => {

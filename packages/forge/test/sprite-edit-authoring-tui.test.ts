@@ -1,5 +1,5 @@
 // Thin chrome smoke tests for the sprite-authoring TUI additions (issue #339):
-// the pose menu, the anchor marker on the canvas, the mirror view, and
+// the animation menu, the anchor marker on the canvas, the mirror view, and
 // animation playback. Logic is covered headlessly elsewhere; these assert keys
 // reach the pure ops and the Renderable draws the right thing.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -43,8 +43,8 @@ async function mount(opts: {
 	return { ...t, editor };
 }
 
-describe('pose menu', () => {
-	test('P opens the menu and shows the poses', async () => {
+describe('animation menu', () => {
+	test('P opens the menu and shows the animations', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('buddy', 'form'),
 			id: 'buddy',
@@ -52,13 +52,13 @@ describe('pose menu', () => {
 		});
 		t.editor.key(seq('P'));
 		await t.renderOnce();
-		expect(t.editor.poseMenu).not.toBeNull();
+		expect(t.editor.animationMenu).not.toBeNull();
 		const frame = t.captureCharFrame();
-		expect(frame).toContain('Poses');
+		expect(frame).toContain('Animations');
 		expect(frame).toContain('walkA');
 	});
 
-	test('creating a pose reflects in the doc and chrome', async () => {
+	test('creating an animation reflects in the doc and chrome', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('buddy', 'form'),
 			id: 'buddy',
@@ -69,8 +69,8 @@ describe('pose menu', () => {
 		for (const ch of 'wave') t.editor.key(seq(ch));
 		t.editor.key(key('return')); // confirm — action applied, menu stays open
 		await t.renderOnce();
-		expect(t.editor.state.doc.poses.wave).toBeDefined();
-		// The new pose is listed in the (still-open) menu.
+		expect(t.editor.state.doc.animations.wave).toBeDefined();
+		// The new animation is listed in the (still-open) menu.
 		expect(t.captureCharFrame()).toContain('wave');
 	});
 });
@@ -152,7 +152,7 @@ describe('mirror view', () => {
 });
 
 describe('playback', () => {
-	// A two-frame pose whose frames put a block in different cells.
+	// A two-frame animation whose frames put a block in different cells.
 	function animDoc(): SpriteDoc {
 		const frame = (name: string, lit: 0 | 1) => ({
 			name,
@@ -166,7 +166,7 @@ describe('playback', () => {
 			key: 'p',
 			baseline: 0,
 			anchors: {},
-			poses: { idle: ['a', 'b'] },
+			animations: { idle: ['a', 'b'] },
 			fps: { idle: 4 },
 			colors: {},
 			frames: [frame('a', 0), frame('b', 1)],
@@ -179,7 +179,7 @@ describe('playback', () => {
 		const docBefore = t.editor.state.doc;
 		const histBefore = t.editor.state.history;
 
-		t.editor.key(seq('.')); // start pose playback
+		t.editor.key(seq('.')); // start animation playback
 		expect(t.editor.playing).toBe(true);
 		// 260ms at 4fps → floor(0.26*4)=1 → frame 'b'.
 		t.editor.tick(260);
@@ -200,7 +200,7 @@ describe('playback', () => {
 		expect(t.editor.state.feedback).toContain('playback');
 	});
 
-	test('a single-frame pose stays on frame 0', async () => {
+	test('a single-frame animation stays on frame 0', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('cap', 'hat'),
 			id: 'cap',

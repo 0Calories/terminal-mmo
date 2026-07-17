@@ -188,11 +188,13 @@ test('golden: hat sprites', () => {
 // hand-authored TS. These snapshots pin that the compiled frames are pixel-for-
 // pixel identical to the pre-migration art.
 test('golden: buddy form frames', () => {
-	for (const [poseId, frame] of Object.entries(formById('buddy').frames)) {
+	for (const [animationId, frame] of Object.entries(formById('buddy').frames)) {
 		const isArr = Array.isArray(frame);
 		const frames: readonly Sprite[] = isArr ? frame : [frame as Sprite];
 		frames.forEach((f, i) => {
-			const label = isArr ? `buddy: ${poseId}[${i}]` : `buddy: ${poseId}`;
+			const label = isArr
+				? `buddy: ${animationId}[${i}]`
+				: `buddy: ${animationId}`;
 			expect(spriteGrid(f)).toMatchSnapshot(label);
 		});
 	}

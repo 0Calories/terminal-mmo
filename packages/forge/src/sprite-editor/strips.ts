@@ -1,5 +1,5 @@
 // Pure layout for the two canvas views (spec #387, locked #375): STRIPS — the
-// default, every Pose a labeled horizontal strip of its Frames, all editable in
+// default, every Animation a labeled horizontal strip of its Frames, all editable in
 // place — and FOCUS (`tab`) — one Frame centred under a Frame-name tab row.
 // Everything is in "content" coordinates: the unscrolled screen-cell grid the
 // strips would occupy; `tui.ts` subtracts a scroll offset and clips. Hit-tests
@@ -15,7 +15,7 @@ export const STRIP_GAP = 1;
 // One Frame's block: its screen-cell rect in content coordinates. A frame of
 // w×h cells is 2w×2h Pixels, each Pixel zoom×zoom cells on screen.
 export interface StripFrameBox {
-	readonly pose: string;
+	readonly animation: string;
 	readonly name: string;
 	readonly x: number;
 	readonly y: number;
@@ -27,7 +27,7 @@ export interface StripFrameBox {
 }
 
 export interface StripLabel {
-	readonly pose: string;
+	readonly animation: string;
 	readonly y: number;
 	readonly text: string;
 }
@@ -43,16 +43,17 @@ export interface StripsLayout {
 	readonly contentH: number;
 }
 
-// Every pose in doc order, then any frame no pose references as its own
-// implicit single-frame strip (the parser's implicit-pose rule).
-function stripSpecs(doc: SpriteDoc): { pose: string; frames: string[] }[] {
-	const specs = Object.entries(doc.poses).map(([pose, frames]) => ({
-		pose,
+// Every animation in doc order, then any frame no animation references as its own
+// implicit single-frame strip (the parser's implicit-animation rule).
+function stripSpecs(doc: SpriteDoc): { animation: string; frames: string[] }[] {
+	const specs = Object.entries(doc.animations).map(([animation, frames]) => ({
+		animation,
 		frames: [...frames],
 	}));
 	const referenced = new Set(specs.flatMap((s) => s.frames));
 	for (const f of doc.frames)
-		if (!referenced.has(f.name)) specs.push({ pose: f.name, frames: [f.name] });
+		if (!referenced.has(f.name))
+			specs.push({ animation: f.name, frames: [f.name] });
 	return specs;
 }
 
@@ -64,9 +65,9 @@ export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 	let contentW = 0;
 
 	for (const spec of stripSpecs(doc)) {
-		const fps = doc.fps[spec.pose];
-		const label = `${spec.pose} · ${spec.frames.length}f${fps ? ` · ${fps}fps` : ''}`;
-		labels.push({ pose: spec.pose, y, text: label });
+		const fps = doc.fps[spec.animation];
+		const label = `${spec.animation} · ${spec.frames.length}f${fps ? ` · ${fps}fps` : ''}`;
+		labels.push({ animation: spec.animation, y, text: label });
 		contentW = Math.max(contentW, label.length);
 
 		const rowY = y + 1;
@@ -79,7 +80,7 @@ export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 			const pxW = Math.max(1, w * 2);
 			const pxH = Math.max(1, h * 2);
 			const box: StripFrameBox = {
-				pose: spec.pose,
+				animation: spec.animation,
 				name,
 				x,
 				y: rowY,
@@ -162,7 +163,7 @@ export function scrollIntoView(
 }
 
 // ---------------------------------------------------------------------------
-// Focus mode — one Frame centred, its pose's frame names as a tab row
+// Focus mode — one Frame centred, its animation's frame names as a tab row
 // ---------------------------------------------------------------------------
 
 export interface FocusTab {

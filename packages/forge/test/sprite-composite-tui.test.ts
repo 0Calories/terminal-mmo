@@ -100,14 +100,14 @@ describe('editor floating preview pane', () => {
 		expect(t.editor.previewFacing).toBe(-1);
 	});
 
-	test('clicking the pane play control toggles pose playback (mouse-clickable)', async () => {
+	test('clicking the pane play control toggles animation playback (mouse-clickable)', async () => {
 		const t = await mountEditor(
 			loadDoc('sprites/forms/buddy.sprite', 'buddy'),
 			'form',
 		);
 		expect(t.editor.playMode).toBe('none');
 		t.editor.mouseDown({ button: 0, x: PLAY_X, y: CONTROL_ROW });
-		expect(t.editor.playMode).toBe('pose');
+		expect(t.editor.playMode).toBe('animation');
 	});
 
 	test('a click on the pane body is swallowed — it never paints the canvas beneath', async () => {
@@ -145,10 +145,10 @@ describe('forge sprite preview TUI', () => {
 		);
 		const frame = t.captureCharFrame();
 		expect(frame).toContain('sword');
-		expect(frame).toContain('[ ] pose');
+		expect(frame).toContain('[ ] animation');
 	});
 
-	test('[ and ] switch pose/phase', async () => {
+	test('[ and ] switch animation/phase', async () => {
 		const t = await mountPreview(
 			loadDoc('sprites/weapons/sword.sprite', 'sword'),
 			'weapon',
@@ -196,7 +196,7 @@ describe('forge sprite preview TUI', () => {
 });
 
 describe('reload on save', () => {
-	test('reload swaps the doc and preserves the selected pose when it survives', async () => {
+	test('reload swaps the doc and preserves the selected animation when it survives', async () => {
 		const doc = loadDoc('sprites/weapons/sword.sprite', 'sword');
 		const t = await createTestRenderer({ width: 80, height: 24 });
 		const preview = new SpritePreview(t.renderer, {
@@ -227,7 +227,7 @@ describe('reload on save', () => {
 		expect(preview.parseError).toBe('boom');
 	});
 
-	test('preservedStanceIndex falls back to 0 when the pose vanished', () => {
+	test('preservedStanceIndex falls back to 0 when the animation vanished', () => {
 		const doc = loadDoc('sprites/forms/buddy.sprite', 'buddy');
 		const stances = previewStances(doc, 'form');
 		expect(preservedStanceIndex(stances, stances[1]?.id)).toBe(1);

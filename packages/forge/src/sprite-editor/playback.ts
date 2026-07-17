@@ -1,11 +1,11 @@
 // Pure animation-playback math for the Sprite editor (ADR 0031, issue #339).
 // Playback is presentation — it never mutates the doc or history. The TUI holds
-// the wall-clock elapsed time and asks these functions which frame/pose to show
+// the wall-clock elapsed time and asks these functions which frame/animation to show
 // this tick, so the logic stays deterministic and unit-testable without a clock.
 import { EMOTE_FPS } from '@mmo/core/sprites';
 
-// Which frame of a `frameCount`-long pose is showing after `elapsedS` seconds at
-// `fps`. A single-frame (or empty) pose is always frame 0; a non-positive fps
+// Which frame of a `frameCount`-long animation is showing after `elapsedS` seconds at
+// `fps`. A single-frame (or empty) animation is always frame 0; a non-positive fps
 // freezes on frame 0.
 export function playbackFrame(
 	frameCount: number,
@@ -18,12 +18,12 @@ export function playbackFrame(
 	return ((step % frameCount) + frameCount) % frameCount;
 }
 
-// The pose's playback fps: its authored value, or the shared EMOTE_FPS default.
-export function poseFps(
+// The animation's playback fps: its authored value, or the shared EMOTE_FPS default.
+export function animationFps(
 	fpsMap: Readonly<Record<string, number>>,
-	pose: string,
+	animation: string,
 ): number {
-	return fpsMap[pose] ?? EMOTE_FPS;
+	return fpsMap[animation] ?? EMOTE_FPS;
 }
 
 // Walk-cycle preview alternates walkA/walkB so the artist sees the gait. STRIDE
@@ -31,7 +31,7 @@ export function poseFps(
 // fixed brisk rate rather than deriving from STRIDE.
 export const WALK_PREVIEW_FPS = 4;
 
-export function walkPreviewPose(
+export function walkPreviewAnimation(
 	elapsedS: number,
 	fps: number = WALK_PREVIEW_FPS,
 ): 'walkA' | 'walkB' {

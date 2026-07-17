@@ -1,7 +1,7 @@
 // `forge sprite preview <id>` (ADR 0031, issue #340): a live TUI that renders any
 // `.sprite` the way the game draws it — the Composited preview outside the editor.
 // Loads a sprite by bare id, shows the role-appropriate composition through the
-// shared renderer, and re-renders on file save. Controls: `[`/`]` switch pose /
+// shared renderer, and re-renders on file save. Controls: `[`/`]` switch animation /
 // phase, `.` toggle playback, `m` flip facing, `q` quit. It never writes; it only
 // watches the sprites directory and recompiles the live file.
 import { readFileSync, watch } from 'node:fs';
@@ -29,7 +29,7 @@ import { roleForDir } from './view';
 const CHROME_H = 2;
 
 // Given the previous stance id, find its index in a fresh stance list (a reload
-// may have added/removed poses); fall back to the first stance when it is gone.
+// may have added/removed animations); fall back to the first stance when it is gone.
 export function preservedStanceIndex(
 	stances: readonly PreviewStance[],
 	prevId: string | undefined,
@@ -74,7 +74,7 @@ export class SpritePreview extends Renderable {
 		return this.stances[this.stanceIndex]?.id ?? 'idle';
 	}
 
-	// Swap in a freshly-parsed doc (a save landed), preserving the selected pose
+	// Swap in a freshly-parsed doc (a save landed), preserving the selected animation
 	// when it still exists. A parse failure keeps the last-good art and surfaces
 	// the error in the status line, mirroring zone preview.
 	reload(doc: SpriteDoc | null, error: string | null): void {
@@ -177,7 +177,7 @@ export class SpritePreview extends Renderable {
 		const helpRow = H - 1;
 		buf.fillRect(0, helpRow, W, 1, chromeBg);
 		buf.drawText(
-			'[ ] pose · . play · m mirror · q quit'.slice(0, W),
+			'[ ] animation · . play · m mirror · q quit'.slice(0, W),
 			0,
 			helpRow,
 			dim,

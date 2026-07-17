@@ -1,6 +1,6 @@
 // Whole-set validation for `.sprite` assets (ADR 0031). Pure functions over
 // in-memory SpriteSources (no fs) returning SpriteDiagnostic[] (the same
-// diagnostic shape the parser emits). Role profiles declare the poses and
+// diagnostic shape the parser emits). Role profiles declare the animations and
 // doc-level anchors a sprite of that role must provide; `validateSpriteSet` also
 // enforces the whole-set joins `forge sprite check` gates in CI: dangling
 // weapon/monster/npc catalog references, unresolvable color keys (the parser's
@@ -14,24 +14,24 @@ import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
 import type { SpriteDiagnostic, SpriteDoc } from './sprite-file';
 import { parseSpriteFile } from './sprite-file';
 
-// The emote ids the sim knows about (core's registry). A Form pose named
+// The emote ids the sim knows about (core's registry). A Form animation named
 // `emote:<x>` is only meaningful if `<x>` is one of these.
 const KNOWN_EMOTES = new Set(EMOTES.map((e) => e.id));
 
 interface RoleProfile {
-	// Poses that must exist (by name) in the doc's resolved pose map.
-	poses: readonly string[];
+	// Animations that must exist (by name) in the doc's resolved animation map.
+	animations: readonly string[];
 	// Doc-level anchors that must be declared.
 	anchors: readonly string[];
 }
 
 export const ROLE_PROFILES: Readonly<Record<string, RoleProfile>> = {
-	forms: { poses: ['idle', 'walkA', 'walkB'], anchors: ['grip', 'head'] },
+	forms: { animations: ['idle', 'walkA', 'walkB'], anchors: ['grip', 'head'] },
 	// `recovery` is optional for weapons, so it is not required here.
-	weapons: { poses: ['idle', 'windup', 'active'], anchors: ['grip'] },
-	hats: { poses: ['idle'], anchors: [] },
-	monsters: { poses: ['idle'], anchors: [] },
-	npcs: { poses: ['idle'], anchors: [] },
+	weapons: { animations: ['idle', 'windup', 'active'], anchors: ['grip'] },
+	hats: { animations: ['idle'], anchors: [] },
+	monsters: { animations: ['idle'], anchors: [] },
+	npcs: { animations: ['idle'], anchors: [] },
 };
 
 export function validateSpriteRole(
@@ -49,12 +49,12 @@ export function validateSpriteRole(
 		return diagnostics;
 	}
 
-	for (const pose of profile.poses) {
-		if (!(pose in doc.poses)) {
+	for (const animation of profile.animations) {
+		if (!(animation in doc.animations)) {
 			diagnostics.push({
 				severity: 'error',
 				spriteId: doc.id,
-				message: `sprite '${doc.id}' (role '${role}') is missing required pose '${pose}'`,
+				message: `sprite '${doc.id}' (role '${role}') is missing required animation '${animation}'`,
 			});
 		}
 	}
@@ -67,19 +67,19 @@ export function validateSpriteRole(
 			});
 		}
 	}
-	// A Form may author `emote:<x>` poses; the sim only plays emotes in core's
-	// EMOTES registry, so a pose for an unregistered emote is a dead grid and an
+	// A Form may author `emote:<x>` animations; the sim only plays emotes in core's
+	// EMOTES registry, so an animation for an unregistered emote is a dead grid and an
 	// authoring error. (A registered emote the Form omits is fine — it falls back
 	// to idle at runtime.)
 	if (role === 'forms') {
-		for (const poseName of Object.keys(doc.poses)) {
-			if (!poseName.startsWith('emote:')) continue;
-			const emoteId = poseName.slice('emote:'.length);
+		for (const animationName of Object.keys(doc.animations)) {
+			if (!animationName.startsWith('emote:')) continue;
+			const emoteId = animationName.slice('emote:'.length);
 			if (!KNOWN_EMOTES.has(emoteId)) {
 				diagnostics.push({
 					severity: 'error',
 					spriteId: doc.id,
-					message: `sprite '${doc.id}' (role '${role}') has pose '${poseName}' for unknown emote '${emoteId}'`,
+					message: `sprite '${doc.id}' (role '${role}') has animation '${animationName}' for unknown emote '${emoteId}'`,
 				});
 			}
 		}

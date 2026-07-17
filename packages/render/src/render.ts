@@ -224,7 +224,7 @@ export function drawEntitySprite<C>(
 	let grip: { x: number; y: number } | undefined;
 	let head: { x: number; y: number } | undefined;
 	if (body) {
-		const pose = bodyFrame(
+		const animation = bodyFrame(
 			{
 				move,
 				phase,
@@ -238,7 +238,7 @@ export function drawEntitySprite<C>(
 			},
 			body.fps,
 		);
-		sprite = formFrame(body, pose.poseId, pose.frameIndex);
+		sprite = formFrame(body, animation.animationId, animation.frameIndex);
 		baseline = body.baseline ?? 0;
 		// Per-frame anchors win over the BodySprite's (ADR 0031); TS-authored
 		// frames carry none, so they fall back to the body and render unchanged.

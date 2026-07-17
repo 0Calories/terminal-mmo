@@ -1,13 +1,13 @@
-// Headless tests for the pose- and anchor-menu reducers (issue #339).
+// Headless tests for the animation- and anchor-menu reducers (issue #339).
 import { describe, expect, test } from 'bun:test';
 import {
+	type AnimationRow,
 	anchorMenuKey,
+	animationMenuKey,
 	type MenuKey,
 	openAnchorMenu,
-	openPoseMenu,
-	type PoseRow,
-	poseMenuKey,
-	syncPoseMenu,
+	openAnimationMenu,
+	syncAnimationMenu,
 } from '../src/sprite-editor/menus';
 
 const ch = (c: string): MenuKey => ({ name: 'char', char: c });
@@ -20,74 +20,74 @@ function open<T>(menu: T | null): T {
 	return menu;
 }
 
-const POSES: PoseRow[] = [
+const ANIMATIONS: AnimationRow[] = [
 	{ name: 'idle', frameCount: 1, fps: null },
 	{ name: 'walkA', frameCount: 1, fps: null },
 	{ name: 'cheer', frameCount: 2, fps: 8 },
 ];
 
-describe('pose menu', () => {
-	test('opens on the current pose', () => {
-		const m = openPoseMenu(POSES, 'walkA');
+describe('animation menu', () => {
+	test('opens on the current animation', () => {
+		const m = openAnimationMenu(ANIMATIONS, 'walkA');
 		expect(m.index).toBe(1);
 	});
 
 	test('enter emits a switch action', () => {
-		const m = openPoseMenu(POSES, 'idle');
-		const r = poseMenuKey(m, k('enter'));
-		expect(r.action).toEqual({ type: 'switch', pose: 'idle' });
+		const m = openAnimationMenu(ANIMATIONS, 'idle');
+		const r = animationMenuKey(m, k('enter'));
+		expect(r.action).toEqual({ type: 'switch', animation: 'idle' });
 		expect(r.menu).toBeNull();
 	});
 
 	test('c → type → enter emits create', () => {
-		let m = openPoseMenu(POSES, 'idle');
-		m = open(poseMenuKey(m, ch('c')).menu);
+		let m = openAnimationMenu(ANIMATIONS, 'idle');
+		m = open(animationMenuKey(m, ch('c')).menu);
 		expect(m.input?.mode).toBe('create');
-		m = open(poseMenuKey(m, ch('w')).menu);
-		m = open(poseMenuKey(m, ch('a')).menu);
-		m = open(poseMenuKey(m, ch('v')).menu);
-		m = open(poseMenuKey(m, ch('e')).menu);
-		const r = poseMenuKey(m, k('enter'));
+		m = open(animationMenuKey(m, ch('w')).menu);
+		m = open(animationMenuKey(m, ch('a')).menu);
+		m = open(animationMenuKey(m, ch('v')).menu);
+		m = open(animationMenuKey(m, ch('e')).menu);
+		const r = animationMenuKey(m, k('enter'));
 		expect(r.action).toEqual({ type: 'create', name: 'wave' });
 	});
 
-	test('d emits delete of the highlighted pose', () => {
-		const m = openPoseMenu(POSES, 'cheer');
-		const r = poseMenuKey(m, ch('d'));
-		expect(r.action).toEqual({ type: 'delete', pose: 'cheer' });
+	test('d emits delete of the highlighted animation', () => {
+		const m = openAnimationMenu(ANIMATIONS, 'cheer');
+		const r = animationMenuKey(m, ch('d'));
+		expect(r.action).toEqual({ type: 'delete', animation: 'cheer' });
 	});
 
 	test('reorder uses the frame cursor', () => {
-		let m = openPoseMenu(POSES, 'cheer'); // index 2, 2 frames
-		m = open(poseMenuKey(m, k('right')).menu); // frameIndex → 1
-		const r = poseMenuKey(m, ch('<'));
+		let m = openAnimationMenu(ANIMATIONS, 'cheer'); // index 2, 2 frames
+		m = open(animationMenuKey(m, k('right')).menu); // frameIndex → 1
+		const r = animationMenuKey(m, ch('<'));
 		expect(r.action).toEqual({
 			type: 'reorder',
-			pose: 'cheer',
+			animation: 'cheer',
 			index: 1,
 			delta: -1,
 		});
 	});
 
 	test('f → digits → enter emits setFps', () => {
-		let m = openPoseMenu(POSES, 'walkA');
-		m = open(poseMenuKey(m, ch('f')).menu);
-		m = open(poseMenuKey(m, ch('1')).menu);
-		m = open(poseMenuKey(m, ch('2')).menu);
-		const r = poseMenuKey(m, k('enter'));
-		expect(r.action).toEqual({ type: 'setFps', pose: 'walkA', fps: 12 });
+		let m = openAnimationMenu(ANIMATIONS, 'walkA');
+		m = open(animationMenuKey(m, ch('f')).menu);
+		m = open(animationMenuKey(m, ch('1')).menu);
+		m = open(animationMenuKey(m, ch('2')).menu);
+		const r = animationMenuKey(m, k('enter'));
+		expect(r.action).toEqual({ type: 'setFps', animation: 'walkA', fps: 12 });
 	});
 
 	test('f → empty → enter clears fps', () => {
-		let m = openPoseMenu(POSES, 'idle');
-		m = open(poseMenuKey(m, ch('f')).menu);
-		const r = poseMenuKey(m, k('enter'));
-		expect(r.action).toEqual({ type: 'setFps', pose: 'idle', fps: null });
+		let m = openAnimationMenu(ANIMATIONS, 'idle');
+		m = open(animationMenuKey(m, ch('f')).menu);
+		const r = animationMenuKey(m, k('enter'));
+		expect(r.action).toEqual({ type: 'setFps', animation: 'idle', fps: null });
 	});
 
-	test('syncPoseMenu keeps the selection on a live pose', () => {
-		const m = openPoseMenu(POSES, 'cheer'); // index 2
-		const next = syncPoseMenu(m, POSES.slice(0, 2)); // cheer removed
+	test('syncAnimationMenu keeps the selection on a live animation', () => {
+		const m = openAnimationMenu(ANIMATIONS, 'cheer'); // index 2
+		const next = syncAnimationMenu(m, ANIMATIONS.slice(0, 2)); // cheer removed
 		expect(next.index).toBe(1);
 	});
 });

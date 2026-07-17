@@ -28,7 +28,7 @@ export function buildFormRegistry(
 	for (const source of sources) {
 		if (source.role !== 'forms') continue;
 		// A Form that fails to parse or does not satisfy the role profile (missing
-		// poses/anchors or an unknown emote) is skipped rather than compiled into a
+		// animations/anchors or an unknown emote) is skipped rather than compiled into a
 		// broken body.
 		const doc = acceptSprite(source, 'forms');
 		if (doc === null) continue;

@@ -173,7 +173,7 @@ describe('Sprite editor TUI smoke', () => {
 			initialFeedback: 'creating new sprite hats/newhat',
 			// Wide enough for the status row's right-aligned feedback slot to fit
 			// next to the full left status content (narrow widths drop the note by
-			// composeStatusLine's left-wins rule, covered in sprite-editor-view).
+			// comanimationStatusLine's left-wins rule, covered in sprite-editor-view).
 			width: 140,
 		});
 		expect(t.editor.state.feedback).toBe('creating new sprite hats/newhat');
@@ -695,7 +695,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 });
 
 describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', () => {
-	// A two-frame pose: frames 'a' and 'b' side by side in one strip.
+	// A two-frame animation: frames 'a' and 'b' side by side in one strip.
 	function twoFrameDoc(): ReturnType<typeof emptySpriteDoc> {
 		const frame = (name: string) => ({
 			name,
@@ -709,7 +709,7 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 			key: 'p',
 			baseline: 0,
 			anchors: {},
-			poses: { idle: ['a', 'b'] },
+			animations: { idle: ['a', 'b'] },
 			fps: {},
 			colors: {},
 			frames: [frame('a'), frame('b')],
@@ -732,10 +732,10 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(rail).toContain('ink');
 		expect(rail).toContain('▚▚'); // the transparent swatch in the grid
 		expect(rail).toContain('playback');
-		expect(rail).toContain('pose idle');
+		expect(rail).toContain('animation idle');
 	});
 
-	test('strips view labels every pose and underlines the active frame', async () => {
+	test('strips view labels every animation and underlines the active frame', async () => {
 		const t = await mount({
 			doc: twoFrameDoc(),
 			id: 'duo',
@@ -874,7 +874,7 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 				p: SPRITE_PREVIEWS.p,
 				a: SPRITE_PREVIEWS.a,
 			}),
-			pose: t.editor.state.pose,
+			animation: t.editor.state.animation,
 			fps: 8,
 			frameCount: 1,
 			playMode: 'none',

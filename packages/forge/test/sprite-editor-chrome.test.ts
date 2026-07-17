@@ -35,7 +35,7 @@ function model(overrides: Partial<Parameters<typeof railModel>[0]> = {}) {
 		tool: 'paint',
 		ink: colorInk('p'),
 		entries: entriesFor(),
-		pose: 'idle',
+		animation: 'idle',
 		fps: 8,
 		frameCount: 1,
 		playMode: 'none',
@@ -145,9 +145,9 @@ describe('railModel — tools · ink · playback boxes', () => {
 		expect(square?.swatch).toBe('checker');
 	});
 
-	test('shows the pose, fps and frame count, and lights the playing mode', () => {
-		const idle = model({ pose: 'walkA', fps: 6, frameCount: 3 });
-		expect(allText(idle)).toContain('pose walkA · 6fps · 3f');
+	test('shows the animation, fps and frame count, and lights the playing mode', () => {
+		const idle = model({ animation: 'walkA', fps: 6, frameCount: 3 });
+		expect(allText(idle)).toContain('animation walkA · 6fps · 3f');
 		const playing = model({ playMode: 'walk' });
 		const walkSpan = playing
 			.flatMap((r) => r.spans)
@@ -185,13 +185,13 @@ describe('railModel — tools · ink · playback boxes', () => {
 				x0 += s.text.length;
 			}
 			const text = rowText(row);
-			if (text.includes('. pose'))
-				playHit = railActionAt(rows, text.indexOf('. pose'), y);
+			if (text.includes('. animation'))
+				playHit = railActionAt(rows, text.indexOf('. animation'), y);
 		});
 		// entriesFor() lists the palette in paletteEntries order; the first grid
 		// swatch is its first entry.
 		expect(inkHit).toEqual({ type: 'ink', ink: colorInk(entriesFor()[0].key) });
-		expect(playHit).toEqual({ type: 'play', mode: 'pose' });
+		expect(playHit).toEqual({ type: 'play', mode: 'animation' });
 	});
 
 	test('a click on dead space returns nothing', () => {

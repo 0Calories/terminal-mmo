@@ -417,7 +417,7 @@ describe('selectFrame & cursor', () => {
 });
 
 describe('saveResult round-trip', () => {
-	test('serializes a doc exercising poses, anchors, colors and bg with no error diagnostics', () => {
+	test('serializes a doc exercising animations, anchors, colors and bg with no error diagnostics', () => {
 		let s = initSpriteEditor(emptySpriteDoc('hero', 'form'));
 		s = defineLocalColor(s, 'z', [10, 20, 30, 255]);
 		// One-color pixel with a local ink.

@@ -1,7 +1,7 @@
 {
 	"baseline": 1,
 	"anchors": { "grip": [7, 1], "head": [4, 0] },
-	"poses": {
+	"animations": {
 		"emote:wave": ["wave-0", "wave-1"],
 		"emote:dance": ["dance-0", "dance-1"]
 	}

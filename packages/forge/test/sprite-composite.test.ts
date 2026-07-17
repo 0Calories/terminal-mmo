@@ -189,7 +189,7 @@ function localColorDoc(): SpriteDoc {
 		key: 'w',
 		baseline: 0,
 		anchors: {},
-		poses: { idle: ['m0'] },
+		animations: { idle: ['m0'] },
 		fps: {},
 		colors: { z: [11, 22, 33, 255] },
 		frames: [

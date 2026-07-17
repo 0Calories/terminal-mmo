@@ -4,7 +4,7 @@ import { RARITY_COLOR } from '@mmo/core/items';
 import {
 	ACCENT_CYCLE,
 	bitName,
-	composeStatusLine,
+	comanimationStatusLine,
 	DEFAULT_ZOOM,
 	dirForRole,
 	docDynamicUsage,
@@ -218,21 +218,21 @@ describe('status + help chrome', () => {
 		expect(line).toContain('*');
 	});
 
-	test('composeStatusLine right-aligns the coercion feedback', () => {
-		const line = composeStatusLine('left', 'punched bg', 20);
+	test('comanimationStatusLine right-aligns the coercion feedback', () => {
+		const line = comanimationStatusLine('left', 'punched bg', 20);
 		expect(line.length).toBe(20);
 		expect(line.startsWith('left')).toBe(true);
 		expect(line.endsWith('punched bg')).toBe(true);
 	});
 
-	test('composeStatusLine drops the feedback when it cannot fit', () => {
-		const line = composeStatusLine('a very long left side', 'note', 12);
+	test('comanimationStatusLine drops the feedback when it cannot fit', () => {
+		const line = comanimationStatusLine('a very long left side', 'note', 12);
 		expect(line).toBe('a very long ');
 		expect(line).not.toContain('note');
 	});
 
-	test('composeStatusLine with no feedback is just the left, clipped', () => {
-		expect(composeStatusLine('hello', '', 3)).toBe('hel');
+	test('comanimationStatusLine with no feedback is just the left, clipped', () => {
+		expect(comanimationStatusLine('hello', '', 3)).toBe('hel');
 	});
 
 	test('save diag summary — clean and dirty', () => {
@@ -280,7 +280,7 @@ describe('variant strip — session hue/accent selector (spec #401 amendment)', 
 			key: 'g',
 			baseline: 0,
 			anchors: {},
-			poses: {},
+			animations: {},
 			fps: {},
 			colors: {},
 			frames: [

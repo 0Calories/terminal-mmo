@@ -18,7 +18,7 @@ function docOf(text: string, id = 's'): SpriteDoc {
 
 const FORMS_OK = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"poses": { "walkA": ["wa"], "walkB": ["wb"] }
+	"animations": { "walkA": ["wa"], "walkB": ["wb"] }
 }
 --- idle
 AB
@@ -46,7 +46,7 @@ AB
 CD
 `;
 
-test('validateSpriteRole: forms fails naming missing pose and anchor', () => {
+test('validateSpriteRole: forms fails naming missing animation and anchor', () => {
 	const diags = validateSpriteRole(docOf(FORMS_BAD, 'buddy'), 'forms');
 	expect(diags.every((d) => d.severity === 'error')).toBe(true);
 	expect(diags.every((d) => d.spriteId === 'buddy')).toBe(true);
@@ -61,7 +61,7 @@ test('validateSpriteRole: forms fails naming missing pose and anchor', () => {
 
 const FORMS_KNOWN_EMOTE = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"poses": { "walkA": ["wa"], "walkB": ["wb"], "emote:wave": ["ev"] }
+	"animations": { "walkA": ["wa"], "walkB": ["wb"], "emote:wave": ["ev"] }
 }
 --- idle
 AB
@@ -73,7 +73,7 @@ AB
 AB
 `;
 
-test('validateSpriteRole: forms accepts an emote pose for a registered emote', () => {
+test('validateSpriteRole: forms accepts an emote animation for a registered emote', () => {
 	expect(
 		validateSpriteRole(docOf(FORMS_KNOWN_EMOTE, 'buddy'), 'forms'),
 	).toEqual([]);
@@ -81,7 +81,7 @@ test('validateSpriteRole: forms accepts an emote pose for a registered emote', (
 
 const FORMS_UNKNOWN_EMOTE = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"poses": { "walkA": ["wa"], "walkB": ["wb"], "emote:boogie": ["bg"] }
+	"animations": { "walkA": ["wa"], "walkB": ["wb"], "emote:boogie": ["bg"] }
 }
 --- idle
 AB
@@ -93,7 +93,7 @@ AB
 AB
 `;
 
-test('validateSpriteRole: forms rejects an emote pose for an unregistered emote', () => {
+test('validateSpriteRole: forms rejects an emote animation for an unregistered emote', () => {
 	const diags = validateSpriteRole(
 		docOf(FORMS_UNKNOWN_EMOTE, 'buddy'),
 		'forms',
@@ -106,7 +106,7 @@ test('validateSpriteRole: forms rejects an emote pose for an unregistered emote'
 
 const WEAPON_OK = `{
 	"anchors": { "grip": [0, 0] },
-	"poses": { "windup": ["wu"], "active": ["ac"] }
+	"animations": { "windup": ["wu"], "active": ["ac"] }
 }
 --- idle
 AB
@@ -121,7 +121,7 @@ test('validateSpriteRole: weapons passes with idle/windup/active and grip (recov
 });
 
 const WEAPON_BAD = `{
-	"poses": { "windup": ["wu"] }
+	"animations": { "windup": ["wu"] }
 }
 --- idle
 AB
@@ -129,7 +129,7 @@ AB
 AB
 `;
 
-test('validateSpriteRole: weapons fails on missing active pose and grip anchor', () => {
+test('validateSpriteRole: weapons fails on missing active animation and grip anchor', () => {
 	const diags = validateSpriteRole(docOf(WEAPON_BAD, 'sword'), 'weapons');
 	expect(diags.length).toBe(2);
 	const joined = diags.map((d) => d.message).join('\n');
@@ -200,7 +200,7 @@ test('validateSpriteSet: a parse failure is reported but the role check is skipp
 	// (dangling catalog) diagnostics with other ids, which are unrelated here.
 	const brokenDiags = diags.filter((d) => d.spriteId === 'broken');
 	expect(brokenDiags.length).toBeGreaterThan(0);
-	// only the parse diagnostic(s) — no "missing pose"/"missing anchor" profile noise
+	// only the parse diagnostic(s) — no "missing animation"/"missing anchor" profile noise
 	expect(brokenDiags.some((d) => d.message.includes('missing'))).toBe(false);
 });
 
@@ -209,7 +209,7 @@ function weaponSource(id: string): SpriteSource {
 	return {
 		id,
 		role: 'weapons',
-		text: `{"anchors":{"grip":[0,0]},"poses":{"windup":["wu"],"active":["ac"]}}
+		text: `{"anchors":{"grip":[0,0]},"animations":{"windup":["wu"],"active":["ac"]}}
 --- idle
 AB
 --- wu

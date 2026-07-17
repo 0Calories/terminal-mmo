@@ -91,11 +91,11 @@ test('a registry compiles only its own role', () => {
 	expect([...npcs.keys()]).toEqual(['b']);
 });
 
-// A source that fails the role profile (no `idle` pose) is skipped, not compiled
+// A source that fails the role profile (no `idle` animation) is skipped, not compiled
 // into broken art — mirrors buildFormRegistry / buildWeaponRegistry.
 test('a profile-failing source is skipped', () => {
 	const good = source('good', 'monsters');
-	// `walk` frame → implicit pose `walk`, never the required `idle`.
+	// `walk` frame → implicit animation `walk`, never the required `idle`.
 	const bad: SpriteSource = {
 		id: 'bad',
 		role: 'monsters',

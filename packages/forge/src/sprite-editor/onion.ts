@@ -1,8 +1,8 @@
 // Pure onion-skin sourcing (spec #387). Onion skinning ghosts neighbouring
 // Frames under the active Frame so in-between drawing has visible motion
 // context: previous Frames tint red, next Frames blue, intensity falling with
-// distance, wrapping within the Pose. WHICH Frames ghost — at which tint and
-// intensity — is pure: a function of the Pose's Frame list, the active Frame,
+// distance, wrapping within the Animation. WHICH Frames ghost — at which tint and
+// intensity — is pure: a function of the Animation's Frame list, the active Frame,
 // and the onion depth. Rendering the ghosts (under the current art, visible only
 // through transparency, replacing the checkerboard there) is the TUI's job; this
 // module never reads a Pixel or touches a screen.
@@ -33,9 +33,9 @@ export interface OnionGhost {
 // first lit ghost win a Pixel gets "nearest wins", and at equal distance the
 // previous (red) ghost, listed first, beats the next (blue) one.
 //
-// Yields nothing when onion skin is off (depth ≤ 0), a Pose has one Frame or
+// Yields nothing when onion skin is off (depth ≤ 0), an Animation has one Frame or
 // none (there is no neighbour to ghost), or `active` is not in the list. Indices
-// wrap within the Pose; a ghost index that resolves back to the active Frame is
+// wrap within the Animation; a ghost index that resolves back to the active Frame is
 // dropped — under its own transparent Pixels it would contribute nothing.
 export function onionGhosts(
 	frames: readonly string[],

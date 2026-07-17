@@ -32,12 +32,12 @@ AB
 CD
 `;
 
-test('the real buddy.sprite compiles to a body with its full pose repertoire', () => {
+test('the real buddy.sprite compiles to a body with its full animation repertoire', () => {
 	const registry = buildFormRegistry([buddySource()]);
 	const body = registry.get('buddy');
 	expect(body).toBeDefined();
-	const poses = Object.keys(body?.frames ?? {}).sort();
-	expect(poses).toEqual([
+	const animations = Object.keys(body?.frames ?? {}).sort();
+	expect(animations).toEqual([
 		'emote:dance',
 		'emote:sit',
 		'emote:wave',
@@ -46,7 +46,7 @@ test('the real buddy.sprite compiles to a body with its full pose repertoire', (
 		'walkA',
 		'walkB',
 	]);
-	// multi-frame poses are arrays; single-frame poses are lone Sprites
+	// multi-frame animations are arrays; single-frame animations are lone Sprites
 	expect(Array.isArray(body?.frames['emote:wave'])).toBe(true);
 	expect(Array.isArray(body?.frames['emote:dance'])).toBe(true);
 	expect(Array.isArray(body?.frames.idle)).toBe(false);
@@ -84,10 +84,10 @@ AB
 	expect(registry.has('buddy')).toBe(true);
 });
 
-test('a source authoring an unregistered emote pose is skipped (role error)', () => {
+test('a source authoring an unregistered emote animation is skipped (role error)', () => {
 	const withBadEmote = `{
 	"anchors": { "grip": [0, 0], "head": [0, 0] },
-	"poses": { "walkA": ["wa"], "walkB": ["wb"], "emote:boogie": ["bg"] }
+	"animations": { "walkA": ["wa"], "walkB": ["wb"], "emote:boogie": ["bg"] }
 }
 --- idle
 AB

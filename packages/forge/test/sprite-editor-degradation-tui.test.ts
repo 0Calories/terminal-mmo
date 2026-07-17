@@ -59,7 +59,7 @@ function wideTwoFrameDoc(): SpriteDoc {
 		key: 'p',
 		baseline: 0,
 		anchors: {},
-		poses: { row: ['aa', 'bb'] },
+		animations: { row: ['aa', 'bb'] },
 		fps: {},
 		colors: {},
 		frames: [frame('aa'), frame('bb')],
@@ -164,11 +164,11 @@ describe('rung 2 — strips force focus (#398)', () => {
 		expect(narrow).toContain('aa │ bb');
 		expect(narrow).toContain('strips folded to focus');
 
-		// A wide terminal fits both Frames — strips return (the pose label shows).
+		// A wide terminal fits both Frames — strips return (the animation label shows).
 		t.resize(160, 24);
 		await t.renderOnce();
 		const wide = t.captureCharFrame();
-		expect(wide).toContain('row · 2f'); // the strip's pose label
+		expect(wide).toContain('row · 2f'); // the strip's animation label
 		expect(wide).not.toContain('strips folded to focus');
 	});
 });
@@ -183,7 +183,7 @@ describe('rung 3 — folded playback box (#398)', () => {
 			height: 24,
 		});
 		// Folded: the box collapses to a single 'playback' hint; its full-box
-		// controls (', walk', 'pose idle') are gone, but the rail itself stays.
+		// controls (', walk', 'animation idle') are gone, but the rail itself stays.
 		const folded = railText(t.captureCharFrame());
 		expect(folded).toContain('playback');
 		expect(folded).not.toContain(', walk');
@@ -193,6 +193,6 @@ describe('rung 3 — folded playback box (#398)', () => {
 		await t.renderOnce();
 		const full = railText(t.captureCharFrame());
 		expect(full).toContain(', walk');
-		expect(full).toContain('pose idle');
+		expect(full).toContain('animation idle');
 	});
 });

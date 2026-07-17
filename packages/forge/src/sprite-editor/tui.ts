@@ -8,7 +8,7 @@
 //
 // Layout (spec #387, locked by prototype #375): a 30-column left rail (tools ·
 // ink · playback), the canvas region beside it in one of two views — STRIPS
-// (default; every Pose a labeled strip of editable Frames) and FOCUS (`tab`;
+// (default; every Animation a labeled strip of editable Frames) and FOCUS (`tab`;
 // one Frame centred under a Frame-name tab row) — and a two-row bottom chrome:
 // the status line (coercion feedback right-aligned) over a context-sensitive
 // hint line. `?` opens the complete grouped key map.
@@ -77,22 +77,24 @@ import {
 import {
 	type AnchorMenuAction,
 	type AnchorMenuState,
+	type AnimationMenuAction,
+	type AnimationMenuState,
+	type AnimationRow,
 	anchorMenuKey,
+	animationMenuKey,
 	type MenuKey,
 	openAnchorMenu,
-	openPoseMenu,
-	type PoseMenuAction,
-	type PoseMenuState,
-	type PoseRow,
-	poseMenuKey,
-	syncPoseMenu,
+	openAnimationMenu,
+	syncAnimationMenu,
 } from './menus';
 import { cycleOnionDepth, ghostColor, onionGhosts } from './onion';
-import { playbackFrame, poseFps, walkPreviewPose } from './playback';
+import { animationFps, playbackFrame, walkPreviewAnimation } from './playback';
 import { normalizeDoc } from './resize';
 import {
-	addFrameToPose,
+	addFrameToAnimation,
 	anchorMarkers,
+	animationFrames,
+	animationNames,
 	beginResize,
 	beginStroke,
 	cancelFloat,
@@ -104,13 +106,13 @@ import {
 	commitFloat,
 	commitResize,
 	copySelection,
-	createPose,
+	createAnimation,
 	cropToSelection,
 	currentFrame,
 	cutSelection,
 	type DynamicPreviews,
 	defineLocalColor,
-	deletePose,
+	deleteAnimation,
 	deleteSelection,
 	endStroke,
 	eyedropAt,
@@ -127,8 +129,6 @@ import {
 	pasteFromClipboard,
 	pixelToCell,
 	placeAnchor,
-	poseFrames,
-	poseNames,
 	readPixel,
 	redoEdit,
 	reorderFrame,
@@ -138,13 +138,13 @@ import {
 	type SpriteTool,
 	saveResult,
 	selectAll,
+	selectAnimation,
 	selectFrame,
 	selectionOverlay,
-	selectPose,
 	setAnchorName,
 	setAnchorScope,
+	setAnimationFps,
 	setInk,
-	setPoseFps,
 	setTool,
 	shapePreviewPixels,
 	stampGlyph,
@@ -168,7 +168,7 @@ import { emptySpriteDoc, type SpriteRole } from './templates';
 import {
 	ANCHOR_MARKER,
 	type Cam,
-	composeStatusLine,
+	comanimationStatusLine,
 	DEFAULT_ZOOM,
 	dirForRole,
 	docDynamicUsage,
@@ -267,7 +267,7 @@ function cursorRingGlyph(dx: number, dy: number, z: number): string {
 }
 
 // What playback is currently animating.
-type PlayMode = 'none' | 'pose' | 'walk';
+type PlayMode = 'none' | 'animation' | 'walk';
 
 // The two canvas views (spec #387): strips is the default; `tab` toggles.
 type CanvasView = 'strips' | 'focus';
@@ -348,7 +348,7 @@ export class SpriteEditor extends Renderable {
 	// colour or edit an existing one, over a hue/shade grid + hex entry.
 	colorPicker: ColorPickerState | null = null;
 	// The `c` ink quick-pick overlay (spec #387): random-access ink selection.
-	poseMenu: PoseMenuState | null = null;
+	animationMenu: AnimationMenuState | null = null;
 	anchorMenu: AnchorMenuState | null = null;
 	mirror = false;
 	// The always-on floating Composited preview (#393): the WIP art rendered the way
@@ -643,7 +643,7 @@ export class SpriteEditor extends Renderable {
 	private modalActive(): boolean {
 		return (
 			this.colorPicker !== null ||
-			this.poseMenu !== null ||
+			this.animationMenu !== null ||
 			this.anchorMenu !== null ||
 			this.awaitingStamp ||
 			this.helpOpen ||
@@ -704,8 +704,8 @@ export class SpriteEditor extends Renderable {
 			case 'addFrame':
 				this.addFrame();
 				return;
-			case 'poseMenu':
-				this.openPoseMenu();
+			case 'animationMenu':
+				this.openAnimationMenu();
 				return;
 			case 'anchorMenu':
 				this.openAnchorMenu();
@@ -778,9 +778,9 @@ export class SpriteEditor extends Renderable {
 				// A click on a strip's name row activates that Frame without painting.
 				const strip = layout.nameRows.indexOf(cy);
 				if (strip >= 0) {
-					const pose = layout.labels[strip].pose;
+					const animation = layout.labels[strip].animation;
 					const box = layout.frames.find(
-						(f) => f.pose === pose && cx >= f.x && cx < f.x + f.w,
+						(f) => f.animation === animation && cx >= f.x && cx < f.x + f.w,
 					);
 					if (box) this.state = selectFrame(this.state, box.name);
 				}
@@ -873,7 +873,7 @@ export class SpriteEditor extends Renderable {
 					e.x >= pane.play.x0 &&
 					e.x <= pane.play.x1
 				) {
-					this.togglePlay('pose');
+					this.togglePlay('animation');
 				}
 			}
 			return;
@@ -1099,7 +1099,7 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
-	// ---- frames / poses / edits ----
+	// ---- frames / animations / edits ----
 
 	private stepFrame(delta: number): void {
 		this.liftPen();
@@ -1110,19 +1110,19 @@ export class SpriteEditor extends Renderable {
 		this.followCursor = true;
 	}
 
-	private stepPose(delta: number): void {
+	private stepAnimation(delta: number): void {
 		this.liftPen();
-		const names = poseNames(this.state);
+		const names = animationNames(this.state);
 		if (names.length === 0) return;
-		const i = Math.max(0, names.indexOf(this.state.pose));
+		const i = Math.max(0, names.indexOf(this.state.animation));
 		const next = names[(i + delta + names.length) % names.length];
-		this.state = selectPose(this.state, next);
+		this.state = selectAnimation(this.state, next);
 		this.followCursor = true;
 	}
 
 	private addFrame(): void {
 		this.liftPen();
-		this.state = addFrameToPose(this.state, this.state.pose);
+		this.state = addFrameToAnimation(this.state, this.state.animation);
 		this.followCursor = true;
 	}
 
@@ -1169,63 +1169,71 @@ export class SpriteEditor extends Renderable {
 		this.state = setTool(this.state, tool);
 	}
 
-	// ---- pose menu ----
+	// ---- animation menu ----
 
-	private poseRows(): PoseRow[] {
-		return poseNames(this.state).map((name) => ({
+	private animationRows(): AnimationRow[] {
+		return animationNames(this.state).map((name) => ({
 			name,
-			frameCount: poseFrames(this.state, name).length,
+			frameCount: animationFrames(this.state, name).length,
 			fps: this.state.doc.fps[name] ?? null,
 		}));
 	}
 
-	private openPoseMenu(): void {
+	private openAnimationMenu(): void {
 		this.liftPen();
-		this.poseMenu = openPoseMenu(this.poseRows(), this.state.pose);
+		this.animationMenu = openAnimationMenu(
+			this.animationRows(),
+			this.state.animation,
+		);
 	}
 
-	private applyPoseAction(action: PoseMenuAction): void {
+	private applyAnimationAction(action: AnimationMenuAction): void {
 		switch (action.type) {
 			case 'switch':
-				this.state = selectPose(this.state, action.pose);
+				this.state = selectAnimation(this.state, action.animation);
 				break;
 			case 'create':
-				this.state = createPose(this.state, action.name);
+				this.state = createAnimation(this.state, action.name);
 				break;
 			case 'delete':
-				this.state = deletePose(this.state, action.pose);
+				this.state = deleteAnimation(this.state, action.animation);
 				break;
 			case 'addFrame':
-				this.state = addFrameToPose(this.state, action.pose);
+				this.state = addFrameToAnimation(this.state, action.animation);
 				break;
 			case 'reorder':
 				this.state = reorderFrame(
 					this.state,
-					action.pose,
+					action.animation,
 					action.index,
 					action.delta,
 				);
 				break;
 			case 'setFps':
-				this.state = setPoseFps(this.state, action.pose, action.fps);
+				this.state = setAnimationFps(this.state, action.animation, action.fps);
 				break;
 			case 'close':
 				break;
 		}
 	}
 
-	private poseMenuKeyDispatch(k: SpriteKey): void {
-		const menu = this.poseMenu;
+	private animationMenuKeyDispatch(k: SpriteKey): void {
+		const menu = this.animationMenu;
 		if (!menu) return;
-		const res = poseMenuKey(menu, toMenuKey(k));
+		const res = animationMenuKey(menu, toMenuKey(k));
 		if (res.action && res.action.type !== 'close') {
 			const keep = res.action.type === 'create' ? res.action.name : undefined;
-			this.applyPoseAction(res.action);
+			this.applyAnimationAction(res.action);
 			// 'switch' closes the menu; everything else stays open, re-synced.
-			if (res.action.type === 'switch') this.poseMenu = null;
-			else this.poseMenu = syncPoseMenu(menu, this.poseRows(), keep);
+			if (res.action.type === 'switch') this.animationMenu = null;
+			else
+				this.animationMenu = syncAnimationMenu(
+					menu,
+					this.animationRows(),
+					keep,
+				);
 		} else {
-			this.poseMenu = res.menu;
+			this.animationMenu = res.menu;
 		}
 	}
 
@@ -1336,7 +1344,7 @@ export class SpriteEditor extends Renderable {
 
 	// ---- playback (presentation only) ----
 
-	private togglePlay(mode: 'pose' | 'walk'): void {
+	private togglePlay(mode: 'animation' | 'walk'): void {
 		this.liftPen();
 		this.playMode = this.playMode === mode ? 'none' : mode;
 		this.playElapsedMs = 0;
@@ -1378,14 +1386,14 @@ export class SpriteEditor extends Renderable {
 	// or the animated frame while playing. Never mutates state.
 	get displayFrame(): string {
 		if (this.playMode === 'walk') {
-			const pose = walkPreviewPose(this.playElapsedMs / 1000);
-			const frames = poseFrames(this.state, pose);
+			const animation = walkPreviewAnimation(this.playElapsedMs / 1000);
+			const frames = animationFrames(this.state, animation);
 			return frames[0] ?? this.state.frame;
 		}
-		if (this.playMode === 'pose') {
-			const frames = poseFrames(this.state, this.state.pose);
+		if (this.playMode === 'animation') {
+			const frames = animationFrames(this.state, this.state.animation);
 			if (frames.length === 0) return this.state.frame;
-			const fps = poseFps(this.state.doc.fps, this.state.pose);
+			const fps = animationFps(this.state.doc.fps, this.state.animation);
 			const idx = playbackFrame(frames.length, this.playElapsedMs / 1000, fps);
 			return frames[idx] ?? this.state.frame;
 		}
@@ -1413,8 +1421,8 @@ export class SpriteEditor extends Renderable {
 			this.colorPickerKey(k);
 			return;
 		}
-		if (this.poseMenu) {
-			this.poseMenuKeyDispatch(k);
+		if (this.animationMenu) {
+			this.animationMenuKeyDispatch(k);
 			return;
 		}
 		if (this.anchorMenu) {
@@ -1453,7 +1461,7 @@ export class SpriteEditor extends Renderable {
 				return;
 			}
 			if (k.sequence === '.') {
-				this.togglePlay('pose');
+				this.togglePlay('animation');
 				return;
 			}
 			if (k.sequence === ',') {
@@ -1555,10 +1563,10 @@ export class SpriteEditor extends Renderable {
 			this.redo();
 			return;
 		}
-		// Poses / anchors / mirror / playback (checked by sequence so shift/plain
+		// Animations / anchors / mirror / playback (checked by sequence so shift/plain
 		// variants are unambiguous).
 		if (k.sequence === 'P') {
-			this.openPoseMenu();
+			this.openAnimationMenu();
 			return;
 		}
 		if (k.sequence === 'A') {
@@ -1581,7 +1589,7 @@ export class SpriteEditor extends Renderable {
 			return;
 		}
 		if (k.sequence === '.') {
-			this.togglePlay('pose');
+			this.togglePlay('animation');
 			return;
 		}
 		if (k.sequence === ',') {
@@ -1601,13 +1609,13 @@ export class SpriteEditor extends Renderable {
 			this.setZoom(stepZoom(this.zoom, -1));
 			return;
 		}
-		// Pose stepping and the strips ↔ focus toggle.
+		// Animation stepping and the strips ↔ focus toggle.
 		if (k.sequence === '{') {
-			this.stepPose(-1);
+			this.stepAnimation(-1);
 			return;
 		}
 		if (k.sequence === '}') {
-			this.stepPose(1);
+			this.stepAnimation(1);
 			return;
 		}
 		if (k.name === 'tab') {
@@ -1714,7 +1722,7 @@ export class SpriteEditor extends Renderable {
 	}
 
 	// Rebuild the onion-skin ghost layers for this render: one pre-pointed reader +
-	// tint per neighbouring Frame the active Pose sources at the current depth,
+	// tint per neighbouring Frame the active Animation sources at the current depth,
 	// nearest first. Empty while playing (playback suspends ghosts, spec #387) or
 	// when onion is off, so `onionGhostRGBA` is a cheap no-op then.
 	private buildOnionLayers(C: Palette): void {
@@ -1722,7 +1730,7 @@ export class SpriteEditor extends Renderable {
 			this.onionLayers = [];
 			return;
 		}
-		const frames = poseFrames(this.state, this.state.pose);
+		const frames = animationFrames(this.state, this.state.animation);
 		const ghosts = onionGhosts(frames, this.state.frame, this.onionDepth);
 		const bg = C.bg.toInts();
 		this.onionLayers = ghosts.map((g) => {
@@ -1927,9 +1935,9 @@ export class SpriteEditor extends Renderable {
 			tool: this.state.tool,
 			ink: this.state.ink,
 			entries: this.entries(),
-			pose: this.state.pose,
-			fps: poseFps(this.state.doc.fps, this.state.pose),
-			frameCount: poseFrames(this.state, this.state.pose).length,
+			animation: this.state.animation,
+			fps: animationFps(this.state.doc.fps, this.state.animation),
+			frameCount: animationFrames(this.state, this.state.animation).length,
 			playMode: this.playMode,
 			onionDepth: this.onionDepth,
 			height: viewH,
@@ -1979,7 +1987,7 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
-	// STRIPS: every Pose a labeled horizontal strip of its Frames, all editable
+	// STRIPS: every Animation a labeled horizontal strip of its Frames, all editable
 	// in place, the active Frame underlined (spec #387).
 	private renderStrips(
 		buf: OptimizedBuffer,
@@ -2062,7 +2070,7 @@ export class SpriteEditor extends Renderable {
 			const sy = syOf(layout.nameRows[i]);
 			if (sy < top || sy >= viewH) return;
 			for (const box of layout.frames) {
-				if (box.pose !== label.pose) continue;
+				if (box.animation !== label.animation) continue;
 				const active = box.name === this.state.frame;
 				const text = active
 					? (box.name + '▔'.repeat(Math.max(0, box.w - box.name.length))).slice(
@@ -2152,7 +2160,7 @@ export class SpriteEditor extends Renderable {
 		let top = 0;
 		let tabs: readonly FocusTab[] = [];
 		if (showTabs) {
-			const frames = poseFrames(this.state, this.state.pose);
+			const frames = animationFrames(this.state, this.state.animation);
 			const list = frames.length > 0 ? frames : frameNames(this.state);
 			const ft = focusTabs(list, this.state.frame);
 			tabs = ft.tabs;
@@ -2388,14 +2396,14 @@ export class SpriteEditor extends Renderable {
 			bit: cursorCell.bit,
 			zoom: this.zoom,
 			dirty: this.dirty,
-			pose: this.state.pose,
+			animation: this.state.animation,
 			anchorName: this.state.anchorName,
 			anchorScope: this.state.anchorScope,
 		});
 		// The coercion note rides the right of the status row. Draw the composed
 		// line, then re-tint just the note when it made the cut so it stands out.
 		const feedback = this.state.feedback;
-		const status = composeStatusLine(statusLeft, feedback, W);
+		const status = comanimationStatusLine(statusLeft, feedback, W);
 		const statusRow = H - CHROME_H;
 		buf.fillRect(0, statusRow, W, 1, C.chromeBg);
 		buf.drawText(status, 0, statusRow, C.text, C.chromeBg);
@@ -2413,7 +2421,7 @@ export class SpriteEditor extends Renderable {
 			const label =
 				this.playMode === 'walk'
 					? `▶ walk preview (${displayFrame}) — . or , stops`
-					: `▶ playing ${this.state.pose} (${displayFrame}) — . or , stops`;
+					: `▶ playing ${this.state.animation} (${displayFrame}) — . or , stops`;
 			buf.drawText(label.slice(0, W), 0, hintRow, C.hot, C.chromeBg);
 		} else if (this.awaitingStamp) {
 			buf.drawText(
@@ -2451,7 +2459,7 @@ export class SpriteEditor extends Renderable {
 
 		this.renderHelp(buf, W, H, C);
 		this.renderColorPicker(buf, W, H, C);
-		this.renderPoseMenu(buf, W, H, C);
+		this.renderAnimationMenu(buf, W, H, C);
 		this.renderAnchorMenu(buf, W, H, C);
 	}
 
@@ -2729,7 +2737,7 @@ export class SpriteEditor extends Renderable {
 	}
 
 	// A centered modal box from pre-formatted rows; a row beginning with '▸' is
-	// highlighted. Shared by the picker, the pose/anchor menus and the help
+	// highlighted. Shared by the picker, the animation/anchor menus and the help
 	// overlay.
 	private drawModal(
 		buf: OptimizedBuffer,
@@ -2755,25 +2763,26 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
-	private renderPoseMenu(
+	private renderAnimationMenu(
 		buf: OptimizedBuffer,
 		W: number,
 		H: number,
 		C: Palette,
 	): void {
-		const menu = this.poseMenu;
+		const menu = this.animationMenu;
 		if (!menu) return;
 		const rows: string[] = [];
 		if (menu.input) {
-			const title = menu.input.mode === 'create' ? 'New pose name' : 'Pose fps';
+			const title =
+				menu.input.mode === 'create' ? 'New animation name' : 'Animation fps';
 			rows.push(title);
 			rows.push(`▸ ${menu.input.buffer || '_'}`);
 			if (menu.error) rows.push(`⚠ ${menu.error}`);
 			rows.push('Enter confirm · Esc back');
 		} else {
-			rows.push('Poses');
-			for (let i = 0; i < menu.poses.length; i++) {
-				const p = menu.poses[i];
+			rows.push('Animations');
+			for (let i = 0; i < menu.animations.length; i++) {
+				const p = menu.animations[i];
 				const fps = p.fps === null ? 'default' : `${p.fps}fps`;
 				const sel = i === menu.index ? '▸' : ' ';
 				const frameMark =

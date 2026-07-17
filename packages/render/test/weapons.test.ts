@@ -27,7 +27,7 @@ function swordSource(id = 'sword'): SpriteSource {
 	return { id, role: 'weapons', text: SWORD_TEXT };
 }
 
-// A minimal valid weapons source: idle/windup/active phase poses + grip.
+// A minimal valid weapons source: idle/windup/active phase animations + grip.
 const MINIMAL = `{ "accent": "s", "anchors": { "grip": [0, 0] } }
 --- idle
 AB
@@ -66,7 +66,7 @@ test('a source with a broken header is skipped; the others still load', () => {
 });
 
 test('a source that fails the weapons role profile is skipped', () => {
-	// missing the active pose and the grip anchor -> role profile error.
+	// missing the active animation and the grip anchor -> role profile error.
 	const bad = `--- idle
 AB
 --- windup

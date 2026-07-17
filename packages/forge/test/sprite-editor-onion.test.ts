@@ -1,5 +1,5 @@
 // Headless tests for pure onion-skin sourcing (spec #387, issue #396). Ghosts
-// are sourced by a pure function of a Pose's Frame list, the active Frame, and
+// are sourced by a pure function of an Animation's Frame list, the active Frame, and
 // the onion depth — so wrapping, distance-falloff, tint and depth-0/playback
 // suspension are all asserted here, state → expected, with no screen.
 import { describe, expect, test } from 'bun:test';
@@ -45,7 +45,7 @@ describe('onionGhosts — which Frames ghost at which tint/intensity', () => {
 		]);
 	});
 
-	test('wraps within the Pose at both ends', () => {
+	test('wraps within the Animation at both ends', () => {
 		// Active is the first Frame: its previous wraps to the last.
 		const first = onionGhosts(POSE, 'a', 1);
 		expect(first).toEqual([
@@ -57,7 +57,7 @@ describe('onionGhosts — which Frames ghost at which tint/intensity', () => {
 		expect(last.map((g) => g.frame)).toEqual(['d', 'a']);
 	});
 
-	test('a single-Frame Pose has no neighbour to ghost', () => {
+	test('a single-Frame Animation has no neighbour to ghost', () => {
 		expect(onionGhosts(['solo'], 'solo', 2)).toEqual([]);
 	});
 
@@ -66,7 +66,7 @@ describe('onionGhosts — which Frames ghost at which tint/intensity', () => {
 	});
 
 	test('a ghost that wraps back onto the active Frame is dropped', () => {
-		// Two-Frame Pose at depth 2: distance-2 both ways lands on the active
+		// Two-Frame Animation at depth 2: distance-2 both ways lands on the active
 		// Frame and is dropped, leaving only the distance-1 neighbour (twice).
 		const g = onionGhosts(['x', 'y'], 'x', 2);
 		expect(g.every((gh) => gh.frame !== 'x')).toBe(true);

@@ -66,14 +66,14 @@ function mkDoc(
 		key?: string;
 	} = {},
 ): SpriteDoc {
-	const poses: Record<string, readonly string[]> = {};
-	for (const f of frames) poses[f.name] = [f.name];
+	const animations: Record<string, readonly string[]> = {};
+	for (const f of frames) animations[f.name] = [f.name];
 	return {
 		id: 'x',
 		key: opts.key ?? 'p',
 		baseline: opts.baseline ?? 0,
 		anchors: opts.anchors ?? {},
-		poses,
+		animations,
 		fps: {},
 		colors: {} as Readonly<Record<string, RGBAQuad>>,
 		frames,

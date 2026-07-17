@@ -19,7 +19,7 @@ export function buildWeaponRegistry(
 	for (const source of sources) {
 		if (source.role !== 'weapons') continue;
 		// A weapon that fails to parse or does not satisfy the role profile (missing
-		// phase poses or the grip anchor) is skipped rather than compiled into broken
+		// phase animations or the grip anchor) is skipped rather than compiled into broken
 		// art.
 		const doc = acceptSprite(source, 'weapons');
 		if (doc === null) continue;

@@ -1,5 +1,5 @@
 // Clipboard — copy / cut / delete / paste (spec #387, #400). The clipboard is a
-// single in-editor buffer that survives Frame/Pose switches; copy is a pure read
+// single in-editor buffer that survives Frame/Animation switches; copy is a pure read
 // (no undo entry), cut = copy + clear as one step, delete = clear as one step,
 // and paste SPAWNS A FLOAT at the source coordinates via the #399 float
 // machinery — the paste float then behaves exactly like a move float (drag/
@@ -120,7 +120,7 @@ describe('delete clears the selection contents without touching the clipboard', 
 });
 
 // ---------------------------------------------------------------------------
-// The buffer survives Frame / Pose switches
+// The buffer survives Frame / Animation switches
 // ---------------------------------------------------------------------------
 
 describe('the clipboard buffer is editor-session-scoped', () => {

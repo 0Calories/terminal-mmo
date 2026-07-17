@@ -2,15 +2,15 @@
 import { describe, expect, test } from 'bun:test';
 import { EMOTE_FPS } from '@mmo/core/sprites';
 import {
+	animationFps,
 	playbackFrame,
-	poseFps,
 	WALK_PREVIEW_FPS,
-	walkPreviewPose,
+	walkPreviewAnimation,
 } from '../src/sprite-editor/playback';
 
 describe('playbackFrame', () => {
 	test('cycles frames at the given fps', () => {
-		// 4 fps over a 3-frame pose: 0.0s→0, 0.25s→1, 0.5s→2, 0.75s→0 (wrap).
+		// 4 fps over a 3-frame animation: 0.0s→0, 0.25s→1, 0.5s→2, 0.75s→0 (wrap).
 		expect(playbackFrame(3, 0, 4)).toBe(0);
 		expect(playbackFrame(3, 0.25, 4)).toBe(1);
 		expect(playbackFrame(3, 0.5, 4)).toBe(2);
@@ -23,7 +23,7 @@ describe('playbackFrame', () => {
 		expect(playbackFrame(2, 0.2, 10)).toBe(0);
 	});
 
-	test('a single-frame pose is always frame 0', () => {
+	test('a single-frame animation is always frame 0', () => {
 		expect(playbackFrame(1, 5, 30)).toBe(0);
 		expect(playbackFrame(0, 5, 30)).toBe(0);
 	});
@@ -34,19 +34,19 @@ describe('playbackFrame', () => {
 	});
 });
 
-describe('poseFps', () => {
+describe('animationFps', () => {
 	test('uses the authored value when present', () => {
-		expect(poseFps({ walkA: 8 }, 'walkA')).toBe(8);
+		expect(animationFps({ walkA: 8 }, 'walkA')).toBe(8);
 	});
 	test('falls back to EMOTE_FPS when absent', () => {
-		expect(poseFps({}, 'idle')).toBe(EMOTE_FPS);
+		expect(animationFps({}, 'idle')).toBe(EMOTE_FPS);
 	});
 });
 
-describe('walkPreviewPose', () => {
+describe('walkPreviewAnimation', () => {
 	test('alternates walkA/walkB at the preview cadence', () => {
-		expect(walkPreviewPose(0)).toBe('walkA');
-		expect(walkPreviewPose(1 / WALK_PREVIEW_FPS)).toBe('walkB');
-		expect(walkPreviewPose(2 / WALK_PREVIEW_FPS)).toBe('walkA');
+		expect(walkPreviewAnimation(0)).toBe('walkA');
+		expect(walkPreviewAnimation(1 / WALK_PREVIEW_FPS)).toBe('walkB');
+		expect(walkPreviewAnimation(2 / WALK_PREVIEW_FPS)).toBe('walkA');
 	});
 });

@@ -4,7 +4,7 @@ import type { Sprite } from './sprite';
 export const WEAPON_ACCENT_KEY = 'a';
 
 // The *art* half of a Weapon: its animated frame set. Weapon *stats* (name, damage)
-// and pose selection (WeaponFrameId) live in @mmo/core.
+// and animation selection (WeaponFrameId) live in @mmo/core.
 export interface WeaponSprite {
 	frames: {
 		idle?: Sprite;

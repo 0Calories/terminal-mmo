@@ -48,7 +48,7 @@ export interface SpriteDoc {
 	// only the weapon compiler consumes it. Absent for non-weapon sprites.
 	accent?: string;
 	anchors: Readonly<Record<string, SpriteAnchor>>;
-	poses: Readonly<Record<string, readonly string[]>>;
+	animations: Readonly<Record<string, readonly string[]>>;
 	fps: Readonly<Record<string, number>>;
 	colors: Readonly<Record<string, RGBAQuad>>;
 	frames: readonly SpriteFrameDoc[];
@@ -166,7 +166,7 @@ interface ParsedHeader {
 	baseline: number;
 	accent?: string;
 	anchors: Record<string, SpriteAnchor>;
-	explicitPoses: Record<string, string[]>;
+	explicitAnimations: Record<string, string[]>;
 	fpsRaw: Record<string, number>;
 	colors: Record<string, RGBAQuad>;
 	frameOverrides: Record<string, { anchors: Record<string, SpriteAnchor> }>;
@@ -181,7 +181,7 @@ function parseHeaderObject(
 		'baseline',
 		'accent',
 		'anchors',
-		'poses',
+		'animations',
 		'fps',
 		'colors',
 		'frames',
@@ -240,22 +240,22 @@ function parseHeaderObject(
 			? parseAnchorEntries(header.anchors, report, "'anchors'")
 			: {};
 
-	const explicitPoses: Record<string, string[]> = {};
-	if (header.poses !== undefined) {
-		if (isPlainObject(header.poses)) {
-			for (const [name, list] of Object.entries(header.poses)) {
+	const explicitAnimations: Record<string, string[]> = {};
+	if (header.animations !== undefined) {
+		if (isPlainObject(header.animations)) {
+			for (const [name, list] of Object.entries(header.animations)) {
 				if (
 					Array.isArray(list) &&
 					list.length > 0 &&
 					list.every((v) => typeof v === 'string')
 				) {
-					explicitPoses[name] = list as string[];
+					explicitAnimations[name] = list as string[];
 				} else {
-					report('error', `invalid pose entry '${name}'`);
+					report('error', `invalid animation entry '${name}'`);
 				}
 			}
 		} else {
-			report('error', "invalid 'poses': expected an object");
+			report('error', "invalid 'animations': expected an object");
 		}
 	}
 
@@ -331,7 +331,7 @@ function parseHeaderObject(
 		baseline,
 		...(accent !== undefined ? { accent } : {}),
 		anchors,
-		explicitPoses,
+		explicitAnimations,
 		fpsRaw,
 		colors,
 		frameOverrides,
@@ -592,11 +592,13 @@ export function parseSpriteFile(
 		}
 	}
 
-	// Pose resolution: explicit poses (filtered against real frames), then
-	// implicit single-frame poses for every frame not consumed by an
-	// explicit pose (by name or by reference).
-	const explicitPoses: Record<string, string[]> = {};
-	for (const [poseName, list] of Object.entries(header.explicitPoses)) {
+	// Animation resolution: explicit animations (filtered against real frames), then
+	// implicit single-frame animations for every frame not consumed by an
+	// explicit animation (by name or by reference).
+	const explicitAnimations: Record<string, string[]> = {};
+	for (const [animationName, list] of Object.entries(
+		header.explicitAnimations,
+	)) {
 		const filtered: string[] = [];
 		for (const frameName of list) {
 			if (frameNames.has(frameName)) {
@@ -604,30 +606,32 @@ export function parseSpriteFile(
 			} else {
 				report(
 					'error',
-					`pose '${poseName}' references missing frame '${frameName}'`,
+					`animation '${animationName}' references missing frame '${frameName}'`,
 				);
 			}
 		}
-		if (filtered.length > 0) explicitPoses[poseName] = filtered;
+		if (filtered.length > 0) explicitAnimations[animationName] = filtered;
 	}
 
 	const excluded = new Set<string>();
-	for (const [poseName, list] of Object.entries(explicitPoses)) {
-		excluded.add(poseName);
+	for (const [animationName, list] of Object.entries(explicitAnimations)) {
+		excluded.add(animationName);
 		for (const frameName of list) excluded.add(frameName);
 	}
 
-	const poses: Record<string, readonly string[]> = { ...explicitPoses };
+	const animations: Record<string, readonly string[]> = {
+		...explicitAnimations,
+	};
 	for (const f of finalFrames) {
-		if (!excluded.has(f.name)) poses[f.name] = [f.name];
+		if (!excluded.has(f.name)) animations[f.name] = [f.name];
 	}
 
 	const fps: Record<string, number> = {};
-	for (const [poseName, v] of Object.entries(header.fpsRaw)) {
-		if (poseName in poses) {
-			fps[poseName] = v;
+	for (const [animationName, v] of Object.entries(header.fpsRaw)) {
+		if (animationName in animations) {
+			fps[animationName] = v;
 		} else {
-			report('warning', `fps for unknown pose '${poseName}'`);
+			report('warning', `fps for unknown animation '${animationName}'`);
 		}
 	}
 
@@ -637,7 +641,7 @@ export function parseSpriteFile(
 		baseline: header.baseline,
 		...(header.accent !== undefined ? { accent: header.accent } : {}),
 		anchors: header.anchors,
-		poses,
+		animations,
 		fps,
 		colors: header.colors,
 		frames: finalFrames,
@@ -660,12 +664,13 @@ export function serializeSpriteFile(doc: SpriteDoc): string {
 			Object.entries(doc.anchors).map(([n, a]) => [n, [a.x, a.y]]),
 		);
 	}
-	const explicitPoses = Object.fromEntries(
-		Object.entries(doc.poses).filter(
+	const explicitAnimations = Object.fromEntries(
+		Object.entries(doc.animations).filter(
 			([name, list]) => !(list.length === 1 && list[0] === name),
 		),
 	);
-	if (Object.keys(explicitPoses).length > 0) header.poses = explicitPoses;
+	if (Object.keys(explicitAnimations).length > 0)
+		header.animations = explicitAnimations;
 	if (Object.keys(doc.fps).length > 0) header.fps = doc.fps;
 	if (Object.keys(doc.colors).length > 0) {
 		header.colors = Object.fromEntries(

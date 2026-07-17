@@ -31,7 +31,7 @@ function blank(name: string, w = 4, h = 4): SpriteFrameDoc {
 	return { name, rows, colors: rows.slice(), bg: rows.slice(), anchors: {} };
 }
 
-// A 3-Frame 'run' pose: f0 lights Pixel (0,0), f2 lights Pixel (2,0); the middle
+// A 3-Frame 'run' animation: f0 lights Pixel (0,0), f2 lights Pixel (2,0); the middle
 // Frame f1 (the one we edit) is fully transparent, so its neighbours ghost
 // straight through it.
 function animDoc(): SpriteDoc {
@@ -40,7 +40,7 @@ function animDoc(): SpriteDoc {
 		key: 'p',
 		baseline: 0,
 		anchors: {},
-		poses: { run: ['f0', 'f1', 'f2'] },
+		animations: { run: ['f0', 'f1', 'f2'] },
 		fps: {},
 		colors: {} as SpriteDoc['colors'],
 		frames: [blank('f0'), blank('f1'), blank('f2')],
@@ -123,7 +123,7 @@ describe('onion skinning — ghosts through the active Frame', () => {
 	test('playback suspends the ghosts', async () => {
 		const t = await mount('focus');
 		t.editor.key(key('O', { sequence: 'O' })); // onion on
-		t.editor.key(key('.', { sequence: '.' })); // play the pose
+		t.editor.key(key('.', { sequence: '.' })); // play the animation
 		await t.renderOnce();
 		const cap = t.captureSpans();
 		expect(canvasHasBg(cap, PREV)).toBe(false);

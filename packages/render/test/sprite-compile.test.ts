@@ -112,7 +112,7 @@ test('omitted colors/bg default to doc key on inked cells', () => {
 const BODY = `{
 	"baseline": 1,
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"poses": { "walkA": ["fa", "fb"] },
+	"animations": { "walkA": ["fa", "fb"] },
 	"fps": { "walkA": 8 },
 	"frames": { "fb": { "anchors": { "grip": [1, 1] } } }
 }
@@ -127,12 +127,12 @@ EF
 GH
 `;
 
-test('compileBodySprite: multi-frame pose is an array, single-frame is a Sprite', () => {
+test('compileBodySprite: multi-frame animation is an array, single-frame is a Sprite', () => {
 	const { doc, diagnostics } = parseSpriteFile(BODY, 'buddy');
 	expect(diagnostics).toEqual([]);
 	const body = compileBodySprite(doc as SpriteDoc);
 
-	// multi-frame pose -> array
+	// multi-frame animation -> array
 	const walk = body.frames.walkA;
 	expect(Array.isArray(walk)).toBe(true);
 	const walkArr = walk as readonly Sprite[];
@@ -140,7 +140,7 @@ test('compileBodySprite: multi-frame pose is an array, single-frame is a Sprite'
 	expect(walkArr[0].rows(1)).toEqual(['AB', 'CD']);
 	expect(walkArr[1].rows(1)).toEqual(['EF', 'GH']);
 
-	// implicit single-frame pose -> Sprite, not array
+	// implicit single-frame animation -> Sprite, not array
 	const idle = body.frames.idle;
 	expect(Array.isArray(idle)).toBe(false);
 	expect((idle as Sprite).rows(1)).toEqual(['XY', 'ZW']);
@@ -188,7 +188,7 @@ EF
 GH
 `;
 
-test('compileWeaponSprite: phase poses compile — idle/windup/recovery single, active is a sweep array', () => {
+test('compileWeaponSprite: phase animations compile — idle/windup/recovery single, active is a sweep array', () => {
 	const { doc, diagnostics } = parseSpriteFile(WEAPON, 'sword');
 	// The negative grip trips only the out-of-bounds warning, never an error.
 	expect(diagnostics.some((d) => d.severity === 'error')).toBe(false);

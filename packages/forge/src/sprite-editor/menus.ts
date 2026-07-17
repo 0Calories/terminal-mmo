@@ -1,5 +1,5 @@
 // Pure state machines for the Sprite editor's modal overlays (ADR 0031, issue
-// #339): the pose menu (switch/create/delete/add-frame/reorder/fps) and the
+// #339): the animation menu (switch/create/delete/add-frame/reorder/fps) and the
 // anchor menu (pick which named anchor to place, at doc or frame scope). Same
 // reducer pattern as `colorPicker.ts`: the TUI renders the state and feeds keys in;
 // each key returns the next menu (or null to close) plus an optional action the
@@ -19,66 +19,66 @@ const NAME_RE = /^[A-Za-z0-9:_-]+$/;
 const NAME_CHAR_RE = /^[A-Za-z0-9:_-]$/;
 
 // ---------------------------------------------------------------------------
-// Pose menu
+// Animation menu
 // ---------------------------------------------------------------------------
 
-export interface PoseRow {
+export interface AnimationRow {
 	name: string;
 	frameCount: number;
-	// The pose's authored fps, or null when it uses the default.
+	// The animation's authored fps, or null when it uses the default.
 	fps: number | null;
 }
 
-export interface PoseMenuState {
-	poses: readonly PoseRow[];
-	// Highlighted pose row.
+export interface AnimationMenuState {
+	animations: readonly AnimationRow[];
+	// Highlighted animation row.
 	index: number;
-	// Highlighted frame within that pose (the reorder target).
+	// Highlighted frame within that animation (the reorder target).
 	frameIndex: number;
-	// Non-null while typing a new pose name or an fps value.
+	// Non-null while typing a new animation name or an fps value.
 	input: { mode: 'create' | 'fps'; buffer: string } | null;
 	error: string;
 }
 
-export type PoseMenuAction =
-	| { type: 'switch'; pose: string }
+export type AnimationMenuAction =
+	| { type: 'switch'; animation: string }
 	| { type: 'create'; name: string }
-	| { type: 'delete'; pose: string }
-	| { type: 'addFrame'; pose: string }
-	| { type: 'reorder'; pose: string; index: number; delta: number }
-	| { type: 'setFps'; pose: string; fps: number | null }
+	| { type: 'delete'; animation: string }
+	| { type: 'addFrame'; animation: string }
+	| { type: 'reorder'; animation: string; index: number; delta: number }
+	| { type: 'setFps'; animation: string; fps: number | null }
 	| { type: 'close' };
 
-export interface PoseMenuResult {
-	menu: PoseMenuState | null;
-	action?: PoseMenuAction;
+export interface AnimationMenuResult {
+	menu: AnimationMenuState | null;
+	action?: AnimationMenuAction;
 }
 
-export function openPoseMenu(
-	poses: readonly PoseRow[],
-	currentPose: string,
-): PoseMenuState {
+export function openAnimationMenu(
+	animations: readonly AnimationRow[],
+	currentAnimation: string,
+): AnimationMenuState {
 	const index = Math.max(
 		0,
-		poses.findIndex((p) => p.name === currentPose),
+		animations.findIndex((p) => p.name === currentAnimation),
 	);
-	return { poses, index, frameIndex: 0, input: null, error: '' };
+	return { animations, index, frameIndex: 0, input: null, error: '' };
 }
 
-// Re-sync the menu's pose snapshot after the TUI applies a mutating action,
+// Re-sync the menu's animation snapshot after the TUI applies a mutating action,
 // clamping the selection onto a still-valid row.
-export function syncPoseMenu(
-	menu: PoseMenuState,
-	poses: readonly PoseRow[],
-	keepPose?: string,
-): PoseMenuState {
-	const wanted = keepPose ?? menu.poses[menu.index]?.name;
-	const idx = poses.findIndex((p) => p.name === wanted);
-	const index = idx >= 0 ? idx : Math.min(menu.index, poses.length - 1);
-	const frameCount = poses[index]?.frameCount ?? 1;
+export function syncAnimationMenu(
+	menu: AnimationMenuState,
+	animations: readonly AnimationRow[],
+	keepAnimation?: string,
+): AnimationMenuState {
+	const wanted = keepAnimation ?? menu.animations[menu.index]?.name;
+	const idx = animations.findIndex((p) => p.name === wanted);
+	const index = idx >= 0 ? idx : Math.min(menu.index, animations.length - 1);
+	const frameCount = animations[index]?.frameCount ?? 1;
 	return {
 		...menu,
-		poses,
+		animations,
 		index: Math.max(0, index),
 		frameIndex: Math.min(menu.frameIndex, Math.max(0, frameCount - 1)),
 		input: null,
@@ -86,18 +86,26 @@ export function syncPoseMenu(
 	};
 }
 
-export function currentPoseRow(menu: PoseMenuState): PoseRow | undefined {
-	return menu.poses[menu.index];
+export function currentAnimationRow(
+	menu: AnimationMenuState,
+): AnimationRow | undefined {
+	return menu.animations[menu.index];
 }
 
-export function poseMenuKey(menu: PoseMenuState, k: MenuKey): PoseMenuResult {
-	if (menu.input) return poseInputKey(menu, k);
-	return poseListKey(menu, k);
+export function animationMenuKey(
+	menu: AnimationMenuState,
+	k: MenuKey,
+): AnimationMenuResult {
+	if (menu.input) return animationInputKey(menu, k);
+	return animationListKey(menu, k);
 }
 
-function poseListKey(menu: PoseMenuState, k: MenuKey): PoseMenuResult {
-	const n = menu.poses.length;
-	const row = currentPoseRow(menu);
+function animationListKey(
+	menu: AnimationMenuState,
+	k: MenuKey,
+): AnimationMenuResult {
+	const n = menu.animations.length;
+	const row = currentAnimationRow(menu);
 	switch (k.name) {
 		case 'escape':
 			return { menu: null, action: { type: 'close' } };
@@ -131,7 +139,7 @@ function poseListKey(menu: PoseMenuState, k: MenuKey): PoseMenuResult {
 		}
 		case 'enter':
 			if (!row) return { menu, action: { type: 'close' } };
-			return { menu: null, action: { type: 'switch', pose: row.name } };
+			return { menu: null, action: { type: 'switch', animation: row.name } };
 	}
 	if (k.name !== 'char' || !row) return { menu };
 	switch (k.char) {
@@ -140,9 +148,9 @@ function poseListKey(menu: PoseMenuState, k: MenuKey): PoseMenuResult {
 				menu: { ...menu, input: { mode: 'create', buffer: '' }, error: '' },
 			};
 		case 'd':
-			return { menu, action: { type: 'delete', pose: row.name } };
+			return { menu, action: { type: 'delete', animation: row.name } };
 		case 'a':
-			return { menu, action: { type: 'addFrame', pose: row.name } };
+			return { menu, action: { type: 'addFrame', animation: row.name } };
 		case 'f':
 			return {
 				menu: {
@@ -160,7 +168,7 @@ function poseListKey(menu: PoseMenuState, k: MenuKey): PoseMenuResult {
 				menu,
 				action: {
 					type: 'reorder',
-					pose: row.name,
+					animation: row.name,
 					index: menu.frameIndex,
 					delta: -1,
 				},
@@ -171,7 +179,7 @@ function poseListKey(menu: PoseMenuState, k: MenuKey): PoseMenuResult {
 				menu,
 				action: {
 					type: 'reorder',
-					pose: row.name,
+					animation: row.name,
 					index: menu.frameIndex,
 					delta: 1,
 				},
@@ -180,7 +188,10 @@ function poseListKey(menu: PoseMenuState, k: MenuKey): PoseMenuResult {
 	return { menu };
 }
 
-function poseInputKey(menu: PoseMenuState, k: MenuKey): PoseMenuResult {
+function animationInputKey(
+	menu: AnimationMenuState,
+	k: MenuKey,
+): AnimationMenuResult {
 	const inp = menu.input;
 	if (!inp) return { menu };
 	if (k.name === 'escape') return { menu: { ...menu, input: null, error: '' } };
@@ -188,7 +199,7 @@ function poseInputKey(menu: PoseMenuState, k: MenuKey): PoseMenuResult {
 		return {
 			menu: { ...menu, input: { ...inp, buffer: inp.buffer.slice(0, -1) } },
 		};
-	if (k.name === 'enter') return poseInputCommit(menu, inp);
+	if (k.name === 'enter') return animationInputCommit(menu, inp);
 	if (k.name === 'char' && k.char) {
 		if (inp.mode === 'fps') {
 			if (!/[0-9]/.test(k.char) || inp.buffer.length >= 3) return { menu };
@@ -202,27 +213,35 @@ function poseInputKey(menu: PoseMenuState, k: MenuKey): PoseMenuResult {
 	return { menu };
 }
 
-function poseInputCommit(
-	menu: PoseMenuState,
+function animationInputCommit(
+	menu: AnimationMenuState,
 	inp: { mode: 'create' | 'fps'; buffer: string },
-): PoseMenuResult {
+): AnimationMenuResult {
 	if (inp.mode === 'create') {
 		if (!NAME_RE.test(inp.buffer))
-			return { menu: { ...menu, error: 'enter a legal pose name' } };
+			return { menu: { ...menu, error: 'enter a legal animation name' } };
 		return { menu, action: { type: 'create', name: inp.buffer } };
 	}
 	// fps: empty clears back to the default; otherwise a positive integer.
 	if (inp.buffer === '')
 		return {
 			menu,
-			action: { type: 'setFps', pose: menu.poses[menu.index].name, fps: null },
+			action: {
+				type: 'setFps',
+				animation: menu.animations[menu.index].name,
+				fps: null,
+			},
 		};
 	const fps = Number.parseInt(inp.buffer, 10);
 	if (!Number.isFinite(fps) || fps <= 0)
 		return { menu: { ...menu, error: 'fps must be a positive number' } };
 	return {
 		menu,
-		action: { type: 'setFps', pose: menu.poses[menu.index].name, fps },
+		action: {
+			type: 'setFps',
+			animation: menu.animations[menu.index].name,
+			fps,
+		},
 	};
 }
 
