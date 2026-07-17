@@ -203,20 +203,10 @@ test('golden: buddy form frames', () => {
 test('golden: sword weapon frames', () => {
 	const weapon = weaponSpriteById(0);
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
-	if (weapon.frames.idle)
-		expect(spriteGrid(weapon.frames.idle)).toMatchSnapshot('sword: idle');
-	if (weapon.frames.windup)
-		expect(spriteGrid(weapon.frames.windup)).toMatchSnapshot('sword: windup');
-	if (weapon.frames.active) {
-		weapon.frames.active.forEach((f, i) => {
-			if (f === undefined) return;
-			expect(spriteGrid(f)).toMatchSnapshot(`sword: active[${i}]`);
-		});
-	}
-	if (weapon.frames.recovery)
-		expect(spriteGrid(weapon.frames.recovery)).toMatchSnapshot(
-			'sword: recovery',
-		);
+	expect(spriteGrid(weapon.frames.rest)).toMatchSnapshot('sword: rest');
+	weapon.frames.swing.forEach((f, i) => {
+		expect(spriteGrid(f)).toMatchSnapshot(`sword: swing[${i}]`);
+	});
 });
 
 // --- 2. Composited scene goldens ----------------------------------------

@@ -27,13 +27,15 @@ function swordSource(id = 'sword'): SpriteSource {
 	return { id, role: 'weapons', text: SWORD_TEXT };
 }
 
-// A minimal valid weapons source: idle/windup/active phase animations + grip.
-const MINIMAL = `{ "accent": "s", "anchors": { "grip": [0, 0] } }
+// A minimal valid weapons source: a Default frame + 3-frame swing + grip.
+const MINIMAL = `{ "accent": "s", "anchors": { "grip": [0, 0] }, "animations": { "swing": ["s0", "s1", "s2"] } }
 --- idle
 AB
---- windup
+--- s0
 AB
---- active
+--- s1
+AB
+--- s2
 AB
 `;
 
@@ -41,9 +43,8 @@ test('the real sword.sprite compiles to a weapon with all phase frames and its a
 	const registry = buildWeaponRegistry([swordSource()]);
 	const ws = registry.get('sword');
 	expect(ws).toBeDefined();
-	expect(ws?.frames.idle).toBeDefined();
-	expect(ws?.frames.windup).toBeDefined();
-	expect(Array.isArray(ws?.frames.active)).toBe(true);
+	expect(ws?.frames.rest).toBeDefined();
+	expect(ws?.frames.swing).toHaveLength(3);
 	expect(ws?.accent).toBe('s');
 	// The sword's grip sits one cell left of its art (a negative offset).
 	expect(ws?.grip).toEqual({ x: -1, y: 2 });

@@ -552,7 +552,7 @@ exports[`golden: buddy form frames: buddy: emote:sit 1`] = `
 }
 `;
 
-exports[`golden: sword weapon frames: sword: idle 1`] = `
+exports[`golden: sword weapon frames: sword: rest 1`] = `
 {
   "baseline": 0,
   "h": 3,
@@ -580,7 +580,7 @@ exports[`golden: sword weapon frames: sword: idle 1`] = `
 }
 `;
 
-exports[`golden: sword weapon frames: sword: windup 1`] = `
+exports[`golden: sword weapon frames: sword: swing[0] 1`] = `
 {
   "baseline": 0,
   "h": 3,
@@ -608,7 +608,7 @@ exports[`golden: sword weapon frames: sword: windup 1`] = `
 }
 `;
 
-exports[`golden: sword weapon frames: sword: active[0] 1`] = `
+exports[`golden: sword weapon frames: sword: swing[1] 1`] = `
 {
   "baseline": 0,
   "h": 4,
@@ -637,6 +637,26 @@ exports[`golden: sword weapon frames: sword: active[0] 1`] = `
     "     ",
   ],
   "w": 5,
+}
+`;
+
+exports[`golden: sword weapon frames: sword: swing[2] 1`] = `
+{
+  "baseline": 0,
+  "h": 1,
+  "keysLeft": [
+    "a",
+  ],
+  "keysRight": [
+    "a",
+  ],
+  "left": [
+    " ",
+  ],
+  "right": [
+    " ",
+  ],
+  "w": 1,
 }
 `;
 

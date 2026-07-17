@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { bladeEdgeArc, meleeHitbox, sweepIndex } from '@mmo/core/combat';
+import { bladeEdgeArc, meleeHitbox } from '@mmo/core/combat';
 import {
 	BOX,
 	type Entity,
@@ -653,7 +653,7 @@ test('a cosmetic hat is overlaid directly above the head', () => {
 test('an equipped Avatar at rest renders the weapon idle frame at the mirrored grip, on top of the body (ADR 0018)', () => {
 	const weapon = weaponSpriteById(0);
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
-	const frame = weapon.frames.idle;
+	const frame = weapon.frames.rest;
 	if (!frame) throw new Error('expected an authored idle frame');
 
 	for (const facing of [1, -1] as Facing[]) {
@@ -697,15 +697,13 @@ test('an equipped Avatar at rest renders the weapon idle frame at the mirrored g
 	}
 });
 
-test('mid-active-swing the composited weapon plays the sweep frame, and no box-fill floods the melee hitbox (ADR 0018 §4/§5)', () => {
+test('mid-active-swing the composited weapon plays the active swing frame, and no box-fill floods the melee hitbox (ADR 0018 §4/§5, ADR 0036)', () => {
 	const weapon = weaponSpriteById(0);
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
-	const sweep = weapon.frames.active;
-	if (!sweep || sweep.length === 0)
-		throw new Error('expected authored active sweep frames');
 
 	const progress = 0.5;
-	const frame = sweep[sweepIndex(progress, sweep.length)];
+	// Phase-indexed selection: the active phase shows swing frame 1.
+	const frame = weapon.frames.swing[1];
 
 	const buf = new FakeBuffer(28, 16);
 	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });

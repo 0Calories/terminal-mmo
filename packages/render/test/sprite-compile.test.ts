@@ -176,32 +176,30 @@ test('compileBodySprite: throws when doc-level grip/head anchors are missing', (
 const WEAPON = `{
 	"key": "a",
 	"accent": "s",
-	"anchors": { "grip": [-1, 2] }
+	"anchors": { "grip": [-1, 2] },
+	"animations": { "swing": ["swing-0", "swing-1", "swing-2"] }
 }
 --- idle
 AB
---- windup
+--- swing-0
 CD
---- active
+--- swing-1
 EF
---- recovery
+--- swing-2
 GH
 `;
 
-test('compileWeaponSprite: phase animations compile — idle/windup/recovery single, active is a sweep array', () => {
+test('compileWeaponSprite: the Default frame is the rest sprite; swing is a 3-frame phase array (ADR 0036)', () => {
 	const { doc, diagnostics } = parseSpriteFile(WEAPON, 'sword');
 	// The negative grip trips only the out-of-bounds warning, never an error.
 	expect(diagnostics.some((d) => d.severity === 'error')).toBe(false);
 	const ws = compileWeaponSprite(doc as SpriteDoc);
 
-	expect(Array.isArray(ws.frames.idle)).toBe(false);
-	expect((ws.frames.idle as Sprite).rows(1)).toEqual(['AB']);
-	expect((ws.frames.windup as Sprite).rows(1)).toEqual(['CD']);
-	expect((ws.frames.recovery as Sprite).rows(1)).toEqual(['GH']);
-
-	expect(Array.isArray(ws.frames.active)).toBe(true);
-	expect(ws.frames.active?.length).toBe(1);
-	expect(ws.frames.active?.[0].rows(1)).toEqual(['EF']);
+	expect(ws.frames.rest.rows(1)).toEqual(['AB']);
+	expect(ws.frames.swing).toHaveLength(3);
+	expect(ws.frames.swing[0].rows(1)).toEqual(['CD']);
+	expect(ws.frames.swing[1].rows(1)).toEqual(['EF']);
+	expect(ws.frames.swing[2].rows(1)).toEqual(['GH']);
 });
 
 test('compileWeaponSprite: grip (a negative offset) and accent carry onto the WeaponSprite', () => {
@@ -211,38 +209,31 @@ test('compileWeaponSprite: grip (a negative offset) and accent carry onto the We
 	expect(ws.accent).toBe('s');
 });
 
-test('compileWeaponSprite: recovery absent round-trips to no recovery frame', () => {
-	const noRecovery = `{ "accent": "s", "anchors": { "grip": [0, 0] } }
---- idle
-AB
---- windup
-CD
---- active
-EF
-`;
-	const { doc } = parseSpriteFile(noRecovery, 'sword');
-	const ws = compileWeaponSprite(doc as SpriteDoc);
-	expect(ws.frames.recovery).toBeUndefined();
-});
-
 test('compileWeaponSprite: defaults accent to the dynamic accent key when the header omits it', () => {
-	const noAccent = `{ "anchors": { "grip": [0, 0] } }
+	const noAccent = `{ "anchors": { "grip": [0, 0] }, "animations": { "swing": ["s0", "s1", "s2"] } }
 --- idle
 AB
---- windup
+--- s0
 CD
---- active
+--- s1
 EF
+--- s2
+GH
 `;
 	const { doc } = parseSpriteFile(noAccent, 'sword');
 	const ws = compileWeaponSprite(doc as SpriteDoc);
 	expect(ws.accent).toBe(WEAPON_ACCENT_KEY);
 });
 
-test('compileWeaponSprite: throws when the grip anchor is missing', () => {
-	const { doc } = parseSpriteFile(
-		`--- idle\nAB\n--- windup\nCD\n--- active\nEF\n`,
+test('compileWeaponSprite: throws when the grip anchor or the 3-frame swing is missing', () => {
+	const { doc: nogrip } = parseSpriteFile(
+		`{ "animations": { "swing": ["a", "b", "c"] } }\n--- idle\nAB\n--- a\nAB\n--- b\nAB\n--- c\nAB\n`,
 		'nogrip',
 	);
-	expect(() => compileWeaponSprite(doc as SpriteDoc)).toThrow();
+	expect(() => compileWeaponSprite(nogrip as SpriteDoc)).toThrow();
+	const { doc: noswing } = parseSpriteFile(
+		`{ "anchors": { "grip": [0, 0] } }\n--- idle\nAB\n`,
+		'noswing',
+	);
+	expect(() => compileWeaponSprite(noswing as SpriteDoc)).toThrow();
 });

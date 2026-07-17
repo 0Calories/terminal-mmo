@@ -43,14 +43,12 @@ export {
 	stepAvatarCombat,
 	superArmorActive,
 	swatEvent,
-	sweepIndex,
 	swingHitsTarget,
 	swingPhase,
 	swingPose,
 	swingPoseCell,
 	swingPoseGlyph,
 	swingProgress,
-	weaponFrame,
 } from './combat';
 export {
 	COMBAT,

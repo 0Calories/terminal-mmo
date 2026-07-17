@@ -162,12 +162,14 @@ describe('sprite CLI', () => {
 	// Write a complete, valid set covering every @mmo/core catalog/reference id so
 	// the whole-set reference check resolves cleanly.
 	function writeCompleteSet(): void {
-		const weapon = `{"anchors":{"grip":[0,0]},"animations":{"windup":["wu"],"active":["ac"]}}
+		const weapon = `{"anchors":{"grip":[0,0]},"animations":{"swing":["s0","s1","s2"]}}
 --- idle
 AB
---- wu
+--- s0
 AB
---- ac
+--- s1
+AB
+--- s2
 AB
 `;
 		const idle = `--- idle\nAB\n`;

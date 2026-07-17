@@ -10,7 +10,7 @@ export {
 	type EmoteAnimationId,
 	mirrorAnchorX,
 	STRIDE,
-	type WeaponFrameId,
+	swingFrameIndex,
 } from './animation';
 export {
 	MONSTER_SPRITE_REF,

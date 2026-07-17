@@ -101,18 +101,17 @@ export interface PreviewStance {
 	fps: number;
 }
 
-const WEAPON_PHASES = ['idle', 'windup', 'active', 'recovery'] as const;
-
 export function previewStances(
 	doc: SpriteDoc,
 	role: SpriteRole,
 ): PreviewStance[] {
 	if (role === 'weapon') {
-		const out: PreviewStance[] = [{ id: 'idle', fps: 0 }];
-		for (const ph of WEAPON_PHASES) {
-			if (ph === 'idle') continue;
-			if (doc.animations[ph]) out.push({ id: ph, fps: 0 });
-		}
+		// The Default (rest) frame, then each swing frame — every stance a
+		// concrete frame name the phase mapping resolves (ADR 0036).
+		const rest = doc.frames[0]?.name ?? 'idle';
+		const out: PreviewStance[] = [{ id: rest, fps: 0 }];
+		for (const name of doc.animations.swing ?? [])
+			out.push({ id: name, fps: 0 });
 		return out;
 	}
 	if (role === 'form') {
@@ -166,27 +165,17 @@ function resolveFrame(
 	return fallback;
 }
 
-// Which swing phase a weapon stance denotes: a phase id directly, or the phase
-// whose animation contains the given frame name.
+// Which swing phase a weapon stance denotes: the phase whose swing slot holds
+// that frame name (ADR 0036: windup → 0, active → 1, recovery → 2), or 'idle'
+// (the Default/rest frame) for anything else.
+const SWING_PHASES = ['windup', 'active', 'recovery'] as const;
+
 function weaponPhaseOf(
 	doc: SpriteDoc,
 	stance: string,
 ): 'idle' | 'windup' | 'active' | 'recovery' {
-	if ((WEAPON_PHASES as readonly string[]).includes(stance))
-		return stance as (typeof WEAPON_PHASES)[number];
-	for (const ph of ['windup', 'active', 'recovery'] as const)
-		if (doc.animations[ph]?.includes(stance)) return ph;
-	return 'idle';
-}
-
-// Progress within the active sweep for a given stance (mid-sweep by default, or
-// the position of an explicitly-named active sub-frame).
-function activeProgress(doc: SpriteDoc, stance: string): number {
-	const active = doc.animations.active;
-	if (!active || active.length <= 1) return 0.5;
-	const i = active.indexOf(stance);
-	if (i < 0) return 0.5;
-	return i / (active.length - 1);
+	const i = (doc.animations.swing ?? []).indexOf(stance);
+	return i >= 0 && i < 3 ? SWING_PHASES[i] : 'idle';
 }
 
 // The entity action seating a weapon in a static phase (elapsed 0), or the live
@@ -216,7 +205,7 @@ function weaponAction(
 	return {
 		move: 'basic',
 		phase,
-		progress: phase === 'active' ? activeProgress(doc, stance) : 0.5,
+		progress: 0.5,
 		flags: 0,
 		emote: null,
 		emoteT: 0,

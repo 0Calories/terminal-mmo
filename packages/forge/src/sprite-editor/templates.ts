@@ -32,7 +32,11 @@ const ROLE_TEMPLATES: Record<SpriteRole, RoleTemplate> = {
 		animations: { walk: ['walk-0', 'walk-1'] },
 		anchors: { grip: [4, 2], head: [2, 0] },
 	},
-	weapon: { frames: ['idle', 'windup', 'active'], anchors: { grip: [1, 2] } },
+	weapon: {
+		frames: ['idle', 'swing-0', 'swing-1', 'swing-2'],
+		animations: { swing: ['swing-0', 'swing-1', 'swing-2'] },
+		anchors: { grip: [1, 2] },
+	},
 	hat: { frames: ['idle'], anchors: {} },
 	monster: { frames: ['idle'], anchors: {} },
 	npc: { frames: ['idle'], anchors: {} },

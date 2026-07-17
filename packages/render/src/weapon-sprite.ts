@@ -3,14 +3,14 @@ import type { Sprite } from './sprite';
 // The recolor key the Weapon accent drives (see Weapon accent in CONTEXT.md).
 export const WEAPON_ACCENT_KEY = 'a';
 
-// The *art* half of a Weapon: its animated frame set. Weapon *stats* (name, damage)
-// and animation selection (WeaponFrameId) live in @mmo/core.
+// The *art* half of a Weapon (ADR 0036): its Default (rest) frame plus the
+// 3-frame `swing` the replicated attack phase indexes (windup → 0, active → 1,
+// recovery → 2). Weapon *stats* (name, damage) and the phase → frame selection
+// (`swingFrameIndex`) live in @mmo/core.
 export interface WeaponSprite {
 	frames: {
-		idle?: Sprite;
-		windup?: Sprite;
-		active?: readonly Sprite[];
-		recovery?: Sprite;
+		rest: Sprite;
+		swing: readonly [Sprite, Sprite, Sprite];
 	};
 	grip: { x: number; y: number };
 	accent: string;

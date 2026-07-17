@@ -94,34 +94,37 @@ export function compileBodySprite(doc: SpriteDoc): BodySprite {
 	};
 }
 
-// Compile a weapon sprite (ADR 0031): phase animations `idle`/`windup`/`recovery`
-// each compile to a single Sprite, `active` to the swing sweep (readonly
-// Sprite[]) the renderer samples by Attack progress. The grip is a doc-level
-// anchor (an offset, so it may be negative); the accent is the palette key the
-// dynamic `a` channel resolves to at render time. Assumes the doc passed the
-// `weapons` role profile — still throws if the required grip is absent.
+// Compile a weapon sprite (ADR 0036): the Default frame — the first frame in
+// the file — becomes the rest sprite, and the `swing` animation's exactly-three
+// frames compile phase-indexed (windup/active/recovery). The grip is a
+// doc-level anchor (an offset, so it may be negative); the accent is the
+// palette key the dynamic `a` channel resolves to at render time. Assumes the
+// doc passed the `weapons` role profile — still throws if the grip or the
+// 3-frame swing is absent.
 export function compileWeaponSprite(doc: SpriteDoc): WeaponSprite {
 	const grip = doc.anchors.grip;
 	if (grip === undefined)
 		throw new Error(
 			`sprite doc '${doc.id}' (role 'weapons') requires a doc-level anchor 'grip'`,
 		);
-
-	const frames: WeaponSprite['frames'] = {};
-	if (doc.animations.idle)
-		frames.idle = spriteFromDoc(doc, doc.animations.idle[0]);
-	if (doc.animations.windup)
-		frames.windup = spriteFromDoc(doc, doc.animations.windup[0]);
-	if (doc.animations.recovery)
-		frames.recovery = spriteFromDoc(doc, doc.animations.recovery[0]);
-	if (doc.animations.active)
-		frames.active = doc.animations.active.map((name) =>
-			spriteFromDoc(doc, name),
+	const rest = doc.frames[0];
+	if (rest === undefined)
+		throw new Error(`sprite doc '${doc.id}' has no frames`);
+	const swing = doc.animations.swing;
+	if (swing === undefined || swing.length !== 3)
+		throw new Error(
+			`sprite doc '${doc.id}' (role 'weapons') requires a 'swing' animation of exactly 3 frames`,
 		);
-
 	return {
-		frames,
-		grip: { x: grip.x, y: grip.y },
+		frames: {
+			rest: spriteFromDoc(doc, rest.name),
+			swing: [
+				spriteFromDoc(doc, swing[0]),
+				spriteFromDoc(doc, swing[1]),
+				spriteFromDoc(doc, swing[2]),
+			],
+		},
+		grip,
 		accent: doc.accent ?? WEAPON_ACCENT_KEY,
 	};
 }

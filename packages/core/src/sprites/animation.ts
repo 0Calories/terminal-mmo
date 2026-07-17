@@ -16,7 +16,15 @@ export type AnimationId =
 	| 'hurt'
 	| EmoteAnimationId;
 
-export type WeaponFrameId = 'idle' | 'windup' | 'active' | 'recovery';
+// The swing frame a replicated attack phase selects (ADR 0036): weapons author
+// a Default (rest) frame plus one `swing` animation of exactly three frames,
+// indexed by phase — timing authority stays in the replicated phase durations,
+// so a swing fps is ignored and owner/observers agree by construction.
+export function swingFrameIndex(phase: AttackPhase): 0 | 1 | 2 {
+	if (phase === 'windup') return 0;
+	if (phase === 'active') return 1;
+	return 2;
+}
 
 export const STRIDE = 6;
 

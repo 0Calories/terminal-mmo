@@ -102,36 +102,61 @@ test('validateSpriteRole: forms rejects an emote animation for an unregistered e
 });
 
 const WEAPON_OK = `{
+	"accent": "s",
 	"anchors": { "grip": [0, 0] },
-	"animations": { "windup": ["wu"], "active": ["ac"] }
+	"animations": { "swing": ["swing-0", "swing-1", "swing-2"] }
 }
 --- idle
 AB
---- wu
+--- swing-0
 AB
---- ac
+--- swing-1
+AB
+--- swing-2
 AB
 `;
 
-test('validateSpriteRole: weapons passes with idle/windup/active and grip (recovery optional)', () => {
+test('validateSpriteRole: weapons passes with a default frame + a 3-frame swing and grip', () => {
 	expect(validateSpriteRole(docOf(WEAPON_OK, 'sword'), 'weapons')).toEqual([]);
 });
 
 const WEAPON_BAD = `{
-	"animations": { "windup": ["wu"] }
+	"animations": { "chop": ["ch"] }
 }
 --- idle
 AB
---- wu
+--- ch
 AB
 `;
 
-test('validateSpriteRole: weapons fails on missing active animation and grip anchor', () => {
+test('validateSpriteRole: weapons fails on missing swing animation and grip anchor', () => {
 	const diags = validateSpriteRole(docOf(WEAPON_BAD, 'sword'), 'weapons');
 	expect(diags.length).toBe(2);
 	const joined = diags.map((d) => d.message).join('\n');
-	expect(joined).toContain('active');
+	expect(joined).toContain('swing');
 	expect(joined).toContain('grip');
+});
+
+const WEAPON_SHORT_SWING = `{
+	"anchors": { "grip": [0, 0] },
+	"animations": { "swing": ["swing-0", "swing-1"] }
+}
+--- idle
+AB
+--- swing-0
+AB
+--- swing-1
+AB
+`;
+
+test('validateSpriteRole: a swing of other than exactly 3 frames is an error (ADR 0036)', () => {
+	const diags = validateSpriteRole(
+		docOf(WEAPON_SHORT_SWING, 'sword'),
+		'weapons',
+	);
+	expect(diags.length).toBe(1);
+	expect(diags[0].severity).toBe('error');
+	expect(diags[0].message).toContain('exactly 3');
 });
 
 test('validateSpriteRole: hats/monsters/npcs require only idle', () => {
@@ -206,12 +231,14 @@ function weaponSource(id: string): SpriteSource {
 	return {
 		id,
 		role: 'weapons',
-		text: `{"anchors":{"grip":[0,0]},"animations":{"windup":["wu"],"active":["ac"]}}
+		text: `{"anchors":{"grip":[0,0]},"animations":{"swing":["s0","s1","s2"]}}
 --- idle
 AB
---- wu
+--- s0
 AB
---- ac
+--- s1
+AB
+--- s2
 AB
 `,
 	};

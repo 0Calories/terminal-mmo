@@ -13,7 +13,7 @@ import type {
 } from '../entities/types';
 import { applyImpulse } from '../physics/physics';
 import { capabilityUnlocked } from '../progression/progression';
-import { spriteMetaFor, type WeaponFrameId } from '../sprites';
+import { spriteMetaFor } from '../sprites';
 import { COMBAT } from './constants';
 import {
 	type PlayerClass,
@@ -289,20 +289,6 @@ export function swingPose(
 	const glyph = facing === 1 ? '╱' : '╲';
 	const arc = phase === 'active' ? (facing === 1 ? '╱' : '╲') : null;
 	return { glyph, arc };
-}
-
-export function weaponFrame(
-	move: MoveId,
-	phase: AttackPhase | null,
-): WeaponFrameId {
-	if (move !== 'basic' || phase === null) return 'idle';
-	return phase;
-}
-
-export function sweepIndex(progress: number, len: number): number {
-	if (len <= 1) return 0;
-	const p = progress < 0 ? 0 : progress > 1 ? 1 : progress;
-	return Math.min(len - 1, Math.floor(p * len));
 }
 
 export interface ArcCell {

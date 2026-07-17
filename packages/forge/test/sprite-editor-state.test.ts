@@ -468,9 +468,18 @@ describe('role templates', () => {
 		expect(Object.keys(doc.anchors).sort()).toEqual(['grip', 'head']);
 	});
 
-	test('weapon has idle/windup/active frames and a grip anchor', () => {
+	test('weapon has a Default frame + 3-frame swing and a grip anchor (ADR 0036)', () => {
 		const doc = emptySpriteDoc('sword', 'weapon');
-		expect(doc.frames.map((f) => f.name)).toEqual(['idle', 'windup', 'active']);
+		expect(doc.frames.map((f) => f.name)).toEqual([
+			'idle',
+			'swing-0',
+			'swing-1',
+			'swing-2',
+		]);
+		expect(doc.animations).toEqual({
+			idle: ['idle'],
+			swing: ['swing-0', 'swing-1', 'swing-2'],
+		});
 		expect(Object.keys(doc.anchors)).toEqual(['grip']);
 	});
 

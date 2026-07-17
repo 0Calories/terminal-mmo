@@ -27,8 +27,7 @@ interface RoleProfile {
 
 export const ROLE_PROFILES: Readonly<Record<string, RoleProfile>> = {
 	forms: { animations: ['idle', 'walk'], anchors: ['grip', 'head'] },
-	// `recovery` is optional for weapons, so it is not required here.
-	weapons: { animations: ['idle', 'windup', 'active'], anchors: ['grip'] },
+	weapons: { animations: ['swing'], anchors: ['grip'] },
 	hats: { animations: ['idle'], anchors: [] },
 	monsters: { animations: ['idle'], anchors: [] },
 	npcs: { animations: ['idle'], anchors: [] },
@@ -58,6 +57,19 @@ export function validateSpriteRole(
 			});
 		}
 	}
+	// A weapon's swing is phase-indexed (ADR 0036): each of the exactly three
+	// frames maps to a replicated attack phase, so any other count is an error.
+	if (role === 'weapons') {
+		const swing = doc.animations.swing;
+		if (swing !== undefined && swing.length !== 3) {
+			diagnostics.push({
+				severity: 'error',
+				spriteId: doc.id,
+				message: `sprite '${doc.id}' (role 'weapons') must author exactly 3 swing frames (windup/active/recovery), found ${swing.length}`,
+			});
+		}
+	}
+
 	for (const anchor of profile.anchors) {
 		if (!(anchor in doc.anchors)) {
 			diagnostics.push({
