@@ -404,7 +404,7 @@ export function bitName(bit: number): string {
 
 // The persistent status line's LEFT content — tool, Pixel + cell coordinates,
 // zoom, ink, and save state. The coercion feedback is drawn right-aligned on the
-// same row (see `comanimationStatusLine`); save diagnostics render separately.
+// same row (see `composeStatusLine`); save diagnostics render separately.
 export function spriteStatusLine(m: SpriteStatusModel): string {
 	const dirty = m.dirty ? ' *' : '';
 	const animation = m.animation ? ` · animation ${m.animation}` : '';
@@ -419,7 +419,7 @@ export function spriteStatusLine(m: SpriteStatusModel): string {
 // Compose the status row: `left` at column 0, `right` (the coercion feedback)
 // flush against the right edge of `width`, with at least one space between them.
 // When they cannot both fit, the left content wins and the right is dropped.
-export function comanimationStatusLine(
+export function composeStatusLine(
 	left: string,
 	right: string,
 	width: number,

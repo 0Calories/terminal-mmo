@@ -170,7 +170,7 @@ import { emptySpriteDoc, type SpriteRole } from './templates';
 import {
 	ANCHOR_MARKER,
 	type Cam,
-	comanimationStatusLine,
+	composeStatusLine,
 	DEFAULT_ZOOM,
 	dirForRole,
 	docDynamicUsage,
@@ -2308,7 +2308,7 @@ export class SpriteEditor extends Renderable {
 							)
 						: (this.focusHint ?? requiredHintLine(this.state.doc, this.role));
 		const feedback = transient || this.state.feedback;
-		const status = comanimationStatusLine(statusLeft, feedback, W);
+		const status = composeStatusLine(statusLeft, feedback, W);
 		const statusRow = H - CHROME_H;
 		buf.fillRect(0, statusRow, W, 1, C.chromeBg);
 		buf.drawText(status, 0, statusRow, C.text, C.chromeBg);

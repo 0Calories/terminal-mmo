@@ -4,7 +4,7 @@ import { RARITY_COLOR } from '@mmo/core/items';
 import {
 	ACCENT_CYCLE,
 	bitName,
-	comanimationStatusLine,
+	composeStatusLine,
 	DEFAULT_ZOOM,
 	dirForRole,
 	docDynamicUsage,
@@ -217,21 +217,21 @@ describe('status + help chrome', () => {
 		expect(line).toContain('*');
 	});
 
-	test('comanimationStatusLine right-aligns the coercion feedback', () => {
-		const line = comanimationStatusLine('left', 'punched bg', 20);
+	test('composeStatusLine right-aligns the coercion feedback', () => {
+		const line = composeStatusLine('left', 'punched bg', 20);
 		expect(line.length).toBe(20);
 		expect(line.startsWith('left')).toBe(true);
 		expect(line.endsWith('punched bg')).toBe(true);
 	});
 
-	test('comanimationStatusLine drops the feedback when it cannot fit', () => {
-		const line = comanimationStatusLine('a very long left side', 'note', 12);
+	test('composeStatusLine drops the feedback when it cannot fit', () => {
+		const line = composeStatusLine('a very long left side', 'note', 12);
 		expect(line).toBe('a very long ');
 		expect(line).not.toContain('note');
 	});
 
-	test('comanimationStatusLine with no feedback is just the left, clipped', () => {
-		expect(comanimationStatusLine('hello', '', 3)).toBe('hel');
+	test('composeStatusLine with no feedback is just the left, clipped', () => {
+		expect(composeStatusLine('hello', '', 3)).toBe('hel');
 	});
 
 	test('save diag summary — clean and dirty', () => {

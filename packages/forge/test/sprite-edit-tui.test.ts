@@ -217,7 +217,7 @@ describe('Sprite editor TUI smoke', () => {
 			initialFeedback: 'creating new sprite hats/newhat',
 			// Wide enough for the status row's right-aligned feedback slot to fit
 			// next to the full left status content (narrow widths drop the note by
-			// comanimationStatusLine's left-wins rule, covered in sprite-editor-view).
+			// composeStatusLine's left-wins rule, covered in sprite-editor-view).
 			width: 140,
 		});
 		expect(t.editor.state.feedback).toBe('creating new sprite hats/newhat');
