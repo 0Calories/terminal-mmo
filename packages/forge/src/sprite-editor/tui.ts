@@ -1779,22 +1779,25 @@ export class SpriteEditor extends Renderable {
 			return;
 		}
 		// Filmstrip navigation (spec, post-#351): in the focus view the ← / → arrows
-		// step the active frame along the animation, wrapping. They only claim the
-		// arrows when nothing else does — resize mode was dispatched above, and a
-		// pending shape/select preview, a live float, and the move tool all keep the
-		// arrows for their own stepping. `a`/`d` and the vertical arrows still nudge
-		// the cursor, so horizontal cursor movement stays available.
+		// step the active frame along the animation, wrapping. Tool identity alone
+		// must NOT suppress this — the select tool is the launch default (commit
+		// 4bf75e2) and does nothing with the arrows until a marquee is pending, so a
+		// fresh focus session must still navigate frames. Only a LIVE interaction
+		// that legitimately owns the arrows blocks the step: a pending shape/select
+		// marquee preview, a live float being nudged, or the move tool nudging a
+		// committed selection. Resize mode was dispatched above (it keeps
+		// precedence). `a`/`d` and the vertical arrows still nudge the cursor.
 		const inFocus =
 			this.view === 'focus' || (this.forceFocus && this.view === 'strips');
+		const arrowsBusy =
+			this.state.shape !== null ||
+			this.state.float !== null ||
+			(this.state.tool === 'move' && this.state.selection !== null);
 		if (
 			inFocus &&
 			!k.shift &&
 			(k.name === 'left' || k.name === 'right') &&
-			!this.state.shape &&
-			!this.state.float &&
-			!isShapeTool(this.state.tool) &&
-			this.state.tool !== 'select' &&
-			this.state.tool !== 'move'
+			!arrowsBusy
 		) {
 			this.stepFocusFrame(k.name === 'left' ? -1 : 1);
 			return;

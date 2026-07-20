@@ -1512,6 +1512,35 @@ describe('focus filmstrip (post-#351)', () => {
 		expect(gap).toEqual([16, 18, 26]);
 	});
 
+	test('← / → step the active frame under the launch-default select tool (no marquee)', async () => {
+		const t = await mountWalk();
+		// No tool switch: the editor launches on select (commit 4bf75e2), and with
+		// no marquee pending the arrows do nothing for select — so they are free to
+		// navigate frames. Tool identity alone must not suppress frame-stepping.
+		expect(t.editor.state.tool).toBe('select');
+		expect(t.editor.state.shape).toBeNull();
+		expect(t.editor.state.selection).toBeNull();
+		expect(t.editor.state.frame).toBe('walk 0');
+		t.editor.key(key('right'));
+		expect(t.editor.state.frame).toBe('walk 1');
+		t.editor.key(key('left'));
+		expect(t.editor.state.frame).toBe('walk 0');
+	});
+
+	test('a pending select marquee keeps the arrows (they grow it, not the frame)', async () => {
+		const t = await mountWalk();
+		// Drop a marquee anchor (select is the default tool): now a live gesture owns
+		// the arrows, so → grows the marquee and the active frame does NOT change.
+		t.editor.key(key('return')); // anchor the select marquee at the cursor
+		expect(t.editor.state.shape).not.toBeNull();
+		const frameBefore = t.editor.state.frame;
+		t.editor.key(key('right'));
+		expect(t.editor.state.frame).toBe(frameBefore);
+		expect(t.editor.state.shape?.to.x).toBeGreaterThan(
+			t.editor.state.shape?.anchor.x ?? 0,
+		);
+	});
+
 	test('← / → step the active frame with wrap (pencil active)', async () => {
 		const t = await mountWalk();
 		t.editor.key(key('p')); // a non-gesture tool: arrows navigate frames
