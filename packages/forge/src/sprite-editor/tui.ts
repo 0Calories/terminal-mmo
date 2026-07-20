@@ -238,6 +238,17 @@ export interface SpriteEditorOpts {
 // the degradation solver so it and the renderer agree on the canvas height.
 const CHROME_H = CHROME_ROWS;
 
+// The colour the native renderer is registered to CLEAR unpainted cells with —
+// the terminal's "declared background". A translucent terminal (e.g. Ghostty
+// with background-opacity) composites any cell whose background equals this
+// declared colour against the window, so the wallpaper shows through it. The
+// editor paints every cell opaquely, so this clear colour is never itself drawn;
+// its sole job is to be a value NONE of the editor's surface shades equal, so no
+// chrome or canvas cell is ever mistaken for the transparent terminal default.
+// (It must therefore differ from `C.bg` and every other painted surface shade —
+// pinned by the "no cell equals the clear colour" test.)
+export const RENDERER_CLEAR_COLOR = '#05060a';
+
 // How many rail rows the session variant options occupy (one per channel).
 function variantRowCountOf(options: readonly { channel: 'p' | 'a' }[]): number {
 	return new Set(options.map((o) => o.channel)).size;
@@ -2270,16 +2281,22 @@ export class SpriteEditor extends Renderable {
 		// Onion ghosts only source the active Frame; while playing the display
 		// frame is not it (and the layers are empty anyway).
 		const onion = viewState.frame === this.state.frame;
+		// The checker is the frame's own transparency indicator, so it is confined
+		// to the frame's Pixel bounds; the margin around the centred frame is a
+		// plain opaque surround (Palette.bg — the strips view's plain background),
+		// so the frame reads as a checker island whose bounds are visible, and the
+		// canvas surround stays distinct from the chrome.
 		for (let sy = top; sy < viewH; sy++) {
 			for (let sx = RAIL_W; sx < RAIL_W + viewW; sx++) {
 				const px = this.cam.x + Math.floor((sx - origin.x) / z);
 				const py = this.cam.y + Math.floor((sy - origin.y) / z);
+				const inFrame = px >= 0 && px < pxW && py >= 0 && py < pxH;
 				buf.setCell(
 					sx,
 					sy,
 					' ',
 					C.dim,
-					this.pixelRGBA(viewState, px, py, sx + sy, C, onion),
+					inFrame ? this.pixelRGBA(viewState, px, py, sx + sy, C, onion) : C.bg,
 				);
 			}
 		}
@@ -2969,7 +2986,7 @@ export async function runSpriteEdit(
 	const renderer = await createCliRenderer({
 		targetFps: 30,
 		exitOnCtrlC: true,
-		backgroundColor: '#10121a',
+		backgroundColor: RENDERER_CLEAR_COLOR,
 		useKittyKeyboard: {},
 	});
 	const doQuit = () => {

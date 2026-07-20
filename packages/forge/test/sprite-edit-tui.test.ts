@@ -36,7 +36,11 @@ import {
 	TRANSPARENT_INK,
 } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
-import { SpriteEditor, type SpriteKey } from '../src/sprite-editor/tui';
+import {
+	RENDERER_CLEAR_COLOR,
+	SpriteEditor,
+	type SpriteKey,
+} from '../src/sprite-editor/tui';
 import {
 	resolveColorKey,
 	SPRITE_PREVIEWS,
@@ -130,6 +134,10 @@ async function mount(opts: {
 		// The ≥80×24 floor (#398): mount at the floor by default so the editor UI
 		// renders (below it a placard replaces the whole UI).
 		height: opts.height ?? 24,
+		// Mirror the CLI: register the same clear colour the real editor declares,
+		// so the "no cell equals the terminal-default background" invariant is
+		// exercised through the same seam production uses.
+		backgroundColor: RENDERER_CLEAR_COLOR,
 	});
 	const editor = new SpriteEditor(t.renderer, {
 		id: opts.id,
@@ -1283,5 +1291,83 @@ describe('Sprite editor shape tools (#394)', () => {
 		t.editor.key(key('escape'));
 		expect(t.editor.state.shape).toBeNull();
 		expect(t.editor.state.doc).toBe(before);
+	});
+});
+
+// The `#rrggbb` string as the RGBA ints RGBA.fromInts produces, so a captured
+// span's background can be compared to a palette/clear colour.
+function hexToInts(hex: string): [number, number, number] {
+	const h = hex.replace('#', '');
+	return [
+		Number.parseInt(h.slice(0, 2), 16),
+		Number.parseInt(h.slice(2, 4), 16),
+		Number.parseInt(h.slice(4, 6), 16),
+	];
+}
+
+describe('TUI opacity: no cell collapses to the terminal-default background (concern 1)', () => {
+	// The declared clear colour (what a translucent terminal composites against
+	// the window). The editor paints every cell opaquely, so NO chrome or canvas
+	// cell may be painted this colour — otherwise it shows the wallpaper through.
+	const CLEAR = hexToInts(RENDERER_CLEAR_COLOR);
+	// The transparency checker's distinctive shade (Palette.grid); its twin phase
+	// is Palette.bg. Confined to a frame's actual bounds, it never tiles margins.
+	const GRID: [number, number, number] = [28, 32, 44];
+
+	test('no chrome or canvas cell is painted the declared clear colour', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('bg', 'form'),
+			id: 'bg',
+			role: 'form',
+		});
+		await t.renderOnce();
+		const cap = t.captureSpans();
+		for (let y = 0; y < cap.lines.length; y++)
+			for (const s of cap.lines[y].spans) {
+				const [r, g, b] = s.bg.toInts();
+				expect([r, g, b]).not.toEqual(CLEAR);
+			}
+	});
+
+	test('focus view confines the checker to the frame; the margin is the plain surround', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('foc', 'form'),
+			id: 'foc',
+			role: 'form',
+		});
+		t.editor.key(key('tab')); // strips → focus
+		expect(t.editor.view).toBe('focus');
+		await t.renderOnce();
+
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private render geometry.
+		const geom = (t.editor as any).geom as {
+			focus: { origin: { x: number; y: number }; top: number };
+			viewH: number;
+		};
+		const { origin, top } = geom.focus;
+		const z = t.editor.zoom;
+		const { w, h } = frameExtent(currentFrame(t.editor.state));
+		const fx1 = origin.x + Math.max(1, w * 2) * z;
+		const fy1 = origin.y + Math.max(1, h * 2) * z;
+
+		const cap = t.captureSpans();
+		let checkerInFrame = 0;
+		for (let y = top; y < Math.min(geom.viewH, cap.lines.length); y++) {
+			let col = 0;
+			for (const s of cap.lines[y].spans) {
+				const [r, g, b] = s.bg.toInts();
+				if (r === GRID[0] && g === GRID[1] && b === GRID[2])
+					for (let c = col; c < col + s.width; c++) {
+						const inFrame =
+							c >= origin.x && c < fx1 && y >= origin.y && y < fy1;
+						// Every checker cell lands inside the frame — never the margin.
+						expect(inFrame).toBe(true);
+						if (inFrame) checkerInFrame++;
+					}
+				col += s.width;
+			}
+		}
+		// The frame still shows the transparency checker (it is not all-plain).
+		expect(checkerInFrame).toBeGreaterThan(0);
 	});
 });
