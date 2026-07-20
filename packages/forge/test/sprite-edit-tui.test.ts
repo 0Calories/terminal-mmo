@@ -1411,3 +1411,129 @@ describe('TUI opacity: no cell collapses to the terminal-default background (con
 		expect(checkerInFrame).toBeGreaterThan(0);
 	});
 });
+
+describe('focus filmstrip (post-#351)', () => {
+	// A three-frame walk, every frame lighting the same top-left Pixel so the lit
+	// screen cell sits at each frame box's (x0, origin.y).
+	const WALK3 =
+		'{"animations":[{"name":"walk"}]}\n' +
+		'--- walk 0\n▘·\n··\n' +
+		'--- walk 1\n▘·\n··\n' +
+		'--- walk 2\n▘·\n··\n';
+
+	async function mountWalk() {
+		const { doc } = parseSpriteFile(WALK3, 'film');
+		if (!doc) throw new Error('walk fixture failed to parse');
+		const t = await mount({ doc, id: 'film', role: 'hat' });
+		// Force the floating Composited preview off so it never overlaps the
+		// filmstrip's right-hand neighbours (it floats over the top-right).
+		// biome-ignore lint/suspicious/noExplicitAny: set the private preview override.
+		(t.editor as any).previewOverride = false;
+		t.editor.key(key('tab')); // strips → focus
+		await t.renderOnce();
+		return t;
+	}
+
+	// biome-ignore lint/suspicious/noExplicitAny: reach the private render geometry.
+	const focusGeom = (t: Awaited<ReturnType<typeof mount>>) =>
+		(t.editor as any).geom.focus as {
+			origin: { x: number; y: number };
+			top: number;
+			pxH: number;
+			frames: { name: string; x0: number; x1: number }[];
+		};
+
+	const bgAt = (
+		cap: ReturnType<
+			Awaited<ReturnType<typeof createTestRenderer>>['captureSpans']
+		>,
+		x: number,
+		y: number,
+	): [number, number, number] => {
+		let col = 0;
+		for (const s of cap.lines[y].spans) {
+			if (x >= col && x < col + s.width) {
+				const [r, g, b] = s.bg.toInts();
+				return [r, g, b];
+			}
+			col += s.width;
+		}
+		return [-1, -1, -1];
+	};
+
+	test('renders the whole animation: one box per frame, the active centred', async () => {
+		const t = await mountWalk();
+		const f = focusGeom(t);
+		expect(f.frames.map((b) => b.name)).toEqual(['walk 0', 'walk 1', 'walk 2']);
+		// The active frame (walk 0) is the centred origin; its neighbours sit to the
+		// right at ascending x.
+		const active = f.frames.find((b) => b.name === 'walk 0');
+		expect(active?.x0).toBe(f.origin.x);
+		const w1 = f.frames.find((b) => b.name === 'walk 1');
+		const w2 = f.frames.find((b) => b.name === 'walk 2');
+		expect(w1 && active && w1.x0 > active.x0).toBe(true);
+		expect(w2 && w1 && w2.x0 > w1.x0).toBe(true);
+	});
+
+	test('a neighbour frame renders dimmer than the active frame', async () => {
+		const t = await mountWalk();
+		const f = focusGeom(t);
+		const cap = t.captureSpans();
+		const active = f.frames.find((b) => b.name === 'walk 0');
+		const neighbour = f.frames.find((b) => b.name === 'walk 1');
+		if (!active || !neighbour) throw new Error('missing boxes');
+		// Each frame's lit Pixel (0,0) is the cell at (box.x0, origin.y).
+		const lit = bgAt(cap, active.x0, f.origin.y);
+		const dim = bgAt(cap, neighbour.x0, f.origin.y);
+		const sum = (c: number[]) => c[0] + c[1] + c[2];
+		// The neighbour's colours are genuinely dimmed, not merely decorated.
+		expect(sum(dim)).toBeLessThan(sum(lit));
+		expect(sum(dim)).toBeGreaterThan(0);
+	});
+
+	test('the margins and inter-frame gaps stay the plain opaque surround', async () => {
+		const t = await mountWalk();
+		const f = focusGeom(t);
+		const cap = t.captureSpans();
+		// The gap column just right of the active frame's box is plain C.bg
+		// (16,18,26) — never the checker, art, or the declared clear colour.
+		const active = f.frames.find((b) => b.name === 'walk 0');
+		if (!active) throw new Error('no active box');
+		const gap = bgAt(cap, active.x1, f.origin.y);
+		expect(gap).toEqual([16, 18, 26]);
+	});
+
+	test('← / → step the active frame with wrap (pencil active)', async () => {
+		const t = await mountWalk();
+		t.editor.key(key('p')); // a non-gesture tool: arrows navigate frames
+		expect(t.editor.state.frame).toBe('walk 0');
+		t.editor.key(key('left')); // wrap back to the last frame
+		expect(t.editor.state.frame).toBe('walk 2');
+		t.editor.key(key('right')); // wrap forward
+		expect(t.editor.state.frame).toBe('walk 0');
+		t.editor.key(key('right'));
+		expect(t.editor.state.frame).toBe('walk 1');
+	});
+
+	test('clicking a dimmed neighbour activates it without painting', async () => {
+		const t = await mountWalk();
+		const before = t.editor.state.doc;
+		const f = focusGeom(t);
+		const neighbour = f.frames.find((b) => b.name === 'walk 1');
+		if (!neighbour) throw new Error('no neighbour box');
+		// Click an unlit cell inside the neighbour box (its Pixel (1,0) is dark).
+		t.editor.mouseDown({ button: 0, x: neighbour.x0 + 2, y: f.origin.y });
+		t.editor.mouseUp();
+		expect(t.editor.state.frame).toBe('walk 1');
+		expect(t.editor.state.doc).toBe(before); // activation never paints
+	});
+
+	test('playback keeps the display single-frame', async () => {
+		const t = await mountWalk();
+		// biome-ignore lint/suspicious/noExplicitAny: drive playback + read geometry.
+		const ed = t.editor as any;
+		ed.togglePlay('animation');
+		await t.renderOnce();
+		expect(focusGeom(t).frames).toHaveLength(1);
+	});
+});

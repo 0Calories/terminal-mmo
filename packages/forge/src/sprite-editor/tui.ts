@@ -255,6 +255,11 @@ function variantRowCountOf(options: readonly { channel: 'p' | 'a' }[]): number {
 }
 const SCROLLOFF = 2;
 
+// Screen-cell gap between neighbouring frames in the focus filmstrip. Small, so
+// the strip reads as one continuous animation while each frame stays a distinct
+// checker island.
+const FILMSTRIP_GAP = 2;
+
 // PREVIEW_W / PREVIEW_H (the floating Composited preview's native ~34×11) now
 // live in `degradation.ts` alongside the ≥80×24 floor, so the solver and the
 // renderer size the pane identically.
@@ -455,6 +460,15 @@ export class SpriteEditor extends Renderable {
 			tabs: readonly FocusTab[];
 			origin: { x: number; y: number };
 			top: number;
+			// Every frame of the active animation as a screen box in the filmstrip
+			// (spec: focus renders the whole animation, the active frame centred and
+			// full-brightness, neighbours alongside and dimmed). A click inside a
+			// neighbour box activates that frame; inside the active box it paints.
+			// Single-frame animations (and the playback path) carry exactly one box.
+			frames: { name: string; x0: number; x1: number }[];
+			// The active frame's Pixel height in cells (box vertical extent = origin.y
+			// .. origin.y + pxH), so a click's row can be bounded to the strip.
+			pxH: number;
 		} | null;
 		// The floating preview pane's screen rect + its clickable control spans, so
 		// mouse handlers can swallow clicks over the pane and hit flip/play.
@@ -898,6 +912,23 @@ export class SpriteEditor extends Renderable {
 				const tab = focusTabAt(f.tabs, e.x - RAIL_W);
 				if (tab) this.state = selectFrame(this.state, tab.name);
 				return;
+			}
+			// Filmstrip click model (spec): a press inside a DIMMED neighbour frame
+			// activates it (no paint) — the artist tabs along the animation by
+			// clicking; a press inside the active frame paints; a press in a gap or
+			// margin does nothing. The active frame keeps the focusPixel path so paint
+			// hit-testing is unchanged from the single-frame view.
+			if (f) {
+				const inRow = e.y >= f.origin.y && e.y < f.origin.y + f.pxH * this.zoom;
+				const box = inRow
+					? f.frames.find((b) => e.x >= b.x0 && e.x < b.x1)
+					: undefined;
+				if (box && box.name !== this.state.frame) {
+					this.liftPen();
+					this.state = selectFrame(this.state, box.name);
+					return;
+				}
+				if (!box) return; // gap / margin: no paint, no activation
 			}
 			px = this.focusPixel(e.x, e.y);
 		}
@@ -1494,6 +1525,21 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
+	// Step the active frame along the current animation's filmstrip, wrapping at
+	// both ends (spec, post-#351). A single-frame animation has nowhere to step, so
+	// this is a no-op there.
+	private stepFocusFrame(delta: number): void {
+		const frames = animationFrames(this.state, this.state.animation);
+		if (frames.length <= 1) return;
+		const i = frames.indexOf(this.state.frame);
+		if (i < 0) return;
+		const n = frames.length;
+		const next = frames[(i + delta + n) % n];
+		this.liftPen();
+		this.state = selectFrame(this.state, next);
+		this.followCursor = true;
+	}
+
 	// ---- playback (presentation only) ----
 
 	private togglePlay(mode: 'animation' | 'walk'): void {
@@ -1712,6 +1758,27 @@ export class SpriteEditor extends Renderable {
 			this.toggleView();
 			return;
 		}
+		// Filmstrip navigation (spec, post-#351): in the focus view the ← / → arrows
+		// step the active frame along the animation, wrapping. They only claim the
+		// arrows when nothing else does — resize mode was dispatched above, and a
+		// pending shape/select preview, a live float, and the move tool all keep the
+		// arrows for their own stepping. `a`/`d` and the vertical arrows still nudge
+		// the cursor, so horizontal cursor movement stays available.
+		const inFocus =
+			this.view === 'focus' || (this.forceFocus && this.view === 'strips');
+		if (
+			inFocus &&
+			!k.shift &&
+			(k.name === 'left' || k.name === 'right') &&
+			!this.state.shape &&
+			!this.state.float &&
+			!isShapeTool(this.state.tool) &&
+			this.state.tool !== 'select' &&
+			this.state.tool !== 'move'
+		) {
+			this.stepFocusFrame(k.name === 'left' ? -1 : 1);
+			return;
+		}
 		// Tools also live on the number row, in rail order (spec #387).
 		const railTool = RAIL_TOOLS.find((t) => k.sequence === t.key);
 		if (railTool) {
@@ -1843,6 +1910,21 @@ export class SpriteEditor extends Renderable {
 			if (ghost) return ghost;
 		}
 		return phase % 2 === 0 ? C.grid : C.bg;
+	}
+
+	// Dim a colour toward the plain surround (Palette.bg) for a filmstrip neighbour
+	// frame: the artist reads the whole animation at a glance while the active frame
+	// — the only one a paint touches — stays full-bright and unambiguous.
+	private dimRGBA(c: RGBA, C: Palette): RGBA {
+		const [r, g, b] = c.toInts();
+		const [br, bg, bb] = C.bg.toInts();
+		const f = 0.5; // half-way to the surround
+		return RGBA.fromInts(
+			Math.round(r * (1 - f) + br * f),
+			Math.round(g * (1 - f) + bg * f),
+			Math.round(b * (1 - f) + bb * f),
+			255,
+		);
 	}
 
 	// The colour a pending shape's preview Pixels tint to: the resolved ink, or a
@@ -2280,28 +2362,66 @@ export class SpriteEditor extends Renderable {
 			x: RAIL_W + (fitsX ? centeredOrigin(pxW * z, viewW) : 0),
 			y: top + (fitsY ? centeredOrigin(pxH * z, availH) : 0),
 		};
-		this.geom.focus = { tabs, origin, top };
-
 		// Onion ghosts only source the active Frame; while playing the display
 		// frame is not it (and the layers are empty anyway).
 		const onion = viewState.frame === this.state.frame;
-		// The checker is the frame's own transparency indicator, so it is confined
-		// to the frame's Pixel bounds; the margin around the centred frame is a
-		// plain opaque surround (Palette.bg — the strips view's plain background),
-		// so the frame reads as a checker island whose bounds are visible, and the
-		// canvas surround stays distinct from the chrome.
+
+		// The filmstrip: every frame of the active animation, laid out in a row with
+		// the active frame at the centred origin and its neighbours ±stride apart
+		// (spec, post-#351). Playback (showTabs = false) and single-frame animations
+		// degenerate to exactly one box — the centred active frame, byte-for-byte the
+		// prior single-frame view. Frames are uniform-sized (docs normalize on load),
+		// so one stride and the active frame's extent describe the whole strip.
+		const filmNames = showTabs
+			? animationFrames(this.state, this.state.animation)
+			: [];
+		const names = filmNames.length > 1 ? filmNames : [this.state.frame];
+		const activeIdx = Math.max(0, names.indexOf(this.state.frame));
+		const stride = pxW * z + FILMSTRIP_GAP;
+		const boxes = names.map((name, i) => {
+			const x0 = origin.x + (i - activeIdx) * stride;
+			return { name, i, x0, x1: x0 + pxW * z };
+		});
+		this.geom.focus = {
+			tabs,
+			origin,
+			top,
+			pxH,
+			frames: boxes.map((b) => ({ name: b.name, x0: b.x0, x1: b.x1 })),
+		};
+
+		// Per-frame render states: the active frame carries the float overlay
+		// (`viewState`); a neighbour reads the doc directly at its own frame. Cached
+		// so the inner loop rebuilds no state per cell.
+		const stateFor = new Map<string, SpriteEditorState>();
+		for (const b of boxes)
+			stateFor.set(
+				b.name,
+				b.name === this.state.frame
+					? viewState
+					: { ...this.state, frame: b.name },
+			);
+
+		// The checker is each frame's own transparency indicator, so it is confined
+		// to that frame's Pixel bounds; the margins and inter-frame gaps are a plain
+		// opaque surround (Palette.bg — the strips view's plain background), so every
+		// frame reads as a checker island. Neighbour frames dim their colours (not
+		// just decoration) toward the surround; the active frame stays full-bright.
 		for (let sy = top; sy < viewH; sy++) {
 			for (let sx = RAIL_W; sx < RAIL_W + viewW; sx++) {
-				const px = this.cam.x + Math.floor((sx - origin.x) / z);
 				const py = this.cam.y + Math.floor((sy - origin.y) / z);
-				const inFrame = px >= 0 && px < pxW && py >= 0 && py < pxH;
-				buf.setCell(
-					sx,
-					sy,
-					' ',
-					C.dim,
-					inFrame ? this.pixelRGBA(viewState, px, py, sx + sy, C, onion) : C.bg,
-				);
+				const box = boxes.find((b) => sx >= b.x0 && sx < b.x1);
+				let color = C.bg;
+				if (box && py >= 0 && py < pxH) {
+					const px = this.cam.x + Math.floor((sx - box.x0) / z);
+					if (px >= 0 && px < pxW) {
+						const active = box.i === activeIdx;
+						const st = stateFor.get(box.name) ?? viewState;
+						color = this.pixelRGBA(st, px, py, sx + sy, C, active && onion);
+						if (!active) color = this.dimRGBA(color, C);
+					}
+				}
+				buf.setCell(sx, sy, ' ', C.dim, color);
 			}
 		}
 
