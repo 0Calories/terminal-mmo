@@ -69,6 +69,19 @@ async function clickRail(
 	throw new Error(`no rail button matching ${re}`);
 }
 
+// Click the Composited preview pane's ▶ play / ■ stop control (post-#351: play
+// moved off the rail to the pane's bottom border). Requires the pane visible.
+async function clickPanePlay(
+	t: Awaited<ReturnType<typeof mount>>,
+): Promise<void> {
+	await t.renderOnce();
+	// biome-ignore lint/suspicious/noExplicitAny: reach the private pane geometry.
+	const pane = (t.editor as any).geom.preview;
+	if (!pane) throw new Error('preview pane not shown — cannot click ▶ play');
+	t.editor.mouseDown({ button: 0, x: pane.play.x0, y: pane.play.y });
+	t.editor.mouseUp();
+}
+
 describe('animation menu', () => {
 	test('P opens the menu and shows the animations', async () => {
 		const t = await mount({
@@ -382,21 +395,21 @@ describe('playback', () => {
 	test('playback is not a trap: rail stop, pane stop and esc all end it; painting stays gated (ADR 0036)', async () => {
 		// Rail play button toggles off again.
 		const t1 = await mount({ doc: animDoc(), id: 'anim', role: 'hat' });
-		await clickRail(t1, /\bplay\b/);
+		await clickPanePlay(t1);
 		expect(t1.editor.playing).toBe(true);
-		await clickRail(t1, /\bplay\b/);
+		await clickPanePlay(t1);
 		expect(t1.editor.playing).toBe(false);
 
 		// esc stops playback.
 		const t2 = await mount({ doc: animDoc(), id: 'anim2', role: 'hat' });
-		await clickRail(t2, /\bplay\b/);
+		await clickPanePlay(t2);
 		expect(t2.editor.playing).toBe(true);
 		t2.editor.key(key('escape'));
 		expect(t2.editor.playing).toBe(false);
 
 		// The preview pane's ■ stop control stops it.
 		const t3 = await mount({ doc: animDoc(), id: 'anim3', role: 'hat' });
-		await clickRail(t3, /\bplay\b/);
+		await clickPanePlay(t3);
 		expect(t3.editor.playing).toBe(true);
 		await t3.renderOnce();
 		const rows = t3.captureCharFrame().split('\n');
@@ -415,7 +428,7 @@ describe('playback', () => {
 
 		// While playing, a canvas click paints nothing (playback gates paint only).
 		const t4 = await mount({ doc: animDoc(), id: 'anim4', role: 'hat' });
-		await clickRail(t4, /\bplay\b/);
+		await clickPanePlay(t4);
 		const docBefore = t4.editor.state.doc;
 		t4.editor.mouseDown({ button: 0, x: 45, y: 5 });
 		t4.editor.mouseUp();
@@ -461,7 +474,7 @@ describe('playback', () => {
 		const docBefore = t.editor.state.doc;
 		const histBefore = t.editor.state.history;
 
-		await clickRail(t, /\bplay\b/); // start animation playback
+		await clickPanePlay(t); // start animation playback
 		expect(t.editor.playing).toBe(true);
 		// 260ms at 4fps → floor(0.26*4)=1 → frame 'idle 1'.
 		t.editor.tick(260);
@@ -475,7 +488,7 @@ describe('playback', () => {
 
 	test('editing is refused while playing', async () => {
 		const t = await mount({ doc: animDoc(), id: 'anim', role: 'hat' });
-		await clickRail(t, /\bplay\b/);
+		await clickPanePlay(t);
 		const docBefore = t.editor.state.doc;
 		t.editor.key(key('space')); // would paint — refused during playback
 		expect(t.editor.state.doc).toBe(docBefore);
@@ -488,7 +501,7 @@ describe('playback', () => {
 			id: 'cap',
 			role: 'hat',
 		});
-		await clickRail(t, /\bplay\b/);
+		await clickPanePlay(t);
 		t.editor.tick(5000);
 		expect(t.editor.displayFrame).toBe('idle');
 	});

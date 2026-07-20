@@ -923,9 +923,9 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		};
 	}
 
-	test('the left rail carries the tools row, ink list and playback box', async () => {
-		// A tall terminal so the full playback box shows (rung 3 folds it when the
-		// rail can't fit the full ink list + playback — e.g. at the 24-row floor).
+	test('the left rail carries the tools row, ink list and frame/view/size boxes', async () => {
+		// A tall terminal so the full control boxes show (rung 3 folds them when the
+		// rail can't fit the full ink list + boxes — e.g. at the 24-row floor).
 		const t = await mount({
 			doc: emptySpriteDoc('rail', 'hat'),
 			id: 'rail',
@@ -938,8 +938,16 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(rail).toContain('pencil');
 		expect(rail).toContain('ink');
 		expect(rail).toContain('▚▚'); // the transparent swatch in the grid
-		expect(rail).toContain('playback');
-		expect(rail).toContain('animation idle');
+		// The playback box dissolved into three labeled boxes (post-#351); the
+		// redundant `animation idle · Nfps · Nf` info line is gone.
+		expect(rail).toContain('frame');
+		expect(rail).toContain('view');
+		expect(rail).toContain('size');
+		expect(rail).toContain('◌ onion');
+		expect(rail).not.toContain('playback');
+		// The dropped box info line carried `· Nfps · Nf`; no `fps` text survives in
+		// the rail now (the status row below still carries the animation readout).
+		expect(rail).not.toContain('fps');
 	});
 
 	test('strips view labels every animation and underlines the active frame', async () => {
@@ -1133,9 +1141,9 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(t.editor.helpOpen).toBe(false);
 	});
 
-	test('rail clicks switch tools, pick inks and toggle playback', async () => {
-		// Tall enough that the playback box is unfolded (its ', walk' control is
-		// only present in the full box, not the folded one-row rung-3 hint).
+	test('rail clicks switch tools, pick inks and cycle a control box button', async () => {
+		// Tall enough that the full control boxes are unfolded (their buttons are
+		// only present in the full boxes, not the folded one-row rung-3 hint).
 		const t = await mount({
 			doc: emptySpriteDoc('click', 'hat'),
 			id: 'click',
@@ -1185,14 +1193,15 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		if (!swatch) throw new Error("no 'a' swatch in the rail grid");
 		t.editor.mouseDown({ button: 0, x: swatch.x, y: swatch.y });
 		expect(t.editor.state.ink).toEqual({ kind: 'color', key: 'a' });
-		// Playback box.
-		const playY = rowWith(' walk');
+		// The view box's onion button cycles the onion-skin depth (play/walk left
+		// the rail for the preview pane, post-#351).
+		const onionY = rowWith('onion');
 		t.editor.mouseDown({
 			button: 0,
-			x: lines[playY].indexOf('walk'),
-			y: playY,
+			x: lines[onionY].indexOf('onion'),
+			y: onionY,
 		});
-		expect(t.editor.playMode).toBe('walk');
+		expect(t.editor.onionDepth).toBe(1);
 	});
 });
 

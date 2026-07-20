@@ -1,5 +1,5 @@
 // The editor chrome's pure models (spec #387, layout locked by prototype #375):
-// the 30-column left rail (tools · ink · playback boxes) and the `?` overlay's
+// the 30-column left rail (tools · ink · frame/view/size boxes) and the `?` overlay's
 // grouped key map. Everything here is a deterministic function of the pure
 // editor state — `tui.ts` only draws the
 // rows and routes clicks back through the returned actions, so the rail's
@@ -97,12 +97,13 @@ export interface RailInput {
 	readonly fps: number;
 	readonly frameCount: number;
 	readonly playMode: 'none' | 'animation' | 'walk';
-	// Onion-skin depth (0 off), surfaced in the playback box.
+	// Onion-skin depth (0 off), surfaced in the view box.
 	readonly onionDepth: number;
 	// Rows available for the rail (the canvas region's height).
 	readonly height: number;
-	// Small-terminal rung 3 (spec #387): fold the playback box to a single hint
-	// row so the ink list keeps room. Decided by the degradation solver.
+	// Small-terminal rung 3 (spec #387): fold the frame/view/size boxes to a
+	// single hint row so the ink list keeps room. Decided by the degradation
+	// solver. (Field name kept for compatibility with the solver output.)
 	readonly foldPlayback?: boolean;
 	// The session p/a variant options (view.ts `variantOptions`): empty/absent
 	// when the art paints no dynamic key, so the rows simply don't render.
@@ -238,41 +239,42 @@ export function railModel(input: RailInput): RailRow[] {
 	rows.push({ spans: [{ text: '' }] });
 
 	rows.push(
-		...(input.foldPlayback ? foldedPlaybackBox(input) : playbackBox(input)),
+		...(input.foldPlayback ? foldedRailBoxes(input) : railBoxes(input)),
 	);
 	return rows;
 }
 
-// Every control is a self-labeled button (QA round 3: the editor is
-// mouse-primary — no key glyphs in the labels; the keys they mirrored died).
-function playbackBox(input: RailInput): RailRow[] {
+// The three labeled control boxes below the ink grid (post-#351 organization
+// round): `frame` (structure edits), `view` (editing aids), `size` (canvas
+// resize). The playback box dissolved — play/walk moved to the Composited
+// preview pane and the animation menu; the redundant `animation · Nfps · Nf`
+// info line is dropped (the strip label/stepper/status carry it). Every button
+// carries a width-1 leading glyph (verified through Bun.stringWidth); the rail's
+// hit-testing walks span.text.length, so an ambiguous-width glyph would desync
+// the columns to its right.
+function railBoxes(input: RailInput): RailRow[] {
 	return [
-		{ spans: [{ text: ' playback', dim: true }], title: true },
+		{ spans: [{ text: ' frame', dim: true }], title: true },
 		{
 			spans: [
-				{
-					text: ` ${input.animation} · ${input.fps}fps · ${input.frameCount}f`,
-					dim: true,
-				},
+				{ text: ' ' },
+				{ text: '✚ frame', dim: true, action: { type: 'addFrame' } },
+				{ text: ' · ' },
+				{ text: '▤ animation', dim: true, action: { type: 'animationMenu' } },
 			],
 		},
 		{
 			spans: [
 				{ text: ' ' },
+				{ text: '◎ anchor', dim: true, action: { type: 'anchorMenu' } },
+			],
+		},
+		{ spans: [{ text: ' view', dim: true }], title: true },
+		{
+			spans: [
+				{ text: ' ' },
 				{
-					text: input.playMode === 'animation' ? '▶ play' : '  play',
-					hot: input.playMode === 'animation',
-					action: { type: 'play', mode: 'animation' },
-				},
-				{ text: '  ' },
-				{
-					text: input.playMode === 'walk' ? '▶ walk' : '  walk',
-					hot: input.playMode === 'walk',
-					action: { type: 'play', mode: 'walk' },
-				},
-				{ text: '  ' },
-				{
-					text: `onion ${input.onionDepth}`,
+					text: `◌ onion ${input.onionDepth}`,
 					hot: input.onionDepth > 0,
 					dim: input.onionDepth === 0,
 					action: { type: 'onionCycle' },
@@ -282,61 +284,48 @@ function playbackBox(input: RailInput): RailRow[] {
 		{
 			spans: [
 				{ text: ' ' },
-				{ text: '+frame', dim: true, action: { type: 'addFrame' } },
-				{ text: ' · ' },
-				{ text: 'animation', dim: true, action: { type: 'animationMenu' } },
-				{ text: ' · ' },
-				{ text: 'anchor', dim: true, action: { type: 'anchorMenu' } },
-			],
-		},
-		{
-			spans: [
-				{ text: ' ' },
 				{
-					text: 'mirror',
+					text: '⇄ mirror',
 					dim: !input.mirrorOn,
 					hot: input.mirrorOn,
 					action: { type: 'mirror' },
 				},
 				{ text: ' · ' },
 				{
-					text: 'preview',
+					text: '◫ preview',
 					dim: !input.previewOn,
 					hot: input.previewOn,
 					action: { type: 'previewToggle' },
 				},
 			],
 		},
+		{ spans: [{ text: ' size', dim: true }], title: true },
 		{
 			spans: [
 				{ text: ' ' },
-				{ text: 'resize', dim: true, action: { type: 'resize' } },
+				{ text: '⤢ resize', dim: true, action: { type: 'resize' } },
 				{ text: ' · ' },
-				{ text: 'crop', dim: true, action: { type: 'crop' } },
+				{ text: '✂ crop', dim: true, action: { type: 'crop' } },
 			],
 		},
 	];
 }
 
-// The folded playback box (spec #387 rung 3): one hint row standing in for the
-// full box when the rail can't fit both boxes. Keeps the most-used controls —
-// play and add-Frame — clickable; the fps/animation/onion detail is dropped until the
-// terminal grows back and the full box returns.
-function foldedPlaybackBox(input: RailInput): RailRow[] {
-	const playing = input.playMode === 'animation';
+// The folded form (spec #387 rung 3, reworked post-#351): when the rail can't
+// fit the full three boxes with the ink list, they collapse to a single row that
+// keeps the two highest-frequency frame ops — `✚ frame` and the `▤ animation`
+// menu (the menu is the escape hatch back to onion/mirror/resize/crop/play while
+// folded). The full boxes return when the terminal grows back.
+function foldedRailBoxes(_input: RailInput): RailRow[] {
 	return [
 		{
 			title: true,
 			spans: [
-				{ text: ' playback', dim: true },
+				{ text: ' frame', dim: true },
 				{ text: '  ' },
-				{
-					text: playing ? '▶ play' : 'play',
-					hot: playing,
-					action: { type: 'play', mode: 'animation' },
-				},
+				{ text: '✚ frame', dim: true, action: { type: 'addFrame' } },
 				{ text: ' · ' },
-				{ text: '+frame', dim: true, action: { type: 'addFrame' } },
+				{ text: '▤ animation', dim: true, action: { type: 'animationMenu' } },
 			],
 		},
 	];
@@ -422,13 +411,16 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: 'click', label: 'tools · ink swatches · p/a variants' },
 			{ keys: 'dbl-click swatch', label: 'define / edit file-local colour' },
 			{ keys: 'active rect/○', label: 'click again: outline ↔ filled' },
-			{ keys: 'playback box', label: 'play · walk · onion · +frame · menus' },
+			{ keys: 'frame box', label: '✚ frame · ▤ animation · ◎ anchor menus' },
 			{
 				keys: 'anchor menu',
 				label: 'click picks (next click places) · ✕ deletes',
 			},
-			{ keys: 'buttons', label: 'mirror · preview · resize · crop' },
-			{ keys: 'preview pane', label: 'flip · play controls' },
+			{
+				keys: 'view · size',
+				label: 'onion · mirror · preview · resize · crop',
+			},
+			{ keys: 'preview pane', label: 'flip · ▶ play · ▶ walk' },
 		],
 	},
 ];
