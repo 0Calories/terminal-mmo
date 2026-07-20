@@ -39,10 +39,14 @@ import {
 	compileWeaponSprite,
 	drawEntitySprite,
 	FORM_IDS,
+	findFrame,
 	formById,
+	frameLabelAt,
+	frameLocations,
 	HAT_IDS,
 	type RenderStyle,
 	type Sprite,
+	type SpriteAnimationDoc,
 	type SpriteDoc,
 	type SpriteOverrides,
 	spriteFromDoc,
@@ -101,35 +105,45 @@ export interface PreviewStance {
 	fps: number;
 }
 
+// The 'swing' animation, if this doc declares one.
+function swingAnimation(doc: SpriteDoc): SpriteAnimationDoc | undefined {
+	return doc.animations.find((a) => a.name === 'swing');
+}
+
+// The Default (rest) frame's canonical label — frame 0 of the first animation.
+function defaultFrameLabel(doc: SpriteDoc): string {
+	return frameLocations(doc)[0]?.label ?? 'idle';
+}
+
 export function previewStances(
 	doc: SpriteDoc,
 	role: SpriteRole,
 ): PreviewStance[] {
 	if (role === 'weapon') {
 		// The Default (rest) frame, then each swing frame — every stance a
-		// concrete frame name the phase mapping resolves (ADR 0036).
-		const rest = doc.frames[0]?.name ?? 'idle';
-		const out: PreviewStance[] = [{ id: rest, fps: 0 }];
-		for (const name of doc.animations.swing ?? [])
-			out.push({ id: name, fps: 0 });
+		// concrete frame label the phase mapping resolves (ADR 0036/0037).
+		const out: PreviewStance[] = [{ id: defaultFrameLabel(doc), fps: 0 }];
+		const swing = swingAnimation(doc);
+		if (swing)
+			swing.frames.forEach((_, i) => {
+				out.push({ id: frameLabelAt(swing, i), fps: 0 });
+			});
 		return out;
 	}
 	if (role === 'form') {
 		const out: PreviewStance[] = [{ id: 'idle', fps: 0 }];
-		if (doc.animations.walk) out.push({ id: 'walk', fps: 0 });
-		for (const animation of Object.keys(doc.animations)) {
-			if (animation === 'idle' || animation === 'walk') continue;
-			out.push({ id: animation, fps: animationFps(doc.fps, animation) });
+		if (doc.animations.some((a) => a.name === 'walk'))
+			out.push({ id: 'walk', fps: 0 });
+		for (const animation of doc.animations) {
+			if (animation.name === 'idle' || animation.name === 'walk') continue;
+			out.push({ id: animation.name, fps: animationFps(doc, animation.name) });
 		}
 		return out;
 	}
 	// hat / monster / npc: one stance per animation (usually just 'idle').
-	return Object.keys(doc.animations).map((animation) => ({
-		id: animation,
-		fps:
-			(doc.animations[animation]?.length ?? 1) > 1
-				? animationFps(doc.fps, animation)
-				: 0,
+	return doc.animations.map((animation) => ({
+		id: animation.name,
+		fps: animation.frames.length > 1 ? animationFps(doc, animation.name) : 0,
 	}));
 }
 
@@ -137,36 +151,36 @@ export function previewStances(
 // Frame / action resolution
 // ---------------------------------------------------------------------------
 
-// Resolve a stance + elapsed time to the concrete frame name to show. Accepts
+// Resolve a stance + elapsed time to the concrete frame LABEL to show. Accepts
 // an animation id (sampled by its fps), 'walk' (stride-simulated gait, ADR
-// 0035), or a bare frame name (shown as-is — how the editor pins the exact
+// 0035), or a bare frame label (shown as-is — how the editor pins the exact
 // edited frame).
 function resolveFrame(
 	doc: SpriteDoc,
 	stance: string,
 	elapsedS: number,
 ): string {
-	const fallback = doc.frames[0]?.name ?? 'idle';
-	if (stance === 'walk' && doc.animations.walk) {
-		const frames = doc.animations.walk;
-		const idx = walkPreviewIndex(frames.length, elapsedS);
-		return frames[idx] ?? fallback;
+	const fallback = defaultFrameLabel(doc);
+	const walk = doc.animations.find((a) => a.name === 'walk');
+	if (stance === 'walk' && walk) {
+		const idx = walkPreviewIndex(walk.frames.length, elapsedS);
+		return frameLabelAt(walk, idx);
 	}
-	const animationFrames = doc.animations[stance];
-	if (animationFrames && animationFrames.length > 0) {
+	const animation = doc.animations.find((a) => a.name === stance);
+	if (animation && animation.frames.length > 0) {
 		const idx = playbackFrame(
-			animationFrames.length,
+			animation.frames.length,
 			elapsedS,
-			animationFps(doc.fps, stance),
+			animationFps(doc, stance),
 		);
-		return animationFrames[idx] ?? fallback;
+		return frameLabelAt(animation, idx);
 	}
-	if (doc.frames.some((f) => f.name === stance)) return stance;
+	if (findFrame(doc, stance) !== undefined) return stance;
 	return fallback;
 }
 
 // Which swing phase a weapon stance denotes: the phase whose swing slot holds
-// that frame name (ADR 0036: windup → 0, active → 1, recovery → 2), or 'idle'
+// that frame label (ADR 0036: windup → 0, active → 1, recovery → 2), or 'idle'
 // (the Default/rest frame) for anything else.
 const SWING_PHASES = ['windup', 'active', 'recovery'] as const;
 
@@ -174,7 +188,11 @@ function weaponPhaseOf(
 	doc: SpriteDoc,
 	stance: string,
 ): 'idle' | 'windup' | 'active' | 'recovery' {
-	const i = (doc.animations.swing ?? []).indexOf(stance);
+	const swing = swingAnimation(doc);
+	if (!swing) return 'idle';
+	const i = swing.frames.findIndex(
+		(_, idx) => frameLabelAt(swing, idx) === stance,
+	);
 	return i >= 0 && i < 3 ? SWING_PHASES[i] : 'idle';
 }
 

@@ -22,7 +22,11 @@ import {
 // A minimal valid single-frame monster/npc source (satisfies the `idle`-only
 // role profile). `role` decides which registry claims it.
 function source(id: string, role: string): SpriteSource {
-	return { id, role, text: '{"key":"m"}\n--- idle\n▟▙\n▜▛\n' };
+	return {
+		id,
+		role,
+		text: '{"key":"m","animations":[{"name":"idle"}]}\n--- idle\n▟▙\n▜▛\n',
+	};
 }
 
 // Forms are discovered by directory scan (ADR 0031). The catalog is whatever
@@ -99,7 +103,7 @@ test('a profile-failing source is skipped', () => {
 	const bad: SpriteSource = {
 		id: 'bad',
 		role: 'monsters',
-		text: '{"key":"m"}\n--- walk\n▟▙\n',
+		text: '{"key":"m","animations":[{"name":"walk"}]}\n--- walk\n▟▙\n',
 	};
 	const registry = buildMonsterRegistry([good, bad]);
 	expect(registry.has('good')).toBe(true);

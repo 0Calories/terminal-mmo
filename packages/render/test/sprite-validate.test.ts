@@ -1,5 +1,5 @@
-// Role-profile validator (ADR 0031): pure functions over parsed SpriteDocs and
-// in-memory SpriteSource sets. No disk access.
+// Role-profile validator (ADR 0031/0037): pure functions over parsed SpriteDocs
+// and in-memory SpriteSource sets. No disk access.
 import { expect, test } from 'bun:test';
 import type { SpriteSource } from '@mmo/assets';
 import { parseSpriteFile, type SpriteDoc } from '../src';
@@ -18,15 +18,15 @@ function docOf(text: string, id = 's'): SpriteDoc {
 
 const FORMS_OK = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"animations": { "walk": ["walk-0", "walk-1"] }
+	"animations": [{ "name": "idle" }, { "name": "walk" }]
 }
 --- idle
 AB
 CD
---- walk-0
+--- walk 0
 AB
 CD
---- walk-1
+--- walk 1
 AB
 CD
 `;
@@ -36,7 +36,8 @@ test('validateSpriteRole: forms passes with idle/walk and grip/head', () => {
 });
 
 const FORMS_BAD = `{
-	"anchors": { "grip": [1, 0] }
+	"anchors": { "grip": [1, 0] },
+	"animations": [{ "name": "idle" }]
 }
 --- idle
 AB
@@ -58,15 +59,15 @@ test('validateSpriteRole: forms fails naming missing animation and anchor', () =
 
 const FORMS_KNOWN_EMOTE = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"animations": { "walk": ["wa", "wb"], "emote:wave": ["ev"] }
+	"animations": [{ "name": "idle" }, { "name": "walk" }, { "name": "emote:wave" }]
 }
 --- idle
 AB
---- wa
+--- walk 0
 AB
---- wb
+--- walk 1
 AB
---- ev
+--- emote:wave
 AB
 `;
 
@@ -78,15 +79,15 @@ test('validateSpriteRole: forms accepts an emote animation for a registered emot
 
 const FORMS_UNKNOWN_EMOTE = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"animations": { "walk": ["wa", "wb"], "emote:boogie": ["bg"] }
+	"animations": [{ "name": "idle" }, { "name": "walk" }, { "name": "emote:boogie" }]
 }
 --- idle
 AB
---- wa
+--- walk 0
 AB
---- wb
+--- walk 1
 AB
---- bg
+--- emote:boogie
 AB
 `;
 
@@ -101,18 +102,42 @@ test('validateSpriteRole: forms rejects an emote animation for an unregistered e
 	expect(diags[0].message).toContain('unknown emote');
 });
 
+const FORMS_NON_IDLE_LEAD = `{
+	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"animations": [{ "name": "walk" }, { "name": "idle" }]
+}
+--- walk 0
+AB
+--- walk 1
+AB
+--- idle
+AB
+`;
+
+test('validateSpriteRole: a form whose first animation is not idle warns (never errors) — ADR 0037', () => {
+	const diags = validateSpriteRole(
+		docOf(FORMS_NON_IDLE_LEAD, 'buddy'),
+		'forms',
+	);
+	expect(diags.length).toBe(1);
+	expect(diags[0].severity).toBe('warning');
+	expect(diags[0].message).toContain('idle');
+	// A form that DOES lead with idle raises no such warning.
+	expect(validateSpriteRole(docOf(FORMS_OK, 'buddy'), 'forms')).toEqual([]);
+});
+
 const WEAPON_OK = `{
 	"accent": "s",
 	"anchors": { "grip": [0, 0] },
-	"animations": { "swing": ["swing-0", "swing-1", "swing-2"] }
+	"animations": [{ "name": "idle" }, { "name": "swing" }]
 }
 --- idle
 AB
---- swing-0
+--- swing 0
 AB
---- swing-1
+--- swing 1
 AB
---- swing-2
+--- swing 2
 AB
 `;
 
@@ -121,11 +146,11 @@ test('validateSpriteRole: weapons passes with a default frame + a 3-frame swing 
 });
 
 const WEAPON_BAD = `{
-	"animations": { "chop": ["ch"] }
+	"animations": [{ "name": "idle" }, { "name": "chop" }]
 }
 --- idle
 AB
---- ch
+--- chop
 AB
 `;
 
@@ -139,13 +164,13 @@ test('validateSpriteRole: weapons fails on missing swing animation and grip anch
 
 const WEAPON_SHORT_SWING = `{
 	"anchors": { "grip": [0, 0] },
-	"animations": { "swing": ["swing-0", "swing-1"] }
+	"animations": [{ "name": "idle" }, { "name": "swing" }]
 }
 --- idle
 AB
---- swing-0
+--- swing 0
 AB
---- swing-1
+--- swing 1
 AB
 `;
 
@@ -161,22 +186,22 @@ test('validateSpriteRole: a swing of other than exactly 3 frames is an error (AD
 
 const WEAPON_NO_REST = `{
 	"anchors": { "grip": [0, 0] },
-	"animations": { "swing": ["swing-0", "swing-1", "swing-2"] }
+	"animations": [{ "name": "swing" }]
 }
---- swing-0
+--- swing 0
 AB
---- swing-1
+--- swing 1
 AB
---- swing-2
+--- swing 2
 AB
 `;
 
-test('validateSpriteRole: a weapon whose first frame belongs to swing has no rest Default frame — error (ADR 0036)', () => {
+test('validateSpriteRole: a weapon whose first animation is swing has no rest Default frame — error (ADR 0036/0037)', () => {
 	const diags = validateSpriteRole(docOf(WEAPON_NO_REST, 'sword'), 'weapons');
 	expect(diags.length).toBe(1);
 	expect(diags[0].severity).toBe('error');
 	expect(diags[0].message).toContain('rest');
-	expect(diags[0].message).toContain('swing-0');
+	expect(diags[0].message).toContain('swing');
 });
 
 test('validateSpriteRole: the swing-count error speaks in attack phases, not retired frame names', () => {
@@ -188,12 +213,13 @@ test('validateSpriteRole: the swing-count error speaks in attack phases, not ret
 	expect(diags[0].message).not.toContain('windup');
 });
 
+const idleText = `{ "animations": [{ "name": "idle" }] }\n--- idle\nAB\n`;
+const nonIdleText = `{ "animations": [{ "name": "x" }] }\n--- x\nAB\n`;
+
 test('validateSpriteRole: hats/monsters/npcs require only idle', () => {
-	const okText = `--- idle\nAB\n`;
-	const badText = `--- x\nAB\n`;
 	for (const role of ['hats', 'monsters', 'npcs']) {
-		expect(validateSpriteRole(docOf(okText, 'h'), role)).toEqual([]);
-		const bad = validateSpriteRole(docOf(badText, 'h'), role);
+		expect(validateSpriteRole(docOf(idleText, 'h'), role)).toEqual([]);
+		const bad = validateSpriteRole(docOf(nonIdleText, 'h'), role);
 		expect(bad.length).toBe(1);
 		expect(bad[0].severity).toBe('error');
 		expect(bad[0].message).toContain('idle');
@@ -201,7 +227,7 @@ test('validateSpriteRole: hats/monsters/npcs require only idle', () => {
 });
 
 test('validateSpriteRole: unknown role is a warning', () => {
-	const diags = validateSpriteRole(docOf(`--- idle\nAB\n`, 'x'), 'bogus');
+	const diags = validateSpriteRole(docOf(idleText, 'x'), 'bogus');
 	expect(diags.length).toBe(1);
 	expect(diags[0].severity).toBe('warning');
 	expect(diags[0].message).toContain('bogus');
@@ -230,8 +256,8 @@ test('acceptSprite: returns null for a source that fails to parse', () => {
 
 test('validateSpriteSet: aggregates parse diagnostics and role-profile diagnostics', () => {
 	const sources: SpriteSource[] = [
-		{ id: 'good-hat', role: 'hats', text: `--- idle\nAB\n` },
-		{ id: 'bad-hat', role: 'hats', text: `--- x\nAB\n` },
+		{ id: 'good-hat', role: 'hats', text: idleText },
+		{ id: 'bad-hat', role: 'hats', text: nonIdleText },
 		{ id: 'broken', role: 'hats', text: 'not valid json {{{' },
 	];
 	const diags = validateSpriteSet(sources);
@@ -255,26 +281,26 @@ test('validateSpriteSet: a parse failure is reported but the role check is skipp
 	expect(brokenDiags.some((d) => d.message.includes('missing'))).toBe(false);
 });
 
-// A minimal valid weapon source (idle/windup/active + grip) for reference tests.
+// A minimal valid weapon source (idle rest + 3-frame swing + grip) for reference tests.
 function weaponSource(id: string): SpriteSource {
 	return {
 		id,
 		role: 'weapons',
-		text: `{"anchors":{"grip":[0,0]},"animations":{"swing":["s0","s1","s2"]}}
+		text: `{"anchors":{"grip":[0,0]},"animations":[{"name":"idle"},{"name":"swing"}]}
 --- idle
 AB
---- s0
+--- swing 0
 AB
---- s1
+--- swing 1
 AB
---- s2
+--- swing 2
 AB
 `,
 	};
 }
 
 function idleSource(id: string, role: string): SpriteSource {
-	return { id, role, text: `--- idle\nAB\n` };
+	return { id, role, text: idleText };
 }
 
 test('validateSpriteSet: dangling weapon/monster/npc catalog references are errors', () => {
@@ -311,7 +337,7 @@ test('validateSpriteSet: an unresolvable color key is an error, not a silent fal
 	const src: SpriteSource = {
 		id: 'badcol',
 		role: 'hats',
-		text: `{"colors":{"q":[1,2,3,255]}}\n--- idle\nAB\n@colors\nqz\n`,
+		text: `{"colors":{"q":[1,2,3,255]},"animations":[{"name":"idle"}]}\n--- idle\nAB\n@colors\nqz\n`,
 	};
 	const diags = validateSpriteSet([src]);
 	const err = diags.find(
@@ -337,7 +363,7 @@ test('validateSpriteSet: reserved p/a redefinition surfaces as an aggregated err
 	const src: SpriteSource = {
 		id: 'reserved',
 		role: 'hats',
-		text: `{"colors":{"p":[1,2,3,255]}}\n--- idle\nAB\n`,
+		text: `{"colors":{"p":[1,2,3,255]},"animations":[{"name":"idle"}]}\n--- idle\nAB\n`,
 	};
 	const diags = validateSpriteSet([src]);
 	expect(

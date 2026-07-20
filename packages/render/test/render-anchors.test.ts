@@ -89,16 +89,18 @@ function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
 // mutating an array. idle/walk satisfy the forms role profile.
 const OVERRIDE_FORM = `{
 	"anchors": { "grip": [2, 0], "head": [1, 0] },
-	"animations": { "walk": ["walk-0", "walk-1"] },
-	"frames": { "walk-1": { "anchors": { "grip": [0, 0] } } }
+	"animations": [
+		{ "name": "idle" },
+		{ "name": "walk", "anchors": { "1": { "grip": [0, 0] } } }
+	]
 }
 --- idle
 ···
 ···
---- walk-0
+--- walk 0
 ···
 ···
---- walk-1
+--- walk 1
 ···
 ···
 `;

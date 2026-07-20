@@ -2,7 +2,7 @@
 	"key": "a",
 	"accent": "s",
 	"anchors": { "grip": [-1, 2] },
-	"animations": { "swing": ["swing-0", "swing-1", "swing-2"] }
+	"animations": [{ "name": "idle" }, { "name": "swing" }]
 }
 --- idle
 ▐▌
@@ -12,7 +12,7 @@
 aa
 aa
 kk
---- swing-0
+--- swing 0
 ·▙··
 ·▐▙·
 ··▝▘
@@ -20,7 +20,7 @@ kk
 ·a··
 ·aa·
 ··kk
---- swing-1
+--- swing 1
 ·····
 ▂▙▂▂▂
 ▔▛▔▔▔
@@ -30,5 +30,5 @@ kk
 kaaaa
 kaaaa
 ·····
---- swing-2
+--- swing 2
 ·

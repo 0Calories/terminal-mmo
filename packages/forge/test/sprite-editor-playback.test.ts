@@ -35,11 +35,32 @@ describe('playbackFrame', () => {
 });
 
 describe('animationFps', () => {
+	const doc = {
+		id: 'x',
+		key: 'p',
+		baseline: 0,
+		anchors: {},
+		colors: {},
+		animations: [
+			{
+				name: 'idle',
+				frames: [{ rows: ['A'], colors: ['p'], bg: [' '], anchors: {} }],
+			},
+			{
+				name: 'walk',
+				fps: 8,
+				frames: [
+					{ rows: ['A'], colors: ['p'], bg: [' '], anchors: {} },
+					{ rows: ['B'], colors: ['p'], bg: [' '], anchors: {} },
+				],
+			},
+		],
+	} as const;
 	test('uses the authored value when present', () => {
-		expect(animationFps({ walkA: 8 }, 'walkA')).toBe(8);
+		expect(animationFps(doc, 'walk')).toBe(8);
 	});
 	test('falls back to EMOTE_FPS when absent', () => {
-		expect(animationFps({}, 'idle')).toBe(EMOTE_FPS);
+		expect(animationFps(doc, 'idle')).toBe(EMOTE_FPS);
 	});
 });
 

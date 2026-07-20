@@ -17,8 +17,10 @@ import { basename, dirname, join } from 'node:path';
 import type { RGBAQuad } from '@mmo/core/entities';
 import { STANDARD_PALETTE } from '@mmo/core/entities';
 import {
+	allFrames,
 	buildSceneStyle,
 	type CellBuffer,
+	frameLocations,
 	parseSpriteFile,
 	type RenderStyle,
 	SENTINEL,
@@ -96,7 +98,6 @@ import {
 	anchorMarkers,
 	anchorScopeFor,
 	animationFrames,
-	animationNames,
 	beginResize,
 	beginStroke,
 	cancelFloat,
@@ -157,7 +158,6 @@ import {
 import {
 	centeredOrigin,
 	clampScroll,
-	DEFAULT_FPS,
 	type FocusTab,
 	FPS_MAX,
 	FPS_MIN,
@@ -565,7 +565,10 @@ export class SpriteEditor extends Renderable {
 	// The widest Frame's width in cells — the degradation solver scales it to
 	// decide whether two full Frames fit at the current zoom (spec #398 rung 2).
 	private maxFrameCellW(): number {
-		return Math.max(1, ...this.state.doc.frames.map((f) => frameExtent(f).w));
+		return Math.max(
+			1,
+			...allFrames(this.state.doc).map((f) => frameExtent(f).w),
+		);
 	}
 
 	// ---- pen / paint ----
@@ -867,7 +870,7 @@ export class SpriteEditor extends Renderable {
 				const step = stepperHit(layout, cx, cy);
 				if (step && button === 'left') {
 					this.liftPen();
-					const cur = this.state.doc.fps[step.animation] ?? DEFAULT_FPS;
+					const cur = animationFps(this.state.doc, step.animation);
 					const next = Math.max(FPS_MIN, Math.min(FPS_MAX, cur + step.delta));
 					if (next !== cur)
 						this.state = setAnimationFps(this.state, step.animation, next);
@@ -1296,10 +1299,10 @@ export class SpriteEditor extends Renderable {
 	// ---- animation menu ----
 
 	private animationRows(): AnimationRow[] {
-		return animationNames(this.state).map((name) => ({
-			name,
-			frameCount: animationFrames(this.state, name).length,
-			fps: this.state.doc.fps[name] ?? null,
+		return this.state.doc.animations.map((a) => ({
+			name: a.name,
+			frameCount: a.frames.length,
+			fps: a.fps ?? null,
 		}));
 	}
 
@@ -1542,7 +1545,7 @@ export class SpriteEditor extends Renderable {
 		if (this.playMode === 'animation') {
 			const frames = animationFrames(this.state, this.state.animation);
 			if (frames.length === 0) return this.state.frame;
-			const fps = animationFps(this.state.doc.fps, this.state.animation);
+			const fps = animationFps(this.state.doc, this.state.animation);
 			const idx = playbackFrame(frames.length, this.playElapsedMs / 1000, fps);
 			return frames[idx] ?? this.state.frame;
 		}
@@ -2017,7 +2020,7 @@ export class SpriteEditor extends Renderable {
 			ink: this.state.ink,
 			entries: this.entries(),
 			animation: this.state.animation,
-			fps: animationFps(this.state.doc.fps, this.state.animation),
+			fps: animationFps(this.state.doc, this.state.animation),
 			frameCount: animationFrames(this.state, this.state.animation).length,
 			playMode: this.playMode,
 			onionDepth: this.onionDepth,
@@ -2106,18 +2109,19 @@ export class SpriteEditor extends Renderable {
 			}
 		}
 
-		// Frame-name rows: the active Frame's name is highlighted and its block
-		// width underlined.
-		const defaultFrame = this.state.doc.frames[0]?.name;
+		// Frame rows: each frame reads `frame N` (ADR 0037: frames are unnamed) with
+		// the active one highlighted and its block width underlined.
+		const defaultFrame = frameLocations(this.state.doc)[0]?.label;
 		layout.labels.forEach((label, i) => {
 			const sy = syOf(layout.nameRows[i]);
 			if (sy < 0 || sy >= viewH) return;
 			for (const box of layout.frames) {
 				if (box.animation !== label.animation) continue;
 				const active = box.name === this.state.frame;
-				// The Default frame is badged (ADR 0036): its name carries ◈ so the
-				// canvas says where file-level anchors (and defaults) live.
-				const name = box.name === defaultFrame ? `◈${box.name}` : box.name;
+				// The Default frame is badged (ADR 0036/0037): its `frame 0` carries ◈
+				// so the canvas says where file-level anchors (and defaults) live.
+				const display = `frame ${box.index}`;
+				const name = box.name === defaultFrame ? `◈${display}` : display;
 				const text = active
 					? (name + '▔'.repeat(Math.max(0, box.w - name.length))).slice(
 							0,
@@ -2387,7 +2391,7 @@ export class SpriteEditor extends Renderable {
 			termH: H,
 			zoom: this.zoom,
 			maxFrameCellW: this.maxFrameCellW(),
-			frameCount: this.state.doc.frames.length,
+			frameCount: allFrames(this.state.doc).length,
 			inkCount: this.entries().length + 1,
 			variantRowCount: variantRowCountOf(
 				variantOptions(docDynamicUsage(this.state.doc), this.variant),

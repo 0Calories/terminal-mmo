@@ -47,8 +47,7 @@ function railText(frame: string): string {
 // A doc with two Frames wide enough (12 cells) that two never fit at ×2 in a
 // narrow terminal — the rung-2 force-focus trigger.
 function wideTwoFrameDoc(): SpriteDoc {
-	const frame = (name: string) => ({
-		name,
+	const frame = () => ({
 		rows: [' '.repeat(12), ' '.repeat(12)],
 		colors: [' '.repeat(12), ' '.repeat(12)],
 		bg: [' '.repeat(12), ' '.repeat(12)],
@@ -59,10 +58,8 @@ function wideTwoFrameDoc(): SpriteDoc {
 		key: 'p',
 		baseline: 0,
 		anchors: {},
-		animations: { row: ['aa', 'bb'] },
-		fps: {},
+		animations: [{ name: 'row', frames: [frame(), frame()] }],
 		colors: {},
-		frames: [frame('aa'), frame('bb')],
 	};
 }
 
@@ -178,9 +175,9 @@ describe('rung 2 — strips force focus (#398)', () => {
 		// The user never left strips…
 		expect(t.editor.view).toBe('strips');
 		// …but two wide Frames don't fit, so focus is rendered: its tab row shows
-		// the Frame names, and the hint line explains the fold.
+		// the frames' `frame N` positions, and the hint line explains the fold.
 		const narrow = t.captureCharFrame();
-		expect(narrow).toContain('aa │ bb');
+		expect(narrow).toContain('frame 0 │ frame 1');
 		expect(narrow).toContain('strips folded to focus');
 
 		// A wide terminal fits both Frames — strips return (the animation label shows).

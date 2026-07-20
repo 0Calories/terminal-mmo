@@ -20,15 +20,15 @@ function buddySource(id = 'buddy'): SpriteSource {
 // A minimal valid forms source: idle/walk + grip/head, no emotes.
 const MINIMAL = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"animations": { "walk": ["walk-0", "walk-1"] }
+	"animations": [{ "name": "idle" }, { "name": "walk" }]
 }
 --- idle
 AB
 CD
---- walk-0
+--- walk 0
 AB
 CD
---- walk-1
+--- walk 1
 AB
 CD
 `;
@@ -70,7 +70,7 @@ test('a source with a broken header is skipped; the others still load', () => {
 
 test('a source that fails the forms role profile is skipped', () => {
 	// missing walk animation and head anchor -> role profile error -> not registered
-	const bad = `{ "anchors": { "grip": [0, 0] } }
+	const bad = `{ "anchors": { "grip": [0, 0] }, "animations": [{ "name": "idle" }] }
 --- idle
 AB
 `;
@@ -85,15 +85,15 @@ AB
 test('a source authoring an unregistered emote animation is skipped (role error)', () => {
 	const withBadEmote = `{
 	"anchors": { "grip": [0, 0], "head": [0, 0] },
-	"animations": { "walk": ["wa", "wb"], "emote:boogie": ["bg"] }
+	"animations": [{ "name": "idle" }, { "name": "walk" }, { "name": "emote:boogie" }]
 }
 --- idle
 AB
---- wa
+--- walk 0
 AB
---- wb
+--- walk 1
 AB
---- bg
+--- emote:boogie
 AB
 `;
 	const registry = buildFormRegistry([

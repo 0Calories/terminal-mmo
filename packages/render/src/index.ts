@@ -37,8 +37,16 @@ export {
 	spriteFromDoc,
 } from './sprite-compile';
 export {
+	allFrames,
+	defaultFrame,
+	type FrameLocation,
+	findFrame,
+	frameLabelAt,
+	frameLocations,
+	mapDocFrames,
 	parseSpriteFile,
 	type SpriteAnchor,
+	type SpriteAnimationDoc,
 	type SpriteDiagnostic,
 	type SpriteDoc,
 	type SpriteFrameDoc,

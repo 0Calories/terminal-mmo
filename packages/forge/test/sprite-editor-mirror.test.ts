@@ -9,7 +9,10 @@ import { mirrorAnchorMarkers, mirrorRender } from '../src/sprite-editor/view';
 describe('mirrorRender', () => {
 	test('mirrors an asymmetric glyph (▐ → ▌)', () => {
 		// A right-half-block on the left cell of a 2-wide frame.
-		const { doc } = parseSpriteFile('--- idle\n▐·\n··\n', 'flag');
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n▐·\n··\n',
+			'flag',
+		);
 		if (!doc) throw new Error('fixture failed to parse');
 		const m = mirrorRender(doc, 'idle');
 		expect(m.width).toBe(2);

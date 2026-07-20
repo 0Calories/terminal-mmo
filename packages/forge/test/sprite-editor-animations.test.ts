@@ -11,13 +11,24 @@ import {
 	deleteAnimation,
 	frameNames,
 	initSpriteEditor,
+	paintPixel,
+	readPixel,
 	redoEdit,
 	reorderFrame,
 	type SpriteEditorState,
 	selectAnimation,
+	selectFrame,
 	setAnimationFps,
 	undoEdit,
 } from '../src/sprite-editor/state';
+
+// v2 (ADR 0037): fps lives per-animation on the ordered animations array, not a
+// top-level `doc.fps` map. Read a named animation's authored fps (undefined when
+// cleared) straight off its entry.
+function fpsOf(s: SpriteEditorState, animation: string): number | undefined {
+	return s.doc.animations.find((a) => a.name === animation)?.fps;
+}
+
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 import {
 	missingRequiredAnchors,
@@ -98,22 +109,21 @@ describe('deleteAnimation', () => {
 		const s = deleteAnimation(formState(), 'walk');
 		expect(s.feedback).toBe('');
 		expect(animationNames(s)).not.toContain('walk');
-		// walk's frames were referenced by no other animation, so their sections go too.
-		expect(frameNames(s)).not.toContain('walk-0');
-		expect(frameNames(s)).not.toContain('walk-1');
+		// walk's frames belong to walk alone (v2: frames are index-bound to one
+		// animation), so their labels go with it.
+		expect(frameNames(s)).not.toContain('walk 0');
+		expect(frameNames(s)).not.toContain('walk 1');
 	});
 
-	test('keeps a frame that another animation still references', () => {
-		// Make idle and a second animation share the same frame, then delete the second.
-		let s = createAnimation(formState(), 'wave');
-		// wave now owns frame 'wave'; point a new animation at it too via addFrameToAnimation
-		// then delete one — the shared frame must survive.
-		s = {
-			...s,
-			doc: { ...s.doc, animations: { ...s.doc.animations, alias: ['wave'] } },
-		};
-		s = deleteAnimation(s, 'alias');
-		expect(animationNames(s)).not.toContain('alias');
+	test('deleting one animation leaves other animations’ frames intact', () => {
+		// v2 has no cross-animation frame sharing (frames are index-bound to a
+		// single animation, ADR 0037); deleting one animation must not disturb the
+		// frames of any other. Add two independent animations, delete one, and the
+		// survivor's frame stays.
+		let s = createAnimation(formState(), 'wave'); // wave: [wave]
+		s = createAnimation(s, 'flex'); // flex: [flex]
+		s = deleteAnimation(s, 'flex');
+		expect(animationNames(s)).not.toContain('flex');
 		expect(frameNames(s)).toContain('wave');
 	});
 
@@ -136,7 +146,7 @@ describe('deleteAnimation', () => {
 		const s = deleteAnimation(formState(), 'walk');
 		const back = undoEdit(s);
 		expect(animationNames(back)).toContain('walk');
-		expect(frameNames(back)).toContain('walk-0');
+		expect(frameNames(back)).toContain('walk 0');
 	});
 });
 
@@ -144,7 +154,7 @@ describe('selectAnimation', () => {
 	test('switches current animation and lands on its first frame', () => {
 		const s = selectAnimation(formState(), 'walk');
 		expect(s.animation).toBe('walk');
-		expect(s.frame).toBe('walk-0');
+		expect(s.frame).toBe('walk 0');
 	});
 
 	test('refuses an unknown animation', () => {
@@ -155,12 +165,18 @@ describe('selectAnimation', () => {
 
 describe('reorderFrame', () => {
 	test('swaps adjacent frames within an animation', () => {
-		let s = createAnimation(formState(), 'combo'); // combo:[combo]
-		s = addFrameToAnimation(s, 'combo');
-		const names = animationFrames(s, 'combo');
-		expect(names).toHaveLength(2);
+		let s = createAnimation(formState(), 'combo'); // combo: single frame 'combo'
+		s = addFrameToAnimation(s, 'combo'); // combo 0, combo 1; current is 'combo 1'
+		expect(animationFrames(s, 'combo')).toEqual(['combo 0', 'combo 1']);
+		// v2 frame labels are positional (ADR 0037), so a swap can't be read off the
+		// labels — mark the second frame's content and watch it move to index 0.
+		s = paintPixel(s, 0, 0); // paints the current frame, 'combo 1'
+		expect(readPixel(selectFrame(s, 'combo 1'), 0, 0)).toBe(true);
+		expect(readPixel(selectFrame(s, 'combo 0'), 0, 0)).toBe(false);
 		s = reorderFrame(s, 'combo', 0, 1);
-		expect(animationFrames(s, 'combo')).toEqual([names[1], names[0]]);
+		expect(animationFrames(s, 'combo')).toEqual(['combo 0', 'combo 1']);
+		expect(readPixel(selectFrame(s, 'combo 0'), 0, 0)).toBe(true);
+		expect(readPixel(selectFrame(s, 'combo 1'), 0, 0)).toBe(false);
 	});
 
 	test('refuses moving out of range', () => {
@@ -182,13 +198,13 @@ describe('setAnimationFps', () => {
 	test('sets a positive fps', () => {
 		const s = setAnimationFps(formState(), 'walk', 8);
 		expect(s.feedback).toBe('');
-		expect(s.doc.fps.walk).toBe(8);
+		expect(fpsOf(s, 'walk')).toBe(8);
 	});
 
 	test('null clears the fps back to the default', () => {
 		let s = setAnimationFps(formState(), 'walk', 8);
 		s = setAnimationFps(s, 'walk', null);
-		expect(s.doc.fps.walk).toBeUndefined();
+		expect(fpsOf(s, 'walk')).toBeUndefined();
 	});
 
 	test('refuses a non-positive fps', () => {
@@ -204,7 +220,7 @@ describe('setAnimationFps', () => {
 	test('is undoable', () => {
 		const s = setAnimationFps(formState(), 'walk', 8);
 		const back = undoEdit(s);
-		expect(back.doc.fps.walk).toBeUndefined();
+		expect(fpsOf(back, 'walk')).toBeUndefined();
 	});
 });
 

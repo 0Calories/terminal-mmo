@@ -14,7 +14,13 @@
 //   • add/remove a BOTTOM row    → no anchor shift, baseline ±1 (bottom moves).
 // Growing at the top therefore preserves ground contact (the bottom stays put),
 // which is why load-normalize grows shorter Frames upward.
-import type { SpriteAnchor, SpriteDoc, SpriteFrameDoc } from '@mmo/render';
+import {
+	allFrames,
+	mapDocFrames,
+	type SpriteAnchor,
+	type SpriteDoc,
+	type SpriteFrameDoc,
+} from '@mmo/render';
 
 export type ResizeEdge = 'left' | 'right' | 'top' | 'bottom';
 
@@ -60,7 +66,7 @@ export function frameContentBounds(frame: SpriteFrameDoc): Bounds | null {
 // The union of every Frame's content bounds, or null when the whole doc is blank.
 export function unionContentBounds(doc: SpriteDoc): Bounds | null {
 	let out: Bounds | null = null;
-	for (const f of doc.frames) {
+	for (const f of allFrames(doc)) {
 		const b = frameContentBounds(f);
 		if (!b) continue;
 		out = out
@@ -78,9 +84,10 @@ export function unionContentBounds(doc: SpriteDoc): Bounds | null {
 // Whether every Frame already shares one grid size (the editor's whole-file
 // policy). A single-frame doc is trivially uniform.
 export function isUniform(doc: SpriteDoc): boolean {
-	if (doc.frames.length === 0) return true;
-	const { w, h } = frameSize(doc.frames[0]);
-	return doc.frames.every((f) => {
+	const frames = allFrames(doc);
+	if (frames.length === 0) return true;
+	const { w, h } = frameSize(frames[0]);
+	return frames.every((f) => {
 		const s = frameSize(f);
 		return s.w === w && s.h === h;
 	});
@@ -101,27 +108,23 @@ function shiftAnchors(
 function shiftAllAnchors(doc: SpriteDoc, dx: number, dy: number): SpriteDoc {
 	if (dx === 0 && dy === 0) return doc;
 	return {
-		...doc,
-		anchors: shiftAnchors(doc.anchors, dx, dy),
-		frames: doc.frames.map((f) => ({
+		...mapDocFrames(doc, (f) => ({
 			...f,
 			anchors: shiftAnchors(f.anchors, dx, dy),
 		})),
+		anchors: shiftAnchors(doc.anchors, dx, dy),
 	};
 }
 
 type GridFn = (grid: readonly string[]) => string[];
 
 function mapGrids(doc: SpriteDoc, fn: GridFn): SpriteDoc {
-	return {
-		...doc,
-		frames: doc.frames.map((f) => ({
-			...f,
-			rows: fn(f.rows),
-			colors: fn(f.colors),
-			bg: fn(f.bg),
-		})),
-	};
+	return mapDocFrames(doc, (f) => ({
+		...f,
+		rows: fn(f.rows),
+		colors: fn(f.colors),
+		bg: fn(f.bg),
+	}));
 }
 
 // Grow or shrink the whole file by one cell on one edge, compensating anchors and
@@ -133,8 +136,9 @@ export function resizeDoc(
 	edge: ResizeEdge,
 	dir: 1 | -1,
 ): SpriteDoc | null {
-	if (doc.frames.length === 0) return null;
-	const { w, h } = frameSize(doc.frames[0]);
+	const first = allFrames(doc)[0];
+	if (first === undefined) return null;
+	const { w, h } = frameSize(first);
 	if (dir < 0) {
 		if ((edge === 'left' || edge === 'right') && w <= 1) return null;
 		if ((edge === 'top' || edge === 'bottom') && h <= 1) return null;
@@ -174,8 +178,9 @@ export function cropDocToCells(
 	cx1: number,
 	cy1: number,
 ): SpriteDoc {
-	if (doc.frames.length === 0) return doc;
-	const { w, h } = frameSize(doc.frames[0]);
+	const first = allFrames(doc)[0];
+	if (first === undefined) return doc;
+	const { w, h } = frameSize(first);
 	const x0 = Math.max(0, Math.min(cx0, w - 1));
 	const y0 = Math.max(0, Math.min(cy0, h - 1));
 	const x1 = Math.max(x0, Math.min(cx1, w - 1));
@@ -196,10 +201,11 @@ export function cropDocToCells(
 // uniform docs return unchanged (identity), so a load-normalize on a shipped
 // uniform file is a no-op.
 export function normalizeDoc(doc: SpriteDoc): SpriteDoc {
-	if (doc.frames.length === 0 || isUniform(doc)) return doc;
-	const unionW = Math.max(...doc.frames.map((f) => frameSize(f).w));
-	const unionH = Math.max(...doc.frames.map((f) => frameSize(f).h));
-	const frames = doc.frames.map((f) => {
+	const frames = allFrames(doc);
+	if (frames.length === 0 || isUniform(doc)) return doc;
+	const unionW = Math.max(...frames.map((f) => frameSize(f).w));
+	const unionH = Math.max(...frames.map((f) => frameSize(f).h));
+	return mapDocFrames(doc, (f) => {
 		const { h } = frameSize(f);
 		const topPad = unionH - h;
 		const grow: GridFn = (g) => {
@@ -227,7 +233,6 @@ export function normalizeDoc(doc: SpriteDoc): SpriteDoc {
 			anchors,
 		};
 	});
-	return { ...doc, frames };
 }
 
 // Trim a file to the union content bounding box across Frames, dropping workspace
@@ -236,10 +241,11 @@ export function normalizeDoc(doc: SpriteDoc): SpriteDoc {
 // trim round-trip a no-op for already-uniform files. A fully-transparent doc is
 // left untouched (nothing to trim to).
 export function trimDoc(doc: SpriteDoc): SpriteDoc {
-	if (doc.frames.length === 0) return doc;
+	const first = allFrames(doc)[0];
+	if (first === undefined) return doc;
 	const b = unionContentBounds(doc);
 	if (!b) return doc;
-	const { w, h } = frameSize(doc.frames[0]);
+	const { w, h } = frameSize(first);
 	if (b.x0 === 0 && b.y0 === 0 && b.x1 === w - 1 && b.y1 === h - 1) return doc;
 	return cropDocToCells(doc, b.x0, b.y0, b.x1, b.y1);
 }

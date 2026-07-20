@@ -28,7 +28,11 @@ describe('stripsLayout — every Animation a labeled strip of its Frames', () =>
 	});
 
 	test('the strip label carries only the animation name — no frame count or fps', () => {
-		const withFps = { ...doc, fps: { idle: 6, walk: 6 } };
+		// v2 (ADR 0037): fps lives per-animation on the animations array.
+		const withFps = {
+			...doc,
+			animations: doc.animations.map((a) => ({ ...a, fps: 6 })),
+		};
 		const l = stripsLayout(withFps, 2);
 		for (const label of l.labels) expect(label.text).toBe(label.animation);
 	});
@@ -49,17 +53,19 @@ describe('stripsLayout — every Animation a labeled strip of its Frames', () =>
 		expect(b.y).toBe(a.y);
 	});
 
-	test('a frame referenced by no animation still gets a strip (implicit animation)', () => {
-		const orphan = {
+	test('every declared animation gets its own labeled strip, in doc order', () => {
+		// v2 (ADR 0037): there are no orphan frames — every frame is index-bound to a
+		// declared animation. Each animation, including ones beyond the template, is
+		// its own strip in doc order.
+		const extended = {
 			...doc,
-			animations: { idle: ['idle'] as const, walk: ['walk-0'] as const },
+			animations: [
+				...doc.animations,
+				{ name: 'jump', frames: [doc.animations[0].frames[0]] },
+			],
 		};
-		const l = stripsLayout(orphan, 1);
-		expect(l.labels.map((s) => s.animation)).toEqual([
-			'idle',
-			'walk',
-			'walk-1',
-		]);
+		const l = stripsLayout(extended, 1);
+		expect(l.labels.map((s) => s.animation)).toEqual(['idle', 'walk', 'jump']);
 	});
 
 	test('content extent covers the widest strip and the last name row', () => {
@@ -94,14 +100,12 @@ describe('fps stepper — multi-frame strips only (QA round 3)', () => {
 		// A single wide-named two-frame animation whose frames are tiny: the strip
 		// edge sits left of where a right-justified stepper would start, so the
 		// stepper clamps to one space past the name and overhangs the strip edge.
+		const tiny = doc.animations[0].frames[0];
 		const narrow = {
 			...doc,
-			frames: [
-				{ ...doc.frames[0], name: 'a' },
-				{ ...doc.frames[0], name: 'b' },
+			animations: [
+				{ name: 'a-very-long-animation-name', frames: [tiny, tiny] },
 			],
-			animations: { 'a-very-long-animation-name': ['a', 'b'] },
-			fps: {},
 		};
 		const l = stripsLayout(narrow, 1);
 		const st = l.steppers[0];
@@ -116,7 +120,13 @@ describe('fps stepper — multi-frame strips only (QA round 3)', () => {
 	});
 
 	test('an authored fps shows in the stepper text', () => {
-		const l = stripsLayout({ ...doc, fps: { walk: 12 } }, 2);
+		const withFps = {
+			...doc,
+			animations: doc.animations.map((a) =>
+				a.name === 'walk' ? { ...a, fps: 12 } : a,
+			),
+		};
+		const l = stripsLayout(withFps, 2);
 		expect(l.steppers[0].text).toBe('‹ 12fps ›');
 	});
 
@@ -140,11 +150,11 @@ describe('stripsHit — click-through resolution', () => {
 	const l = stripsLayout(doc, 2);
 
 	test('a cell inside a block resolves to that frame and the Pixel under it', () => {
-		// walk-0's block; ×2 means screen (2,3) inside it is Pixel (1,1).
-		const walkA = frameBoxOf(l, 'walk-0');
-		if (!walkA) throw new Error('walk-0 missing');
+		// walk 0's block; ×2 means screen (2,3) inside it is Pixel (1,1).
+		const walkA = frameBoxOf(l, 'walk 0');
+		if (!walkA) throw new Error('walk 0 missing');
 		const hit = stripsHit(l, walkA.x + 2, walkA.y + 3);
-		expect(hit?.frame.name).toBe('walk-0');
+		expect(hit?.frame.name).toBe('walk 0');
 		expect(hit).toMatchObject({ px: 1, py: 1 });
 	});
 
@@ -173,10 +183,12 @@ describe('scrolling helpers', () => {
 
 describe('focus mode — tab row + centring', () => {
 	test('tabs carry each frame name with its click extent, active marked', () => {
+		// v2 (ADR 0037): tabs render `frame N` by position; each still carries its
+		// frame's identity label for click-selection.
 		const { text, tabs } = focusTabs(['idle', 'walk', 'jump'], 'walk');
-		expect(text).toBe(' idle │ walk │ jump');
+		expect(text).toBe(' frame 0 │ frame 1 │ frame 2');
 		expect(tabs.find((t) => t.active)?.name).toBe('walk');
-		const hit = focusTabAt(tabs, text.indexOf('jump') + 1);
+		const hit = focusTabAt(tabs, text.indexOf('frame 2') + 1);
 		expect(hit?.name).toBe('jump');
 		expect(focusTabAt(tabs, text.indexOf('│'))).toBeUndefined();
 	});

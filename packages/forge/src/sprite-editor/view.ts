@@ -7,6 +7,7 @@ import { type Facing, HUES, type RGBAQuad } from '@mmo/core/entities';
 import { RARITY_COLOR } from '@mmo/core/items';
 import { mirrorAnchorX } from '@mmo/core/sprites';
 import {
+	allFrames,
 	ROLE_PROFILES,
 	SENTINEL,
 	type SpriteDoc,
@@ -53,7 +54,8 @@ export function missingRequiredAnimations(
 ): string[] {
 	const profile = ROLE_PROFILES[dirForRole(role)];
 	if (!profile) return [];
-	return profile.animations.filter((p) => !(p in doc.animations));
+	const names = new Set(doc.animations.map((a) => a.name));
+	return profile.animations.filter((p) => !names.has(p));
 }
 
 // The role's full required-anchor list (movable, never deletable — ADR 0036).
@@ -162,7 +164,7 @@ export function docDynamicUsage(doc: SpriteDoc): DynamicUsage {
 		if (key === 'p') usage.p = true;
 		else if (key === 'a') usage.a = true;
 	};
-	for (const f of doc.frames) {
+	for (const f of allFrames(doc)) {
 		for (const row of f.colors)
 			for (const ch of row) mark(ch === SENTINEL ? doc.key : ch);
 		for (const row of f.bg) for (const ch of row) if (ch !== SENTINEL) mark(ch);
@@ -418,7 +420,7 @@ export function spriteStatusLine(m: SpriteStatusModel): string {
 		m.tool === 'anchor' && m.anchorName
 			? `anchor ${m.anchorName}@${m.anchorScope ?? 'doc'}`
 			: m.tool;
-	return `${m.id} (${m.role})${dirty}${animation} · frame ${m.frame} [${m.frameIdx + 1}/${m.frameCount}] · ${tool} · ×${m.zoom} · ink ${m.ink} · px (${m.pixel.x},${m.pixel.y}) cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
+	return `${m.id} (${m.role})${dirty}${animation} · frame ${m.frameIdx + 1}/${m.frameCount} · ${tool} · ×${m.zoom} · ink ${m.ink} · px (${m.pixel.x},${m.pixel.y}) cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
 }
 
 // Compose the status row: `left` at column 0, `right` (the coercion feedback)

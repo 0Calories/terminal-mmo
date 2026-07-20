@@ -6,6 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { RGBAQuad } from '@mmo/core/entities';
 import {
+	allFrames,
 	parseSpriteFile,
 	type SpriteAnchor,
 	type SpriteDoc,
@@ -41,11 +42,16 @@ import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
 // Build a frame from glyph rows; colors/bg default to blank (the tests below care
 // about art + Anchor/baseline geometry, not the fg/bg grids).
+// A named frame — v2 frames are unnamed, but the tests key by a memorable name;
+// mkDoc turns each into its own single-frame animation of that name (the `name`
+// field is harmless extra data the resize transforms ignore).
+type NamedFrame = SpriteFrameDoc & { name: string };
+
 function frame(
 	name: string,
 	rows: string[],
 	anchors: Record<string, SpriteAnchor> = {},
-): SpriteFrameDoc {
+): NamedFrame {
 	const w = rows.reduce((m, r) => Math.max(m, r.length), 0);
 	const padded = rows.map((r) => r.padEnd(w, ' '));
 	const blank = padded.map((r) => ' '.repeat(r.length));
@@ -59,24 +65,20 @@ function frame(
 }
 
 function mkDoc(
-	frames: SpriteFrameDoc[],
+	frames: NamedFrame[],
 	opts: {
 		anchors?: Record<string, SpriteAnchor>;
 		baseline?: number;
 		key?: string;
 	} = {},
 ): SpriteDoc {
-	const animations: Record<string, readonly string[]> = {};
-	for (const f of frames) animations[f.name] = [f.name];
 	return {
 		id: 'x',
 		key: opts.key ?? 'p',
 		baseline: opts.baseline ?? 0,
 		anchors: opts.anchors ?? {},
-		animations,
-		fps: {},
+		animations: frames.map((f) => ({ name: f.name, frames: [f] })),
 		colors: {} as Readonly<Record<string, RGBAQuad>>,
-		frames,
 	};
 }
 
@@ -85,7 +87,7 @@ const sizeOf = (f: SpriteFrameDoc) => ({
 	h: f.rows.length,
 });
 const frameByName = (doc: SpriteDoc, name: string) =>
-	doc.frames.find((f) => f.name === name);
+	doc.animations.find((a) => a.name === name)?.frames[0];
 
 describe('content bounds', () => {
 	test('frameContentBounds is the tight box of inked cells', () => {
@@ -164,49 +166,49 @@ describe('resizeDoc — whole-file edge add/remove with compensation', () => {
 
 	test('adding a left column shifts every Anchor x by +1 cell (2 Pixels)', () => {
 		const out = resizeDoc(base(), 'left', 1) as SpriteDoc;
-		expect(out.frames[0].rows).toEqual([' AB', ' CD']);
+		expect(allFrames(out)[0].rows).toEqual([' AB', ' CD']);
 		expect(out.anchors.grip).toEqual({ x: 2, y: 1 });
 		expect(out.baseline).toBe(0);
 	});
 
 	test('adding a right column leaves Anchors and baseline put', () => {
 		const out = resizeDoc(base(), 'right', 1) as SpriteDoc;
-		expect(out.frames[0].rows).toEqual(['AB ', 'CD ']);
+		expect(allFrames(out)[0].rows).toEqual(['AB ', 'CD ']);
 		expect(out.anchors.grip).toEqual({ x: 1, y: 1 });
 		expect(out.baseline).toBe(0);
 	});
 
 	test('adding a top row shifts Anchor y by +1, baseline unchanged', () => {
 		const out = resizeDoc(base(), 'top', 1) as SpriteDoc;
-		expect(out.frames[0].rows).toEqual(['  ', 'AB', 'CD']);
+		expect(allFrames(out)[0].rows).toEqual(['  ', 'AB', 'CD']);
 		expect(out.anchors.grip).toEqual({ x: 1, y: 2 });
 		expect(out.baseline).toBe(0);
 	});
 
 	test('adding a bottom row raises the baseline, Anchors unchanged', () => {
 		const out = resizeDoc(base(), 'bottom', 1) as SpriteDoc;
-		expect(out.frames[0].rows).toEqual(['AB', 'CD', '  ']);
+		expect(allFrames(out)[0].rows).toEqual(['AB', 'CD', '  ']);
 		expect(out.anchors.grip).toEqual({ x: 1, y: 1 });
 		expect(out.baseline).toBe(1);
 	});
 
 	test('removing a left column shifts Anchor x by -1', () => {
 		const out = resizeDoc(base(), 'left', -1) as SpriteDoc;
-		expect(out.frames[0].rows).toEqual(['B', 'D']);
+		expect(allFrames(out)[0].rows).toEqual(['B', 'D']);
 		expect(out.anchors.grip).toEqual({ x: 0, y: 1 });
 	});
 
 	test('removing a bottom row lowers the baseline (clamped at 0)', () => {
 		const out = resizeDoc(base(), 'bottom', -1) as SpriteDoc;
-		expect(out.frames[0].rows).toEqual(['AB']);
+		expect(allFrames(out)[0].rows).toEqual(['AB']);
 		expect(out.baseline).toBe(0);
 	});
 
 	test('every Frame resizes together (whole-file)', () => {
 		const doc = mkDoc([frame('a', ['AB', 'CD']), frame('b', ['EF', 'GH'])]);
 		const out = resizeDoc(doc, 'right', 1) as SpriteDoc;
-		expect(sizeOf(out.frames[0])).toEqual({ w: 3, h: 2 });
-		expect(sizeOf(out.frames[1])).toEqual({ w: 3, h: 2 });
+		expect(sizeOf(allFrames(out)[0])).toEqual({ w: 3, h: 2 });
+		expect(sizeOf(allFrames(out)[1])).toEqual({ w: 3, h: 2 });
 	});
 
 	test('refuses (null) a shrink that would collapse below 1×1', () => {
@@ -225,7 +227,7 @@ describe('cropDocToCells — crop with compensation', () => {
 			baseline: 1,
 		});
 		const out = cropDocToCells(doc, 1, 1, 2, 2);
-		expect(out.frames[0].rows).toEqual(['FG', 'JK']);
+		expect(allFrames(out)[0].rows).toEqual(['FG', 'JK']);
 		// left removed 1 → x-1; top removed 1 → y-1.
 		expect(out.anchors.grip).toEqual({ x: 1, y: 1 });
 		// bottom removed 1 row (row 3) → baseline 1 - 1 = 0.
@@ -244,8 +246,8 @@ describe('trimDoc — save trims to the union content bbox', () => {
 		);
 		const out = trimDoc(doc);
 		// union content: x 1..2, y 1..2 → 2×2.
-		expect(out.frames[0].rows).toEqual(['##', '##']);
-		expect(out.frames[1].rows).toEqual(['# ', '  ']);
+		expect(allFrames(out)[0].rows).toEqual(['##', '##']);
+		expect(allFrames(out)[1].rows).toEqual(['# ', '  ']);
 		expect(out.anchors.grip).toEqual({ x: 0, y: 0 });
 		// bottom removed 1 row → baseline 1 - 1 = 0.
 		expect(out.baseline).toBe(0);
@@ -265,7 +267,7 @@ describe('trimDoc — save trims to the union content bbox', () => {
 describe('parser round-trip through the editor', () => {
 	// A non-uniform file: 2×3 idle, 5×4 active with a blank top row of its own.
 	const NON_UNIFORM = [
-		'{"key":"a","anchors":{"grip":[0,0]}}',
+		'{"key":"a","anchors":{"grip":[0,0]},"animations":[{"name":"idle"},{"name":"active"}]}',
 		'--- idle',
 		'##',
 		'##',
@@ -298,9 +300,16 @@ describe('parser round-trip through the editor', () => {
 	});
 
 	test('an already-uniform tight file round-trips byte-stable', () => {
-		const raw = ['--- idle', '###', '###', '--- walkA', '# #', '###', ''].join(
-			'\n',
-		);
+		const raw = [
+			'{"animations":[{"name":"idle"},{"name":"walkA"}]}',
+			'--- idle',
+			'###',
+			'###',
+			'--- walkA',
+			'# #',
+			'###',
+			'',
+		].join('\n');
 		// The serializer's canonical form of this uniform tight file.
 		const canonical = serializeSpriteFile(
 			parseSpriteFile(raw, 'walker').doc as SpriteDoc,

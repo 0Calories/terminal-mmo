@@ -1,9 +1,12 @@
-{"key":"k"}
+{
+	"key": "k",
+	"animations": [{ "name": "idle" }]
+}
 --- idle
 ·█████·
 ·█████·
 ▄█████▄
 @colors
-·······
+·kkkkk·
 ·mmmmm·
-·······
+kkkkkkk

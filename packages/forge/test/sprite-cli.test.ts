@@ -16,7 +16,8 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-const VALID = `--- idle
+const VALID = `{"animations":[{"name":"idle"},{"name":"wave"}]}
+--- idle
 AB
 CD
 --- wave
@@ -27,7 +28,7 @@ B·
 ··
 `;
 
-const RESERVED_KEY_ERROR = `{"colors": {"p": [1,2,3,255]}}
+const RESERVED_KEY_ERROR = `{"colors": {"p": [1,2,3,255]}, "animations":[{"name":"idle"}]}
 --- idle
 AB
 CD
@@ -38,7 +39,7 @@ const BAD_JSON = `{ this is not json
 AB
 `;
 
-const CUSTOM_COLORS = `{"key": "e", "colors": {"q": [10,20,30,255]}}
+const CUSTOM_COLORS = `{"key": "e", "colors": {"q": [10,20,30,255]}, "animations":[{"name":"idle"},{"name":"wave"}]}
 --- idle
 AB
 CD
@@ -53,7 +54,7 @@ e·
 ··
 `;
 
-const DEFAULT_COLORS = `{"key": "e"}
+const DEFAULT_COLORS = `{"key": "e", "animations":[{"name":"idle"}]}
 --- idle
 AB
 CD
@@ -162,17 +163,17 @@ describe('sprite CLI', () => {
 	// Write a complete, valid set covering every @mmo/core catalog/reference id so
 	// the whole-set reference check resolves cleanly.
 	function writeCompleteSet(): void {
-		const weapon = `{"anchors":{"grip":[0,0]},"animations":{"swing":["s0","s1","s2"]}}
+		const weapon = `{"anchors":{"grip":[0,0]},"animations":[{"name":"idle"},{"name":"swing"}]}
 --- idle
 AB
---- s0
+--- swing 0
 AB
---- s1
+--- swing 1
 AB
---- s2
+--- swing 2
 AB
 `;
-		const idle = `--- idle\nAB\n`;
+		const idle = `{"animations":[{"name":"idle"}]}\n--- idle\nAB\n`;
 		for (const [dir, id] of [['weapons', 'sword']] as const) {
 			mkdirSync(join(root, dir), { recursive: true });
 			writeFileSync(join(root, dir, `${id}.sprite`), weapon);
@@ -200,7 +201,7 @@ AB
 		mkdirSync(join(root, 'hats'), { recursive: true });
 		writeFileSync(
 			join(root, 'hats', 'warn.sprite'),
-			`{"nope": 1}\n--- idle\nAB\n`,
+			`{"nope": 1, "animations":[{"name":"idle"}]}\n--- idle\nAB\n`,
 		);
 		expect(runSprite(['check'], deps())).toBe(0);
 		const out = output();
@@ -211,7 +212,10 @@ AB
 	test('check: dangling catalog references fail with exit 1', () => {
 		// Only a hat present — the weapon/monster/npc catalog references dangle.
 		mkdirSync(join(root, 'hats'), { recursive: true });
-		writeFileSync(join(root, 'hats', 'cap.sprite'), `--- idle\nAB\n`);
+		writeFileSync(
+			join(root, 'hats', 'cap.sprite'),
+			`{"animations":[{"name":"idle"}]}\n--- idle\nAB\n`,
+		);
 		expect(runSprite(['check'], deps())).toBe(1);
 		expect(output()).toContain('sword');
 	});
@@ -230,7 +234,7 @@ AB
 		mkdirSync(join(root, 'hats'), { recursive: true });
 		writeFileSync(
 			join(root, 'hats', 'badcol.sprite'),
-			`{"colors":{"q":[1,2,3,255]}}\n--- idle\nAB\n@colors\nqz\n`,
+			`{"colors":{"q":[1,2,3,255]}, "animations":[{"name":"idle"}]}\n--- idle\nAB\n@colors\nqz\n`,
 		);
 		expect(runSprite(['check'], deps())).toBe(1);
 		expect(output()).toContain('unknown color key');

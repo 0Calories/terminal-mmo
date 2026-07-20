@@ -28,14 +28,14 @@ function swordSource(id = 'sword'): SpriteSource {
 }
 
 // A minimal valid weapons source: a Default frame + 3-frame swing + grip.
-const MINIMAL = `{ "accent": "s", "anchors": { "grip": [0, 0] }, "animations": { "swing": ["s0", "s1", "s2"] } }
+const MINIMAL = `{ "accent": "s", "anchors": { "grip": [0, 0] }, "animations": [{ "name": "idle" }, { "name": "swing" }] }
 --- idle
 AB
---- s0
+--- swing 0
 AB
---- s1
+--- swing 1
 AB
---- s2
+--- swing 2
 AB
 `;
 
@@ -67,8 +67,9 @@ test('a source with a broken header is skipped; the others still load', () => {
 });
 
 test('a source that fails the weapons role profile is skipped', () => {
-	// missing the active animation and the grip anchor -> role profile error.
-	const bad = `--- idle
+	// missing the swing animation and the grip anchor -> role profile error.
+	const bad = `{ "animations": [{ "name": "idle" }, { "name": "windup" }] }
+--- idle
 AB
 --- windup
 AB
