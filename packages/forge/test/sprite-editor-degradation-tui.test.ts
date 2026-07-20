@@ -88,6 +88,7 @@ describe('below-floor placard (#398)', () => {
 			width: 100,
 			height: 24,
 		});
+		t.editor.key(seq('p')); // pencil (the launch default is now select)
 		t.editor.key(seq('space')); // paint at cursor (0,0)
 		t.editor.key(seq('space')); // lift pen
 		expect(readPixel(t.editor.state, 0, 0)).toBe(true);

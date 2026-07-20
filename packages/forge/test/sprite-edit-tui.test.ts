@@ -251,6 +251,7 @@ describe('Sprite editor TUI smoke', () => {
 			id: 'draw',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		// Nothing is painted yet.
 		expect(canvasHasBg(t.captureSpans(), INK_P, 17)).toBe(false);
 		// Paint all four quadrants of cell (0,0) as one pen stroke.
@@ -328,8 +329,8 @@ describe('Sprite editor TUI smoke', () => {
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'clip', role: 'hat' });
 
-		// Select the top-left Pixel (marquee via the select tool: 7).
-		t.editor.key(key('7', { sequence: '7' }));
+		// Select the top-left Pixel (marquee via the select tool: 1).
+		t.editor.key(key('1', { sequence: '1' }));
 		t.editor.key(key('return')); // anchor at cursor (0,0)
 		t.editor.key(key('return')); // commit a 1-Pixel selection
 		expect(t.editor.state.selection).not.toBeNull();
@@ -393,6 +394,7 @@ describe('Sprite editor TUI smoke', () => {
 			role: 'hat',
 			width: 140,
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.key(key('space')); // paint 'p' at TL
 		t.editor.key(key('space')); // lift pen
 		// Define a fresh file-local colour via the modal (double-click a swatch,
@@ -608,6 +610,7 @@ describe('Sprite editor mouse painting', () => {
 			id: 'm',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		// Down at the block's origin → Pixel (0,0); drag 2 cells right → Pixel (1,0).
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
 		t.editor.mouseDrag({ button: 0, x: bx + 2, y: by });
@@ -625,6 +628,7 @@ describe('Sprite editor mouse painting', () => {
 			id: 'drag',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		// Some terminals report drags with button 'none' (button code > 2); the
 		// stroke's button is remembered from mouseDown so inking continues.
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
@@ -640,6 +644,7 @@ describe('Sprite editor mouse painting', () => {
 			id: 'erase',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
 		t.editor.mouseUp();
 		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
@@ -655,6 +660,7 @@ describe('Sprite editor mouse painting', () => {
 			id: 'z',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.zoom = 4;
 		await t.renderOnce(); // capture geometry at the new zoom
 		// At ×4, the block's first 4 columns/rows all map to Pixel 0.
@@ -688,6 +694,7 @@ describe('Focus navigation: enter dives into a frame, esc surfaces to strips', (
 			id: 'nav',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil: enter dives only when a non-gesture tool is active
 		expect(t.editor.view).toBe('strips');
 		t.editor.key(key('enter'));
 		expect(t.editor.view).toBe('focus');
@@ -713,6 +720,7 @@ describe('Focus navigation: enter dives into a frame, esc surfaces to strips', (
 			id: 'flt',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.key(key('space')); // paint so the shift has art to move
 		t.editor.key(key('space'));
 		t.editor.key(key('right', { shift: true })); // whole-Frame shift → float
@@ -730,7 +738,7 @@ describe('Focus navigation: enter dives into a frame, esc surfaces to strips', (
 			id: 'sel',
 			role: 'hat',
 		});
-		t.editor.key(key('7', { sequence: '7' })); // select tool
+		t.editor.key(key('1', { sequence: '1' })); // select tool
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
 		t.editor.mouseDrag({ button: 0, x: bx + 3, y: by + 1 });
 		t.editor.mouseUp();
@@ -750,7 +758,7 @@ describe('Focus navigation: enter dives into a frame, esc surfaces to strips', (
 			id: 'shp',
 			role: 'hat',
 		});
-		t.editor.key(key('4', { sequence: '4' })); // line tool
+		t.editor.key(key('5', { sequence: '5' })); // line tool
 		t.editor.key(key('enter')); // places the shape anchor
 		expect(t.editor.state.shape).not.toBeNull();
 		expect(t.editor.view).toBe('strips');
@@ -773,7 +781,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 		});
 		const before = currentFrame(t.editor.state);
 		// Marquee cells (0,0)-(1,0) with the select tool, then crop with plain c.
-		t.editor.key(key('7', { sequence: '7' }));
+		t.editor.key(key('1', { sequence: '1' }));
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
 		t.editor.mouseDrag({ button: 0, x: bx + 3, y: by + 1 });
 		t.editor.mouseUp();
@@ -804,6 +812,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 			role: 'hat',
 		});
 		const painted = t.editor.state.ink; // the doc's default key
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.key(key('space')); // paint at cursor (0,0)
 		t.editor.key(key('space')); // lift pen
 		t.editor.state = setInk(t.editor.state, TRANSPARENT_INK); // move ink away
@@ -840,6 +849,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 			role: 'hat',
 		});
 		const painted = t.editor.state.ink;
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.mouseDown({ button: 0, x: bx, y: by }); // paint a Pixel
 		t.editor.mouseUp();
 		t.editor.state = setInk(t.editor.state, TRANSPARENT_INK); // ink → transparent
@@ -955,6 +965,7 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 
 	test('clicking another frame activates it AND applies the tool (click-through)', async () => {
 		const t = await mount({ doc: twoFrameDoc(), id: 'duo', role: 'hat' });
+		t.editor.key(key('p')); // pencil: click-through paints (launch default is select)
 		expect(t.editor.state.frame).toBe('idle 0');
 		// Frame 1's block: 2×2 cells → 4×4 Pixels → ×2 → 8 cols; gap 2 → x offset 10.
 		t.editor.mouseDown({ button: 0, x: RAIL_W + 10, y: 1 });
@@ -1192,7 +1203,7 @@ describe('select drag renders the dotted marquee, never ink (ADR 0036)', () => {
 			id: 'marq',
 			role: 'hat',
 		});
-		t.editor.key(key('7', { sequence: '7' })); // select tool
+		t.editor.key(key('1', { sequence: '1' })); // select tool
 		// Drag from the block origin (RAIL_W, 1) — in-progress, not released.
 		t.editor.mouseDown({ button: 0, x: RAIL_W, y: 1 });
 		t.editor.mouseDrag({ button: 0, x: RAIL_W + 6, y: 5 });
@@ -1236,11 +1247,11 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'n',
 			role: 'hat',
 		});
-		t.editor.key(key('4', { sequence: '4' }));
-		expect(t.editor.state.tool).toBe('line');
 		t.editor.key(key('5', { sequence: '5' }));
-		expect(t.editor.state.tool).toBe('rect');
+		expect(t.editor.state.tool).toBe('line');
 		t.editor.key(key('6', { sequence: '6' }));
+		expect(t.editor.state.tool).toBe('rect');
+		t.editor.key(key('7', { sequence: '7' }));
 		expect(t.editor.state.tool).toBe('ellipse');
 	});
 
@@ -1250,7 +1261,7 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'l',
 			role: 'hat',
 		});
-		t.editor.key(key('4', { sequence: '4' }));
+		t.editor.key(key('5', { sequence: '5' })); // line
 		t.editor.mouseDown({ button: 0, ...at(0, 0) });
 		t.editor.mouseDrag({ button: 0, ...at(3, 0) });
 		t.editor.mouseUp();
@@ -1266,7 +1277,7 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'p',
 			role: 'hat',
 		});
-		t.editor.key(key('5', { sequence: '5' })); // rect
+		t.editor.key(key('6', { sequence: '6' })); // rect
 		const before = t.editor.state.doc;
 		t.editor.mouseDown({ button: 0, ...at(0, 0) });
 		t.editor.mouseDrag({ button: 0, ...at(3, 2) });
@@ -1283,7 +1294,7 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'o',
 			role: 'hat',
 		});
-		t.editor.key(key('5', { sequence: '5' })); // rect
+		t.editor.key(key('6', { sequence: '6' })); // rect
 		expect(t.editor.state.rectMode).toBe('outline');
 		await clickRail(t, /\brect\b/); // already active → toggles mode
 		expect(t.editor.state.rectMode).toBe('filled');
@@ -1297,7 +1308,7 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'k',
 			role: 'hat',
 		});
-		t.editor.key(key('4', { sequence: '4' })); // line
+		t.editor.key(key('5', { sequence: '5' })); // line
 		t.editor.key(key('return')); // place anchor at cursor (0,0)
 		for (let i = 0; i < 3; i++) t.editor.key(key('right')); // endpoint (3,0)
 		expect(t.editor.state.shape).not.toBeNull();
@@ -1313,7 +1324,7 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'c',
 			role: 'hat',
 		});
-		t.editor.key(key('4', { sequence: '4' }));
+		t.editor.key(key('5', { sequence: '5' })); // line
 		const before = t.editor.state.doc;
 		t.editor.mouseDown({ button: 0, ...at(0, 0) });
 		t.editor.mouseDrag({ button: 0, ...at(3, 0) });

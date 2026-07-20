@@ -276,7 +276,17 @@ describe('rail tool icons', () => {
 		const pencil = rows
 			.flatMap((r) => r.spans)
 			.find((s) => s.text.includes('pencil'));
-		expect(pencil?.text).toContain('▸1 ✎ pencil');
+		// Pencil sits at number key 2 (select leads the rail at 1).
+		expect(pencil?.text).toContain('▸2 ✎ pencil');
+	});
+
+	test('select leads the rail at number key 1; pencil follows at 2', () => {
+		expect(RAIL_TOOLS[0]).toMatchObject({ key: '1', tool: 'select' });
+		expect(RAIL_TOOLS[1]).toMatchObject({ key: '2', tool: 'paint' });
+		// Every number-row key ascends with array position, 1-based.
+		RAIL_TOOLS.forEach((t, i) => {
+			expect(t.key).toBe(String(i + 1));
+		});
 	});
 
 	test('every glyph and fallback is one column by the renderer/hit-test width rules', () => {

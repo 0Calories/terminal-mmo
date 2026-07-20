@@ -140,6 +140,7 @@ describe('mouse-native anchors (ADR 0036)', () => {
 			role: 'form',
 		});
 		t.editor.state = selectFrame(t.editor.state, 'walk 0');
+		t.editor.key(key('p')); // pencil: enter dives only for a non-gesture tool (default is select)
 		t.editor.key(key('return')); // focus the frame so its markers are on screen
 		await t.renderOnce();
 		// grip (4,2) is the bottom-most ✛ on screen; head (2,0) the top-most.

@@ -49,12 +49,14 @@ export interface RailRow {
 }
 
 // The tools the rail offers today, in rail order with their number-row keys
-// (spec #387: tools live on the number row in rail order — pencil, fill, stamp,
-// line, rect, ellipse, select, move, paste; erase is demoted to the right
-// button, off the rail, and the anchor tool moved off the number row — it lives
-// on the playback box's `anchor` button. Select (7)/move (8) are live
-// (#399); paste (9) is a TRIGGER — clicking it or pressing 9 spawns a paste float
-// and hands off to move, never resting as the active tool (#400).
+// (spec #387: tools live on the number row in rail order — select leads at `1`
+// (the launch default, post-#351 organization round), then pencil, fill, stamp,
+// line, rect, ellipse, move, paste; erase is demoted to the right button, off
+// the rail, and the anchor tool moved off the number row — it lives on the
+// frame box's `anchor` button. Select (1)/move (8) are live (#399); paste (9) is
+// a TRIGGER — clicking it or pressing 9 spawns a paste float and hands off to
+// move, never resting as the active tool (#400). Pencil keeps its `p` letter
+// binding (ADR 0035) on top of its number-row key.
 // Every glyph must be ONE code unit and ONE terminal column: the rail's
 // hit-testing walks span.text.length, so a double-width (or ambiguous-width)
 // glyph would desync every mouse column to its right. ○ is U+25CB (never the
@@ -66,13 +68,13 @@ export const RAIL_TOOLS: readonly {
 	glyph: string;
 	label: string;
 }[] = [
-	{ key: '1', tool: 'paint', glyph: '✎', label: 'pencil' },
-	{ key: '2', tool: 'fill', glyph: '▓', label: 'fill' },
-	{ key: '3', tool: 'stamp', glyph: '▣', label: 'stamp' },
-	{ key: '4', tool: 'line', glyph: '╱', label: 'line' },
-	{ key: '5', tool: 'rect', glyph: '▭', label: 'rect' },
-	{ key: '6', tool: 'ellipse', glyph: '○', label: 'ellipse' },
-	{ key: '7', tool: 'select', glyph: '↖', label: 'select' },
+	{ key: '1', tool: 'select', glyph: '↖', label: 'select' },
+	{ key: '2', tool: 'paint', glyph: '✎', label: 'pencil' },
+	{ key: '3', tool: 'fill', glyph: '▓', label: 'fill' },
+	{ key: '4', tool: 'stamp', glyph: '▣', label: 'stamp' },
+	{ key: '5', tool: 'line', glyph: '╱', label: 'line' },
+	{ key: '6', tool: 'rect', glyph: '▭', label: 'rect' },
+	{ key: '7', tool: 'ellipse', glyph: '○', label: 'ellipse' },
 	{ key: '8', tool: 'move', glyph: '✜', label: 'move' },
 	{ key: '9', tool: 'paste', glyph: '⧉', label: 'paste' },
 ];
