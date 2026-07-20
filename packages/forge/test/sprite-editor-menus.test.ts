@@ -58,6 +58,28 @@ describe('animation menu', () => {
 		expect(r.action).toEqual({ type: 'delete', animation: 'cheer' });
 	});
 
+	test('p plays the highlighted animation and closes the menu (post-#351)', () => {
+		const m = openAnimationMenu(ANIMATIONS, 'cheer');
+		const r = animationMenuKey(m, ch('p'));
+		expect(r.action).toEqual({
+			type: 'play',
+			mode: 'animation',
+			animation: 'cheer',
+		});
+		expect(r.menu).toBeNull();
+	});
+
+	test('w plays the walk gait and closes the menu (post-#351)', () => {
+		const m = openAnimationMenu(ANIMATIONS, 'idle');
+		const r = animationMenuKey(m, ch('w'));
+		expect(r.action).toEqual({
+			type: 'play',
+			mode: 'walk',
+			animation: 'idle',
+		});
+		expect(r.menu).toBeNull();
+	});
+
 	test('reorder uses the frame cursor', () => {
 		let m = openAnimationMenu(ANIMATIONS, 'cheer'); // index 2, 2 frames
 		m = open(animationMenuKey(m, k('right')).menu); // frameIndex → 1

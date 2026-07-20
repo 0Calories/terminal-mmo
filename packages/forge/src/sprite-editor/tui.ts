@@ -479,6 +479,7 @@ export class SpriteEditor extends Renderable {
 			h: number;
 			flip: { x0: number; x1: number; y: number };
 			play: { x0: number; x1: number; y: number };
+			walk: { x0: number; x1: number; y: number };
 		} | null;
 		// The colour picker's hue/shade grid rect, so a click resolves to a cell.
 		colorGrid: {
@@ -1035,6 +1036,12 @@ export class SpriteEditor extends Renderable {
 					e.x <= pane.play.x1
 				) {
 					this.togglePlay('animation');
+				} else if (
+					e.y === pane.walk.y &&
+					e.x >= pane.walk.x0 &&
+					e.x <= pane.walk.x1
+				) {
+					this.togglePlay('walk');
 				}
 			}
 			return;
@@ -1370,6 +1377,9 @@ export class SpriteEditor extends Renderable {
 			case 'setFps':
 				this.state = setAnimationFps(this.state, action.animation, action.fps);
 				break;
+			case 'play':
+				// Handled in animationMenuKeyDispatch (needs the TUI playback state).
+				break;
 			case 'close':
 				break;
 		}
@@ -1379,6 +1389,16 @@ export class SpriteEditor extends Renderable {
 		const menu = this.animationMenu;
 		if (!menu) return;
 		const res = animationMenuKey(menu, toMenuKey(k));
+		// Play/walk from the menu closes it and starts playback (post-#351: their
+		// secondary home when the preview pane is auto-hidden). Animation playback
+		// plays the selected row; walk plays the form's walk gait.
+		if (res.action?.type === 'play') {
+			this.animationMenu = null;
+			if (res.action.mode === 'animation')
+				this.state = selectAnimation(this.state, res.action.animation);
+			if (this.playMode !== res.action.mode) this.togglePlay(res.action.mode);
+			return;
+		}
 		if (res.action && res.action.type !== 'close') {
 			const keep = res.action.type === 'create' ? res.action.name : undefined;
 			this.applyAnimationAction(res.action);
@@ -2813,14 +2833,21 @@ export class SpriteEditor extends Renderable {
 		});
 		if (!ok) buf.drawText('keep drawing…'.slice(0, iw), ix, iy, C.dim, C.bg);
 
-		// Flip + play controls on the bottom border, clickable via geom.preview.
+		// Flip + play + walk controls on the bottom border, clickable via
+		// geom.preview (post-#351: play/walk moved off the rail to the pane, their
+		// primary home). Each mode's control shows ■ stop while it is the one
+		// playing; clicking the other mode's control switches to it.
 		const flipText = `flip ${this.previewFacing === 1 ? '→' : '←'}`;
-		const playing = this.playMode !== 'none';
-		const playText = playing ? '■ stop' : '▶ play';
+		const animPlaying = this.playMode === 'animation';
+		const walkPlaying = this.playMode === 'walk';
+		const playText = animPlaying ? '■ stop' : '▶ play';
+		const walkText = walkPlaying ? '■ stop' : '▶ walk';
 		const flipX = x0 + 2;
 		buf.drawText(flipText, flipX, y1, C.text, C.boxBg);
 		const playX = flipX + flipText.length + 2;
-		buf.drawText(playText, playX, y1, playing ? C.hot : C.text, C.boxBg);
+		buf.drawText(playText, playX, y1, animPlaying ? C.hot : C.text, C.boxBg);
+		const walkX = playX + playText.length + 2;
+		buf.drawText(walkText, walkX, y1, walkPlaying ? C.hot : C.text, C.boxBg);
 
 		this.geom.preview = {
 			x0,
@@ -2829,6 +2856,7 @@ export class SpriteEditor extends Renderable {
 			h: paneH,
 			flip: { x0: flipX, x1: flipX + flipText.length - 1, y: y1 },
 			play: { x0: playX, x1: playX + playText.length - 1, y: y1 },
+			walk: { x0: walkX, x1: walkX + walkText.length - 1, y: y1 },
 		};
 	}
 
@@ -3005,7 +3033,7 @@ export class SpriteEditor extends Renderable {
 			}
 			if (menu.error) rows.push(`⚠ ${menu.error}`);
 			rows.push('Enter switch · c new · d del · a +frame');
-			rows.push('f fps · ←/→ pick frame · </> reorder · Esc');
+			rows.push('p play · w walk · f fps · ←/→ frame · </> reorder · Esc');
 		}
 		this.drawModal(buf, W, H, rows, C);
 	}

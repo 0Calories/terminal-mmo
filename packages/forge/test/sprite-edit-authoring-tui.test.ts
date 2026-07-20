@@ -424,6 +424,37 @@ describe('playback', () => {
 		expect(t4.editor.playing).toBe(true);
 	});
 
+	test('the preview pane carries ▶ play and ▶ walk; clicking walk starts walk playback (post-#351)', async () => {
+		const t = await mount({ doc: animDoc(), id: 'panewalk', role: 'hat' });
+		await t.renderOnce();
+		const rows = t.captureCharFrame().split('\n');
+		// Both controls live on the pane's bottom border now (off the rail).
+		expect(rows.some((r) => r.includes('▶ play'))).toBe(true);
+		let walk: { x: number; y: number } | null = null;
+		for (let y = 0; y < rows.length; y++) {
+			const x = rows[y].indexOf('▶ walk');
+			if (x >= 0) {
+				walk = { x, y };
+				break;
+			}
+		}
+		if (!walk) throw new Error('no ▶ walk control on the pane');
+		t.editor.mouseDown({ button: 0, x: walk.x, y: walk.y });
+		t.editor.mouseUp();
+		expect(t.editor.playing).toBe(true);
+		// biome-ignore lint/suspicious/noExplicitAny: read the private play mode.
+		expect((t.editor as any).playMode).toBe('walk');
+	});
+
+	test('the animation menu w entry starts walk playback (the pane auto-hides small)', async () => {
+		const t = await mount({ doc: animDoc(), id: 'menuwalk', role: 'hat' });
+		await clickRail(t, /\banimation\b/); // open the animation menu (mouse-native)
+		t.editor.key(key('w', { sequence: 'w' }));
+		expect(t.editor.playing).toBe(true);
+		// biome-ignore lint/suspicious/noExplicitAny: read the private play mode.
+		expect((t.editor as any).playMode).toBe('walk');
+	});
+
 	test('a tick advances the displayed frame without mutating the doc', async () => {
 		const t = await mount({ doc: animDoc(), id: 'anim', role: 'hat' });
 		expect(t.editor.displayFrame).toBe('idle 0');

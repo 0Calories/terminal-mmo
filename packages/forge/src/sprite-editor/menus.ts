@@ -47,6 +47,11 @@ export type AnimationMenuAction =
 	| { type: 'addFrame'; animation: string }
 	| { type: 'reorder'; animation: string; index: number; delta: number }
 	| { type: 'setFps'; animation: string; fps: number | null }
+	// Start playback from the menu (post-#351: play/walk left the rail; the menu
+	// is their secondary home when the preview pane is auto-hidden on a small
+	// terminal). `animation` playback plays the selected row; `walk` plays the
+	// form's walk gait regardless of selection.
+	| { type: 'play'; mode: 'animation' | 'walk'; animation: string }
 	| { type: 'close' };
 
 export interface AnimationMenuResult {
@@ -151,6 +156,16 @@ function animationListKey(
 			return { menu, action: { type: 'delete', animation: row.name } };
 		case 'a':
 			return { menu, action: { type: 'addFrame', animation: row.name } };
+		case 'p':
+			return {
+				menu: null,
+				action: { type: 'play', mode: 'animation', animation: row.name },
+			};
+		case 'w':
+			return {
+				menu: null,
+				action: { type: 'play', mode: 'walk', animation: row.name },
+			};
 		case 'f':
 			return {
 				menu: {
