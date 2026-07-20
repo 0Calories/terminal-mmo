@@ -39,12 +39,14 @@ export interface StripLabel {
 	readonly text: string;
 }
 
-// A multi-frame strip's fps stepper on its name row (QA round 3): `‹ 5fps ›`
-// with the chevrons as click targets stepping the animation's fps by ±1
-// (clamped 1–30 by the caller). Single-frame strips carry none.
+// A multi-frame strip's fps stepper on its label row: `‹ 5fps ›` with the
+// chevrons as click targets stepping the animation's fps by ±1 (clamped 1–30 by
+// the caller). It is right-justified so its right edge meets the strip's right
+// edge; on a strip too narrow for name + stepper it clamps one space past the
+// name (overhanging the edge). Single-frame strips carry none.
 export interface StripFpsStepper {
 	readonly animation: string;
-	// Content row (the strip's name row) and the stepper text's extent.
+	// Content row (the strip's label row) and the stepper text's extent.
 	readonly y: number;
 	readonly x: number;
 	readonly text: string;
@@ -86,8 +88,12 @@ export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 
 	for (const spec of stripSpecs(doc)) {
 		const fps = doc.fps[spec.animation];
-		const label = `${spec.animation} · ${spec.frames.length}f${fps ? ` · ${fps}fps` : ''}`;
-		labels.push({ animation: spec.animation, y, text: label });
+		// The label is just the animation name (the frame count and the static fps
+		// text moved out — the count is self-evident from the strip, the fps now
+		// lives on the interactive stepper).
+		const label = spec.animation;
+		const labelY = y;
+		labels.push({ animation: spec.animation, y: labelY, text: label });
 		contentW = Math.max(contentW, label.length);
 
 		const rowY = y + 1;
@@ -113,19 +119,25 @@ export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 			stripH = Math.max(stripH, box.h);
 			x += box.w + FRAME_GAP;
 		}
-		contentW = Math.max(contentW, Math.max(0, x - FRAME_GAP));
+		// The strip's right edge: the last frame box's right edge (drop the trailing
+		// inter-frame gap the loop added).
+		const stripRight = Math.max(0, x - FRAME_GAP);
+		contentW = Math.max(contentW, stripRight);
 		const nameRow = rowY + stripH;
 		nameRows.push(nameRow);
-		// The fps stepper rides the name row, after the frames' extent.
+		// The fps stepper rides the LABEL row, right-justified so its right edge
+		// meets the strip's right edge. On a strip too narrow for name + stepper it
+		// clamps to one space past the name (overhanging the edge) — never colliding.
 		if (spec.frames.length > 1) {
-			const stepper: StripFpsStepper = {
+			const text = `‹ ${fps ?? DEFAULT_FPS}fps ›`;
+			const stepperX = Math.max(label.length + 1, stripRight - text.length);
+			steppers.push({
 				animation: spec.animation,
-				y: nameRow,
-				x,
-				text: `‹ ${fps ?? DEFAULT_FPS}fps ›`,
-			};
-			steppers.push(stepper);
-			contentW = Math.max(contentW, stepper.x + stepper.text.length);
+				y: labelY,
+				x: stepperX,
+				text,
+			});
+			contentW = Math.max(contentW, stepperX + text.length);
 		}
 		y = nameRow + 1 + STRIP_GAP;
 	}

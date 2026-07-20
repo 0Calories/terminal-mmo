@@ -187,7 +187,8 @@ describe('rung 2 — strips force focus (#398)', () => {
 		t.resize(160, 24);
 		await t.renderOnce();
 		const wide = t.captureCharFrame();
-		expect(wide).toContain('row · 2f'); // the strip's animation label
+		// The strip's animation label (just the name now) shows — strips returned.
+		expect(wide).toContain('row');
 		expect(wide).not.toContain('strips folded to focus');
 	});
 });

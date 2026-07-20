@@ -923,7 +923,10 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		});
 		const frame = t.captureCharFrame();
 		expect(t.editor.view).toBe('strips');
-		expect(frame).toContain('idle · 2f');
+		// The strip label is just the animation name; the multi-frame strip also
+		// carries its interactive fps stepper on that row.
+		expect(frame).toContain('idle');
+		expect(frame).toContain('‹ 5fps ›');
 		// The active frame 'a' is underlined on the name row; 'b' is plain.
 		const nameRow = frame.split('\n').find((l) => l.includes('▔'));
 		expect(nameRow).toBeDefined();
@@ -967,14 +970,14 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		const t = await mount({ doc: navDoc, id: 'nav', role: 'form' });
 		// jump's strip label sits at content row ~38 — off-screen at the 24-row
 		// floor (viewH=22), below both the idle and walk strips.
-		expect(t.captureCharFrame()).not.toContain('jump ·');
+		expect(t.captureCharFrame()).not.toContain('jump');
 		t.editor.wheel({ button: 0, x: 40, y: 5, scroll: { direction: 'down' } });
 		await t.renderOnce();
 		// One notch (3 rows) brings nothing yet; keep scrolling.
 		for (let i = 0; i < 5; i++)
 			t.editor.wheel({ button: 0, x: 40, y: 5, scroll: { direction: 'down' } });
 		await t.renderOnce();
-		expect(t.captureCharFrame()).toContain('jump ·');
+		expect(t.captureCharFrame()).toContain('jump');
 		// Middle-drag pans back up.
 		t.editor.mouseDown({ button: 1, x: 40, y: 2 });
 		t.editor.mouseDrag({ button: 1, x: 40, y: 20 });

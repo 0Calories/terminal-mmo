@@ -862,8 +862,8 @@ export class SpriteEditor extends Renderable {
 			const { cx, cy } = this.stripsContentAt(e);
 			const hit = stripsHit(layout, cx, cy);
 			if (!hit) {
-				// The name row's fps stepper (QA round 3): ‹ steps down, › up,
-				// clamped 1–30. An undoable doc edit via setAnimationFps.
+				// The label row's fps stepper: ‹ steps down, › up, clamped 1–30. An
+				// undoable doc edit via setAnimationFps.
 				const step = stepperHit(layout, cx, cy);
 				if (step && button === 'left') {
 					this.liftPen();
@@ -2137,7 +2137,7 @@ export class SpriteEditor extends Renderable {
 			}
 		});
 
-		// Multi-frame strips carry their fps stepper on the name row (QA round 3).
+		// Multi-frame strips carry their fps stepper on the label row.
 		for (const st of layout.steppers) {
 			const sy = syOf(st.y);
 			if (sy < 0 || sy >= viewH) continue;

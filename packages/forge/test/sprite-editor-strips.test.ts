@@ -23,14 +23,14 @@ describe('stripsLayout — every Animation a labeled strip of its Frames', () =>
 	test('lays one labeled strip per animation, in doc order', () => {
 		const l = stripsLayout(doc, 2);
 		expect(l.labels.map((s) => s.animation)).toEqual(['idle', 'walk']);
-		expect(l.labels[0].text).toContain('idle');
-		expect(l.labels[0].text).toContain('1f');
+		// The label is just the animation name — no frame count, no fps text.
+		expect(l.labels[0].text).toBe('idle');
 	});
 
-	test('an authored fps shows on the strip label', () => {
-		const withFps = { ...doc, fps: { idle: 6 } };
+	test('the strip label carries only the animation name — no frame count or fps', () => {
+		const withFps = { ...doc, fps: { idle: 6, walk: 6 } };
 		const l = stripsLayout(withFps, 2);
-		expect(l.labels[0].text).toContain('6fps');
+		for (const label of l.labels) expect(label.text).toBe(label.animation);
 	});
 
 	test('frame blocks are fatbits-sized: 2·cells Pixels at zoom×zoom cells each', () => {
@@ -71,15 +71,48 @@ describe('stripsLayout — every Animation a labeled strip of its Frames', () =>
 });
 
 describe('fps stepper — multi-frame strips only (QA round 3)', () => {
-	test('a multi-frame strip carries a ‹ Nfps › stepper on its name row; single-frame strips none', () => {
+	test('a multi-frame strip carries a ‹ Nfps › stepper on its label row, right-justified to the strip edge; single-frame strips none', () => {
 		const l = stripsLayout(doc, 2);
 		expect(l.steppers).toHaveLength(1);
 		const st = l.steppers[0];
 		expect(st.animation).toBe('walk');
 		expect(st.text).toBe('‹ 5fps ›');
-		// It sits on walk's name row, after the frames' extent.
+		// It now rides walk's LABEL row (up from the name row), sharing it with the
+		// animation name.
 		const walkIdx = l.labels.findIndex((lb) => lb.animation === 'walk');
-		expect(st.y).toBe(l.nameRows[walkIdx]);
+		expect(st.y).toBe(l.labels[walkIdx].y);
+		// Right-justified: the stepper's right edge lands exactly on the strip's
+		// right edge (the last frame box's right edge).
+		const walkFrames = l.frames.filter((f) => f.animation === 'walk');
+		const stripRight = Math.max(...walkFrames.map((f) => f.x + f.w));
+		expect(st.x + st.text.length).toBe(stripRight);
+		// Clear of the name (no collision).
+		expect(st.x).toBeGreaterThanOrEqual(l.labels[walkIdx].text.length + 1);
+	});
+
+	test('a strip too narrow for name + stepper clamps the stepper clear of the name (may overhang the edge)', () => {
+		// A single wide-named two-frame animation whose frames are tiny: the strip
+		// edge sits left of where a right-justified stepper would start, so the
+		// stepper clamps to one space past the name and overhangs the strip edge.
+		const narrow = {
+			...doc,
+			frames: [
+				{ ...doc.frames[0], name: 'a' },
+				{ ...doc.frames[0], name: 'b' },
+			],
+			animations: { 'a-very-long-animation-name': ['a', 'b'] },
+			fps: {},
+		};
+		const l = stripsLayout(narrow, 1);
+		const st = l.steppers[0];
+		const name = l.labels[0].text.length;
+		expect(st.x).toBe(name + 1);
+		const frames = l.frames;
+		const stripRight = Math.max(...frames.map((f) => f.x + f.w));
+		// It overhangs — its right edge is past the strip's right edge.
+		expect(st.x + st.text.length).toBeGreaterThan(stripRight);
+		// contentW covers the overhang.
+		expect(l.contentW).toBeGreaterThanOrEqual(st.x + st.text.length);
 	});
 
 	test('an authored fps shows in the stepper text', () => {
