@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: accepted, amended by ADR 0035 (`poses:` key renamed `animations:`;
+  per-animation fps now editable in the editor)
 ---
 
 # Sprite asset files (`.sprite`) and the forge Sprite editor

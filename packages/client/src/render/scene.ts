@@ -2,14 +2,14 @@ import {
 	ACTION_FLAG,
 	aabbOverlap,
 	entityBox,
-	guardPoseCell,
-	guardPoseGlyph,
+	guardOverlayCell,
+	guardOverlayGlyph,
 	guardRaised,
 	skillForSlot,
 	skillHitbox,
+	swingOverlay,
+	swingOverlayCell,
 	swingPhase,
-	swingPose,
-	swingPoseCell,
 	swingProgress,
 } from '@mmo/core/combat';
 import type { AttackPhase, Entity } from '@mmo/core/entities';
@@ -70,16 +70,16 @@ function drawSwing(
 	const st = swingRenderState(e);
 	if (!st) return;
 	const move = e.action && e.action.move !== 'idle' ? e.action.move : 'basic';
-	const pose = swingPose(move, st.phase, e.facing);
-	if (!pose) return;
-	const cell = swingPoseCell(e, st.phase);
+	const overlay = swingOverlay(move, st.phase, e.facing);
+	if (!overlay) return;
+	const cell = swingOverlayCell(e, st.phase);
 	const ax = Math.round(cell.x - cam.x);
 	const ay = Math.round(cell.y - cam.y);
 	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
 		buf.setCellWithAlphaBlending(
 			ax,
 			ay,
-			pose.glyph,
+			overlay.glyph,
 			C.telegraph,
 			C.transparent,
 		);
@@ -98,14 +98,14 @@ function drawGuard(
 	sh: number,
 ) {
 	if (!isGuarding(e)) return;
-	const cell = guardPoseCell(e);
+	const cell = guardOverlayCell(e);
 	const ax = Math.round(cell.x - cam.x);
 	const ay = Math.round(cell.y - cam.y);
 	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
 		buf.setCellWithAlphaBlending(
 			ax,
 			ay,
-			guardPoseGlyph(),
+			guardOverlayGlyph(),
 			C.guard,
 			C.transparent,
 		);

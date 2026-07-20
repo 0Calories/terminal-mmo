@@ -7,11 +7,15 @@ import {
 	validateSpriteSet,
 } from '@mmo/render';
 import type { CliDeps } from './cli';
+import { RAIL_TOOLS, TOOL_GLYPH_FALLBACKS } from './sprite-editor';
 
 const USAGE = [
 	'usage:',
 	"  forge sprite render <id>          parse + dump one .sprite file's frames as ASCII + diagnostics",
 	'  forge sprite check [dir]          whole-set validation (CI; non-zero on error)',
+	'  forge sprite edit <role>/<id>     open the pixel Sprite editor (a fresh template if the id is new)',
+	'  forge sprite preview <id>         live Composited preview: the art rendered the way the game draws it',
+	'  forge sprite glyphs               print the rail tool glyphs + fallbacks (eyeball tofu/width here)',
 ].join('\n');
 
 export function runSprite(argv: string[], deps: CliDeps): number {
@@ -21,10 +25,24 @@ export function runSprite(argv: string[], deps: CliDeps): number {
 			return cmdRender(rest, deps);
 		case 'check':
 			return cmdCheck(rest, deps);
+		case 'glyphs':
+			return cmdGlyphs(deps);
 		default:
 			deps.log(USAGE);
 			return cmd ? 1 : 0;
 	}
+}
+
+// One row of every rail tool glyph (with its fallback where one exists), so an
+// artist can eyeball tofu or double-width rendering in their own terminal
+// before the rail commits to a glyph.
+function cmdGlyphs(deps: CliDeps): number {
+	const row = RAIL_TOOLS.map((t) => {
+		const fb = TOOL_GLYPH_FALLBACKS[t.tool];
+		return `${t.label} ${t.glyph}${fb ? ` (fb ${fb})` : ''}`;
+	}).join(' · ');
+	deps.log(row);
+	return 0;
 }
 
 const hasError = (diags: SpriteDiagnostic[]) =>
@@ -43,11 +61,19 @@ export function formatSpriteDiagnostics(diags: SpriteDiagnostic[]): string {
 
 export function findSpriteFile(root: string, id: string): string | undefined {
 	if (id.includes('/') || id.endsWith('.sprite')) {
-		const candidate = isAbsolute(id) ? id : resolve(process.cwd(), id);
-		if (existsSync(candidate)) return candidate;
-		if (!candidate.endsWith('.sprite')) {
-			const withExt = `${candidate}.sprite`;
-			if (existsSync(withExt)) return withExt;
+		// A slash id is tried as a filesystem path first (cwd-relative or
+		// absolute), then against the sprites root — `forms/buddy` and the
+		// picker's `dirForRole(role)/id` launch form both mean "under root"
+		// when no such path exists where the tool was run.
+		const candidates = isAbsolute(id)
+			? [id]
+			: [resolve(process.cwd(), id), join(root, id)];
+		for (const candidate of candidates) {
+			if (existsSync(candidate)) return candidate;
+			if (!candidate.endsWith('.sprite')) {
+				const withExt = `${candidate}.sprite`;
+				if (existsSync(withExt)) return withExt;
+			}
 		}
 		return undefined;
 	}
@@ -103,9 +129,9 @@ function cmdRender(args: string[], deps: CliDeps): number {
 		return 1;
 	}
 
-	const poseCount = Object.keys(doc.poses).length;
+	const animationCount = Object.keys(doc.animations).length;
 	deps.log(
-		`${doc.id}  ${doc.frames.length} frame(s)  ${poseCount} pose(s)  baseline ${doc.baseline}`,
+		`${doc.id}  ${doc.frames.length} frame(s)  ${animationCount} animation(s)  baseline ${doc.baseline}`,
 	);
 
 	for (const frame of doc.frames) {

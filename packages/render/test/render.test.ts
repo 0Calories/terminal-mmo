@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { bladeEdgeArc, meleeHitbox, sweepIndex } from '@mmo/core/combat';
+import { bladeEdgeArc, meleeHitbox } from '@mmo/core/combat';
 import {
 	BOX,
 	type Entity,
@@ -490,7 +490,7 @@ function avatarTopLeft(e: Entity) {
 	return { sprite, ax, ay, grip: form.grip, head: form.head };
 }
 
-test("an Avatar renders its Form's idle Pose as its body, through the bodyFrame selector (ADR 0020)", () => {
+test("an Avatar renders its Form's idle Animation as its body, through the bodyFrame selector (ADR 0020)", () => {
 	const buf = new FakeBuffer(20, 16);
 	for (const facing of [1, -1] as Facing[]) {
 		buf.clear('BG');
@@ -541,7 +541,7 @@ test('each Avatar Form renders its own idle body through the shared render path 
 	}
 });
 
-function expectBodyPose(over: Partial<Entity>, sprite: Sprite) {
+function expectBodyAnimation(over: Partial<Entity>, sprite: Sprite) {
 	const buf = new FakeBuffer(40, 16);
 	const e = makeEntity({ type: 'player', y: 7, facing: 1, ...over });
 	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE);
@@ -552,14 +552,14 @@ function expectBodyPose(over: Partial<Entity>, sprite: Sprite) {
 
 test('a moving Avatar animates the distance-driven walk cycle; standing freezes to idle (ADR 0020 §7)', () => {
 	const idle = formFrame(FORMS[0], 'idle');
-	const walkA = formFrame(FORMS[0], 'walkA');
-	const walkB = formFrame(FORMS[0], 'walkB');
+	const walkA = formFrame(FORMS[0], 'walk', 0);
+	const walkB = formFrame(FORMS[0], 'walk', 1);
 
-	// 2·STRIDE+3 is an even stride (walkA); 3·STRIDE+3 the next, odd one (walkB).
-	expectBodyPose({ x: 2 * STRIDE + 3, vx: 3 }, walkA);
-	expectBodyPose({ x: 3 * STRIDE + 3, vx: 3 }, walkB);
+	// 2·STRIDE+3 is an even stride (walk frame 0); 3·STRIDE+3 the next, odd one (frame 1).
+	expectBodyAnimation({ x: 2 * STRIDE + 3, vx: 3 }, walkA);
+	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 3 }, walkB);
 
-	expectBodyPose({ x: 3 * STRIDE + 3, vx: 0 }, idle);
+	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 0 }, idle);
 });
 
 test('an observer renders the same walk frame as the owner for a given position (ADR 0020 §7)', () => {
@@ -584,7 +584,7 @@ test('an observer renders the same walk frame as the owner for a given position 
 		drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE);
 		return buf;
 	};
-	const walkB = formFrame(FORMS[0], 'walkB');
+	const walkB = formFrame(FORMS[0], 'walk', 1);
 	const ax = Math.round(3 * STRIDE + 3 - Math.floor((walkB.w - BOX.w) / 2));
 	const ay = Math.round(7 + BOX.h - walkB.h + (FORMS[0].baseline ?? 0));
 	expectSpriteAt(render(owner), walkB, ax, ay, 1, fgFor);
@@ -593,7 +593,7 @@ test('an observer renders the same walk frame as the owner for a given position 
 
 test('an airborne Avatar does not walk even while moving horizontally (ADR 0020 ladder)', () => {
 	const jump = formFrame(FORMS[0], 'jump');
-	expectBodyPose({ x: 3 * STRIDE + 3, vx: 3, onGround: false }, jump);
+	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 3, onGround: false }, jump);
 });
 
 test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouched", () => {
@@ -653,7 +653,7 @@ test('a cosmetic hat is overlaid directly above the head', () => {
 test('an equipped Avatar at rest renders the weapon idle frame at the mirrored grip, on top of the body (ADR 0018)', () => {
 	const weapon = weaponSpriteById(0);
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
-	const frame = weapon.frames.idle;
+	const frame = weapon.frames.rest;
 	if (!frame) throw new Error('expected an authored idle frame');
 
 	for (const facing of [1, -1] as Facing[]) {
@@ -697,15 +697,13 @@ test('an equipped Avatar at rest renders the weapon idle frame at the mirrored g
 	}
 });
 
-test('mid-active-swing the composited weapon plays the sweep frame, and no box-fill floods the melee hitbox (ADR 0018 §4/§5)', () => {
+test('mid-active-swing the composited weapon plays the active swing frame, and no box-fill floods the melee hitbox (ADR 0018 §4/§5, ADR 0036)', () => {
 	const weapon = weaponSpriteById(0);
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
-	const sweep = weapon.frames.active;
-	if (!sweep || sweep.length === 0)
-		throw new Error('expected authored active sweep frames');
 
 	const progress = 0.5;
-	const frame = sweep[sweepIndex(progress, sweep.length)];
+	// Phase-indexed selection: the active phase shows swing frame 1.
+	const frame = weapon.frames.swing[1];
 
 	const buf = new FakeBuffer(28, 16);
 	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
@@ -882,10 +880,10 @@ function expectPlantedFeet(buf: FakeBuffer, e: Entity, sprite: Sprite) {
 	expect(feet).toBeGreaterThan(0);
 }
 
-test('the walk frames plant on the same general over-solid rule, no pose-specific code (ADR 0021)', () => {
-	for (const [x, pose] of [
-		[2 * STRIDE + 3, 'walkA'],
-		[3 * STRIDE + 3, 'walkB'],
+test('the walk frames plant on the same general over-solid rule, no animation-specific code (ADR 0021)', () => {
+	for (const [x, frameIndex] of [
+		[2 * STRIDE + 3, 0],
+		[3 * STRIDE + 3, 1],
 	] as const) {
 		const buf = new FakeBuffer(40, 16);
 		const e = makeEntity({ type: 'player', x, y: 7, vx: 3 });
@@ -895,7 +893,7 @@ test('the walk frames plant on the same general over-solid rule, no pose-specifi
 			{ x: 0, y: 0 },
 			STYLE,
 		);
-		expectPlantedFeet(buf, e, formFrame(FORMS[0], pose));
+		expectPlantedFeet(buf, e, formFrame(FORMS[0], 'walk', frameIndex));
 	}
 });
 

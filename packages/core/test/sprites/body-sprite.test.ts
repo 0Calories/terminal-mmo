@@ -18,57 +18,72 @@ const REST: BodyState = {
 	staggered: false,
 };
 
-describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
+describe('bodyFrame (pure Animation selector / precedence ladder)', () => {
 	test('returns idle when no higher-priority state applies', () => {
-		expect(bodyFrame(REST)).toEqual({ poseId: 'idle', frameIndex: 0 });
+		expect(bodyFrame(REST)).toEqual({ animationId: 'idle', frameIndex: 0 });
 	});
 
 	test('stagger sits at the top of the ladder, even mid-swing', () => {
 		expect(
 			bodyFrame({ ...REST, staggered: true, move: 'basic', phase: 'active' })
-				.poseId,
+				.animationId,
 		).toBe('hurt');
 	});
 
-	test('a basic swing selects its phase Pose (windup/active/recovery)', () => {
+	test('a basic swing selects its phase Animation (windup/active/recovery)', () => {
 		for (const phase of ['windup', 'active', 'recovery'] as const)
-			expect(bodyFrame({ ...REST, move: 'basic', phase }).poseId).toBe(phase);
+			expect(bodyFrame({ ...REST, move: 'basic', phase }).animationId).toBe(
+				phase,
+			);
 	});
 
 	test('airborne selects jump, below combat but above walk', () => {
-		expect(bodyFrame({ ...REST, airborne: true }).poseId).toBe('jump');
+		expect(bodyFrame({ ...REST, airborne: true }).animationId).toBe('jump');
 		expect(
 			bodyFrame({ ...REST, airborne: true, move: 'basic', phase: 'windup' })
-				.poseId,
+				.animationId,
 		).toBe('windup');
 	});
 
-	test('walking flips walkA/walkB every STRIDE cells of travelled distance', () => {
-		expect(bodyFrame({ ...REST, moving: true, distanceX: 0 }).poseId).toBe(
-			'walkA',
-		);
+	test('walking distance-indexes the walk animation every STRIDE cells (ADR 0035)', () => {
+		expect(bodyFrame({ ...REST, moving: true, distanceX: 0 })).toEqual({
+			animationId: 'walk',
+			frameIndex: 0,
+		});
 		expect(
-			bodyFrame({ ...REST, moving: true, distanceX: STRIDE - 0.1 }).poseId,
-		).toBe('walkA');
-		expect(bodyFrame({ ...REST, moving: true, distanceX: STRIDE }).poseId).toBe(
-			'walkB',
-		);
+			bodyFrame({ ...REST, moving: true, distanceX: STRIDE - 0.1 }).frameIndex,
+		).toBe(0);
 		expect(
-			bodyFrame({ ...REST, moving: true, distanceX: 2 * STRIDE }).poseId,
-		).toBe('walkA');
+			bodyFrame({ ...REST, moving: true, distanceX: STRIDE }).frameIndex,
+		).toBe(1);
 		expect(
-			bodyFrame({ ...REST, moving: true, distanceX: -STRIDE }).poseId,
-		).toBe('walkB');
+			bodyFrame({ ...REST, moving: true, distanceX: 2 * STRIDE }).frameIndex,
+		).toBe(0);
+		expect(
+			bodyFrame({ ...REST, moving: true, distanceX: -STRIDE }).frameIndex,
+		).toBe(1);
 	});
 
-	test('an emote poses below walk: walking cancels it (ADR 0020 §6)', () => {
-		expect(bodyFrame({ ...REST, emote: 'wave' }).poseId).toBe('emote:wave');
+	test('the gait generalizes: a third walk frame extends the cycle, no type change', () => {
+		const at = (distanceX: number) =>
+			bodyFrame({ ...REST, moving: true, distanceX }, undefined, 3).frameIndex;
+		expect(at(0)).toBe(0);
+		expect(at(STRIDE)).toBe(1);
+		expect(at(2 * STRIDE)).toBe(2);
+		expect(at(3 * STRIDE)).toBe(0);
+	});
+
+	test('an emote animations below walk: walking cancels it (ADR 0020 §6)', () => {
+		expect(bodyFrame({ ...REST, emote: 'wave' }).animationId).toBe(
+			'emote:wave',
+		);
 		expect(
-			bodyFrame({ ...REST, emote: 'wave', moving: true, distanceX: 0 }).poseId,
-		).toBe('walkA');
+			bodyFrame({ ...REST, emote: 'wave', moving: true, distanceX: 0 })
+				.animationId,
+		).toBe('walk');
 		expect(
 			bodyFrame({ ...REST, emote: 'wave', move: 'basic', phase: 'active' })
-				.poseId,
+				.animationId,
 		).toBe('active');
 	});
 
@@ -93,7 +108,7 @@ describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
 		expect(bodyFrame({ ...REST, emote: 'sit', emoteT: 99 }).frameIndex).toBe(0);
 	});
 
-	test('a per-pose fps overrides EMOTE_FPS for that emote, changing frame progression (ADR 0031)', () => {
+	test('a per-animation fps overrides EMOTE_FPS for that emote, changing frame progression (ADR 0031)', () => {
 		const fps = { 'emote:wave': 10 } as const;
 		// At 10 fps, emoteT = 1/EMOTE_FPS (0.2s) lands on floor(0.2 * 10) = 2, not 1.
 		expect(
@@ -103,7 +118,7 @@ describe('bodyFrame (pure Pose selector / precedence ladder)', () => {
 		expect(
 			bodyFrame({ ...REST, emote: 'wave', emoteT: 0.5 }, fps).frameIndex,
 		).toBe(5);
-		// A pose absent from the fps map still uses EMOTE_FPS.
+		// An animation absent from the fps map still uses EMOTE_FPS.
 		expect(
 			bodyFrame({ ...REST, emote: 'dance', emoteT: 3 / EMOTE_FPS }, fps)
 				.frameIndex,

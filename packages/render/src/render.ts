@@ -1,10 +1,8 @@
 import {
 	ACTION_FLAG,
 	bladeEdgeArc,
-	sweepIndex,
 	swingPhase,
 	swingProgress,
-	weaponFrame,
 } from '@mmo/core/combat';
 import {
 	type AttackPhase,
@@ -16,9 +14,14 @@ import {
 	type Terrain,
 } from '@mmo/core/entities';
 import { isSolid } from '@mmo/core/physics';
-import { bodyFrame, mirrorAnchorX, spriteMetaFor } from '@mmo/core/sprites';
+import {
+	bodyFrame,
+	mirrorAnchorX,
+	spriteMetaFor,
+	swingFrameIndex,
+} from '@mmo/core/sprites';
 import type { Portal } from '@mmo/core/zones';
-import { type BodySprite, formFrame } from './body-sprite';
+import { type BodySprite, formFrame, walkFrameCount } from './body-sprite';
 import { formById } from './forms';
 import { hatById } from './hats';
 import { spriteFor, spriteForNpc } from './registry';
@@ -224,7 +227,7 @@ export function drawEntitySprite<C>(
 	let grip: { x: number; y: number } | undefined;
 	let head: { x: number; y: number } | undefined;
 	if (body) {
-		const pose = bodyFrame(
+		const animation = bodyFrame(
 			{
 				move,
 				phase,
@@ -237,8 +240,9 @@ export function drawEntitySprite<C>(
 				staggered,
 			},
 			body.fps,
+			walkFrameCount(body),
 		);
-		sprite = formFrame(body, pose.poseId, pose.frameIndex);
+		sprite = formFrame(body, animation.animationId, animation.frameIndex);
 		baseline = body.baseline ?? 0;
 		// Per-frame anchors win over the BodySprite's (ADR 0031); TS-authored
 		// frames carry none, so they fall back to the body and render unchanged.
@@ -272,11 +276,12 @@ export function drawEntitySprite<C>(
 
 	const ws = overrides?.weapon ?? weaponSpriteFor(e);
 	if (ws && grip) {
-		const id = weaponFrame(move, phase);
+		// Phase-indexed swing selection (ADR 0036): the replicated attack phase
+		// picks the swing frame; anything else shows the Default (rest) frame.
 		const frame =
-			id === 'active'
-				? ws.frames.active?.[sweepIndex(progress, ws.frames.active.length)]
-				: ws.frames[id];
+			move === 'basic' && phase !== null
+				? ws.frames.swing[swingFrameIndex(phase)]
+				: ws.frames.rest;
 		const bodyGripX = sx + mirrorAnchorX(grip.x, sprite.w, e.facing);
 		const bodyGripY = sy + grip.y;
 		const accent = style.palette[ws.accent] ?? style.paletteDefault;

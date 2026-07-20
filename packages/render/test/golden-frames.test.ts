@@ -188,11 +188,13 @@ test('golden: hat sprites', () => {
 // hand-authored TS. These snapshots pin that the compiled frames are pixel-for-
 // pixel identical to the pre-migration art.
 test('golden: buddy form frames', () => {
-	for (const [poseId, frame] of Object.entries(formById('buddy').frames)) {
+	for (const [animationId, frame] of Object.entries(formById('buddy').frames)) {
 		const isArr = Array.isArray(frame);
 		const frames: readonly Sprite[] = isArr ? frame : [frame as Sprite];
 		frames.forEach((f, i) => {
-			const label = isArr ? `buddy: ${poseId}[${i}]` : `buddy: ${poseId}`;
+			const label = isArr
+				? `buddy: ${animationId}[${i}]`
+				: `buddy: ${animationId}`;
 			expect(spriteGrid(f)).toMatchSnapshot(label);
 		});
 	}
@@ -201,20 +203,10 @@ test('golden: buddy form frames', () => {
 test('golden: sword weapon frames', () => {
 	const weapon = weaponSpriteById(0);
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
-	if (weapon.frames.idle)
-		expect(spriteGrid(weapon.frames.idle)).toMatchSnapshot('sword: idle');
-	if (weapon.frames.windup)
-		expect(spriteGrid(weapon.frames.windup)).toMatchSnapshot('sword: windup');
-	if (weapon.frames.active) {
-		weapon.frames.active.forEach((f, i) => {
-			if (f === undefined) return;
-			expect(spriteGrid(f)).toMatchSnapshot(`sword: active[${i}]`);
-		});
-	}
-	if (weapon.frames.recovery)
-		expect(spriteGrid(weapon.frames.recovery)).toMatchSnapshot(
-			'sword: recovery',
-		);
+	expect(spriteGrid(weapon.frames.rest)).toMatchSnapshot('sword: rest');
+	weapon.frames.swing.forEach((f, i) => {
+		expect(spriteGrid(f)).toMatchSnapshot(`sword: swing[${i}]`);
+	});
 });
 
 // --- 2. Composited scene goldens ----------------------------------------
@@ -281,8 +273,8 @@ test('golden scene: ghost shooter', () => {
 
 test('golden scene: walk frames', () => {
 	for (const [x, label] of [
-		[2 * STRIDE + 3, 'walkA'],
-		[3 * STRIDE + 3, 'walkB'],
+		[2 * STRIDE + 3, 'walk-0'],
+		[3 * STRIDE + 3, 'walk-1'],
 	] as const) {
 		const buf = new FakeBuffer(40, 16);
 		const e = makeEntity({ type: 'player', x, y: 7, vx: 3 });

@@ -18,20 +18,20 @@ function docOf(text: string, id = 's'): SpriteDoc {
 
 const FORMS_OK = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"poses": { "walkA": ["wa"], "walkB": ["wb"] }
+	"animations": { "walk": ["walk-0", "walk-1"] }
 }
 --- idle
 AB
 CD
---- wa
+--- walk-0
 AB
 CD
---- wb
+--- walk-1
 AB
 CD
 `;
 
-test('validateSpriteRole: forms passes with idle/walkA/walkB and grip/head', () => {
+test('validateSpriteRole: forms passes with idle/walk and grip/head', () => {
 	expect(validateSpriteRole(docOf(FORMS_OK, 'buddy'), 'forms')).toEqual([]);
 });
 
@@ -41,27 +41,24 @@ const FORMS_BAD = `{
 --- idle
 AB
 CD
---- walkA
-AB
-CD
 `;
 
-test('validateSpriteRole: forms fails naming missing pose and anchor', () => {
+test('validateSpriteRole: forms fails naming missing animation and anchor', () => {
 	const diags = validateSpriteRole(docOf(FORMS_BAD, 'buddy'), 'forms');
 	expect(diags.every((d) => d.severity === 'error')).toBe(true);
 	expect(diags.every((d) => d.spriteId === 'buddy')).toBe(true);
 	const joined = diags.map((d) => d.message).join('\n');
-	expect(joined).toContain('walkB');
+	expect(joined).toContain("'walk'");
 	expect(joined).toContain('head');
 	expect(joined).toContain('buddy');
 	expect(joined).toContain('forms');
-	// grip and walkA are present, so must not be reported
-	expect(joined).not.toContain('walkA');
+	// grip and idle are present, so must not be reported
+	expect(joined).not.toContain("'idle'");
 });
 
 const FORMS_KNOWN_EMOTE = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"poses": { "walkA": ["wa"], "walkB": ["wb"], "emote:wave": ["ev"] }
+	"animations": { "walk": ["wa", "wb"], "emote:wave": ["ev"] }
 }
 --- idle
 AB
@@ -73,7 +70,7 @@ AB
 AB
 `;
 
-test('validateSpriteRole: forms accepts an emote pose for a registered emote', () => {
+test('validateSpriteRole: forms accepts an emote animation for a registered emote', () => {
 	expect(
 		validateSpriteRole(docOf(FORMS_KNOWN_EMOTE, 'buddy'), 'forms'),
 	).toEqual([]);
@@ -81,7 +78,7 @@ test('validateSpriteRole: forms accepts an emote pose for a registered emote', (
 
 const FORMS_UNKNOWN_EMOTE = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"poses": { "walkA": ["wa"], "walkB": ["wb"], "emote:boogie": ["bg"] }
+	"animations": { "walk": ["wa", "wb"], "emote:boogie": ["bg"] }
 }
 --- idle
 AB
@@ -93,7 +90,7 @@ AB
 AB
 `;
 
-test('validateSpriteRole: forms rejects an emote pose for an unregistered emote', () => {
+test('validateSpriteRole: forms rejects an emote animation for an unregistered emote', () => {
 	const diags = validateSpriteRole(
 		docOf(FORMS_UNKNOWN_EMOTE, 'buddy'),
 		'forms',
@@ -105,36 +102,90 @@ test('validateSpriteRole: forms rejects an emote pose for an unregistered emote'
 });
 
 const WEAPON_OK = `{
+	"accent": "s",
 	"anchors": { "grip": [0, 0] },
-	"poses": { "windup": ["wu"], "active": ["ac"] }
+	"animations": { "swing": ["swing-0", "swing-1", "swing-2"] }
 }
 --- idle
 AB
---- wu
+--- swing-0
 AB
---- ac
+--- swing-1
+AB
+--- swing-2
 AB
 `;
 
-test('validateSpriteRole: weapons passes with idle/windup/active and grip (recovery optional)', () => {
+test('validateSpriteRole: weapons passes with a default frame + a 3-frame swing and grip', () => {
 	expect(validateSpriteRole(docOf(WEAPON_OK, 'sword'), 'weapons')).toEqual([]);
 });
 
 const WEAPON_BAD = `{
-	"poses": { "windup": ["wu"] }
+	"animations": { "chop": ["ch"] }
 }
 --- idle
 AB
---- wu
+--- ch
 AB
 `;
 
-test('validateSpriteRole: weapons fails on missing active pose and grip anchor', () => {
+test('validateSpriteRole: weapons fails on missing swing animation and grip anchor', () => {
 	const diags = validateSpriteRole(docOf(WEAPON_BAD, 'sword'), 'weapons');
 	expect(diags.length).toBe(2);
 	const joined = diags.map((d) => d.message).join('\n');
-	expect(joined).toContain('active');
+	expect(joined).toContain('swing');
 	expect(joined).toContain('grip');
+});
+
+const WEAPON_SHORT_SWING = `{
+	"anchors": { "grip": [0, 0] },
+	"animations": { "swing": ["swing-0", "swing-1"] }
+}
+--- idle
+AB
+--- swing-0
+AB
+--- swing-1
+AB
+`;
+
+test('validateSpriteRole: a swing of other than exactly 3 frames is an error (ADR 0036)', () => {
+	const diags = validateSpriteRole(
+		docOf(WEAPON_SHORT_SWING, 'sword'),
+		'weapons',
+	);
+	expect(diags.length).toBe(1);
+	expect(diags[0].severity).toBe('error');
+	expect(diags[0].message).toContain('exactly 3');
+});
+
+const WEAPON_NO_REST = `{
+	"anchors": { "grip": [0, 0] },
+	"animations": { "swing": ["swing-0", "swing-1", "swing-2"] }
+}
+--- swing-0
+AB
+--- swing-1
+AB
+--- swing-2
+AB
+`;
+
+test('validateSpriteRole: a weapon whose first frame belongs to swing has no rest Default frame — error (ADR 0036)', () => {
+	const diags = validateSpriteRole(docOf(WEAPON_NO_REST, 'sword'), 'weapons');
+	expect(diags.length).toBe(1);
+	expect(diags[0].severity).toBe('error');
+	expect(diags[0].message).toContain('rest');
+	expect(diags[0].message).toContain('swing-0');
+});
+
+test('validateSpriteRole: the swing-count error speaks in attack phases, not retired frame names', () => {
+	const diags = validateSpriteRole(
+		docOf(WEAPON_SHORT_SWING, 'sword'),
+		'weapons',
+	);
+	expect(diags[0].message).toContain('attack phase');
+	expect(diags[0].message).not.toContain('windup');
 });
 
 test('validateSpriteRole: hats/monsters/npcs require only idle', () => {
@@ -200,7 +251,7 @@ test('validateSpriteSet: a parse failure is reported but the role check is skipp
 	// (dangling catalog) diagnostics with other ids, which are unrelated here.
 	const brokenDiags = diags.filter((d) => d.spriteId === 'broken');
 	expect(brokenDiags.length).toBeGreaterThan(0);
-	// only the parse diagnostic(s) — no "missing pose"/"missing anchor" profile noise
+	// only the parse diagnostic(s) — no "missing animation"/"missing anchor" profile noise
 	expect(brokenDiags.some((d) => d.message.includes('missing'))).toBe(false);
 });
 
@@ -209,12 +260,14 @@ function weaponSource(id: string): SpriteSource {
 	return {
 		id,
 		role: 'weapons',
-		text: `{"anchors":{"grip":[0,0]},"poses":{"windup":["wu"],"active":["ac"]}}
+		text: `{"anchors":{"grip":[0,0]},"animations":{"swing":["s0","s1","s2"]}}
 --- idle
 AB
---- wu
+--- s0
 AB
---- ac
+--- s1
+AB
+--- s2
 AB
 `,
 	};

@@ -17,36 +17,36 @@ function buddySource(id = 'buddy'): SpriteSource {
 	return { id, role: 'forms', text: BUDDY_TEXT };
 }
 
-// A minimal valid forms source: idle/walkA/walkB + grip/head, no emotes.
+// A minimal valid forms source: idle/walk + grip/head, no emotes.
 const MINIMAL = `{
-	"anchors": { "grip": [1, 0], "head": [0, 0] }
+	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"animations": { "walk": ["walk-0", "walk-1"] }
 }
 --- idle
 AB
 CD
---- walkA
+--- walk-0
 AB
 CD
---- walkB
+--- walk-1
 AB
 CD
 `;
 
-test('the real buddy.sprite compiles to a body with its full pose repertoire', () => {
+test('the real buddy.sprite compiles to a body with its full animation repertoire', () => {
 	const registry = buildFormRegistry([buddySource()]);
 	const body = registry.get('buddy');
 	expect(body).toBeDefined();
-	const poses = Object.keys(body?.frames ?? {}).sort();
-	expect(poses).toEqual([
+	const animations = Object.keys(body?.frames ?? {}).sort();
+	expect(animations).toEqual([
 		'emote:dance',
 		'emote:sit',
 		'emote:wave',
 		'idle',
 		'jump',
-		'walkA',
-		'walkB',
+		'walk',
 	]);
-	// multi-frame poses are arrays; single-frame poses are lone Sprites
+	// multi-frame animations are arrays; single-frame animations are lone Sprites
 	expect(Array.isArray(body?.frames['emote:wave'])).toBe(true);
 	expect(Array.isArray(body?.frames['emote:dance'])).toBe(true);
 	expect(Array.isArray(body?.frames.idle)).toBe(false);
@@ -69,11 +69,9 @@ test('a source with a broken header is skipped; the others still load', () => {
 });
 
 test('a source that fails the forms role profile is skipped', () => {
-	// missing walkB and head anchor -> role profile error -> not registered
+	// missing walk animation and head anchor -> role profile error -> not registered
 	const bad = `{ "anchors": { "grip": [0, 0] } }
 --- idle
-AB
---- walkA
 AB
 `;
 	const registry = buildFormRegistry([
@@ -84,10 +82,10 @@ AB
 	expect(registry.has('buddy')).toBe(true);
 });
 
-test('a source authoring an unregistered emote pose is skipped (role error)', () => {
+test('a source authoring an unregistered emote animation is skipped (role error)', () => {
 	const withBadEmote = `{
 	"anchors": { "grip": [0, 0], "head": [0, 0] },
-	"poses": { "walkA": ["wa"], "walkB": ["wb"], "emote:boogie": ["bg"] }
+	"animations": { "walk": ["wa", "wb"], "emote:boogie": ["bg"] }
 }
 --- idle
 AB

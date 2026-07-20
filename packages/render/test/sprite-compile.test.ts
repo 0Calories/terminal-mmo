@@ -43,6 +43,38 @@ test('compiles a single frame doc with transparency, custom key, colors, bg, bas
 	expect(sprite.grip).toEqual({ x: 0, y: 1 });
 });
 
+const ANCHORED = `{
+	"anchors": { "grip": [1, 0], "head": [1, 1], "tail": [0, 1] },
+	"frames": { "sit": { "anchors": { "head": [0, 0] } } }
+}
+--- idle
+AB
+CD
+--- sit
+XY
+ZW
+`;
+
+test('spriteFromDoc carries the full effective anchor map, not just grip (#351 QA round 5)', () => {
+	const { doc, diagnostics } = parseSpriteFile(ANCHORED, 'anchored');
+	expect(diagnostics).toEqual([]);
+	// Default frame: doc-level anchors flow through untouched.
+	const idle = spriteFromDoc(doc as SpriteDoc, 'idle');
+	expect(idle.anchors).toEqual({
+		grip: { x: 1, y: 0 },
+		head: { x: 1, y: 1 },
+		tail: { x: 0, y: 1 },
+	});
+	// Overriding frame: its head override wins; every other anchor falls
+	// back to the doc level — exactly compileFrameSprite's overlay rule.
+	const sit = spriteFromDoc(doc as SpriteDoc, 'sit');
+	expect(sit.anchors).toEqual({
+		grip: { x: 1, y: 0 },
+		head: { x: 0, y: 0 },
+		tail: { x: 0, y: 1 },
+	});
+});
+
 const EDGE_TRANSPARENCY = `--- idle
 ·AB·
 ·CD·
@@ -112,8 +144,8 @@ test('omitted colors/bg default to doc key on inked cells', () => {
 const BODY = `{
 	"baseline": 1,
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
-	"poses": { "walkA": ["fa", "fb"] },
-	"fps": { "walkA": 8 },
+	"animations": { "walk": ["fa", "fb"] },
+	"fps": { "walk": 8 },
 	"frames": { "fb": { "anchors": { "grip": [1, 1] } } }
 }
 --- idle
@@ -127,20 +159,20 @@ EF
 GH
 `;
 
-test('compileBodySprite: multi-frame pose is an array, single-frame is a Sprite', () => {
+test('compileBodySprite: multi-frame animation is an array, single-frame is a Sprite', () => {
 	const { doc, diagnostics } = parseSpriteFile(BODY, 'buddy');
 	expect(diagnostics).toEqual([]);
 	const body = compileBodySprite(doc as SpriteDoc);
 
-	// multi-frame pose -> array
-	const walk = body.frames.walkA;
+	// multi-frame animation -> array
+	const walk = body.frames.walk;
 	expect(Array.isArray(walk)).toBe(true);
 	const walkArr = walk as readonly Sprite[];
 	expect(walkArr.length).toBe(2);
 	expect(walkArr[0].rows(1)).toEqual(['AB', 'CD']);
 	expect(walkArr[1].rows(1)).toEqual(['EF', 'GH']);
 
-	// implicit single-frame pose -> Sprite, not array
+	// implicit single-frame animation -> Sprite, not array
 	const idle = body.frames.idle;
 	expect(Array.isArray(idle)).toBe(false);
 	expect((idle as Sprite).rows(1)).toEqual(['XY', 'ZW']);
@@ -154,7 +186,7 @@ test('compileBodySprite: doc-level anchors seed body grip/head and frame anchors
 	expect(body.head).toEqual({ x: 0, y: 0 });
 	expect(body.baseline).toBe(1);
 
-	const walkArr = body.frames.walkA as readonly Sprite[];
+	const walkArr = body.frames.walk as readonly Sprite[];
 	// fa inherits doc anchors; fb overrides grip (frame wins), keeps head
 	expect(walkArr[0].anchors.grip).toEqual({ x: 1, y: 0 });
 	expect(walkArr[0].anchors.head).toEqual({ x: 0, y: 0 });
@@ -165,7 +197,7 @@ test('compileBodySprite: doc-level anchors seed body grip/head and frame anchors
 test('compileBodySprite: fps is carried from the doc', () => {
 	const { doc } = parseSpriteFile(BODY, 'buddy');
 	const body = compileBodySprite(doc as SpriteDoc);
-	expect(body.fps).toEqual({ walkA: 8 });
+	expect(body.fps).toEqual({ walk: 8 });
 });
 
 test('compileBodySprite: throws when doc-level grip/head anchors are missing', () => {
@@ -176,32 +208,30 @@ test('compileBodySprite: throws when doc-level grip/head anchors are missing', (
 const WEAPON = `{
 	"key": "a",
 	"accent": "s",
-	"anchors": { "grip": [-1, 2] }
+	"anchors": { "grip": [-1, 2] },
+	"animations": { "swing": ["swing-0", "swing-1", "swing-2"] }
 }
 --- idle
 AB
---- windup
+--- swing-0
 CD
---- active
+--- swing-1
 EF
---- recovery
+--- swing-2
 GH
 `;
 
-test('compileWeaponSprite: phase poses compile — idle/windup/recovery single, active is a sweep array', () => {
+test('compileWeaponSprite: the Default frame is the rest sprite; swing is a 3-frame phase array (ADR 0036)', () => {
 	const { doc, diagnostics } = parseSpriteFile(WEAPON, 'sword');
 	// The negative grip trips only the out-of-bounds warning, never an error.
 	expect(diagnostics.some((d) => d.severity === 'error')).toBe(false);
 	const ws = compileWeaponSprite(doc as SpriteDoc);
 
-	expect(Array.isArray(ws.frames.idle)).toBe(false);
-	expect((ws.frames.idle as Sprite).rows(1)).toEqual(['AB']);
-	expect((ws.frames.windup as Sprite).rows(1)).toEqual(['CD']);
-	expect((ws.frames.recovery as Sprite).rows(1)).toEqual(['GH']);
-
-	expect(Array.isArray(ws.frames.active)).toBe(true);
-	expect(ws.frames.active?.length).toBe(1);
-	expect(ws.frames.active?.[0].rows(1)).toEqual(['EF']);
+	expect(ws.frames.rest.rows(1)).toEqual(['AB']);
+	expect(ws.frames.swing).toHaveLength(3);
+	expect(ws.frames.swing[0].rows(1)).toEqual(['CD']);
+	expect(ws.frames.swing[1].rows(1)).toEqual(['EF']);
+	expect(ws.frames.swing[2].rows(1)).toEqual(['GH']);
 });
 
 test('compileWeaponSprite: grip (a negative offset) and accent carry onto the WeaponSprite', () => {
@@ -211,38 +241,31 @@ test('compileWeaponSprite: grip (a negative offset) and accent carry onto the We
 	expect(ws.accent).toBe('s');
 });
 
-test('compileWeaponSprite: recovery absent round-trips to no recovery frame', () => {
-	const noRecovery = `{ "accent": "s", "anchors": { "grip": [0, 0] } }
---- idle
-AB
---- windup
-CD
---- active
-EF
-`;
-	const { doc } = parseSpriteFile(noRecovery, 'sword');
-	const ws = compileWeaponSprite(doc as SpriteDoc);
-	expect(ws.frames.recovery).toBeUndefined();
-});
-
 test('compileWeaponSprite: defaults accent to the dynamic accent key when the header omits it', () => {
-	const noAccent = `{ "anchors": { "grip": [0, 0] } }
+	const noAccent = `{ "anchors": { "grip": [0, 0] }, "animations": { "swing": ["s0", "s1", "s2"] } }
 --- idle
 AB
---- windup
+--- s0
 CD
---- active
+--- s1
 EF
+--- s2
+GH
 `;
 	const { doc } = parseSpriteFile(noAccent, 'sword');
 	const ws = compileWeaponSprite(doc as SpriteDoc);
 	expect(ws.accent).toBe(WEAPON_ACCENT_KEY);
 });
 
-test('compileWeaponSprite: throws when the grip anchor is missing', () => {
-	const { doc } = parseSpriteFile(
-		`--- idle\nAB\n--- windup\nCD\n--- active\nEF\n`,
+test('compileWeaponSprite: throws when the grip anchor or the 3-frame swing is missing', () => {
+	const { doc: nogrip } = parseSpriteFile(
+		`{ "animations": { "swing": ["a", "b", "c"] } }\n--- idle\nAB\n--- a\nAB\n--- b\nAB\n--- c\nAB\n`,
 		'nogrip',
 	);
-	expect(() => compileWeaponSprite(doc as SpriteDoc)).toThrow();
+	expect(() => compileWeaponSprite(nogrip as SpriteDoc)).toThrow();
+	const { doc: noswing } = parseSpriteFile(
+		`{ "anchors": { "grip": [0, 0] } }\n--- idle\nAB\n`,
+		'noswing',
+	);
+	expect(() => compileWeaponSprite(noswing as SpriteDoc)).toThrow();
 });

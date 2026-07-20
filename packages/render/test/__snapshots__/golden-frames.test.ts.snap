@@ -300,35 +300,7 @@ exports[`golden: hat sprites: hat: wizard 1`] = `
 }
 `;
 
-exports[`golden: buddy form frames: buddy: idle 1`] = `
-{
-  "baseline": 0,
-  "h": 3,
-  "keysLeft": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "keysRight": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "left": [
-    " ▐▛█▛██▌ ",
-    "▝▜█████▛▘",
-    "  ▀   ▀  ",
-  ],
-  "right": [
-    " ▐██▜█▜▌ ",
-    "▝▜█████▛▘",
-    "  ▀   ▀  ",
-  ],
-  "w": 9,
-}
-`;
-
-exports[`golden: buddy form frames: buddy: walkA 1`] = `
+exports[`golden: buddy form frames: buddy: walk[0] 1`] = `
 {
   "baseline": 0,
   "h": 3,
@@ -356,7 +328,7 @@ exports[`golden: buddy form frames: buddy: walkA 1`] = `
 }
 `;
 
-exports[`golden: buddy form frames: buddy: walkB 1`] = `
+exports[`golden: buddy form frames: buddy: walk[1] 1`] = `
 {
   "baseline": 0,
   "h": 3,
@@ -379,34 +351,6 @@ exports[`golden: buddy form frames: buddy: walkB 1`] = `
     " ▐██▜█▜▌ ",
     "▝▜█████▛▘",
     "   ▀ ▀   ",
-  ],
-  "w": 9,
-}
-`;
-
-exports[`golden: buddy form frames: buddy: jump 1`] = `
-{
-  "baseline": 0,
-  "h": 3,
-  "keysLeft": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "keysRight": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "left": [
-    " ▐▛█▛██▙▖",
-    "▝▜█████▌ ",
-    " ▀     ▀ ",
-  ],
-  "right": [
-    "▗▟██▜█▜▌ ",
-    " ▐█████▛▘",
-    " ▀     ▀ ",
   ],
   "w": 9,
 }
@@ -524,6 +468,62 @@ exports[`golden: buddy form frames: buddy: emote:dance[1] 1`] = `
 }
 `;
 
+exports[`golden: buddy form frames: buddy: idle 1`] = `
+{
+  "baseline": 0,
+  "h": 3,
+  "keysLeft": [
+    "ppppppppp",
+    "ppppppppp",
+    "ppppppppp",
+  ],
+  "keysRight": [
+    "ppppppppp",
+    "ppppppppp",
+    "ppppppppp",
+  ],
+  "left": [
+    " ▐▛█▛██▌ ",
+    "▝▜█████▛▘",
+    "  ▀   ▀  ",
+  ],
+  "right": [
+    " ▐██▜█▜▌ ",
+    "▝▜█████▛▘",
+    "  ▀   ▀  ",
+  ],
+  "w": 9,
+}
+`;
+
+exports[`golden: buddy form frames: buddy: jump 1`] = `
+{
+  "baseline": 0,
+  "h": 3,
+  "keysLeft": [
+    "ppppppppp",
+    "ppppppppp",
+    "ppppppppp",
+  ],
+  "keysRight": [
+    "ppppppppp",
+    "ppppppppp",
+    "ppppppppp",
+  ],
+  "left": [
+    " ▐▛█▛██▙▖",
+    "▝▜█████▌ ",
+    " ▀     ▀ ",
+  ],
+  "right": [
+    "▗▟██▜█▜▌ ",
+    " ▐█████▛▘",
+    " ▀     ▀ ",
+  ],
+  "w": 9,
+}
+`;
+
 exports[`golden: buddy form frames: buddy: emote:sit 1`] = `
 {
   "baseline": 0,
@@ -552,119 +552,7 @@ exports[`golden: buddy form frames: buddy: emote:sit 1`] = `
 }
 `;
 
-exports[`golden: wisp (drafted) form frames: wisp: idle 1`] = `
-{
-  "baseline": 0,
-  "h": 3,
-  "keysLeft": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "keysRight": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "left": [
-    "   ▟██▙  ",
-    "   ▐██▌  ",
-    "   ▀  ▀  ",
-  ],
-  "right": [
-    "  ▟██▙   ",
-    "  ▐██▌   ",
-    "  ▀  ▀   ",
-  ],
-  "w": 9,
-}
-`;
-
-exports[`golden: wisp (drafted) form frames: wisp: walkA 1`] = `
-{
-  "baseline": 0,
-  "h": 3,
-  "keysLeft": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "keysRight": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "left": [
-    "   ▟██▙  ",
-    "   ▐██▌  ",
-    "  ▀    ▀ ",
-  ],
-  "right": [
-    "  ▟██▙   ",
-    "  ▐██▌   ",
-    " ▀    ▀  ",
-  ],
-  "w": 9,
-}
-`;
-
-exports[`golden: wisp (drafted) form frames: wisp: walkB 1`] = `
-{
-  "baseline": 0,
-  "h": 3,
-  "keysLeft": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "keysRight": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "left": [
-    "   ▟██▙  ",
-    "   ▐██▌  ",
-    "    ▀▀   ",
-  ],
-  "right": [
-    "  ▟██▙   ",
-    "  ▐██▌   ",
-    "   ▀▀    ",
-  ],
-  "w": 9,
-}
-`;
-
-exports[`golden: wisp (drafted) form frames: wisp: jump 1`] = `
-{
-  "baseline": 0,
-  "h": 3,
-  "keysLeft": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "keysRight": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "left": [
-    "  ▟▟██▙▙ ",
-    "   ▐██▌  ",
-    "   ▀  ▀  ",
-  ],
-  "right": [
-    " ▟▟██▙▙  ",
-    "  ▐██▌   ",
-    "  ▀  ▀   ",
-  ],
-  "w": 9,
-}
-`;
-
-exports[`golden: sword weapon frames: sword: idle 1`] = `
+exports[`golden: sword weapon frames: sword: rest 1`] = `
 {
   "baseline": 0,
   "h": 3,
@@ -692,7 +580,7 @@ exports[`golden: sword weapon frames: sword: idle 1`] = `
 }
 `;
 
-exports[`golden: sword weapon frames: sword: windup 1`] = `
+exports[`golden: sword weapon frames: sword: swing[0] 1`] = `
 {
   "baseline": 0,
   "h": 3,
@@ -720,7 +608,7 @@ exports[`golden: sword weapon frames: sword: windup 1`] = `
 }
 `;
 
-exports[`golden: sword weapon frames: sword: active[0] 1`] = `
+exports[`golden: sword weapon frames: sword: swing[1] 1`] = `
 {
   "baseline": 0,
   "h": 4,
@@ -749,6 +637,26 @@ exports[`golden: sword weapon frames: sword: active[0] 1`] = `
     "     ",
   ],
   "w": 5,
+}
+`;
+
+exports[`golden: sword weapon frames: sword: swing[2] 1`] = `
+{
+  "baseline": 0,
+  "h": 1,
+  "keysLeft": [
+    "a",
+  ],
+  "keysRight": [
+    "a",
+  ],
+  "left": [
+    " ",
+  ],
+  "right": [
+    " ",
+  ],
+  "w": 1,
 }
 `;
 
@@ -828,7 +736,7 @@ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _"
 `;
 
-exports[`golden scene: walk frames: walk frame: walkA 1`] = `
+exports[`golden scene: walk frames: walk frame: walk-0 1`] = `
 "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
@@ -847,7 +755,7 @@ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _"
 `;
 
-exports[`golden scene: walk frames: walk frame: walkB 1`] = `
+exports[`golden scene: walk frames: walk frame: walk-1 1`] = `
 "_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _

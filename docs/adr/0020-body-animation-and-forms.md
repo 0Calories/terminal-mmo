@@ -1,5 +1,6 @@
 ---
-status: accepted
+status: accepted, amended by ADR 0035 ("pose" → "animation"; walkA/walkB merged
+  into one distance-indexed `walk` animation)
 ---
 
 # Animated body sprites, Forms, and pose-driven emotes

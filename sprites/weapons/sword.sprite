@@ -1,4 +1,9 @@
-{"key":"a","accent":"s","anchors":{"grip":[-1,2]}}
+{
+	"key": "a",
+	"accent": "s",
+	"anchors": { "grip": [-1, 2] },
+	"animations": { "swing": ["swing-0", "swing-1", "swing-2"] }
+}
 --- idle
 ▐▌
 ▟▙
@@ -7,21 +12,23 @@
 aa
 aa
 kk
---- windup
-·▙
-·▐▙
+--- swing-0
+·▙··
+·▐▙·
 ··▝▘
 @colors
-·a
-·aa
+·a··
+·aa·
 ··kk
---- active
-·
+--- swing-1
+·····
 ▂▙▂▂▂
 ▔▛▔▔▔
-·
+·····
 @colors
-·
+·····
 kaaaa
 kaaaa
+·····
+--- swing-2
 ·

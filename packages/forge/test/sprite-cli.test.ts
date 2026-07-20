@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runSprite } from '../src/sprite-cli';
+import { findSpriteFile, runSprite } from '../src/sprite-cli';
+import { dirForRole } from '../src/sprite-editor/view';
 
 let root: string;
 let lines: string[];
@@ -161,12 +162,14 @@ describe('sprite CLI', () => {
 	// Write a complete, valid set covering every @mmo/core catalog/reference id so
 	// the whole-set reference check resolves cleanly.
 	function writeCompleteSet(): void {
-		const weapon = `{"anchors":{"grip":[0,0]},"poses":{"windup":["wu"],"active":["ac"]}}
+		const weapon = `{"anchors":{"grip":[0,0]},"animations":{"swing":["s0","s1","s2"]}}
 --- idle
 AB
---- wu
+--- s0
 AB
---- ac
+--- s1
+AB
+--- s2
 AB
 `;
 		const idle = `--- idle\nAB\n`;
@@ -231,5 +234,56 @@ AB
 		);
 		expect(runSprite(['check'], deps())).toBe(1);
 		expect(output()).toContain('unknown color key');
+	});
+});
+
+describe('findSpriteFile', () => {
+	// The launch forms `forge sprite edit <dir>/<id>` and the unified picker's
+	// reconstructed `dirForRole(role)/id` argument must resolve against the
+	// sprites root, not only cwd — a slash id that silently missed the root used
+	// to fall through to "create a fresh empty template" (the empty-canvas bug).
+	test('a role/id slash form resolves under the sprites root when cwd is elsewhere', () => {
+		mkdirSync(join(root, 'forms'), { recursive: true });
+		const path = join(root, 'forms', 'buddy.sprite');
+		writeFileSync(path, VALID);
+		expect(findSpriteFile(root, 'forms/buddy')).toBe(path);
+		expect(findSpriteFile(root, 'forms/buddy.sprite')).toBe(path);
+	});
+
+	test("the picker's dirForRole(role)/id launch form finds the existing file", () => {
+		mkdirSync(join(root, 'forms'), { recursive: true });
+		const path = join(root, 'forms', 'buddy.sprite');
+		writeFileSync(path, VALID);
+		expect(findSpriteFile(root, `${dirForRole('form')}/buddy`)).toBe(path);
+	});
+
+	test('a bare id still searches the root recursively', () => {
+		mkdirSync(join(root, 'hats'), { recursive: true });
+		const path = join(root, 'hats', 'cap.sprite');
+		writeFileSync(path, VALID);
+		expect(findSpriteFile(root, 'cap')).toBe(path);
+	});
+
+	test('an absolute path is honoured as-is', () => {
+		mkdirSync(join(root, 'forms'), { recursive: true });
+		const path = join(root, 'forms', 'buddy.sprite');
+		writeFileSync(path, VALID);
+		expect(findSpriteFile(root, path)).toBe(path);
+	});
+
+	test('a missing slash id returns undefined (the caller creates from template)', () => {
+		expect(findSpriteFile(root, 'forms/nope')).toBeUndefined();
+	});
+});
+
+describe('sprite glyphs — rail icon eyeball check', () => {
+	test('prints every tool glyph with its fallback in one row, exit 0', () => {
+		expect(runSprite(['glyphs'], deps())).toBe(0);
+		const row = output();
+		expect(row).toContain('✎'); // pencil candidate
+		expect(row).toContain('⌖'); // select fallback
+		expect(row).toContain('pencil');
+		// One row: the whole point is a single glance in the terminal.
+		expect(row.trim()).not.toContain('\n');
 	});
 });

@@ -83,21 +83,22 @@ function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
 	};
 }
 
-// A `forms` source with a per-frame `grip` override on one pose. Bodies now
+// A `forms` source with a per-frame `grip` override on one animation. Bodies now
 // come only from the directory-scan registry, so a per-frame override is
 // authored as a `.sprite` document (via buildFormRegistry) rather than by
-// mutating an array. idle/walkA/walkB satisfy the forms role profile.
+// mutating an array. idle/walk satisfy the forms role profile.
 const OVERRIDE_FORM = `{
 	"anchors": { "grip": [2, 0], "head": [1, 0] },
-	"frames": { "walkB": { "anchors": { "grip": [0, 0] } } }
+	"animations": { "walk": ["walk-0", "walk-1"] },
+	"frames": { "walk-1": { "anchors": { "grip": [0, 0] } } }
 }
 --- idle
 ···
 ···
---- walkA
+--- walk-0
 ···
 ···
---- walkB
+--- walk-1
 ···
 ···
 `;
@@ -113,18 +114,22 @@ function overrideBody() {
 
 // Reproduces drawEntitySprite's seat rule verbatim (render.ts): a frame's own
 // grip anchor wins, otherwise the BodySprite's grip.
-function resolvedGripX(body: BodySprite, pose: 'idle' | 'walkB') {
-	const frame = formFrame(body, pose);
+function resolvedGripX(
+	body: BodySprite,
+	animation: 'idle' | 'walk',
+	frameIndex = 0,
+) {
+	const frame = formFrame(body, animation, frameIndex);
 	return frame.anchors.grip?.x ?? body.grip.x;
 }
 
-test('a per-frame grip override wins over the doc grip; a plain pose inherits it (end-to-end from a .sprite source)', () => {
+test('a per-frame grip override wins over the doc grip; a plain animation inherits it (end-to-end from a .sprite source)', () => {
 	const body = overrideBody();
 	// idle authors no override -> the renderer resolves the doc/body grip (x=2)
 	expect(resolvedGripX(body, 'idle')).toBe(2);
-	// walkB overrides grip to x=0 -> two cells left of the body grip
-	expect(resolvedGripX(body, 'walkB')).toBe(0);
-	expect(resolvedGripX(body, 'walkB')).toBe(resolvedGripX(body, 'idle') - 2);
+	// walk-1 overrides grip to x=0 -> two cells left of the body grip
+	expect(resolvedGripX(body, 'walk', 1)).toBe(0);
+	expect(resolvedGripX(body, 'walk', 1)).toBe(resolvedGripX(body, 'idle') - 2);
 });
 
 test('drawEntitySprite seats a weapon layer for the default Form (the seat resolution runs end-to-end)', () => {
