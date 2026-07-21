@@ -65,7 +65,12 @@ import {
 	SHADE_ROWS,
 	typeHex,
 } from './colorPicker';
-import { renderComposite, styleWithLocalColors } from './composite';
+import {
+	type PlainFrame,
+	renderComposite,
+	renderPlainFrame,
+	styleWithLocalColors,
+} from './composite';
 import {
 	CHROME_ROWS,
 	type DegradationLayout,
@@ -3139,11 +3144,14 @@ export class SpriteEditor extends Renderable {
 		this.geom.anchorMenuBox = this.drawModal(buf, W, H, rows, C);
 	}
 
-	// The `⤢ canvas` size modal (round 3): the Default frame in full colour with
-	// every other frame's silhouette ghosted behind it, inside a bright bounds
-	// rectangle. The title reads `canvas W×H → W'×H'` live; pixels the current
-	// bounds would clip render in the warning colour. Edge/corner drag geometry is
-	// recorded in `geom.canvasModal` for hit-testing.
+	// The `⤢ canvas` size modal (round 3): the Default frame rendered by the SAME
+	// frame renderer the game/preview use (`renderPlainFrame` → `drawEntitySprite`
+	// via the `base` override, issue #411), so the art is pixel-identical — real
+	// glyphs, real fg/bg, one terminal cell per doc cell. Every other frame's
+	// silhouette ghosts behind it (dimmed, cell granularity), all inside a bright
+	// bounds rectangle. The title reads `canvas W×H → W'×H'` live; doc cells the
+	// current bounds would clip fill the warning colour, overriding the art.
+	// Edge/corner drag geometry is recorded in `geom.canvasModal` for hit-testing.
 	private renderCanvasModal(
 		buf: OptimizedBuffer,
 		W: number,
@@ -3153,7 +3161,10 @@ export class SpriteEditor extends Renderable {
 		this.geom.canvasModal = null;
 		const m = this.canvasModal;
 		if (!m) return;
-		const CW = 2;
+		// One terminal cell per doc cell: the glyphs carry the 2×2 sub-pixels, so the
+		// real render is 1:1 (the old CW=2/CH=1 footprint was the bug's quarter-res
+		// block art).
+		const CW = 1;
 		const CH = 1;
 		const { w, h } = canvasTarget(m);
 		const title = `canvas ${m.w0}×${m.h0} → ${w}×${h}`;
@@ -3187,25 +3198,35 @@ export class SpriteEditor extends Renderable {
 		const inBox = (sx: number, sy: number) =>
 			sx >= inX0 && sx < inX1 && sy >= inY0 && sy < inY1;
 
-		const local = this.state.doc.colors;
+		// Render every frame plainly through the shared frame renderer. The Default
+		// frame (index 0) draws in full colour; the rest supply ghost silhouettes
+		// and the "ink in ANY frame" test for clip warnings. Colours resolve exactly
+		// as the preview pane's: file-local customs, then the session dynamic p/a
+		// previews, merged into the scene style so keys land the same everywhere.
+		const toRGBA = (r: number, g: number, b: number, a: number) =>
+			RGBA.fromInts(r, g, b, a);
 		const previews = this.dynamicPreviews();
-		const frames = allFrames(this.state.doc);
-		const cellInk = (
-			f: (typeof frames)[number],
-			cx: number,
-			cy: number,
-		): RGBA | null => {
-			const glyph = f.rows[cy]?.[cx] ?? ' ';
-			if (glyph === ' ' || glyph === SENTINEL) return null;
-			const key = f.colors[cy]?.[cx] ?? '';
-			const rgba = resolveColorKey(
-				key === SENTINEL ? this.state.doc.key : key,
-				local,
-				this.globalPalette,
-				previews,
-			);
-			return rgba ? SpriteEditor.rgba(rgba) : C.ink;
+		const style = styleWithLocalColors(
+			styleWithLocalColors(this.sceneStyle, this.state.doc.colors, toRGBA),
+			{ p: previews.p, a: previews.a },
+			toRGBA,
+		);
+		const labels = frameLocations(this.state.doc).map((f) => f.label);
+		const plains = labels.map((label) =>
+			renderPlainFrame(this.state.doc, label, style),
+		);
+		const defaultPlain = plains[0] ?? null;
+		// Clip-warning screen cells, repainted after the bounds rectangle: with 1:1
+		// cells the right/bottom border can sit exactly on the first clipped column/
+		// row, so the warning must win over the border there (it marks the cut).
+		const warns: { sx: number; sy: number }[] = [];
+		const ghostAt = (cx: number, cy: number): PlainFrame<RGBA> | null => {
+			for (let i = 1; i < plains.length; i++)
+				if (plains[i]?.at(cx, cy)) return plains[i];
+			return null;
 		};
+		const inkedAny = (cx: number, cy: number): boolean =>
+			plains.some((p) => p?.at(cx, cy) != null);
 
 		// The union of the original grid and the target bounds, so growth shows.
 		const xL = -m.left;
@@ -3220,26 +3241,35 @@ export class SpriteEditor extends Renderable {
 			for (let cx = cx0; cx < cx1; cx++) {
 				const sx = ox0 + cx * CW;
 				const sy = oy0 + cy * CH;
-				const inkDefault = frames[0] ? cellInk(frames[0], cx, cy) : null;
-				let ghost: RGBA | null = null;
-				if (!inkDefault)
-					for (let i = 1; i < frames.length; i++) {
-						const g = cellInk(frames[i], cx, cy);
-						if (g) {
-							ghost = g;
-							break;
-						}
-					}
-				const inked = inkDefault !== null || ghost !== null;
+				if (!inBox(sx, sy)) continue;
 				const insideBounds = cx >= xL && cx < xR && cy >= yT && cy < yB;
-				let color: RGBA;
-				if (inked && isClipped(m, cx, cy)) color = C.feedback;
-				else if (inkDefault) color = inkDefault;
-				else if (ghost) color = this.dimRGBA(ghost, C);
-				else if (insideBounds) color = (cx + cy) % 2 === 0 ? C.grid : C.bg;
-				else color = C.boxBg;
-				for (let dx = 0; dx < CW; dx++)
-					if (inBox(sx + dx, sy)) buf.setCell(sx + dx, sy, ' ', C.dim, color);
+				const bgLayer = insideBounds
+					? (cx + cy) % 2 === 0
+						? C.grid
+						: C.bg
+					: C.boxBg;
+				// A clipped cell that holds ink in ANY frame flags in the warning
+				// colour — a solid block that overrides the art beneath it.
+				if (isClipped(m, cx, cy) && inkedAny(cx, cy)) {
+					buf.setCell(sx, sy, ' ', C.dim, C.feedback);
+					warns.push({ sx, sy });
+					continue;
+				}
+				const d = defaultPlain?.at(cx, cy) ?? null;
+				if (d) {
+					// The real glyph + fg. An opaque doc bg key wins; otherwise the
+					// glyph's unlit sub-pixels fall through to the modal background
+					// (checkerboard / box), just as transparency does when framed.
+					buf.setCell(sx, sy, d.ch, d.fg, d.bg ?? bgLayer);
+					continue;
+				}
+				const g = ghostAt(cx, cy)?.at(cx, cy) ?? null;
+				if (g) {
+					// A dimmed ghost of the other frame, kept clearly subordinate.
+					buf.setCell(sx, sy, g.ch, this.dimRGBA(g.fg, C), bgLayer);
+					continue;
+				}
+				buf.setCell(sx, sy, ' ', C.dim, bgLayer);
 			}
 		}
 
@@ -3269,6 +3299,10 @@ export class SpriteEditor extends Renderable {
 		edge(rightX, topY, '┐');
 		edge(leftX, bottomY, '└');
 		edge(rightX, bottomY, '┘');
+
+		// Clip warnings win over the bounds border where they collide (see `warns`).
+		for (const { sx, sy } of warns)
+			if (inBox(sx, sy)) buf.setCell(sx, sy, ' ', C.dim, C.feedback);
 
 		this.geom.canvasModal = {
 			ox0,

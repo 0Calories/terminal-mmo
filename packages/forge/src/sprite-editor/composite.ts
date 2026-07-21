@@ -490,6 +490,89 @@ export function styleWithLocalColors<C>(
 	return { ...base, palette };
 }
 
+// One doc cell of a plainly-rendered frame: the glyph + fg the shared renderer
+// drew, and its bg — `null` when the cell is transparent-backed (only the glyph's
+// lit sub-pixels show), a colour when the doc set an opaque bg key. A whole cell
+// is `null` when empty (nothing drawn).
+export interface PlainFrameCell<C> {
+	ch: string;
+	fg: C;
+	bg: C | null;
+}
+
+// A doc frame rendered PLAINLY through the same frame renderer the game/preview
+// uses (`drawEntitySprite` via the `base` override), captured as a per-doc-cell
+// grid. Cell (cx,cy) is exactly the sprite cell drawn at that position — no glyph
+// or colour is re-derived by the caller. Used by the canvas-size modal so its art
+// is pixel-identical to a real frame render (issue #411).
+export interface PlainFrame<C> {
+	w: number;
+	h: number;
+	at(cx: number, cy: number): PlainFrameCell<C> | null;
+}
+
+// A CellBuffer that records what got drawn instead of painting, keyed by cell —
+// how `renderPlainFrame` reads back the shared renderer's output. `setCell` is an
+// opaque draw (records the bg); `setCellWithAlphaBlending` is a transparent-backed
+// draw (bg stays `null`). A space glyph clears the cell (nothing lit).
+class PlainCapture<C> implements CellBuffer<C> {
+	readonly width: number;
+	readonly height: number;
+	private readonly cells: (PlainFrameCell<C> | null)[];
+	constructor(w: number, h: number) {
+		this.width = w;
+		this.height = h;
+		this.cells = new Array(Math.max(0, w * h)).fill(null);
+	}
+	clear(): void {}
+	private put(x: number, y: number, cell: PlainFrameCell<C> | null): void {
+		if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
+		this.cells[y * this.width + x] = cell;
+	}
+	setCell(x: number, y: number, ch: string, fg: C, bg: C): void {
+		this.put(x, y, ch === ' ' ? null : { ch, fg, bg });
+	}
+	setCellWithAlphaBlending(x: number, y: number, ch: string, fg: C): void {
+		this.put(x, y, ch === ' ' ? null : { ch, fg, bg: null });
+	}
+	at(cx: number, cy: number): PlainFrameCell<C> | null {
+		if (cx < 0 || cx >= this.width || cy < 0 || cy >= this.height) return null;
+		return this.cells[cy * this.width + cx];
+	}
+}
+
+// Render one frame of a doc plainly (no hat/weapon/form composition — the doc's
+// own grid, the way a monster/npc frame renders) and hand back its cells indexed
+// by doc coordinate. The `base` override + facing 1 means doc cell (cx,cy) maps to
+// sprite cell (cx,cy) 1:1 (glyphs carry the 2×2 sub-pixels); we invert
+// `drawEntitySprite`'s placement so that cell lands at buffer (0,0). Returns null
+// when the frame cannot compile yet (e.g. a doc with no frames).
+export function renderPlainFrame<C>(
+	doc: SpriteDoc,
+	frameLabel: string | undefined,
+	style: RenderStyle<C>,
+): PlainFrame<C> | null {
+	let base: Sprite;
+	try {
+		base = spriteFromDoc(doc, frameLabel);
+	} catch {
+		return null;
+	}
+	const baseline = spriteMetaFor(PLAIN_TYPE).baseline;
+	const e: Entity = { ...baseAvatar(1), type: PLAIN_TYPE };
+	e.cosmetics = undefined;
+	// Invert `drawEntitySprite`'s base placement (sx = e.x - floor((w-BOX.w)/2) -
+	// cam.x; sy = e.y + BOX.h - h + baseline - cam.y) so the sprite's (0,0) lands
+	// at buffer (0,0). e.x/e.y are 0 (baseAvatar), so the camera carries the shift.
+	const cam = {
+		x: -Math.floor((base.w - BOX.w) / 2),
+		y: BOX.h - base.h + baseline,
+	};
+	const buf = new PlainCapture<C>(base.w, base.h);
+	drawEntitySprite(buf, e, cam, style, undefined, undefined, { base });
+	return { w: base.w, h: base.h, at: (cx, cy) => buf.at(cx, cy) };
+}
+
 // Render the composited preview into a cell buffer through the shared renderer,
 // cleared to the game's real background color first. No terrain is passed, so the
 // avatar floats against the background exactly as intended for contrast judging.

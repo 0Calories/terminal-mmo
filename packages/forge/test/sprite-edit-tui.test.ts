@@ -970,6 +970,77 @@ describe('canvas-size modal (round 3): resize + crop in one gesture', () => {
 			}
 		expect(found).toBe(true);
 	});
+
+	test('the modal renders the real Default-frame glyph + fg/bg, not a solid block (#411)', async () => {
+		// The Default frame's cell (0,0) is a PARTIAL-quadrant glyph (▘) with distinct
+		// custom fg + bg. The old modal read the raw glyph, treated it as fully lit,
+		// and stamped a solid space cell in fg only (bg dropped). The fixed modal
+		// reuses the shared frame renderer, so the buffer must carry the actual glyph
+		// with both resolved colours.
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}],"colors":{"q":[10,20,30,255],"s":[200,100,50,255]}}\n--- idle\n▘·\n··\n@colors\nq·\n··\n@bg\ns·\n··\n',
+			'real',
+		);
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'real', role: 'hat' });
+		await clickRail(t, /\bcanvas\b/);
+		await t.renderOnce();
+		const cap = t.captureSpans();
+		const cell = (x: number, y: number) => {
+			let col = 0;
+			for (const s of cap.lines[y].spans) {
+				if (x < col + s.width)
+					return {
+						ch: s.text[x - col] ?? ' ',
+						fg: s.fg.toInts(),
+						bg: s.bg.toInts(),
+					};
+				col += s.width;
+			}
+			return null;
+		};
+		// Scope the search to the modal box (the always-on preview pane also renders
+		// the sprite, so an unscoped glyph search would find it there — this test is
+		// specifically about the MODAL's own render).
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private modal geom.
+		const box = (t.editor as any).geom.canvasModal?.box as
+			| { ox: number; oy: number; w: number; h: number }
+			| undefined;
+		if (!box) throw new Error('canvas modal geometry not recorded');
+		// Locate the real glyph inside the modal: the old code never emitted it here
+		// (solid blocks are space cells), so its presence proves the render path.
+		let hit: { x: number; y: number } | null = null;
+		for (let y = box.oy; y < box.oy + box.h && !hit; y++) {
+			let col = 0;
+			for (const s of cap.lines[y].spans) {
+				for (let k = 0; k < s.text.length; k++) {
+					const gx = col + k;
+					if (s.text[k] === '▘' && gx >= box.ox && gx < box.ox + box.w) {
+						hit = { x: gx, y };
+						break;
+					}
+				}
+				if (hit) break;
+				col += s.width;
+			}
+		}
+		if (!hit)
+			throw new Error(
+				'the Default frame glyph ▘ was not rendered in the modal',
+			);
+		const lit = cell(hit.x, hit.y);
+		expect(lit?.ch).toBe('▘');
+		// The fg is the resolved custom key `q`, and the bg the resolved `s` — bg is
+		// no longer dropped.
+		expect(lit?.fg.slice(0, 3)).toEqual([10, 20, 30]);
+		expect(lit?.bg.slice(0, 3)).toEqual([200, 100, 50]);
+		// The empty cell to the glyph's right (inside bounds) is NOT painted as ink:
+		// no glyph, and neither the fg nor bg ink colour.
+		const empty = cell(hit.x + 1, hit.y);
+		expect(empty?.ch).toBe(' ');
+		expect(empty?.bg.slice(0, 3)).not.toEqual([10, 20, 30]);
+		expect(empty?.bg.slice(0, 3)).not.toEqual([200, 100, 50]);
+	});
 });
 
 describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', () => {
