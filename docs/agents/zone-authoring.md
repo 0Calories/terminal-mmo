@@ -101,3 +101,13 @@ sprite placement, and legibility. For a zoomed/scrolled view, pass a `cam` offse
 **What this still can't tell you:** colour, and motion (jump arcs, monster
 aggro, camera feel). Those need a human running `forge zone preview` / `forge zone play` in a
 real terminal — say so rather than claiming you verified them.
+
+## Judging sprite art the same way
+
+The sprite analogue needs no scratch script: `forge sprite render <id>` dumps a
+sprite's raw frames headlessly, and `forge sprite render <id> --composite
+[--stance <id>]` dumps the **Composited preview** — the art as the game draws
+it (a hat seated on a body, a weapon in the hand mid-swing), through the same
+shared renderer the editor pane uses. The header lists every available stance;
+quote multi-word ones (`--stance "swing 0"`). Same caveat as zones: glyphs
+only — colour and playback need a human in `forge sprite edit`.

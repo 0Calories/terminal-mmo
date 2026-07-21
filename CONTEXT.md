@@ -873,11 +873,12 @@ legitimately trip — never a rejection (ADR 0031).
 _Avoid_: Mount point, slot, hardpoint
 
 **Composited preview**:
-The Sprite editor's in-context render: the work-in-progress sprite shown as the
-game will actually draw it — a hat seated on a body, a weapon in the hand across
-its swing, a Form wearing hat and weapon — against the game's real background,
-through the shared renderer. The forge analogue of the Zone editor's "faithful
-render" promise.
+The in-context render of a sprite as the game will actually draw it — a hat
+seated on a body, a weapon in the hand across its swing, a Form wearing hat and
+weapon — against the game's real background, through the shared renderer. Two
+surfaces show it: the Sprite editor's always-visible pane, and a headless dump
+for eyes that cannot read a terminal. The forge analogue of the Zone editor's
+"faithful render" promise.
 _Avoid_: Mannequin, dress-up view, test render
 
 **Preview stance**:
