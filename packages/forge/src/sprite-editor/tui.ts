@@ -66,7 +66,6 @@ import {
 	typeHex,
 } from './colorPicker';
 import {
-	type PlainFrame,
 	renderComposite,
 	renderPlainFrame,
 	styleWithLocalColors,
@@ -3144,14 +3143,17 @@ export class SpriteEditor extends Renderable {
 		this.geom.anchorMenuBox = this.drawModal(buf, W, H, rows, C);
 	}
 
-	// The `⤢ canvas` size modal (round 3): the Default frame rendered by the SAME
-	// frame renderer the game/preview use (`renderPlainFrame` → `drawEntitySprite`
-	// via the `base` override, issue #411), so the art is pixel-identical — real
-	// glyphs, real fg/bg, one terminal cell per doc cell. Every other frame's
-	// silhouette ghosts behind it (dimmed, cell granularity), all inside a bright
-	// bounds rectangle. The title reads `canvas W×H → W'×H'` live; doc cells the
-	// current bounds would clip fill the warning colour, overriding the art.
-	// Edge/corner drag geometry is recorded in `geom.canvasModal` for hit-testing.
+	// The `⤢ canvas` size modal (round 3): ONLY the Default frame (index 0),
+	// rendered by the SAME frame renderer the game/preview use (`renderPlainFrame`
+	// → `drawEntitySprite` via the `base` override, issue #411), so the art is
+	// pixel-identical — real glyphs, real fg/bg, one terminal cell per doc cell,
+	// inside a bright bounds rectangle. The title reads `canvas W×H → W'×H'` live.
+	// Other frames are NOT drawn (dimmed ghosts read as broken art, QA follow-up);
+	// the clip warning is their safety net: a doc cell the current bounds would
+	// clip fills the warning colour if ANY frame inks it, so a cut that would drop
+	// art invisible in the Default frame still flags. Empty in-bounds cells (even
+	// ones only a non-default frame inks) render the checkerboard. Edge/corner drag
+	// geometry is recorded in `geom.canvasModal` for hit-testing.
 	private renderCanvasModal(
 		buf: OptimizedBuffer,
 		W: number,
@@ -3198,9 +3200,9 @@ export class SpriteEditor extends Renderable {
 		const inBox = (sx: number, sy: number) =>
 			sx >= inX0 && sx < inX1 && sy >= inY0 && sy < inY1;
 
-		// Render every frame plainly through the shared frame renderer. The Default
-		// frame (index 0) draws in full colour; the rest supply ghost silhouettes
-		// and the "ink in ANY frame" test for clip warnings. Colours resolve exactly
+		// Render every frame plainly through the shared frame renderer. Only the
+		// Default frame (index 0) is drawn; the rest exist solely for the "ink in ANY
+		// frame" clip-warning test (they are never painted). Colours resolve exactly
 		// as the preview pane's: file-local customs, then the session dynamic p/a
 		// previews, merged into the scene style so keys land the same everywhere.
 		const toRGBA = (r: number, g: number, b: number, a: number) =>
@@ -3220,11 +3222,6 @@ export class SpriteEditor extends Renderable {
 		// cells the right/bottom border can sit exactly on the first clipped column/
 		// row, so the warning must win over the border there (it marks the cut).
 		const warns: { sx: number; sy: number }[] = [];
-		const ghostAt = (cx: number, cy: number): PlainFrame<RGBA> | null => {
-			for (let i = 1; i < plains.length; i++)
-				if (plains[i]?.at(cx, cy)) return plains[i];
-			return null;
-		};
 		const inkedAny = (cx: number, cy: number): boolean =>
 			plains.some((p) => p?.at(cx, cy) != null);
 
@@ -3263,12 +3260,9 @@ export class SpriteEditor extends Renderable {
 					buf.setCell(sx, sy, d.ch, d.fg, d.bg ?? bgLayer);
 					continue;
 				}
-				const g = ghostAt(cx, cy)?.at(cx, cy) ?? null;
-				if (g) {
-					// A dimmed ghost of the other frame, kept clearly subordinate.
-					buf.setCell(sx, sy, g.ch, this.dimRGBA(g.fg, C), bgLayer);
-					continue;
-				}
+				// Empty in the Default frame — checkerboard, even if another frame inks
+				// this cell (its ghost is deliberately not shown). A clip would have
+				// flagged it above via inkedAny.
 				buf.setCell(sx, sy, ' ', C.dim, bgLayer);
 			}
 		}

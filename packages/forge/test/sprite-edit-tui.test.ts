@@ -1041,6 +1041,56 @@ describe('canvas-size modal (round 3): resize + crop in one gesture', () => {
 		expect(empty?.bg.slice(0, 3)).not.toEqual([10, 20, 30]);
 		expect(empty?.bg.slice(0, 3)).not.toEqual([200, 100, 50]);
 	});
+
+	test('a cell only a non-default frame inks: checkerboard unclipped, warning when clipped (no ghost, #411 QA)', async () => {
+		// idle (the Default frame) inks (0,0); sit inks (1,1) — a cell idle leaves
+		// empty. The modal must NOT ghost sit's ink (dimmed ghosts read as broken
+		// art): (1,1) is plain checkerboard while unclipped. But the all-frame clip
+		// safety net must still catch it: shrinking away (1,1) flags it in warning.
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"},{"name":"sit"}],"colors":{"q":[10,20,30,255]}}\n--- idle\n█·\n··\n@colors\nq·\n··\n--- sit\n··\n·█\n@colors\n··\n·q\n',
+			'ghost',
+		);
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'ghost', role: 'hat' });
+		await clickRail(t, /\bcanvas\b/);
+		await t.renderOnce();
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private modal geom.
+		const g = (t.editor as any).geom.canvasModal as {
+			ox0: number;
+			oy0: number;
+			cw: number;
+			ch: number;
+		} | null;
+		if (!g) throw new Error('canvas modal geometry not recorded');
+		const cell = (
+			cap: ReturnType<typeof t.captureSpans>,
+			x: number,
+			y: number,
+		) => {
+			let col = 0;
+			for (const s of cap.lines[y].spans) {
+				if (x < col + s.width)
+					return { ch: s.text[x - col] ?? ' ', bg: s.bg.toInts() };
+				col += s.width;
+			}
+			return null;
+		};
+		// Screen position of doc cell (1,1) — the one only `sit` inks.
+		const sx = g.ox0 + 1 * g.cw;
+		const sy = g.oy0 + 1 * g.ch;
+		// Unclipped: no dimmed ghost glyph, no ink colour — just checkerboard (space).
+		const before = cell(t.captureSpans(), sx, sy);
+		expect(before?.ch).toBe(' ');
+		expect(before?.bg.slice(0, 3)).not.toEqual([10, 20, 30]);
+		expect(before?.bg.slice(0, 3)).not.toEqual([255, 180, 80]);
+		// Shrink the right edge one cell → column 1 (holding sit's only-frame ink at
+		// (1,1)) is clipped. The safety net flags it in the warning colour.
+		t.editor.key(key('a'));
+		await t.renderOnce();
+		const after = cell(t.captureSpans(), sx, sy);
+		expect(after?.bg.slice(0, 3)).toEqual([255, 180, 80]);
+	});
 });
 
 describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', () => {
