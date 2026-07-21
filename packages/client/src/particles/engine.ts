@@ -62,6 +62,10 @@ export class Pool {
 		return n;
 	}
 
+	clear(): void {
+		for (const p of this.specks) p.active = false;
+	}
+
 	// A free slot if any, else evict-oldest.
 	claim(): Speck {
 		let slot: Speck | null = null;
@@ -178,10 +182,24 @@ function advance(p: Speck, dt: number, dtMs: number, t: Terrain): void {
 			p.y = y;
 		}
 	} else if (p.stage === 'rest') {
-		p.stageMs += dtMs;
-		if (p.stageMs >= prof.restMs) {
-			p.stage = 'fade';
+		// Terrain can change under a rested speck (#373): a rest embedded in a
+		// wall dies like an airborne speck would, and one whose support vanished
+		// is reclaimed by gravity (bounced stays set, so it re-rests on landing).
+		const col = Math.floor(p.x);
+		const row = Math.floor(p.y);
+		if (isWall(t, col, row)) {
+			p.active = false;
+			return;
+		}
+		if (!isSolid(t, col, row + 1)) {
+			p.stage = 'airborne';
 			p.stageMs = 0;
+		} else {
+			p.stageMs += dtMs;
+			if (p.stageMs >= prof.restMs) {
+				p.stage = 'fade';
+				p.stageMs = 0;
+			}
 		}
 	} else {
 		p.stageMs += dtMs;

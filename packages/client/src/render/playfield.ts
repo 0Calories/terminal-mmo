@@ -80,7 +80,9 @@ export class PlayfieldRenderable extends Renderable {
 		);
 	}
 
-	// Reset on any zone change: a new zone's tick can collide with the last consumed, wedging the gate.
+	// Reset on any zone change: a new zone's tick can collide with the last
+	// consumed, wedging the gate — and the particle pool must not carry the old
+	// zone's specks into terrain they were never simmed against (#373).
 	private consumeSnapshotEvents(
 		zoneId: string,
 		tick: number,
@@ -88,6 +90,8 @@ export class PlayfieldRenderable extends Renderable {
 	): CombatEvent[] {
 		if (zoneId !== this.lastZoneId) {
 			this.lastParticleTick = -1;
+			// First frame is arrival, not a transition — don't drop a pre-frame burst.
+			if (this.lastZoneId !== null) this.particles.clear();
 			this.lastZoneId = zoneId;
 		}
 		const fresh = tick !== this.lastParticleTick ? events : [];

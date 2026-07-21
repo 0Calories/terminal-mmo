@@ -6,7 +6,7 @@ import { runPicker } from '../src/picker';
 import { runPlay } from '../src/play';
 import { runPreview } from '../src/preview';
 import { runSprite } from '../src/sprite-cli';
-import { runSpriteEdit, runSpritePreview } from '../src/sprite-editor';
+import { runSpriteEdit } from '../src/sprite-editor';
 
 const zonesRoot = join(process.cwd(), 'zones');
 const spritesRoot = join(process.cwd(), 'sprites');
@@ -30,8 +30,6 @@ if (domain === 'zone') {
 	if (rest[0] === 'edit')
 		if (rest[1]) await runSpriteEdit(rest.slice(1), spriteDeps);
 		else await runPicker('sprite', pickerDeps);
-	else if (rest[0] === 'preview')
-		await runSpritePreview(rest.slice(1), spriteDeps);
 	else process.exit(runSprite(rest, spriteDeps));
 } else if (!domain) {
 	// Bare `forge`: the single entry point — the picker over every editable asset
@@ -44,7 +42,7 @@ if (domain === 'zone') {
 			'',
 			'  (no args) open the unified asset picker over all editable assets',
 			'  zone      author + validate .zone content (render|preview|play|edit|check|new|rename)',
-			'  sprite    author + validate .sprite art (render|check|edit|preview)',
+			'  sprite    author + validate .sprite art (render|check|edit)',
 			'',
 			'run `forge zone` for zone subcommands.',
 			'run `forge sprite` for sprite subcommands.',
