@@ -150,8 +150,11 @@ describe('editor floating preview pane', () => {
 
 	test('the key map documents the preview toggle as a rail button (QA round 3)', () => {
 		const bindings = SPRITE_KEYMAP.flatMap((g) => g.bindings);
+		// The preview toggle lives on the view/size control boxes (post-#351).
 		expect(
-			bindings.some((b) => b.keys === 'buttons' && b.label.includes('preview')),
+			bindings.some(
+				(b) => b.keys === 'view · size' && b.label.includes('preview'),
+			),
 		).toBe(true);
 		// No v binding survives.
 		expect(bindings.some((b) => b.keys === 'v')).toBe(false);

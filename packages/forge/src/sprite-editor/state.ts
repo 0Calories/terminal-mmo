@@ -306,7 +306,10 @@ export function initSpriteEditor(
 		animation:
 			animationContaining(normalized, label) ?? first?.animation.name ?? '',
 		cursor: { x: 0, y: 0 },
-		tool: 'paint',
+		// Launch default is the select tool (post-#351 organization round): the
+		// editor is mouse-primary and select is the safest resting tool — it never
+		// paints until a marquee is committed.
+		tool: 'select',
 		ink: colorInk(normalized.key),
 		anchorName: firstAnchorName(normalized),
 		feedback: '',

@@ -32,7 +32,10 @@ import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
 // The hat template is a 6×4 cell canvas → 12×8 Pixels.
 function blankState(): SpriteEditorState {
-	return initSpriteEditor(emptySpriteDoc('test', 'hat'));
+	// Start on the pencil: the editor's launch default is now the select tool, but
+	// these tests drive shape gestures explicitly and the plain left-click paths
+	// here expect painting, not a marquee.
+	return setTool(initSpriteEditor(emptySpriteDoc('test', 'hat')), 'paint');
 }
 
 const key = (pts: readonly Point[]): string =>

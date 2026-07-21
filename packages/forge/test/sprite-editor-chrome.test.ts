@@ -52,12 +52,16 @@ function allText(rows: readonly RailRow[]): string {
 	return rows.map(rowText).join('\n');
 }
 
-describe('railModel — tools · ink · playback boxes', () => {
-	test('carries the three boxes with every tool listed', () => {
+describe('railModel — tools · ink · frame/view/size boxes', () => {
+	test('carries the boxes with every tool listed', () => {
 		const text = allText(model());
 		expect(text).toContain('tools');
 		expect(text).toContain('ink');
-		expect(text).toContain('playback');
+		// The playback box dissolved into three labeled control boxes (post-#351).
+		expect(text).toContain('frame');
+		expect(text).toContain('view');
+		expect(text).toContain('size');
+		expect(text).not.toContain('playback');
 		for (const t of RAIL_TOOLS) expect(text).toContain(t.label);
 	});
 
@@ -184,76 +188,83 @@ describe('railModel — tools · ink · playback boxes', () => {
 		expect(square?.swatch).toBe('checker');
 	});
 
-	test('shows the animation, fps and frame count, and lights the playing mode', () => {
-		const idle = model({ animation: 'walkA', fps: 6, frameCount: 3 });
-		expect(allText(idle)).toContain('walkA · 6fps · 3f');
-		const playing = model({ playMode: 'walk' });
-		const walkSpan = playing
-			.flatMap((r) => r.spans)
-			.find((s) => s.text.includes('walk') && s.action?.type === 'play');
-		expect(walkSpan?.hot).toBe(true);
-		expect(walkSpan?.text).toContain('▶');
+	test('the redundant animation · fps · frame-count info line is dropped', () => {
+		// The strip label/stepper and the status row carry this now (post-#351).
+		const text = allText(model({ animation: 'walkA', fps: 6, frameCount: 3 }));
+		expect(text).not.toContain('walkA · 6fps · 3f');
+		expect(text).not.toContain('6fps');
 	});
 
-	test('surfaces the onion-skin depth as a cycling button in the playback box', () => {
+	test('play and walk have left the rail (they live on the preview pane + menu)', () => {
+		const spans = model({ playMode: 'walk' }).flatMap((r) => r.spans);
+		expect(spans.some((s) => s.action?.type === 'play')).toBe(false);
+		expect(allText(model())).not.toContain('walk');
+	});
+
+	test('the view box surfaces onion depth as a glyphed cycling button', () => {
 		const off = model();
 		const offSpan = off
 			.flatMap((r) => r.spans)
-			.find((s) => s.text.startsWith('onion '));
-		expect(offSpan?.text).toBe('onion 0');
+			.find((s) => s.text.startsWith('◌ onion '));
+		expect(offSpan?.text).toBe('◌ onion 0');
 		expect(offSpan?.hot).toBeFalsy();
 		expect(offSpan?.action).toEqual({ type: 'onionCycle' });
 		const on = model({ onionDepth: 2 });
 		const onSpan = on
 			.flatMap((r) => r.spans)
-			.find((s) => s.text.startsWith('onion '));
-		expect(onSpan?.text).toBe('onion 2');
+			.find((s) => s.text.startsWith('◌ onion '));
+		expect(onSpan?.text).toBe('◌ onion 2');
 		expect(onSpan?.hot).toBe(true);
 	});
 
-	test('the mouse-primary buttons: mirror · preview · resize · crop, self-labeled (QA round 3)', () => {
+	test('every control button carries its width-1 glyph and self-labels', () => {
 		const rows = model({ mirrorOn: true, previewOn: false });
 		const spans = rows.flatMap((r) => r.spans);
 		const byAction = (type: string) =>
 			spans.find((s) => s.action?.type === type);
-		expect(byAction('mirror')?.text).toBe('mirror');
+		expect(byAction('addFrame')?.text).toBe('✚ frame');
+		expect(byAction('animationMenu')?.text).toBe('▤ animation');
+		expect(byAction('anchorMenu')?.text).toBe('◎ anchor');
+		expect(byAction('mirror')?.text).toBe('⇄ mirror');
 		expect(byAction('mirror')?.hot).toBe(true);
-		expect(byAction('previewToggle')?.text).toBe('preview');
+		expect(byAction('previewToggle')?.text).toBe('◫ preview');
 		expect(byAction('previewToggle')?.hot).toBeFalsy();
-		expect(byAction('resize')?.text).toBe('resize');
-		expect(byAction('crop')?.text).toBe('crop');
-		expect(byAction('addFrame')?.text).toBe('+frame');
-		expect(byAction('animationMenu')?.text).toBe('animation');
-		expect(byAction('anchorMenu')?.text).toBe('anchor');
-		// No key glyphs ride any button label — the keys they mirrored died.
-		const buttonTexts = spans
-			.filter((s) => s.action && s.action.type !== 'tool')
-			.map((s) => s.text)
-			.join(' ');
-		expect(buttonTexts).not.toMatch(/\bn \+frame|P animation|A anchor|O \d/);
+		expect(byAction('resize')?.text).toBe('⤢ resize');
+		expect(byAction('crop')?.text).toBe('✂ crop');
+		// Each leading glyph is exactly one terminal column so hit-testing stays
+		// aligned.
+		for (const label of [
+			'✚ frame',
+			'▤ animation',
+			'◎ anchor',
+			'⇄ mirror',
+			'◫ preview',
+			'⤢ resize',
+			'✂ crop',
+		])
+			expect(Bun.stringWidth([...label][0])).toBe(1);
 	});
 
-	test('ink swatches and playback controls are click targets', () => {
+	test('ink swatches and control buttons are click targets', () => {
 		const rows = model();
 		// The first grid swatch sits one column in on the first grid row; walk the
 		// spans to its rendered x and hit it.
 		let inkHit: ReturnType<typeof railActionAt>;
-		let playHit: ReturnType<typeof railActionAt>;
+		let frameHit: ReturnType<typeof railActionAt>;
 		rows.forEach((row, y) => {
 			let x0 = 0;
 			for (const s of row.spans) {
 				if (inkHit === undefined && s.action?.type === 'ink')
 					inkHit = railActionAt(rows, x0, y);
+				if (frameHit === undefined && s.action?.type === 'addFrame')
+					frameHit = railActionAt(rows, x0, y);
 				x0 += s.text.length;
 			}
-			const text = rowText(row);
-			if (text.includes(' play') && playHit === undefined)
-				playHit = railActionAt(rows, text.indexOf('play'), y);
 		});
 		// entriesFor() lists the palette in paletteEntries order; the first grid
 		// swatch is its first entry.
 		expect(inkHit).toEqual({ type: 'ink', ink: colorInk(entriesFor()[0].key) });
-		expect(playHit).toEqual({ type: 'play', mode: 'animation' });
+		expect(frameHit).toEqual({ type: 'addFrame' });
 	});
 
 	test('a click on dead space returns nothing', () => {
@@ -276,7 +287,17 @@ describe('rail tool icons', () => {
 		const pencil = rows
 			.flatMap((r) => r.spans)
 			.find((s) => s.text.includes('pencil'));
-		expect(pencil?.text).toContain('▸1 ✎ pencil');
+		// Pencil sits at number key 2 (select leads the rail at 1).
+		expect(pencil?.text).toContain('▸2 ✎ pencil');
+	});
+
+	test('select leads the rail at number key 1; pencil follows at 2', () => {
+		expect(RAIL_TOOLS[0]).toMatchObject({ key: '1', tool: 'select' });
+		expect(RAIL_TOOLS[1]).toMatchObject({ key: '2', tool: 'paint' });
+		// Every number-row key ascends with array position, 1-based.
+		RAIL_TOOLS.forEach((t, i) => {
+			expect(t.key).toBe(String(i + 1));
+		});
 	});
 
 	test('every glyph and fallback is one column by the renderer/hit-test width rules', () => {

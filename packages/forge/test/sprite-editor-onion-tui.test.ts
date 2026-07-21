@@ -140,7 +140,9 @@ describe('onion skinning — ghosts through the active Frame', () => {
 	test('playback suspends the ghosts', async () => {
 		const t = await mount('focus');
 		await clickRail(t, /\bonion\b/); // onion on
-		await clickRail(t, /\bplay\b/); // play the animation
+		// Play moved off the rail to the preview pane (post-#351); drive it directly.
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private playback toggle.
+		(t.editor as any).togglePlay('animation');
 		await t.renderOnce();
 		const cap = t.captureSpans();
 		expect(canvasHasBg(cap, PREV)).toBe(false);

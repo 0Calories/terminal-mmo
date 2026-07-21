@@ -414,6 +414,10 @@ describe('selectFrame & cursor', () => {
 		const s = setTool(blankState(), 'stamp');
 		expect(s.tool).toBe('stamp');
 	});
+
+	test('the launch default tool is select (mouse-primary, post-#351)', () => {
+		expect(blankState().tool).toBe('select');
+	});
 });
 
 describe('saveResult round-trip', () => {

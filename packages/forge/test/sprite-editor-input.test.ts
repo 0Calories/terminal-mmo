@@ -18,7 +18,9 @@ import {
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
 function blankState(): SpriteEditorState {
-	return initSpriteEditor(emptySpriteDoc('test', 'hat'));
+	// These exercise the paint-routing seam, so start on the pencil (the editor's
+	// launch default is now the select tool, which marquees rather than paints).
+	return setTool(initSpriteEditor(emptySpriteDoc('test', 'hat')), 'paint');
 }
 
 // The normalized event both devices target: a left/ink paint at pixel (2,1).

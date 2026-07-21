@@ -251,6 +251,7 @@ describe('Sprite editor TUI smoke', () => {
 			id: 'draw',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		// Nothing is painted yet.
 		expect(canvasHasBg(t.captureSpans(), INK_P, 17)).toBe(false);
 		// Paint all four quadrants of cell (0,0) as one pen stroke.
@@ -328,8 +329,8 @@ describe('Sprite editor TUI smoke', () => {
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'clip', role: 'hat' });
 
-		// Select the top-left Pixel (marquee via the select tool: 7).
-		t.editor.key(key('7', { sequence: '7' }));
+		// Select the top-left Pixel (marquee via the select tool: 1).
+		t.editor.key(key('1', { sequence: '1' }));
 		t.editor.key(key('return')); // anchor at cursor (0,0)
 		t.editor.key(key('return')); // commit a 1-Pixel selection
 		expect(t.editor.state.selection).not.toBeNull();
@@ -393,6 +394,7 @@ describe('Sprite editor TUI smoke', () => {
 			role: 'hat',
 			width: 140,
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.key(key('space')); // paint 'p' at TL
 		t.editor.key(key('space')); // lift pen
 		// Define a fresh file-local colour via the modal (double-click a swatch,
@@ -608,6 +610,7 @@ describe('Sprite editor mouse painting', () => {
 			id: 'm',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		// Down at the block's origin → Pixel (0,0); drag 2 cells right → Pixel (1,0).
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
 		t.editor.mouseDrag({ button: 0, x: bx + 2, y: by });
@@ -625,6 +628,7 @@ describe('Sprite editor mouse painting', () => {
 			id: 'drag',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		// Some terminals report drags with button 'none' (button code > 2); the
 		// stroke's button is remembered from mouseDown so inking continues.
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
@@ -640,6 +644,7 @@ describe('Sprite editor mouse painting', () => {
 			id: 'erase',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
 		t.editor.mouseUp();
 		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
@@ -655,6 +660,7 @@ describe('Sprite editor mouse painting', () => {
 			id: 'z',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.zoom = 4;
 		await t.renderOnce(); // capture geometry at the new zoom
 		// At ×4, the block's first 4 columns/rows all map to Pixel 0.
@@ -688,6 +694,7 @@ describe('Focus navigation: enter dives into a frame, esc surfaces to strips', (
 			id: 'nav',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil: enter dives only when a non-gesture tool is active
 		expect(t.editor.view).toBe('strips');
 		t.editor.key(key('enter'));
 		expect(t.editor.view).toBe('focus');
@@ -713,6 +720,7 @@ describe('Focus navigation: enter dives into a frame, esc surfaces to strips', (
 			id: 'flt',
 			role: 'hat',
 		});
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.key(key('space')); // paint so the shift has art to move
 		t.editor.key(key('space'));
 		t.editor.key(key('right', { shift: true })); // whole-Frame shift → float
@@ -730,7 +738,7 @@ describe('Focus navigation: enter dives into a frame, esc surfaces to strips', (
 			id: 'sel',
 			role: 'hat',
 		});
-		t.editor.key(key('7', { sequence: '7' })); // select tool
+		t.editor.key(key('1', { sequence: '1' })); // select tool
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
 		t.editor.mouseDrag({ button: 0, x: bx + 3, y: by + 1 });
 		t.editor.mouseUp();
@@ -750,7 +758,7 @@ describe('Focus navigation: enter dives into a frame, esc surfaces to strips', (
 			id: 'shp',
 			role: 'hat',
 		});
-		t.editor.key(key('4', { sequence: '4' })); // line tool
+		t.editor.key(key('5', { sequence: '5' })); // line tool
 		t.editor.key(key('enter')); // places the shape anchor
 		expect(t.editor.state.shape).not.toBeNull();
 		expect(t.editor.view).toBe('strips');
@@ -773,7 +781,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 		});
 		const before = currentFrame(t.editor.state);
 		// Marquee cells (0,0)-(1,0) with the select tool, then crop with plain c.
-		t.editor.key(key('7', { sequence: '7' }));
+		t.editor.key(key('1', { sequence: '1' }));
 		t.editor.mouseDown({ button: 0, x: bx, y: by });
 		t.editor.mouseDrag({ button: 0, x: bx + 3, y: by + 1 });
 		t.editor.mouseUp();
@@ -804,6 +812,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 			role: 'hat',
 		});
 		const painted = t.editor.state.ink; // the doc's default key
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.key(key('space')); // paint at cursor (0,0)
 		t.editor.key(key('space')); // lift pen
 		t.editor.state = setInk(t.editor.state, TRANSPARENT_INK); // move ink away
@@ -840,6 +849,7 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 			role: 'hat',
 		});
 		const painted = t.editor.state.ink;
+		t.editor.key(key('p')); // pencil (the launch default is now select)
 		t.editor.mouseDown({ button: 0, x: bx, y: by }); // paint a Pixel
 		t.editor.mouseUp();
 		t.editor.state = setInk(t.editor.state, TRANSPARENT_INK); // ink → transparent
@@ -913,9 +923,9 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		};
 	}
 
-	test('the left rail carries the tools row, ink list and playback box', async () => {
-		// A tall terminal so the full playback box shows (rung 3 folds it when the
-		// rail can't fit the full ink list + playback — e.g. at the 24-row floor).
+	test('the left rail carries the tools row, ink list and frame/view/size boxes', async () => {
+		// A tall terminal so the full control boxes show (rung 3 folds them when the
+		// rail can't fit the full ink list + boxes — e.g. at the 24-row floor).
 		const t = await mount({
 			doc: emptySpriteDoc('rail', 'hat'),
 			id: 'rail',
@@ -928,8 +938,16 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(rail).toContain('pencil');
 		expect(rail).toContain('ink');
 		expect(rail).toContain('▚▚'); // the transparent swatch in the grid
-		expect(rail).toContain('playback');
-		expect(rail).toContain('animation idle');
+		// The playback box dissolved into three labeled boxes (post-#351); the
+		// redundant `animation idle · Nfps · Nf` info line is gone.
+		expect(rail).toContain('frame');
+		expect(rail).toContain('view');
+		expect(rail).toContain('size');
+		expect(rail).toContain('◌ onion');
+		expect(rail).not.toContain('playback');
+		// The dropped box info line carried `· Nfps · Nf`; no `fps` text survives in
+		// the rail now (the status row below still carries the animation readout).
+		expect(rail).not.toContain('fps');
 	});
 
 	test('strips view labels every animation and underlines the active frame', async () => {
@@ -955,6 +973,7 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 
 	test('clicking another frame activates it AND applies the tool (click-through)', async () => {
 		const t = await mount({ doc: twoFrameDoc(), id: 'duo', role: 'hat' });
+		t.editor.key(key('p')); // pencil: click-through paints (launch default is select)
 		expect(t.editor.state.frame).toBe('idle 0');
 		// Frame 1's block: 2×2 cells → 4×4 Pixels → ×2 → 8 cols; gap 2 → x offset 10.
 		t.editor.mouseDown({ button: 0, x: RAIL_W + 10, y: 1 });
@@ -1122,9 +1141,9 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(t.editor.helpOpen).toBe(false);
 	});
 
-	test('rail clicks switch tools, pick inks and toggle playback', async () => {
-		// Tall enough that the playback box is unfolded (its ', walk' control is
-		// only present in the full box, not the folded one-row rung-3 hint).
+	test('rail clicks switch tools, pick inks and cycle a control box button', async () => {
+		// Tall enough that the full control boxes are unfolded (their buttons are
+		// only present in the full boxes, not the folded one-row rung-3 hint).
 		const t = await mount({
 			doc: emptySpriteDoc('click', 'hat'),
 			id: 'click',
@@ -1174,14 +1193,15 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		if (!swatch) throw new Error("no 'a' swatch in the rail grid");
 		t.editor.mouseDown({ button: 0, x: swatch.x, y: swatch.y });
 		expect(t.editor.state.ink).toEqual({ kind: 'color', key: 'a' });
-		// Playback box.
-		const playY = rowWith(' walk');
+		// The view box's onion button cycles the onion-skin depth (play/walk left
+		// the rail for the preview pane, post-#351).
+		const onionY = rowWith('onion');
 		t.editor.mouseDown({
 			button: 0,
-			x: lines[playY].indexOf('walk'),
-			y: playY,
+			x: lines[onionY].indexOf('onion'),
+			y: onionY,
 		});
-		expect(t.editor.playMode).toBe('walk');
+		expect(t.editor.onionDepth).toBe(1);
 	});
 });
 
@@ -1192,7 +1212,7 @@ describe('select drag renders the dotted marquee, never ink (ADR 0036)', () => {
 			id: 'marq',
 			role: 'hat',
 		});
-		t.editor.key(key('7', { sequence: '7' })); // select tool
+		t.editor.key(key('1', { sequence: '1' })); // select tool
 		// Drag from the block origin (RAIL_W, 1) — in-progress, not released.
 		t.editor.mouseDown({ button: 0, x: RAIL_W, y: 1 });
 		t.editor.mouseDrag({ button: 0, x: RAIL_W + 6, y: 5 });
@@ -1236,11 +1256,11 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'n',
 			role: 'hat',
 		});
-		t.editor.key(key('4', { sequence: '4' }));
-		expect(t.editor.state.tool).toBe('line');
 		t.editor.key(key('5', { sequence: '5' }));
-		expect(t.editor.state.tool).toBe('rect');
+		expect(t.editor.state.tool).toBe('line');
 		t.editor.key(key('6', { sequence: '6' }));
+		expect(t.editor.state.tool).toBe('rect');
+		t.editor.key(key('7', { sequence: '7' }));
 		expect(t.editor.state.tool).toBe('ellipse');
 	});
 
@@ -1250,7 +1270,7 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'l',
 			role: 'hat',
 		});
-		t.editor.key(key('4', { sequence: '4' }));
+		t.editor.key(key('5', { sequence: '5' })); // line
 		t.editor.mouseDown({ button: 0, ...at(0, 0) });
 		t.editor.mouseDrag({ button: 0, ...at(3, 0) });
 		t.editor.mouseUp();
@@ -1266,7 +1286,7 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'p',
 			role: 'hat',
 		});
-		t.editor.key(key('5', { sequence: '5' })); // rect
+		t.editor.key(key('6', { sequence: '6' })); // rect
 		const before = t.editor.state.doc;
 		t.editor.mouseDown({ button: 0, ...at(0, 0) });
 		t.editor.mouseDrag({ button: 0, ...at(3, 2) });
@@ -1283,7 +1303,7 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'o',
 			role: 'hat',
 		});
-		t.editor.key(key('5', { sequence: '5' })); // rect
+		t.editor.key(key('6', { sequence: '6' })); // rect
 		expect(t.editor.state.rectMode).toBe('outline');
 		await clickRail(t, /\brect\b/); // already active → toggles mode
 		expect(t.editor.state.rectMode).toBe('filled');
@@ -1297,7 +1317,7 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'k',
 			role: 'hat',
 		});
-		t.editor.key(key('4', { sequence: '4' })); // line
+		t.editor.key(key('5', { sequence: '5' })); // line
 		t.editor.key(key('return')); // place anchor at cursor (0,0)
 		for (let i = 0; i < 3; i++) t.editor.key(key('right')); // endpoint (3,0)
 		expect(t.editor.state.shape).not.toBeNull();
@@ -1313,7 +1333,7 @@ describe('Sprite editor shape tools (#394)', () => {
 			id: 'c',
 			role: 'hat',
 		});
-		t.editor.key(key('4', { sequence: '4' }));
+		t.editor.key(key('5', { sequence: '5' })); // line
 		const before = t.editor.state.doc;
 		t.editor.mouseDown({ button: 0, ...at(0, 0) });
 		t.editor.mouseDrag({ button: 0, ...at(3, 0) });
@@ -1398,5 +1418,160 @@ describe('TUI opacity: no cell collapses to the terminal-default background (con
 		}
 		// The frame still shows the transparency checker (it is not all-plain).
 		expect(checkerInFrame).toBeGreaterThan(0);
+	});
+});
+
+describe('focus filmstrip (post-#351)', () => {
+	// A three-frame walk, every frame lighting the same top-left Pixel so the lit
+	// screen cell sits at each frame box's (x0, origin.y).
+	const WALK3 =
+		'{"animations":[{"name":"walk"}]}\n' +
+		'--- walk 0\n▘·\n··\n' +
+		'--- walk 1\n▘·\n··\n' +
+		'--- walk 2\n▘·\n··\n';
+
+	async function mountWalk() {
+		const { doc } = parseSpriteFile(WALK3, 'film');
+		if (!doc) throw new Error('walk fixture failed to parse');
+		const t = await mount({ doc, id: 'film', role: 'hat' });
+		// Force the floating Composited preview off so it never overlaps the
+		// filmstrip's right-hand neighbours (it floats over the top-right).
+		// biome-ignore lint/suspicious/noExplicitAny: set the private preview override.
+		(t.editor as any).previewOverride = false;
+		t.editor.key(key('tab')); // strips → focus
+		await t.renderOnce();
+		return t;
+	}
+
+	// biome-ignore lint/suspicious/noExplicitAny: reach the private render geometry.
+	const focusGeom = (t: Awaited<ReturnType<typeof mount>>) =>
+		(t.editor as any).geom.focus as {
+			origin: { x: number; y: number };
+			top: number;
+			pxH: number;
+			frames: { name: string; x0: number; x1: number }[];
+		};
+
+	const bgAt = (
+		cap: ReturnType<
+			Awaited<ReturnType<typeof createTestRenderer>>['captureSpans']
+		>,
+		x: number,
+		y: number,
+	): [number, number, number] => {
+		let col = 0;
+		for (const s of cap.lines[y].spans) {
+			if (x >= col && x < col + s.width) {
+				const [r, g, b] = s.bg.toInts();
+				return [r, g, b];
+			}
+			col += s.width;
+		}
+		return [-1, -1, -1];
+	};
+
+	test('renders the whole animation: one box per frame, the active centred', async () => {
+		const t = await mountWalk();
+		const f = focusGeom(t);
+		expect(f.frames.map((b) => b.name)).toEqual(['walk 0', 'walk 1', 'walk 2']);
+		// The active frame (walk 0) is the centred origin; its neighbours sit to the
+		// right at ascending x.
+		const active = f.frames.find((b) => b.name === 'walk 0');
+		expect(active?.x0).toBe(f.origin.x);
+		const w1 = f.frames.find((b) => b.name === 'walk 1');
+		const w2 = f.frames.find((b) => b.name === 'walk 2');
+		expect(w1 && active && w1.x0 > active.x0).toBe(true);
+		expect(w2 && w1 && w2.x0 > w1.x0).toBe(true);
+	});
+
+	test('a neighbour frame renders dimmer than the active frame', async () => {
+		const t = await mountWalk();
+		const f = focusGeom(t);
+		const cap = t.captureSpans();
+		const active = f.frames.find((b) => b.name === 'walk 0');
+		const neighbour = f.frames.find((b) => b.name === 'walk 1');
+		if (!active || !neighbour) throw new Error('missing boxes');
+		// Each frame's lit Pixel (0,0) is the cell at (box.x0, origin.y).
+		const lit = bgAt(cap, active.x0, f.origin.y);
+		const dim = bgAt(cap, neighbour.x0, f.origin.y);
+		const sum = (c: number[]) => c[0] + c[1] + c[2];
+		// The neighbour's colours are genuinely dimmed, not merely decorated.
+		expect(sum(dim)).toBeLessThan(sum(lit));
+		expect(sum(dim)).toBeGreaterThan(0);
+	});
+
+	test('the margins and inter-frame gaps stay the plain opaque surround', async () => {
+		const t = await mountWalk();
+		const f = focusGeom(t);
+		const cap = t.captureSpans();
+		// The gap column just right of the active frame's box is plain C.bg
+		// (16,18,26) — never the checker, art, or the declared clear colour.
+		const active = f.frames.find((b) => b.name === 'walk 0');
+		if (!active) throw new Error('no active box');
+		const gap = bgAt(cap, active.x1, f.origin.y);
+		expect(gap).toEqual([16, 18, 26]);
+	});
+
+	test('← / → step the active frame under the launch-default select tool (no marquee)', async () => {
+		const t = await mountWalk();
+		// No tool switch: the editor launches on select (commit 4bf75e2), and with
+		// no marquee pending the arrows do nothing for select — so they are free to
+		// navigate frames. Tool identity alone must not suppress frame-stepping.
+		expect(t.editor.state.tool).toBe('select');
+		expect(t.editor.state.shape).toBeNull();
+		expect(t.editor.state.selection).toBeNull();
+		expect(t.editor.state.frame).toBe('walk 0');
+		t.editor.key(key('right'));
+		expect(t.editor.state.frame).toBe('walk 1');
+		t.editor.key(key('left'));
+		expect(t.editor.state.frame).toBe('walk 0');
+	});
+
+	test('a pending select marquee keeps the arrows (they grow it, not the frame)', async () => {
+		const t = await mountWalk();
+		// Drop a marquee anchor (select is the default tool): now a live gesture owns
+		// the arrows, so → grows the marquee and the active frame does NOT change.
+		t.editor.key(key('return')); // anchor the select marquee at the cursor
+		expect(t.editor.state.shape).not.toBeNull();
+		const frameBefore = t.editor.state.frame;
+		t.editor.key(key('right'));
+		expect(t.editor.state.frame).toBe(frameBefore);
+		expect(t.editor.state.shape?.to.x).toBeGreaterThan(
+			t.editor.state.shape?.anchor.x ?? 0,
+		);
+	});
+
+	test('← / → step the active frame with wrap (pencil active)', async () => {
+		const t = await mountWalk();
+		t.editor.key(key('p')); // a non-gesture tool: arrows navigate frames
+		expect(t.editor.state.frame).toBe('walk 0');
+		t.editor.key(key('left')); // wrap back to the last frame
+		expect(t.editor.state.frame).toBe('walk 2');
+		t.editor.key(key('right')); // wrap forward
+		expect(t.editor.state.frame).toBe('walk 0');
+		t.editor.key(key('right'));
+		expect(t.editor.state.frame).toBe('walk 1');
+	});
+
+	test('clicking a dimmed neighbour activates it without painting', async () => {
+		const t = await mountWalk();
+		const before = t.editor.state.doc;
+		const f = focusGeom(t);
+		const neighbour = f.frames.find((b) => b.name === 'walk 1');
+		if (!neighbour) throw new Error('no neighbour box');
+		// Click an unlit cell inside the neighbour box (its Pixel (1,0) is dark).
+		t.editor.mouseDown({ button: 0, x: neighbour.x0 + 2, y: f.origin.y });
+		t.editor.mouseUp();
+		expect(t.editor.state.frame).toBe('walk 1');
+		expect(t.editor.state.doc).toBe(before); // activation never paints
+	});
+
+	test('playback keeps the display single-frame', async () => {
+		const t = await mountWalk();
+		// biome-ignore lint/suspicious/noExplicitAny: drive playback + read geometry.
+		const ed = t.editor as any;
+		ed.togglePlay('animation');
+		await t.renderOnce();
+		expect(focusGeom(t).frames).toHaveLength(1);
 	});
 });

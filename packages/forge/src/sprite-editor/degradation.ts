@@ -43,12 +43,13 @@ const INK_TITLE_ROWS = 1;
 // The active-colour readout row under the swatch grid.
 const INK_ACTIVE_ROWS = 1;
 const BLANK_ROWS = 1;
-// The full playback box's height (matches playbackBox() in chrome.ts): title,
-// info, play/walk/onion, +frame/animation/anchor, mirror/preview, resize/crop.
-// When the rung folds it, it collapses to a single hint row. Mouse-primary
-// (ADR 0035) leans on this box, so the accounting must be honest: at the
-// ≥80×24 floor the full box fits.
-const PLAYBACK_FULL_ROWS = 6;
+// The full control-boxes height (matches railBoxes() in chrome.ts): the three
+// labeled boxes below the ink grid — frame (title + ✚frame/▤animation + ◎anchor),
+// view (title + ◌onion + ⇄mirror/◫preview), size (title + ⤢resize/✂crop) = 8
+// rows. When the rung folds them, they collapse to a single hint row. Mouse-
+// primary (ADR 0035) leans on these, so the accounting must be honest: at the
+// ≥80×24 floor the full boxes fit.
+const PLAYBACK_FULL_ROWS = 8;
 
 export interface DegradationInput {
 	// The terminal's size in cells.
