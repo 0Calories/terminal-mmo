@@ -4,5 +4,10 @@
 // between the editor's own files (state/view/input/strips/…), and tests reach
 // internals white-box via deep imports on purpose.
 export { RAIL_TOOLS, TOOL_GLYPH_FALLBACKS } from './chrome';
-export { runSpritePreview } from './preview';
+export {
+	previewStances,
+	renderComposite,
+	styleWithLocalColors,
+} from './composite';
 export { runSpriteEdit } from './tui';
+export { roleForDir } from './view';
