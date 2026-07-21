@@ -150,6 +150,47 @@ describe('sprite CLI', () => {
 		).toBe(1);
 	});
 
+	// The headless Composited preview (#386): `render --composite` replaces the
+	// dead standalone `forge sprite preview` TUI as the agent-facing surface.
+	test('render --composite: dumps the game-drawn art with a stance header', () => {
+		mkdirSync(join(root, 'monsters'), { recursive: true });
+		writeFileSync(join(root, 'monsters', 'slime.sprite'), VALID);
+		expect(runSprite(['render', 'slime', '--composite'], deps())).toBe(0);
+		const out = output();
+		expect(out).toContain('slime  monster  stance idle');
+		expect(out).toContain('stances: idle · wave');
+		expect(out).toContain('AB');
+		expect(out).toContain('✓ no issues');
+	});
+
+	test('render --composite --stance selects a stance; unknown stance lists the options', () => {
+		mkdirSync(join(root, 'monsters'), { recursive: true });
+		writeFileSync(join(root, 'monsters', 'slime.sprite'), VALID);
+		expect(
+			runSprite(['render', 'slime', '--composite', '--stance', 'wave'], deps()),
+		).toBe(0);
+		expect(output()).toContain('slime  monster  stance wave');
+
+		lines = [];
+		expect(
+			runSprite(['render', 'slime', '--composite', '--stance', 'nope'], deps()),
+		).toBe(1);
+		expect(output()).toContain("unknown stance 'nope'");
+		expect(output()).toContain('idle · wave');
+	});
+
+	test('render --composite: a sprite outside a role dir fails with a clear message', () => {
+		writeFileSync(join(root, 'buddy.sprite'), VALID);
+		expect(runSprite(['render', 'buddy', '--composite'], deps())).toBe(1);
+		expect(output()).toContain('cannot tell the role');
+	});
+
+	test('render: --stance without --composite fails with a clear message', () => {
+		writeFileSync(join(root, 'buddy.sprite'), VALID);
+		expect(runSprite(['render', 'buddy', '--stance', 'idle'], deps())).toBe(1);
+		expect(output()).toContain('--stance only applies with --composite');
+	});
+
 	test('bare command prints usage and exits 0', () => {
 		expect(runSprite([], deps())).toBe(0);
 		expect(output().toLowerCase()).toContain('usage');
