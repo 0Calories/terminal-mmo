@@ -31,10 +31,15 @@
 // `.sprite` grids; the artist never selects a bg.
 import type { RGBAQuad } from '@mmo/core/entities';
 import {
+	findFrame,
+	frameLabelAt,
+	frameLocations,
 	glyphFromQuadrants,
+	mapDocFrames,
 	parseSpriteFile,
 	quadrantsFromGlyph,
 	SENTINEL,
+	type SpriteAnimationDoc,
 	type SpriteDiagnostic,
 	type SpriteDoc,
 	type SpriteFrameDoc,
@@ -210,7 +215,9 @@ export function inkEquals(a: Ink, b: Ink): boolean {
 
 export interface SpriteEditorState {
 	doc: SpriteDoc;
-	// Name of the frame currently being edited.
+	// Canonical label of the frame currently being edited (ADR 0037): the bare
+	// animation name for a single-frame animation, `<animation> <index>`
+	// otherwise. Frames are unnamed — this is their positional identity.
 	frame: string;
 	// Name of the animation the current frame belongs to (drives playback + animation ops).
 	animation: string;
@@ -287,11 +294,17 @@ export function initSpriteEditor(
 	// in size is normalized to the union bounding box on load. Already-uniform docs
 	// pass through untouched (identity), so this is a no-op for shipped assets.
 	const normalized = normalizeDoc(doc);
-	const name = frame ?? normalized.frames[0]?.name ?? '';
+	const locations = frameLocations(normalized);
+	const first = locations[0];
+	const label =
+		frame !== undefined && locations.some((l) => l.label === frame)
+			? frame
+			: (first?.label ?? '');
 	return {
 		doc: normalized,
-		frame: name,
-		animation: animationContaining(normalized, name) ?? name,
+		frame: label,
+		animation:
+			animationContaining(normalized, label) ?? first?.animation.name ?? '',
 		cursor: { x: 0, y: 0 },
 		tool: 'paint',
 		ink: colorInk(normalized.key),
@@ -311,15 +324,13 @@ export function initSpriteEditor(
 	};
 }
 
-// The animation whose frame list contains `frame`, if any (the parser also treats a
-// frame referenced by no animation as its own implicit single-frame animation).
+// The animation owning the frame with label `frame`, if any (ADR 0037: a frame's
+// identity is (animation, index), so its label resolves to exactly one animation).
 function animationContaining(
 	doc: SpriteDoc,
 	frame: string,
 ): string | undefined {
-	for (const [animation, frames] of Object.entries(doc.animations))
-		if (frames.includes(frame)) return animation;
-	return undefined;
+	return findFrame(doc, frame)?.animation.name;
 }
 
 function firstAnchorName(doc: SpriteDoc): string {
@@ -327,13 +338,14 @@ function firstAnchorName(doc: SpriteDoc): string {
 }
 
 export function currentFrame(state: SpriteEditorState): SpriteFrameDoc {
-	const f = state.doc.frames.find((fr) => fr.name === state.frame);
+	const f = findFrame(state.doc, state.frame)?.frame;
 	if (!f) throw new Error(`no such frame '${state.frame}'`);
 	return f;
 }
 
+// Every frame's canonical label in doc order (the flat, labeled frame list).
 export function frameNames(state: SpriteEditorState): string[] {
-	return state.doc.frames.map((f) => f.name);
+	return frameLocations(state.doc).map((l) => l.label);
 }
 
 // Cell extent of a frame, in cells.
@@ -437,10 +449,25 @@ function writeCell(
 	};
 }
 
-function replaceFrame(doc: SpriteDoc, frame: SpriteFrameDoc): SpriteDoc {
+// Replace the frame at `label`'s (animation, index) with `frame`. Frames are
+// unnamed, so the write targets the current frame's position rather than a name
+// match — every paint edits the current frame.
+function replaceFrame(
+	doc: SpriteDoc,
+	label: string,
+	frame: SpriteFrameDoc,
+): SpriteDoc {
+	const loc = findFrame(doc, label);
+	if (loc === undefined) return doc;
+	const animationName = loc.animation.name;
+	const index = loc.index;
 	return {
 		...doc,
-		frames: doc.frames.map((f) => (f.name === frame.name ? frame : f)),
+		animations: doc.animations.map((a) =>
+			a.name === animationName
+				? { ...a, frames: a.frames.map((f, i) => (i === index ? frame : f)) }
+				: a,
+		),
 	};
 }
 
@@ -466,7 +493,7 @@ function commitFrame(
 	frame: SpriteFrameDoc,
 	tag?: string,
 ): SpriteEditorState {
-	return commitDoc(state, replaceFrame(state.doc, frame), tag);
+	return commitDoc(state, replaceFrame(state.doc, state.frame, frame), tag);
 }
 
 // ---------------------------------------------------------------------------
@@ -515,43 +542,60 @@ export function setInk(state: SpriteEditorState, ink: Ink): SpriteEditorState {
 
 export function selectFrame(
 	state: SpriteEditorState,
-	name: string,
+	label: string,
 ): SpriteEditorState {
-	if (!state.doc.frames.some((f) => f.name === name))
-		return refuse(state, `no such frame '${name}'`);
-	const animation = animationContaining(state.doc, name) ?? state.animation;
-	return { ...state, frame: name, animation, stroke: null, feedback: '' };
+	const loc = findFrame(state.doc, label);
+	if (loc === undefined) return refuse(state, `no such frame '${label}'`);
+	return {
+		...state,
+		frame: label,
+		animation: loc.animation.name,
+		stroke: null,
+		feedback: '',
+	};
 }
 
 // ---------------------------------------------------------------------------
-// Animations — named ordered frame lists (ADR 0031). All mutations are undoable;
-// illegal names / missing targets refuse with `feedback`.
+// Animations — the ordered animation array (ADR 0037); each animation owns its
+// unnamed, index-bound frames. All mutations are undoable; illegal names /
+// missing targets refuse with `feedback`.
 // ---------------------------------------------------------------------------
+
+function animationByName(
+	doc: SpriteDoc,
+	name: string,
+): SpriteAnimationDoc | undefined {
+	return doc.animations.find((a) => a.name === name);
+}
 
 export function animationNames(state: SpriteEditorState): string[] {
-	return Object.keys(state.doc.animations);
+	return state.doc.animations.map((a) => a.name);
 }
 
+// The canonical labels of an animation's frames, in order (its frames' string
+// identities — see `frameLabelAt`).
 export function animationFrames(
 	state: SpriteEditorState,
 	animation: string,
 ): string[] {
-	return [...(state.doc.animations[animation] ?? [])];
+	const a = animationByName(state.doc, animation);
+	if (a === undefined) return [];
+	return a.frames.map((_, i) => frameLabelAt(a, i));
 }
 
 // A fresh, fully-transparent frame sized to the current canvas so new frames
 // line up with the art the artist is already drawing.
-function newBlankFrame(state: SpriteEditorState, name: string): SpriteFrameDoc {
-	const cur = state.doc.frames.find((f) => f.name === state.frame);
+function newBlankFrame(state: SpriteEditorState): SpriteFrameDoc {
+	const cur = findFrame(state.doc, state.frame)?.frame;
 	const { w, h } = cur ? frameExtent(cur) : { w: 6, h: 4 };
 	const rows = Array.from({ length: Math.max(1, h) }, () =>
 		' '.repeat(Math.max(1, w)),
 	);
-	return { name, rows, colors: rows.slice(), bg: rows.slice(), anchors: {} };
+	return { rows, colors: rows.slice(), bg: rows.slice(), anchors: {} };
 }
 
-// Create a named animation backed by one fresh blank frame of the same name; switch
-// to it. Refuses illegal/duplicate names or a name colliding with a frame.
+// Create a named animation backed by one fresh blank frame; switch to it. Refuses
+// illegal or duplicate names.
 export function createAnimation(
 	state: SpriteEditorState,
 	name: string,
@@ -561,81 +605,66 @@ export function createAnimation(
 			state,
 			`'${name}' is not a legal animation name (${NAME_RE.source})`,
 		);
-	if (name in state.doc.animations)
+	if (animationByName(state.doc, name) !== undefined)
 		return refuse(state, `animation '${name}' already exists`);
-	if (state.doc.frames.some((f) => f.name === name))
-		return refuse(state, `a frame named '${name}' already exists`);
-	const frame = newBlankFrame(state, name);
+	const frame = newBlankFrame(state);
+	const animation: SpriteAnimationDoc = { name, frames: [frame] };
 	const nextDoc: SpriteDoc = {
 		...state.doc,
-		frames: [...state.doc.frames, frame],
-		animations: { ...state.doc.animations, [name]: [name] },
+		animations: [...state.doc.animations, animation],
 	};
 	const committed = commitDoc(state, nextDoc);
+	// A single-frame animation's frame label is the bare animation name.
 	return { ...committed, animation: name, frame: name };
 }
 
-// Append a fresh blank frame to an existing animation and select it. Without a name,
-// one is derived (`<animation>-2`, `<animation>-3`, …) avoiding collisions.
+// Append a fresh blank frame to an existing animation and select it (ADR 0037:
+// frames are index-bound, so the new frame is simply the next index).
 export function addFrameToAnimation(
 	state: SpriteEditorState,
 	animation: string,
-	frameName?: string,
 ): SpriteEditorState {
-	const list = state.doc.animations[animation];
-	if (list === undefined)
+	const target = animationByName(state.doc, animation);
+	if (target === undefined)
 		return refuse(state, `no such animation '${animation}'`);
-	const name = frameName ?? autoFrameName(state, animation);
-	if (!NAME_RE.test(name))
-		return refuse(state, `'${name}' is not a legal frame name`);
-	if (state.doc.frames.some((f) => f.name === name))
-		return refuse(state, `a frame named '${name}' already exists`);
-	const frame = newBlankFrame(state, name);
+	const frame = newBlankFrame(state);
+	const nextFrames = [...target.frames, frame];
 	const nextDoc: SpriteDoc = {
 		...state.doc,
-		frames: [...state.doc.frames, frame],
-		animations: { ...state.doc.animations, [animation]: [...list, name] },
+		animations: state.doc.animations.map((a) =>
+			a.name === animation ? { ...a, frames: nextFrames } : a,
+		),
 	};
 	const committed = commitDoc(state, nextDoc);
-	return { ...committed, animation, frame: name };
+	const newIndex = nextFrames.length - 1;
+	return {
+		...committed,
+		animation,
+		frame: `${animation} ${newIndex}`,
+	};
 }
 
-function autoFrameName(state: SpriteEditorState, animation: string): string {
-	for (let n = 2; ; n++) {
-		const candidate = `${animation}-${n}`;
-		if (!state.doc.frames.some((f) => f.name === candidate)) return candidate;
-	}
-}
-
-// Delete an animation entry and garbage-collect any frame sections it orphaned (a
-// frame referenced by no remaining animation is removed, so it does not silently
-// become an implicit single-frame animation). Refuses removing the last animation.
+// Delete an animation and its frames. Refuses removing the last animation.
 export function deleteAnimation(
 	state: SpriteEditorState,
 	animation: string,
 ): SpriteEditorState {
-	if (!(animation in state.doc.animations))
+	if (animationByName(state.doc, animation) === undefined)
 		return refuse(state, `no such animation '${animation}'`);
-	if (Object.keys(state.doc.animations).length <= 1)
+	if (state.doc.animations.length <= 1)
 		return refuse(state, 'cannot delete the last animation');
-	const nextAnimations: Record<string, readonly string[]> = {};
-	for (const [name, frames] of Object.entries(state.doc.animations))
-		if (name !== animation) nextAnimations[name] = frames;
-	const referenced = new Set(Object.values(nextAnimations).flat());
-	const nextFrames = state.doc.frames.filter((f) => referenced.has(f.name));
-	const nextDoc: SpriteDoc = {
-		...state.doc,
-		animations: nextAnimations,
-		frames: nextFrames,
-	};
+	const nextAnimations = state.doc.animations.filter(
+		(a) => a.name !== animation,
+	);
+	const nextDoc: SpriteDoc = { ...state.doc, animations: nextAnimations };
 	const committed = commitDoc(state, nextDoc);
 	// Keep the cursor on a live animation/frame.
-	if (nextAnimations[state.animation] !== undefined) return committed;
-	const nextAnimation = Object.keys(nextAnimations)[0];
+	if (state.animation !== animation) return committed;
+	const first = nextAnimations[0];
 	return {
 		...committed,
-		animation: nextAnimation,
-		frame: nextAnimations[nextAnimation][0],
+		animation: first.name,
+		frame: frameLabelAt(first, 0),
 	};
 }
 
@@ -645,13 +674,13 @@ export function selectAnimation(
 	state: SpriteEditorState,
 	animation: string,
 ): SpriteEditorState {
-	const list = state.doc.animations[animation];
-	if (list === undefined)
+	const target = animationByName(state.doc, animation);
+	if (target === undefined)
 		return refuse(state, `no such animation '${animation}'`);
 	return {
 		...state,
 		animation,
-		frame: list[0] ?? state.frame,
+		frame: frameLabelAt(target, 0),
 		stroke: null,
 		feedback: '',
 	};
@@ -664,9 +693,10 @@ export function reorderFrame(
 	index: number,
 	delta: number,
 ): SpriteEditorState {
-	const list = state.doc.animations[animation];
-	if (list === undefined)
+	const target = animationByName(state.doc, animation);
+	if (target === undefined)
 		return refuse(state, `no such animation '${animation}'`);
+	const list = target.frames;
 	const to = index + delta;
 	if (index < 0 || index >= list.length || to < 0 || to >= list.length)
 		return refuse(state, 'cannot move that frame — out of range');
@@ -674,7 +704,9 @@ export function reorderFrame(
 	[next[index], next[to]] = [next[to], next[index]];
 	const nextDoc: SpriteDoc = {
 		...state.doc,
-		animations: { ...state.doc.animations, [animation]: next },
+		animations: state.doc.animations.map((a) =>
+			a.name === animation ? { ...a, frames: next } : a,
+		),
 	};
 	return commitDoc(state, nextDoc);
 }
@@ -686,17 +718,22 @@ export function setAnimationFps(
 	animation: string,
 	fps: number | null,
 ): SpriteEditorState {
-	if (!(animation in state.doc.animations))
+	if (animationByName(state.doc, animation) === undefined)
 		return refuse(state, `no such animation '${animation}'`);
-	const nextFps: Record<string, number> = { ...state.doc.fps };
-	if (fps === null) {
-		delete nextFps[animation];
-	} else if (!Number.isFinite(fps) || fps <= 0) {
+	if (fps !== null && (!Number.isFinite(fps) || fps <= 0))
 		return refuse(state, 'fps must be a positive number');
-	} else {
-		nextFps[animation] = fps;
-	}
-	return commitDoc(state, { ...state.doc, fps: nextFps });
+	const nextDoc: SpriteDoc = {
+		...state.doc,
+		animations: state.doc.animations.map((a) => {
+			if (a.name !== animation) return a;
+			if (fps === null) {
+				const { fps: _drop, ...rest } = a;
+				return rest;
+			}
+			return { ...a, fps };
+		}),
+	};
+	return commitDoc(state, nextDoc);
 }
 
 // ---------------------------------------------------------------------------
@@ -733,11 +770,11 @@ export function setAnchorName(
 	return { ...state, anchorName: name, feedback: '' };
 }
 
-// The scope an anchor edit lands at, decided by FRAME IDENTITY (ADR 0036):
-// the Default frame — the first frame in the file — owns the file-level
+// The scope an anchor edit lands at, decided by FRAME IDENTITY (ADR 0036/0037):
+// the Default frame — frame 0 of the first animation — owns the file-level
 // anchors; any other frame authors its own override. No stored toggle.
 export function anchorScopeFor(state: SpriteEditorState): AnchorScope {
-	return state.frame === state.doc.frames[0]?.name ? 'doc' : 'frame';
+	return state.frame === frameLocations(state.doc)[0]?.label ? 'doc' : 'frame';
 }
 
 // Place (or move) a named anchor at a cell. The scope is derived from the
@@ -793,13 +830,15 @@ export function deleteAnchor(
 		return refuse(state, `no such anchor '${name}'`);
 	const anchors = { ...state.doc.anchors };
 	delete anchors[name];
-	const frames = state.doc.frames.map((f) => {
-		if (!(name in f.anchors)) return f;
-		const fa = { ...f.anchors };
-		delete fa[name];
-		return { ...f, anchors: fa };
-	});
-	const nextDoc: SpriteDoc = { ...state.doc, anchors, frames };
+	const nextDoc: SpriteDoc = {
+		...mapDocFrames(state.doc, (f) => {
+			if (!(name in f.anchors)) return f;
+			const fa = { ...f.anchors };
+			delete fa[name];
+			return { ...f, anchors: fa };
+		}),
+		anchors,
+	};
 	const committed = commitDoc(state, nextDoc);
 	// Keep the armed anchor name valid.
 	if (committed.anchorName !== name) return committed;
@@ -814,7 +853,10 @@ export function removeAnchorOverride(
 ): SpriteEditorState {
 	const frame = currentFrame(state);
 	if (!(name in frame.anchors))
-		return refuse(state, `frame '${frame.name}' has no override for '${name}'`);
+		return refuse(
+			state,
+			`frame '${state.frame}' has no override for '${name}'`,
+		);
 	const anchors = { ...frame.anchors };
 	delete anchors[name];
 	return commitFrame(state, { ...frame, anchors });

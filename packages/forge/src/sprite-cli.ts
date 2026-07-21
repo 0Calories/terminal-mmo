@@ -2,6 +2,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, isAbsolute, join, resolve } from 'node:path';
 import { readSpriteSourcesFromDir } from '@mmo/assets';
 import {
+	allFrames,
+	frameLabelAt,
 	parseSpriteFile,
 	type SpriteDiagnostic,
 	validateSpriteSet,
@@ -129,31 +131,34 @@ function cmdRender(args: string[], deps: CliDeps): number {
 		return 1;
 	}
 
-	const animationCount = Object.keys(doc.animations).length;
+	const frames = allFrames(doc);
+	const animationCount = doc.animations.length;
 	deps.log(
-		`${doc.id}  ${doc.frames.length} frame(s)  ${animationCount} animation(s)  baseline ${doc.baseline}`,
+		`${doc.id}  ${frames.length} frame(s)  ${animationCount} animation(s)  baseline ${doc.baseline}`,
 	);
 
-	for (const frame of doc.frames) {
-		const width = frame.rows.length > 0 ? frame.rows[0].length : 0;
-		const height = frame.rows.length;
-		deps.log('');
-		deps.log(`--- ${frame.name}  ${width}×${height}`);
-		for (const row of frame.rows) deps.log(row.replaceAll(' ', '·'));
+	for (const animation of doc.animations) {
+		animation.frames.forEach((frame, index) => {
+			const width = frame.rows.length > 0 ? frame.rows[0].length : 0;
+			const height = frame.rows.length;
+			deps.log('');
+			deps.log(`--- ${frameLabelAt(animation, index)}  ${width}×${height}`);
+			for (const row of frame.rows) deps.log(row.replaceAll(' ', '·'));
 
-		const hasCustomColors = frame.colors.some((row) =>
-			[...row].some((ch) => ch !== ' ' && ch !== doc.key),
-		);
-		if (hasCustomColors) {
-			deps.log('@colors');
-			for (const row of frame.colors) deps.log(row.replaceAll(' ', '·'));
-		}
+			const hasCustomColors = frame.colors.some((row) =>
+				[...row].some((ch) => ch !== ' ' && ch !== doc.key),
+			);
+			if (hasCustomColors) {
+				deps.log('@colors');
+				for (const row of frame.colors) deps.log(row.replaceAll(' ', '·'));
+			}
 
-		const hasBg = frame.bg.some((row) => /\S/.test(row));
-		if (hasBg) {
-			deps.log('@bg');
-			for (const row of frame.bg) deps.log(row.replaceAll(' ', '·'));
-		}
+			const hasBg = frame.bg.some((row) => /\S/.test(row));
+			if (hasBg) {
+				deps.log('@bg');
+				for (const row of frame.bg) deps.log(row.replaceAll(' ', '·'));
+			}
+		});
 	}
 
 	deps.log('');

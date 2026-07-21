@@ -26,30 +26,28 @@ const CANVAS_BG: [number, number, number, number] = [16, 18, 26, 255];
 const PREV = ghostColor('prev', 1, CANVAS_BG);
 const NEXT = ghostColor('next', 1, CANVAS_BG);
 
-function blank(name: string, w = 4, h = 4): SpriteFrameDoc {
+function blank(w = 4, h = 4): SpriteFrameDoc {
 	const rows = Array.from({ length: h }, () => ' '.repeat(w));
-	return { name, rows, colors: rows.slice(), bg: rows.slice(), anchors: {} };
+	return { rows, colors: rows.slice(), bg: rows.slice(), anchors: {} };
 }
 
-// A 3-Frame 'run' animation: f0 lights Pixel (0,0), f2 lights Pixel (2,0); the middle
-// Frame f1 (the one we edit) is fully transparent, so its neighbours ghost
-// straight through it.
+// A 3-Frame 'run' animation: frame 'run 0' lights Pixel (0,0), 'run 2' lights
+// Pixel (2,0); the middle Frame 'run 1' (the one we edit) is fully transparent,
+// so its neighbours ghost straight through it.
 function animDoc(): SpriteDoc {
 	const base: SpriteDoc = {
 		id: 'anim',
 		key: 'p',
 		baseline: 0,
 		anchors: {},
-		animations: { run: ['f0', 'f1', 'f2'] },
-		fps: {},
+		animations: [{ name: 'run', frames: [blank(), blank(), blank()] }],
 		colors: {} as SpriteDoc['colors'],
-		frames: [blank('f0'), blank('f1'), blank('f2')],
 	};
 	// Paint through the pure state ops so the grids are real art.
-	let s = initSpriteEditor(base, 'f0');
-	s = paintPixel(s, 0, 0); // f0: Pixel (0,0)
-	s = selectFrame(s, 'f2');
-	s = paintPixel(s, 2, 0); // f2: Pixel (2,0)
+	let s = initSpriteEditor(base, 'run 0');
+	s = paintPixel(s, 0, 0); // run 0: Pixel (0,0)
+	s = selectFrame(s, 'run 2');
+	s = paintPixel(s, 2, 0); // run 2: Pixel (2,0)
 	return s.doc;
 }
 
@@ -59,7 +57,7 @@ async function mount(view: 'strips' | 'focus') {
 		id: 'anim',
 		role: 'form',
 		doc: animDoc(),
-		frame: 'f1',
+		frame: 'run 1',
 		save: () => {},
 	});
 	editor.attach(t.renderer.root);

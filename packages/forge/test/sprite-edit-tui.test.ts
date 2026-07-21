@@ -191,7 +191,7 @@ async function dblClickFirstSwatch(
 describe('Sprite editor TUI smoke', () => {
 	test('opens an existing sprite and renders its frame art as a colour block', async () => {
 		// A tiny hat with one lit quadrant (▘) in the idle frame.
-		const text = '--- idle\n▘·\n··\n';
+		const text = '{"animations":[{"name":"idle"}]}\n--- idle\n▘·\n··\n';
 		const { doc } = parseSpriteFile(text, 'cap');
 		if (!doc) throw new Error('fixture failed to parse');
 		const { captureCharFrame, captureSpans, editor } = await mount({
@@ -267,7 +267,10 @@ describe('Sprite editor TUI smoke', () => {
 
 	test('a whole-Frame shift floats the art live on the canvas (spec #399)', async () => {
 		// A hat with a single lit Pixel at the top-left of the idle frame.
-		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'flo');
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n▘·\n··\n',
+			'flo',
+		);
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'flo', role: 'hat' });
 		const fg = resolveColorKey(
@@ -297,7 +300,10 @@ describe('Sprite editor TUI smoke', () => {
 	});
 
 	test('Enter drops a whole-Frame-shift float from the pencil tool (spec #399)', async () => {
-		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'flo2');
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n▘·\n··\n',
+			'flo2',
+		);
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'flo2', role: 'hat' });
 		// A whole-Frame shift floats under the default pencil tool.
@@ -315,7 +321,10 @@ describe('Sprite editor TUI smoke', () => {
 
 	test('y copies and 9 pastes a float at the source through the keyboard (spec #400)', async () => {
 		// A hat with a single lit Pixel at the top-left of the idle frame.
-		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'clip');
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n▘·\n··\n',
+			'clip',
+		);
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'clip', role: 'hat' });
 
@@ -474,7 +483,10 @@ describe('Sprite editor TUI smoke', () => {
 
 	test('idle time never recolors dynamic ink — p stays at the selected variant (spec #401 amendment)', async () => {
 		// A hat with one lit `p` (dynamic hue) Pixel in the idle frame.
-		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'stat');
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n▘·\n··\n',
+			'stat',
+		);
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'stat', role: 'hat' });
 		const hue = (i: number): [number, number, number] => [
@@ -534,7 +546,10 @@ describe('Sprite editor TUI smoke', () => {
 	}
 
 	test('clicking a hue swatch on the rail variant rows recolors the p art', async () => {
-		const { doc } = parseSpriteFile('--- idle\n▘·\n··\n', 'var');
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n▘·\n··\n',
+			'var',
+		);
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'var', role: 'hat' });
 		const rows = railRowsFor(t, { p: true, a: false }, { p: 0, a: 0 });
@@ -558,7 +573,7 @@ describe('Sprite editor TUI smoke', () => {
 	test('the variant rows live in the rail and only for dynamic-ink art; the canvas never shifts', async () => {
 		// Static-key art: no variant rows, and the first strips label on row 0.
 		const staticDoc = parseSpriteFile(
-			'{"key": "g"}\n--- idle\n▘·\n··\n',
+			'{"key": "g", "animations":[{"name":"idle"}]}\n--- idle\n▘·\n··\n',
 			'stat2',
 		).doc;
 		if (!staticDoc) throw new Error('fixture failed to parse');
@@ -568,7 +583,10 @@ describe('Sprite editor TUI smoke', () => {
 		expect(rows1.some((r) => / p \[\]/.test(r.slice(0, RAIL_W)))).toBe(false);
 		// Dynamic-key art: the rail gains the p variant row; the canvas stays
 		// put — the strips label still sits on row 0, no layout jump.
-		const pDoc = parseSpriteFile('--- idle\n▘·\n··\n', 'dyn').doc;
+		const pDoc = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n▘·\n··\n',
+			'dyn',
+		).doc;
 		if (!pDoc) throw new Error('fixture failed to parse');
 		const t2 = await mount({ doc: pDoc, id: 'dyn', role: 'hat' });
 		const rows2 = t2.captureCharFrame().split('\n');
@@ -877,22 +895,21 @@ describe('resize mode nudge keys follow the wasd ruling (ADR 0035)', () => {
 describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', () => {
 	// A two-frame animation: frames 'a' and 'b' side by side in one strip.
 	function twoFrameDoc(): ReturnType<typeof emptySpriteDoc> {
-		const frame = (name: string) => ({
-			name,
+		const frame = () => ({
 			rows: ['  ', '  '],
 			colors: ['  ', '  '],
 			bg: ['  ', '  '],
 			anchors: {},
 		});
+		// A single two-frame animation: its frames are unnamed (ADR 0037), so their
+		// identity labels are 'idle 0' and 'idle 1'.
 		return {
 			id: 'duo',
 			key: 'p',
 			baseline: 0,
 			anchors: {},
-			animations: { idle: ['a', 'b'] },
-			fps: {},
+			animations: [{ name: 'idle', frames: [frame(), frame()] }],
 			colors: {},
-			frames: [frame('a'), frame('b')],
 		};
 	}
 
@@ -927,19 +944,22 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		// carries its interactive fps stepper on that row.
 		expect(frame).toContain('idle');
 		expect(frame).toContain('‹ 5fps ›');
-		// The active frame 'a' is underlined on the name row; 'b' is plain.
-		const nameRow = frame.split('\n').find((l) => l.includes('▔'));
+		// Frames are unnamed (ADR 0037): the name row shows each frame's `frame N`
+		// position, and the Default frame (frame 0 of the first animation) carries
+		// the ◈ badge. The active frame 0 is the default here.
+		const nameRow = frame.split('\n').find((l) => l.includes('◈frame 0'));
 		expect(nameRow).toBeDefined();
-		expect(nameRow).toContain('a▔');
+		expect(nameRow).toContain('◈frame 0');
+		expect(nameRow).toContain('frame 1');
 	});
 
 	test('clicking another frame activates it AND applies the tool (click-through)', async () => {
 		const t = await mount({ doc: twoFrameDoc(), id: 'duo', role: 'hat' });
-		expect(t.editor.state.frame).toBe('a');
-		// Frame 'b' block: 2×2 cells → 4×4 Pixels → ×2 → 8 cols; gap 2 → x offset 10.
+		expect(t.editor.state.frame).toBe('idle 0');
+		// Frame 1's block: 2×2 cells → 4×4 Pixels → ×2 → 8 cols; gap 2 → x offset 10.
 		t.editor.mouseDown({ button: 0, x: RAIL_W + 10, y: 1 });
 		t.editor.mouseUp();
-		expect(t.editor.state.frame).toBe('b');
+		expect(t.editor.state.frame).toBe('idle 1');
 		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
 	});
 
@@ -949,11 +969,12 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		await t.renderOnce();
 		expect(t.editor.view).toBe('focus');
 		const tabRow = t.captureCharFrame().split('\n')[0].slice(RAIL_W);
-		expect(tabRow).toContain('a │ b');
-		// Clicking a tab activates that frame.
-		const bCol = RAIL_W + tabRow.indexOf('b', tabRow.indexOf('│'));
+		// Frames are unnamed (ADR 0037): the tab row reads `frame N` by position.
+		expect(tabRow).toContain('frame 0 │ frame 1');
+		// Clicking the second tab activates that frame ('idle 1').
+		const bCol = RAIL_W + tabRow.indexOf('1', tabRow.indexOf('│'));
 		t.editor.mouseDown({ button: 0, x: bCol, y: 0 });
-		expect(t.editor.state.frame).toBe('b');
+		expect(t.editor.state.frame).toBe('idle 1');
 		t.editor.key(key('tab'));
 		expect(t.editor.view).toBe('strips');
 	});
@@ -961,11 +982,13 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 	test('wheel scrolls the strips; ctrl-wheel zooms; middle-drag pans', async () => {
 		// A form doc with a third (jump) strip so there is content below the fold.
 		const base = emptySpriteDoc('nav', 'form');
-		const jump = { ...base.frames[0], name: 'jump' };
+		// A third single-frame animation ('jump') so there is content below the fold.
 		const navDoc = {
 			...base,
-			frames: [...base.frames, jump],
-			animations: { ...base.animations, jump: ['jump'] },
+			animations: [
+				...base.animations,
+				{ name: 'jump', frames: [base.animations[0].frames[0]] },
+			],
 		};
 		const t = await mount({ doc: navDoc, id: 'nav', role: 'form' });
 		// jump's strip label sits at content row ~38 — off-screen at the 24-row
@@ -1013,10 +1036,13 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 			}
 			throw new Error(`no ${glyph} on screen`);
 		};
+		// fps now lives on the animation object (ADR 0037), not a top-level map.
+		const walkFps = () =>
+			t.editor.state.doc.animations.find((a) => a.name === 'walk')?.fps;
 		const dec = find('‹');
 		t.editor.mouseDown({ button: 0, x: dec.x, y: dec.y });
 		t.editor.mouseUp();
-		expect(t.editor.state.doc.fps.walk).toBe(4);
+		expect(walkFps()).toBe(4);
 		// Down to the floor: clamped at 1.
 		for (let i = 0; i < 6; i++) {
 			const d = find('‹');
@@ -1024,15 +1050,15 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 			t.editor.mouseUp();
 			await t.renderOnce();
 		}
-		expect(t.editor.state.doc.fps.walk).toBe(1);
+		expect(walkFps()).toBe(1);
 		// The › chevron steps back up.
 		const inc = find('›');
 		t.editor.mouseDown({ button: 0, x: inc.x, y: inc.y });
 		t.editor.mouseUp();
-		expect(t.editor.state.doc.fps.walk).toBe(2);
+		expect(walkFps()).toBe(2);
 		// A stepper edit is undoable like any doc mutation.
 		t.editor.key(key('u'));
-		expect(t.editor.state.doc.fps.walk).toBe(1);
+		expect(walkFps()).toBe(1);
 	});
 
 	test('the bottom row is the status readout — the persistent hint line is gone (QA round 3)', async () => {

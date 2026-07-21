@@ -11,7 +11,11 @@ import type { SpriteSource } from '@mmo/assets';
 import { WEAPONS } from '@mmo/core/combat';
 import { EMOTES } from '@mmo/core/entities';
 import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
-import type { SpriteDiagnostic, SpriteDoc } from './sprite-file';
+import type {
+	SpriteAnimationDoc,
+	SpriteDiagnostic,
+	SpriteDoc,
+} from './sprite-file';
 import { parseSpriteFile } from './sprite-file';
 
 // The emote ids the sim knows about (core's registry). A Form animation named
@@ -48,8 +52,11 @@ export function validateSpriteRole(
 		return diagnostics;
 	}
 
+	const byName = new Map<string, SpriteAnimationDoc>(
+		doc.animations.map((a) => [a.name, a]),
+	);
 	for (const animation of profile.animations) {
-		if (!(animation in doc.animations)) {
+		if (!byName.has(animation)) {
 			diagnostics.push({
 				severity: 'error',
 				spriteId: doc.id,
@@ -59,28 +66,24 @@ export function validateSpriteRole(
 	}
 	// A weapon's swing is phase-indexed (ADR 0036): each of the exactly three
 	// frames maps to a replicated attack phase, so any other count is an error.
-	// The same ADR also requires a rest Default frame: the file's FIRST frame is
-	// what the weapon shows outside a swing, so it must not belong to the swing
-	// animation — a file opening with a swing frame authored no rest art at all.
+	// The same ADR also requires a rest Default frame: the Default frame — frame 0
+	// of the first animation (ADR 0037) — is what the weapon shows outside a
+	// swing, so the first animation must not be `swing` — a file opening with the
+	// swing animation authored no rest art at all.
 	if (role === 'weapons') {
-		const swing = doc.animations.swing;
-		if (swing !== undefined && swing.length !== 3) {
+		const swing = byName.get('swing');
+		if (swing !== undefined && swing.frames.length !== 3) {
 			diagnostics.push({
 				severity: 'error',
 				spriteId: doc.id,
-				message: `sprite '${doc.id}' (role 'weapons') must author exactly 3 swing frames, one per attack phase, found ${swing.length}`,
+				message: `sprite '${doc.id}' (role 'weapons') must author exactly 3 swing frames, one per attack phase, found ${swing.frames.length}`,
 			});
 		}
-		const first = doc.frames[0];
-		if (
-			swing !== undefined &&
-			first !== undefined &&
-			swing.includes(first.name)
-		) {
+		if (doc.animations[0]?.name === 'swing') {
 			diagnostics.push({
 				severity: 'error',
 				spriteId: doc.id,
-				message: `sprite '${doc.id}' (role 'weapons') must open with a rest Default frame — its first frame '${first.name}' belongs to the swing animation`,
+				message: `sprite '${doc.id}' (role 'weapons') must open with a rest Default frame — its first animation is the swing animation`,
 			});
 		}
 	}
@@ -99,16 +102,27 @@ export function validateSpriteRole(
 	// authoring error. (A registered emote the Form omits is fine — it falls back
 	// to idle at runtime.)
 	if (role === 'forms') {
-		for (const animationName of Object.keys(doc.animations)) {
-			if (!animationName.startsWith('emote:')) continue;
-			const emoteId = animationName.slice('emote:'.length);
+		for (const animation of doc.animations) {
+			if (!animation.name.startsWith('emote:')) continue;
+			const emoteId = animation.name.slice('emote:'.length);
 			if (!KNOWN_EMOTES.has(emoteId)) {
 				diagnostics.push({
 					severity: 'error',
 					spriteId: doc.id,
-					message: `sprite '${doc.id}' (role '${role}') has animation '${animationName}' for unknown emote '${emoteId}'`,
+					message: `sprite '${doc.id}' (role '${role}') has animation '${animation.name}' for unknown emote '${emoteId}'`,
 				});
 			}
+		}
+		// A form's first animation is the Default frame's owner (ADR 0037). Keeping
+		// idle first is a file-authoring convention now that Default is positional,
+		// so a non-idle lead is a WARNING (never an error) — a guard against the
+		// next sprite silently regressing the way buddy did.
+		if (doc.animations.length > 0 && doc.animations[0].name !== 'idle') {
+			diagnostics.push({
+				severity: 'warning',
+				spriteId: doc.id,
+				message: `sprite '${doc.id}' (role '${role}') should lead with the 'idle' animation — its Default frame is currently '${doc.animations[0].name}' frame 0`,
+			});
 		}
 	}
 	return diagnostics;

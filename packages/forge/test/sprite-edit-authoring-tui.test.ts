@@ -7,7 +7,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SCENE_PALETTE } from '@mmo/core/entities';
-import { parseSpriteFile, type SpriteDoc } from '@mmo/render';
+import {
+	allFrames,
+	findFrame,
+	parseSpriteFile,
+	type SpriteDoc,
+} from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
 import { selectFrame } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
@@ -90,7 +95,9 @@ describe('animation menu', () => {
 		for (const ch of 'wave') t.editor.key(seq(ch));
 		t.editor.key(key('return')); // confirm — action applied, menu stays open
 		await t.renderOnce();
-		expect(t.editor.state.doc.animations.wave).toBeDefined();
+		expect(
+			t.editor.state.doc.animations.find((a) => a.name === 'wave'),
+		).toBeDefined();
 		// The new animation is listed in the (still-open) menu.
 		expect(t.captureCharFrame()).toContain('wave');
 	});
@@ -119,7 +126,7 @@ describe('mouse-native anchors (ADR 0036)', () => {
 		expect(t.editor.state.doc.anchors.grip).toEqual({ x: 1, y: 1 });
 		// File-level: no override was authored on the Default frame.
 		expect(
-			t.editor.state.doc.frames.every((f) => f.anchors.grip === undefined),
+			allFrames(t.editor.state.doc).every((f) => f.anchors.grip === undefined),
 		).toBe(true);
 		// One undo step restores it.
 		t.editor.key(key('u'));
@@ -132,7 +139,7 @@ describe('mouse-native anchors (ADR 0036)', () => {
 			id: 'buddy',
 			role: 'form',
 		});
-		t.editor.state = selectFrame(t.editor.state, 'walk-0');
+		t.editor.state = selectFrame(t.editor.state, 'walk 0');
 		t.editor.key(key('return')); // focus the frame so its markers are on screen
 		await t.renderOnce();
 		// grip (4,2) is the bottom-most ✛ on screen; head (2,0) the top-most.
@@ -152,8 +159,7 @@ describe('mouse-native anchors (ADR 0036)', () => {
 		t.editor.mouseDown({ button: 0, x: grip.x, y: grip.y });
 		t.editor.mouseDrag({ button: 0, x: to.x, y: to.y });
 		t.editor.mouseUp();
-		const walk0 = () =>
-			t.editor.state.doc.frames.find((f) => f.name === 'walk-0');
+		const walk0 = () => findFrame(t.editor.state.doc, 'walk 0')?.frame;
 		expect(walk0()?.anchors.grip).toEqual({ x: 3, y: 2 });
 		expect(t.editor.state.doc.anchors.grip).toEqual({ x: 4, y: 2 }); // doc untouched
 		// Right-click the (amber, overridden) marker at its new cell clears it.
@@ -237,7 +243,7 @@ describe('mouse-native anchors (ADR 0036)', () => {
 			id: 'buddy',
 			role: 'form',
 		});
-		expect(t.captureCharFrame()).toContain('◈idle');
+		expect(t.captureCharFrame()).toContain('◈frame 0');
 	});
 });
 
@@ -256,7 +262,7 @@ describe('anchor marker', () => {
 		// A hat whose art fully lights the anchor cell — the marker at (0,0) sits
 		// over painted 'p' pixels, so its background must be the art's colour.
 		const { doc } = parseSpriteFile(
-			'{ "anchors": { "grip": [0, 0] } }\n--- idle\n██\n██\n',
+			'{ "anchors": { "grip": [0, 0] }, "animations": [{ "name": "idle" }] }\n--- idle\n██\n██\n',
 			'lit',
 		);
 		if (!doc) throw new Error('fixture failed to parse');
@@ -311,7 +317,10 @@ describe('mirror view', () => {
 		// ▐ (right half block) mirrors to ▌ (left half block). The fatbits main
 		// canvas paints the art as colour blocks; the mirror panel still renders
 		// glyphs, so its mirrored art shows as the ▌ glyph.
-		const { doc } = parseSpriteFile('--- idle\n▐·\n··\n', 'flag');
+		const { doc } = parseSpriteFile(
+			'{ "animations": [{ "name": "idle" }] }\n--- idle\n▐·\n··\n',
+			'flag',
+		);
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'flag', role: 'hat' });
 		// Isolate the mirror panel: the always-on floating preview (#393) otherwise
@@ -349,10 +358,11 @@ describe('mirror view', () => {
 });
 
 describe('playback', () => {
-	// A two-frame animation whose frames put a block in different cells.
+	// A two-frame animation whose frames put a block in different cells. In v2
+	// (ADR 0037) frames are unnamed — the 'idle' animation's two frames carry the
+	// positional labels 'idle 0' and 'idle 1'.
 	function animDoc(): SpriteDoc {
-		const frame = (name: string, lit: 0 | 1) => ({
-			name,
+		const frame = (lit: 0 | 1) => ({
 			rows: [lit === 0 ? '█ ' : ' █', '  '],
 			colors: [lit === 0 ? 'p ' : ' p', '  '],
 			bg: ['  ', '  '],
@@ -363,10 +373,8 @@ describe('playback', () => {
 			key: 'p',
 			baseline: 0,
 			anchors: {},
-			animations: { idle: ['a', 'b'] },
-			fps: { idle: 4 },
+			animations: [{ name: 'idle', fps: 4, frames: [frame(0), frame(1)] }],
 			colors: {},
-			frames: [frame('a', 0), frame('b', 1)],
 		};
 	}
 
@@ -417,16 +425,16 @@ describe('playback', () => {
 
 	test('a tick advances the displayed frame without mutating the doc', async () => {
 		const t = await mount({ doc: animDoc(), id: 'anim', role: 'hat' });
-		expect(t.editor.displayFrame).toBe('a');
+		expect(t.editor.displayFrame).toBe('idle 0');
 		const docBefore = t.editor.state.doc;
 		const histBefore = t.editor.state.history;
 
 		await clickRail(t, /\bplay\b/); // start animation playback
 		expect(t.editor.playing).toBe(true);
-		// 260ms at 4fps → floor(0.26*4)=1 → frame 'b'.
+		// 260ms at 4fps → floor(0.26*4)=1 → frame 'idle 1'.
 		t.editor.tick(260);
 		await t.renderOnce();
-		expect(t.editor.displayFrame).toBe('b');
+		expect(t.editor.displayFrame).toBe('idle 1');
 
 		// Playback is presentation only: the doc and history are untouched.
 		expect(t.editor.state.doc).toBe(docBefore);

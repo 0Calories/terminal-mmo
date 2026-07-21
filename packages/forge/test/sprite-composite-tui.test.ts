@@ -184,7 +184,7 @@ describe('forge sprite preview TUI', () => {
 		);
 		expect(t.preview.stanceId).toBe('idle');
 		t.preview.key(seq(']'));
-		expect(t.preview.stanceId).toBe('swing-0');
+		expect(t.preview.stanceId).toBe('swing 0');
 		t.preview.key(seq('['));
 		expect(t.preview.stanceId).toBe('idle');
 		// wraps backwards to the last phase the doc actually declares.
@@ -234,13 +234,13 @@ describe('reload on save', () => {
 			doc,
 		});
 		preview.key(seq(']')); // select the wind-up swing frame
-		expect(preview.stanceId).toBe('swing-0');
+		expect(preview.stanceId).toBe('swing 0');
 
 		// A save lands: the same doc reparsed. The selection survives.
 		const reparsed = loadDoc('sprites/weapons/sword.sprite', 'sword');
 		preview.reload(reparsed, null);
 		expect(preview.doc).toBe(reparsed);
-		expect(preview.stanceId).toBe('swing-0');
+		expect(preview.stanceId).toBe('swing 0');
 	});
 
 	test('reload with a parse error keeps the last-good doc and surfaces the error', async () => {

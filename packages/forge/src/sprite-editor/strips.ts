@@ -5,7 +5,7 @@
 // strips would occupy; `tui.ts` subtracts a scroll offset and clips. Hit-tests
 // invert the same geometry, so click-through Frame activation and the keyboard
 // cursor agree on where every Frame sits by construction.
-import type { SpriteDoc } from '@mmo/render';
+import { frameLabelAt, type SpriteDoc } from '@mmo/render';
 import { frameExtent } from './state';
 
 // Columns between frame blocks in a strip; blank rows between strips.
@@ -23,7 +23,11 @@ export const FPS_MAX = 30;
 // w×h cells is 2w×2h Pixels, each Pixel zoom×zoom cells on screen.
 export interface StripFrameBox {
 	readonly animation: string;
+	// The frame's canonical identity label (`<animation> <index>` / `<animation>`)
+	// — what selection and badge/active comparisons key on.
 	readonly name: string;
+	// The frame's index within its animation, for the `frame N` display label.
+	readonly index: number;
 	readonly x: number;
 	readonly y: number;
 	readonly w: number;
@@ -64,20 +68,6 @@ export interface StripsLayout {
 	readonly contentH: number;
 }
 
-// Every animation in doc order, then any frame no animation references as its own
-// implicit single-frame strip (the parser's implicit-animation rule).
-function stripSpecs(doc: SpriteDoc): { animation: string; frames: string[] }[] {
-	const specs = Object.entries(doc.animations).map(([animation, frames]) => ({
-		animation,
-		frames: [...frames],
-	}));
-	const referenced = new Set(specs.flatMap((s) => s.frames));
-	for (const f of doc.frames)
-		if (!referenced.has(f.name))
-			specs.push({ animation: f.name, frames: [f.name] });
-	return specs;
-}
-
 export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 	const labels: StripLabel[] = [];
 	const frames: StripFrameBox[] = [];
@@ -86,28 +76,29 @@ export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 	let y = 0;
 	let contentW = 0;
 
-	for (const spec of stripSpecs(doc)) {
-		const fps = doc.fps[spec.animation];
+	// Every animation is a strip, in doc order (ADR 0037: order lives in the data,
+	// the strips view is a pure mirror).
+	for (const animation of doc.animations) {
+		const fps = animation.fps;
 		// The label is just the animation name (the frame count and the static fps
 		// text moved out — the count is self-evident from the strip, the fps now
 		// lives on the interactive stepper).
-		const label = spec.animation;
+		const label = animation.name;
 		const labelY = y;
-		labels.push({ animation: spec.animation, y: labelY, text: label });
+		labels.push({ animation: animation.name, y: labelY, text: label });
 		contentW = Math.max(contentW, label.length);
 
 		const rowY = y + 1;
 		let x = 0;
 		let stripH = 1;
-		for (const name of spec.frames) {
-			const f = doc.frames.find((fr) => fr.name === name);
-			if (!f) continue;
+		animation.frames.forEach((f, index) => {
 			const { w, h } = frameExtent(f);
 			const pxW = Math.max(1, w * 2);
 			const pxH = Math.max(1, h * 2);
 			const box: StripFrameBox = {
-				animation: spec.animation,
-				name,
+				animation: animation.name,
+				name: frameLabelAt(animation, index),
+				index,
 				x,
 				y: rowY,
 				w: pxW * zoom,
@@ -118,7 +109,7 @@ export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 			frames.push(box);
 			stripH = Math.max(stripH, box.h);
 			x += box.w + FRAME_GAP;
-		}
+		});
 		// The strip's right edge: the last frame box's right edge (drop the trailing
 		// inter-frame gap the loop added).
 		const stripRight = Math.max(0, x - FRAME_GAP);
@@ -128,11 +119,11 @@ export function stripsLayout(doc: SpriteDoc, zoom: number): StripsLayout {
 		// The fps stepper rides the LABEL row, right-justified so its right edge
 		// meets the strip's right edge. On a strip too narrow for name + stepper it
 		// clamps to one space past the name (overhanging the edge) — never colliding.
-		if (spec.frames.length > 1) {
+		if (animation.frames.length > 1) {
 			const text = `‹ ${fps ?? DEFAULT_FPS}fps ›`;
 			const stepperX = Math.max(label.length + 1, stripRight - text.length);
 			steppers.push({
-				animation: spec.animation,
+				animation: animation.name,
 				y: labelY,
 				x: stepperX,
 				text,
@@ -235,21 +226,24 @@ export interface FocusTab {
 	readonly active: boolean;
 }
 
-// The tab row: ` idle │ walk │ jump ` with each name's rendered extent as a
-// click target.
+// The tab row for the current animation's frames: ` frame 0 │ frame 1 ` with each
+// tab's rendered extent as a click target (ADR 0037: frames are unnamed, so a tab
+// shows its `frame N` position). `frames` are the frames' identity labels in
+// order — carried on each tab for selection — while the rendered text is `frame
+// N` by position.
 export function focusTabs(
 	frames: readonly string[],
 	active: string,
 ): { text: string; tabs: FocusTab[] } {
 	const tabs: FocusTab[] = [];
 	let text = '';
-	for (const name of frames) {
+	frames.forEach((name, i) => {
 		if (text) text += ' │ ';
 		else text = ' ';
 		const x0 = text.length;
-		text += name;
+		text += `frame ${i}`;
 		tabs.push({ name, x0, x1: text.length, active: name === active });
-	}
+	});
 	return { text, tabs };
 }
 

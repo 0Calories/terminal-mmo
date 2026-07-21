@@ -193,6 +193,7 @@ describe('status + help chrome', () => {
 			id: 'buddy',
 			role: 'form',
 			frame: 'idle',
+			animation: 'idle',
 			frameIdx: 0,
 			frameCount: 3,
 			tool: 'paint',
@@ -205,8 +206,10 @@ describe('status + help chrome', () => {
 		});
 		expect(line).toContain('buddy');
 		expect(line).toContain('(form)');
+		// v2 (ADR 0037): frames are unnamed, so the status surfaces the animation
+		// and the frame's 1-based flat position, not a frame name.
 		expect(line).toContain('idle');
-		expect(line).toContain('[1/3]');
+		expect(line).toContain('frame 1/3');
 		expect(line).toContain('paint');
 		expect(line).toContain('×2');
 		expect(line).toContain('ink p');
@@ -279,12 +282,15 @@ describe('variant options — session hue/accent selector (spec #401, in the rai
 			key: 'g',
 			baseline: 0,
 			anchors: {},
-			animations: {},
-			fps: {},
-			colors: {},
-			frames: [
-				{ name: 'idle', rows: ['▘▘'], colors: [colors], bg: [bg], anchors: {} },
+			// v2 (ADR 0037): frames live inside the ordered animations array, not a
+			// top-level `frames`/`fps`/`animations` map.
+			animations: [
+				{
+					name: 'idle',
+					frames: [{ rows: ['▘▘'], colors: [colors], bg: [bg], anchors: {} }],
+				},
 			],
+			colors: {},
 		} as unknown as Parameters<typeof docDynamicUsage>[0];
 	}
 

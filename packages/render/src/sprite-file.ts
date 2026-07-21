@@ -1,8 +1,17 @@
-// The `.sprite` asset file format (ADR 0031): pure parse/serialize between
-// `.sprite` text (JSON header + named visible-glyph frame sections with
-// optional `@colors`/`@bg` grids) and a SpriteDoc. Grammar errors are
-// diagnostics, never throws. Parse <-> serialize round-trips losslessly for
-// any diagnostics-free document.
+// The `.sprite` asset file format (ADR 0031, v2 per ADR 0037): pure
+// parse/serialize between `.sprite` text (JSON header + unnamed visible-glyph
+// frame sections bound by `--- <animation> <index>`, with optional
+// `@colors`/`@bg` grids) and a SpriteDoc. Grammar errors are diagnostics, never
+// throws. Parse <-> serialize round-trips losslessly for any diagnostics-free
+// document.
+//
+// Format v2 (ADR 0037): the header's `animations` is an ordered ARRAY of
+// `{ name, fps?, anchors? }` objects — the single source of animation order and
+// metadata. Frames are unnamed: a grid section binds by `--- <animation>
+// <index>` (the index omitted for a single-frame animation), the frame count is
+// derived from the sections, and per-frame anchor overrides live on the owning
+// animation object keyed by frame index. The Default frame is frame 0 of the
+// first animation.
 import { type RGBAQuad, SCENE_PALETTE } from '@mmo/core/entities';
 import { SENTINEL } from './sprite';
 
@@ -13,11 +22,14 @@ import { SENTINEL } from './sprite';
 const RESERVED_KEYS = new Set(['p', 'a']);
 // The default color key applied to inked cells when a file declares none.
 const DEFAULT_KEY = 'p';
-const FRAME_NAME_RE = /^[A-Za-z0-9:_-]+$/;
+// Animation names share the identifier charset (letters, digits, `:_-`).
+const ANIMATION_NAME_RE = /^[A-Za-z0-9:_-]+$/;
 // The implied per-animation playback rate (EMOTE_FPS in @mmo/core): serialized
 // files omit fps entries equal to it.
 const DEFAULT_ANIMATION_FPS = 5;
-const SECTION_RE = /^---\s+(\S+)\s*$/;
+// A grid section header: `--- <animation>` (single-frame) or `--- <animation>
+// <index>` (one frame of a multi-frame animation).
+const SECTION_RE = /^---\s+(\S+)(?:\s+(\d+))?\s*$/;
 
 export type SpriteSeverity = 'error' | 'warning';
 
@@ -25,6 +37,9 @@ export interface SpriteDiagnostic {
 	severity: SpriteSeverity;
 	spriteId: string;
 	message: string;
+	// The section a diagnostic is about, as its `<animation> <index>` label (or
+	// bare `<animation>` for a single-frame animation) — frames are unnamed, so
+	// this is their positional identity, not a name.
 	frame?: string;
 	cell?: { x: number; y: number };
 }
@@ -34,12 +49,23 @@ export interface SpriteAnchor {
 	y: number;
 }
 
+// One unnamed frame: its glyph/colour/bg grids plus this frame's per-index anchor
+// overrides (empty when it inherits the doc-level anchors unchanged). Its
+// identity is its (animation, index) position, never a name.
 export interface SpriteFrameDoc {
-	name: string;
 	rows: readonly string[];
 	colors: readonly string[];
 	bg: readonly string[];
 	anchors: Readonly<Record<string, SpriteAnchor>>;
+}
+
+// One animation: an ordered, non-empty list of frames, an optional playback fps
+// (absent means the default rate), and its name. The array of these on a
+// SpriteDoc is the authority on animation order (ADR 0037).
+export interface SpriteAnimationDoc {
+	name: string;
+	fps?: number;
+	frames: readonly SpriteFrameDoc[];
 }
 
 export interface SpriteDoc {
@@ -51,10 +77,84 @@ export interface SpriteDoc {
 	// only the weapon compiler consumes it. Absent for non-weapon sprites.
 	accent?: string;
 	anchors: Readonly<Record<string, SpriteAnchor>>;
-	animations: Readonly<Record<string, readonly string[]>>;
-	fps: Readonly<Record<string, number>>;
+	animations: readonly SpriteAnimationDoc[];
 	colors: Readonly<Record<string, RGBAQuad>>;
-	frames: readonly SpriteFrameDoc[];
+}
+
+// The flat, in-order list of every frame across every animation — the shared
+// "all frames" view whole-file transforms (resize/crop/trim) and previews
+// iterate over. The Default frame is `allFrames(doc)[0]`.
+export function allFrames(doc: SpriteDoc): SpriteFrameDoc[] {
+	return doc.animations.flatMap((a) => a.frames);
+}
+
+// The Default frame — frame 0 of the first animation (ADR 0037) — or undefined
+// for a doc with no animations.
+export function defaultFrame(doc: SpriteDoc): SpriteFrameDoc | undefined {
+	return doc.animations[0]?.frames[0];
+}
+
+// A frame's positional identity within a doc: its owning animation, its index
+// there, and a canonical label — `<animation>` for a single-frame animation,
+// `<animation> <index>` otherwise, matching the `--- ...` section syntax. Frames
+// are unnamed (ADR 0037); this label is their stable string identity for UI and
+// the compiler's frame lookup.
+export interface FrameLocation {
+	animation: SpriteAnimationDoc;
+	index: number;
+	frame: SpriteFrameDoc;
+	label: string;
+}
+
+// The canonical label for frame `index` of `animation` (see FrameLocation).
+export function frameLabelAt(
+	animation: SpriteAnimationDoc,
+	index: number,
+): string {
+	return animation.frames.length === 1
+		? animation.name
+		: `${animation.name} ${index}`;
+}
+
+// Every frame's location, in doc order — the flat, labeled view of the doc.
+export function frameLocations(doc: SpriteDoc): FrameLocation[] {
+	const out: FrameLocation[] = [];
+	for (const animation of doc.animations) {
+		animation.frames.forEach((frame, index) => {
+			out.push({
+				animation,
+				index,
+				frame,
+				label: frameLabelAt(animation, index),
+			});
+		});
+	}
+	return out;
+}
+
+// Resolve a canonical frame label to its location, or undefined when no frame
+// carries it.
+export function findFrame(
+	doc: SpriteDoc,
+	label: string,
+): FrameLocation | undefined {
+	return frameLocations(doc).find((l) => l.label === label);
+}
+
+// Rebuild a doc's animations by mapping every frame through `fn`, preserving the
+// animation nesting. The one seam whole-file grid transforms pass through so they
+// never reason about the animation grouping.
+export function mapDocFrames(
+	doc: SpriteDoc,
+	fn: (frame: SpriteFrameDoc) => SpriteFrameDoc,
+): SpriteDoc {
+	return {
+		...doc,
+		animations: doc.animations.map((a) => ({
+			...a,
+			frames: a.frames.map(fn),
+		})),
+	};
 }
 
 // Where a diagnostic occurred within a sprite file, beyond the sprite itself.
@@ -164,15 +264,93 @@ function parseAnchorEntries(
 	return out;
 }
 
+// One declared animation from the header array: its name, optional fps, and its
+// per-frame-index anchor overrides (keyed by numeric index).
+interface HeaderAnimation {
+	name: string;
+	fps?: number;
+	overrides: Map<number, Record<string, SpriteAnchor>>;
+}
+
 interface ParsedHeader {
 	key: string;
 	baseline: number;
 	accent?: string;
 	anchors: Record<string, SpriteAnchor>;
-	explicitAnimations: Record<string, string[]>;
-	fpsRaw: Record<string, number>;
+	animations: HeaderAnimation[];
 	colors: Record<string, RGBAQuad>;
-	frameOverrides: Record<string, { anchors: Record<string, SpriteAnchor> }>;
+}
+
+function parseHeaderAnimations(
+	value: unknown,
+	report: Reporter,
+): HeaderAnimation[] {
+	const out: HeaderAnimation[] = [];
+	if (!Array.isArray(value)) {
+		report('error', "invalid 'animations': expected an array");
+		return out;
+	}
+	const seen = new Set<string>();
+	for (const entry of value) {
+		if (!isPlainObject(entry)) {
+			report('error', 'invalid animation entry: expected an object');
+			continue;
+		}
+		const name = entry.name;
+		if (typeof name !== 'string' || !ANIMATION_NAME_RE.test(name)) {
+			report(
+				'error',
+				`invalid animation name '${String(name)}' (${ANIMATION_NAME_RE.source})`,
+			);
+			continue;
+		}
+		if (seen.has(name)) {
+			report('error', `duplicate animation '${name}'`);
+			continue;
+		}
+		seen.add(name);
+
+		for (const k of Object.keys(entry)) {
+			if (k !== 'name' && k !== 'fps' && k !== 'anchors')
+				report('warning', `unknown field '${k}' in animation '${name}'`);
+		}
+
+		let fps: number | undefined;
+		if (entry.fps !== undefined) {
+			if (
+				typeof entry.fps === 'number' &&
+				Number.isFinite(entry.fps) &&
+				entry.fps > 0
+			)
+				fps = entry.fps;
+			else report('error', `invalid fps for animation '${name}'`);
+		}
+
+		const overrides = new Map<number, Record<string, SpriteAnchor>>();
+		if (entry.anchors !== undefined) {
+			if (isPlainObject(entry.anchors)) {
+				for (const [idxKey, v] of Object.entries(entry.anchors)) {
+					const idx = Number(idxKey);
+					if (!Number.isInteger(idx) || idx < 0 || String(idx) !== idxKey) {
+						report(
+							'error',
+							`invalid frame index '${idxKey}' in animation '${name}' anchors`,
+						);
+						continue;
+					}
+					overrides.set(
+						idx,
+						parseAnchorEntries(v, report, `${name}[${idx}].anchors`),
+					);
+				}
+			} else {
+				report('error', `invalid 'anchors' for animation '${name}'`);
+			}
+		}
+
+		out.push({ name, ...(fps !== undefined ? { fps } : {}), overrides });
+	}
+	return out;
 }
 
 function parseHeaderObject(
@@ -185,9 +363,7 @@ function parseHeaderObject(
 		'accent',
 		'anchors',
 		'animations',
-		'fps',
 		'colors',
-		'frames',
 		'id',
 	]);
 	for (const k of Object.keys(header)) {
@@ -243,39 +419,10 @@ function parseHeaderObject(
 			? parseAnchorEntries(header.anchors, report, "'anchors'")
 			: {};
 
-	const explicitAnimations: Record<string, string[]> = {};
-	if (header.animations !== undefined) {
-		if (isPlainObject(header.animations)) {
-			for (const [name, list] of Object.entries(header.animations)) {
-				if (
-					Array.isArray(list) &&
-					list.length > 0 &&
-					list.every((v) => typeof v === 'string')
-				) {
-					explicitAnimations[name] = list as string[];
-				} else {
-					report('error', `invalid animation entry '${name}'`);
-				}
-			}
-		} else {
-			report('error', "invalid 'animations': expected an object");
-		}
-	}
-
-	const fpsRaw: Record<string, number> = {};
-	if (header.fps !== undefined) {
-		if (isPlainObject(header.fps)) {
-			for (const [name, v] of Object.entries(header.fps)) {
-				if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
-					fpsRaw[name] = v;
-				} else {
-					report('error', `invalid fps entry '${name}'`);
-				}
-			}
-		} else {
-			report('error', "invalid 'fps': expected an object");
-		}
-	}
+	const animations =
+		header.animations !== undefined
+			? parseHeaderAnimations(header.animations, report)
+			: [];
 
 	const colors: Record<string, RGBAQuad> = {};
 	if (header.colors !== undefined) {
@@ -307,37 +454,13 @@ function parseHeaderObject(
 		}
 	}
 
-	const frameOverrides: Record<
-		string,
-		{ anchors: Record<string, SpriteAnchor> }
-	> = {};
-	if (header.frames !== undefined) {
-		if (isPlainObject(header.frames)) {
-			for (const [name, v] of Object.entries(header.frames)) {
-				if (isPlainObject(v)) {
-					const overrideAnchors =
-						v.anchors !== undefined
-							? parseAnchorEntries(v.anchors, report, `frames.${name}.anchors`)
-							: {};
-					frameOverrides[name] = { anchors: overrideAnchors };
-				} else {
-					report('error', `invalid frames override entry '${name}'`);
-				}
-			}
-		} else {
-			report('error', "invalid 'frames': expected an object");
-		}
-	}
-
 	return {
 		key,
 		baseline,
 		...(accent !== undefined ? { accent } : {}),
 		anchors,
-		explicitAnimations,
-		fpsRaw,
+		animations,
 		colors,
-		frameOverrides,
 	};
 }
 
@@ -346,6 +469,22 @@ function knownColorKey(
 	fileColors: Record<string, RGBAQuad>,
 ): boolean {
 	return k in SCENE_PALETTE || RESERVED_KEYS.has(k) || k in fileColors;
+}
+
+// The glyph/colour/bg grids of one parsed section (anchors resolved later).
+interface SectionGrids {
+	rows: string[];
+	colors: string[];
+	bg: string[];
+}
+
+// A raw parsed section header before it is bound to an animation frame.
+interface RawSection {
+	animation: string;
+	index: number | null;
+	label: string;
+	contentStart: number;
+	contentEnd: number;
 }
 
 export function parseSpriteFile(
@@ -388,254 +527,175 @@ export function parseSpriteFile(
 		report,
 	);
 
-	// Locate every section start.
-	const sectionStarts: { idx: number; name: string }[] = [];
+	// Locate every section start and its (animation, index) binding.
+	const rawSections: RawSection[] = [];
 	for (let i = 0; i < lines.length; i++) {
 		const m = SECTION_RE.exec(lines[i]);
-		if (m) sectionStarts.push({ idx: i, name: m[1] });
+		if (!m) continue;
+		const animation = m[1];
+		const index = m[2] !== undefined ? Number(m[2]) : null;
+		const label = index === null ? animation : `${animation} ${index}`;
+		rawSections.push({
+			animation,
+			index,
+			label,
+			contentStart: i + 1,
+			contentEnd: lines.length,
+		});
+	}
+	for (let s = 0; s < rawSections.length; s++) {
+		rawSections[s].contentEnd =
+			s + 1 < rawSections.length
+				? rawSections[s + 1].contentStart - 1
+				: lines.length;
 	}
 
-	const seen = new Set<string>();
-	const frames: SpriteFrameDoc[] = [];
-
-	for (let s = 0; s < sectionStarts.length; s++) {
-		const { idx, name } = sectionStarts[s];
-		if (seen.has(name)) {
-			report('error', `duplicate frame section '${name}'`, { frame: name });
-			continue;
-		}
-		seen.add(name);
-
-		if (!FRAME_NAME_RE.test(name)) {
-			report('error', `invalid frame name '${name}'`, { frame: name });
-		}
-
-		const contentEnd =
-			s + 1 < sectionStarts.length ? sectionStarts[s + 1].idx : lines.length;
-		const content = lines.slice(idx + 1, contentEnd);
-		const split = splitSection(content);
-
-		if (split.duplicateColors) {
-			report('error', '@colors appears more than once in this section', {
-				frame: name,
-			});
-		}
-		if (split.duplicateBg) {
-			report('error', '@bg appears more than once in this section', {
-				frame: name,
-			});
-		}
-
-		const artRaw = gridFromLines(split.artLines);
-		const h = artRaw.length;
-		const w = h > 0 ? artRaw[0].length : 0;
-		if (h === 0 || w === 0) {
-			report('error', `empty frame '${name}'`, { frame: name });
-			continue;
-		}
-		const artRows = artRaw.map((row) =>
-			Array.from(row, (ch) => (ch === SENTINEL || ch === ' ' ? ' ' : ch)).join(
-				'',
-			),
+	// Parse each section's grids, keyed by its label.
+	const gridsByLabel = new Map<string, SectionGrids>();
+	for (const sec of rawSections) {
+		const grids = parseSectionGrids(
+			lines.slice(sec.contentStart, sec.contentEnd),
+			sec.label,
+			header,
+			report,
 		);
+		if (grids !== null) gridsByLabel.set(sec.label, grids);
+	}
 
-		// Colors grid.
-		let colorsGrid: string[] | null = null;
-		if (split.colorsLines !== null) {
-			const raw = gridFromLines(split.colorsLines);
-			const ch = raw.length;
-			const cw = ch > 0 ? raw[0].length : 0;
-			if (ch !== h || cw !== w) {
-				report(
-					'error',
-					`@colors grid dimensions (${cw}x${ch}) do not match art (${w}x${h})`,
-					{ frame: name },
-				);
-			} else {
-				colorsGrid = raw;
-			}
+	// Bind sections to their declared animations. A section naming an animation
+	// the header does not declare is an error (ADR 0037 rejects the "sections mint
+	// animations" alternative). Group the valid sections per animation.
+	const declared = new Map(header.animations.map((a) => [a.name, a]));
+	const sectionsByAnimation = new Map<string, RawSection[]>();
+	for (const sec of rawSections) {
+		if (!declared.has(sec.animation)) {
+			report(
+				'error',
+				`section '${sec.label}' references undeclared animation '${sec.animation}'`,
+				{ frame: sec.label },
+			);
+			continue;
 		}
-		const colorRows: string[] = [];
-		for (let y = 0; y < h; y++) {
-			let rowOut = '';
-			for (let x = 0; x < w; x++) {
-				const artInked = artRows[y][x] !== ' ';
-				if (colorsGrid === null) {
-					rowOut += artInked ? header.key : ' ';
-					continue;
-				}
-				const raw = colorsGrid[y][x];
-				const isBlank = raw === SENTINEL || raw === ' ';
-				if (artInked) {
-					const finalKey = isBlank ? header.key : raw;
-					if (!isBlank && !knownColorKey(raw, header.colors)) {
-						report('warning', `unknown color key '${raw}'`, {
-							frame: name,
-							cell: { x, y },
-						});
-					}
-					rowOut += finalKey;
-				} else {
-					if (!isBlank) {
-						report('warning', `color key on transparent cell '${raw}'`, {
-							frame: name,
-							cell: { x, y },
-						});
-					}
-					rowOut += ' ';
-				}
-			}
-			colorRows.push(rowOut);
-		}
+		const list = sectionsByAnimation.get(sec.animation) ?? [];
+		list.push(sec);
+		sectionsByAnimation.set(sec.animation, list);
+	}
 
-		// Bg grid.
-		let bgGrid: string[] | null = null;
-		if (split.bgLines !== null) {
-			const raw = gridFromLines(split.bgLines);
-			const bh = raw.length;
-			const bw = bh > 0 ? raw[0].length : 0;
-			if (bh !== h || bw !== w) {
-				report(
-					'error',
-					`@bg grid dimensions (${bw}x${bh}) do not match art (${w}x${h})`,
-					{ frame: name },
-				);
-			} else {
-				bgGrid = raw;
-			}
+	const animations: SpriteAnimationDoc[] = [];
+	for (const decl of header.animations) {
+		const secs = sectionsByAnimation.get(decl.name) ?? [];
+		if (secs.length === 0) {
+			report('error', `animation '${decl.name}' has no frame sections`);
+			continue;
 		}
-		const bgRows: string[] = [];
-		for (let y = 0; y < h; y++) {
-			let rowOut = '';
-			for (let x = 0; x < w; x++) {
-				if (bgGrid === null) {
-					rowOut += ' ';
-					continue;
-				}
-				const artInked = artRows[y][x] !== ' ';
-				const raw = bgGrid[y][x];
-				const isBlank = raw === SENTINEL || raw === ' ';
-				if (isBlank) {
-					rowOut += ' ';
-				} else if (artInked) {
-					if (!knownColorKey(raw, header.colors)) {
-						report('warning', `unknown color key '${raw}'`, {
-							frame: name,
-							cell: { x, y },
-						});
-					}
-					rowOut += raw;
-				} else {
+		// Resolve each section to a frame index. A single bare section is frame 0;
+		// otherwise every section must carry an explicit, contiguous index from 0.
+		const byIndex = new Map<number, RawSection>();
+		let indexError = false;
+		if (secs.length === 1 && secs[0].index === null) {
+			byIndex.set(0, secs[0]);
+		} else {
+			for (const sec of secs) {
+				if (sec.index === null) {
 					report(
 						'error',
-						`bg key on transparent cell (${x},${y}) is inexpressible`,
-						{ frame: name, cell: { x, y } },
+						`animation '${decl.name}' has multiple frames, so section '${sec.label}' needs an index`,
+						{ frame: sec.label },
 					);
-					rowOut += ' ';
+					indexError = true;
+					continue;
+				}
+				if (byIndex.has(sec.index)) {
+					report('error', `duplicate frame '${sec.label}'`, {
+						frame: sec.label,
+					});
+					indexError = true;
+					continue;
+				}
+				byIndex.set(sec.index, sec);
+			}
+		}
+		if (indexError) continue;
+		const count = byIndex.size;
+		let contiguous = true;
+		for (let i = 0; i < count; i++) {
+			if (!byIndex.has(i)) {
+				report(
+					'error',
+					`animation '${decl.name}' has non-contiguous frame indices (missing index ${i})`,
+				);
+				contiguous = false;
+				break;
+			}
+		}
+		if (!contiguous) continue;
+
+		const frames: SpriteFrameDoc[] = [];
+		let allGridsPresent = true;
+		for (let i = 0; i < count; i++) {
+			const sec = byIndex.get(i) as RawSection;
+			const grids = gridsByLabel.get(sec.label);
+			if (grids === undefined) {
+				// The section's grids failed to parse (e.g. empty frame) — already
+				// reported; drop the whole animation to keep indices contiguous.
+				allGridsPresent = false;
+				break;
+			}
+			const overrides = decl.overrides.get(i) ?? {};
+			for (const anchorName of Object.keys(overrides)) {
+				if (!(anchorName in header.anchors)) {
+					report('warning', `override of undeclared anchor '${anchorName}'`, {
+						frame: sec.label,
+					});
 				}
 			}
-			bgRows.push(rowOut);
+			frames.push({
+				rows: grids.rows,
+				colors: grids.colors,
+				bg: grids.bg,
+				anchors: overrides,
+			});
+		}
+		if (!allGridsPresent) continue;
+
+		// A per-index override pointing past the frame count is a dropped typo.
+		for (const idx of decl.overrides.keys()) {
+			if (idx >= count) {
+				report(
+					'warning',
+					`anchor override for missing frame index ${idx} in animation '${decl.name}'`,
+				);
+			}
 		}
 
-		frames.push({
-			name,
-			rows: artRows,
-			colors: colorRows,
-			bg: bgRows,
-			anchors: {},
+		animations.push({
+			name: decl.name,
+			...(decl.fps !== undefined ? { fps: decl.fps } : {}),
+			frames,
 		});
 	}
 
-	if (frames.length === 0) {
-		report('error', 'no valid frame sections');
+	if (animations.length === 0) {
+		report('error', 'no valid animations');
 		return { doc: null, diagnostics };
 	}
 
-	const frameNames = new Set(frames.map((f) => f.name));
-
-	// Resolve frame anchor overrides from the header `frames` field.
-	const overridesByFrame = new Map<string, Record<string, SpriteAnchor>>();
-	for (const [name, entry] of Object.entries(header.frameOverrides)) {
-		if (!frameNames.has(name)) {
-			report('warning', `'frames' override for missing frame '${name}'`, {
-				frame: name,
-			});
-			continue;
-		}
-		for (const anchorName of Object.keys(entry.anchors)) {
-			if (!(anchorName in header.anchors)) {
-				report('warning', `override of undeclared anchor '${anchorName}'`, {
-					frame: name,
-				});
-			}
-		}
-		overridesByFrame.set(name, entry.anchors);
-	}
-
-	const finalFrames: SpriteFrameDoc[] = frames.map((f) => {
-		const overrides = overridesByFrame.get(f.name) ?? {};
-		return { ...f, anchors: overrides };
-	});
-
 	// Anchor bounds check (effective = file-level merged with frame overrides).
-	for (const f of finalFrames) {
-		const effective = { ...header.anchors, ...f.anchors };
-		const h = f.rows.length;
-		const w = h > 0 ? f.rows[0].length : 0;
-		for (const [anchorName, a] of Object.entries(effective)) {
-			// Anchors are offsets and may be any integer; a value outside the art
-			// bounds (either direction) is still worth a typo-guard warning, but a
-			// grip-style anchor on a weapon legitimately trips it.
-			if (a.x < 0 || a.y < 0 || a.x >= w || a.y >= h) {
-				report('warning', `anchor '${anchorName}' out of bounds`, {
-					frame: f.name,
-					cell: { x: a.x, y: a.y },
-				});
+	for (const a of animations) {
+		a.frames.forEach((f, i) => {
+			const effective = { ...header.anchors, ...f.anchors };
+			const h = f.rows.length;
+			const w = h > 0 ? f.rows[0].length : 0;
+			const label = a.frames.length === 1 ? a.name : `${a.name} ${i}`;
+			for (const [anchorName, anc] of Object.entries(effective)) {
+				if (anc.x < 0 || anc.y < 0 || anc.x >= w || anc.y >= h) {
+					report('warning', `anchor '${anchorName}' out of bounds`, {
+						frame: label,
+						cell: { x: anc.x, y: anc.y },
+					});
+				}
 			}
-		}
-	}
-
-	// Animation resolution: explicit animations (filtered against real frames), then
-	// implicit single-frame animations for every frame not consumed by an
-	// explicit animation (by name or by reference).
-	const explicitAnimations: Record<string, string[]> = {};
-	for (const [animationName, list] of Object.entries(
-		header.explicitAnimations,
-	)) {
-		const filtered: string[] = [];
-		for (const frameName of list) {
-			if (frameNames.has(frameName)) {
-				filtered.push(frameName);
-			} else {
-				report(
-					'error',
-					`animation '${animationName}' references missing frame '${frameName}'`,
-				);
-			}
-		}
-		if (filtered.length > 0) explicitAnimations[animationName] = filtered;
-	}
-
-	const excluded = new Set<string>();
-	for (const [animationName, list] of Object.entries(explicitAnimations)) {
-		excluded.add(animationName);
-		for (const frameName of list) excluded.add(frameName);
-	}
-
-	const animations: Record<string, readonly string[]> = {
-		...explicitAnimations,
-	};
-	for (const f of finalFrames) {
-		if (!excluded.has(f.name)) animations[f.name] = [f.name];
-	}
-
-	const fps: Record<string, number> = {};
-	for (const [animationName, v] of Object.entries(header.fpsRaw)) {
-		if (animationName in animations) {
-			fps[animationName] = v;
-		} else {
-			report('warning', `fps for unknown animation '${animationName}'`);
-		}
+		});
 	}
 
 	const doc: SpriteDoc = {
@@ -645,12 +705,144 @@ export function parseSpriteFile(
 		...(header.accent !== undefined ? { accent: header.accent } : {}),
 		anchors: header.anchors,
 		animations,
-		fps,
 		colors: header.colors,
-		frames: finalFrames,
 	};
 
 	return { doc, diagnostics };
+}
+
+// Parse one section's content into resolved glyph/colour/bg grids, or null when
+// the frame is empty (reported). Split out so the parse loop stays readable.
+function parseSectionGrids(
+	content: readonly string[],
+	label: string,
+	header: ParsedHeader,
+	report: Reporter,
+): SectionGrids | null {
+	const split = splitSection(content);
+	if (split.duplicateColors) {
+		report('error', '@colors appears more than once in this section', {
+			frame: label,
+		});
+	}
+	if (split.duplicateBg) {
+		report('error', '@bg appears more than once in this section', {
+			frame: label,
+		});
+	}
+
+	const artRaw = gridFromLines(split.artLines);
+	const h = artRaw.length;
+	const w = h > 0 ? artRaw[0].length : 0;
+	if (h === 0 || w === 0) {
+		report('error', `empty frame '${label}'`, { frame: label });
+		return null;
+	}
+	const artRows = artRaw.map((row) =>
+		Array.from(row, (ch) => (ch === SENTINEL || ch === ' ' ? ' ' : ch)).join(
+			'',
+		),
+	);
+
+	// Colors grid.
+	let colorsGrid: string[] | null = null;
+	if (split.colorsLines !== null) {
+		const raw = gridFromLines(split.colorsLines);
+		const ch = raw.length;
+		const cw = ch > 0 ? raw[0].length : 0;
+		if (ch !== h || cw !== w) {
+			report(
+				'error',
+				`@colors grid dimensions (${cw}x${ch}) do not match art (${w}x${h})`,
+				{ frame: label },
+			);
+		} else {
+			colorsGrid = raw;
+		}
+	}
+	const colorRows: string[] = [];
+	for (let y = 0; y < h; y++) {
+		let rowOut = '';
+		for (let x = 0; x < w; x++) {
+			const artInked = artRows[y][x] !== ' ';
+			if (colorsGrid === null) {
+				rowOut += artInked ? header.key : ' ';
+				continue;
+			}
+			const raw = colorsGrid[y][x];
+			const isBlank = raw === SENTINEL || raw === ' ';
+			if (artInked) {
+				const finalKey = isBlank ? header.key : raw;
+				if (!isBlank && !knownColorKey(raw, header.colors)) {
+					report('warning', `unknown color key '${raw}'`, {
+						frame: label,
+						cell: { x, y },
+					});
+				}
+				rowOut += finalKey;
+			} else {
+				if (!isBlank) {
+					report('warning', `color key on transparent cell '${raw}'`, {
+						frame: label,
+						cell: { x, y },
+					});
+				}
+				rowOut += ' ';
+			}
+		}
+		colorRows.push(rowOut);
+	}
+
+	// Bg grid.
+	let bgGrid: string[] | null = null;
+	if (split.bgLines !== null) {
+		const raw = gridFromLines(split.bgLines);
+		const bh = raw.length;
+		const bw = bh > 0 ? raw[0].length : 0;
+		if (bh !== h || bw !== w) {
+			report(
+				'error',
+				`@bg grid dimensions (${bw}x${bh}) do not match art (${w}x${h})`,
+				{ frame: label },
+			);
+		} else {
+			bgGrid = raw;
+		}
+	}
+	const bgRows: string[] = [];
+	for (let y = 0; y < h; y++) {
+		let rowOut = '';
+		for (let x = 0; x < w; x++) {
+			if (bgGrid === null) {
+				rowOut += ' ';
+				continue;
+			}
+			const artInked = artRows[y][x] !== ' ';
+			const raw = bgGrid[y][x];
+			const isBlank = raw === SENTINEL || raw === ' ';
+			if (isBlank) {
+				rowOut += ' ';
+			} else if (artInked) {
+				if (!knownColorKey(raw, header.colors)) {
+					report('warning', `unknown color key '${raw}'`, {
+						frame: label,
+						cell: { x, y },
+					});
+				}
+				rowOut += raw;
+			} else {
+				report(
+					'error',
+					`bg key on transparent cell (${x},${y}) is inexpressible`,
+					{ frame: label, cell: { x, y } },
+				);
+				rowOut += ' ';
+			}
+		}
+		bgRows.push(rowOut);
+	}
+
+	return { rows: artRows, colors: colorRows, bg: bgRows };
 }
 
 function toGlyphRow(row: string): string {
@@ -658,18 +850,20 @@ function toGlyphRow(row: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Header formatting (ADR 0036): saves must not churn hand-compacted headers.
-// The emitted style is deterministic: the header object lists one field per
-// tab-indented line; every VALUE renders inline when its whole line fits the
+// Header formatting (ADR 0036/0037): saves must not churn hand-compacted
+// headers. The emitted style is deterministic: the header object lists one field
+// per tab-indented line; every VALUE renders inline when its whole line fits the
 // width budget, otherwise its object expands one entry per line (recursively);
-// arrays — anchor coordinates, frame lists, colours — are ALWAYS single-line.
+// arrays — anchor coordinates, colours, and the animations array — expand one
+// element per line when the whole array would overflow, else stay inline. Each
+// animation object stays on ONE line (ADR 0037's compact-header discipline).
 // ---------------------------------------------------------------------------
 
 const HEADER_LINE_BUDGET = 78;
 
 function inlineJson(value: unknown): string {
 	if (Array.isArray(value))
-		return `[${value.map((v) => JSON.stringify(v)).join(', ')}]`;
+		return `[${value.map((v) => inlineJson(v)).join(', ')}]`;
 	if (typeof value === 'object' && value !== null) {
 		const entries = Object.entries(value as Record<string, unknown>);
 		if (entries.length === 0) return '{}';
@@ -683,11 +877,20 @@ function inlineJson(value: unknown): string {
 
 function headerValue(value: unknown, indent: string): string {
 	const inline = inlineJson(value);
-	if (
-		indent.length + inline.length <= HEADER_LINE_BUDGET ||
-		Array.isArray(value)
-	)
+	if (indent.length + inline.length <= HEADER_LINE_BUDGET) return inline;
+	// An overflowing array of objects (the animations array) expands one element
+	// per line, each element still inline. A plain coordinate/colour array never
+	// reaches here (those fit the budget); if one somehow does, keep it inline.
+	if (Array.isArray(value)) {
+		if (value.every((v) => isPlainObject(v) || Array.isArray(v))) {
+			const inner = `${indent}\t`;
+			const body = value
+				.map((v) => `${inner}${headerValue(v, inner)}`)
+				.join(',\n');
+			return `[\n${body}\n${indent}]`;
+		}
 		return inline;
+	}
 	if (typeof value === 'object' && value !== null) {
 		const entries = Object.entries(value as Record<string, unknown>);
 		if (entries.length === 0) return '{}';
@@ -707,36 +910,22 @@ function formatHeader(header: Record<string, unknown>): string {
 	return `{\n${body}\n}`;
 }
 
-// Canonical animation order (ADR 0035): idle, walk, jump surface first so every
-// form's file (and the strips view mirroring it) leads with its required core;
-// everything else keeps its existing relative order.
-const CANONICAL_LEADS = ['idle', 'walk', 'jump'] as const;
-
-function canonicalAnimationNames(doc: SpriteDoc): string[] {
-	const names = Object.keys(doc.animations);
-	const leads = CANONICAL_LEADS.filter((n) => names.includes(n));
-	return [...leads, ...names.filter((n) => !leads.includes(n as never))];
-}
-
-// Frame sections in canonical order: each animation's frames in list order,
-// deduped (a frame shared by two animations serializes once, at its first use).
-// A frame referenced by no animation cannot occur (the parser makes it an
-// implicit single-frame animation), but keep any stragglers at the tail.
-function canonicalFrames(doc: SpriteDoc): SpriteFrameDoc[] {
-	const byName = new Map(doc.frames.map((f) => [f.name, f]));
-	const out: SpriteFrameDoc[] = [];
-	const seen = new Set<string>();
-	for (const animation of canonicalAnimationNames(doc)) {
-		for (const name of doc.animations[animation]) {
-			const frame = byName.get(name);
-			if (frame !== undefined && !seen.has(name)) {
-				seen.add(name);
-				out.push(frame);
-			}
-		}
-	}
-	for (const f of doc.frames) if (!seen.has(f.name)) out.push(f);
-	return out;
+// The header `animations` array: one object per animation, in doc order, each
+// carrying its name, any non-default fps, and any per-index anchor overrides.
+function serializeAnimations(doc: SpriteDoc): Record<string, unknown>[] {
+	return doc.animations.map((a) => {
+		const obj: Record<string, unknown> = { name: a.name };
+		if (a.fps !== undefined && a.fps !== DEFAULT_ANIMATION_FPS) obj.fps = a.fps;
+		const overrides: Record<string, unknown> = {};
+		a.frames.forEach((f, i) => {
+			if (Object.keys(f.anchors).length === 0) return;
+			overrides[String(i)] = Object.fromEntries(
+				Object.entries(f.anchors).map(([n, anc]) => [n, [anc.x, anc.y]]),
+			);
+		});
+		if (Object.keys(overrides).length > 0) obj.anchors = overrides;
+		return obj;
+	});
 }
 
 export function serializeSpriteFile(doc: SpriteDoc): string {
@@ -749,64 +938,44 @@ export function serializeSpriteFile(doc: SpriteDoc): string {
 			Object.entries(doc.anchors).map(([n, a]) => [n, [a.x, a.y]]),
 		);
 	}
-	const explicitAnimations = Object.fromEntries(
-		canonicalAnimationNames(doc)
-			.map((name) => [name, doc.animations[name]] as const)
-			.filter(([name, list]) => !(list.length === 1 && list[0] === name)),
-	);
-	if (Object.keys(explicitAnimations).length > 0)
-		header.animations = explicitAnimations;
-	// The default rate is implied — an entry equal to it is dropped so files
-	// stay clean under the editor's fps stepper (ADR 0035; EMOTE_FPS in core).
-	const fps = Object.fromEntries(
-		Object.entries(doc.fps).filter(([, v]) => v !== DEFAULT_ANIMATION_FPS),
-	);
-	if (Object.keys(fps).length > 0) header.fps = fps;
+	// The animations array is always present — it is the authority on order and
+	// the exhaustive frame binding (ADR 0037).
+	header.animations = serializeAnimations(doc);
 	if (Object.keys(doc.colors).length > 0) {
 		header.colors = Object.fromEntries(
 			Object.entries(doc.colors).map(([k, q]) => [k, [q[0], q[1], q[2], q[3]]]),
 		);
 	}
-	const frameOverrides = Object.fromEntries(
-		doc.frames
-			.filter((f) => Object.keys(f.anchors).length > 0)
-			.map((f) => [
-				f.name,
-				{
-					anchors: Object.fromEntries(
-						Object.entries(f.anchors).map(([n, a]) => [n, [a.x, a.y]]),
-					),
-				},
-			]),
-	);
-	if (Object.keys(frameOverrides).length > 0) header.frames = frameOverrides;
 
 	const lines: string[] = [];
-	if (Object.keys(header).length > 0) {
-		lines.push(...formatHeader(header).split('\n'));
-	}
+	lines.push(...formatHeader(header).split('\n'));
 
-	for (const frame of canonicalFrames(doc)) {
-		lines.push(`--- ${frame.name}`);
-		for (const row of frame.rows) lines.push(toGlyphRow(row));
+	for (const animation of doc.animations) {
+		const single = animation.frames.length === 1;
+		animation.frames.forEach((frame, i) => {
+			lines.push(
+				single ? `--- ${animation.name}` : `--- ${animation.name} ${i}`,
+			);
+			for (const row of frame.rows) lines.push(toGlyphRow(row));
 
-		const needColors = frame.rows.some((row, y) =>
-			Array.from(row).some(
-				(ch, x) => ch !== ' ' && frame.colors[y][x] !== doc.key,
-			),
-		);
-		if (needColors) {
-			lines.push('@colors');
-			for (const row of frame.colors) lines.push(toGlyphRow(row));
-		}
+			const needColors = frame.rows.some((row, y) =>
+				Array.from(row).some(
+					(ch, x) => ch !== ' ' && frame.colors[y][x] !== doc.key,
+				),
+			);
+			if (needColors) {
+				lines.push('@colors');
+				for (const row of frame.colors) lines.push(toGlyphRow(row));
+			}
 
-		const needBg = frame.bg.some((row) =>
-			Array.from(row).some((ch) => ch !== ' '),
-		);
-		if (needBg) {
-			lines.push('@bg');
-			for (const row of frame.bg) lines.push(toGlyphRow(row));
-		}
+			const needBg = frame.bg.some((row) =>
+				Array.from(row).some((ch) => ch !== ' '),
+			);
+			if (needBg) {
+				lines.push('@bg');
+				for (const row of frame.bg) lines.push(toGlyphRow(row));
+			}
+		});
 	}
 
 	return `${lines.join('\n')}\n`;

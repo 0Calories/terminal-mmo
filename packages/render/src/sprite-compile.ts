@@ -3,7 +3,12 @@
 import type { AnimationId } from '@mmo/core/sprites';
 import type { BodySprite } from './body-sprite';
 import { SENTINEL, Sprite } from './sprite';
-import type { SpriteDoc, SpriteFrameDoc } from './sprite-file';
+import {
+	defaultFrame,
+	findFrame,
+	type SpriteDoc,
+	type SpriteFrameDoc,
+} from './sprite-file';
 import { WEAPON_ACCENT_KEY, type WeaponSprite } from './weapon-sprite';
 
 function toGlyphText(rows: readonly string[]): string {
@@ -23,58 +28,45 @@ function toGridText(rows: readonly string[]): string | undefined {
 	return rows.map((row) => row.replaceAll(' ', SENTINEL)).join('\n');
 }
 
-function selectFrame(doc: SpriteDoc, frameName: string): SpriteFrameDoc {
-	const frame = doc.frames.find((f) => f.name === frameName);
-	if (frame !== undefined) return frame;
-	if (doc.frames.length === 0) {
-		throw new Error(`sprite doc '${doc.id}' has no frames`);
-	}
-	return doc.frames[0];
-}
-
-export function spriteFromDoc(doc: SpriteDoc, frameName = 'idle'): Sprite {
-	const frame = selectFrame(doc, frameName);
-
-	// The full effective anchor map — doc-level overlaid with the frame's own
-	// overrides, frame wins — same rule as compileFrameSprite. Carrying only
-	// grip here silently dropped every other frame-level override (e.g. a
-	// head override never moved the hat in the composited preview).
+// Compile a specific frame object into a runtime Sprite carrying its effective
+// anchors (doc-level anchors overlaid with the frame's own per-index overrides —
+// frame wins). The baseline is a whole-form property, so per-frame Sprites keep
+// the 0 default (BodySprite carries the real baseline); pass `withBaseline` for
+// the standalone previews (`spriteFromDoc`) that render the frame directly.
+function frameSprite(
+	doc: SpriteDoc,
+	frame: SpriteFrameDoc,
+	withBaseline: boolean,
+): Sprite {
 	const anchors = { ...doc.anchors, ...frame.anchors };
-
 	return new Sprite(toGlyphText(frame.rows), {
 		defaultKey: doc.key,
 		colors: toGridText(frame.colors),
 		bg: toGridText(frame.bg),
-		baseline: doc.baseline,
+		...(withBaseline ? { baseline: doc.baseline } : {}),
 		grip: anchors.grip,
 		anchors,
 	});
 }
 
-// Compile one frame into a runtime Sprite carrying its effective anchors
-// (doc-level anchors overlaid with the frame's own overrides — frame wins).
-function compileFrameSprite(doc: SpriteDoc, frameName: string): Sprite {
-	const frame = doc.frames.find((f) => f.name === frameName);
+// Compile a single frame — selected by its canonical label (ADR 0037), or the
+// Default frame when no label is given / it does not resolve — to a runtime
+// Sprite. Non-form roles (hats/monsters/npcs) call this with their sole
+// animation's name as the label.
+export function spriteFromDoc(doc: SpriteDoc, label?: string): Sprite {
+	const resolved =
+		label !== undefined ? findFrame(doc, label)?.frame : undefined;
+	const frame = resolved ?? defaultFrame(doc);
 	if (frame === undefined)
-		throw new Error(
-			`sprite doc '${doc.id}' animation references missing frame '${frameName}'`,
-		);
-	const anchors = { ...doc.anchors, ...frame.anchors };
-	// A body's baseline is a whole-form property carried on BodySprite, not on
-	// each animation frame — leaving the per-frame Sprite baseline at its 0 default
-	// keeps compiled frames byte-identical to hand-authored ones.
-	return new Sprite(toGlyphText(frame.rows), {
-		defaultKey: doc.key,
-		colors: toGridText(frame.colors),
-		bg: toGridText(frame.bg),
-		anchors,
-	});
+		throw new Error(`sprite doc '${doc.id}' has no frames`);
+	return frameSprite(doc, frame, true);
 }
 
 // Compile a full-body sprite: every animation becomes a Sprite (single frame) or a
-// readonly Sprite[] (>1 frame). Assumes the doc passed `forms` role validation;
-// still throws (rather than emitting NaN) if the required grip/head anchors are
-// absent. `fps` is carried through for a later animation slice to consume.
+// readonly Sprite[] (>1 frame), and the per-animation fps values are gathered into
+// the name→fps lookup `bodyFrame` consumes. Assumes the doc passed `forms` role
+// validation; still throws (rather than emitting NaN) if the required grip/head
+// anchors are absent.
 export function compileBodySprite(doc: SpriteDoc): BodySprite {
 	const grip = doc.anchors.grip;
 	const head = doc.anchors.head;
@@ -84,10 +76,12 @@ export function compileBodySprite(doc: SpriteDoc): BodySprite {
 		);
 
 	const frames: Partial<Record<AnimationId, Sprite | readonly Sprite[]>> = {};
-	for (const [animationName, frameList] of Object.entries(doc.animations)) {
-		const compiled = frameList.map((name) => compileFrameSprite(doc, name));
-		frames[animationName as AnimationId] =
+	const fps: Record<string, number> = {};
+	for (const animation of doc.animations) {
+		const compiled = animation.frames.map((f) => frameSprite(doc, f, false));
+		frames[animation.name as AnimationId] =
 			compiled.length === 1 ? compiled[0] : compiled;
+		if (animation.fps !== undefined) fps[animation.name] = animation.fps;
 	}
 
 	return {
@@ -95,14 +89,14 @@ export function compileBodySprite(doc: SpriteDoc): BodySprite {
 		grip,
 		head,
 		baseline: doc.baseline,
-		...(Object.keys(doc.fps).length > 0 ? { fps: doc.fps } : {}),
+		...(Object.keys(fps).length > 0 ? { fps } : {}),
 	};
 }
 
-// Compile a weapon sprite (ADR 0036): the Default frame — the first frame in
-// the file — becomes the rest sprite, and the `swing` animation's exactly-three
-// frames compile phase-indexed (windup/active/recovery). The grip is a
-// doc-level anchor (an offset, so it may be negative); the accent is the
+// Compile a weapon sprite (ADR 0036/0037): the Default frame — frame 0 of the
+// first animation — becomes the rest sprite, and the `swing` animation's
+// exactly-three frames compile phase-indexed (windup/active/recovery). The grip
+// is a doc-level anchor (an offset, so it may be negative); the accent is the
 // palette key the dynamic `a` channel resolves to at render time. Assumes the
 // doc passed the `weapons` role profile — still throws if the grip or the
 // 3-frame swing is absent.
@@ -112,21 +106,21 @@ export function compileWeaponSprite(doc: SpriteDoc): WeaponSprite {
 		throw new Error(
 			`sprite doc '${doc.id}' (role 'weapons') requires a doc-level anchor 'grip'`,
 		);
-	const rest = doc.frames[0];
+	const rest = defaultFrame(doc);
 	if (rest === undefined)
 		throw new Error(`sprite doc '${doc.id}' has no frames`);
-	const swing = doc.animations.swing;
-	if (swing === undefined || swing.length !== 3)
+	const swing = doc.animations.find((a) => a.name === 'swing');
+	if (swing === undefined || swing.frames.length !== 3)
 		throw new Error(
 			`sprite doc '${doc.id}' (role 'weapons') requires a 'swing' animation of exactly 3 frames`,
 		);
 	return {
 		frames: {
-			rest: spriteFromDoc(doc, rest.name),
+			rest: frameSprite(doc, rest, true),
 			swing: [
-				spriteFromDoc(doc, swing[0]),
-				spriteFromDoc(doc, swing[1]),
-				spriteFromDoc(doc, swing[2]),
+				frameSprite(doc, swing.frames[0], true),
+				frameSprite(doc, swing.frames[1], true),
+				frameSprite(doc, swing.frames[2], true),
 			],
 		},
 		grip,

@@ -14,6 +14,7 @@ import {
 	buildSceneStyle,
 	type CellBuffer,
 	drawEntitySprite,
+	mapDocFrames,
 	parseSpriteFile,
 	type RenderStyle,
 	type SpriteDoc,
@@ -196,13 +197,10 @@ test('editing the WIP doc changes the composite; the registry stays put', () => 
 	renderComposite(before, doc, 'hat', STYLE, view);
 
 	// Blank out the hat's art in the WIP doc — a change the saved file never saw.
-	const blanked: SpriteDoc = {
-		...doc,
-		frames: doc.frames.map((f) => ({
-			...f,
-			rows: f.rows.map((r) => ' '.repeat(r.length)),
-		})),
-	};
+	const blanked: SpriteDoc = mapDocFrames(doc, (f) => ({
+		...f,
+		rows: f.rows.map((r) => ' '.repeat(r.length)),
+	}));
 	const after = new FakeBuffer(W, H);
 	renderComposite(after, blanked, 'hat', STYLE, view);
 
@@ -237,18 +235,20 @@ function localColorDoc(): SpriteDoc {
 		key: 'w',
 		baseline: 0,
 		anchors: {},
-		animations: { idle: ['m0'] },
-		fps: {},
-		colors: { z: [11, 22, 33, 255] },
-		frames: [
+		animations: [
 			{
-				name: 'm0',
-				rows: ['██', '██'],
-				colors: ['zz', 'zz'],
-				bg: ['  ', '  '],
-				anchors: {},
+				name: 'idle',
+				frames: [
+					{
+						rows: ['██', '██'],
+						colors: ['zz', 'zz'],
+						bg: ['  ', '  '],
+						anchors: {},
+					},
+				],
 			},
 		],
+		colors: { z: [11, 22, 33, 255] },
 	};
 }
 
@@ -344,13 +344,11 @@ function overrideFormDoc(
 		key: 'p',
 		baseline: 0,
 		anchors: { grip: { x: 2, y: 1 }, head: { x: 1, y: 0 } },
-		animations: { idle: ['idle'] },
-		fps: {},
-		colors: {},
-		frames: [
-			{ name: 'idle', ...art, anchors: {} },
-			{ name: 'emote:sit', ...art, anchors: sitAnchors },
+		animations: [
+			{ name: 'idle', frames: [{ ...art, anchors: {} }] },
+			{ name: 'emote:sit', frames: [{ ...art, anchors: sitAnchors }] },
 		],
+		colors: {},
 	};
 }
 

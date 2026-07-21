@@ -1,3 +1,6 @@
-{"key":"o"}
+{
+	"key": "o",
+	"animations": [{ "name": "idle" }]
+}
 --- idle
 ▄█████▄

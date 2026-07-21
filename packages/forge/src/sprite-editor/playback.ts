@@ -3,6 +3,7 @@
 // the wall-clock elapsed time and asks these functions which frame/animation to show
 // this tick, so the logic stays deterministic and unit-testable without a clock.
 import { EMOTE_FPS } from '@mmo/core/sprites';
+import type { SpriteDoc } from '@mmo/render';
 
 // Which frame of a `frameCount`-long animation is showing after `elapsedS` seconds at
 // `fps`. A single-frame (or empty) animation is always frame 0; a non-positive fps
@@ -18,12 +19,10 @@ export function playbackFrame(
 	return ((step % frameCount) + frameCount) % frameCount;
 }
 
-// The animation's playback fps: its authored value, or the shared EMOTE_FPS default.
-export function animationFps(
-	fpsMap: Readonly<Record<string, number>>,
-	animation: string,
-): number {
-	return fpsMap[animation] ?? EMOTE_FPS;
+// The animation's playback fps: its authored value, or the shared EMOTE_FPS
+// default (ADR 0037: fps lives on the animation object).
+export function animationFps(doc: SpriteDoc, animation: string): number {
+	return doc.animations.find((a) => a.name === animation)?.fps ?? EMOTE_FPS;
 }
 
 // Walk-cycle preview simulates stride against the `walk` animation the same way

@@ -55,8 +55,7 @@ _Avoid_: Body model, rig, skeleton (frames are whole grids, there is no rig)
 A named, selectable unit of the player's **Body sprite** — Animations exist
 specifically for players, handling the special frames of states
 (`walk`, `jump`, attack) and **Emote**s. An ordered list of **Frame**s played at
-a per-Animation fps, where a single Frame is the common case and a Frame belonging
-to no Animation is its own implicit single-frame Animation. Which Animation shows
+a per-Animation fps, where a single Frame is the common case. Which Animation shows
 is chosen each render by a pure, shared function of replicated state so owner and
 observers agree. Body-animation priority is a fixed ladder — `hurt/stagger >
 combat > airborne > walk > emote > idle` — where, deliberately, walking cancels an
@@ -796,8 +795,8 @@ the game-world language above.
 **Sprite file**:
 The `.sprite` asset file that *is* a sprite's source of truth — human-readable
 art (glyph grids you can see in a text editor, zone-style) plus its metadata:
-**Frame**s grouped into named **Animation**s, **Anchor**s, colors, per-Animation
-fps. One format
+an ordered array of named **Animation**s, each an ordered run of unnamed
+**Frame**s, plus **Anchor**s, colors, per-Animation fps (ADR 0037). One format
 covers every sprite shape (a hat is the degenerate single-frame case; a Form and
 a Weapon are richer profiles of the same format). Identity is the filename
 (cf. Zone id), and the containing directory names its **Sprite role**. Consumed
@@ -827,16 +826,19 @@ status-line feedback; never refused, never merely validated after the fact
 _Avoid_: Paint program, pixel editor (it edits Sprite files, pixels are the means)
 
 **Frame**:
-One named glyph grid in a Sprite file — the unit the Sprite editor paints and the
-thing an **Animation** orders into playback. A Frame referenced by no Animation is
-its own implicit single-frame Animation, which is how bare frame names (`jump`)
-stay selectable at render time.
-_Avoid_: Cel, image, page
+One glyph grid in a Sprite file — the unit the Sprite editor paints and the
+thing an **Animation** orders into playback. Frames are unnamed: a frame is
+identified by its Animation plus index (`frame 0`, `frame 1`), which is also how
+every UI surface labels it (ADR 0037). A single-frame Animation (`jump`) is the
+degenerate case, not a special one.
+_Avoid_: Cel, image, page, frame name (retired, ADR 0037)
 
 **Default frame**:
-The first Frame in a Sprite file — every sprite's first-class citizen, one
-universal rule for all roles (a form's `idle`, a weapon's rest/hold frame, a
-hat's only frame; canonical file order makes it so by construction). It is where
+Frame 0 of the first **Animation** in a Sprite file's animation array — every
+sprite's first-class citizen, one universal rule for all roles (a form's `idle`,
+a weapon's rest/hold frame, a hat's only frame; the ordered array makes it so
+explicitly, ADR 0037, and `sprites:check` warns when a form's first animation
+isn't `idle`). It is where
 the file-level **Anchor**s are authored: anchor edits on the Default frame set
 the file's defaults, anchor edits on any other Frame author that frame's
 override (ADR 0036). The editor badges it.

@@ -1,4 +1,7 @@
-{"key":"o"}
+{
+	"key": "o",
+	"animations": [{ "name": "idle" }]
+}
 --- idle
 ··▟▙··
 ·▟██▙·
@@ -10,4 +13,4 @@
 ·oooo·
 oooooo
 cccccc
-·oooo·
+oooooo

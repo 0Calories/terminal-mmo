@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { SCENE_PALETTE } from '@mmo/core/entities';
-import { parseSpriteFile, quadrantsFromGlyph } from '@mmo/render';
+import { findFrame, parseSpriteFile, quadrantsFromGlyph } from '@mmo/render';
 import { trimDoc } from '../src/sprite-editor/resize';
 import {
 	beginStroke,
@@ -387,11 +387,11 @@ describe('selectFrame & cursor', () => {
 		const doc = emptySpriteDoc('hero', 'form');
 		let s = initSpriteEditor(doc);
 		expect(s.frame).toBe('idle');
-		s = selectFrame(s, 'walk-0');
-		expect(s.frame).toBe('walk-0');
+		s = selectFrame(s, 'walk 0');
+		expect(s.frame).toBe('walk 0');
 		const before = s;
 		s = selectFrame(s, 'nope');
-		expect(s.frame).toBe('walk-0');
+		expect(s.frame).toBe('walk 0');
 		expect(s.feedback).toContain('no such frame');
 		expect(before.doc).toBe(s.doc);
 	});
@@ -399,8 +399,8 @@ describe('selectFrame & cursor', () => {
 	test('painting affects only the current frame', () => {
 		let s = initSpriteEditor(emptySpriteDoc('hero', 'form'));
 		s = paintPixel(s, 0, 0); // in idle
-		s = selectFrame(s, 'walk-0');
-		expect(readPixel(s, 0, 0)).toBe(false); // walk-0 untouched
+		s = selectFrame(s, 'walk 0');
+		expect(readPixel(s, 0, 0)).toBe(false); // walk 0 untouched
 	});
 
 	test('moveCursor clamps to non-negative pixels', () => {
@@ -440,8 +440,8 @@ describe('saveResult round-trip', () => {
 		// trimmed doc, not the roomier in-editor frame.
 		const { doc } = parseSpriteFile(text, 'hero');
 		expect(doc).not.toBeNull();
-		const idle = doc?.frames.find((f) => f.name === 'idle');
-		const savedIdle = trimDoc(s.doc).frames.find((f) => f.name === 'idle');
+		const idle = doc ? findFrame(doc, 'idle')?.frame : undefined;
+		const savedIdle = findFrame(trimDoc(s.doc), 'idle')?.frame;
 		expect(idle?.rows).toEqual(savedIdle?.rows as string[]);
 		expect(idle?.colors).toEqual(savedIdle?.colors as string[]);
 		expect(idle?.bg).toEqual(savedIdle?.bg as string[]);
@@ -458,35 +458,26 @@ describe('role templates', () => {
 		expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
 	});
 
-	test('form has idle + walk-0/walk-1 frames (one walk animation) and grip/head anchors', () => {
+	test('form has idle + walk 0/walk 1 frames (one walk animation) and grip/head anchors', () => {
 		const doc = emptySpriteDoc('hero', 'form');
-		expect(doc.frames.map((f) => f.name)).toEqual(['idle', 'walk-0', 'walk-1']);
-		expect(doc.animations).toEqual({
-			idle: ['idle'],
-			walk: ['walk-0', 'walk-1'],
-		});
+		// Frames are unnamed (ADR 0037); their identity is (animation, index).
+		expect(doc.animations.map((a) => a.name)).toEqual(['idle', 'walk']);
+		expect(doc.animations.map((a) => a.frames.length)).toEqual([1, 2]);
 		expect(Object.keys(doc.anchors).sort()).toEqual(['grip', 'head']);
 	});
 
 	test('weapon has a Default frame + 3-frame swing and a grip anchor (ADR 0036)', () => {
 		const doc = emptySpriteDoc('sword', 'weapon');
-		expect(doc.frames.map((f) => f.name)).toEqual([
-			'idle',
-			'swing-0',
-			'swing-1',
-			'swing-2',
-		]);
-		expect(doc.animations).toEqual({
-			idle: ['idle'],
-			swing: ['swing-0', 'swing-1', 'swing-2'],
-		});
+		expect(doc.animations.map((a) => a.name)).toEqual(['idle', 'swing']);
+		expect(doc.animations.map((a) => a.frames.length)).toEqual([1, 3]);
 		expect(Object.keys(doc.anchors)).toEqual(['grip']);
 	});
 
 	test('hat / monster / npc have a single idle frame', () => {
 		for (const role of ['hat', 'monster', 'npc'] as SpriteRole[]) {
 			const doc = emptySpriteDoc('x', role);
-			expect(doc.frames.map((f) => f.name)).toEqual(['idle']);
+			expect(doc.animations.map((a) => a.name)).toEqual(['idle']);
+			expect(doc.animations.map((a) => a.frames.length)).toEqual([1]);
 		}
 	});
 });
