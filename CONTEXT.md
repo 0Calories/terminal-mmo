@@ -230,8 +230,8 @@ _Avoid_: Chat bubble, balloon, callout, tooltip
 
 **Emote**:
 A motion the Avatar's own body performs to express itself (e.g. `wave`, `dance`,
-`sit`) — an **Animation** played on the **Body sprite**, triggered by the `/em`/`/emote`
-chat command (ADR 0020). Each emote has a **lifetime mode**: `oneshot` (plays once,
+`sit`) — an **Animation** played on the **Body sprite**, triggered by typing the
+emote's name as a chat command (`/wave`; ADR 0020). Each emote has a **lifetime mode**: `oneshot` (plays once,
 then returns to idle), `loop` (cycles until interrupted), or `hold` (one sustained
 frame). The active emote is replicated in the per-entity action-state, so a late
 arrival still sees a held or looping emote; movement or combat clears it. *Not* the

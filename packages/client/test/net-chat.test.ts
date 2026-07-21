@@ -36,7 +36,7 @@ test('a whisper goes out addressed to its target', () => {
 test('an emote goes out and is handed back for local prediction', () => {
 	const net = sink();
 	const id = EMOTES[0].id;
-	expect(sendChatLine(net, `/em ${id}`)).toBe(id);
+	expect(sendChatLine(net, `/${id}`)).toBe(id);
 	expect(net.sent).toEqual([{ t: 'emote', emote: id }]);
 });
 

@@ -34,6 +34,7 @@ export {
 export {
 	EMOTES,
 	type EmoteDef,
+	type EmoteId,
 	type EmoteLifetime,
 	emoteById,
 	emoteInterrupted,

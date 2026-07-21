@@ -20,7 +20,7 @@ import { parseSpriteFile } from './sprite-file';
 
 // The emote ids the sim knows about (core's registry). A Form animation named
 // `emote:<x>` is only meaningful if `<x>` is one of these.
-const KNOWN_EMOTES = new Set(EMOTES.map((e) => e.id));
+const KNOWN_EMOTES = new Set<string>(EMOTES.map((e) => e.id));
 
 interface RoleProfile {
 	// Animations that must exist (by name) in the doc's resolved animation map.
