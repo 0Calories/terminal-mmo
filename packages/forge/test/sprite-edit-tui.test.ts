@@ -526,7 +526,6 @@ describe('Sprite editor TUI smoke', () => {
 			fps: 5,
 			frameCount: 1,
 			playMode: 'none',
-			onionDepth: 0,
 			height: 22,
 			variants: variantOptions(usage, active),
 		});
@@ -1246,7 +1245,6 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 			fps: 8,
 			frameCount: 1,
 			playMode: 'none',
-			onionDepth: 0,
 			height: 32,
 		});
 		let swatch: { x: number; y: number } | null = null;

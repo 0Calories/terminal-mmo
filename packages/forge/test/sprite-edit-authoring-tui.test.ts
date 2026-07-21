@@ -352,6 +352,48 @@ describe('mirror view (deleted, round 3)', () => {
 	});
 });
 
+describe('focus [+] tile clones the last frame (round 3)', () => {
+	function twoFrameDoc(): SpriteDoc {
+		const frame = () => ({
+			rows: ['█ ', '  '],
+			colors: ['p ', '  '],
+			bg: ['  ', '  '],
+			anchors: {},
+		});
+		return {
+			id: 'clone',
+			key: 'p',
+			baseline: 0,
+			anchors: {},
+			animations: [{ name: 'idle', frames: [frame(), frame()] }],
+			colors: {},
+		};
+	}
+
+	test('clicking the [+] tile appends a clone of the last frame and selects it', async () => {
+		const t = await mount({ doc: twoFrameDoc(), id: 'clone', role: 'hat' });
+		// Drop the floating pane so the tile is never occluded by it.
+		await clickRail(t, /\bpreview\b/);
+		t.editor.key(key('tab')); // strips → focus
+		t.editor.key(key('right')); // step to the last frame so the tile is on-screen
+		await t.renderOnce();
+		const before = t.editor.state.doc.animations[0].frames.length;
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private focus geometry.
+		const tile = (t.editor as any).geom.focus.plusTile as {
+			x0: number;
+			y0: number;
+			y1: number;
+		} | null;
+		if (!tile) throw new Error('no [+] tile on-screen');
+		const midY = Math.floor((tile.y0 + tile.y1) / 2);
+		t.editor.mouseDown({ button: 0, x: tile.x0, y: midY });
+		t.editor.mouseUp();
+		expect(t.editor.state.doc.animations[0].frames.length).toBe(before + 1);
+		// The new (cloned) frame is active.
+		expect(t.editor.state.frame).toBe('idle 2');
+	});
+});
+
 describe('playback', () => {
 	// A two-frame animation whose frames put a block in different cells. In v2
 	// (ADR 0037) frames are unnamed — the 'idle' animation's two frames carry the

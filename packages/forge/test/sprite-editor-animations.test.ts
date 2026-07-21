@@ -6,6 +6,7 @@ import {
 	addFrameToAnimation,
 	animationFrames,
 	animationNames,
+	cloneFrameToAnimation,
 	createAnimation,
 	currentFrame,
 	deleteAnimation,
@@ -99,6 +100,31 @@ describe('addFrameToAnimation', () => {
 		let s = createAnimation(formState(), 'cheer');
 		const before = animationFrames(s, 'cheer').length;
 		s = addFrameToAnimation(s, 'cheer');
+		s = undoEdit(s);
+		expect(animationFrames(s, 'cheer')).toHaveLength(before);
+	});
+});
+
+describe('cloneFrameToAnimation (the focus [+] tile, round 3)', () => {
+	test('appends a clone of the last frame carrying its art, and selects it', () => {
+		let s = createAnimation(formState(), 'cheer');
+		s = paintPixel(s, 1, 1); // paint the source frame
+		s = cloneFrameToAnimation(s, 'cheer');
+		expect(animationFrames(s, 'cheer')).toHaveLength(2);
+		// The new frame is active and is a copy of the one it follows.
+		expect(s.frame).toBe('cheer 1');
+		expect(readPixel(s, 1, 1)).toBe(true);
+	});
+
+	test('refuses an unknown animation', () => {
+		const s = cloneFrameToAnimation(formState(), 'nope');
+		expect(s.feedback).not.toBe('');
+	});
+
+	test('is undoable', () => {
+		let s = createAnimation(formState(), 'cheer');
+		const before = animationFrames(s, 'cheer').length;
+		s = cloneFrameToAnimation(s, 'cheer');
 		s = undoEdit(s);
 		expect(animationFrames(s, 'cheer')).toHaveLength(before);
 	});

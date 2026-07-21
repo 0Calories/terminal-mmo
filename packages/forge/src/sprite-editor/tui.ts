@@ -98,12 +98,11 @@ import {
 	openAnimationMenu,
 	syncAnimationMenu,
 } from './menus';
-import { cycleOnionDepth, ghostColor, onionGhosts } from './onion';
+import { ghostColor, previousGhostFrame } from './onion';
 import { animationFps, playbackFrame, walkPreviewIndex } from './playback';
 import type { ResizeEdge } from './resize';
 import { normalizeDoc } from './resize';
 import {
-	addFrameToAnimation,
 	anchorMarkers,
 	anchorScopeFor,
 	animationFrames,
@@ -112,6 +111,7 @@ import {
 	cancelShape,
 	cellAt,
 	clearSelection,
+	cloneFrameToAnimation,
 	colorInk,
 	commitFloat,
 	copySelection,
@@ -424,11 +424,11 @@ export class SpriteEditor extends Renderable {
 	private penDown = false;
 	// The fatbits zoom (×z on the ladder). Presentation only — never in the doc.
 	zoom = DEFAULT_ZOOM;
-	// Onion-skin depth (0 off, cycled by the rail's onion button — mouse-only,
-	// ADR 0035). Presentation only. Ghosts are drawn
-	// only for the active Frame, and only while not playing (playback suspends
-	// them). `onionLayers` is the per-render, pre-pointed source built from it.
-	onionDepth = 0;
+	// Onion skin on/off (round 3): a plain toggle riding the focus tab row. When
+	// on, the focus view's active Frame ghosts its PREVIOUS Frame beneath its art,
+	// while not playing (playback suspends it) and only for multi-frame animations.
+	// `onionLayers` is the per-render, pre-pointed source built from it.
+	onion = false;
 	private onionLayers: {
 		read: (px: number, py: number) => boolean;
 		color: RGBA;
@@ -476,6 +476,12 @@ export class SpriteEditor extends Renderable {
 			// The active frame's Pixel height in cells (box vertical extent = origin.y
 			// .. origin.y + pxH), so a click's row can be bounded to the strip.
 			pxH: number;
+			// The `[+]` clone tile after the last frame (round 3): its clickable
+			// screen box, or null in the playback path / when it is off-screen.
+			plusTile: { x0: number; x1: number; y0: number; y1: number } | null;
+			// The onion on/off toggle riding the right edge of the tab row (round 3):
+			// its clickable span, or null for single-frame animations / playback.
+			onionToggle: { x0: number; x1: number; y: number } | null;
 		} | null;
 		// The floating preview pane's screen rect + its clickable control spans, so
 		// mouse handlers can swallow clicks over the pane and hit flip/play.
@@ -785,17 +791,11 @@ export class SpriteEditor extends Renderable {
 			case 'play':
 				this.togglePlay(action.mode);
 				return;
-			case 'addFrame':
-				this.addFrame();
-				return;
 			case 'animationMenu':
 				this.openAnimationMenu();
 				return;
 			case 'anchorMenu':
 				this.openAnchorMenu();
-				return;
-			case 'onionCycle':
-				this.cycleOnion();
 				return;
 			case 'canvas':
 				this.openCanvasSizeModal();
@@ -923,8 +923,29 @@ export class SpriteEditor extends Renderable {
 		} else {
 			const f = this.geom.focus;
 			if (f && e.y < f.top) {
+				// The onion toggle rides the tab row's right edge (round 3).
+				const ot = f.onionToggle;
+				if (ot && e.y === ot.y && e.x >= ot.x0 && e.x <= ot.x1) {
+					this.liftPen();
+					this.toggleOnion();
+					return;
+				}
 				const tab = focusTabAt(f.tabs, e.x - RAIL_W);
 				if (tab) this.state = selectFrame(this.state, tab.name);
+				return;
+			}
+			// The `[+]` clone tile trailing the last frame appends a clone of the
+			// last frame and selects it (round 3: the sole frame-creation entry).
+			if (
+				f?.plusTile &&
+				e.x >= f.plusTile.x0 &&
+				e.x <= f.plusTile.x1 &&
+				e.y >= f.plusTile.y0 &&
+				e.y < f.plusTile.y1
+			) {
+				this.liftPen();
+				this.state = cloneFrameToAnimation(this.state, this.state.animation);
+				this.followCursor = true;
 				return;
 			}
 			// Filmstrip click model (spec): a press inside a DIMMED neighbour frame
@@ -1316,12 +1337,6 @@ export class SpriteEditor extends Renderable {
 
 	// ---- frames / animations / edits ----
 
-	private addFrame(): void {
-		this.liftPen();
-		this.state = addFrameToAnimation(this.state, this.state.animation);
-		this.followCursor = true;
-	}
-
 	private toggleView(): void {
 		this.liftPen();
 		this.view = this.view === 'strips' ? 'focus' : 'strips';
@@ -1393,9 +1408,6 @@ export class SpriteEditor extends Renderable {
 				break;
 			case 'delete':
 				this.state = deleteAnimation(this.state, action.animation);
-				break;
-			case 'addFrame':
-				this.state = addFrameToAnimation(this.state, action.animation);
 				break;
 			case 'reorder':
 				this.state = reorderFrame(
@@ -1660,14 +1672,14 @@ export class SpriteEditor extends Renderable {
 		this.previewOverride = !this.composite;
 	}
 
-	// Cycle the onion-skin depth 0 → 1 → 2 → 0 (spec #387). Presentation only.
-	private cycleOnion(): void {
-		this.onionDepth = cycleOnionDepth(this.onionDepth);
-		const label =
-			this.onionDepth === 0
-				? 'onion skin off'
-				: `onion skin depth ${this.onionDepth}`;
-		this.state = { ...this.state, feedback: label };
+	// Toggle onion skinning on/off (round 3). Presentation only; the effect only
+	// shows in the focus view's active Frame, for multi-frame animations.
+	private toggleOnion(): void {
+		this.onion = !this.onion;
+		this.state = {
+			...this.state,
+			feedback: this.onion ? 'onion skin on' : 'onion skin off',
+		};
 	}
 
 	// Advance the playback clock and repaint. Public so tests can drive elapsed
@@ -1948,25 +1960,29 @@ export class SpriteEditor extends Renderable {
 		return RGBA.fromInts(q[0], q[1], q[2], q[3]);
 	}
 
-	// Rebuild the onion-skin ghost layers for this render: one pre-pointed reader +
-	// tint per neighbouring Frame the active Animation sources at the current depth,
-	// nearest first. Empty while playing (playback suspends ghosts, spec #387) or
-	// when onion is off, so `onionGhostRGBA` is a cheap no-op then.
+	// Rebuild the onion-skin ghost layer for this render (round 3): a single
+	// pre-pointed reader + red tint for the active Frame's PREVIOUS Frame. Empty
+	// while playing (playback suspends the ghost), when onion is off, or when the
+	// animation has no neighbour to ghost — so `onionGhostRGBA` is a cheap no-op.
 	private buildOnionLayers(C: Palette): void {
-		if (this.playMode !== 'none' || this.onionDepth <= 0) {
+		if (this.playMode !== 'none' || !this.onion) {
 			this.onionLayers = [];
 			return;
 		}
 		const frames = animationFrames(this.state, this.state.animation);
-		const ghosts = onionGhosts(frames, this.state.frame, this.onionDepth);
+		const prev = previousGhostFrame(frames, this.state.frame);
+		if (!prev) {
+			this.onionLayers = [];
+			return;
+		}
 		const bg = C.bg.toInts();
-		this.onionLayers = ghosts.map((g) => {
-			const ghostState: SpriteEditorState = { ...this.state, frame: g.frame };
-			return {
+		const ghostState: SpriteEditorState = { ...this.state, frame: prev };
+		this.onionLayers = [
+			{
 				read: (px: number, py: number) => readPixel(ghostState, px, py),
-				color: SpriteEditor.rgba(ghostColor(g.tint, g.intensity, bg)),
-			};
-		});
+				color: SpriteEditor.rgba(ghostColor('prev', 1, bg)),
+			},
+		];
 	}
 
 	// The ghost colour showing through a transparent Pixel of the active Frame, or
@@ -2211,7 +2227,6 @@ export class SpriteEditor extends Renderable {
 			fps: animationFps(this.state.doc, this.state.animation),
 			frameCount: animationFrames(this.state, this.state.animation).length,
 			playMode: this.playMode,
-			onionDepth: this.onionDepth,
 			height: viewH,
 			foldPlayback: this.foldPlayback,
 			variants: variantOptions(docDynamicUsage(this.state.doc), this.variant),
@@ -2290,7 +2305,9 @@ export class SpriteEditor extends Renderable {
 						syOf(cy),
 						' ',
 						C.dim,
-						this.pixelRGBA(st, px, py, cx + cy, C, active),
+						// Onion is a focus-view-only effect now (round 3): the strips
+						// grid never ghosts.
+						this.pixelRGBA(st, px, py, cx + cy, C, false),
 					);
 				}
 			}
@@ -2359,7 +2376,7 @@ export class SpriteEditor extends Renderable {
 				sy,
 				ANCHOR_MARKER,
 				m.overridden ? C.overrideFg : C.anchorFg,
-				this.pixelRGBA(disp, m.x * 2, m.y * 2, ccx + ccy, C, true),
+				this.pixelRGBA(disp, m.x * 2, m.y * 2, ccx + ccy, C, false),
 			);
 		}
 
@@ -2391,7 +2408,7 @@ export class SpriteEditor extends Renderable {
 					this.state.cursor.y,
 					sx - x0 + this.scroll.x + (sy + this.scroll.y),
 					C,
-					true,
+					false,
 				),
 			C,
 		);
@@ -2411,6 +2428,9 @@ export class SpriteEditor extends Renderable {
 		this.geom.layout = null;
 		let top = 0;
 		let tabs: readonly FocusTab[] = [];
+		// The onion on/off toggle rides the right edge of the tab row (round 3),
+		// mirroring how the fps stepper rides the strip label row; multi-frame only.
+		let onionToggle: { x0: number; x1: number; y: number } | null = null;
 		if (showTabs) {
 			const frames = animationFrames(this.state, this.state.animation);
 			const list = frames.length > 0 ? frames : frameNames(this.state);
@@ -2439,6 +2459,26 @@ export class SpriteEditor extends Renderable {
 					C.hot,
 					C.chromeBg,
 				);
+			// The onion toggle, right-justified on the tab row (disabled/hidden for a
+			// single-frame animation, which has nothing to ghost). It stops short of
+			// the floating preview pane's left edge so the pane never occludes it.
+			if (frames.length > 1) {
+				const onionText = '◌ onion';
+				const paneW = this.composite ? Math.min(PREVIEW_W, viewW) : 0;
+				const rightLimit = RAIL_W + viewW - paneW;
+				const onionX = Math.max(RAIL_W, rightLimit - onionText.length);
+				this.drawClipped(
+					buf,
+					onionText,
+					onionX,
+					0,
+					RAIL_W,
+					rightLimit,
+					this.onion ? C.hot : C.dim,
+					C.chromeBg,
+				);
+				onionToggle = { x0: onionX, x1: onionX + onionText.length - 1, y: 0 };
+			}
 			top = 1;
 		}
 
@@ -2487,12 +2527,28 @@ export class SpriteEditor extends Renderable {
 			const x0 = origin.x + (i - activeIdx) * stride;
 			return { name, i, x0, x1: x0 + pxW * z };
 		});
+		// The `[+]` clone tile trails the last frame (round 3). It scrolls with the
+		// strip, so it is only visible/clickable when the last frame is near the
+		// centred origin; off-screen it simply isn't recorded. Shown only in the
+		// editable focus view (not the playback path).
+		const lastBox = boxes[boxes.length - 1];
+		const tileY0 = origin.y;
+		const tileY1 = origin.y + pxH * z;
+		const PLUS_W = 3;
+		const tileX0 = lastBox.x1 + FILMSTRIP_GAP;
+		const plusVisible =
+			showTabs && tileX0 < RAIL_W + viewW && tileX0 + PLUS_W > RAIL_W;
+		const plusTile = plusVisible
+			? { x0: tileX0, x1: tileX0 + PLUS_W - 1, y0: tileY0, y1: tileY1 }
+			: null;
 		this.geom.focus = {
 			tabs,
 			origin,
 			top,
 			pxH,
 			frames: boxes.map((b) => ({ name: b.name, x0: b.x0, x1: b.x1 })),
+			plusTile,
+			onionToggle,
 		};
 
 		// Per-frame render states: the active frame carries the float overlay
@@ -2528,6 +2584,22 @@ export class SpriteEditor extends Renderable {
 				}
 				buf.setCell(sx, sy, ' ', C.dim, color);
 			}
+		}
+
+		// The `[+]` clone tile trailing the last frame: a boxed `[+]`, vertically
+		// centred in the strip, clipped to the canvas region.
+		if (plusTile) {
+			const midY = Math.floor((plusTile.y0 + plusTile.y1 - 1) / 2);
+			this.drawClipped(
+				buf,
+				'[+]',
+				plusTile.x0,
+				midY,
+				RAIL_W,
+				RAIL_W + viewW,
+				C.hot,
+				C.bg,
+			);
 		}
 
 		for (const m of this.displayMarkers()) {
@@ -3022,7 +3094,7 @@ export class SpriteEditor extends Renderable {
 				rows.push(`${sel} ${p.name} · ${fps}${frameMark}`);
 			}
 			if (menu.error) rows.push(`⚠ ${menu.error}`);
-			rows.push('Enter switch · c new · d del · a +frame');
+			rows.push('Enter switch · c new · d del');
 			rows.push('p play · w walk · f fps · ←/→ frame · </> reorder · Esc');
 		}
 		this.drawModal(buf, W, H, rows, C);

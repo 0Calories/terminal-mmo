@@ -18,10 +18,8 @@ export type RailAction =
 	| { readonly type: 'tool'; readonly tool: SpriteTool }
 	| { readonly type: 'ink'; readonly ink: Ink }
 	| { readonly type: 'play'; readonly mode: 'animation' | 'walk' }
-	| { readonly type: 'addFrame' }
 	| { readonly type: 'animationMenu' }
 	| { readonly type: 'anchorMenu' }
-	| { readonly type: 'onionCycle' }
 	// Opens the canvas-size modal (round 3): the one control for resize + crop.
 	| { readonly type: 'canvas' }
 	| { readonly type: 'previewToggle' }
@@ -96,9 +94,6 @@ export interface RailInput {
 	readonly fps: number;
 	readonly frameCount: number;
 	readonly playMode: 'none' | 'animation' | 'walk';
-	// Onion-skin depth (0 off). Retained for compatibility; onion moved off the
-	// rail to the focus tab row (round 3), so railModel no longer reads it.
-	readonly onionDepth: number;
 	// Rows available for the rail (the canvas region's height).
 	readonly height: number;
 	// Small-terminal rung 3 (spec #387): fold the `edit` box to a single hint row
@@ -366,6 +361,7 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			{ keys: 'drag', label: 'shapes · select marquee · move float' },
 			{ keys: 'drag ✛ / rmb ✛', label: 'move anchor (◈ = file level) / clear' },
 			{ keys: 'click strip', label: 'activate frame (animation nav)' },
+			{ keys: 'focus [+] / ◌', label: 'clone last frame · onion ghosts prev' },
 			{ keys: '‹ fps ›', label: "strip name row steps the animation's fps" },
 			{ keys: 'wheel', label: 'scroll strips (shift: horizontal)' },
 			{ keys: 'ctrl-wheel', label: 'zoom · middle-drag pans' },

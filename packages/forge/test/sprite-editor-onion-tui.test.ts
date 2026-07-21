@@ -90,44 +90,55 @@ function canvasHasBg(cap: Spans, rgb: readonly number[]): boolean {
 	return false;
 }
 
-describe('onion skinning — ghosts through the active Frame', () => {
-	test('depth 0 (default) shows no ghosts, only the checkerboard', async () => {
+describe('onion skinning — a prev-frame ghost in the focus view (round 3)', () => {
+	test('off by default shows no ghost, only the checkerboard', async () => {
 		const t = await mount('focus');
-		expect(t.editor.onionDepth).toBe(0);
+		expect(t.editor.onion).toBe(false);
 		expect(canvasHasBg(t.captureSpans(), PREV)).toBe(false);
 		expect(canvasHasBg(t.captureSpans(), NEXT)).toBe(false);
 	});
 
-	// Round 3 removed the rail onion button (concern 4 re-homes the control on the
-	// focus tab row); until then the onion state is driven through the field.
-	test('onion on shows the previous/next neighbours ghost red/blue (focus)', async () => {
+	test('onion on ghosts ONLY the previous frame (red), never the next', async () => {
 		const t = await mount('focus');
-		t.editor.onionDepth = 1;
+		t.editor.onion = true;
 		await t.renderOnce();
 		const cap = t.captureSpans();
-		// f0 (previous) shows red through f1's transparency; f2 (next) shows blue.
+		// run 1's previous frame is run 0 (red ghost); the next frame no longer ghosts.
 		expect(canvasHasBg(cap, PREV)).toBe(true);
-		expect(canvasHasBg(cap, NEXT)).toBe(true);
+		expect(canvasHasBg(cap, NEXT)).toBe(false);
 	});
 
-	test('ghosts also render in the strips view', async () => {
+	test('the effect is confined to the focus view — strips never ghosts', async () => {
 		const t = await mount('strips');
-		t.editor.onionDepth = 1;
-		await t.renderOnce();
-		const cap = t.captureSpans();
-		expect(canvasHasBg(cap, PREV)).toBe(true);
-		expect(canvasHasBg(cap, NEXT)).toBe(true);
-	});
-
-	test('playback suspends the ghosts', async () => {
-		const t = await mount('focus');
-		t.editor.onionDepth = 1;
-		// Play moved off the rail to the preview pane (post-#351); drive it directly.
-		// biome-ignore lint/suspicious/noExplicitAny: reach the private playback toggle.
-		(t.editor as any).togglePlay('animation');
+		t.editor.onion = true;
 		await t.renderOnce();
 		const cap = t.captureSpans();
 		expect(canvasHasBg(cap, PREV)).toBe(false);
 		expect(canvasHasBg(cap, NEXT)).toBe(false);
+	});
+
+	test('playback suspends the ghost', async () => {
+		const t = await mount('focus');
+		t.editor.onion = true;
+		// Play moved off the rail to the preview pane (post-#351); drive it directly.
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private playback toggle.
+		(t.editor as any).togglePlay('animation');
+		await t.renderOnce();
+		expect(canvasHasBg(t.captureSpans(), PREV)).toBe(false);
+	});
+
+	test('the tab-row onion toggle flips it on and off', async () => {
+		const t = await mount('focus');
+		expect(t.editor.onion).toBe(false);
+		await t.renderOnce();
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private focus geometry.
+		const ot = (t.editor as any).geom.focus.onionToggle as {
+			x0: number;
+			y: number;
+		} | null;
+		if (!ot) throw new Error('no onion toggle on the tab row');
+		t.editor.mouseDown({ button: 0, x: ot.x0, y: ot.y });
+		t.editor.mouseUp();
+		expect(t.editor.onion).toBe(true);
 	});
 });

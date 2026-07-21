@@ -637,6 +637,38 @@ export function addFrameToAnimation(
 	};
 }
 
+// Append a CLONE of the animation's LAST frame — its art AND its per-frame anchor
+// overrides — and select it (round 3). The focus view's `[+]` tile is the sole
+// frame-creation entry point now, and a clone (not a blank) is the consistent
+// reading: the new frame starts as a copy of the one it follows.
+export function cloneFrameToAnimation(
+	state: SpriteEditorState,
+	animation: string,
+): SpriteEditorState {
+	const target = animationByName(state.doc, animation);
+	if (target === undefined)
+		return refuse(state, `no such animation '${animation}'`);
+	const last = target.frames[target.frames.length - 1];
+	const clone: SpriteFrameDoc = last
+		? {
+				rows: [...last.rows],
+				colors: [...last.colors],
+				bg: [...last.bg],
+				anchors: { ...last.anchors },
+			}
+		: newBlankFrame(state);
+	const nextFrames = [...target.frames, clone];
+	const nextDoc: SpriteDoc = {
+		...state.doc,
+		animations: state.doc.animations.map((a) =>
+			a.name === animation ? { ...a, frames: nextFrames } : a,
+		),
+	};
+	const committed = commitDoc(state, nextDoc);
+	const newIndex = nextFrames.length - 1;
+	return { ...committed, animation, frame: `${animation} ${newIndex}` };
+}
+
 // Delete an animation and its frames. Refuses removing the last animation.
 export function deleteAnimation(
 	state: SpriteEditorState,

@@ -38,7 +38,6 @@ function model(overrides: Partial<Parameters<typeof railModel>[0]> = {}) {
 		fps: 8,
 		frameCount: 1,
 		playMode: 'none',
-		onionDepth: 0,
 		height: 22,
 		...overrides,
 	});
@@ -205,9 +204,8 @@ describe('railModel — tools · ink · edit box', () => {
 	});
 
 	test('onion has left the rail (round 3: it lives on the focus tab row)', () => {
-		const spans = model({ onionDepth: 2 }).flatMap((r) => r.spans);
+		const spans = model().flatMap((r) => r.spans);
 		expect(spans.some((s) => s.text.startsWith('◌ onion'))).toBe(false);
-		expect(spans.some((s) => s.action?.type === 'onionCycle')).toBe(false);
 	});
 
 	test('every edit-box button carries its width-1 glyph and self-labels', () => {
