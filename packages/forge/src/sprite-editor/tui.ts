@@ -771,6 +771,10 @@ export class SpriteEditor extends Renderable {
 				this.cycleOnion();
 				return;
 			case 'resize':
+			case 'canvas':
+				// Round 3 interim: the `⤢ canvas` button opens the (soon-to-be) modal;
+				// until concern 3 lands it, it enters the existing whole-file resize
+				// flow so canvas sizing stays reachable.
 				this.liftPen();
 				this.state = beginResize(this.state);
 				return;

@@ -191,10 +191,11 @@ describe('rung 2 — strips force focus (#398)', () => {
 	});
 });
 
-describe('rung 3 — folded playback box (#398)', () => {
-	test('the full box (the mouse-primary buttons) fits at the 80×24 floor; a huge palette folds it', async () => {
-		// Mouse-primary (ADR 0035): the frame/view/size boxes carry the only path to
-		// preview/resize/crop, so a standard doc keeps them whole at floor.
+describe('rung 3 — folded edit box (#398)', () => {
+	test('the full edit box fits at the 80×24 floor; a huge palette folds it', async () => {
+		// Mouse-primary (ADR 0035): the `edit` box carries the only path to the
+		// animation/anchor menus and the canvas/preview toggles, so a standard doc
+		// keeps it whole at floor.
 		const t = await mount({
 			doc: emptySpriteDoc('fold', 'hat'),
 			id: 'fold',
@@ -203,14 +204,14 @@ describe('rung 3 — folded playback box (#398)', () => {
 			height: 24,
 		});
 		const full = railText(t.captureCharFrame());
-		expect(full).toContain('frame');
+		expect(full).toContain('edit');
+		expect(full).toContain('canvas');
 		expect(full).toContain('preview');
-		expect(full).toContain('crop');
 
 		// A palette long enough to overflow the rail folds the box (and the fold
 		// reverses when the terminal grows tall).
 		const colors = Object.fromEntries(
-			Array.from({ length: 60 }, (_, i) => [
+			Array.from({ length: 90 }, (_, i) => [
 				String.fromCharCode(0x0100 + i),
 				[i, i, i, 255] as [number, number, number, number],
 			]),
@@ -227,12 +228,13 @@ describe('rung 3 — folded playback box (#398)', () => {
 			height: 24,
 		});
 		const folded = railText(t2.captureCharFrame());
-		// The fold collapses the three boxes to a single row keeping ✚ frame + the
-		// animation menu; preview/resize/crop drop until the terminal grows.
-		expect(folded).toContain('frame');
+		// The fold collapses the edit box to a single row keeping the animation +
+		// anchor menus; the canvas + preview toggles drop until the terminal grows.
+		expect(folded).toContain('animation');
+		expect(folded).not.toContain('canvas');
 		expect(folded).not.toContain('preview');
 		t2.resize(80, 45);
 		await t2.renderOnce();
-		expect(railText(t2.captureCharFrame())).toContain('preview');
+		expect(railText(t2.captureCharFrame())).toContain('canvas');
 	});
 });

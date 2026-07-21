@@ -773,22 +773,21 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 	const bx = RAIL_W;
 	const by = 1;
 
-	test('c crops to the committed selection (the quick-pick is retired)', async () => {
+	test('crop has left the rail (round 3: the canvas-size modal absorbs it)', async () => {
 		const t = await mount({
-			doc: emptySpriteDoc('crop', 'hat'),
-			id: 'crop',
+			doc: emptySpriteDoc('sizing', 'hat'),
+			id: 'sizing',
 			role: 'hat',
 		});
-		const before = currentFrame(t.editor.state);
-		// Marquee cells (0,0)-(1,0) with the select tool, then crop with plain c.
-		t.editor.key(key('1', { sequence: '1' }));
-		t.editor.mouseDown({ button: 0, x: bx, y: by });
-		t.editor.mouseDrag({ button: 0, x: bx + 3, y: by + 1 });
-		t.editor.mouseUp();
-		expect(t.editor.state.selection).not.toBeNull();
-		await clickRail(t, /\bcrop\b/);
-		const after = frameExtent(currentFrame(t.editor.state));
-		expect(after.w).toBeLessThan(frameExtent(before).w);
+		await t.renderOnce();
+		const rail = t
+			.captureCharFrame()
+			.split('\n')
+			.map((r) => r.slice(0, RAIL_W))
+			.join('\n');
+		expect(rail).not.toContain('crop');
+		// The `⤢ canvas` button replaces the old resize + crop buttons.
+		expect(rail).toContain('canvas');
 	});
 
 	test('C is unbound: shift-c neither crops nor changes state', async () => {
@@ -869,7 +868,7 @@ describe('resize mode nudge keys follow the wasd ruling (ADR 0035)', () => {
 			id: 'rz',
 			role: 'hat',
 		});
-		await clickRail(t, /\bresize\b/);
+		await clickRail(t, /\bcanvas\b/);
 		expect(t.editor.state.resize).toBe('right');
 		const w0 = frameExtent(currentFrame(t.editor.state)).w;
 		t.editor.key(key('d')); // grow the right edge out
@@ -887,7 +886,7 @@ describe('resize mode nudge keys follow the wasd ruling (ADR 0035)', () => {
 			id: 'rzv',
 			role: 'hat',
 		});
-		await clickRail(t, /\bresize\b/);
+		await clickRail(t, /\bcanvas\b/);
 		for (let i = 0; i < 4 && t.editor.state.resize !== 'bottom'; i++)
 			t.editor.key(key('tab'));
 		expect(t.editor.state.resize).toBe('bottom');
@@ -923,9 +922,9 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		};
 	}
 
-	test('the left rail carries the tools row, ink list and frame/view/size boxes', async () => {
-		// A tall terminal so the full control boxes show (rung 3 folds them when the
-		// rail can't fit the full ink list + boxes — e.g. at the 24-row floor).
+	test('the left rail carries the tools row, ink list and the edit box', async () => {
+		// A tall terminal so the full edit box shows (rung 3 folds it when the rail
+		// can't fit the full ink list + box — e.g. at the 24-row floor).
 		const t = await mount({
 			doc: emptySpriteDoc('rail', 'hat'),
 			id: 'rail',
@@ -938,15 +937,16 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(rail).toContain('pencil');
 		expect(rail).toContain('ink');
 		expect(rail).toContain('▚▚'); // the transparent swatch in the grid
-		// The playback box dissolved into three labeled boxes (post-#351); the
-		// redundant `animation idle · Nfps · Nf` info line is gone.
-		expect(rail).toContain('frame');
-		expect(rail).toContain('view');
-		expect(rail).toContain('size');
-		expect(rail).toContain('◌ onion');
+		// The three control boxes fused into one `edit` box (round 3); onion, frame
+		// creation, and the resize/crop buttons left the rail.
+		expect(rail).toContain('edit');
+		expect(rail).toContain('animation');
+		expect(rail).toContain('canvas');
+		expect(rail).not.toContain('◌ onion');
+		expect(rail).not.toContain('✚ frame');
 		expect(rail).not.toContain('playback');
-		// The dropped box info line carried `· Nfps · Nf`; no `fps` text survives in
-		// the rail now (the status row below still carries the animation readout).
+		// No `fps` text survives in the rail (the status row below carries the
+		// animation readout).
 		expect(rail).not.toContain('fps');
 	});
 
@@ -1193,15 +1193,6 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		if (!swatch) throw new Error("no 'a' swatch in the rail grid");
 		t.editor.mouseDown({ button: 0, x: swatch.x, y: swatch.y });
 		expect(t.editor.state.ink).toEqual({ kind: 'color', key: 'a' });
-		// The view box's onion button cycles the onion-skin depth (play/walk left
-		// the rail for the preview pane, post-#351).
-		const onionY = rowWith('onion');
-		t.editor.mouseDown({
-			button: 0,
-			x: lines[onionY].indexOf('onion'),
-			y: onionY,
-		});
-		expect(t.editor.onionDepth).toBe(1);
 	});
 });
 

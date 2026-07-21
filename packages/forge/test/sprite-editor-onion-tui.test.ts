@@ -90,25 +90,6 @@ function canvasHasBg(cap: Spans, rgb: readonly number[]): boolean {
 	return false;
 }
 
-// Click the rail button whose label matches `re` (QA round 3: the O and .
-// keys died; onion cycling and playback are rail buttons).
-async function clickRail(
-	t: Awaited<ReturnType<typeof mount>>,
-	re: RegExp,
-): Promise<void> {
-	await t.renderOnce();
-	const rows = t.captureCharFrame().split('\n');
-	for (let y = 0; y < rows.length; y++) {
-		const m = re.exec(rows[y].slice(0, RAIL_W));
-		if (m) {
-			t.editor.mouseDown({ button: 0, x: m.index + 1, y });
-			t.editor.mouseUp();
-			return;
-		}
-	}
-	throw new Error(`no rail button matching ${re}`);
-}
-
 describe('onion skinning — ghosts through the active Frame', () => {
 	test('depth 0 (default) shows no ghosts, only the checkerboard', async () => {
 		const t = await mount('focus');
@@ -117,10 +98,11 @@ describe('onion skinning — ghosts through the active Frame', () => {
 		expect(canvasHasBg(t.captureSpans(), NEXT)).toBe(false);
 	});
 
-	test('the onion button cycles depth and the previous/next neighbours ghost red/blue (focus)', async () => {
+	// Round 3 removed the rail onion button (concern 4 re-homes the control on the
+	// focus tab row); until then the onion state is driven through the field.
+	test('onion on shows the previous/next neighbours ghost red/blue (focus)', async () => {
 		const t = await mount('focus');
-		await clickRail(t, /\bonion\b/); // depth → 1
-		expect(t.editor.onionDepth).toBe(1);
+		t.editor.onionDepth = 1;
 		await t.renderOnce();
 		const cap = t.captureSpans();
 		// f0 (previous) shows red through f1's transparency; f2 (next) shows blue.
@@ -130,7 +112,7 @@ describe('onion skinning — ghosts through the active Frame', () => {
 
 	test('ghosts also render in the strips view', async () => {
 		const t = await mount('strips');
-		await clickRail(t, /\bonion\b/);
+		t.editor.onionDepth = 1;
 		await t.renderOnce();
 		const cap = t.captureSpans();
 		expect(canvasHasBg(cap, PREV)).toBe(true);
@@ -139,7 +121,7 @@ describe('onion skinning — ghosts through the active Frame', () => {
 
 	test('playback suspends the ghosts', async () => {
 		const t = await mount('focus');
-		await clickRail(t, /\bonion\b/); // onion on
+		t.editor.onionDepth = 1;
 		// Play moved off the rail to the preview pane (post-#351); drive it directly.
 		// biome-ignore lint/suspicious/noExplicitAny: reach the private playback toggle.
 		(t.editor as any).togglePlay('animation');
@@ -147,15 +129,5 @@ describe('onion skinning — ghosts through the active Frame', () => {
 		const cap = t.captureSpans();
 		expect(canvasHasBg(cap, PREV)).toBe(false);
 		expect(canvasHasBg(cap, NEXT)).toBe(false);
-	});
-
-	test('the onion button wraps 0 → 1 → 2 → 0', async () => {
-		const t = await mount('focus');
-		await clickRail(t, /\bonion\b/);
-		expect(t.editor.onionDepth).toBe(1);
-		await clickRail(t, /\bonion\b/);
-		expect(t.editor.onionDepth).toBe(2);
-		await clickRail(t, /\bonion\b/);
-		expect(t.editor.onionDepth).toBe(0);
 	});
 });
