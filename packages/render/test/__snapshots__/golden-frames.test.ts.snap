@@ -300,6 +300,34 @@ exports[`golden: hat sprites: hat: wizard 1`] = `
 }
 `;
 
+exports[`golden: buddy form frames: buddy: idle 1`] = `
+{
+  "baseline": 0,
+  "h": 3,
+  "keysLeft": [
+    "ppppppppp",
+    "ppppppppp",
+    "ppppppppp",
+  ],
+  "keysRight": [
+    "ppppppppp",
+    "ppppppppp",
+    "ppppppppp",
+  ],
+  "left": [
+    " ▐▛█▛██▌ ",
+    "▝▜█████▛▘",
+    "  ▀   ▀  ",
+  ],
+  "right": [
+    " ▐██▜█▜▌ ",
+    "▝▜█████▛▘",
+    "  ▀   ▀  ",
+  ],
+  "w": 9,
+}
+`;
+
 exports[`golden: buddy form frames: buddy: walk[0] 1`] = `
 {
   "baseline": 0,
@@ -351,6 +379,34 @@ exports[`golden: buddy form frames: buddy: walk[1] 1`] = `
     " ▐██▜█▜▌ ",
     "▝▜█████▛▘",
     "   ▀ ▀   ",
+  ],
+  "w": 9,
+}
+`;
+
+exports[`golden: buddy form frames: buddy: jump 1`] = `
+{
+  "baseline": 0,
+  "h": 3,
+  "keysLeft": [
+    "ppppppppp",
+    "ppppppppp",
+    "ppppppppp",
+  ],
+  "keysRight": [
+    "ppppppppp",
+    "ppppppppp",
+    "ppppppppp",
+  ],
+  "left": [
+    "▗▟▛█▛██▙▖",
+    " ▐█████▌ ",
+    " ▀     ▀ ",
+  ],
+  "right": [
+    "▗▟██▜█▜▙▖",
+    " ▐█████▌ ",
+    " ▀     ▀ ",
   ],
   "w": 9,
 }
@@ -468,62 +524,6 @@ exports[`golden: buddy form frames: buddy: emote:dance[1] 1`] = `
 }
 `;
 
-exports[`golden: buddy form frames: buddy: idle 1`] = `
-{
-  "baseline": 0,
-  "h": 3,
-  "keysLeft": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "keysRight": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "left": [
-    " ▐▛█▛██▌ ",
-    "▝▜█████▛▘",
-    "  ▀   ▀  ",
-  ],
-  "right": [
-    " ▐██▜█▜▌ ",
-    "▝▜█████▛▘",
-    "  ▀   ▀  ",
-  ],
-  "w": 9,
-}
-`;
-
-exports[`golden: buddy form frames: buddy: jump 1`] = `
-{
-  "baseline": 0,
-  "h": 3,
-  "keysLeft": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "keysRight": [
-    "ppppppppp",
-    "ppppppppp",
-    "ppppppppp",
-  ],
-  "left": [
-    " ▐▛█▛██▙▖",
-    "▝▜█████▌ ",
-    " ▀     ▀ ",
-  ],
-  "right": [
-    "▗▟██▜█▜▌ ",
-    " ▐█████▛▘",
-    " ▀     ▀ ",
-  ],
-  "w": 9,
-}
-`;
-
 exports[`golden: buddy form frames: buddy: emote:sit 1`] = `
 {
   "baseline": 0,
@@ -539,14 +539,14 @@ exports[`golden: buddy form frames: buddy: emote:sit 1`] = `
     "ppppppppp",
   ],
   "left": [
-    " ▐▛█▛██▌ ",
-    "▄▟█████▀ ",
     "         ",
+    " ▐▛█▛██▌ ",
+    "▄▟█████▛▘",
   ],
   "right": [
-    " ▐██▜█▜▌ ",
-    " ▀█████▙▄",
     "         ",
+    " ▐██▜█▜▌ ",
+    "▝▜█████▙▄",
   ],
   "w": 9,
 }
