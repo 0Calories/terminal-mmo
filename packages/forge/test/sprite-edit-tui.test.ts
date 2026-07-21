@@ -526,7 +526,6 @@ describe('Sprite editor TUI smoke', () => {
 			fps: 5,
 			frameCount: 1,
 			playMode: 'none',
-			onionDepth: 0,
 			height: 22,
 			variants: variantOptions(usage, active),
 		});
@@ -773,22 +772,21 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 	const bx = RAIL_W;
 	const by = 1;
 
-	test('c crops to the committed selection (the quick-pick is retired)', async () => {
+	test('crop has left the rail (round 3: the canvas-size modal absorbs it)', async () => {
 		const t = await mount({
-			doc: emptySpriteDoc('crop', 'hat'),
-			id: 'crop',
+			doc: emptySpriteDoc('sizing', 'hat'),
+			id: 'sizing',
 			role: 'hat',
 		});
-		const before = currentFrame(t.editor.state);
-		// Marquee cells (0,0)-(1,0) with the select tool, then crop with plain c.
-		t.editor.key(key('1', { sequence: '1' }));
-		t.editor.mouseDown({ button: 0, x: bx, y: by });
-		t.editor.mouseDrag({ button: 0, x: bx + 3, y: by + 1 });
-		t.editor.mouseUp();
-		expect(t.editor.state.selection).not.toBeNull();
-		await clickRail(t, /\bcrop\b/);
-		const after = frameExtent(currentFrame(t.editor.state));
-		expect(after.w).toBeLessThan(frameExtent(before).w);
+		await t.renderOnce();
+		const rail = t
+			.captureCharFrame()
+			.split('\n')
+			.map((r) => r.slice(0, RAIL_W))
+			.join('\n');
+		expect(rail).not.toContain('crop');
+		// The `⤢ canvas` button replaces the old resize + crop buttons.
+		expect(rail).toContain('canvas');
 	});
 
 	test('C is unbound: shift-c neither crops nor changes state', async () => {
@@ -862,43 +860,236 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 	});
 });
 
-describe('resize mode nudge keys follow the wasd ruling (ADR 0035)', () => {
-	test('a/d nudge the selected horizontal edge; h/l are retired', async () => {
+describe('canvas-size modal (round 3): resize + crop in one gesture', () => {
+	test('canvas opens the modal; a/d nudge the armed (right) edge; enter applies', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('rz', 'hat'),
 			id: 'rz',
 			role: 'hat',
 		});
-		await clickRail(t, /\bresize\b/);
-		expect(t.editor.state.resize).toBe('right');
 		const w0 = frameExtent(currentFrame(t.editor.state)).w;
+		await clickRail(t, /\bcanvas\b/);
+		expect(t.editor.canvasModal).not.toBeNull();
+		// The doc is untouched while the modal is live — only enter commits.
 		t.editor.key(key('d')); // grow the right edge out
-		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0 + 1);
-		t.editor.key(key('a')); // shrink it back in
-		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0);
-		t.editor.key(key('l')); // retired vim spellings: no nudge
+		t.editor.key(key('d'));
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0); // not yet
+		t.editor.key(key('a')); // shrink one back in (net +1)
+		t.editor.key(key('l')); // retired vim spellings: ignored by the modal
 		t.editor.key(key('h'));
-		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0);
+		t.editor.key(key('return')); // apply
+		expect(t.editor.canvasModal).toBeNull();
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0 + 1);
 	});
 
-	test('w/s nudge a vertical edge; j/k are retired', async () => {
+	test('the modal apply is one undo step; esc cancels with no change', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('rzv', 'hat'),
 			id: 'rzv',
 			role: 'hat',
 		});
-		await clickRail(t, /\bresize\b/);
-		for (let i = 0; i < 4 && t.editor.state.resize !== 'bottom'; i++)
-			t.editor.key(key('tab'));
-		expect(t.editor.state.resize).toBe('bottom');
-		const h0 = frameExtent(currentFrame(t.editor.state)).h;
-		t.editor.key(key('s')); // grow the bottom edge down
-		expect(frameExtent(currentFrame(t.editor.state)).h).toBe(h0 + 1);
-		t.editor.key(key('w')); // shrink it back up
-		expect(frameExtent(currentFrame(t.editor.state)).h).toBe(h0);
-		t.editor.key(key('j')); // retired vim spellings: no nudge
-		t.editor.key(key('k'));
-		expect(frameExtent(currentFrame(t.editor.state)).h).toBe(h0);
+		const before = t.editor.state.doc;
+		const w0 = frameExtent(currentFrame(t.editor.state)).w;
+		// Apply a grow, then undo back to the original doc.
+		await clickRail(t, /\bcanvas\b/);
+		t.editor.key(key('d'));
+		t.editor.key(key('return'));
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0 + 1);
+		t.editor.key(key('u')); // undo
+		expect(t.editor.state.doc).toBe(before);
+		// esc leaves the modal without touching the doc.
+		await clickRail(t, /\bcanvas\b/);
+		t.editor.key(key('d'));
+		t.editor.key(key('escape'));
+		expect(t.editor.canvasModal).toBeNull();
+		expect(t.editor.state.doc).toBe(before);
+	});
+
+	test('dragging an edge of the bounds rectangle grows the canvas', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('rzd', 'hat'),
+			id: 'rzd',
+			role: 'hat',
+		});
+		const w0 = frameExtent(currentFrame(t.editor.state)).w;
+		await clickRail(t, /\bcanvas\b/);
+		await t.renderOnce();
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private modal geom.
+		const g = (t.editor as any).geom.canvasModal;
+		if (!g) throw new Error('canvas modal geometry not recorded');
+		// Grab the right border and drag it two cells (cw each) further right.
+		const midY = Math.floor((g.topY + g.bottomY) / 2);
+		t.editor.mouseDown({ button: 0, x: g.rightX, y: midY });
+		t.editor.mouseDrag({ button: 0, x: g.rightX + 2 * g.cw, y: midY });
+		t.editor.mouseUp();
+		t.editor.key(key('return'));
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0 + 2);
+	});
+
+	test('the modal titles the live size and paints no clear-colour cell', async () => {
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n██\n██\n',
+			'blk',
+		);
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'blk', role: 'hat' });
+		await clickRail(t, /\bcanvas\b/);
+		t.editor.key(key('a')); // shrink the right edge one cell (clips a column)
+		await t.renderOnce();
+		const frame = t.captureCharFrame();
+		// The title reads the live before → after size.
+		expect(frame).toContain('canvas 2×2 → 1×2');
+		// The declared clear colour is never painted, even with the modal open.
+		const CLEAR = hexToInts(RENDERER_CLEAR_COLOR);
+		const cap = t.captureSpans();
+		for (let y = 0; y < cap.lines.length; y++)
+			for (const s of cap.lines[y].spans) {
+				const [r, g, b] = s.bg.toInts();
+				expect([r, g, b]).not.toEqual(CLEAR);
+			}
+	});
+
+	test('a column the shrink would clip renders in the warning colour', async () => {
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n██\n██\n',
+			'clip',
+		);
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'clip', role: 'hat' });
+		await clickRail(t, /\bcanvas\b/);
+		t.editor.key(key('a')); // shrink right → the last inked column would clip
+		await t.renderOnce();
+		// The warning shade is Palette.feedback = (255,180,80).
+		const WARN: [number, number, number] = [255, 180, 80];
+		const cap = t.captureSpans();
+		let found = false;
+		for (let y = 0; y < cap.lines.length && !found; y++)
+			for (const s of cap.lines[y].spans) {
+				const [r, g, b] = s.bg.toInts();
+				if (r === WARN[0] && g === WARN[1] && b === WARN[2]) found = true;
+			}
+		expect(found).toBe(true);
+	});
+
+	test('the modal renders the real Default-frame glyph + fg/bg, not a solid block (#411)', async () => {
+		// The Default frame's cell (0,0) is a PARTIAL-quadrant glyph (▘) with distinct
+		// custom fg + bg. The old modal read the raw glyph, treated it as fully lit,
+		// and stamped a solid space cell in fg only (bg dropped). The fixed modal
+		// reuses the shared frame renderer, so the buffer must carry the actual glyph
+		// with both resolved colours.
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}],"colors":{"q":[10,20,30,255],"s":[200,100,50,255]}}\n--- idle\n▘·\n··\n@colors\nq·\n··\n@bg\ns·\n··\n',
+			'real',
+		);
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'real', role: 'hat' });
+		await clickRail(t, /\bcanvas\b/);
+		await t.renderOnce();
+		const cap = t.captureSpans();
+		const cell = (x: number, y: number) => {
+			let col = 0;
+			for (const s of cap.lines[y].spans) {
+				if (x < col + s.width)
+					return {
+						ch: s.text[x - col] ?? ' ',
+						fg: s.fg.toInts(),
+						bg: s.bg.toInts(),
+					};
+				col += s.width;
+			}
+			return null;
+		};
+		// Scope the search to the modal box (the always-on preview pane also renders
+		// the sprite, so an unscoped glyph search would find it there — this test is
+		// specifically about the MODAL's own render).
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private modal geom.
+		const box = (t.editor as any).geom.canvasModal?.box as
+			| { ox: number; oy: number; w: number; h: number }
+			| undefined;
+		if (!box) throw new Error('canvas modal geometry not recorded');
+		// Locate the real glyph inside the modal: the old code never emitted it here
+		// (solid blocks are space cells), so its presence proves the render path.
+		let hit: { x: number; y: number } | null = null;
+		for (let y = box.oy; y < box.oy + box.h && !hit; y++) {
+			let col = 0;
+			for (const s of cap.lines[y].spans) {
+				for (let k = 0; k < s.text.length; k++) {
+					const gx = col + k;
+					if (s.text[k] === '▘' && gx >= box.ox && gx < box.ox + box.w) {
+						hit = { x: gx, y };
+						break;
+					}
+				}
+				if (hit) break;
+				col += s.width;
+			}
+		}
+		if (!hit)
+			throw new Error(
+				'the Default frame glyph ▘ was not rendered in the modal',
+			);
+		const lit = cell(hit.x, hit.y);
+		expect(lit?.ch).toBe('▘');
+		// The fg is the resolved custom key `q`, and the bg the resolved `s` — bg is
+		// no longer dropped.
+		expect(lit?.fg.slice(0, 3)).toEqual([10, 20, 30]);
+		expect(lit?.bg.slice(0, 3)).toEqual([200, 100, 50]);
+		// The empty cell to the glyph's right (inside bounds) is NOT painted as ink:
+		// no glyph, and neither the fg nor bg ink colour.
+		const empty = cell(hit.x + 1, hit.y);
+		expect(empty?.ch).toBe(' ');
+		expect(empty?.bg.slice(0, 3)).not.toEqual([10, 20, 30]);
+		expect(empty?.bg.slice(0, 3)).not.toEqual([200, 100, 50]);
+	});
+
+	test('a cell only a non-default frame inks: checkerboard unclipped, warning when clipped (no ghost, #411 QA)', async () => {
+		// idle (the Default frame) inks (0,0); sit inks (1,1) — a cell idle leaves
+		// empty. The modal must NOT ghost sit's ink (dimmed ghosts read as broken
+		// art): (1,1) is plain checkerboard while unclipped. But the all-frame clip
+		// safety net must still catch it: shrinking away (1,1) flags it in warning.
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"},{"name":"sit"}],"colors":{"q":[10,20,30,255]}}\n--- idle\n█·\n··\n@colors\nq·\n··\n--- sit\n··\n·█\n@colors\n··\n·q\n',
+			'ghost',
+		);
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'ghost', role: 'hat' });
+		await clickRail(t, /\bcanvas\b/);
+		await t.renderOnce();
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private modal geom.
+		const g = (t.editor as any).geom.canvasModal as {
+			ox0: number;
+			oy0: number;
+			cw: number;
+			ch: number;
+		} | null;
+		if (!g) throw new Error('canvas modal geometry not recorded');
+		const cell = (
+			cap: ReturnType<typeof t.captureSpans>,
+			x: number,
+			y: number,
+		) => {
+			let col = 0;
+			for (const s of cap.lines[y].spans) {
+				if (x < col + s.width)
+					return { ch: s.text[x - col] ?? ' ', bg: s.bg.toInts() };
+				col += s.width;
+			}
+			return null;
+		};
+		// Screen position of doc cell (1,1) — the one only `sit` inks.
+		const sx = g.ox0 + 1 * g.cw;
+		const sy = g.oy0 + 1 * g.ch;
+		// Unclipped: no dimmed ghost glyph, no ink colour — just checkerboard (space).
+		const before = cell(t.captureSpans(), sx, sy);
+		expect(before?.ch).toBe(' ');
+		expect(before?.bg.slice(0, 3)).not.toEqual([10, 20, 30]);
+		expect(before?.bg.slice(0, 3)).not.toEqual([255, 180, 80]);
+		// Shrink the right edge one cell → column 1 (holding sit's only-frame ink at
+		// (1,1)) is clipped. The safety net flags it in the warning colour.
+		t.editor.key(key('a'));
+		await t.renderOnce();
+		const after = cell(t.captureSpans(), sx, sy);
+		expect(after?.bg.slice(0, 3)).toEqual([255, 180, 80]);
 	});
 });
 
@@ -923,9 +1114,9 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		};
 	}
 
-	test('the left rail carries the tools row, ink list and frame/view/size boxes', async () => {
-		// A tall terminal so the full control boxes show (rung 3 folds them when the
-		// rail can't fit the full ink list + boxes — e.g. at the 24-row floor).
+	test('the left rail carries the tools row, ink list and the edit box', async () => {
+		// A tall terminal so the full edit box shows (rung 3 folds it when the rail
+		// can't fit the full ink list + box — e.g. at the 24-row floor).
 		const t = await mount({
 			doc: emptySpriteDoc('rail', 'hat'),
 			id: 'rail',
@@ -938,15 +1129,16 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		expect(rail).toContain('pencil');
 		expect(rail).toContain('ink');
 		expect(rail).toContain('▚▚'); // the transparent swatch in the grid
-		// The playback box dissolved into three labeled boxes (post-#351); the
-		// redundant `animation idle · Nfps · Nf` info line is gone.
-		expect(rail).toContain('frame');
-		expect(rail).toContain('view');
-		expect(rail).toContain('size');
-		expect(rail).toContain('◌ onion');
+		// The three control boxes fused into one `edit` box (round 3); onion, frame
+		// creation, and the resize/crop buttons left the rail.
+		expect(rail).toContain('edit');
+		expect(rail).toContain('animation');
+		expect(rail).toContain('canvas');
+		expect(rail).not.toContain('◌ onion');
+		expect(rail).not.toContain('✚ frame');
 		expect(rail).not.toContain('playback');
-		// The dropped box info line carried `· Nfps · Nf`; no `fps` text survives in
-		// the rail now (the status row below still carries the animation readout).
+		// No `fps` text survives in the rail (the status row below carries the
+		// animation readout).
 		expect(rail).not.toContain('fps');
 	});
 
@@ -1174,7 +1366,6 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 			fps: 8,
 			frameCount: 1,
 			playMode: 'none',
-			onionDepth: 0,
 			height: 32,
 		});
 		let swatch: { x: number; y: number } | null = null;
@@ -1193,15 +1384,6 @@ describe('Sprite editor chrome (#392): rail, strips/focus, navigation, help', ()
 		if (!swatch) throw new Error("no 'a' swatch in the rail grid");
 		t.editor.mouseDown({ button: 0, x: swatch.x, y: swatch.y });
 		expect(t.editor.state.ink).toEqual({ kind: 'color', key: 'a' });
-		// The view box's onion button cycles the onion-skin depth (play/walk left
-		// the rail for the preview pane, post-#351).
-		const onionY = rowWith('onion');
-		t.editor.mouseDown({
-			button: 0,
-			x: lines[onionY].indexOf('onion'),
-			y: onionY,
-		});
-		expect(t.editor.onionDepth).toBe(1);
 	});
 });
 

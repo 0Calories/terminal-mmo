@@ -54,14 +54,8 @@ import {
 	redo,
 	undo,
 } from '../history';
-import {
-	cropDocToCells,
-	normalizeDoc,
-	RESIZE_EDGES,
-	type ResizeEdge,
-	resizeDoc,
-	trimDoc,
-} from './resize';
+import { applyCanvasModal, type CanvasModal } from './canvasModal';
+import { normalizeDoc, trimDoc } from './resize';
 
 export type SpriteTool =
 	| 'paint'
@@ -250,9 +244,6 @@ export interface SpriteEditorState {
 	// The in-editor clipboard buffer (spec #400), or null when nothing is copied.
 	// Survives Frame/Animation switches; never persisted to disk.
 	clipboard: Clipboard | null;
-	// The edge selected in whole-file resize mode (spec #402), or null when not
-	// resizing. Nudges apply live to `doc`; commit records ONE undo step.
-	resize: ResizeEdge | null;
 }
 
 // A resolved view of one cell: `fg`/`bg` are '' when transparent, and `mask` is
@@ -323,7 +314,6 @@ export function initSpriteEditor(
 		selection: null,
 		float: null,
 		clipboard: null,
-		resize: null,
 	};
 }
 
@@ -645,6 +635,38 @@ export function addFrameToAnimation(
 		animation,
 		frame: `${animation} ${newIndex}`,
 	};
+}
+
+// Append a CLONE of the animation's LAST frame — its art AND its per-frame anchor
+// overrides — and select it (round 3). The focus view's `[+]` tile is the sole
+// frame-creation entry point now, and a clone (not a blank) is the consistent
+// reading: the new frame starts as a copy of the one it follows.
+export function cloneFrameToAnimation(
+	state: SpriteEditorState,
+	animation: string,
+): SpriteEditorState {
+	const target = animationByName(state.doc, animation);
+	if (target === undefined)
+		return refuse(state, `no such animation '${animation}'`);
+	const last = target.frames[target.frames.length - 1];
+	const clone: SpriteFrameDoc = last
+		? {
+				rows: [...last.rows],
+				colors: [...last.colors],
+				bg: [...last.bg],
+				anchors: { ...last.anchors },
+			}
+		: newBlankFrame(state);
+	const nextFrames = [...target.frames, clone];
+	const nextDoc: SpriteDoc = {
+		...state.doc,
+		animations: state.doc.animations.map((a) =>
+			a.name === animation ? { ...a, frames: nextFrames } : a,
+		),
+	};
+	const committed = commitDoc(state, nextDoc);
+	const newIndex = nextFrames.length - 1;
+	return { ...committed, animation, frame: `${animation} ${newIndex}` };
 }
 
 // Delete an animation and its frames. Refuses removing the last animation.
@@ -1969,14 +1991,15 @@ export function eyedropAt(
 }
 
 // ---------------------------------------------------------------------------
-// Whole-file resize & crop (spec #402). Resize/crop are pure doc transforms
-// (see ./resize) that grow or shrink every Frame together, compensating Anchors
-// and the baseline on each edge add/remove. Resize is a live mode whose commit is
-// ONE undo step; crop is a single destructive step with status feedback.
+// Whole-file sizing (spec #402, round 3). The canvas-size modal replaces the old
+// live resize mode AND crop: it grows or shrinks every Frame together — cropping,
+// enlarging and shifting in one gesture — compensating Anchors and the baseline
+// on each edge add/remove (the modal's per-edge math lives in ./canvasModal). The
+// commit here is ONE undo step.
 // ---------------------------------------------------------------------------
 
-// Clamp the cursor into the current Frame's Pixel extent (after a resize/crop the
-// old cursor may sit past the new edge).
+// Clamp the cursor into the current Frame's Pixel extent (after a resize the old
+// cursor may sit past the new edge).
 function clampCursor(state: SpriteEditorState): SpriteEditorState {
 	const { w, h } = frameExtent(currentFrame(state));
 	const cx = Math.max(0, Math.min(Math.max(0, w * 2 - 1), state.cursor.x));
@@ -1985,88 +2008,19 @@ function clampCursor(state: SpriteEditorState): SpriteEditorState {
 	return { ...state, cursor: { x: cx, y: cy } };
 }
 
-function resizeHint(state: SpriteEditorState, edge: ResizeEdge): string {
-	const { w, h } = frameExtent(currentFrame(state));
-	return `resize ▸${edge} · ${w}×${h} · tab edge · arrows · enter/esc`;
-}
-
-// Enter whole-file resize mode with the `right` edge selected. Any in-flight
-// float / shape / selection is dropped so the mode owns the canvas cleanly.
-export function beginResize(state: SpriteEditorState): SpriteEditorState {
-	const edge: ResizeEdge = 'right';
-	const s: SpriteEditorState = {
-		...state,
-		shape: null,
-		float: null,
-		selection: null,
-		resize: edge,
-	};
-	return { ...s, feedback: resizeHint(s, edge) };
-}
-
-// Cycle the selected edge (left → right → top → bottom → left).
-export function resizeCycleEdge(state: SpriteEditorState): SpriteEditorState {
-	if (!state.resize) return state;
-	const i = RESIZE_EDGES.indexOf(state.resize);
-	const edge = RESIZE_EDGES[(i + 1) % RESIZE_EDGES.length];
-	return { ...state, resize: edge, feedback: resizeHint(state, edge) };
-}
-
-// Nudge the selected edge: `dir` +1 grows it outward (adds a cell), -1 shrinks it
-// inward (removes a cell). Applies live to `doc` WITHOUT recording history, so the
-// whole mode collapses to one undo step on commit.
-export function resizeNudge(
+// Apply the canvas-size modal to every Frame as ONE undo step, clamping the
+// cursor into the new extent. A no-op modal (no deltas) leaves the doc untouched;
+// a would-be-degenerate result (guarded by the modal's own clamps) is refused.
+export function resizeCanvas(
 	state: SpriteEditorState,
-	dir: 1 | -1,
+	modal: CanvasModal,
 ): SpriteEditorState {
-	if (!state.resize) return state;
-	const next = resizeDoc(state.doc, state.resize, dir);
-	if (!next) return { ...state, feedback: 'cannot shrink below 1×1' };
-	const s = clampCursor({ ...state, doc: next });
-	return { ...s, feedback: resizeHint(s, state.resize) };
-}
-
-// Commit the accumulated resize as ONE undo step and leave the mode.
-export function commitResize(state: SpriteEditorState): SpriteEditorState {
-	if (!state.resize) return state;
-	const changed = state.doc !== state.history.present;
-	const history = changed ? record(state.history, state.doc) : state.history;
-	const { w, h } = frameExtent(currentFrame(state));
-	return {
-		...state,
-		resize: null,
-		history,
-		feedback: changed ? `resized to ${w}×${h}` : '',
-	};
-}
-
-// Abandon the mode, restoring the doc to its pre-resize state losslessly.
-export function cancelResize(state: SpriteEditorState): SpriteEditorState {
-	if (!state.resize) return state;
-	const s = clampCursor({
-		...state,
-		doc: state.history.present,
-		resize: null,
-	});
-	return { ...s, feedback: '' };
-}
-
-// Crop the whole file to the committed selection (spec #402): the selection's
-// Pixel bbox rounds OUTWARD to cell boundaries, then standard crop semantics
-// (Anchors/baseline compensate). Destructive, a single undo step. Refuses with
-// feedback when there is no selection.
-export function cropToSelection(state: SpriteEditorState): SpriteEditorState {
-	const sel = state.selection;
-	if (!sel) return refuse(state, 'no selection to crop');
-	// Round the Pixel bbox outward: any cell the selection touches is kept.
-	const cx0 = Math.floor(sel.x0 / 2);
-	const cy0 = Math.floor(sel.y0 / 2);
-	const cx1 = Math.floor(sel.x1 / 2);
-	const cy1 = Math.floor(sel.y1 / 2);
-	const nextDoc = cropDocToCells(state.doc, cx0, cy0, cx1, cy1);
-	const committed = commitDoc({ ...state, selection: null }, nextDoc);
+	const nextDoc = applyCanvasModal(state.doc, modal);
+	if (!nextDoc) return refuse(state, 'cannot shrink below 1×1');
+	if (nextDoc === state.doc) return { ...state, feedback: '' };
+	const committed = commitDoc(state, nextDoc);
 	const { w, h } = frameExtent(currentFrame(committed));
-	return { ...clampCursor(committed), feedback: `cropped to ${w}×${h}` };
+	return { ...clampCursor(committed), feedback: `canvas ${w}×${h}` };
 }
 
 // ---------------------------------------------------------------------------

@@ -103,17 +103,17 @@ describe('rung 2 — strips force focus (spec #398)', () => {
 	});
 });
 
-describe('rung 3 — playback box folds (spec #398)', () => {
-	test('folds when the rail cannot fit the full ink grid and the playback box, and unfolds when it can', () => {
+describe('rung 3 — edit box folds (spec #398)', () => {
+	test('folds when the rail cannot fit the full ink grid and the edit box, and unfolds when it can', () => {
 		// An absurdly long palette (many grid rows) at a squat height cannot
 		// share the rail with the box; taller terminals fit both — reversible.
-		const short = input({ termW: 100, termH: 24, inkCount: 60 });
+		const short = input({ termW: 100, termH: 24, inkCount: 90 });
 		expect(solveDegradation(short).foldPlayback).toBe(true);
 		expect(solveDegradation({ ...short, termH: 40 }).foldPlayback).toBe(false);
 	});
 
 	test('the standard palette + variants keep the full box at the 80×24 floor (mouse-primary, ADR 0035)', () => {
-		// The playback box now carries the mouse-only buttons, so the honest grid
+		// The `edit` box carries the mouse-only buttons, so the honest grid
 		// accounting must keep it unfolded for a real doc at the floor.
 		expect(
 			solveDegradation(

@@ -36,6 +36,14 @@ import {
 import type { CliDeps } from '../cli';
 import { findSpriteFile, formatSpriteDiagnostics } from '../sprite-cli';
 import {
+	type CanvasModal,
+	canvasTarget,
+	isClipped,
+	nudgeCanvasEdge,
+	openCanvasModal,
+	setEdge,
+} from './canvasModal';
+import {
 	helpOverlayRows,
 	RAIL_TOOLS,
 	RAIL_W,
@@ -57,7 +65,11 @@ import {
 	SHADE_ROWS,
 	typeHex,
 } from './colorPicker';
-import { renderComposite, styleWithLocalColors } from './composite';
+import {
+	renderComposite,
+	renderPlainFrame,
+	styleWithLocalColors,
+} from './composite';
 import {
 	CHROME_ROWS,
 	type DegradationLayout,
@@ -90,27 +102,24 @@ import {
 	openAnimationMenu,
 	syncAnimationMenu,
 } from './menus';
-import { cycleOnionDepth, ghostColor, onionGhosts } from './onion';
+import { ghostColor, previousGhostFrame } from './onion';
 import { animationFps, playbackFrame, walkPreviewIndex } from './playback';
+import type { ResizeEdge } from './resize';
 import { normalizeDoc } from './resize';
 import {
-	addFrameToAnimation,
 	anchorMarkers,
 	anchorScopeFor,
 	animationFrames,
-	beginResize,
 	beginStroke,
 	cancelFloat,
-	cancelResize,
 	cancelShape,
 	cellAt,
 	clearSelection,
+	cloneFrameToAnimation,
 	colorInk,
 	commitFloat,
-	commitResize,
 	copySelection,
 	createAnimation,
-	cropToSelection,
 	currentFrame,
 	cutSelection,
 	type DynamicPreviews,
@@ -137,8 +146,7 @@ import {
 	redoEdit,
 	removeAnchorOverride,
 	reorderFrame,
-	resizeCycleEdge,
-	resizeNudge,
+	resizeCanvas,
 	type SpriteEditorState,
 	type SpriteTool,
 	saveResult,
@@ -178,8 +186,6 @@ import {
 	DEFAULT_ZOOM,
 	dirForRole,
 	docDynamicUsage,
-	mirrorAnchorMarkers,
-	mirrorRender,
 	missingRequiredAnchors,
 	parseEditArg,
 	requiredAnchors,
@@ -377,7 +383,13 @@ export class SpriteEditor extends Renderable {
 	// The `c` ink quick-pick overlay (spec #387): random-access ink selection.
 	animationMenu: AnimationMenuState | null = null;
 	anchorMenu: AnchorMenuState | null = null;
-	mirror = false;
+	// The `⤢ canvas` size modal (round 3): drag any edge/corner of a bright
+	// canvas-bounds rectangle to grow/shrink every Frame at once (resize + crop in
+	// one gesture). Null when closed; enter applies, esc cancels.
+	canvasModal: CanvasModal | null = null;
+	// An in-flight edge/corner drag inside the canvas modal: which edges the grab
+	// moves (a corner carries two), or null when not dragging.
+	private canvasDragEdges: ResizeEdge[] | null = null;
 	// The always-on floating Composited preview (#393): the WIP art rendered the way
 	// the game draws it, docked top-right over the canvas. It is shown by default so
 	// the artist always draws against the truth. On a small terminal rung 1 (spec
@@ -397,8 +409,7 @@ export class SpriteEditor extends Renderable {
 	get composite(): boolean {
 		return previewVisible(this.autoPreview, this.previewOverride);
 	}
-	// The preview pane's own facing, flipped by its flip control. Independent of the
-	// canvas `mirror` split so flipping the preview never opens the mirror panel.
+	// The preview pane's own facing, flipped by its flip control.
 	previewFacing: 1 | -1 = 1;
 	// Which canvas view is active: strips (default) or focus (`tab`).
 	view: CanvasView = 'strips';
@@ -417,11 +428,11 @@ export class SpriteEditor extends Renderable {
 	private penDown = false;
 	// The fatbits zoom (×z on the ladder). Presentation only — never in the doc.
 	zoom = DEFAULT_ZOOM;
-	// Onion-skin depth (0 off, cycled by the rail's onion button — mouse-only,
-	// ADR 0035). Presentation only. Ghosts are drawn
-	// only for the active Frame, and only while not playing (playback suspends
-	// them). `onionLayers` is the per-render, pre-pointed source built from it.
-	onionDepth = 0;
+	// Onion skin on/off (round 3): a plain toggle riding the focus tab row. When
+	// on, the focus view's active Frame ghosts its PREVIOUS Frame beneath its art,
+	// while not playing (playback suspends it) and only for multi-frame animations.
+	// `onionLayers` is the per-render, pre-pointed source built from it.
+	onion = false;
 	private onionLayers: {
 		read: (px: number, py: number) => boolean;
 		color: RGBA;
@@ -469,6 +480,12 @@ export class SpriteEditor extends Renderable {
 			// The active frame's Pixel height in cells (box vertical extent = origin.y
 			// .. origin.y + pxH), so a click's row can be bounded to the strip.
 			pxH: number;
+			// The `[+]` clone tile after the last frame (round 3): its clickable
+			// screen box, or null in the playback path / when it is off-screen.
+			plusTile: { x0: number; x1: number; y0: number; y1: number } | null;
+			// The onion on/off toggle riding the right edge of the tab row (round 3):
+			// its clickable span, or null for single-frame animations / playback.
+			onionToggle: { x0: number; x1: number; y: number } | null;
 		} | null;
 		// The floating preview pane's screen rect + its clickable control spans, so
 		// mouse handlers can swallow clicks over the pane and hit flip/play.
@@ -479,7 +496,6 @@ export class SpriteEditor extends Renderable {
 			h: number;
 			flip: { x0: number; x1: number; y: number };
 			play: { x0: number; x1: number; y: number };
-			walk: { x0: number; x1: number; y: number };
 		} | null;
 		// The colour picker's hue/shade grid rect, so a click resolves to a cell.
 		colorGrid: {
@@ -493,6 +509,21 @@ export class SpriteEditor extends Renderable {
 		anchorCells: { x: number; y: number; name: string; overridden: boolean }[];
 		// The anchor menu's modal box this render (mouse-native menu, ADR 0036).
 		anchorMenuBox: { ox: number; oy: number; w: number; h: number } | null;
+		// The canvas-size modal's screen geometry this render (round 3): the stable
+		// origin of the original grid, the screen-cells-per-sprite-cell scale, and
+		// the target-bounds rectangle's four border positions, so an edge/corner
+		// drag inverts back to a per-edge cell delta.
+		canvasModal: {
+			ox0: number;
+			oy0: number;
+			cw: number;
+			ch: number;
+			leftX: number;
+			rightX: number;
+			topY: number;
+			bottomY: number;
+			box: { ox: number; oy: number; w: number; h: number };
+		} | null;
 	} = {
 		viewH: 0,
 		viewW: 0,
@@ -503,6 +534,7 @@ export class SpriteEditor extends Renderable {
 		colorGrid: null,
 		anchorCells: [],
 		anchorMenuBox: null,
+		canvasModal: null,
 	};
 	// An in-flight mouse paint stroke (down→drag→up coalesces to one undo step),
 	// and the button held for it (drag events don't reliably re-report the button).
@@ -570,9 +602,9 @@ export class SpriteEditor extends Renderable {
 	}
 
 	// The dynamic p/a colours for the session-selected variant (spec #401 as
-	// amended): the canvas, shape preview, mirror AND the rail's swatches all
-	// resolve painted `p`/`a` through these, so every surface agrees. Nothing
-	// advances them but a click on the variant strip.
+	// amended): the canvas, shape preview AND the rail's swatches all resolve
+	// painted `p`/`a` through these, so every surface agrees. Nothing advances
+	// them but a click on the variant strip.
 	private dynamicPreviews(): DynamicPreviews {
 		return variantPreviews(this.variant.p, this.variant.a);
 	}
@@ -700,7 +732,7 @@ export class SpriteEditor extends Renderable {
 			this.anchorMenu !== null ||
 			this.awaitingStamp ||
 			this.helpOpen ||
-			this.state.resize !== null
+			this.canvasModal !== null
 		);
 	}
 
@@ -763,29 +795,14 @@ export class SpriteEditor extends Renderable {
 			case 'play':
 				this.togglePlay(action.mode);
 				return;
-			case 'addFrame':
-				this.addFrame();
-				return;
 			case 'animationMenu':
 				this.openAnimationMenu();
 				return;
 			case 'anchorMenu':
 				this.openAnchorMenu();
 				return;
-			case 'onionCycle':
-				this.cycleOnion();
-				return;
-			case 'mirror':
-				this.mirror = !this.mirror;
-				return;
-			case 'resize':
-				this.liftPen();
-				this.state = beginResize(this.state);
-				return;
-			case 'crop':
-				this.liftPen();
-				this.state = cropToSelection(this.state);
-				this.followCursor = true;
+			case 'canvas':
+				this.openCanvasSizeModal();
 				return;
 			case 'previewToggle':
 				this.togglePreview();
@@ -910,8 +927,29 @@ export class SpriteEditor extends Renderable {
 		} else {
 			const f = this.geom.focus;
 			if (f && e.y < f.top) {
+				// The onion toggle rides the tab row's right edge (round 3).
+				const ot = f.onionToggle;
+				if (ot && e.y === ot.y && e.x >= ot.x0 && e.x <= ot.x1) {
+					this.liftPen();
+					this.toggleOnion();
+					return;
+				}
 				const tab = focusTabAt(f.tabs, e.x - RAIL_W);
 				if (tab) this.state = selectFrame(this.state, tab.name);
+				return;
+			}
+			// The `[+]` clone tile trailing the last frame appends a clone of the
+			// last frame and selects it (round 3: the sole frame-creation entry).
+			if (
+				f?.plusTile &&
+				e.x >= f.plusTile.x0 &&
+				e.x <= f.plusTile.x1 &&
+				e.y >= f.plusTile.y0 &&
+				e.y < f.plusTile.y1
+			) {
+				this.liftPen();
+				this.state = cloneFrameToAnimation(this.state, this.state.animation);
+				this.followCursor = true;
 				return;
 			}
 			// Filmstrip click model (spec): a press inside a DIMMED neighbour frame
@@ -1016,6 +1054,13 @@ export class SpriteEditor extends Renderable {
 			}
 			return;
 		}
+		// The canvas-size modal (round 3): a primary press on (or near) an edge or
+		// corner of the bright bounds rectangle starts a drag; the modal otherwise
+		// swallows the click.
+		if (this.canvasModal) {
+			if (e.button === 0) this.canvasModalDown(e);
+			return;
+		}
 		if (this.modalActive()) return;
 		// The floating preview pane swallows every click over it (never paint the
 		// canvas hidden beneath); a primary click on its flip/play controls actuates.
@@ -1036,12 +1081,6 @@ export class SpriteEditor extends Renderable {
 					e.x <= pane.play.x1
 				) {
 					this.togglePlay('animation');
-				} else if (
-					e.y === pane.walk.y &&
-					e.x >= pane.walk.x0 &&
-					e.x <= pane.walk.x1
-				) {
-					this.togglePlay('walk');
 				}
 			}
 			return;
@@ -1074,6 +1113,17 @@ export class SpriteEditor extends Renderable {
 	}
 
 	mouseDrag(e: SpriteMouse): void {
+		// A canvas-modal edge/corner drag follows the pointer, updating the grabbed
+		// edges live (the render shows the new bounds + any clipped pixels).
+		if (this.canvasDragEdges && this.canvasModal) {
+			this.canvasModal = this.canvasDragTo(
+				this.canvasModal,
+				this.canvasDragEdges,
+				e.x,
+				e.y,
+			);
+			return;
+		}
 		if (this.panLast) {
 			this.pan(e.x - this.panLast.x, e.y - this.panLast.y);
 			this.panLast = { x: e.x, y: e.y };
@@ -1123,6 +1173,12 @@ export class SpriteEditor extends Renderable {
 
 	mouseUp(_e?: unknown): void {
 		this.panLast = null;
+		// A canvas-modal edge drag ends on release; the new bounds are already live
+		// in `canvasModal` (nothing commits until enter).
+		if (this.canvasDragEdges) {
+			this.canvasDragEdges = null;
+			return;
+		}
 		if (this.anchorDrag) {
 			// Commit the marker's new cell as ONE placeAnchor (scope = frame
 			// identity); a press with no movement is a no-op.
@@ -1285,12 +1341,6 @@ export class SpriteEditor extends Renderable {
 
 	// ---- frames / animations / edits ----
 
-	private addFrame(): void {
-		this.liftPen();
-		this.state = addFrameToAnimation(this.state, this.state.animation);
-		this.followCursor = true;
-	}
-
 	private toggleView(): void {
 		this.liftPen();
 		this.view = this.view === 'strips' ? 'focus' : 'strips';
@@ -1362,9 +1412,6 @@ export class SpriteEditor extends Renderable {
 				break;
 			case 'delete':
 				this.state = deleteAnimation(this.state, action.animation);
-				break;
-			case 'addFrame':
-				this.state = addFrameToAnimation(this.state, action.animation);
 				break;
 			case 'reorder':
 				this.state = reorderFrame(
@@ -1499,12 +1546,41 @@ export class SpriteEditor extends Renderable {
 		this.state = placeAnchor(this.state, this.state.anchorName, cellX, cellY);
 	}
 
-	// ---- whole-file resize mode (spec #402) ----
+	// ---- canvas-size modal (round 3) ----
 
-	// The arrow that grows the selected edge outward; its opposite shrinks it in.
-	private resizeArrowDir(name: string | undefined): 1 | -1 | 0 {
-		const edge = this.state.resize;
-		if (!edge) return 0;
+	// Open the `⤢ canvas` size modal on the current uniform Frame size. Any
+	// in-flight float/shape/selection is dropped so the modal owns the canvas.
+	private openCanvasSizeModal(): void {
+		this.liftPen();
+		this.state = { ...this.state, shape: null, float: null, selection: null };
+		this.canvasModal = openCanvasModal(this.state.doc);
+	}
+
+	// Arrow keys nudge the last-grabbed edge outward/inward; enter applies the
+	// resize as one undo step; esc cancels. The last-armed edge is stepped by the
+	// arrow that points along its axis (grow when pointing outward).
+	private canvasModalKey(k: SpriteKey): void {
+		const m = this.canvasModal;
+		if (!m) return;
+		if (k.name === 'escape') {
+			this.canvasModal = null;
+			return;
+		}
+		if (k.name === 'return' || k.name === 'enter') {
+			this.state = resizeCanvas(this.state, m);
+			this.canvasModal = null;
+			this.followCursor = true;
+			return;
+		}
+		const dir = this.canvasArrowDir(m.edge, k.name);
+		if (dir !== 0) this.canvasModal = nudgeCanvasEdge(m, dir);
+	}
+
+	// The arrow that grows the armed edge outward (+1); its opposite shrinks it.
+	private canvasArrowDir(
+		edge: ResizeEdge,
+		name: string | undefined,
+	): 1 | -1 | 0 {
 		switch (edge) {
 			case 'left':
 				if (name === 'left' || name === 'a') return 1;
@@ -1525,24 +1601,48 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
-	private resizeKeyDispatch(k: SpriteKey): void {
-		if (k.name === 'escape') {
-			this.state = cancelResize(this.state);
-			return;
+	// A press near an edge or corner of the bounds rectangle starts a drag (a
+	// corner grabs both its edges); a press elsewhere in the modal is swallowed.
+	private canvasModalDown(e: SpriteMouse): void {
+		const g = this.geom.canvasModal;
+		const m = this.canvasModal;
+		if (!g || !m) return;
+		const tol = 1;
+		const onY = e.y >= g.topY - tol && e.y <= g.bottomY + tol;
+		const onX = e.x >= g.leftX - tol && e.x <= g.rightX + tol;
+		const edges: ResizeEdge[] = [];
+		if (onY && Math.abs(e.x - g.leftX) <= tol) edges.push('left');
+		if (onY && Math.abs(e.x - g.rightX) <= tol) edges.push('right');
+		if (onX && Math.abs(e.y - g.topY) <= tol) edges.push('top');
+		if (onX && Math.abs(e.y - g.bottomY) <= tol) edges.push('bottom');
+		if (edges.length === 0) return;
+		this.canvasDragEdges = edges;
+		this.canvasModal = this.canvasDragTo(m, edges, e.x, e.y);
+	}
+
+	// Resolve the grabbed edges to their new cell boundaries under the pointer and
+	// set them (each clamped so the axis stays ≥ 1 cell). Left/top gutters carry a
+	// one-cell offset so the border snaps to the boundary the artist points at.
+	private canvasDragTo(
+		m: CanvasModal,
+		edges: readonly ResizeEdge[],
+		x: number,
+		y: number,
+	): CanvasModal {
+		const g = this.geom.canvasModal;
+		if (!g) return m;
+		let next = m;
+		for (const edge of edges) {
+			if (edge === 'left')
+				next = setEdge(next, 'left', -Math.round((x + 1 - g.ox0) / g.cw));
+			else if (edge === 'right')
+				next = setEdge(next, 'right', Math.round((x - g.ox0) / g.cw) - m.w0);
+			else if (edge === 'top')
+				next = setEdge(next, 'top', -Math.round((y + 1 - g.oy0) / g.ch));
+			else
+				next = setEdge(next, 'bottom', Math.round((y - g.oy0) / g.ch) - m.h0);
 		}
-		if (k.name === 'return' || k.name === 'enter') {
-			this.state = commitResize(this.state);
-			return;
-		}
-		if (k.name === 'tab') {
-			this.state = resizeCycleEdge(this.state);
-			return;
-		}
-		const dir = this.resizeArrowDir(k.name);
-		if (dir !== 0) {
-			this.state = resizeNudge(this.state, dir);
-			this.followCursor = true;
-		}
+		return next;
 	}
 
 	// Step the active frame along the current animation's filmstrip, wrapping at
@@ -1576,14 +1676,14 @@ export class SpriteEditor extends Renderable {
 		this.previewOverride = !this.composite;
 	}
 
-	// Cycle the onion-skin depth 0 → 1 → 2 → 0 (spec #387). Presentation only.
-	private cycleOnion(): void {
-		this.onionDepth = cycleOnionDepth(this.onionDepth);
-		const label =
-			this.onionDepth === 0
-				? 'onion skin off'
-				: `onion skin depth ${this.onionDepth}`;
-		this.state = { ...this.state, feedback: label };
+	// Toggle onion skinning on/off (round 3). Presentation only; the effect only
+	// shows in the focus view's active Frame, for multi-frame animations.
+	private toggleOnion(): void {
+		this.onion = !this.onion;
+		this.state = {
+			...this.state,
+			feedback: this.onion ? 'onion skin on' : 'onion skin off',
+		};
 	}
 
 	// Advance the playback clock and repaint. Public so tests can drive elapsed
@@ -1651,11 +1751,10 @@ export class SpriteEditor extends Renderable {
 			this.stampKey(k);
 			return;
 		}
-		// Whole-file resize mode (spec #402) owns the canvas: tab cycles the edge,
-		// arrows nudge the selected edge in/out, enter commits (one undo step), esc
-		// cancels losslessly.
-		if (this.state.resize) {
-			this.resizeKeyDispatch(k);
+		// The canvas-size modal (round 3) owns the keyboard: arrows nudge the
+		// last-grabbed edge, enter applies (one undo step), esc cancels.
+		if (this.canvasModal) {
+			this.canvasModalKey(k);
 			return;
 		}
 		if (k.sequence === '?') {
@@ -1865,25 +1964,29 @@ export class SpriteEditor extends Renderable {
 		return RGBA.fromInts(q[0], q[1], q[2], q[3]);
 	}
 
-	// Rebuild the onion-skin ghost layers for this render: one pre-pointed reader +
-	// tint per neighbouring Frame the active Animation sources at the current depth,
-	// nearest first. Empty while playing (playback suspends ghosts, spec #387) or
-	// when onion is off, so `onionGhostRGBA` is a cheap no-op then.
+	// Rebuild the onion-skin ghost layer for this render (round 3): a single
+	// pre-pointed reader + red tint for the active Frame's PREVIOUS Frame. Empty
+	// while playing (playback suspends the ghost), when onion is off, or when the
+	// animation has no neighbour to ghost — so `onionGhostRGBA` is a cheap no-op.
 	private buildOnionLayers(C: Palette): void {
-		if (this.playMode !== 'none' || this.onionDepth <= 0) {
+		if (this.playMode !== 'none' || !this.onion) {
 			this.onionLayers = [];
 			return;
 		}
 		const frames = animationFrames(this.state, this.state.animation);
-		const ghosts = onionGhosts(frames, this.state.frame, this.onionDepth);
+		const prev = previousGhostFrame(frames, this.state.frame);
+		if (!prev) {
+			this.onionLayers = [];
+			return;
+		}
 		const bg = C.bg.toInts();
-		this.onionLayers = ghosts.map((g) => {
-			const ghostState: SpriteEditorState = { ...this.state, frame: g.frame };
-			return {
+		const ghostState: SpriteEditorState = { ...this.state, frame: prev };
+		this.onionLayers = [
+			{
 				read: (px: number, py: number) => readPixel(ghostState, px, py),
-				color: SpriteEditor.rgba(ghostColor(g.tint, g.intensity, bg)),
-			};
-		});
+				color: SpriteEditor.rgba(ghostColor('prev', 1, bg)),
+			},
+		];
 	}
 
 	// The ghost colour showing through a transparent Pixel of the active Frame, or
@@ -1915,7 +2018,7 @@ export class SpriteEditor extends Renderable {
 		const cell = cellAt(st, cellX, cellY);
 		const lit = cell.mask !== undefined && (cell.mask & (1 << bit)) !== 0;
 		if (lit) {
-			// A SENTINEL fg means "the frame's default key" (as the mirror does).
+			// A SENTINEL fg means "the frame's default key".
 			const fgKey = cell.fg === SENTINEL ? this.state.doc.key : cell.fg;
 			const fg = resolveColorKey(fgKey, local, this.globalPalette, previews);
 			return fg ? SpriteEditor.rgba(fg) : C.ink;
@@ -2128,11 +2231,9 @@ export class SpriteEditor extends Renderable {
 			fps: animationFps(this.state.doc, this.state.animation),
 			frameCount: animationFrames(this.state, this.state.animation).length,
 			playMode: this.playMode,
-			onionDepth: this.onionDepth,
 			height: viewH,
 			foldPlayback: this.foldPlayback,
 			variants: variantOptions(docDynamicUsage(this.state.doc), this.variant),
-			mirrorOn: this.mirror,
 			previewOn: this.composite,
 		});
 		this.geom.rail = rows;
@@ -2208,7 +2309,9 @@ export class SpriteEditor extends Renderable {
 						syOf(cy),
 						' ',
 						C.dim,
-						this.pixelRGBA(st, px, py, cx + cy, C, active),
+						// Onion is a focus-view-only effect now (round 3): the strips
+						// grid never ghosts.
+						this.pixelRGBA(st, px, py, cx + cy, C, false),
 					);
 				}
 			}
@@ -2277,7 +2380,7 @@ export class SpriteEditor extends Renderable {
 				sy,
 				ANCHOR_MARKER,
 				m.overridden ? C.overrideFg : C.anchorFg,
-				this.pixelRGBA(disp, m.x * 2, m.y * 2, ccx + ccy, C, true),
+				this.pixelRGBA(disp, m.x * 2, m.y * 2, ccx + ccy, C, false),
 			);
 		}
 
@@ -2309,7 +2412,7 @@ export class SpriteEditor extends Renderable {
 					this.state.cursor.y,
 					sx - x0 + this.scroll.x + (sy + this.scroll.y),
 					C,
-					true,
+					false,
 				),
 			C,
 		);
@@ -2329,6 +2432,9 @@ export class SpriteEditor extends Renderable {
 		this.geom.layout = null;
 		let top = 0;
 		let tabs: readonly FocusTab[] = [];
+		// The onion on/off toggle rides the right edge of the tab row (round 3),
+		// mirroring how the fps stepper rides the strip label row; multi-frame only.
+		let onionToggle: { x0: number; x1: number; y: number } | null = null;
 		if (showTabs) {
 			const frames = animationFrames(this.state, this.state.animation);
 			const list = frames.length > 0 ? frames : frameNames(this.state);
@@ -2357,6 +2463,26 @@ export class SpriteEditor extends Renderable {
 					C.hot,
 					C.chromeBg,
 				);
+			// The onion toggle, right-justified on the tab row (disabled/hidden for a
+			// single-frame animation, which has nothing to ghost). It stops short of
+			// the floating preview pane's left edge so the pane never occludes it.
+			if (frames.length > 1) {
+				const onionText = '◌ onion';
+				const paneW = this.composite ? Math.min(PREVIEW_W, viewW) : 0;
+				const rightLimit = RAIL_W + viewW - paneW;
+				const onionX = Math.max(RAIL_W, rightLimit - onionText.length);
+				this.drawClipped(
+					buf,
+					onionText,
+					onionX,
+					0,
+					RAIL_W,
+					rightLimit,
+					this.onion ? C.hot : C.dim,
+					C.chromeBg,
+				);
+				onionToggle = { x0: onionX, x1: onionX + onionText.length - 1, y: 0 };
+			}
 			top = 1;
 		}
 
@@ -2405,12 +2531,28 @@ export class SpriteEditor extends Renderable {
 			const x0 = origin.x + (i - activeIdx) * stride;
 			return { name, i, x0, x1: x0 + pxW * z };
 		});
+		// The `[+]` clone tile trails the last frame (round 3). It scrolls with the
+		// strip, so it is only visible/clickable when the last frame is near the
+		// centred origin; off-screen it simply isn't recorded. Shown only in the
+		// editable focus view (not the playback path).
+		const lastBox = boxes[boxes.length - 1];
+		const tileY0 = origin.y;
+		const tileY1 = origin.y + pxH * z;
+		const PLUS_W = 3;
+		const tileX0 = lastBox.x1 + FILMSTRIP_GAP;
+		const plusVisible =
+			showTabs && tileX0 < RAIL_W + viewW && tileX0 + PLUS_W > RAIL_W;
+		const plusTile = plusVisible
+			? { x0: tileX0, x1: tileX0 + PLUS_W - 1, y0: tileY0, y1: tileY1 }
+			: null;
 		this.geom.focus = {
 			tabs,
 			origin,
 			top,
 			pxH,
 			frames: boxes.map((b) => ({ name: b.name, x0: b.x0, x1: b.x1 })),
+			plusTile,
+			onionToggle,
 		};
 
 		// Per-frame render states: the active frame carries the float overlay
@@ -2446,6 +2588,22 @@ export class SpriteEditor extends Renderable {
 				}
 				buf.setCell(sx, sy, ' ', C.dim, color);
 			}
+		}
+
+		// The `[+]` clone tile trailing the last frame: a boxed `[+]`, vertically
+		// centred in the strip, clipped to the canvas region.
+		if (plusTile) {
+			const midY = Math.floor((plusTile.y0 + plusTile.y1 - 1) / 2);
+			this.drawClipped(
+				buf,
+				'[+]',
+				plusTile.x0,
+				midY,
+				RAIL_W,
+				RAIL_W + viewW,
+				C.hot,
+				C.bg,
+			);
 		}
 
 		for (const m of this.displayMarkers()) {
@@ -2559,16 +2717,10 @@ export class SpriteEditor extends Renderable {
 				? this.floatState()
 				: { ...this.state, frame: displayFrame };
 
-		// The canvas region sits right of the rail; the mirror panel, when toggled,
-		// takes half of it with a one-column divider between. The Composited preview
-		// no longer splits the canvas — it floats over the top-right (#393), so it is
-		// drawn last, after the canvas and mirror.
-		const rightPanel = this.mirror ? 'mirror' : 'none';
+		// The canvas region sits right of the rail. The Composited preview does not
+		// split the canvas — it floats over the top-right (#393), drawn last.
 		const canvasW = Math.max(1, W - RAIL_W);
-		const viewW =
-			rightPanel === 'none'
-				? canvasW
-				: Math.max(1, Math.floor((canvasW - 1) / 2));
+		const viewW = canvasW;
 		this.geom.viewH = viewH;
 		this.geom.viewW = viewW;
 
@@ -2590,10 +2742,6 @@ export class SpriteEditor extends Renderable {
 			this.renderFocus(buf, viewW, viewH, viewState, true, C);
 		} else {
 			this.renderStrips(buf, viewW, viewH, C);
-		}
-
-		if (rightPanel === 'mirror') {
-			this.renderMirror(buf, RAIL_W + viewW, W, viewH, displayFrame, C);
 		}
 
 		// The always-on floating Composited preview draws last, over the top-right of
@@ -2679,88 +2827,7 @@ export class SpriteEditor extends Renderable {
 		this.renderColorPicker(buf, W, H, C);
 		this.renderAnimationMenu(buf, W, H, C);
 		this.renderAnchorMenu(buf, W, H, C);
-	}
-
-	// The read-only left-facing render of the current frame, drawn into the
-	// right-hand region [dividerX+1, W).
-	private renderMirror(
-		buf: OptimizedBuffer,
-		dividerX: number,
-		W: number,
-		viewH: number,
-		frameName: string,
-		C: Palette,
-	): void {
-		for (let sy = 0; sy < viewH; sy++)
-			buf.setCell(dividerX, sy, '│', C.divider, C.bg);
-		const ox = dividerX + 1;
-		const panelW = W - ox;
-		if (panelW <= 0) return;
-
-		const m = mirrorRender(this.state.doc, frameName);
-		const local = this.state.doc.colors;
-		const previews = this.dynamicPreviews();
-		for (let sy = 0; sy < viewH && sy < m.rows.length; sy++) {
-			const row = m.rows[sy];
-			const colorRow = m.colors[sy] ?? '';
-			const bgRow = m.bg[sy] ?? '';
-			for (let sx = 0; sx < panelW && sx < row.length; sx++) {
-				const glyph = row[sx];
-				if (glyph === ' ' || glyph === SENTINEL) {
-					const checker = (sx + sy) % 2 === 0;
-					buf.setCell(ox + sx, sy, ' ', C.dim, checker ? C.grid : C.bg);
-					continue;
-				}
-				const fgKey = colorRow[sx] ?? '';
-				const bgKey = bgRow[sx] ?? '';
-				const fg = resolveColorKey(
-					fgKey === SENTINEL ? this.state.doc.key : fgKey,
-					local,
-					this.globalPalette,
-					previews,
-				);
-				const bg = resolveColorKey(
-					bgKey === SENTINEL ? '' : bgKey,
-					local,
-					this.globalPalette,
-					previews,
-				);
-				buf.setCell(
-					ox + sx,
-					sy,
-					glyph,
-					fg ? SpriteEditor.rgba(fg) : C.ink,
-					bg ? SpriteEditor.rgba(bg) : C.bg,
-				);
-			}
-		}
-		// Mirrored anchor markers, reflected across the rendered width. Each keeps
-		// the background its cell rendered without the marker — the art's bg key,
-		// or the transparency checker where empty (QA round 3).
-		for (const a of mirrorAnchorMarkers(this.displayMarkers(), m.width)) {
-			if (a.x < 0 || a.x >= panelW || a.y < 0 || a.y >= viewH) continue;
-			const glyph = m.rows[a.y]?.[a.x] ?? ' ';
-			let cellBg: RGBA;
-			if (glyph === ' ' || glyph === SENTINEL) {
-				cellBg = (a.x + a.y) % 2 === 0 ? C.grid : C.bg;
-			} else {
-				const bgKey = m.bg[a.y]?.[a.x] ?? '';
-				const bg = resolveColorKey(
-					bgKey === SENTINEL ? '' : bgKey,
-					local,
-					this.globalPalette,
-					previews,
-				);
-				cellBg = bg ? SpriteEditor.rgba(bg) : C.bg;
-			}
-			buf.setCell(
-				ox + a.x,
-				a.y,
-				ANCHOR_MARKER,
-				a.overridden ? C.overrideFg : C.anchorFg,
-				cellBg,
-			);
-		}
+		this.renderCanvasModal(buf, W, H, C);
 	}
 
 	// The always-on floating Composited preview (#393): a native-size, bordered pane
@@ -2770,7 +2837,8 @@ export class SpriteEditor extends Renderable {
 	// weapon, or a monster/npc plain. Animates during playback because `frameName`
 	// (the editor's display frame) advances with each tick. Carries flip + play
 	// controls on its bottom border, both mouse-clickable; the pane's screen rect
-	// and control spans are recorded in `geom.preview` for hit-testing.
+	// and control spans are recorded in `geom.preview` for hit-testing. (Walk-cycle
+	// playback lives only in the animation menu now, round 3.)
 	private renderPreviewPane(
 		buf: OptimizedBuffer,
 		W: number,
@@ -2836,21 +2904,17 @@ export class SpriteEditor extends Renderable {
 		});
 		if (!ok) buf.drawText('keep drawing…'.slice(0, iw), ix, iy, C.dim, C.bg);
 
-		// Flip + play + walk controls on the bottom border, clickable via
-		// geom.preview (post-#351: play/walk moved off the rail to the pane, their
-		// primary home). Each mode's control shows ■ stop while it is the one
-		// playing; clicking the other mode's control switches to it.
+		// Flip + play controls on the bottom border, clickable via geom.preview
+		// (post-#351: play moved off the rail to the pane, its primary home; the
+		// walk cycle now lives only in the animation menu, round 3). The play
+		// control shows ■ stop while animation playback runs.
 		const flipText = `flip ${this.previewFacing === 1 ? '→' : '←'}`;
 		const animPlaying = this.playMode === 'animation';
-		const walkPlaying = this.playMode === 'walk';
 		const playText = animPlaying ? '■ stop' : '▶ play';
-		const walkText = walkPlaying ? '■ stop' : '▶ walk';
 		const flipX = x0 + 2;
 		buf.drawText(flipText, flipX, y1, C.text, C.boxBg);
 		const playX = flipX + flipText.length + 2;
 		buf.drawText(playText, playX, y1, animPlaying ? C.hot : C.text, C.boxBg);
-		const walkX = playX + playText.length + 2;
-		buf.drawText(walkText, walkX, y1, walkPlaying ? C.hot : C.text, C.boxBg);
 
 		this.geom.preview = {
 			x0,
@@ -2859,7 +2923,6 @@ export class SpriteEditor extends Renderable {
 			h: paneH,
 			flip: { x0: flipX, x1: flipX + flipText.length - 1, y: y1 },
 			play: { x0: playX, x1: playX + playText.length - 1, y: y1 },
-			walk: { x0: walkX, x1: walkX + walkText.length - 1, y: y1 },
 		};
 	}
 
@@ -3035,7 +3098,7 @@ export class SpriteEditor extends Renderable {
 				rows.push(`${sel} ${p.name} · ${fps}${frameMark}`);
 			}
 			if (menu.error) rows.push(`⚠ ${menu.error}`);
-			rows.push('Enter switch · c new · d del · a +frame');
+			rows.push('Enter switch · c new · d del');
 			rows.push('p play · w walk · f fps · ←/→ frame · </> reorder · Esc');
 		}
 		this.drawModal(buf, W, H, rows, C);
@@ -3078,6 +3141,174 @@ export class SpriteEditor extends Renderable {
 			rows[i + 1] = `${rows[i + 1].padEnd(boxW - 2)}✕`;
 		}
 		this.geom.anchorMenuBox = this.drawModal(buf, W, H, rows, C);
+	}
+
+	// The `⤢ canvas` size modal (round 3): ONLY the Default frame (index 0),
+	// rendered by the SAME frame renderer the game/preview use (`renderPlainFrame`
+	// → `drawEntitySprite` via the `base` override, issue #411), so the art is
+	// pixel-identical — real glyphs, real fg/bg, one terminal cell per doc cell,
+	// inside a bright bounds rectangle. The title reads `canvas W×H → W'×H'` live.
+	// Other frames are NOT drawn (dimmed ghosts read as broken art, QA follow-up);
+	// the clip warning is their safety net: a doc cell the current bounds would
+	// clip fills the warning colour if ANY frame inks it, so a cut that would drop
+	// art invisible in the Default frame still flags. Empty in-bounds cells (even
+	// ones only a non-default frame inks) render the checkerboard. Edge/corner drag
+	// geometry is recorded in `geom.canvasModal` for hit-testing.
+	private renderCanvasModal(
+		buf: OptimizedBuffer,
+		W: number,
+		H: number,
+		C: Palette,
+	): void {
+		this.geom.canvasModal = null;
+		const m = this.canvasModal;
+		if (!m) return;
+		// One terminal cell per doc cell: the glyphs carry the 2×2 sub-pixels, so the
+		// real render is 1:1 (the old CW=2/CH=1 footprint was the bug's quarter-res
+		// block art).
+		const CW = 1;
+		const CH = 1;
+		const { w, h } = canvasTarget(m);
+		const title = `canvas ${m.w0}×${m.h0} → ${w}×${h}`;
+		const hint = 'drag edges/corners · arrows nudge · enter apply · esc';
+		const boxW = Math.min(
+			W - 2,
+			Math.max(title.length + 4, hint.length + 4, 60),
+		);
+		const boxH = Math.min(H - 2, 20);
+		const ox = Math.max(0, Math.floor((W - boxW) / 2));
+		const oy = Math.max(0, Math.floor((H - boxH) / 2));
+		buf.fillRect(ox, oy, boxW, boxH, C.boxBg);
+		buf.drawText(title.slice(0, boxW - 2), ox + 2, oy, C.text, C.boxBg);
+		buf.drawText(
+			hint.slice(0, boxW - 2),
+			ox + 2,
+			oy + boxH - 1,
+			C.dim,
+			C.boxBg,
+		);
+
+		// Interior drawing region, between the title and hint rows.
+		const inX0 = ox + 2;
+		const inY0 = oy + 2;
+		const inX1 = ox + boxW - 2;
+		const inY1 = oy + boxH - 2;
+		// Stable origin: the original grid centred in the interior. It depends only
+		// on w0/h0, so it never moves during a drag (no pointer jitter).
+		const ox0 = inX0 + Math.max(0, Math.floor((inX1 - inX0 - m.w0 * CW) / 2));
+		const oy0 = inY0 + Math.max(0, Math.floor((inY1 - inY0 - m.h0 * CH) / 2));
+		const inBox = (sx: number, sy: number) =>
+			sx >= inX0 && sx < inX1 && sy >= inY0 && sy < inY1;
+
+		// Render every frame plainly through the shared frame renderer. Only the
+		// Default frame (index 0) is drawn; the rest exist solely for the "ink in ANY
+		// frame" clip-warning test (they are never painted). Colours resolve exactly
+		// as the preview pane's: file-local customs, then the session dynamic p/a
+		// previews, merged into the scene style so keys land the same everywhere.
+		const toRGBA = (r: number, g: number, b: number, a: number) =>
+			RGBA.fromInts(r, g, b, a);
+		const previews = this.dynamicPreviews();
+		const style = styleWithLocalColors(
+			styleWithLocalColors(this.sceneStyle, this.state.doc.colors, toRGBA),
+			{ p: previews.p, a: previews.a },
+			toRGBA,
+		);
+		const labels = frameLocations(this.state.doc).map((f) => f.label);
+		const plains = labels.map((label) =>
+			renderPlainFrame(this.state.doc, label, style),
+		);
+		const defaultPlain = plains[0] ?? null;
+		// Clip-warning screen cells, repainted after the bounds rectangle: with 1:1
+		// cells the right/bottom border can sit exactly on the first clipped column/
+		// row, so the warning must win over the border there (it marks the cut).
+		const warns: { sx: number; sy: number }[] = [];
+		const inkedAny = (cx: number, cy: number): boolean =>
+			plains.some((p) => p?.at(cx, cy) != null);
+
+		// The union of the original grid and the target bounds, so growth shows.
+		const xL = -m.left;
+		const xR = m.w0 + m.right;
+		const yT = -m.top;
+		const yB = m.h0 + m.bottom;
+		const cx0 = Math.min(0, xL);
+		const cx1 = Math.max(m.w0, xR);
+		const cy0 = Math.min(0, yT);
+		const cy1 = Math.max(m.h0, yB);
+		for (let cy = cy0; cy < cy1; cy++) {
+			for (let cx = cx0; cx < cx1; cx++) {
+				const sx = ox0 + cx * CW;
+				const sy = oy0 + cy * CH;
+				if (!inBox(sx, sy)) continue;
+				const insideBounds = cx >= xL && cx < xR && cy >= yT && cy < yB;
+				const bgLayer = insideBounds
+					? (cx + cy) % 2 === 0
+						? C.grid
+						: C.bg
+					: C.boxBg;
+				// A clipped cell that holds ink in ANY frame flags in the warning
+				// colour — a solid block that overrides the art beneath it.
+				if (isClipped(m, cx, cy) && inkedAny(cx, cy)) {
+					buf.setCell(sx, sy, ' ', C.dim, C.feedback);
+					warns.push({ sx, sy });
+					continue;
+				}
+				const d = defaultPlain?.at(cx, cy) ?? null;
+				if (d) {
+					// The real glyph + fg. An opaque doc bg key wins; otherwise the
+					// glyph's unlit sub-pixels fall through to the modal background
+					// (checkerboard / box), just as transparency does when framed.
+					buf.setCell(sx, sy, d.ch, d.fg, d.bg ?? bgLayer);
+					continue;
+				}
+				// Empty in the Default frame — checkerboard, even if another frame inks
+				// this cell (its ghost is deliberately not shown). A clip would have
+				// flagged it above via inkedAny.
+				buf.setCell(sx, sy, ' ', C.dim, bgLayer);
+			}
+		}
+
+		// The bright canvas-bounds rectangle, framed in the gutters around content.
+		const leftX = ox0 + xL * CW - 1;
+		const rightX = ox0 + xR * CW;
+		const topY = oy0 + yT * CH - 1;
+		const bottomY = oy0 + yB * CH;
+		const edge = (sx: number, sy: number, ch: string) => {
+			if (
+				sx >= ox + 1 &&
+				sx < ox + boxW - 1 &&
+				sy >= oy + 1 &&
+				sy < oy + boxH - 1
+			)
+				buf.setCell(sx, sy, ch, C.hot, C.boxBg);
+		};
+		for (let sy = topY; sy <= bottomY; sy++) {
+			edge(leftX, sy, '│');
+			edge(rightX, sy, '│');
+		}
+		for (let sx = leftX; sx <= rightX; sx++) {
+			edge(sx, topY, '─');
+			edge(sx, bottomY, '─');
+		}
+		edge(leftX, topY, '┌');
+		edge(rightX, topY, '┐');
+		edge(leftX, bottomY, '└');
+		edge(rightX, bottomY, '┘');
+
+		// Clip warnings win over the bounds border where they collide (see `warns`).
+		for (const { sx, sy } of warns)
+			if (inBox(sx, sy)) buf.setCell(sx, sy, ' ', C.dim, C.feedback);
+
+		this.geom.canvasModal = {
+			ox0,
+			oy0,
+			cw: CW,
+			ch: CH,
+			leftX,
+			rightX,
+			topY,
+			bottomY,
+			box: { ox, oy, w: boxW, h: boxH },
+		};
 	}
 }
 

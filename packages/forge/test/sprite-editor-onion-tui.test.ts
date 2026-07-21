@@ -90,72 +90,55 @@ function canvasHasBg(cap: Spans, rgb: readonly number[]): boolean {
 	return false;
 }
 
-// Click the rail button whose label matches `re` (QA round 3: the O and .
-// keys died; onion cycling and playback are rail buttons).
-async function clickRail(
-	t: Awaited<ReturnType<typeof mount>>,
-	re: RegExp,
-): Promise<void> {
-	await t.renderOnce();
-	const rows = t.captureCharFrame().split('\n');
-	for (let y = 0; y < rows.length; y++) {
-		const m = re.exec(rows[y].slice(0, RAIL_W));
-		if (m) {
-			t.editor.mouseDown({ button: 0, x: m.index + 1, y });
-			t.editor.mouseUp();
-			return;
-		}
-	}
-	throw new Error(`no rail button matching ${re}`);
-}
-
-describe('onion skinning — ghosts through the active Frame', () => {
-	test('depth 0 (default) shows no ghosts, only the checkerboard', async () => {
+describe('onion skinning — a prev-frame ghost in the focus view (round 3)', () => {
+	test('off by default shows no ghost, only the checkerboard', async () => {
 		const t = await mount('focus');
-		expect(t.editor.onionDepth).toBe(0);
+		expect(t.editor.onion).toBe(false);
 		expect(canvasHasBg(t.captureSpans(), PREV)).toBe(false);
 		expect(canvasHasBg(t.captureSpans(), NEXT)).toBe(false);
 	});
 
-	test('the onion button cycles depth and the previous/next neighbours ghost red/blue (focus)', async () => {
+	test('onion on ghosts ONLY the previous frame (red), never the next', async () => {
 		const t = await mount('focus');
-		await clickRail(t, /\bonion\b/); // depth → 1
-		expect(t.editor.onionDepth).toBe(1);
+		t.editor.onion = true;
 		await t.renderOnce();
 		const cap = t.captureSpans();
-		// f0 (previous) shows red through f1's transparency; f2 (next) shows blue.
+		// run 1's previous frame is run 0 (red ghost); the next frame no longer ghosts.
 		expect(canvasHasBg(cap, PREV)).toBe(true);
-		expect(canvasHasBg(cap, NEXT)).toBe(true);
+		expect(canvasHasBg(cap, NEXT)).toBe(false);
 	});
 
-	test('ghosts also render in the strips view', async () => {
+	test('the effect is confined to the focus view — strips never ghosts', async () => {
 		const t = await mount('strips');
-		await clickRail(t, /\bonion\b/);
-		await t.renderOnce();
-		const cap = t.captureSpans();
-		expect(canvasHasBg(cap, PREV)).toBe(true);
-		expect(canvasHasBg(cap, NEXT)).toBe(true);
-	});
-
-	test('playback suspends the ghosts', async () => {
-		const t = await mount('focus');
-		await clickRail(t, /\bonion\b/); // onion on
-		// Play moved off the rail to the preview pane (post-#351); drive it directly.
-		// biome-ignore lint/suspicious/noExplicitAny: reach the private playback toggle.
-		(t.editor as any).togglePlay('animation');
+		t.editor.onion = true;
 		await t.renderOnce();
 		const cap = t.captureSpans();
 		expect(canvasHasBg(cap, PREV)).toBe(false);
 		expect(canvasHasBg(cap, NEXT)).toBe(false);
 	});
 
-	test('the onion button wraps 0 → 1 → 2 → 0', async () => {
+	test('playback suspends the ghost', async () => {
 		const t = await mount('focus');
-		await clickRail(t, /\bonion\b/);
-		expect(t.editor.onionDepth).toBe(1);
-		await clickRail(t, /\bonion\b/);
-		expect(t.editor.onionDepth).toBe(2);
-		await clickRail(t, /\bonion\b/);
-		expect(t.editor.onionDepth).toBe(0);
+		t.editor.onion = true;
+		// Play moved off the rail to the preview pane (post-#351); drive it directly.
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private playback toggle.
+		(t.editor as any).togglePlay('animation');
+		await t.renderOnce();
+		expect(canvasHasBg(t.captureSpans(), PREV)).toBe(false);
+	});
+
+	test('the tab-row onion toggle flips it on and off', async () => {
+		const t = await mount('focus');
+		expect(t.editor.onion).toBe(false);
+		await t.renderOnce();
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private focus geometry.
+		const ot = (t.editor as any).geom.focus.onionToggle as {
+			x0: number;
+			y: number;
+		} | null;
+		if (!ot) throw new Error('no onion toggle on the tab row');
+		t.editor.mouseDown({ button: 0, x: ot.x0, y: ot.y });
+		t.editor.mouseUp();
+		expect(t.editor.onion).toBe(true);
 	});
 });

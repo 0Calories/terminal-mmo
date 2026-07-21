@@ -2,7 +2,7 @@
 // A single pure function maps (terminal size, zoom, Frame sizes, ink count, the
 // user's manual preview override) → either a "too small" placard or a set of
 // reversible layout decisions. `tui.ts` only OBEYS the result: it draws the
-// placard, or hides/shows the preview, forces the focus view, folds the playback
+// placard, or hides/shows the preview, forces the focus view, folds the `edit`
 // box — never deciding any of that itself. Keeping the ladder here makes every
 // rung's trigger and its reversal unit-testable without a screen.
 //
@@ -12,8 +12,8 @@
 //      canvas interior (the manual `v` toggle overrides in both directions);
 //   2. the strips view is forced to focus mode when fewer than two full Frames
 //      fit side by side at the current zoom (with a status hint);
-//   3. the playback box folds to a single hint row when the rail can't fit the
-//      full ink list and the playback box together;
+//   3. the `edit` box folds to a single hint row when the rail can't fit the
+//      full ink list and the box together;
 //   4. the rail never hides (there is no rung that removes it).
 import { INKS_PER_ROW, RAIL_TOOLS, RAIL_W } from './chrome';
 import { FRAME_GAP } from './strips';
@@ -35,21 +35,20 @@ export const PREVIEW_H = 11;
 
 // The rail's fixed vertical composition, mirroring `chrome.ts`'s railModel:
 // a tools box (title + two-per-row tool rows + a blank), then the ink box
-// (title + the windowed ink list), then the playback box. These constants let
-// the solver reason about "can the full ink list and the playback box both
+// (title + the windowed ink list), then the `edit` box. These constants let
+// the solver reason about "can the full ink list and the edit box both
 // fit?" without rendering.
 const TOOLS_ROWS = 1 + Math.ceil(RAIL_TOOLS.length / 2) + 1;
 const INK_TITLE_ROWS = 1;
 // The active-colour readout row under the swatch grid.
 const INK_ACTIVE_ROWS = 1;
 const BLANK_ROWS = 1;
-// The full control-boxes height (matches railBoxes() in chrome.ts): the three
-// labeled boxes below the ink grid — frame (title + ✚frame/▤animation + ◎anchor),
-// view (title + ◌onion + ⇄mirror/◫preview), size (title + ⤢resize/✂crop) = 8
-// rows. When the rung folds them, they collapse to a single hint row. Mouse-
-// primary (ADR 0035) leans on these, so the accounting must be honest: at the
-// ≥80×24 floor the full boxes fit.
-const PLAYBACK_FULL_ROWS = 8;
+// The full `edit` box height (matches railBoxes() in chrome.ts, round 3): one
+// labeled box below the ink grid — title + `▤ animation · ◎ anchor` + `⤢ canvas ·
+// ◫ preview` = 3 rows. When the rung folds it, it collapses to a single row.
+// Mouse-primary (ADR 0035) leans on these buttons, so the accounting must be
+// honest: at the ≥80×24 floor the full box fits.
+const EDIT_BOX_ROWS = 3;
 
 export interface DegradationInput {
 	// The terminal's size in cells.
@@ -65,7 +64,7 @@ export interface DegradationInput {
 	readonly frameCount: number;
 	// The inks the rail would list (locals + palette + dynamics + transparent).
 	// Rung 3's fold is content-aware on this: a long palette is what makes the
-	// full ink swatch grid (8 per row) and the playback box unable to share the
+	// full ink swatch grid (8 per row) and the edit box unable to share the
 	// rail.
 	readonly inkCount: number;
 	// Session p/a variant rows currently shown in the ink box (0–2).
@@ -84,7 +83,7 @@ export interface DegradationLayout {
 	readonly previewAutoShow: boolean;
 	// Rung 2: force the strips view into focus mode.
 	readonly forceFocus: boolean;
-	// Rung 3: fold the playback box to one hint row.
+	// Rung 3: fold the edit box to one hint row.
 	readonly foldPlayback: boolean;
 	// A short status hint for an active content-aware rung (the forced focus),
 	// or '' when none applies.
@@ -143,16 +142,16 @@ export function solveDegradation(input: DegradationInput): DegradationLayout {
 		? 'narrow terminal — strips folded to focus (grow width or zoom out)'
 		: '';
 
-	// --- Rung 3: fold the playback box when the rail can't fit both boxes ---
-	// The rail wants tools + the full ink list + the playback box. When they do
-	// not all fit its height, the playback box folds to one hint row (the ink
+	// --- Rung 3: fold the edit box when the rail can't fit it with the ink ---
+	// The rail wants tools + the full ink list + the `edit` box. When they do
+	// not all fit its height, the box folds to one hint row (the ink
 	// list keeps windowing beyond that); the rail itself never hides (rung 4).
 	const inkRows =
 		Math.ceil(input.inkCount / INKS_PER_ROW) +
 		INK_ACTIVE_ROWS +
 		input.variantRowCount;
 	const desiredRail =
-		TOOLS_ROWS + INK_TITLE_ROWS + inkRows + BLANK_ROWS + PLAYBACK_FULL_ROWS;
+		TOOLS_ROWS + INK_TITLE_ROWS + inkRows + BLANK_ROWS + EDIT_BOX_ROWS;
 	const foldPlayback = viewH < desiredRail;
 
 	return {

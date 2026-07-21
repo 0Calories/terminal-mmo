@@ -38,7 +38,6 @@ function model(overrides: Partial<Parameters<typeof railModel>[0]> = {}) {
 		fps: 8,
 		frameCount: 1,
 		playMode: 'none',
-		onionDepth: 0,
 		height: 22,
 		...overrides,
 	});
@@ -52,16 +51,19 @@ function allText(rows: readonly RailRow[]): string {
 	return rows.map(rowText).join('\n');
 }
 
-describe('railModel — tools · ink · frame/view/size boxes', () => {
+describe('railModel — tools · ink · edit box', () => {
 	test('carries the boxes with every tool listed', () => {
 		const text = allText(model());
 		expect(text).toContain('tools');
 		expect(text).toContain('ink');
-		// The playback box dissolved into three labeled control boxes (post-#351).
-		expect(text).toContain('frame');
-		expect(text).toContain('view');
-		expect(text).toContain('size');
+		// The three control boxes fused into a single `edit` box (round 3).
+		expect(text).toContain('edit');
 		expect(text).not.toContain('playback');
+		// Frame creation, onion, and the size boxes left the rail (round 3).
+		expect(text).not.toContain('✚ frame');
+		expect(text).not.toContain('◌ onion');
+		expect(text).not.toContain('⤢ resize');
+		expect(text).not.toContain('✂ crop');
 		for (const t of RAIL_TOOLS) expect(text).toContain(t.label);
 	});
 
@@ -201,47 +203,30 @@ describe('railModel — tools · ink · frame/view/size boxes', () => {
 		expect(allText(model())).not.toContain('walk');
 	});
 
-	test('the view box surfaces onion depth as a glyphed cycling button', () => {
-		const off = model();
-		const offSpan = off
-			.flatMap((r) => r.spans)
-			.find((s) => s.text.startsWith('◌ onion '));
-		expect(offSpan?.text).toBe('◌ onion 0');
-		expect(offSpan?.hot).toBeFalsy();
-		expect(offSpan?.action).toEqual({ type: 'onionCycle' });
-		const on = model({ onionDepth: 2 });
-		const onSpan = on
-			.flatMap((r) => r.spans)
-			.find((s) => s.text.startsWith('◌ onion '));
-		expect(onSpan?.text).toBe('◌ onion 2');
-		expect(onSpan?.hot).toBe(true);
+	test('onion has left the rail (round 3: it lives on the focus tab row)', () => {
+		const spans = model().flatMap((r) => r.spans);
+		expect(spans.some((s) => s.text.startsWith('◌ onion'))).toBe(false);
 	});
 
-	test('every control button carries its width-1 glyph and self-labels', () => {
-		const rows = model({ mirrorOn: true, previewOn: false });
+	test('every edit-box button carries its width-1 glyph and self-labels', () => {
+		const rows = model({ previewOn: false });
 		const spans = rows.flatMap((r) => r.spans);
 		const byAction = (type: string) =>
 			spans.find((s) => s.action?.type === type);
-		expect(byAction('addFrame')?.text).toBe('✚ frame');
 		expect(byAction('animationMenu')?.text).toBe('▤ animation');
 		expect(byAction('anchorMenu')?.text).toBe('◎ anchor');
-		expect(byAction('mirror')?.text).toBe('⇄ mirror');
-		expect(byAction('mirror')?.hot).toBe(true);
+		// resize + crop fused into one canvas-size button (round 3).
+		expect(byAction('canvas')?.text).toBe('⤢ canvas');
 		expect(byAction('previewToggle')?.text).toBe('◫ preview');
 		expect(byAction('previewToggle')?.hot).toBeFalsy();
-		expect(byAction('resize')?.text).toBe('⤢ resize');
-		expect(byAction('crop')?.text).toBe('✂ crop');
+		// The buttons that left the rail (round 3).
+		expect(byAction('mirror')).toBeUndefined();
+		expect(byAction('addFrame')).toBeUndefined();
+		expect(byAction('resize')).toBeUndefined();
+		expect(byAction('crop')).toBeUndefined();
 		// Each leading glyph is exactly one terminal column so hit-testing stays
 		// aligned.
-		for (const label of [
-			'✚ frame',
-			'▤ animation',
-			'◎ anchor',
-			'⇄ mirror',
-			'◫ preview',
-			'⤢ resize',
-			'✂ crop',
-		])
+		for (const label of ['▤ animation', '◎ anchor', '⤢ canvas', '◫ preview'])
 			expect(Bun.stringWidth([...label][0])).toBe(1);
 	});
 
@@ -250,21 +235,21 @@ describe('railModel — tools · ink · frame/view/size boxes', () => {
 		// The first grid swatch sits one column in on the first grid row; walk the
 		// spans to its rendered x and hit it.
 		let inkHit: ReturnType<typeof railActionAt>;
-		let frameHit: ReturnType<typeof railActionAt>;
+		let canvasHit: ReturnType<typeof railActionAt>;
 		rows.forEach((row, y) => {
 			let x0 = 0;
 			for (const s of row.spans) {
 				if (inkHit === undefined && s.action?.type === 'ink')
 					inkHit = railActionAt(rows, x0, y);
-				if (frameHit === undefined && s.action?.type === 'addFrame')
-					frameHit = railActionAt(rows, x0, y);
+				if (canvasHit === undefined && s.action?.type === 'canvas')
+					canvasHit = railActionAt(rows, x0, y);
 				x0 += s.text.length;
 			}
 		});
 		// entriesFor() lists the palette in paletteEntries order; the first grid
 		// swatch is its first entry.
 		expect(inkHit).toEqual({ type: 'ink', ink: colorInk(entriesFor()[0].key) });
-		expect(frameHit).toEqual({ type: 'addFrame' });
+		expect(canvasHit).toEqual({ type: 'canvas' });
 	});
 
 	test('a click on dead space returns nothing', () => {
@@ -361,7 +346,8 @@ describe('help surface — ? overlay (the hint line is retired, QA round 3)', ()
 		expect(text).toContain('dbl-click swatch');
 		expect(text).toContain('outline ↔ filled');
 		expect(text).toContain('fps');
-		expect(text).toContain('mirror');
+		// The canvas-split mirror feature is deleted (round 3).
+		expect(text).not.toContain('mirror');
 		expect(text).toContain('resize');
 		expect(text).toContain('crop');
 		expect(text).toContain('flip');

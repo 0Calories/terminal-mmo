@@ -44,7 +44,6 @@ export type AnimationMenuAction =
 	| { type: 'switch'; animation: string }
 	| { type: 'create'; name: string }
 	| { type: 'delete'; animation: string }
-	| { type: 'addFrame'; animation: string }
 	| { type: 'reorder'; animation: string; index: number; delta: number }
 	| { type: 'setFps'; animation: string; fps: number | null }
 	// Start playback from the menu (post-#351: play/walk left the rail; the menu
@@ -154,8 +153,6 @@ function animationListKey(
 			};
 		case 'd':
 			return { menu, action: { type: 'delete', animation: row.name } };
-		case 'a':
-			return { menu, action: { type: 'addFrame', animation: row.name } };
 		case 'p':
 			return {
 				menu: null,
