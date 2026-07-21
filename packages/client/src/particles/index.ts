@@ -46,6 +46,11 @@ export class ParticleEngine {
 			spawnSpeck(this.pool, def.profile, at.x, at.y, dir, this.rng, tint);
 	}
 
+	/** Drop every live speck — the zone-change reset (#373): old-zone specks never sim against new-zone terrain. */
+	clear(): void {
+		this.pool.clear();
+	}
+
 	/** Advance every live speck one render frame against the frame's terrain. */
 	step(dtMs: number, terrain: Terrain): void {
 		this.terrain = terrain;

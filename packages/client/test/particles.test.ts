@@ -377,6 +377,54 @@ test('a descending speck lands on a one-way platform top; an ascending one passe
 	expect(crossed).toBe(true);
 });
 
+test('a rested speck whose support vanishes is reclaimed by gravity, not left frozen mid-air (#373)', () => {
+	// rest on a one-way platform at y=10, then swap to a terrain where only the
+	// floor at y=19 exists — the platform is gone from under the speck
+	const rows: string[] = [];
+	for (let y = 0; y < 20; y++)
+		rows.push(y === 10 ? '='.repeat(40) : (y === 19 ? '#' : '.').repeat(40));
+	const platformed = parseTerrain(rows);
+	const floorOnly = floorTerrain(40, 20);
+
+	const pool = new Pool(4);
+	spawnSpeck(pool, BLOOD, 10, 5, 0, seededRng(1));
+	const p = speckAt(pool);
+	p.vx = 0;
+	p.vy = 4;
+	for (let i = 0; i < 400 && p.stage === 'airborne'; i++)
+		advanceSpecks(pool, 16, platformed);
+	expect(p.stage).toBe('rest');
+	expect(Math.floor(p.y)).toBe(9);
+
+	// the zone's terrain changes under it: back to airborne, falls, re-rests on the real floor
+	advanceSpecks(pool, 16, floorOnly);
+	expect(p.stage).toBe('airborne');
+	for (let i = 0; i < 400 && p.stage === 'airborne'; i++)
+		advanceSpecks(pool, 16, floorOnly);
+	expect(p.stage).toBe('rest');
+	expect(Math.floor(p.y)).toBe(18);
+
+	// and it still extinguishes: the fade timer runs to cull
+	for (let i = 0; i < 600 && p.active; i++) advanceSpecks(pool, 16, floorOnly);
+	expect(p.active).toBe(false);
+});
+
+test('a rested speck whose cell becomes wall-solid dies instead of surviving embedded (#373)', () => {
+	const terrain = floorTerrain(40, 20);
+	const pool = new Pool(4);
+	burst(pool, 'blood', 10, 16, 2, 1, seededRng(3));
+	const p = speckAt(pool);
+	for (let i = 0; i < 400 && p.stage === 'airborne'; i++)
+		advanceSpecks(pool, 16, terrain);
+	expect(p.stage).toBe('rest');
+
+	const allWall = parseTerrain(
+		Array.from({ length: 20 }, () => '#'.repeat(40)),
+	);
+	advanceSpecks(pool, 16, allWall);
+	expect(p.active).toBe(false);
+});
+
 test('a profile with no gravity and no terrain collision never settles (profile-driven)', () => {
 	const FLOATER: Profile = {
 		...BLOOD,

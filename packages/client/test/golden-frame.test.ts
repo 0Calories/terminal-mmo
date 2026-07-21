@@ -103,6 +103,23 @@ test('a re-sent snapshot spawns its effects once, not once per frame', async () 
 	expect(captureCharFrame()).toBe(await renderGoldenFrame());
 });
 
+test('a zone change clears carried-over particles: old-zone specks never render in the new zone (#373)', async () => {
+	// The same arrival with and without a burst back in town must render the
+	// same dungeon frame once the kick has drained — town's specks (alive for
+	// seconds otherwise) may not follow the player through the door.
+	const arrive = async (townEvents: boolean) => {
+		const { frame, frames, game, captureCharFrame } = await mountPlayfield();
+		await frame({ tick: 1 });
+		await frame({ tick: 2, events: townEvents ? scriptedEvents(game) : [] });
+		await frames(HITSTOP_FRAMES);
+		await frame({ tick: 3, zoneId: 'dungeon' });
+		await frames(12);
+		return captureCharFrame();
+	};
+
+	expect(await arrive(true)).toBe(await arrive(false));
+});
+
 test('a zone change resets the gate, so entry effects fire even on a colliding tick', async () => {
 	const enter = async (events: CombatEvent[]) => {
 		const { frame, frames, game, captureCharFrame } = await mountPlayfield();
