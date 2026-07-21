@@ -6,11 +6,13 @@ export interface EmoteDef {
 	duration: number;
 }
 
-export const EMOTES: readonly EmoteDef[] = [
+export const EMOTES = [
 	{ id: 'wave', lifetime: 'oneshot', duration: 1.6 },
 	{ id: 'dance', lifetime: 'loop', duration: 0 },
 	{ id: 'sit', lifetime: 'hold', duration: 0 },
-] as const;
+] as const satisfies readonly EmoteDef[];
+
+export type EmoteId = (typeof EMOTES)[number]['id'];
 
 export function initialEmoteT(def: EmoteDef): number {
 	return def.lifetime === 'oneshot' ? def.duration : 0;

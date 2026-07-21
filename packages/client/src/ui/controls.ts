@@ -50,7 +50,7 @@ export const CONTROL_ROWS: readonly ControlRow[] = [
 	},
 	{ label: 'Interact', keys: 'e', mouseKeys: 'f' },
 	{ label: 'Chat', keys: '↵   (/w whisper)' },
-	{ label: 'Emote', keys: '/em wave · dance · sit' },
+	{ label: 'Emote', keys: '/wave · /dance · /sit' },
 	{ label: 'Customize', keys: 'c   (in Town)' },
 	{ label: 'Audio', keys: 'o' },
 	{ label: 'Mute', keys: 'm' },
