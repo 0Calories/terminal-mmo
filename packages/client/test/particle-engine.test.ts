@@ -65,6 +65,18 @@ test('a level-up burst needs no CombatEvent: the levelup effect is a spawn door 
 	expect(drawn(engine, 'airborne').length).toBeGreaterThan(0);
 });
 
+test('clear() drops every live speck — the zone-change reset (#373)', () => {
+	const engine = new ParticleEngine(seededRng(SEED));
+	engine.spawn('blood', { x: 10, y: 10 }, 1, 8);
+	engine.step(DT, flatTerrain(W, H));
+	expect(engine.activeCount).toBeGreaterThan(0);
+
+	engine.clear();
+	expect(engine.activeCount).toBe(0);
+	expect(drawn(engine, 'airborne').length).toBe(0);
+	expect(drawn(engine, 'settled').length).toBe(0);
+});
+
 test('an off-screen speck is clipped from the draw, not from the sim', () => {
 	const engine = new ParticleEngine(seededRng(SEED));
 	engine.spawn('blood', { x: 200, y: 10 }, 1, 8);
