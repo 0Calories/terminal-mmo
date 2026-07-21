@@ -36,6 +36,14 @@ import {
 import type { CliDeps } from '../cli';
 import { findSpriteFile, formatSpriteDiagnostics } from '../sprite-cli';
 import {
+	type CanvasModal,
+	canvasTarget,
+	isClipped,
+	nudgeCanvasEdge,
+	openCanvasModal,
+	setEdge,
+} from './canvasModal';
+import {
 	helpOverlayRows,
 	RAIL_TOOLS,
 	RAIL_W,
@@ -92,25 +100,22 @@ import {
 } from './menus';
 import { cycleOnionDepth, ghostColor, onionGhosts } from './onion';
 import { animationFps, playbackFrame, walkPreviewIndex } from './playback';
+import type { ResizeEdge } from './resize';
 import { normalizeDoc } from './resize';
 import {
 	addFrameToAnimation,
 	anchorMarkers,
 	anchorScopeFor,
 	animationFrames,
-	beginResize,
 	beginStroke,
 	cancelFloat,
-	cancelResize,
 	cancelShape,
 	cellAt,
 	clearSelection,
 	colorInk,
 	commitFloat,
-	commitResize,
 	copySelection,
 	createAnimation,
-	cropToSelection,
 	currentFrame,
 	cutSelection,
 	type DynamicPreviews,
@@ -137,8 +142,7 @@ import {
 	redoEdit,
 	removeAnchorOverride,
 	reorderFrame,
-	resizeCycleEdge,
-	resizeNudge,
+	resizeCanvas,
 	type SpriteEditorState,
 	type SpriteTool,
 	saveResult,
@@ -375,6 +379,13 @@ export class SpriteEditor extends Renderable {
 	// The `c` ink quick-pick overlay (spec #387): random-access ink selection.
 	animationMenu: AnimationMenuState | null = null;
 	anchorMenu: AnchorMenuState | null = null;
+	// The `⤢ canvas` size modal (round 3): drag any edge/corner of a bright
+	// canvas-bounds rectangle to grow/shrink every Frame at once (resize + crop in
+	// one gesture). Null when closed; enter applies, esc cancels.
+	canvasModal: CanvasModal | null = null;
+	// An in-flight edge/corner drag inside the canvas modal: which edges the grab
+	// moves (a corner carries two), or null when not dragging.
+	private canvasDragEdges: ResizeEdge[] | null = null;
 	// The always-on floating Composited preview (#393): the WIP art rendered the way
 	// the game draws it, docked top-right over the canvas. It is shown by default so
 	// the artist always draws against the truth. On a small terminal rung 1 (spec
@@ -488,6 +499,21 @@ export class SpriteEditor extends Renderable {
 		anchorCells: { x: number; y: number; name: string; overridden: boolean }[];
 		// The anchor menu's modal box this render (mouse-native menu, ADR 0036).
 		anchorMenuBox: { ox: number; oy: number; w: number; h: number } | null;
+		// The canvas-size modal's screen geometry this render (round 3): the stable
+		// origin of the original grid, the screen-cells-per-sprite-cell scale, and
+		// the target-bounds rectangle's four border positions, so an edge/corner
+		// drag inverts back to a per-edge cell delta.
+		canvasModal: {
+			ox0: number;
+			oy0: number;
+			cw: number;
+			ch: number;
+			leftX: number;
+			rightX: number;
+			topY: number;
+			bottomY: number;
+			box: { ox: number; oy: number; w: number; h: number };
+		} | null;
 	} = {
 		viewH: 0,
 		viewW: 0,
@@ -498,6 +524,7 @@ export class SpriteEditor extends Renderable {
 		colorGrid: null,
 		anchorCells: [],
 		anchorMenuBox: null,
+		canvasModal: null,
 	};
 	// An in-flight mouse paint stroke (down→drag→up coalesces to one undo step),
 	// and the button held for it (drag events don't reliably re-report the button).
@@ -695,7 +722,7 @@ export class SpriteEditor extends Renderable {
 			this.anchorMenu !== null ||
 			this.awaitingStamp ||
 			this.helpOpen ||
-			this.state.resize !== null
+			this.canvasModal !== null
 		);
 	}
 
@@ -770,18 +797,8 @@ export class SpriteEditor extends Renderable {
 			case 'onionCycle':
 				this.cycleOnion();
 				return;
-			case 'resize':
 			case 'canvas':
-				// Round 3 interim: the `⤢ canvas` button opens the (soon-to-be) modal;
-				// until concern 3 lands it, it enters the existing whole-file resize
-				// flow so canvas sizing stays reachable.
-				this.liftPen();
-				this.state = beginResize(this.state);
-				return;
-			case 'crop':
-				this.liftPen();
-				this.state = cropToSelection(this.state);
-				this.followCursor = true;
+				this.openCanvasSizeModal();
 				return;
 			case 'previewToggle':
 				this.togglePreview();
@@ -1012,6 +1029,13 @@ export class SpriteEditor extends Renderable {
 			}
 			return;
 		}
+		// The canvas-size modal (round 3): a primary press on (or near) an edge or
+		// corner of the bright bounds rectangle starts a drag; the modal otherwise
+		// swallows the click.
+		if (this.canvasModal) {
+			if (e.button === 0) this.canvasModalDown(e);
+			return;
+		}
 		if (this.modalActive()) return;
 		// The floating preview pane swallows every click over it (never paint the
 		// canvas hidden beneath); a primary click on its flip/play controls actuates.
@@ -1064,6 +1088,17 @@ export class SpriteEditor extends Renderable {
 	}
 
 	mouseDrag(e: SpriteMouse): void {
+		// A canvas-modal edge/corner drag follows the pointer, updating the grabbed
+		// edges live (the render shows the new bounds + any clipped pixels).
+		if (this.canvasDragEdges && this.canvasModal) {
+			this.canvasModal = this.canvasDragTo(
+				this.canvasModal,
+				this.canvasDragEdges,
+				e.x,
+				e.y,
+			);
+			return;
+		}
 		if (this.panLast) {
 			this.pan(e.x - this.panLast.x, e.y - this.panLast.y);
 			this.panLast = { x: e.x, y: e.y };
@@ -1113,6 +1148,12 @@ export class SpriteEditor extends Renderable {
 
 	mouseUp(_e?: unknown): void {
 		this.panLast = null;
+		// A canvas-modal edge drag ends on release; the new bounds are already live
+		// in `canvasModal` (nothing commits until enter).
+		if (this.canvasDragEdges) {
+			this.canvasDragEdges = null;
+			return;
+		}
 		if (this.anchorDrag) {
 			// Commit the marker's new cell as ONE placeAnchor (scope = frame
 			// identity); a press with no movement is a no-op.
@@ -1489,12 +1530,41 @@ export class SpriteEditor extends Renderable {
 		this.state = placeAnchor(this.state, this.state.anchorName, cellX, cellY);
 	}
 
-	// ---- whole-file resize mode (spec #402) ----
+	// ---- canvas-size modal (round 3) ----
 
-	// The arrow that grows the selected edge outward; its opposite shrinks it in.
-	private resizeArrowDir(name: string | undefined): 1 | -1 | 0 {
-		const edge = this.state.resize;
-		if (!edge) return 0;
+	// Open the `⤢ canvas` size modal on the current uniform Frame size. Any
+	// in-flight float/shape/selection is dropped so the modal owns the canvas.
+	private openCanvasSizeModal(): void {
+		this.liftPen();
+		this.state = { ...this.state, shape: null, float: null, selection: null };
+		this.canvasModal = openCanvasModal(this.state.doc);
+	}
+
+	// Arrow keys nudge the last-grabbed edge outward/inward; enter applies the
+	// resize as one undo step; esc cancels. The last-armed edge is stepped by the
+	// arrow that points along its axis (grow when pointing outward).
+	private canvasModalKey(k: SpriteKey): void {
+		const m = this.canvasModal;
+		if (!m) return;
+		if (k.name === 'escape') {
+			this.canvasModal = null;
+			return;
+		}
+		if (k.name === 'return' || k.name === 'enter') {
+			this.state = resizeCanvas(this.state, m);
+			this.canvasModal = null;
+			this.followCursor = true;
+			return;
+		}
+		const dir = this.canvasArrowDir(m.edge, k.name);
+		if (dir !== 0) this.canvasModal = nudgeCanvasEdge(m, dir);
+	}
+
+	// The arrow that grows the armed edge outward (+1); its opposite shrinks it.
+	private canvasArrowDir(
+		edge: ResizeEdge,
+		name: string | undefined,
+	): 1 | -1 | 0 {
 		switch (edge) {
 			case 'left':
 				if (name === 'left' || name === 'a') return 1;
@@ -1515,24 +1585,48 @@ export class SpriteEditor extends Renderable {
 		}
 	}
 
-	private resizeKeyDispatch(k: SpriteKey): void {
-		if (k.name === 'escape') {
-			this.state = cancelResize(this.state);
-			return;
+	// A press near an edge or corner of the bounds rectangle starts a drag (a
+	// corner grabs both its edges); a press elsewhere in the modal is swallowed.
+	private canvasModalDown(e: SpriteMouse): void {
+		const g = this.geom.canvasModal;
+		const m = this.canvasModal;
+		if (!g || !m) return;
+		const tol = 1;
+		const onY = e.y >= g.topY - tol && e.y <= g.bottomY + tol;
+		const onX = e.x >= g.leftX - tol && e.x <= g.rightX + tol;
+		const edges: ResizeEdge[] = [];
+		if (onY && Math.abs(e.x - g.leftX) <= tol) edges.push('left');
+		if (onY && Math.abs(e.x - g.rightX) <= tol) edges.push('right');
+		if (onX && Math.abs(e.y - g.topY) <= tol) edges.push('top');
+		if (onX && Math.abs(e.y - g.bottomY) <= tol) edges.push('bottom');
+		if (edges.length === 0) return;
+		this.canvasDragEdges = edges;
+		this.canvasModal = this.canvasDragTo(m, edges, e.x, e.y);
+	}
+
+	// Resolve the grabbed edges to their new cell boundaries under the pointer and
+	// set them (each clamped so the axis stays ≥ 1 cell). Left/top gutters carry a
+	// one-cell offset so the border snaps to the boundary the artist points at.
+	private canvasDragTo(
+		m: CanvasModal,
+		edges: readonly ResizeEdge[],
+		x: number,
+		y: number,
+	): CanvasModal {
+		const g = this.geom.canvasModal;
+		if (!g) return m;
+		let next = m;
+		for (const edge of edges) {
+			if (edge === 'left')
+				next = setEdge(next, 'left', -Math.round((x + 1 - g.ox0) / g.cw));
+			else if (edge === 'right')
+				next = setEdge(next, 'right', Math.round((x - g.ox0) / g.cw) - m.w0);
+			else if (edge === 'top')
+				next = setEdge(next, 'top', -Math.round((y + 1 - g.oy0) / g.ch));
+			else
+				next = setEdge(next, 'bottom', Math.round((y - g.oy0) / g.ch) - m.h0);
 		}
-		if (k.name === 'return' || k.name === 'enter') {
-			this.state = commitResize(this.state);
-			return;
-		}
-		if (k.name === 'tab') {
-			this.state = resizeCycleEdge(this.state);
-			return;
-		}
-		const dir = this.resizeArrowDir(k.name);
-		if (dir !== 0) {
-			this.state = resizeNudge(this.state, dir);
-			this.followCursor = true;
-		}
+		return next;
 	}
 
 	// Step the active frame along the current animation's filmstrip, wrapping at
@@ -1641,11 +1735,10 @@ export class SpriteEditor extends Renderable {
 			this.stampKey(k);
 			return;
 		}
-		// Whole-file resize mode (spec #402) owns the canvas: tab cycles the edge,
-		// arrows nudge the selected edge in/out, enter commits (one undo step), esc
-		// cancels losslessly.
-		if (this.state.resize) {
-			this.resizeKeyDispatch(k);
+		// The canvas-size modal (round 3) owns the keyboard: arrows nudge the
+		// last-grabbed edge, enter applies (one undo step), esc cancels.
+		if (this.canvasModal) {
+			this.canvasModalKey(k);
 			return;
 		}
 		if (k.sequence === '?') {
@@ -2658,6 +2751,7 @@ export class SpriteEditor extends Renderable {
 		this.renderColorPicker(buf, W, H, C);
 		this.renderAnimationMenu(buf, W, H, C);
 		this.renderAnchorMenu(buf, W, H, C);
+		this.renderCanvasModal(buf, W, H, C);
 	}
 
 	// The always-on floating Composited preview (#393): a native-size, bordered pane
@@ -2971,6 +3065,150 @@ export class SpriteEditor extends Renderable {
 			rows[i + 1] = `${rows[i + 1].padEnd(boxW - 2)}✕`;
 		}
 		this.geom.anchorMenuBox = this.drawModal(buf, W, H, rows, C);
+	}
+
+	// The `⤢ canvas` size modal (round 3): the Default frame in full colour with
+	// every other frame's silhouette ghosted behind it, inside a bright bounds
+	// rectangle. The title reads `canvas W×H → W'×H'` live; pixels the current
+	// bounds would clip render in the warning colour. Edge/corner drag geometry is
+	// recorded in `geom.canvasModal` for hit-testing.
+	private renderCanvasModal(
+		buf: OptimizedBuffer,
+		W: number,
+		H: number,
+		C: Palette,
+	): void {
+		this.geom.canvasModal = null;
+		const m = this.canvasModal;
+		if (!m) return;
+		const CW = 2;
+		const CH = 1;
+		const { w, h } = canvasTarget(m);
+		const title = `canvas ${m.w0}×${m.h0} → ${w}×${h}`;
+		const hint = 'drag edges/corners · arrows nudge · enter apply · esc';
+		const boxW = Math.min(
+			W - 2,
+			Math.max(title.length + 4, hint.length + 4, 60),
+		);
+		const boxH = Math.min(H - 2, 20);
+		const ox = Math.max(0, Math.floor((W - boxW) / 2));
+		const oy = Math.max(0, Math.floor((H - boxH) / 2));
+		buf.fillRect(ox, oy, boxW, boxH, C.boxBg);
+		buf.drawText(title.slice(0, boxW - 2), ox + 2, oy, C.text, C.boxBg);
+		buf.drawText(
+			hint.slice(0, boxW - 2),
+			ox + 2,
+			oy + boxH - 1,
+			C.dim,
+			C.boxBg,
+		);
+
+		// Interior drawing region, between the title and hint rows.
+		const inX0 = ox + 2;
+		const inY0 = oy + 2;
+		const inX1 = ox + boxW - 2;
+		const inY1 = oy + boxH - 2;
+		// Stable origin: the original grid centred in the interior. It depends only
+		// on w0/h0, so it never moves during a drag (no pointer jitter).
+		const ox0 = inX0 + Math.max(0, Math.floor((inX1 - inX0 - m.w0 * CW) / 2));
+		const oy0 = inY0 + Math.max(0, Math.floor((inY1 - inY0 - m.h0 * CH) / 2));
+		const inBox = (sx: number, sy: number) =>
+			sx >= inX0 && sx < inX1 && sy >= inY0 && sy < inY1;
+
+		const local = this.state.doc.colors;
+		const previews = this.dynamicPreviews();
+		const frames = allFrames(this.state.doc);
+		const cellInk = (
+			f: (typeof frames)[number],
+			cx: number,
+			cy: number,
+		): RGBA | null => {
+			const glyph = f.rows[cy]?.[cx] ?? ' ';
+			if (glyph === ' ' || glyph === SENTINEL) return null;
+			const key = f.colors[cy]?.[cx] ?? '';
+			const rgba = resolveColorKey(
+				key === SENTINEL ? this.state.doc.key : key,
+				local,
+				this.globalPalette,
+				previews,
+			);
+			return rgba ? SpriteEditor.rgba(rgba) : C.ink;
+		};
+
+		// The union of the original grid and the target bounds, so growth shows.
+		const xL = -m.left;
+		const xR = m.w0 + m.right;
+		const yT = -m.top;
+		const yB = m.h0 + m.bottom;
+		const cx0 = Math.min(0, xL);
+		const cx1 = Math.max(m.w0, xR);
+		const cy0 = Math.min(0, yT);
+		const cy1 = Math.max(m.h0, yB);
+		for (let cy = cy0; cy < cy1; cy++) {
+			for (let cx = cx0; cx < cx1; cx++) {
+				const sx = ox0 + cx * CW;
+				const sy = oy0 + cy * CH;
+				const inkDefault = frames[0] ? cellInk(frames[0], cx, cy) : null;
+				let ghost: RGBA | null = null;
+				if (!inkDefault)
+					for (let i = 1; i < frames.length; i++) {
+						const g = cellInk(frames[i], cx, cy);
+						if (g) {
+							ghost = g;
+							break;
+						}
+					}
+				const inked = inkDefault !== null || ghost !== null;
+				const insideBounds = cx >= xL && cx < xR && cy >= yT && cy < yB;
+				let color: RGBA;
+				if (inked && isClipped(m, cx, cy)) color = C.feedback;
+				else if (inkDefault) color = inkDefault;
+				else if (ghost) color = this.dimRGBA(ghost, C);
+				else if (insideBounds) color = (cx + cy) % 2 === 0 ? C.grid : C.bg;
+				else color = C.boxBg;
+				for (let dx = 0; dx < CW; dx++)
+					if (inBox(sx + dx, sy)) buf.setCell(sx + dx, sy, ' ', C.dim, color);
+			}
+		}
+
+		// The bright canvas-bounds rectangle, framed in the gutters around content.
+		const leftX = ox0 + xL * CW - 1;
+		const rightX = ox0 + xR * CW;
+		const topY = oy0 + yT * CH - 1;
+		const bottomY = oy0 + yB * CH;
+		const edge = (sx: number, sy: number, ch: string) => {
+			if (
+				sx >= ox + 1 &&
+				sx < ox + boxW - 1 &&
+				sy >= oy + 1 &&
+				sy < oy + boxH - 1
+			)
+				buf.setCell(sx, sy, ch, C.hot, C.boxBg);
+		};
+		for (let sy = topY; sy <= bottomY; sy++) {
+			edge(leftX, sy, '│');
+			edge(rightX, sy, '│');
+		}
+		for (let sx = leftX; sx <= rightX; sx++) {
+			edge(sx, topY, '─');
+			edge(sx, bottomY, '─');
+		}
+		edge(leftX, topY, '┌');
+		edge(rightX, topY, '┐');
+		edge(leftX, bottomY, '└');
+		edge(rightX, bottomY, '┘');
+
+		this.geom.canvasModal = {
+			ox0,
+			oy0,
+			cw: CW,
+			ch: CH,
+			leftX,
+			rightX,
+			topY,
+			bottomY,
+			box: { ox, oy, w: boxW, h: boxH },
+		};
 	}
 }
 

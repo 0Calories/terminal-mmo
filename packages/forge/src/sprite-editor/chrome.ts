@@ -22,8 +22,6 @@ export type RailAction =
 	| { readonly type: 'animationMenu' }
 	| { readonly type: 'anchorMenu' }
 	| { readonly type: 'onionCycle' }
-	| { readonly type: 'resize' }
-	| { readonly type: 'crop' }
 	// Opens the canvas-size modal (round 3): the one control for resize + crop.
 	| { readonly type: 'canvas' }
 	| { readonly type: 'previewToggle' }

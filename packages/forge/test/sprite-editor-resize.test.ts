@@ -23,20 +23,9 @@ import {
 	unionContentBounds,
 } from '../src/sprite-editor/resize';
 import {
-	beginResize,
-	cancelResize,
-	commitResize,
-	cropToSelection,
-	currentFrame,
-	frameExtent,
 	initSpriteEditor,
 	placeAnchor,
-	resizeCycleEdge,
-	resizeNudge,
-	type SpriteEditorState,
 	saveResult,
-	setSelection,
-	undoEdit,
 } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
@@ -317,97 +306,6 @@ describe('parser round-trip through the editor', () => {
 		const parsed = parseSpriteFile(canonical, 'walker');
 		const { text } = saveResult(initSpriteEditor(parsed.doc as SpriteDoc));
 		expect(text).toBe(canonical);
-	});
-});
-
-describe('resize mode — live nudges commit as one undo step', () => {
-	function state(): SpriteEditorState {
-		return initSpriteEditor(
-			mkDoc([frame('idle', ['##', '##'])], {
-				anchors: { grip: { x: 1, y: 1 } },
-			}),
-		);
-	}
-
-	test('begin selects the right edge and reports a hint', () => {
-		const s = beginResize(state());
-		expect(s.resize).toBe('right');
-		expect(s.feedback).toContain('resize');
-	});
-
-	test('tab cycles the selected edge', () => {
-		let s = beginResize(state());
-		s = resizeCycleEdge(s);
-		expect(s.resize).toBe('top');
-	});
-
-	test('nudges apply live without recording history', () => {
-		let s = beginResize(state());
-		s = resizeNudge(s, 1); // grow right
-		s = resizeNudge(s, 1); // grow right again
-		expect(frameExtent(currentFrame(s))).toEqual({ w: 4, h: 2 });
-		// Not yet recorded: undo now would still see the pre-resize doc as present.
-		expect(s.history.present).not.toBe(s.doc);
-	});
-
-	test('commit is exactly one undo step back to the original', () => {
-		const start = state();
-		let s = beginResize(start);
-		s = resizeNudge(s, 1);
-		s = resizeNudge(s, 1);
-		s = commitResize(s);
-		expect(s.resize).toBeNull();
-		expect(frameExtent(currentFrame(s))).toEqual({ w: 4, h: 2 });
-		const back = undoEdit(s);
-		expect(back.doc).toBe(start.doc);
-	});
-
-	test('cancel restores the pre-resize doc losslessly', () => {
-		const start = state();
-		let s = beginResize(start);
-		s = resizeNudge(s, -1); // shrink right → 1 wide
-		s = cancelResize(s);
-		expect(s.resize).toBeNull();
-		expect(s.doc).toBe(start.doc);
-	});
-
-	test('cannot shrink below 1×1', () => {
-		let s = beginResize(initSpriteEditor(mkDoc([frame('a', ['#'])])));
-		s = resizeNudge(s, -1);
-		expect(s.feedback).toContain('cannot shrink');
-		expect(frameExtent(currentFrame(s))).toEqual({ w: 1, h: 1 });
-	});
-});
-
-describe('cropToSelection', () => {
-	function state(): SpriteEditorState {
-		return initSpriteEditor(
-			mkDoc([frame('idle', ['ABCD', 'EFGH', 'IJKL', 'MNOP'])], {
-				anchors: { grip: { x: 0, y: 0 } },
-			}),
-		);
-	}
-
-	test('rounds the selection Pixel bbox outward to cells, then crops', () => {
-		// Pixels x 1..4, y 1..4 → cells 0..2 × 0..2 (rounds outward).
-		let s = setSelection(state(), { x0: 1, y0: 1, x1: 4, y1: 4 });
-		s = cropToSelection(s);
-		expect(frameExtent(currentFrame(s))).toEqual({ w: 3, h: 3 });
-		expect(currentFrame(s).rows).toEqual(['ABC', 'EFG', 'IJK']);
-		expect(s.selection).toBeNull();
-		expect(s.feedback).toBe('cropped to 3×3');
-	});
-
-	test('is a single undo step', () => {
-		const start = state();
-		let s = setSelection(start, { x0: 0, y0: 0, x1: 3, y1: 3 });
-		s = cropToSelection(s);
-		expect(undoEdit(s).doc).toBe(start.doc);
-	});
-
-	test('refuses with feedback when there is no selection', () => {
-		const s = cropToSelection(state());
-		expect(s.feedback).toContain('no selection');
 	});
 });
 

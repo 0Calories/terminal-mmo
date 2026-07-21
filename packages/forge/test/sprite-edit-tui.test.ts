@@ -861,43 +861,115 @@ describe('Sprite editor palette rail: eyedrop + crop rebind (#397)', () => {
 	});
 });
 
-describe('resize mode nudge keys follow the wasd ruling (ADR 0035)', () => {
-	test('a/d nudge the selected horizontal edge; h/l are retired', async () => {
+describe('canvas-size modal (round 3): resize + crop in one gesture', () => {
+	test('canvas opens the modal; a/d nudge the armed (right) edge; enter applies', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('rz', 'hat'),
 			id: 'rz',
 			role: 'hat',
 		});
-		await clickRail(t, /\bcanvas\b/);
-		expect(t.editor.state.resize).toBe('right');
 		const w0 = frameExtent(currentFrame(t.editor.state)).w;
+		await clickRail(t, /\bcanvas\b/);
+		expect(t.editor.canvasModal).not.toBeNull();
+		// The doc is untouched while the modal is live — only enter commits.
 		t.editor.key(key('d')); // grow the right edge out
-		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0 + 1);
-		t.editor.key(key('a')); // shrink it back in
-		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0);
-		t.editor.key(key('l')); // retired vim spellings: no nudge
+		t.editor.key(key('d'));
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0); // not yet
+		t.editor.key(key('a')); // shrink one back in (net +1)
+		t.editor.key(key('l')); // retired vim spellings: ignored by the modal
 		t.editor.key(key('h'));
-		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0);
+		t.editor.key(key('return')); // apply
+		expect(t.editor.canvasModal).toBeNull();
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0 + 1);
 	});
 
-	test('w/s nudge a vertical edge; j/k are retired', async () => {
+	test('the modal apply is one undo step; esc cancels with no change', async () => {
 		const t = await mount({
 			doc: emptySpriteDoc('rzv', 'hat'),
 			id: 'rzv',
 			role: 'hat',
 		});
+		const before = t.editor.state.doc;
+		const w0 = frameExtent(currentFrame(t.editor.state)).w;
+		// Apply a grow, then undo back to the original doc.
 		await clickRail(t, /\bcanvas\b/);
-		for (let i = 0; i < 4 && t.editor.state.resize !== 'bottom'; i++)
-			t.editor.key(key('tab'));
-		expect(t.editor.state.resize).toBe('bottom');
-		const h0 = frameExtent(currentFrame(t.editor.state)).h;
-		t.editor.key(key('s')); // grow the bottom edge down
-		expect(frameExtent(currentFrame(t.editor.state)).h).toBe(h0 + 1);
-		t.editor.key(key('w')); // shrink it back up
-		expect(frameExtent(currentFrame(t.editor.state)).h).toBe(h0);
-		t.editor.key(key('j')); // retired vim spellings: no nudge
-		t.editor.key(key('k'));
-		expect(frameExtent(currentFrame(t.editor.state)).h).toBe(h0);
+		t.editor.key(key('d'));
+		t.editor.key(key('return'));
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0 + 1);
+		t.editor.key(key('u')); // undo
+		expect(t.editor.state.doc).toBe(before);
+		// esc leaves the modal without touching the doc.
+		await clickRail(t, /\bcanvas\b/);
+		t.editor.key(key('d'));
+		t.editor.key(key('escape'));
+		expect(t.editor.canvasModal).toBeNull();
+		expect(t.editor.state.doc).toBe(before);
+	});
+
+	test('dragging an edge of the bounds rectangle grows the canvas', async () => {
+		const t = await mount({
+			doc: emptySpriteDoc('rzd', 'hat'),
+			id: 'rzd',
+			role: 'hat',
+		});
+		const w0 = frameExtent(currentFrame(t.editor.state)).w;
+		await clickRail(t, /\bcanvas\b/);
+		await t.renderOnce();
+		// biome-ignore lint/suspicious/noExplicitAny: reach the private modal geom.
+		const g = (t.editor as any).geom.canvasModal;
+		if (!g) throw new Error('canvas modal geometry not recorded');
+		// Grab the right border and drag it two cells (cw each) further right.
+		const midY = Math.floor((g.topY + g.bottomY) / 2);
+		t.editor.mouseDown({ button: 0, x: g.rightX, y: midY });
+		t.editor.mouseDrag({ button: 0, x: g.rightX + 2 * g.cw, y: midY });
+		t.editor.mouseUp();
+		t.editor.key(key('return'));
+		expect(frameExtent(currentFrame(t.editor.state)).w).toBe(w0 + 2);
+	});
+
+	test('the modal titles the live size and paints no clear-colour cell', async () => {
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n██\n██\n',
+			'blk',
+		);
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'blk', role: 'hat' });
+		await clickRail(t, /\bcanvas\b/);
+		t.editor.key(key('a')); // shrink the right edge one cell (clips a column)
+		await t.renderOnce();
+		const frame = t.captureCharFrame();
+		// The title reads the live before → after size.
+		expect(frame).toContain('canvas 2×2 → 1×2');
+		// The declared clear colour is never painted, even with the modal open.
+		const CLEAR = hexToInts(RENDERER_CLEAR_COLOR);
+		const cap = t.captureSpans();
+		for (let y = 0; y < cap.lines.length; y++)
+			for (const s of cap.lines[y].spans) {
+				const [r, g, b] = s.bg.toInts();
+				expect([r, g, b]).not.toEqual(CLEAR);
+			}
+	});
+
+	test('a column the shrink would clip renders in the warning colour', async () => {
+		const { doc } = parseSpriteFile(
+			'{"animations":[{"name":"idle"}]}\n--- idle\n██\n██\n',
+			'clip',
+		);
+		if (!doc) throw new Error('fixture failed to parse');
+		const t = await mount({ doc, id: 'clip', role: 'hat' });
+		await clickRail(t, /\bcanvas\b/);
+		t.editor.key(key('a')); // shrink right → the last inked column would clip
+		await t.renderOnce();
+		// The warning shade is Palette.feedback = (255,180,80).
+		const WARN: [number, number, number] = [255, 180, 80];
+		const cap = t.captureSpans();
+		let found = false;
+		for (let y = 0; y < cap.lines.length && !found; y++)
+			for (const s of cap.lines[y].spans) {
+				const [r, g, b] = s.bg.toInts();
+				if (r === WARN[0] && g === WARN[1] && b === WARN[2]) found = true;
+			}
+		expect(found).toBe(true);
 	});
 });
 
