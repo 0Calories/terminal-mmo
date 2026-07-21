@@ -22,7 +22,6 @@ export type RailAction =
 	| { readonly type: 'animationMenu' }
 	| { readonly type: 'anchorMenu' }
 	| { readonly type: 'onionCycle' }
-	| { readonly type: 'mirror' }
 	| { readonly type: 'resize' }
 	| { readonly type: 'crop' }
 	| { readonly type: 'previewToggle' }
@@ -108,9 +107,8 @@ export interface RailInput {
 	// The session p/a variant options (view.ts `variantOptions`): empty/absent
 	// when the art paints no dynamic key, so the rows simply don't render.
 	readonly variants?: readonly RailVariant[];
-	// Mirror-panel and composite-preview toggles, surfaced as rail buttons
-	// (QA round 3: their m/v keys are retired).
-	readonly mirrorOn?: boolean;
+	// Composite-preview toggle, surfaced as a rail button (QA round 3: its v key
+	// is retired).
 	readonly previewOn?: boolean;
 }
 
@@ -285,13 +283,6 @@ function railBoxes(input: RailInput): RailRow[] {
 			spans: [
 				{ text: ' ' },
 				{
-					text: '⇄ mirror',
-					dim: !input.mirrorOn,
-					hot: input.mirrorOn,
-					action: { type: 'mirror' },
-				},
-				{ text: ' · ' },
-				{
 					text: '◫ preview',
 					dim: !input.previewOn,
 					hot: input.previewOn,
@@ -418,9 +409,9 @@ export const SPRITE_KEYMAP: readonly KeymapGroup[] = [
 			},
 			{
 				keys: 'view · size',
-				label: 'onion · mirror · preview · resize · crop',
+				label: 'onion · preview · resize · crop',
 			},
-			{ keys: 'preview pane', label: 'flip · ▶ play · ▶ walk' },
+			{ keys: 'preview pane', label: 'flip · ▶ play' },
 		],
 	},
 ];

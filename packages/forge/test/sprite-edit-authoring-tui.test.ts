@@ -326,48 +326,29 @@ describe('anchor marker', () => {
 	});
 });
 
-describe('mirror view', () => {
-	test('m toggles a mirror panel showing the mirrored glyph', async () => {
-		// ▐ (right half block) mirrors to ▌ (left half block). The fatbits main
-		// canvas paints the art as colour blocks; the mirror panel still renders
-		// glyphs, so its mirrored art shows as the ▌ glyph.
+describe('mirror view (deleted, round 3)', () => {
+	test('the canvas-split mirror feature is gone — no rail mirror button, no split', async () => {
+		// ▐ (right half block) would have mirrored to ▌ (left half block) in the old
+		// mirror panel; with the feature deleted the panel never renders and there is
+		// no rail button to toggle it.
 		const { doc } = parseSpriteFile(
 			'{ "animations": [{ "name": "idle" }] }\n--- idle\n▐·\n··\n',
 			'flag',
 		);
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'flag', role: 'hat' });
-		// Isolate the mirror panel: the always-on floating preview (#393) otherwise
-		// docks over the top-right, covering the mirror panel it shares that side
-		// with. `v` drops the preview so this test exercises mirror alone.
+		await t.renderOnce();
+		// The rail carries no mirror button.
+		const railRows = t
+			.captureCharFrame()
+			.split('\n')
+			.map((r) => r.slice(0, 30));
+		expect(railRows.some((r) => /\bmirror\b/.test(r))).toBe(false);
+		// Drop the floating preview (whose avatar art may contain ▌) and confirm the
+		// canvas never paints the old mirror panel's mirrored ▌ glyph.
 		await clickRail(t, /\bpreview\b/);
 		await t.renderOnce();
 		expect(t.captureCharFrame()).not.toContain('▌');
-		await clickRail(t, /\bmirror\b/);
-		await t.renderOnce();
-		// The mirrored ▌ glyph appears in the panel.
-		expect(t.captureCharFrame()).toContain('▌');
-		// The right-facing art is a colour block on the main (left) canvas region.
-		const fg = resolveColorKey(
-			doc.key,
-			doc.colors,
-			SCENE_PALETTE,
-			SPRITE_PREVIEWS,
-		);
-		if (!fg) throw new Error('fixture fg did not resolve');
-		const cap = t.captureSpans();
-		const dividerCol = Math.floor((100 - 1) / 2);
-		let found = false;
-		for (let y = 0; y < 20 && !found; y++) {
-			let col = 0;
-			for (const s of cap.lines[y].spans) {
-				const [r, g, b] = s.bg.toInts();
-				if (col < dividerCol && r === fg[0] && g === fg[1] && b === fg[2])
-					found = true;
-				col += s.width;
-			}
-		}
-		expect(found).toBe(true);
 	});
 });
 
@@ -437,26 +418,13 @@ describe('playback', () => {
 		expect(t4.editor.playing).toBe(true);
 	});
 
-	test('the preview pane carries ▶ play and ▶ walk; clicking walk starts walk playback (post-#351)', async () => {
+	test('the preview pane carries ▶ play but not ▶ walk (round 3: walk lives only in the menu)', async () => {
 		const t = await mount({ doc: animDoc(), id: 'panewalk', role: 'hat' });
 		await t.renderOnce();
 		const rows = t.captureCharFrame().split('\n');
-		// Both controls live on the pane's bottom border now (off the rail).
+		// Play lives on the pane's bottom border; walk was removed from the pane.
 		expect(rows.some((r) => r.includes('▶ play'))).toBe(true);
-		let walk: { x: number; y: number } | null = null;
-		for (let y = 0; y < rows.length; y++) {
-			const x = rows[y].indexOf('▶ walk');
-			if (x >= 0) {
-				walk = { x, y };
-				break;
-			}
-		}
-		if (!walk) throw new Error('no ▶ walk control on the pane');
-		t.editor.mouseDown({ button: 0, x: walk.x, y: walk.y });
-		t.editor.mouseUp();
-		expect(t.editor.playing).toBe(true);
-		// biome-ignore lint/suspicious/noExplicitAny: read the private play mode.
-		expect((t.editor as any).playMode).toBe('walk');
+		expect(rows.some((r) => r.includes('▶ walk'))).toBe(false);
 	});
 
 	test('the animation menu w entry starts walk playback (the pane auto-hides small)', async () => {

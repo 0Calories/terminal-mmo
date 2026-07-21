@@ -178,8 +178,6 @@ import {
 	DEFAULT_ZOOM,
 	dirForRole,
 	docDynamicUsage,
-	mirrorAnchorMarkers,
-	mirrorRender,
 	missingRequiredAnchors,
 	parseEditArg,
 	requiredAnchors,
@@ -377,7 +375,6 @@ export class SpriteEditor extends Renderable {
 	// The `c` ink quick-pick overlay (spec #387): random-access ink selection.
 	animationMenu: AnimationMenuState | null = null;
 	anchorMenu: AnchorMenuState | null = null;
-	mirror = false;
 	// The always-on floating Composited preview (#393): the WIP art rendered the way
 	// the game draws it, docked top-right over the canvas. It is shown by default so
 	// the artist always draws against the truth. On a small terminal rung 1 (spec
@@ -397,8 +394,7 @@ export class SpriteEditor extends Renderable {
 	get composite(): boolean {
 		return previewVisible(this.autoPreview, this.previewOverride);
 	}
-	// The preview pane's own facing, flipped by its flip control. Independent of the
-	// canvas `mirror` split so flipping the preview never opens the mirror panel.
+	// The preview pane's own facing, flipped by its flip control.
 	previewFacing: 1 | -1 = 1;
 	// Which canvas view is active: strips (default) or focus (`tab`).
 	view: CanvasView = 'strips';
@@ -479,7 +475,6 @@ export class SpriteEditor extends Renderable {
 			h: number;
 			flip: { x0: number; x1: number; y: number };
 			play: { x0: number; x1: number; y: number };
-			walk: { x0: number; x1: number; y: number };
 		} | null;
 		// The colour picker's hue/shade grid rect, so a click resolves to a cell.
 		colorGrid: {
@@ -570,9 +565,9 @@ export class SpriteEditor extends Renderable {
 	}
 
 	// The dynamic p/a colours for the session-selected variant (spec #401 as
-	// amended): the canvas, shape preview, mirror AND the rail's swatches all
-	// resolve painted `p`/`a` through these, so every surface agrees. Nothing
-	// advances them but a click on the variant strip.
+	// amended): the canvas, shape preview AND the rail's swatches all resolve
+	// painted `p`/`a` through these, so every surface agrees. Nothing advances
+	// them but a click on the variant strip.
 	private dynamicPreviews(): DynamicPreviews {
 		return variantPreviews(this.variant.p, this.variant.a);
 	}
@@ -774,9 +769,6 @@ export class SpriteEditor extends Renderable {
 				return;
 			case 'onionCycle':
 				this.cycleOnion();
-				return;
-			case 'mirror':
-				this.mirror = !this.mirror;
 				return;
 			case 'resize':
 				this.liftPen();
@@ -1036,12 +1028,6 @@ export class SpriteEditor extends Renderable {
 					e.x <= pane.play.x1
 				) {
 					this.togglePlay('animation');
-				} else if (
-					e.y === pane.walk.y &&
-					e.x >= pane.walk.x0 &&
-					e.x <= pane.walk.x1
-				) {
-					this.togglePlay('walk');
 				}
 			}
 			return;
@@ -1915,7 +1901,7 @@ export class SpriteEditor extends Renderable {
 		const cell = cellAt(st, cellX, cellY);
 		const lit = cell.mask !== undefined && (cell.mask & (1 << bit)) !== 0;
 		if (lit) {
-			// A SENTINEL fg means "the frame's default key" (as the mirror does).
+			// A SENTINEL fg means "the frame's default key".
 			const fgKey = cell.fg === SENTINEL ? this.state.doc.key : cell.fg;
 			const fg = resolveColorKey(fgKey, local, this.globalPalette, previews);
 			return fg ? SpriteEditor.rgba(fg) : C.ink;
@@ -2132,7 +2118,6 @@ export class SpriteEditor extends Renderable {
 			height: viewH,
 			foldPlayback: this.foldPlayback,
 			variants: variantOptions(docDynamicUsage(this.state.doc), this.variant),
-			mirrorOn: this.mirror,
 			previewOn: this.composite,
 		});
 		this.geom.rail = rows;
@@ -2559,16 +2544,10 @@ export class SpriteEditor extends Renderable {
 				? this.floatState()
 				: { ...this.state, frame: displayFrame };
 
-		// The canvas region sits right of the rail; the mirror panel, when toggled,
-		// takes half of it with a one-column divider between. The Composited preview
-		// no longer splits the canvas — it floats over the top-right (#393), so it is
-		// drawn last, after the canvas and mirror.
-		const rightPanel = this.mirror ? 'mirror' : 'none';
+		// The canvas region sits right of the rail. The Composited preview does not
+		// split the canvas — it floats over the top-right (#393), drawn last.
 		const canvasW = Math.max(1, W - RAIL_W);
-		const viewW =
-			rightPanel === 'none'
-				? canvasW
-				: Math.max(1, Math.floor((canvasW - 1) / 2));
+		const viewW = canvasW;
 		this.geom.viewH = viewH;
 		this.geom.viewW = viewW;
 
@@ -2590,10 +2569,6 @@ export class SpriteEditor extends Renderable {
 			this.renderFocus(buf, viewW, viewH, viewState, true, C);
 		} else {
 			this.renderStrips(buf, viewW, viewH, C);
-		}
-
-		if (rightPanel === 'mirror') {
-			this.renderMirror(buf, RAIL_W + viewW, W, viewH, displayFrame, C);
 		}
 
 		// The always-on floating Composited preview draws last, over the top-right of
@@ -2681,88 +2656,6 @@ export class SpriteEditor extends Renderable {
 		this.renderAnchorMenu(buf, W, H, C);
 	}
 
-	// The read-only left-facing render of the current frame, drawn into the
-	// right-hand region [dividerX+1, W).
-	private renderMirror(
-		buf: OptimizedBuffer,
-		dividerX: number,
-		W: number,
-		viewH: number,
-		frameName: string,
-		C: Palette,
-	): void {
-		for (let sy = 0; sy < viewH; sy++)
-			buf.setCell(dividerX, sy, '│', C.divider, C.bg);
-		const ox = dividerX + 1;
-		const panelW = W - ox;
-		if (panelW <= 0) return;
-
-		const m = mirrorRender(this.state.doc, frameName);
-		const local = this.state.doc.colors;
-		const previews = this.dynamicPreviews();
-		for (let sy = 0; sy < viewH && sy < m.rows.length; sy++) {
-			const row = m.rows[sy];
-			const colorRow = m.colors[sy] ?? '';
-			const bgRow = m.bg[sy] ?? '';
-			for (let sx = 0; sx < panelW && sx < row.length; sx++) {
-				const glyph = row[sx];
-				if (glyph === ' ' || glyph === SENTINEL) {
-					const checker = (sx + sy) % 2 === 0;
-					buf.setCell(ox + sx, sy, ' ', C.dim, checker ? C.grid : C.bg);
-					continue;
-				}
-				const fgKey = colorRow[sx] ?? '';
-				const bgKey = bgRow[sx] ?? '';
-				const fg = resolveColorKey(
-					fgKey === SENTINEL ? this.state.doc.key : fgKey,
-					local,
-					this.globalPalette,
-					previews,
-				);
-				const bg = resolveColorKey(
-					bgKey === SENTINEL ? '' : bgKey,
-					local,
-					this.globalPalette,
-					previews,
-				);
-				buf.setCell(
-					ox + sx,
-					sy,
-					glyph,
-					fg ? SpriteEditor.rgba(fg) : C.ink,
-					bg ? SpriteEditor.rgba(bg) : C.bg,
-				);
-			}
-		}
-		// Mirrored anchor markers, reflected across the rendered width. Each keeps
-		// the background its cell rendered without the marker — the art's bg key,
-		// or the transparency checker where empty (QA round 3).
-		for (const a of mirrorAnchorMarkers(this.displayMarkers(), m.width)) {
-			if (a.x < 0 || a.x >= panelW || a.y < 0 || a.y >= viewH) continue;
-			const glyph = m.rows[a.y]?.[a.x] ?? ' ';
-			let cellBg: RGBA;
-			if (glyph === ' ' || glyph === SENTINEL) {
-				cellBg = (a.x + a.y) % 2 === 0 ? C.grid : C.bg;
-			} else {
-				const bgKey = m.bg[a.y]?.[a.x] ?? '';
-				const bg = resolveColorKey(
-					bgKey === SENTINEL ? '' : bgKey,
-					local,
-					this.globalPalette,
-					previews,
-				);
-				cellBg = bg ? SpriteEditor.rgba(bg) : C.bg;
-			}
-			buf.setCell(
-				ox + a.x,
-				a.y,
-				ANCHOR_MARKER,
-				a.overridden ? C.overrideFg : C.anchorFg,
-				cellBg,
-			);
-		}
-	}
-
 	// The always-on floating Composited preview (#393): a native-size, bordered pane
 	// docked top-right over the canvas, drawn through the shared renderer
 	// (`renderComposite`) — pixel-identical to the game. Shows the CURRENT display
@@ -2770,7 +2663,8 @@ export class SpriteEditor extends Renderable {
 	// weapon, or a monster/npc plain. Animates during playback because `frameName`
 	// (the editor's display frame) advances with each tick. Carries flip + play
 	// controls on its bottom border, both mouse-clickable; the pane's screen rect
-	// and control spans are recorded in `geom.preview` for hit-testing.
+	// and control spans are recorded in `geom.preview` for hit-testing. (Walk-cycle
+	// playback lives only in the animation menu now, round 3.)
 	private renderPreviewPane(
 		buf: OptimizedBuffer,
 		W: number,
@@ -2836,21 +2730,17 @@ export class SpriteEditor extends Renderable {
 		});
 		if (!ok) buf.drawText('keep drawing…'.slice(0, iw), ix, iy, C.dim, C.bg);
 
-		// Flip + play + walk controls on the bottom border, clickable via
-		// geom.preview (post-#351: play/walk moved off the rail to the pane, their
-		// primary home). Each mode's control shows ■ stop while it is the one
-		// playing; clicking the other mode's control switches to it.
+		// Flip + play controls on the bottom border, clickable via geom.preview
+		// (post-#351: play moved off the rail to the pane, its primary home; the
+		// walk cycle now lives only in the animation menu, round 3). The play
+		// control shows ■ stop while animation playback runs.
 		const flipText = `flip ${this.previewFacing === 1 ? '→' : '←'}`;
 		const animPlaying = this.playMode === 'animation';
-		const walkPlaying = this.playMode === 'walk';
 		const playText = animPlaying ? '■ stop' : '▶ play';
-		const walkText = walkPlaying ? '■ stop' : '▶ walk';
 		const flipX = x0 + 2;
 		buf.drawText(flipText, flipX, y1, C.text, C.boxBg);
 		const playX = flipX + flipText.length + 2;
 		buf.drawText(playText, playX, y1, animPlaying ? C.hot : C.text, C.boxBg);
-		const walkX = playX + playText.length + 2;
-		buf.drawText(walkText, walkX, y1, walkPlaying ? C.hot : C.text, C.boxBg);
 
 		this.geom.preview = {
 			x0,
@@ -2859,7 +2749,6 @@ export class SpriteEditor extends Renderable {
 			h: paneH,
 			flip: { x0: flipX, x1: flipX + flipText.length - 1, y: y1 },
 			play: { x0: playX, x1: playX + playText.length - 1, y: y1 },
-			walk: { x0: walkX, x1: walkX + walkText.length - 1, y: y1 },
 		};
 	}
 

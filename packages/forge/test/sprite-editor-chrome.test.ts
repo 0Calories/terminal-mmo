@@ -218,15 +218,15 @@ describe('railModel — tools · ink · frame/view/size boxes', () => {
 	});
 
 	test('every control button carries its width-1 glyph and self-labels', () => {
-		const rows = model({ mirrorOn: true, previewOn: false });
+		const rows = model({ previewOn: false });
 		const spans = rows.flatMap((r) => r.spans);
 		const byAction = (type: string) =>
 			spans.find((s) => s.action?.type === type);
 		expect(byAction('addFrame')?.text).toBe('✚ frame');
 		expect(byAction('animationMenu')?.text).toBe('▤ animation');
 		expect(byAction('anchorMenu')?.text).toBe('◎ anchor');
-		expect(byAction('mirror')?.text).toBe('⇄ mirror');
-		expect(byAction('mirror')?.hot).toBe(true);
+		// The canvas-split mirror feature is deleted (round 3): no mirror button.
+		expect(byAction('mirror')).toBeUndefined();
 		expect(byAction('previewToggle')?.text).toBe('◫ preview');
 		expect(byAction('previewToggle')?.hot).toBeFalsy();
 		expect(byAction('resize')?.text).toBe('⤢ resize');
@@ -237,7 +237,6 @@ describe('railModel — tools · ink · frame/view/size boxes', () => {
 			'✚ frame',
 			'▤ animation',
 			'◎ anchor',
-			'⇄ mirror',
 			'◫ preview',
 			'⤢ resize',
 			'✂ crop',
@@ -361,7 +360,8 @@ describe('help surface — ? overlay (the hint line is retired, QA round 3)', ()
 		expect(text).toContain('dbl-click swatch');
 		expect(text).toContain('outline ↔ filled');
 		expect(text).toContain('fps');
-		expect(text).toContain('mirror');
+		// The canvas-split mirror feature is deleted (round 3).
+		expect(text).not.toContain('mirror');
 		expect(text).toContain('resize');
 		expect(text).toContain('crop');
 		expect(text).toContain('flip');

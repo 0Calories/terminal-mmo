@@ -194,7 +194,7 @@ describe('rung 2 — strips force focus (#398)', () => {
 describe('rung 3 — folded playback box (#398)', () => {
 	test('the full box (the mouse-primary buttons) fits at the 80×24 floor; a huge palette folds it', async () => {
 		// Mouse-primary (ADR 0035): the frame/view/size boxes carry the only path to
-		// mirror/preview/resize/crop, so a standard doc keeps them whole at floor.
+		// preview/resize/crop, so a standard doc keeps them whole at floor.
 		const t = await mount({
 			doc: emptySpriteDoc('fold', 'hat'),
 			id: 'fold',
@@ -204,7 +204,7 @@ describe('rung 3 — folded playback box (#398)', () => {
 		});
 		const full = railText(t.captureCharFrame());
 		expect(full).toContain('frame');
-		expect(full).toContain('mirror');
+		expect(full).toContain('preview');
 		expect(full).toContain('crop');
 
 		// A palette long enough to overflow the rail folds the box (and the fold
@@ -228,11 +228,11 @@ describe('rung 3 — folded playback box (#398)', () => {
 		});
 		const folded = railText(t2.captureCharFrame());
 		// The fold collapses the three boxes to a single row keeping ✚ frame + the
-		// animation menu; mirror/preview/resize/crop drop until the terminal grows.
+		// animation menu; preview/resize/crop drop until the terminal grows.
 		expect(folded).toContain('frame');
-		expect(folded).not.toContain('mirror');
+		expect(folded).not.toContain('preview');
 		t2.resize(80, 45);
 		await t2.renderOnce();
-		expect(railText(t2.captureCharFrame())).toContain('mirror');
+		expect(railText(t2.captureCharFrame())).toContain('preview');
 	});
 });
