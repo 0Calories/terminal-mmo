@@ -1,8 +1,3 @@
-// Headless tests for the canvas-size modal's pure model (round 3): the modal
-// replaces the old whole-file resize mode and crop. It tracks per-edge growth in
-// cells, computes the live target size, marks clipped cells, and applies as one
-// doc transform composed from the same per-edge resizeDoc steps the old resize
-// used — so Anchor/baseline compensation is preserved exactly.
 import { describe, expect, test } from 'bun:test';
 import type { RGBAQuad } from '@mmo/core/entities';
 import type { SpriteAnchor, SpriteDoc, SpriteFrameDoc } from '@mmo/render';
@@ -87,11 +82,11 @@ describe('setEdge / nudgeCanvasEdge — grow, shrink, clamp', () => {
 	});
 
 	test('nudge steps the last-armed edge outward / inward', () => {
-		let m = setEdge(base(), 'top', 0); // arm top
-		m = nudgeCanvasEdge(m, 1); // grow top
+		let m = setEdge(base(), 'top', 0);
+		m = nudgeCanvasEdge(m, 1);
 		expect(canvasTarget(m)).toEqual({ w: 3, h: 4 });
 		expect(m.edge).toBe('top');
-		m = nudgeCanvasEdge(m, -1); // shrink top back
+		m = nudgeCanvasEdge(m, -1);
 		expect(canvasTarget(m)).toEqual({ w: 3, h: 3 });
 	});
 });
@@ -103,7 +98,7 @@ describe('isClipped — pixels the current bounds would drop', () => {
 			'right',
 			-1,
 		);
-		expect(isClipped(m, 2, 0)).toBe(true); // last column dropped
+		expect(isClipped(m, 2, 0)).toBe(true);
 		expect(isClipped(m, 1, 0)).toBe(false);
 	});
 
@@ -136,7 +131,7 @@ describe('applyCanvasModal — one transform, resize semantics preserved', () =>
 		const m = setEdge(openCanvasModal(doc), 'left', 1);
 		const out = applyCanvasModal(doc, m);
 		if (!out) throw new Error('apply returned null');
-		// Every frame widened by one left column.
+
 		expect(sizeOf(frameByName(out, 'a') as SpriteFrameDoc)).toEqual({
 			w: 3,
 			h: 2,
@@ -145,7 +140,7 @@ describe('applyCanvasModal — one transform, resize semantics preserved', () =>
 			w: 3,
 			h: 2,
 		});
-		// A left add slides anchors right by one (content unmoved).
+
 		expect(out.anchors.grip).toEqual({ x: 2, y: 1 });
 	});
 

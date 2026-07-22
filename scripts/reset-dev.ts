@@ -11,7 +11,6 @@ function remove(label: string, path: string): void {
 
 console.log('Resetting local server save…');
 
-// Default must match server/src/index.ts.
 const db = process.env.MMO_DB_PATH ?? 'mmo-state.sqlite';
 console.log('Server save (bun:sqlite):');
 remove('db', db);

@@ -6,7 +6,6 @@ function caps(kitty: boolean | undefined): TerminalCapabilities {
 	return { kitty_keyboard: kitty } as unknown as TerminalCapabilities;
 }
 
-// A hand-cranked clock: the probe's settle timer only fires when the test says so.
 function timers() {
 	let next = 1;
 	const pending = new Map<number, () => void>();
@@ -72,7 +71,7 @@ test('a terminal that reports Kitty support up front never warns', () => {
 test('the pre-probe default false does not warn until the burst settles quiet', () => {
 	const h = probe(caps(false));
 	h.probe.observe(caps(false));
-	expect(h.notice.open).toBe(false); // still waiting out the settle window
+	expect(h.notice.open).toBe(false);
 	h.timers.settle();
 	expect(h.notice.open).toBe(true);
 	expect(h.reconciled()).toBe(1);

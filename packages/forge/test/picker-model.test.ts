@@ -1,8 +1,3 @@
-// The unified asset picker's pure list model (spec #387, issue #403): grouping
-// by Sprite role + a zones section, typeahead filtering, cursor movement across
-// sections, Enter → launch-target resolution, the `n` new-sprite flow (role
-// pick → id validation → fresh-template target), and kind pre-filtering.
-// state → action → visible entries / sections / launch target.
 import { describe, expect, test } from 'bun:test';
 import {
 	type AssetInventory,
@@ -26,15 +21,12 @@ import {
 	visibleEntries,
 } from '../src/picker/model';
 
-// Type a whole query one char at a time, the way keypresses arrive.
 function query(state: PickerState, str: string): PickerState {
 	let s = state;
 	for (const ch of str) s = typeQuery(s, ch);
 	return s;
 }
 
-// A small inventory spanning several roles + zones (deliberately unsorted, to
-// prove the model sorts).
 function inventory(): AssetInventory {
 	return {
 		sprites: [
@@ -90,8 +82,7 @@ describe('typeahead filtering', () => {
 	test('filters by substring across sections', () => {
 		const state = query(openPicker(inventory()), 'a');
 		const ids = visibleEntries(state).map((e) => e.id);
-		// 'a' spans sections: archer (form), sword (weApons dir), cap + straw
-		// (hAts dir); no zone id contains it.
+
 		expect(ids.sort()).toEqual(['archer', 'cap', 'straw', 'sword']);
 	});
 
@@ -128,8 +119,7 @@ describe('cursor movement across sections', () => {
 		const state = openPicker(inventory());
 		const n = visibleEntries(state).length;
 		expect(state.cursor).toBe(0);
-		// Down from the last form entry lands on the first weapon entry (next
-		// section) — no gap for the header.
+
 		const forms = pickerSections(state)[0].entries.length;
 		const atFirstWeapon = moveCursor(state, forms);
 		expect(currentEntry(atFirstWeapon)).toEqual({
@@ -137,7 +127,7 @@ describe('cursor movement across sections', () => {
 			role: 'weapon',
 			id: 'sword',
 		});
-		// Clamp: can't move past the last entry or before the first.
+
 		expect(moveCursor(state, n + 10).cursor).toBe(n - 1);
 		expect(moveCursor(state, -3).cursor).toBe(0);
 	});
@@ -182,7 +172,7 @@ describe('new-sprite flow (`n`)', () => {
 		let state = beginNewSprite(openPicker(inventory()));
 		expect(state.newSprite?.phase).toBe('role');
 		expect(newSpriteRole(state)).toBe('form');
-		state = newSpriteMoveRole(state, -1); // wrap backwards
+		state = newSpriteMoveRole(state, -1);
 		expect(newSpriteRole(state)).toBe('npc');
 		state = newSpriteMoveRole(state, 1);
 		expect(newSpriteRole(state)).toBe('form');
@@ -190,7 +180,7 @@ describe('new-sprite flow (`n`)', () => {
 
 	test('choosing a role advances to id entry; typing builds the id', () => {
 		let state = beginNewSprite(openPicker(inventory()));
-		state = newSpriteMoveRole(state, 2); // → hat
+		state = newSpriteMoveRole(state, 2);
 		state = newSpriteChooseRole(state);
 		expect(state.newSprite?.phase).toBe('id');
 		for (const ch of 'fedora') state = newSpriteTypeId(state, ch);
@@ -207,7 +197,7 @@ describe('new-sprite flow (`n`)', () => {
 
 	test('a fresh id commits to a template target (file that does not exist yet)', () => {
 		let state = beginNewSprite(openPicker(inventory()));
-		state = newSpriteMoveRole(state, 2); // hat
+		state = newSpriteMoveRole(state, 2);
 		state = newSpriteChooseRole(state);
 		for (const ch of 'newhat') state = newSpriteTypeId(state, ch);
 		expect(newSpriteError(state)).toBeNull();
@@ -220,9 +210,9 @@ describe('new-sprite flow (`n`)', () => {
 
 	test('a colliding id errors and refuses to commit', () => {
 		let state = beginNewSprite(openPicker(inventory()));
-		state = newSpriteMoveRole(state, 2); // hat
+		state = newSpriteMoveRole(state, 2);
 		state = newSpriteChooseRole(state);
-		for (const ch of 'cap') state = newSpriteTypeId(state, ch); // hats/cap exists
+		for (const ch of 'cap') state = newSpriteTypeId(state, ch);
 		expect(newSpriteError(state)).toContain('already exists');
 		expect(commitNewSprite(state)).toBeNull();
 	});

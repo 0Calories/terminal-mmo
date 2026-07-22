@@ -33,7 +33,6 @@ import {
 	type SpriteRole,
 } from '../src/sprite-editor/templates';
 
-// A roomy, all-transparent single-frame doc for pixel tests.
 function blankState(): SpriteEditorState {
 	return initSpriteEditor(emptySpriteDoc('test', 'hat'));
 }
@@ -45,12 +44,11 @@ const PREVIEWS = {
 
 describe('pixelToCell', () => {
 	test('maps sub-pixels to the documented bit layout', () => {
-		// bit0=TL, bit1=TR, bit2=BL, bit3=BR within a 2×2 cell.
 		expect(pixelToCell(0, 0)).toEqual({ cellX: 0, cellY: 0, bit: 0 });
 		expect(pixelToCell(1, 0)).toEqual({ cellX: 0, cellY: 0, bit: 1 });
 		expect(pixelToCell(0, 1)).toEqual({ cellX: 0, cellY: 0, bit: 2 });
 		expect(pixelToCell(1, 1)).toEqual({ cellX: 0, cellY: 0, bit: 3 });
-		// Cell (1,0) begins at pixel x=2.
+
 		expect(pixelToCell(2, 0)).toEqual({ cellX: 1, cellY: 0, bit: 0 });
 		expect(pixelToCell(3, 5)).toEqual({ cellX: 1, cellY: 2, bit: 3 });
 	});
@@ -61,17 +59,17 @@ describe('paintPixel — the one-color path', () => {
 		const s = paintPixel(blankState(), 0, 0);
 		expect(s.feedback).toBe('');
 		const cell = cellAt(s, 0, 0);
-		expect(cell.glyph).toBe('▘'); // mask 1 = TL
-		expect(cell.fg).toBe('p'); // default key
-		expect(cell.bg).toBe(''); // transparent
+		expect(cell.glyph).toBe('▘');
+		expect(cell.fg).toBe('p');
+		expect(cell.bg).toBe('');
 		expect(readPixel(s, 0, 0)).toBe(true);
 	});
 
 	test('painting the same fg extends the mask', () => {
-		let s = paintPixel(blankState(), 0, 0); // TL
-		s = paintPixel(s, 1, 0); // TR
+		let s = paintPixel(blankState(), 0, 0);
+		s = paintPixel(s, 1, 0);
 		const cell = cellAt(s, 0, 0);
-		expect(cell.mask).toBe(0b0011); // TL|TR
+		expect(cell.mask).toBe(0b0011);
 		expect(cell.glyph).toBe('▀');
 		expect(cell.bg).toBe('');
 	});
@@ -101,54 +99,48 @@ describe('paintPixel — the one-color path', () => {
 });
 
 describe('paintPixel — coercion (auto-resolve, never refuse)', () => {
-	// Build an opaque two-colour cell the only way the single-ink model allows:
-	// paint one colour, then overpaint a second — the old fg demotes to bg.
 	function opaqueCell(): SpriteEditorState {
-		let s = paintPixel(blankState(), 0, 0); // 'p' at TL
+		let s = paintPixel(blankState(), 0, 0);
 		s = setInk(s, colorInk('g'));
-		s = paintPixel(s, 1, 1); // BR, different colour → overpaint
+		s = paintPixel(s, 1, 1);
 		return s;
 	}
 
 	test('overpaint: a second colour into a one-colour cell demotes the old fg to bg', () => {
 		const s = opaqueCell();
 		const cell = cellAt(s, 0, 0);
-		expect(cell.fg).toBe('g'); // the new ink wins the touched Pixel as fg
-		expect(cell.bg).toBe('p'); // the old fg demotes into the bg slot
-		expect(cell.mask).toBe(0b1000); // only the touched Pixel (BR) is lit fg
+		expect(cell.fg).toBe('g');
+		expect(cell.bg).toBe('p');
+		expect(cell.mask).toBe(0b1000);
 		expect(cell.glyph).toBe('▗');
 		expect(s.feedback).toContain('overpainted');
 	});
 
 	test('overpainting the lone lit Pixel recolours in place — no demote, no blot', () => {
-		// The touched Pixel is the cell's ONLY lit Pixel: replacing it preserves no
-		// other art, so the nearest legal state is a plain recolor. Demoting the old
-		// fg to bg here would flood the cell's three transparent quadrants with the
-		// old colour (the "blot" bug).
-		let s = paintPixel(blankState(), 0, 0); // 'p' at TL, rest transparent
+		let s = paintPixel(blankState(), 0, 0);
 		s = setInk(s, colorInk('g'));
-		s = paintPixel(s, 0, 0); // the SAME Pixel, different colour
+		s = paintPixel(s, 0, 0);
 		const cell = cellAt(s, 0, 0);
-		expect(cell.fg).toBe('g'); // the new ink wins the touched Pixel
-		expect(cell.bg).toBe(''); // the complement stays transparent
-		expect(cell.mask).toBe(0b0001); // only TL is lit
+		expect(cell.fg).toBe('g');
+		expect(cell.bg).toBe('');
+		expect(cell.mask).toBe(0b0001);
 		expect(cell.glyph).toBe('▘');
 		expect(s.feedback).toContain('recoloured');
 	});
 
 	test('recolor: painting a different colour into an opaque two-colour cell recolours the fg', () => {
-		let s = opaqueCell(); // fg 'g' @ BR, bg 'p'
+		let s = opaqueCell();
 		s = setInk(s, colorInk('w'));
-		s = paintPixel(s, 1, 0); // TR, into the opaque cell
+		s = paintPixel(s, 1, 0);
 		const cell = cellAt(s, 0, 0);
-		expect(cell.fg).toBe('w'); // fg recoloured to the new ink
-		expect(cell.bg).toBe('p'); // bg untouched
-		expect(cell.mask).toBe(0b1010); // BR + TR now fg
+		expect(cell.fg).toBe('w');
+		expect(cell.bg).toBe('p');
+		expect(cell.mask).toBe(0b1010);
 		expect(s.feedback).toContain('recoloured');
 	});
 
 	test('recolor filling the last complement Pixel drops the bg (one opaque colour)', () => {
-		let s = opaqueCell(); // fg 'g' @ BR, bg 'p'
+		let s = opaqueCell();
 		s = setInk(s, colorInk('w'));
 		for (const [px, py] of [
 			[0, 0],
@@ -159,26 +151,26 @@ describe('paintPixel — coercion (auto-resolve, never refuse)', () => {
 		const cell = cellAt(s, 0, 0);
 		expect(cell.mask).toBe(15);
 		expect(cell.fg).toBe('w');
-		expect(cell.bg).toBe(''); // no complement left, bg dropped
+		expect(cell.bg).toBe('');
 	});
 
 	test('extending the same fg into the transparent complement stays one colour', () => {
-		let s = paintPixel(blankState(), 0, 0); // 'p' TL
-		s = paintPixel(s, 1, 0); // 'p' TR — same ink
+		let s = paintPixel(blankState(), 0, 0);
+		s = paintPixel(s, 1, 0);
 		const cell = cellAt(s, 0, 0);
 		expect(cell.mask).toBe(0b0011);
 		expect(cell.fg).toBe('p');
-		expect(cell.bg).toBe(''); // still transparent, one colour
+		expect(cell.bg).toBe('');
 	});
 });
 
 describe('erasePixel', () => {
 	test('removing a sub-pixel from a one-color cell leaves a transparent hole', () => {
 		let s = paintPixel(blankState(), 0, 0);
-		s = paintPixel(s, 1, 0); // ▀ (TL|TR)
-		s = erasePixel(s, 0, 0); // remove TL
+		s = paintPixel(s, 1, 0);
+		s = erasePixel(s, 0, 0);
 		const cell = cellAt(s, 0, 0);
-		expect(cell.mask).toBe(0b0010); // TR only
+		expect(cell.mask).toBe(0b0010);
 		expect(cell.glyph).toBe('▝');
 		expect(cell.bg).toBe('');
 	});
@@ -193,15 +185,14 @@ describe('erasePixel', () => {
 	});
 
 	test('transparent ink punches the bg out cell-wide and clears the Pixel', () => {
-		// Opaque two-colour cell: fg 'g' @ BR, bg 'p'.
-		let s = paintPixel(blankState(), 0, 0); // 'p' TL
+		let s = paintPixel(blankState(), 0, 0);
 		s = setInk(s, colorInk('g'));
-		s = paintPixel(s, 1, 1); // overpaint → two-colour opaque
+		s = paintPixel(s, 1, 1);
 		expect(cellAt(s, 0, 0).bg).toBe('p');
-		s = erasePixel(s, 1, 1); // transparent ink at the fg Pixel
+		s = erasePixel(s, 1, 1);
 		const cell = cellAt(s, 0, 0);
-		expect(cell.bg).toBe(''); // bg punched out cell-wide
-		expect(cell.mask).toBe(0); // the only fg Pixel cleared
+		expect(cell.bg).toBe('');
+		expect(cell.mask).toBe(0);
 		expect(s.feedback).toContain('punched');
 	});
 
@@ -227,7 +218,7 @@ describe('glyph stamp + coercion', () => {
 	test('painting a colour over a stamped cell replaces the stamp with a Pixel', () => {
 		let s = stampGlyph(setInk(blankState(), colorInk('g')), 0, 0, '▲');
 		s = setInk(s, colorInk('w'));
-		s = paintPixel(s, 0, 0); // TL
+		s = paintPixel(s, 0, 0);
 		const cell = cellAt(s, 0, 0);
 		expect(cell.glyph).toBe('▘');
 		expect(cell.fg).toBe('w');
@@ -261,17 +252,17 @@ describe('canvas growth is explicit-only (spec #399)', () => {
 	test('painting past the right/bottom edge is clipped, never grows the canvas', () => {
 		const s0 = blankState();
 		const ext0 = frameExtent(currentFrame(s0));
-		// Cell (10, 6) begins at pixel (20, 12) — well outside the 6×4 canvas.
+
 		const s = paintPixel(s0, 20, 12);
-		expect(s.doc).toBe(s0.doc); // no doc change — no auto-grow
-		expect(frameExtent(currentFrame(s))).toEqual(ext0); // kept its size
+		expect(s.doc).toBe(s0.doc);
+		expect(frameExtent(currentFrame(s))).toEqual(ext0);
 		expect(s.feedback).toContain('clipped');
 	});
 
 	test('painting past the top/left edge is clipped, not grown into negative space', () => {
 		const s0 = blankState();
 		const s = paintPixel(s0, -1, 0);
-		expect(s.doc).toBe(s0.doc); // no doc change
+		expect(s.doc).toBe(s0.doc);
 		expect(s.feedback).toContain('clipped');
 	});
 });
@@ -314,11 +305,11 @@ describe('color selection & local colors', () => {
 			label: 'z',
 			kind: 'local',
 		});
-		// No reserved keys appear in the 'palette' group.
+
 		const palette = entries.filter((e) => e.kind === 'palette');
 		expect(palette.some((e) => e.key === 'p' || e.key === 'a')).toBe(false);
 		expect(palette.some((e) => e.key === 'g')).toBe(true);
-		// The two dynamic channels are labeled by meaning, with injected previews.
+
 		const dyn = entries.filter((e) => e.kind === 'dynamic');
 		expect(dyn).toEqual([
 			{ key: 'p', rgba: PREVIEWS.p, label: 'player hue', kind: 'dynamic' },
@@ -330,7 +321,7 @@ describe('color selection & local colors', () => {
 describe('undo / redo', () => {
 	test('each non-stroke paint is its own undo step', () => {
 		let s = paintPixel(blankState(), 0, 0);
-		s = paintPixel(s, 2, 0); // different cell
+		s = paintPixel(s, 2, 0);
 		expect(readPixel(s, 0, 0)).toBe(true);
 		expect(readPixel(s, 2, 0)).toBe(true);
 		s = undoEdit(s);
@@ -348,7 +339,7 @@ describe('undo / redo', () => {
 		s = endStroke(s);
 		expect(cellAt(s, 0, 0).mask).toBe(0b0111);
 		const undone = undoEdit(s);
-		// One undo removes the whole stroke.
+
 		expect(cellAt(undone, 0, 0).mask).toBe(0);
 	});
 
@@ -359,7 +350,7 @@ describe('undo / redo', () => {
 		s = beginStroke(s);
 		s = paintPixel(s, 2, 0);
 		s = endStroke(s);
-		s = undoEdit(s); // undoes the second stroke only
+		s = undoEdit(s);
 		expect(readPixel(s, 2, 0)).toBe(false);
 		expect(readPixel(s, 0, 0)).toBe(true);
 	});
@@ -375,9 +366,9 @@ describe('undo / redo', () => {
 	test('clipped and no-op paints create no history entry', () => {
 		let s = paintPixel(blankState(), 0, 0);
 		const depth = s.history.past.length;
-		s = paintPixel(s, -1, 0); // clipped past the edge
+		s = paintPixel(s, -1, 0);
 		expect(s.history.past.length).toBe(depth);
-		s = paintPixel(s, 0, 0); // already exactly this Pixel — no-op
+		s = paintPixel(s, 0, 0);
 		expect(s.history.past.length).toBe(depth);
 	});
 });
@@ -398,9 +389,9 @@ describe('selectFrame & cursor', () => {
 
 	test('painting affects only the current frame', () => {
 		let s = initSpriteEditor(emptySpriteDoc('hero', 'form'));
-		s = paintPixel(s, 0, 0); // in idle
+		s = paintPixel(s, 0, 0);
 		s = selectFrame(s, 'walk 0');
-		expect(readPixel(s, 0, 0)).toBe(false); // walk 0 untouched
+		expect(readPixel(s, 0, 0)).toBe(false);
 	});
 
 	test('moveCursor clamps to non-negative pixels', () => {
@@ -424,24 +415,22 @@ describe('saveResult round-trip', () => {
 	test('serializes a doc exercising animations, anchors, colors and bg with no error diagnostics', () => {
 		let s = initSpriteEditor(emptySpriteDoc('hero', 'form'));
 		s = defineLocalColor(s, 'z', [10, 20, 30, 255]);
-		// One-color pixel with a local ink.
+
 		s = setInk(s, colorInk('z'));
 		s = paintPixel(s, 0, 0);
-		// A two-color (fg+bg) cell, built by overpainting a second colour.
+
 		s = setInk(s, colorInk('g'));
-		s = paintPixel(s, 8, 0); // fg 'g' at cell (4,0)
+		s = paintPixel(s, 8, 0);
 		s = setInk(s, colorInk('w'));
-		s = paintPixel(s, 9, 1); // overpaint → fg 'w', bg 'g'
-		// A glyph stamp.
+		s = paintPixel(s, 9, 1);
+
 		s = setInk(s, colorInk('g'));
 		s = stampGlyph(s, 3, 1, '▲');
 
 		const { text, diagnostics } = saveResult(s);
 		const errors = diagnostics.filter((d) => d.severity === 'error');
 		expect(errors).toEqual([]);
-		// Round-trips: re-parsing yields the same frame art the serializer wrote.
-		// Save trims to the union content bbox (#402), so the shipped art is the
-		// trimmed doc, not the roomier in-editor frame.
+
 		const { doc } = parseSpriteFile(text, 'hero');
 		expect(doc).not.toBeNull();
 		const idle = doc ? findFrame(doc, 'idle')?.frame : undefined;
@@ -464,7 +453,7 @@ describe('role templates', () => {
 
 	test('form has idle + walk 0/walk 1 frames (one walk animation) and grip/head anchors', () => {
 		const doc = emptySpriteDoc('hero', 'form');
-		// Frames are unnamed (ADR 0037); their identity is (animation, index).
+
 		expect(doc.animations.map((a) => a.name)).toEqual(['idle', 'walk']);
 		expect(doc.animations.map((a) => a.frames.length)).toEqual([1, 2]);
 		expect(Object.keys(doc.anchors).sort()).toEqual(['grip', 'head']);

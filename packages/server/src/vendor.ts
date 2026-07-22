@@ -1,7 +1,3 @@
-// Vendor request handling: the server's business, not the world simulation's
-// (ADR 0032). Buy/sell rules stay pure in @mmo/core/items; this file only
-// gates on merchant proximity and writes the result through the world's one
-// avatar-update door.
 import { aabbOverlap } from '@mmo/core/combat';
 import {
 	buyItem,
@@ -17,7 +13,6 @@ import {
 	zoneStateOf,
 } from '@mmo/core/world';
 
-// The placed avatar, but only when it is standing at a vendor Npc.
 function placedAtMerchant(world: ServerWorld, sessionId: number) {
 	const zs = zoneStateOf(world, sessionId);
 	const sa = zs?.avatars.find((a) => a.sessionId === sessionId);

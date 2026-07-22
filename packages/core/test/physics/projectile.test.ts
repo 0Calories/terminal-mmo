@@ -25,7 +25,7 @@ test('a projectile despawns when its lifetime runs out', () => {
 
 test('a fast projectile cannot tunnel through a thin wall (swept, not point-checked)', () => {
 	const walled = parseTerrain(['   #  ', '   #  ', '   #  ']);
-	// Crosses the wall column entirely in one step: 1 → 6.
+
 	const p = makeProjectile({ x: 1, y: 1, vx: 50, damage: 5 });
 	expect(stepProjectile(walled, p, 0.1)).toBeNull();
 });

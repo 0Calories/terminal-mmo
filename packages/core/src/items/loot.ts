@@ -30,8 +30,6 @@ export const RARITIES: RarityDef[] = [
 
 export const AFFIXES = ['str', 'dex', 'int', 'hp', 'crit', 'haste'];
 
-// Selection from the standard palette: common s, uncommon f, rare b, epic v,
-// legendary p.
 export const RARITY_COLOR: Record<Rarity, RGBAQuad> = {
 	common: STANDARD_PALETTE.s,
 	uncommon: STANDARD_PALETTE.f,

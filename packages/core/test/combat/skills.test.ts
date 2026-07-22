@@ -27,8 +27,6 @@ import { flatTerrain } from '../helpers';
 
 const y = GROUND_TOP - BOX.h;
 
-// Skill use at the zone-tick seam: the ONE runtime the server and the forge
-// playtest both drive (the old single-player runtime's coverage, re-expressed).
 function skillState(level: number, monsters: Entity[]): ZoneState {
 	const sa: ServerAvatar = {
 		sessionId: 1,
@@ -65,7 +63,6 @@ function skillGame(level: number): ZoneState {
 	return skillState(level, [spawnMonster('chaser', 2, 20 + BOX.w, y)]);
 }
 
-// The Avatar flanked by a chaser each side, both in AoE reach.
 function flankedGame(level: number): ZoneState {
 	return skillState(level, [
 		spawnMonster('chaser', 2, 20 + BOX.w, y),
@@ -198,7 +195,7 @@ test('Power Strike cannot re-fire while on cooldown', () => {
 
 test('Power Strike re-fires once its cooldown elapses', () => {
 	let g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16);
-	// idle long enough for the cooldown to expire (dt clamped to 0.05s/tick)
+
 	for (let i = 0; i < 80; i++) g = step(g, IDLE, 50);
 	expect(g.avatars[0].skillCooldowns?.[POWER_STRIKE.id] ?? 0).toBe(0);
 	g = step(g, POWER, 16);

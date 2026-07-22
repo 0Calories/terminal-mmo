@@ -1,4 +1,3 @@
-// Run: bun packages/client/src/sprites/cosmetics-preview.ts
 import {
 	type Cosmetics,
 	DEFAULT_FORM_ID,

@@ -212,7 +212,6 @@ test('every entrant to a Zone joins its single shared instance — no channel sp
 	expect(zoneOf(w, 2)).toBe('field-01');
 	expect(zoneOf(w, 3)).toBe('field-01');
 
-	// The instanced Dungeon has no shared instance, so it is absent from zones.
 	expect(Object.keys(w.zones).sort()).toEqual(
 		loadZones()
 			.filter((z) => z.type !== 'dungeon')
@@ -392,7 +391,7 @@ test('a forgiving death in the Dungeon exits to Town and tears the instance down
 
 test('strangers never share a Dungeon instance — each gets its own private run', () => {
 	let w = addSession(townWorld(), 1, 'neo');
-	w = addSession(w, 2, 'trinity'); // no party
+	w = addSession(w, 2, 'trinity');
 	const x = dungeonEntryX(w);
 	w = stepServerWorld(w, [holdAt(1, x, true), holdAt(2, x, true)], 16);
 
@@ -459,7 +458,7 @@ test('a re-entered Dungeon is a fresh instance (repeatable faucet)', () => {
 	let w = addSession(townWorld(), 1, 'neo');
 	w = enterDungeon(w, 1);
 	const first = w.instanceOf[1];
-	w = stepServerWorld(w, [holdAt(1, dungeonExitX(w), true)], 16); // back to Town
+	w = stepServerWorld(w, [holdAt(1, dungeonExitX(w), true)], 16);
 	expect(Object.keys(w.instances).length).toBe(0);
 	w = enterDungeon(w, 1);
 	expect(zoneOf(w, 1)).toBe('dungeon-01');

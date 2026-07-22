@@ -3,15 +3,11 @@ import type { OptimizedBuffer } from '@opentui/core';
 import { ParticleEngine, type ParticleLayer } from '../src/particles';
 import { flatTerrain, seededRng } from './helpers';
 
-// The engine's public surface: named-effect spawns in, layered draws out.
-
 const SEED = 0xfacade;
 const W = 64;
 const H = 24;
 const DT = 16;
 
-// The engine draws through OptimizedBuffer's blending call; recording it is
-// enough to know which layer painted where.
 function stubBuffer(w = W, h = H) {
 	const cells: { x: number; y: number; ch: string }[] = [];
 	const buf = {

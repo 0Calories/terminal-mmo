@@ -47,7 +47,6 @@ export function xpProgress(level: number, xp: number): XpProgress {
 	return { current, needed, ratio: fillRatio(xp, needed), atCap: false };
 }
 
-// Combat gates and Warrior skills both read unlock levels from here — keep in sync.
 export type Capability =
 	| 'attack'
 	| 'block'

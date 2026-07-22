@@ -144,7 +144,7 @@ class Reader {
 	}
 	bytes(): Uint8Array {
 		const len = this.u32();
-		// slice (not subarray) so the value outlives the socket's recycled receive buffer.
+
 		const out = this.buf.slice(this.pos, this.pos + len);
 		this.pos += len;
 		return out;
@@ -186,13 +186,6 @@ export type ClientMessage =
 	| { t: 'createAvatar'; handle: string; cosmetics: Cosmetics }
 	| { t: 'setCosmetics'; cosmetics: Cosmetics };
 
-// Legacy (pre-#348) 4×u8 quad, BYTE-IDENTICAL to what a released client
-// sends/expects — the hat and form bytes carry LEGACY_HAT_IDS / LEGACY_FORM_IDS
-// indices, best-effort only. The full-fidelity string hat AND form ids ride as
-// separate trailing fields on each message (see CONTRIBUTING "Wire protocol
-// changes"), appended after this quad (hat first, then form) and read behind a
-// `remaining()` guard so they override the quad-derived values when present, and
-// legacy frames still decode cleanly without them.
 function writeCosmetics(w: Writer, c: Cosmetics) {
 	w.u8(c.hue);
 	const hatIdx = LEGACY_HAT_IDS.indexOf(c.hat);
@@ -211,16 +204,10 @@ function readCosmetics(r: Reader): Cosmetics {
 	});
 }
 
-// Reads one appended full-fidelity id (hat, then form), if present, else falls
-// back to the quad-derived value (a legacy peer's best-effort mapping). The
-// trailing ids sit back-to-back in write order (hat first, then form), so read
-// the hat before the form.
 function readTrailingId(r: Reader, fallback: string): string {
 	return r.remaining() >= 4 ? r.str() : fallback;
 }
 
-// Merges the trailing hat/form ids back onto the quad, reusing the quad object
-// unchanged when neither overrode it (a legacy frame with no trailing ids).
 function mergeTrailingCosmetics(
 	quad: Cosmetics,
 	hat: string,
@@ -252,8 +239,8 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			writeCosmetics(w, msg.cosmetics);
 			w.u8(msg.weapon);
 			w.str(msg.publicKey);
-			w.str(msg.cosmetics.hat); // append-only: full-fidelity hat id (CONTRIBUTING §wire)
-			w.str(msg.cosmetics.form); // append-only: full-fidelity form id (CONTRIBUTING §wire)
+			w.str(msg.cosmetics.hat);
+			w.str(msg.cosmetics.form);
 			break;
 		case 'proof':
 			w.u8(CLIENT_TAG.proof);
@@ -298,14 +285,14 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.u8(CLIENT_TAG.createAvatar);
 			writeCosmetics(w, msg.cosmetics);
 			w.str(msg.handle);
-			w.str(msg.cosmetics.hat); // append-only: full-fidelity hat id (CONTRIBUTING §wire)
-			w.str(msg.cosmetics.form); // append-only: full-fidelity form id (CONTRIBUTING §wire)
+			w.str(msg.cosmetics.hat);
+			w.str(msg.cosmetics.form);
 			break;
 		case 'setCosmetics':
 			w.u8(CLIENT_TAG.setCosmetics);
 			writeCosmetics(w, msg.cosmetics);
-			w.str(msg.cosmetics.hat); // append-only: full-fidelity hat id (CONTRIBUTING §wire)
-			w.str(msg.cosmetics.form); // append-only: full-fidelity form id (CONTRIBUTING §wire)
+			w.str(msg.cosmetics.hat);
+			w.str(msg.cosmetics.form);
 			break;
 	}
 	return w.finish();
@@ -318,7 +305,7 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 		case CLIENT_TAG.hello: {
 			const handle = r.str();
 			const version = r.remaining() >= 4 ? r.str() : '';
-			// legacy quad: hue(1) + hat(1) + nameplate(1) + form(1) = 4 bytes
+
 			const quad = r.remaining() >= 4 ? readCosmetics(r) : DEFAULT_COSMETICS;
 			const weapon = r.remaining() >= 1 ? r.u8() : DEFAULT_WEAPON;
 			const publicKey = r.remaining() >= 4 ? r.str() : '';
@@ -484,7 +471,7 @@ const ENTITY_TYPES: readonly EntityType[] = [
 	'shooter',
 	'brute',
 ];
-// Append-only: array position is the wire encoding, so reordering silently remaps values.
+
 const COMBAT_EVENT_KINDS: readonly CombatEventKind[] = [
 	'hit',
 	'break',
@@ -540,12 +527,7 @@ function writeAvatar(w: Writer, a: AvatarSnapshot) {
 	w.f64(a.hurtT);
 	w.u8(a.weapon);
 	writeAction(w, a.action);
-	// Append-only: full-fidelity hat id at the END of the record. A per-record
-	// trailing field shifts subsequent records for a stale reader, but
-	// snapshots only ever flow between gate-matched peers (a release client
-	// talking to its matching release server) or same-source peers (dev), so
-	// record-level append is safe here — the quad still carries a
-	// legacy-best-effort hat + form for any peer that doesn't read this far.
+
 	w.str(a.cosmetics.hat);
 	w.str(a.cosmetics.form);
 }

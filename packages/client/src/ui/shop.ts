@@ -8,8 +8,8 @@ import {
 } from '@opentui/core';
 import { COLORS } from '../theme';
 
-const RARITY_PAD = 9; // width of 'legendary', the widest rarity word
-const SLOT_PAD = 9; // width of 'accessory', the widest Slot word
+const RARITY_PAD = 9;
+const SLOT_PAD = 9;
 
 export type ShopMode = 'sell' | 'buy';
 
@@ -27,7 +27,7 @@ export class Shop {
 
 	constructor(ctx: RenderContext, sellOnly = false) {
 		this.sellOnly = sellOnly;
-		// zIndex 20 puts it above the HUD (z10).
+
 		this.container = new BoxRenderable(ctx, {
 			position: 'absolute',
 			top: 0,

@@ -1,19 +1,3 @@
-// Whole-file sizing transforms for the Sprite editor (spec #387, issue #402):
-// load-normalize, save-trim, whole-file edge resize, and crop. Pure functions
-// over a SpriteDoc — no editor state, no I/O — so every invariant (union bbox
-// math, baseline-driven vertical growth, per-edge Anchor/baseline compensation)
-// is testable in isolation.
-//
-// Coordinate model. A Frame is a grid of cells (`frame.rows` etc). Anchors are
-// cell offsets (any integer, per ADR 0031). `doc.baseline` is measured from the
-// grid BOTTOM — the render path positions a Frame by `-h + baseline`, so a Frame
-// renders bottom-anchored. That fixes the compensation rules:
-//   • add/remove a LEFT column   → shift every anchor x by ±1 (content slides).
-//   • add/remove a RIGHT column  → no anchor shift (content unmoved).
-//   • add/remove a TOP row       → shift every anchor y by ±1 (content slides).
-//   • add/remove a BOTTOM row    → no anchor shift, baseline ±1 (bottom moves).
-// Growing at the top therefore preserves ground contact (the bottom stays put),
-// which is why load-normalize grows shorter Frames upward.
 import {
 	allFrames,
 	mapDocFrames,
@@ -42,8 +26,6 @@ function frameSize(frame: SpriteFrameDoc): { w: number; h: number } {
 	return { w: frame.rows[0]?.length ?? 0, h: frame.rows.length };
 }
 
-// The tight bounding box of a Frame's inked (non-blank glyph) cells, or null when
-// the Frame is fully transparent.
 export function frameContentBounds(frame: SpriteFrameDoc): Bounds | null {
 	let x0 = Number.POSITIVE_INFINITY;
 	let y0 = Number.POSITIVE_INFINITY;
@@ -63,7 +45,6 @@ export function frameContentBounds(frame: SpriteFrameDoc): Bounds | null {
 	return { x0, y0, x1, y1 };
 }
 
-// The union of every Frame's content bounds, or null when the whole doc is blank.
 export function unionContentBounds(doc: SpriteDoc): Bounds | null {
 	let out: Bounds | null = null;
 	for (const f of allFrames(doc)) {
@@ -81,8 +62,6 @@ export function unionContentBounds(doc: SpriteDoc): Bounds | null {
 	return out;
 }
 
-// Whether every Frame already shares one grid size (the editor's whole-file
-// policy). A single-frame doc is trivially uniform.
 export function isUniform(doc: SpriteDoc): boolean {
 	const frames = allFrames(doc);
 	if (frames.length === 0) return true;
@@ -104,7 +83,6 @@ function shiftAnchors(
 	return out;
 }
 
-// Shift the doc-level anchors and every Frame override by the same cell delta.
 function shiftAllAnchors(doc: SpriteDoc, dx: number, dy: number): SpriteDoc {
 	if (dx === 0 && dy === 0) return doc;
 	return {
@@ -127,10 +105,6 @@ function mapGrids(doc: SpriteDoc, fn: GridFn): SpriteDoc {
 	}));
 }
 
-// Grow or shrink the whole file by one cell on one edge, compensating anchors and
-// baseline. `dir` is +1 to add (grow outward) or -1 to remove (shrink inward).
-// Returns null when a shrink would collapse the grid below 1×1 (the caller reports
-// it); the doc is otherwise uniform-in, uniform-out.
 export function resizeDoc(
 	doc: SpriteDoc,
 	edge: ResizeEdge,
@@ -161,16 +135,13 @@ export function resizeDoc(
 		const fn: GridFn = dir > 0 ? (g) => [blankRow(w), ...g] : (g) => g.slice(1);
 		return shiftAllAnchors(mapGrids(doc, fn), 0, dir);
 	}
-	// bottom
+
 	const fn: GridFn =
 		dir > 0 ? (g) => [...g, blankRow(w)] : (g) => g.slice(0, -1);
 	const grown = mapGrids(doc, fn);
 	return { ...grown, baseline: Math.max(0, doc.baseline + dir) };
 }
 
-// Crop every Frame to an inclusive cell rectangle, compensating anchors (left/top
-// removal slides them) and baseline (bottom removal lowers it). Cells outside the
-// current grid are clamped in. Assumes a uniform doc (all Frames one size).
 export function cropDocToCells(
 	doc: SpriteDoc,
 	cx0: number,
@@ -193,13 +164,6 @@ export function cropDocToCells(
 	return { ...shifted, baseline: Math.max(0, doc.baseline - botRemoved) };
 }
 
-// Normalize a loaded file to the whole-file policy: every Frame grown to the union
-// grid size with transparent margin, the baseline driving vertical growth (shorter
-// Frames grow UPWARD so their bottom — the ground line — stays put). Horizontal
-// growth pads on the right. Per-Frame Anchor overrides absorb the differing top
-// pad so every Frame's effective Anchor keeps pointing at the same art. Already-
-// uniform docs return unchanged (identity), so a load-normalize on a shipped
-// uniform file is a no-op.
 export function normalizeDoc(doc: SpriteDoc): SpriteDoc {
 	const frames = allFrames(doc);
 	if (frames.length === 0 || isUniform(doc)) return doc;
@@ -213,9 +177,7 @@ export function normalizeDoc(doc: SpriteDoc): SpriteDoc {
 			const top = Array.from({ length: topPad }, () => ' '.repeat(unionW));
 			return [...top, ...widened];
 		};
-		// Vertical growth slides this Frame's content down by `topPad`; its effective
-		// Anchors (doc-level overlaid with existing overrides) must follow, but the
-		// shift differs per Frame, so it is materialized as per-Frame overrides.
+
 		let anchors = f.anchors;
 		if (topPad > 0) {
 			const eff: Record<string, SpriteAnchor> = {};
@@ -235,11 +197,6 @@ export function normalizeDoc(doc: SpriteDoc): SpriteDoc {
 	});
 }
 
-// Trim a file to the union content bounding box across Frames, dropping workspace
-// margins so they never leak into the shipped asset. A tight uniform doc trims to
-// itself (identity of the serialized art), which keeps a load-normalize → save-
-// trim round-trip a no-op for already-uniform files. A fully-transparent doc is
-// left untouched (nothing to trim to).
 export function trimDoc(doc: SpriteDoc): SpriteDoc {
 	const first = allFrames(doc)[0];
 	if (first === undefined) return doc;

@@ -1,9 +1,3 @@
-// The synthetic local session (ADR 0032): forge playtest and offline checks
-// run the REAL server world with one client-shaped session. This file owns
-// only the client half of the loop — dodge gating and movement prediction,
-// exactly what the live client does before reporting an intent. Portals,
-// deaths, respawns, and Dungeon instances all resolve inside stepServerWorld,
-// so "plays fine locally" and "behaves on the live server" are the same code.
 import { canStartDodge } from '../combat/combat';
 import { COMBAT } from '../combat/constants';
 import type { Input } from '../entities/types';
@@ -40,13 +34,10 @@ export function createLocalWorld(
 	handle = 'you',
 ): LocalWorld {
 	const startId = zones.some((z) => z.id === start) ? start : zones[0].id;
-	// A forgiving death relocates to the set's Town, as on the live server;
-	// a set without one falls back to the start Zone.
+
 	const town = zones.find((z) => z.type === 'town')?.id ?? startId;
 	const world = createServerWorld({ zones, start: startId, town });
 	if (world.templates[startId].type === 'dungeon') {
-		// Dungeons have no shared instance: seed a private run directly, under
-		// the same instance key a portal entry would mint.
 		const key = instanceKey(startId, LOCAL_SESSION);
 		const inst = addAvatar(
 			createZoneState(world.templates[startId]),
@@ -87,9 +78,6 @@ export function stepLocalWorld(
 	if (zs === undefined || me === undefined) return lw;
 	const dt = Math.min(dtMs / 1000, PHYS.maxDt);
 
-	// Client-side responsibilities, mirroring the live client's prediction:
-	// the dodge gate + impulse fire before physics, and the server trusts the
-	// reported body (it never re-simulates movement).
 	const dodging =
 		(input.dodge ?? false) &&
 		canStartDodge(me.avatar, input.moveX) &&
@@ -114,7 +102,7 @@ export function stepLocalWorld(
 		y: predicted.y,
 		vx: predicted.vx,
 		vy: predicted.vy,
-		// The server rebuilds the avatar from this intent, so the hop persists.
+
 		ivx: predicted.ivx,
 		facing: predicted.facing,
 		onGround: predicted.onGround,

@@ -1,7 +1,3 @@
-// zones — the place: zone types, the .zone text format, forge-only validation,
-// zone state, and the slim authoritative tick. The whole (registry, instances,
-// portals, sessions) lives in world/.
-
 export {
 	GROUND_TOP,
 	NPC_BOX,

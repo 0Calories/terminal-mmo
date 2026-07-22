@@ -9,8 +9,6 @@ import {
 	encodeServerMessage,
 } from '../../src/protocol';
 
-// Helper to byte-craft a legacy (pre-#348) frame: tag + fields, with the hat
-// carried as a raw u8 LEGACY_HAT_IDS index and NO trailing hat-id string.
 function craftBytes(...parts: (number | string)[]): Uint8Array {
 	const bytes: number[] = [];
 	const enc = new TextEncoder();
@@ -89,9 +87,7 @@ test('a pre-auth hello (no trailing public key or hat id) decodes publicKey empt
 		publicKey: 'trailing-key-to-strip',
 	};
 	const encoded = encodeClientMessage(msg);
-	// strip the trailing form-id field (u32 len + bytes), the trailing hat-id
-	// field (u32 len + 0 bytes, since hat is ''), and the publicKey field
-	// (u32 len + bytes) — the order they sit at the end of the frame.
+
 	const keyLen = new TextEncoder().encode(msg.publicKey).length;
 	const hatLen = new TextEncoder().encode(msg.cosmetics.hat).length;
 	const formLen = new TextEncoder().encode(msg.cosmetics.form).length;
@@ -103,7 +99,6 @@ test('a pre-auth hello (no trailing public key or hat id) decodes publicKey empt
 });
 
 test('a legacy (pre-#348) hello frame — quad only, no trailing hat id — decodes cleanly', () => {
-	// tag, handle, version, then the raw legacy quad (hue, hat=3 -> 'wizard', nameplate, form)
 	const buf = craftBytes(1, 'forward', '0.2.0', 1, 3, 1, 0);
 	expect(decodeClientMessage(buf)).toEqual({
 		t: 'hello',
@@ -130,7 +125,7 @@ test('challenge (server -> client) round-trips the nonce bytes', () => {
 });
 
 test('a truncated hello (no version/quad/weapon/key/hat fields) decodes with defaults, not garbage', () => {
-	const buf = craftBytes(1, 'legacy'); // tag, handle only
+	const buf = craftBytes(1, 'legacy');
 	expect(decodeClientMessage(buf)).toEqual({
 		t: 'hello',
 		handle: 'legacy',
@@ -300,8 +295,7 @@ test('createAvatar round-trips a non-legacy hat id (survives via the appended fu
 });
 
 test('a legacy (pre-#348) createAvatar frame — quad only, no trailing hat id — decodes cleanly', () => {
-	// tag, quad (hue, hat=3 -> 'wizard', nameplate, form), then trailing handle
-	const buf = craftBytes(9, 1, 3, 1, 0, 'Neo'); // 9 = CLIENT_TAG.createAvatar
+	const buf = craftBytes(9, 1, 3, 1, 0, 'Neo');
 	expect(decodeClientMessage(buf)).toEqual({
 		t: 'createAvatar',
 		handle: 'Neo',
@@ -350,8 +344,7 @@ test('setCosmetics round-trips a non-legacy hat id (survives via the appended fu
 });
 
 test('a legacy (pre-#348) setCosmetics frame — quad only, no trailing hat id — decodes cleanly', () => {
-	// tag, quad (hue, hat=3 -> 'wizard', nameplate, form) with no trailing field
-	const buf = craftBytes(10, 1, 3, 1, 0); // 10 = CLIENT_TAG.setCosmetics
+	const buf = craftBytes(10, 1, 3, 1, 0);
 	expect(decodeClientMessage(buf)).toEqual({
 		t: 'setCosmetics',
 		cosmetics: { hue: 1, hat: 'wizard', nameplate: 1, form: 'buddy' },
@@ -387,9 +380,6 @@ test('setCosmetics round-trips a non-legacy form id (survives via the appended f
 });
 
 test('setCosmetics with a trailing hat id but no trailing form id recovers the form from the legacy quad byte', () => {
-	// Byte-craft a frame that appends the full-fidelity hat id but stops before
-	// the form id (form rides only the legacy quad byte). tag(10) + quad
-	// (hue=2, hat=1 -> 'cap', nameplate=1, form=0 -> 'buddy') + trailing hat.
 	const buf = craftBytes(10, 2, 1, 1, 0, 'top-hat');
 	expect(decodeClientMessage(buf)).toEqual({
 		t: 'setCosmetics',
@@ -403,9 +393,7 @@ test('a #302-era createAvatar (no trailing handle or hat id) decodes handle as e
 		handle: 'Neo',
 		cosmetics: { hue: 2, hat: 'cap', nameplate: 3, form: 'buddy' },
 	});
-	// Drop the trailing form-id field (u32 len + 5 bytes for "buddy"), the
-	// trailing hat-id field (u32 len + 3 bytes for "cap"), and the trailing
-	// handle field (u32 len + 3 bytes for "Neo").
+
 	const legacy = full.subarray(0, full.length - 4 - 5 - 4 - 3 - 4 - 3);
 	expect(decodeClientMessage(legacy)).toEqual({
 		t: 'createAvatar',
@@ -464,7 +452,7 @@ test('a pre-auth welcome (no trailing handle) decodes handle as empty', () => {
 		handle: 'Trinity',
 		isNew: true,
 	});
-	// strip trailing isNew byte + durable-handle field (u32 length prefix + bytes)
+
 	const truncated = encoded.subarray(
 		0,
 		encoded.length - 1 - 4 - new TextEncoder().encode('Trinity').length,

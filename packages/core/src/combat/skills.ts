@@ -9,7 +9,7 @@ export type SkillKind = 'frontal' | 'aoe';
 export interface Skill {
 	id: string;
 	name: string;
-	// The DEFAULT binding; MMO_SCHEME=mouse rebinds keys but feedback lines stay on this.
+
 	key: string;
 	kind: SkillKind;
 	unlockLevel: number;
@@ -57,7 +57,6 @@ export function skillUnlocked(skill: Skill, level: number): boolean {
 	return level >= skill.unlockLevel;
 }
 
-// Unlock rungs in the half-open span (fromLevel, toLevel], so a multi-level jump surfaces all.
 export function skillsUnlockedBetween(
 	cls: PlayerClass,
 	fromLevel: number,

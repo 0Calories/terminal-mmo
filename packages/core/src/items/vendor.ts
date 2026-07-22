@@ -15,7 +15,6 @@ export function saleValue(item: Item): number {
 	return RARITY_VALUE[item.rarity] + AFFIX_VALUE * affixTotal;
 }
 
-// Every price sits above the common saleValue (5), so buy-then-resell can't farm Gold.
 export interface StarterGood {
 	base: string;
 	slot: Slot;

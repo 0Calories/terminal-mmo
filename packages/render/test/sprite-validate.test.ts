@@ -1,5 +1,3 @@
-// Role-profile validator (ADR 0031/0037): pure functions over parsed SpriteDocs
-// and in-memory SpriteSource sets. No disk access.
 import { expect, test } from 'bun:test';
 import type { SpriteSource } from '@mmo/assets';
 import { parseSpriteFile, type SpriteDoc } from '../src';
@@ -53,7 +51,7 @@ test('validateSpriteRole: forms fails naming missing animation and anchor', () =
 	expect(joined).toContain('head');
 	expect(joined).toContain('buddy');
 	expect(joined).toContain('forms');
-	// grip and idle are present, so must not be reported
+
 	expect(joined).not.toContain("'idle'");
 });
 
@@ -122,7 +120,7 @@ test('validateSpriteRole: a form whose first animation is not idle warns (never 
 	expect(diags.length).toBe(1);
 	expect(diags[0].severity).toBe('warning');
 	expect(diags[0].message).toContain('idle');
-	// A form that DOES lead with idle raises no such warning.
+
 	expect(validateSpriteRole(docOf(FORMS_OK, 'buddy'), 'forms')).toEqual([]);
 });
 
@@ -261,7 +259,7 @@ test('validateSpriteSet: aggregates parse diagnostics and role-profile diagnosti
 		{ id: 'broken', role: 'hats', text: 'not valid json {{{' },
 	];
 	const diags = validateSpriteSet(sources);
-	// broken: at least one parse diagnostic; bad-hat: one role diagnostic; good-hat: none
+
 	expect(diags.some((d) => d.spriteId === 'broken')).toBe(true);
 	expect(
 		diags.some((d) => d.spriteId === 'bad-hat' && d.message.includes('idle')),
@@ -273,15 +271,13 @@ test('validateSpriteSet: a parse failure is reported but the role check is skipp
 	const diags = validateSpriteSet([
 		{ id: 'broken', role: 'forms', text: 'not valid json {{{' },
 	]);
-	// Scope to the broken sprite: whole-set reference checks add their own
-	// (dangling catalog) diagnostics with other ids, which are unrelated here.
+
 	const brokenDiags = diags.filter((d) => d.spriteId === 'broken');
 	expect(brokenDiags.length).toBeGreaterThan(0);
-	// only the parse diagnostic(s) — no "missing animation"/"missing anchor" profile noise
+
 	expect(brokenDiags.some((d) => d.message.includes('missing'))).toBe(false);
 });
 
-// A minimal valid weapon source (idle rest + 3-frame swing + grip) for reference tests.
 function weaponSource(id: string): SpriteSource {
 	return {
 		id,
@@ -304,16 +300,14 @@ function idleSource(id: string, role: string): SpriteSource {
 }
 
 test('validateSpriteSet: dangling weapon/monster/npc catalog references are errors', () => {
-	// An empty set: every id the @mmo/core catalogs/refs expect dangles.
 	const diags = validateSpriteSet([]);
 	const errs = diags.filter((d) => d.severity === 'error');
 	const byId = (id: string) => errs.find((d) => d.spriteId === id);
-	// 'sword' (WEAPONS[].sprite), 'chaser' (MONSTER_SPRITE_REF), 'merchant'
-	// (NPC_SPRITE_REF.vendor) are stable references the game expects.
+
 	expect(byId('sword')).toBeDefined();
 	expect(byId('chaser')).toBeDefined();
 	expect(byId('merchant')).toBeDefined();
-	// Diagnostics say what is wrong (the id) and why it matters.
+
 	expect(byId('sword')?.message).toContain('sword');
 	expect(byId('chaser')?.message).toContain('chaser');
 });
@@ -328,12 +322,11 @@ test('validateSpriteSet: resolved catalog references produce no dangling-referen
 		idleSource('unused-npc', 'npcs'),
 	];
 	const diags = validateSpriteSet(sources);
-	// The dangling-reference diagnostic message contains the word "resolves".
+
 	expect(diags.some((d) => d.message.includes('resolves'))).toBe(false);
 });
 
 test('validateSpriteSet: an unresolvable color key is an error, not a silent fallback', () => {
-	// 'q' is file-local; 'z' is neither file-local, reserved, nor in SCENE_PALETTE.
 	const src: SpriteSource = {
 		id: 'badcol',
 		role: 'hats',
@@ -348,7 +341,7 @@ test('validateSpriteSet: an unresolvable color key is an error, not a silent fal
 	);
 	expect(err).toBeDefined();
 	expect(err?.message).toContain('z');
-	// Surfaced as an error, not left as a mere warning (silent default fallback).
+
 	expect(
 		diags.some(
 			(d) =>

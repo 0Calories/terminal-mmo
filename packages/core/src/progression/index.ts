@@ -1,5 +1,3 @@
-// progression — XP/levels, capability unlocks, and meter-fill math.
-
 export {
 	clamp01,
 	filledCells,

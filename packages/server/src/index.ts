@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
-// The server's sole door into asset content (ADR 0033): ids/roles/zone-list.
-// Sprite text and art code stay unreachable; depcruise enforces the boundary.
+
 import { loadZones, spriteIds } from '@mmo/assets/meta';
 import {
 	type Cosmetics,
@@ -54,7 +53,6 @@ const SERVER_VERSION = process.env.MMO_VERSION ?? 'dev';
 const TICK_RATE = 20;
 const MS_PER_TICK = 1000 / TICK_RATE;
 
-// Both caps are SOFT: X-Forwarded-For is spoofable.
 const MAX_CONNECTIONS = Number(process.env.MMO_MAX_CONN) || 200;
 const MAX_PER_IP = Number(process.env.MMO_MAX_PER_IP) || 10;
 
@@ -64,7 +62,6 @@ interface WsData {
 	counted: boolean;
 }
 
-// Socket accounting for the caps, not the joined `sockets` (a socket can sit open pre-handshake).
 let openConnections = 0;
 const perIp = new Map<string, number>();
 
@@ -81,10 +78,6 @@ function reject(ws: ServerWebSocket<WsData>, reason: string) {
 	ws.close();
 }
 
-// Set-membership validation is the server's job (core only shapes the type);
-// computed once at startup from @mmo/assets/meta. Any hat or form id not in
-// the set sanitizes to the default; the default Form ('buddy') ships as
-// sprites/forms/buddy.sprite, so it is a member of the set.
 const validHatIds: ReadonlySet<string> = spriteIds('hats');
 const validFormIds: ReadonlySet<string> = spriteIds('forms');
 
@@ -122,7 +115,7 @@ interface PendingAuth {
 const pendingAuth = new Map<number, PendingAuth>();
 const onlineKeyBySession = new Map<number, string>();
 const onlineSessionByKey = new Map<string, number>();
-// New accounts authenticated but not yet spawned: held unplaced until `createAvatar`.
+
 interface PendingSpawn {
 	key: string;
 	publicKey: string;
@@ -200,7 +193,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		accounts = auth.registry;
 		onlineKeyBySession.set(sessionId, key);
 		onlineSessionByKey.set(key, sessionId);
-		// The Save lookup — never a client flag — is the sole authority on new-vs-returning.
+
 		const saved = store.load(key);
 		if (saved) {
 			const restored = restoredFromSave(saved);
@@ -362,7 +355,7 @@ function onMessage(ws: ServerWebSocket<WsData>, raw: Uint8Array) {
 		}
 		return;
 	}
-	// input: the server trusts the reported position with only a loose bounds clamp — it never re-simulates physics.
+
 	const zs = zoneStateOf(world, sessionId);
 	if (zs === undefined) return;
 	const terrain = zs.zone.terrain;
@@ -403,7 +396,7 @@ function tick() {
 		pendingEmotes,
 		pendingInteract,
 	);
-	// Snapshot each Zone before the step to detect a transition INTO a Town this tick (a save point).
+
 	const zoneBefore = new Map<number, string>();
 	for (const sessionId of sockets.keys()) {
 		const z = zoneOf(world, sessionId);
@@ -423,7 +416,6 @@ function tick() {
 		ws.send(encodeServerMessage(worldSnapshotFor(world, sessionId)));
 }
 
-// Idempotent for an unknown session.
 function dropSession(sessionId: number) {
 	flushSession(sessionId);
 	sockets.delete(sessionId);

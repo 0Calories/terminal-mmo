@@ -17,7 +17,6 @@ import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import { type Cam, clampPreviewCam } from './preview';
 
-// Avatar is drawn on top by the shell, so it's not in `entities` here.
 export function playSceneOf(lw: LocalWorld): ZoneScene {
 	const zone = mustZoneState(lw).zone;
 	return {
@@ -65,7 +64,6 @@ function mustAvatar(lw: LocalWorld) {
 	return me;
 }
 
-// Terminals without Kitty release events: a held key sticks, so drop it after this idle.
 const HELD_MS = 220;
 
 type Action = 'left' | 'right' | 'jump' | 'attack' | 'interact';
@@ -148,8 +146,7 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 
 	const { createCliRenderer, Renderable, RGBA } = await import('@opentui/core');
 	const style = buildSceneStyle((r, g, b, a) => RGBA.fromInts(r, g, b, a));
-	// The real server world with one synthetic local session (ADR 0032):
-	// portals, deaths, and Dungeon instances behave exactly as they do live.
+
 	let lw = createLocalWorld(zones, id);
 	const input = new PlayInput();
 

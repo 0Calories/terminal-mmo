@@ -6,7 +6,6 @@ export const PROD_SERVER_URL = `wss://${PROD_SERVER_HOST}`;
 
 export const LOCAL_SERVER_URL = 'ws://localhost:8080';
 
-// dev defaults to LOCAL: a deployed server rejects a dev client at its version gate.
 export function resolveServerUrl(
 	override: string | undefined,
 	version: string,

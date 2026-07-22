@@ -36,19 +36,11 @@ export interface SoundSink {
 	play(kind: SoundKind, opts?: { volume?: number; pan?: number }): void;
 }
 
-// The wall clock and Math.random are a frame's only two non-determinisms; injecting both
-// is what lets the golden-frame test assert a byte-identical buffer.
 export interface PlayfieldOptions extends RenderableOptions {
 	now?: () => number;
 	rng?: () => number;
 }
 
-/**
- * The render-side composition point: each frame it routes the fresh
- * CombatEvents through `present` once, then steps the independent feel
- * systems — particles, camera kick, hitstop, dodge echoes — side by side
- * (ADR 0013 amendment: no shared facade object between them).
- */
 export class PlayfieldRenderable extends Renderable {
 	game: GameState | null = null;
 
@@ -80,9 +72,6 @@ export class PlayfieldRenderable extends Renderable {
 		);
 	}
 
-	// Reset on any zone change: a new zone's tick can collide with the last
-	// consumed, wedging the gate — and the particle pool must not carry the old
-	// zone's specks into terrain they were never simmed against (#373).
 	private consumeSnapshotEvents(
 		zoneId: string,
 		tick: number,
@@ -90,7 +79,7 @@ export class PlayfieldRenderable extends Renderable {
 	): CombatEvent[] {
 		if (zoneId !== this.lastZoneId) {
 			this.lastParticleTick = -1;
-			// First frame is arrival, not a transition — don't drop a pre-frame burst.
+
 			if (this.lastZoneId !== null) this.particles.clear();
 			this.lastZoneId = zoneId;
 		}
@@ -112,7 +101,6 @@ export class PlayfieldRenderable extends Renderable {
 		const dt = this.lastTime ? now - this.lastTime : 0;
 		this.lastTime = now;
 
-		// Render-only freeze: hold the last drawn frame; the sim keeps advancing in game/loop.ts.
 		if (isFrozen(this.hitstop)) {
 			this.hitstop = stepHitstop(this.hitstop, dt);
 			return;
@@ -145,8 +133,6 @@ export class PlayfieldRenderable extends Renderable {
 			: snapshotEvents;
 		this.predicted = [];
 
-		// The one routing pass (ADR 0029 / ADR 0013 amendment): fold this frame's
-		// CombatEvents (snapshot-gated + locally predicted) into presentation exactly once.
 		const presentation = present(fresh);
 
 		for (const dir of presentation.kicks)

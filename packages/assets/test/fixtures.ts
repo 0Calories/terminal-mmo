@@ -1,5 +1,3 @@
-// Minimal authored content for injected-entries tests: one catalog, one Town,
-// one Field with a spawn and a portal, shared by the store/zone suites.
 export const CATALOGS_JSON =
 	'{"monsters":[{"id":"slime","behavior":"chaser","name":"Slime"}],"npcs":[]}';
 

@@ -1,7 +1,3 @@
-// @mmo/core owns sprite *metadata* + *animation selection* only — the art-free, deterministic
-// half the sim (and the server) reasons about. The Sprite class, glyph grids, form/hat/
-// weapon art, and the drawing code live in @mmo/render.
-
 export {
 	type AnimationId,
 	type BodyState,

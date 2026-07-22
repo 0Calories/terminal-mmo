@@ -1,6 +1,3 @@
-// The synthetic local session: the old single-player runtime's coverage,
-// re-expressed against the ONE world runtime. Every portal, death, and
-// dungeon assertion here runs the same stepServerWorld the live server ticks.
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets';
 import type { Input } from '../../src/entities';

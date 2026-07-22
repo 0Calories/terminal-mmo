@@ -1,12 +1,3 @@
-// The Sprite editor's pixel↔glyph bijection (ADR 0031): a terminal cell's art is a
-// 2×2 grid of quadrant sub-pixels, each either foreground-lit or not. This module
-// compiles a 4-bit quadrant bitmap to the matching Unicode block-element glyph, and
-// decompiles a glyph back to its bitmap.
-//
-// Bit layout of the mask (0-15): bit 0 (value 1) = top-left, bit 1 (value 2) =
-// top-right, bit 2 (value 4) = bottom-left, bit 3 (value 8) = bottom-right. A set
-// bit means that quadrant is foreground-lit.
-
 export const QUADRANT_GLYPHS: readonly string[] = [
 	' ',
 	'▘',

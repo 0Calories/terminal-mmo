@@ -3,7 +3,7 @@ import { createPublicKey, verify } from 'node:crypto';
 export const SSH_ED25519 = 'ssh-ed25519';
 const ED25519_KEY_LEN = 32;
 const ED25519_SIG_LEN = 64;
-// ASN.1 SPKI prefix for an ed25519 key (RFC 8410); prepend to the raw 32 key bytes for DER.
+
 const ED25519_SPKI_PREFIX = Uint8Array.from(
 	Buffer.from('302a300506032b6570032100', 'hex'),
 );
@@ -96,7 +96,7 @@ export function parsePublicKeyLine(line: string): SshPublicKey | null {
 	} catch {
 		return null;
 	}
-	// Buffer.from base64 silently drops bad chars; round-trip so garbage can't alias a valid blob.
+
 	if (
 		blob.toString('base64').replace(/=+$/, '') !== parts[1].replace(/=+$/, '')
 	)

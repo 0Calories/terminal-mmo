@@ -7,8 +7,8 @@ export interface Cam {
 
 export const CAMERA = {
 	bandWidthFrac: 1 / 3,
-	bandHeight: 14, // taller than a full jump (~6.4 cells) so hops don't scroll
-	snapDeltaCells: 8, // a single-frame move beyond this is a teleport, not walking
+	bandHeight: 14,
+	snapDeltaCells: 8,
 } as const;
 
 export interface CameraState {
@@ -30,7 +30,6 @@ export const initCameraState = (): CameraState => ({
 	zoneId: null,
 });
 
-// Keep the camera a float — the renderer rounds at draw time; rounding here too double-rounds a followed Avatar and shimmers.
 export function stepCamera(
 	state: CameraState,
 	zoneId: string,
@@ -70,10 +69,6 @@ export function stepCamera(
 	return { cam, center: { x: cx, y: cy }, zoneId };
 }
 
-// --- Camera kick (ADR 0013 amendment: a viewport offset, so it lives with
-// the camera) — a single decaying directional punch on a big moment, layered
-// on top of the follow camera above.
-
 export const CAMERA_KICK = {
 	maxCells: 2,
 	durationMs: 150,
@@ -100,8 +95,6 @@ export function stepKick(kick: Kick, dtMs: number): Kick {
 	return { x: decay(kick.x), y: decay(kick.y) };
 }
 
-// A margin-padded view test for spawn culling: an effect just off screen may
-// still scatter specks into it.
 export const SPAWN_MARGIN = 4;
 
 export function inView(

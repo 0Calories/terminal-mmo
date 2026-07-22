@@ -51,7 +51,6 @@ test('cycling the nameplate colour re-tints the preview nameplate in real time',
 	const before = nameplateSpan(captureSpans());
 	expect(before).toBeDefined();
 
-	// ladder is [name, hue, hat, nameplate], so three downs reach Nameplate
 	creator.key(menuKey('down'));
 	creator.key(menuKey('down'));
 	creator.key(menuKey('down'));

@@ -37,14 +37,10 @@ export interface SessionDeps {
 	interactKey: string;
 	weapon: number;
 	quit(message?: string): void;
-	// The SSH identity may carry a notice worth printing after teardown.
+
 	onIdentityNotice(notice: string | null): void;
 }
 
-/**
- * The client's lifecycle: authenticate, then either create an Avatar or drop straight
- * into the world. `play()` is what turns the lobby into a running game.
- */
 export async function runSession(deps: SessionDeps): Promise<void> {
 	const {
 		renderer,
@@ -175,7 +171,6 @@ export async function runSession(deps: SessionDeps): Promise<void> {
 			const own = net.ownAvatar();
 			const cos = own?.cosmetics ?? DEFAULT_COSMETICS;
 			if (!recustomize) {
-				// Use the snapshot's handle, not net.handle: this session's net.handle still holds the pre-claim handshake name.
 				const durableHandle = own?.handle ?? net.handle;
 				recustomize = new CharacterCreator(renderer, durableHandle, cos, false);
 				recustomize.attach(renderer.root);

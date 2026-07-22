@@ -25,11 +25,6 @@ import {
 } from '../src';
 import { blitSprite } from '../src/render';
 
-// Forms are now a directory-scan registry keyed by string id (ADR 0031). These
-// render tests predate that and index a `FORMS` array; the demo ships exactly
-// one Form ('buddy'), so a one-element shim over the registry keeps them honest
-// without a rewrite. formById tolerates the legacy numeric index at runtime
-// (any non-id falls back to the default Form).
 const FORMS = [formById('buddy')] as const;
 
 interface Cell {
@@ -175,7 +170,7 @@ test('terrain: a solid cell renders as a block; empty cells stay cleared', () =>
 	);
 
 	expect(buf.cleared).toBe('BG');
-	// Lower-half block, so its bg is the sky BG, not terrainBg.
+
 	expect(buf.at(3, 2)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' });
 	expect(buf.at(0, 0)).toBeUndefined();
 });
@@ -348,7 +343,7 @@ test('entities are z-ordered by y: a lower entity is drawn over a higher one', (
 
 	renderZoneScene(
 		buf,
-		// Passed out of order to prove the renderer sorts.
+
 		{ terrain: flat20(), portals: [], npcs: [], entities: [front, back] },
 		{ x: 0, y: 0 },
 		STYLE,
@@ -517,8 +512,7 @@ test('each Avatar Form renders its own idle body through the shared render path 
 				x: 8,
 				y: 7,
 				facing,
-				// This loop deliberately drives the numeric form index (see FORMS[form]
-				// below); formById still accepts it. Cast past the in-flight string type.
+
 				cosmetics: {
 					hue: 0,
 					hat: '',
@@ -555,7 +549,6 @@ test('a moving Avatar animates the distance-driven walk cycle; standing freezes 
 	const walkA = formFrame(FORMS[0], 'walk', 0);
 	const walkB = formFrame(FORMS[0], 'walk', 1);
 
-	// 2·STRIDE+3 is an even stride (walk frame 0); 3·STRIDE+3 the next, odd one (frame 1).
 	expectBodyAnimation({ x: 2 * STRIDE + 3, vx: 3 }, walkA);
 	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 3 }, walkB);
 
@@ -669,7 +662,7 @@ test('an equipped Avatar at rest renders the weapon idle frame at the mirrored g
 		const { sprite: body, ax: sx, ay: sy, grip } = avatarTopLeft(e);
 		const bodyGripX = sx + (facing === 1 ? grip.x : body.w - 1 - grip.x);
 		const bodyGripY = sy + grip.y;
-		// The grip may sit outside the art (negative column), so it isn't a drawn cell.
+
 		const wgx = facing === 1 ? weapon.grip.x : frame.w - 1 - weapon.grip.x;
 		const wx: number = bodyGripX - wgx;
 		const wy: number = bodyGripY - weapon.grip.y;
@@ -702,7 +695,7 @@ test('mid-active-swing the composited weapon plays the active swing frame, and n
 	if (!weapon) throw new Error('expected the default weapon to have a sprite');
 
 	const progress = 0.5;
-	// Phase-indexed selection: the active phase shows swing frame 1.
+
 	const frame = weapon.frames.swing[1];
 
 	const buf = new FakeBuffer(28, 16);
@@ -785,7 +778,6 @@ test('the active phase renders the blade-edge arc in the accent colour; other ph
 		expect(cell?.fg).toBe(accent);
 	}
 
-	// Forward arc cells (|dx|=3) sit clear of the idle blade, so they stay untouched.
 	const idle = new FakeBuffer(28, 16);
 	const rest = makeEntity({
 		type: 'player',
@@ -816,7 +808,7 @@ test('a weaponless Avatar draws no weapon layer', () => {
 		STYLE,
 	);
 	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
-	// The sword's blade tip would sit a row above the body; with no weapon that cell stays empty.
+
 	expect(buf.at(sx + grip.x, sy - 1)).toBeUndefined();
 });
 
@@ -992,7 +984,7 @@ test('a baseline-0 monster (chaser) blits unchanged — no planting (ADR 0021)',
 
 	const sprite = spriteFor('chaser');
 	expect(sprite.baseline).toBe(0);
-	// baseline 0 leaves feet a cell above the surface (over air), so nothing plants — an accepted transitional float.
+
 	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
 	const ay = Math.round(e.y + BOX.h - sprite.h);
 	expectSpriteAt(buf, sprite, ax, ay, 1, fgFor);
@@ -1074,8 +1066,6 @@ test('combat telegraphs are exempt from planting: the blade-edge arc keeps its o
 	}
 });
 
-// ADR 0031: two-color cells (fg + bg both keyed) render through the same
-// hurt/recolor/ghost pipeline as fg-only cells, applied to both channels.
 const twoTone = new Sprite('▀█', { defaultKey: 'p', colors: 'ps', bg: 'k·' });
 
 test('a two-color cell blits opaque with both fg and bg from the palette; a single-color cell stays alpha-blended', () => {

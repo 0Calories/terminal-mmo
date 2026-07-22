@@ -19,7 +19,6 @@ export interface ControlRow {
 	capability?: Capability;
 }
 
-// Keep in lockstep with the binding tables in input.ts and the emotes in chat.ts.
 export const CONTROL_ROWS: readonly ControlRow[] = [
 	{ label: 'Move', keys: '←/→  ·  a/d' },
 	{ label: 'Jump', keys: '␣  ·  ↑' },

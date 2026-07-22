@@ -30,11 +30,7 @@ import {
 } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
-// The hat template is a 6×4 cell canvas → 12×8 Pixels.
 function blankState(): SpriteEditorState {
-	// Start on the pencil: the editor's launch default is now the select tool, but
-	// these tests drive shape gestures explicitly and the plain left-click paths
-	// here expect painting, not a marquee.
 	return setTool(initSpriteEditor(emptySpriteDoc('test', 'hat')), 'paint');
 }
 
@@ -43,10 +39,6 @@ const key = (pts: readonly Point[]): string =>
 		.map((p) => `${p.x},${p.y}`)
 		.sort()
 		.join(' ');
-
-// ---------------------------------------------------------------------------
-// Rasterization — pure geometry over Pixels
-// ---------------------------------------------------------------------------
 
 describe('linePixels', () => {
 	test('a horizontal run is contiguous', () => {
@@ -83,7 +75,7 @@ describe('linePixels', () => {
 
 	test('a line spans its two endpoints with one Pixel per major-axis step', () => {
 		const a = linePixels({ x: 0, y: 0 }, { x: 4, y: 2 });
-		expect(a).toHaveLength(5); // dx=4 dominates → 5 Pixels
+		expect(a).toHaveLength(5);
 		expect(a[0]).toEqual({ x: 0, y: 0 });
 		expect(a.at(-1)).toEqual({ x: 4, y: 2 });
 	});
@@ -93,7 +85,7 @@ describe('rectPixels', () => {
 	test('outline is the four edges of the bbox, hollow centre', () => {
 		const out = rectPixels({ x: 0, y: 0 }, { x: 2, y: 2 }, false);
 		expect(out).toHaveLength(8);
-		expect(key(out)).not.toContain('1,1'); // centre excluded
+		expect(key(out)).not.toContain('1,1');
 		expect(out).toContainEqual({ x: 0, y: 0 });
 		expect(out).toContainEqual({ x: 2, y: 2 });
 	});
@@ -129,7 +121,7 @@ describe('ellipsePixels', () => {
 		const filled = ellipsePixels({ x: 0, y: 0 }, { x: 4, y: 4 }, true);
 		const filledKeys = new Set(filled.map((p) => `${p.x},${p.y}`));
 		for (const p of outline) expect(filledKeys.has(`${p.x},${p.y}`)).toBe(true);
-		expect(outline).not.toContainEqual({ x: 2, y: 2 }); // ring is hollow
+		expect(outline).not.toContainEqual({ x: 2, y: 2 });
 		expect(filled).toContainEqual({ x: 2, y: 2 });
 	});
 
@@ -147,7 +139,6 @@ describe('ellipsePixels', () => {
 
 describe('constrainSquare — visual square on the 1:2 Pixel aspect', () => {
 	test('width is twice the height, the larger visual side governing', () => {
-		// dx=10, dy=2 → the horizontal side dominates visually (10 vs 2×2=4).
 		expect(constrainSquare({ x: 0, y: 0 }, { x: 10, y: 2 })).toEqual({
 			x: 10,
 			y: 5,
@@ -175,10 +166,6 @@ describe('constrainSquare — visual square on the 1:2 Pixel aspect', () => {
 		});
 	});
 });
-
-// ---------------------------------------------------------------------------
-// Pending-shape lifecycle — the one shared anchor state
-// ---------------------------------------------------------------------------
 
 describe('shape lifecycle', () => {
 	test('beginShape drops an anchor and collapses the preview onto it', () => {
@@ -208,7 +195,7 @@ describe('shape lifecycle', () => {
 		s = commitShape(s);
 		expect(s.shape).toBeNull();
 		for (let x = 0; x <= 3; x++) expect(readPixel(s, x, 0)).toBe(true);
-		// Exactly one undo step for the whole shape.
+
 		expect(s.history.past.length).toBe(before + 1);
 		s = undoEdit(s);
 		expect(readPixel(s, 0, 0)).toBe(false);
@@ -229,10 +216,10 @@ describe('shape lifecycle', () => {
 		let s = beginShape(blankState(), 'rect', 0, 0, colorInk('g'));
 		s = { ...s, rectMode: 'filled' };
 		const ext0 = frameExtent(currentFrame(s));
-		s = updateShape(s, 20, 20); // far past the 12×8 Pixel bounds
+		s = updateShape(s, 20, 20);
 		s = commitShape(s);
 		expect(s.feedback).toContain('clipped');
-		// The canvas kept its size — no auto-grow (spec #394).
+
 		expect(frameExtent(currentFrame(s))).toEqual(ext0);
 	});
 
@@ -242,7 +229,7 @@ describe('shape lifecycle', () => {
 		s = updateShape(s, 4, 0);
 		s = cancelShape(s);
 		expect(s.shape).toBeNull();
-		expect(s.doc).toBe(s0.doc); // nothing painted
+		expect(s.doc).toBe(s0.doc);
 	});
 });
 
@@ -260,7 +247,7 @@ describe('toggleShapeMode', () => {
 		let s = setTool(blankState(), 'ellipse');
 		s = toggleShapeMode(s);
 		expect(s.ellipseMode).toBe('filled');
-		expect(s.rectMode).toBe('outline'); // untouched
+		expect(s.rectMode).toBe('outline');
 	});
 
 	test('the line tool has no fill mode', () => {
@@ -268,10 +255,6 @@ describe('toggleShapeMode', () => {
 		expect(s.feedback).toContain('no fill mode');
 	});
 });
-
-// ---------------------------------------------------------------------------
-// Pencil shift-line
-// ---------------------------------------------------------------------------
 
 describe('pencilLineTo', () => {
 	test('with no prior point it paints just the endpoint', () => {
@@ -292,12 +275,7 @@ describe('pencilLineTo', () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// Gesture grammar through the normalized input seam (device parity)
-// ---------------------------------------------------------------------------
-
 describe('shape gestures — drag-commit vs click-click parity', () => {
-	// A mouse gesture: press, drag, release.
 	function viaMouse(tool: 'line' | 'rect' | 'ellipse'): SpriteEditorState {
 		let s = setTool(setInk(blankState(), colorInk('g')), tool);
 		s = applyInput(
@@ -315,7 +293,6 @@ describe('shape gestures — drag-commit vs click-click parity', () => {
 		return s;
 	}
 
-	// A keyboard gesture: enter (anchor), move, enter (commit).
 	function viaKey(tool: 'line' | 'rect' | 'ellipse'): SpriteEditorState {
 		let s = setTool(setInk(blankState(), colorInk('g')), tool);
 		s = applyInput(
@@ -357,7 +334,7 @@ describe('shape gestures — drag-commit vs click-click parity', () => {
 		);
 		expect(s.shape).not.toBeNull();
 		expect(shapePreviewPixels(s).length).toBeGreaterThan(0);
-		expect(s.doc).toBe(doc0); // nothing committed yet
+		expect(s.doc).toBe(doc0);
 	});
 
 	test('esc cancels a pending keyboard shape without painting', () => {
@@ -384,7 +361,7 @@ describe('shift-constrained shapes', () => {
 			s,
 			normalizeMouse({ pixel: { x: 0, y: 0 }, button: 'left', phase: 'down' }),
 		);
-		// Drag to (6,1) with shift: h from max(1, round(6/2)=3) = 3 → (6,3).
+
 		s = applyInput(
 			s,
 			normalizeMouse({
@@ -403,10 +380,10 @@ describe('shift-constrained shapes', () => {
 				shift: true,
 			}),
 		);
-		// The filled square spans x∈[0,6], y∈[0,3].
+
 		expect(readPixel(s, 6, 3)).toBe(true);
 		expect(readPixel(s, 0, 0)).toBe(true);
-		expect(readPixel(s, 6, 4)).toBe(false); // nothing below the square
+		expect(readPixel(s, 6, 4)).toBe(false);
 	});
 });
 
@@ -421,13 +398,12 @@ describe('right-button shapes paint transparent ink', () => {
 	});
 
 	test('committing a transparent rect punches painted Pixels out', () => {
-		// Fill a small block with colour, then erase its outline with a right-drag.
 		let s = setInk(blankState(), colorInk('g'));
 		for (let y = 0; y <= 2; y++)
 			for (let x = 0; x <= 2; x++) {
 				s = applyInput(s, normalizeMouse({ pixel: { x, y }, button: 'left' }));
 			}
-		s = setTool(s, 'rect'); // outline mode
+		s = setTool(s, 'rect');
 		s = applyInput(
 			s,
 			normalizeMouse({ pixel: { x: 0, y: 0 }, button: 'right', phase: 'down' }),
@@ -436,7 +412,7 @@ describe('right-button shapes paint transparent ink', () => {
 			s,
 			normalizeMouse({ pixel: { x: 2, y: 2 }, button: 'right', phase: 'up' }),
 		);
-		expect(readPixel(s, 0, 0)).toBe(false); // corner erased
-		expect(readPixel(s, 1, 1)).toBe(true); // interior untouched by the outline
+		expect(readPixel(s, 0, 0)).toBe(false);
+		expect(readPixel(s, 1, 1)).toBe(true);
 	});
 });

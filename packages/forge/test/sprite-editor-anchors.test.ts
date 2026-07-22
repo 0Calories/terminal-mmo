@@ -1,8 +1,3 @@
-// Headless tests for the Sprite editor's anchor model (ADR 0036): scope is
-// frame IDENTITY — an anchor edit on the Default frame (first in file) edits
-// the file-level anchors, on any other frame it authors that frame's override.
-// Doc-level anchors can be deleted (guarded for role-required names); override
-// removal falls back to the default. Every mutation is undoable.
 import { describe, expect, test } from 'bun:test';
 import { allFrames, findFrame } from '@mmo/render';
 import {
@@ -26,7 +21,7 @@ function formState(): SpriteEditorState {
 describe('anchorScopeFor — frame identity decides (ADR 0036)', () => {
 	test('the Default frame (first in file) edits doc anchors; others author overrides', () => {
 		const s = formState();
-		expect(s.frame).toBe('idle'); // the template's Default frame
+		expect(s.frame).toBe('idle');
 		expect(anchorScopeFor(s)).toBe('doc');
 		expect(anchorScopeFor(selectFrame(s, 'walk 0'))).toBe('frame');
 	});
@@ -37,7 +32,7 @@ describe('placeAnchor — scope derived from the current frame', () => {
 		const s = placeAnchor(formState(), 'grip', 3, 1);
 		expect(s.feedback).toBe('');
 		expect(s.doc.anchors.grip).toEqual({ x: 3, y: 1 });
-		// No override was authored anywhere.
+
 		expect(allFrames(s.doc).every((f) => f.anchors.grip === undefined)).toBe(
 			true,
 		);
@@ -50,7 +45,7 @@ describe('placeAnchor — scope derived from the current frame', () => {
 		expect(s.feedback).toBe('');
 		const walk0 = findFrame(s.doc, 'walk 0')?.frame;
 		expect(walk0?.anchors.grip).toEqual({ x: 5, y: 2 });
-		expect(s.doc.anchors.grip).toEqual(docGrip); // doc level untouched
+		expect(s.doc.anchors.grip).toEqual(docGrip);
 		const idle = findFrame(s.doc, 'idle')?.frame;
 		expect(idle?.anchors.grip).toBeUndefined();
 	});
@@ -76,9 +71,9 @@ describe('placeAnchor — scope derived from the current frame', () => {
 
 describe('deleteAnchor — doc-level, guarded (ADR 0036)', () => {
 	test('removes the doc anchor and any per-frame overrides of that name', () => {
-		let s = placeAnchor(formState(), 'tail', 1, 1); // a custom doc anchor
+		let s = placeAnchor(formState(), 'tail', 1, 1);
 		s = selectFrame(s, 'walk 0');
-		s = placeAnchor(s, 'tail', 2, 2); // an override of it
+		s = placeAnchor(s, 'tail', 2, 2);
 		s = deleteAnchor(s, 'tail', ['grip', 'head']);
 		expect(s.feedback).toBe('');
 		expect(s.doc.anchors.tail).toBeUndefined();
@@ -157,7 +152,7 @@ describe('anchorMarkers', () => {
 		const grip = markers.find((m) => m.name === 'grip');
 		const head = markers.find((m) => m.name === 'head');
 		expect(grip).toEqual({ name: 'grip', x: 5, y: 2, overridden: true });
-		// head has no override, so it comes from the doc level.
+
 		expect(head?.overridden).toBe(false);
 	});
 });

@@ -1,5 +1,3 @@
 [test]
-# Destroy leaked TUI test renderers after each test — without this, every
-# `createTestRenderer` call leaves a native render thread running for the
-# rest of the suite and `bun test` degrades superlinearly.
+# The preload prevents leaked native render threads from degrading the test suite.
 preload = ["./packages/forge/test/destroy-renderers.preload.ts"]

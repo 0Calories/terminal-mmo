@@ -18,7 +18,6 @@ const npcs: NpcCatalogEntry[] = [
 ];
 const catalogs = { monsters, npcs };
 
-// No id in the header — a Zone's identity is its filename, passed as the third arg.
 const FIELD = `{ "type": "field",
   "spawns":  { "c": "goblin-01", "s": "archer-01" },
   "portals": { "a": { "target": "town-01", "arrival": [12, 32] } },
@@ -63,7 +62,7 @@ describe('parseZone — happy path', () => {
 		]);
 		expect(zone.monsters).toHaveLength(2);
 		const [c, s] = zone.monsters;
-		// ids start at 2 (the Avatar is id 1)
+
 		expect(c.id).toBe(2);
 		expect(s.id).toBe(3);
 		expect(c.type).toBe('chaser');
@@ -184,9 +183,9 @@ describe('parseZone — fails safely', () => {
 		const z = `{ "type": "field" }\n---\n..==..\n######`;
 		const { terrain } = parseZone(z, catalogs, 'x');
 		const { w, cells } = terrain;
-		expect(cells[0 * w + 2]).toBe(2); // platform
-		expect(cells[0 * w + 0]).toBe(0); // empty
-		expect(cells[1 * w + 0]).toBe(1); // wall floor
+		expect(cells[0 * w + 2]).toBe(2);
+		expect(cells[0 * w + 0]).toBe(0);
+		expect(cells[1 * w + 0]).toBe(1);
 	});
 
 	test('oversize grid', () => {

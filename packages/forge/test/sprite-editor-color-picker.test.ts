@@ -1,7 +1,3 @@
-// The `e` file-local colour picker modal (spec #387, issue #401): a pure state
-// machine over a hue/shade grid + hex entry that defines a new local colour or
-// edits an existing one. Tests drive state → action → next state + emitted
-// action, never internal representation.
 import { describe, expect, test } from 'bun:test';
 import { HUES, STANDARD_PALETTE } from '@mmo/core/entities';
 import {
@@ -103,7 +99,7 @@ describe('grid navigation and hex entry stay in sync', () => {
 		const at = pickCell(p0, 3, 2);
 		expect(at.rgba).toEqual(gridColor(3, 2));
 		expect(at.hex).toBe(rgbaToHex(gridColor(3, 2)));
-		// Clamp: never runs off the grid.
+
 		const tl = moveCursor(moveCursor(at, -99, -99), 0, 0);
 		expect(tl.col).toBe(0);
 		expect(tl.row).toBe(0);
@@ -117,13 +113,13 @@ describe('grid navigation and hex entry stay in sync', () => {
 		for (const ch of '65b0ff') p = typeHex(p, ch);
 		expect(p.hex).toBe('65b0ff');
 		expect(p.rgba).toEqual([0x65, 0xb0, 0xff, 255]);
-		// Once complete, the next digit starts a fresh entry (type-over).
+
 		expect(typeHex(p, 'a').hex).toBe('a');
 	});
 
 	test('non-hex chars are ignored; backspace edits the buffer', () => {
 		let p = openColorPicker(blankState(), PALETTE_KEYS);
-		p = typeHex(p, 'z'); // ignored
+		p = typeHex(p, 'z');
 		p = typeHex(typeHex(p, 'a'), 'b');
 		expect(p.hex).toBe('ab');
 		expect(backspaceHex(p).hex).toBe('a');
@@ -165,7 +161,7 @@ describe('the define flow reaches an editable ink through the pure state', () =>
 		const res = commitColorPicker(p);
 		expect(res.action?.type).toBe('commit');
 		if (res.action?.type !== 'commit') return;
-		// The TUI applies this as defineLocalColor + setInk; assert the pure result.
+
 		let s = defineLocalColor(s0, res.action.key, res.action.rgba);
 		s = setInk(s, colorInk(res.action.key));
 		expect(s.doc.colors[res.action.key]).toEqual(res.action.rgba);
@@ -173,12 +169,10 @@ describe('the define flow reaches an editable ink through the pure state', () =>
 	});
 });
 
-// A sanity check that the define grid actually spans hues (not a constant).
 test('grid columns span distinct hues', () => {
 	const first = gridColor(0, 3);
 	const mid = gridColor(HUE_COLS >> 1, 3);
 	expect(first).not.toEqual(mid);
-	// The player-hue cycle is unrelated to the grid, but both are real palettes;
-	// this guards the import wiring stays live.
+
 	expect(HUES.length).toBeGreaterThan(0);
 });

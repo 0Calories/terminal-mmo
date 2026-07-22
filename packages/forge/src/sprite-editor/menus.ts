@@ -1,16 +1,4 @@
-// Pure state machines for the Sprite editor's modal overlays (ADR 0031, issue
-// #339): the animation menu (switch/create/delete/add-frame/reorder/fps) and the
-// anchor menu (pick which named anchor to arm — scope is the current frame's
-// identity, ADR 0036). Same
-// reducer pattern as `colorPicker.ts`: the TUI renders the state and feeds keys in;
-// each key returns the next menu (or null to close) plus an optional action the
-// TUI applies to the pure editor state. No I/O, no `@opentui/core`.
-
-// A normalized key event — the TUI maps opentui's keypress onto this so the
-// reducers stay free of keyboard-library detail.
 export interface MenuKey {
-	// A logical name: 'up' | 'down' | 'left' | 'right' | 'enter' | 'escape' |
-	// 'backspace' | 'char'. For 'char', `char` carries the printable character.
 	name: string;
 	char?: string;
 }
@@ -18,24 +6,20 @@ export interface MenuKey {
 const NAME_RE = /^[A-Za-z0-9:_-]+$/;
 const NAME_CHAR_RE = /^[A-Za-z0-9:_-]$/;
 
-// ---------------------------------------------------------------------------
-// Animation menu
-// ---------------------------------------------------------------------------
-
 export interface AnimationRow {
 	name: string;
 	frameCount: number;
-	// The animation's authored fps, or null when it uses the default.
+
 	fps: number | null;
 }
 
 export interface AnimationMenuState {
 	animations: readonly AnimationRow[];
-	// Highlighted animation row.
+
 	index: number;
-	// Highlighted frame within that animation (the reorder target).
+
 	frameIndex: number;
-	// Non-null while typing a new animation name or an fps value.
+
 	input: { mode: 'create' | 'fps'; buffer: string } | null;
 	error: string;
 }
@@ -46,10 +30,6 @@ export type AnimationMenuAction =
 	| { type: 'delete'; animation: string }
 	| { type: 'reorder'; animation: string; index: number; delta: number }
 	| { type: 'setFps'; animation: string; fps: number | null }
-	// Start playback from the menu (post-#351: play/walk left the rail; the menu
-	// is their secondary home when the preview pane is auto-hidden on a small
-	// terminal). `animation` playback plays the selected row; `walk` plays the
-	// form's walk gait regardless of selection.
 	| { type: 'play'; mode: 'animation' | 'walk'; animation: string }
 	| { type: 'close' };
 
@@ -69,8 +49,6 @@ export function openAnimationMenu(
 	return { animations, index, frameIndex: 0, input: null, error: '' };
 }
 
-// Re-sync the menu's animation snapshot after the TUI applies a mutating action,
-// clamping the selection onto a still-valid row.
 export function syncAnimationMenu(
 	menu: AnimationMenuState,
 	animations: readonly AnimationRow[],
@@ -234,7 +212,7 @@ function animationInputCommit(
 			return { menu: { ...menu, error: 'enter a legal animation name' } };
 		return { menu, action: { type: 'create', name: inp.buffer } };
 	}
-	// fps: empty clears back to the default; otherwise a positive integer.
+
 	if (inp.buffer === '')
 		return {
 			menu,
@@ -257,18 +235,12 @@ function animationInputCommit(
 	};
 }
 
-// ---------------------------------------------------------------------------
-// Anchor menu
-// ---------------------------------------------------------------------------
-
 export interface AnchorMenuState {
-	// Candidate anchor names (required-for-role first, then existing), plus the
-	// implicit "+ new" row appended by the reducer's option list.
 	names: readonly string[];
 	index: number;
-	// Role-required names — listed, movable, never deletable (ADR 0036).
+
 	required: readonly string[];
-	// Non-null while typing a new anchor name.
+
 	input: { buffer: string } | null;
 	error: string;
 }
@@ -286,15 +258,13 @@ export interface AnchorMenuResult {
 export function openAnchorMenu(
 	names: readonly string[],
 	current: string,
-	// Role-required anchor names: never deletable (ADR 0036) — the delete zone
-	// is inert on them.
+
 	required: readonly string[],
 ): AnchorMenuState {
 	const index = Math.max(0, names.indexOf(current));
 	return { names, index, required, input: null, error: '' };
 }
 
-// The rows shown: every candidate name plus a trailing "+ new" entry.
 export function anchorRowCount(menu: AnchorMenuState): number {
 	return menu.names.length + 1;
 }
@@ -315,7 +285,6 @@ export function anchorMenuKey(
 		case 'down':
 			return { menu: { ...menu, index: (menu.index + 1) % rows, error: '' } };
 		case 'enter': {
-			// The last row is "+ new".
 			if (menu.index >= menu.names.length)
 				return { menu: { ...menu, input: { buffer: '' }, error: '' } };
 			return {
@@ -327,9 +296,6 @@ export function anchorMenuKey(
 	return { menu };
 }
 
-// A mouse click on the menu (ADR 0036: the menu is mouse-native): `row` counts
-// the name rows then the trailing "+ new"; `deleteZone` is a hit on the row's
-// ✕ affordance, live only for deletable (non-required) names.
 export function anchorMenuClick(
 	menu: AnchorMenuState,
 	row: number,

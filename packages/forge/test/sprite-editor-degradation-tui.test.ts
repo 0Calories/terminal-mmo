@@ -1,9 +1,3 @@
-// Headless render tests for the small-terminal degradation ladder (spec #398):
-// the ≥80×24 placard (live size + recovery with no data loss), the preview
-// auto-hide + manual override, the strips→focus force, and the folded playback
-// box. `@opentui/core/testing` drives the editor Renderable at fixed terminal
-// sizes and `resize()` walks it through the rungs; the pure trigger/reversal
-// logic is covered in sprite-editor-degradation.test.ts.
 import { describe, expect, test } from 'bun:test';
 import type { SpriteDoc } from '@mmo/render';
 import { createTestRenderer } from '@opentui/core/testing';
@@ -36,7 +30,6 @@ async function mount(opts: {
 	return { ...t, editor };
 }
 
-// The rail region (left 30 columns) of the captured frame.
 function railText(frame: string): string {
 	return frame
 		.split('\n')
@@ -44,8 +37,6 @@ function railText(frame: string): string {
 		.join('\n');
 }
 
-// A doc with two Frames wide enough (12 cells) that two never fit at ×2 in a
-// narrow terminal — the rung-2 force-focus trigger.
 function wideTwoFrameDoc(): SpriteDoc {
 	const frame = () => ({
 		rows: [' '.repeat(12), ' '.repeat(12)],
@@ -74,13 +65,12 @@ describe('below-floor placard (#398)', () => {
 		});
 		const frame = t.captureCharFrame();
 		expect(frame).toContain('sprite editor needs ≥80×24');
-		expect(frame).toContain('70×20'); // live current size
-		// The editor UI is gone — the rail's 'tools' box is not drawn.
+		expect(frame).toContain('70×20');
+
 		expect(frame).not.toContain('tools');
 	});
 
 	test('recovers on resize with no data loss', async () => {
-		// Paint a Pixel at a valid size first.
 		const t = await mount({
 			doc: emptySpriteDoc('keep', 'hat'),
 			id: 'keep',
@@ -88,18 +78,16 @@ describe('below-floor placard (#398)', () => {
 			width: 100,
 			height: 24,
 		});
-		t.editor.key(seq('p')); // pencil (the launch default is now select)
-		t.editor.key(seq('space')); // paint at cursor (0,0)
-		t.editor.key(seq('space')); // lift pen
+		t.editor.key(seq('p'));
+		t.editor.key(seq('space'));
+		t.editor.key(seq('space'));
 		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
 
-		// Shrink below the floor: the placard replaces the UI, but the art survives.
 		t.resize(70, 20);
 		await t.renderOnce();
 		expect(t.captureCharFrame()).toContain('needs ≥80×24');
 		expect(readPixel(t.editor.state, 0, 0)).toBe(true);
 
-		// Grow back: the editor returns instantly and the art is still there.
 		t.resize(100, 24);
 		await t.renderOnce();
 		const back = t.captureCharFrame();
@@ -118,8 +106,7 @@ describe('rung 1 — preview auto-hide + override (#398)', () => {
 			width: 80,
 			height: 24,
 		});
-		// At 80 wide the float would cover more than half — auto-hidden. (The
-		// canvas region only: the rail's own 'preview' button always shows.)
+
 		const paneShown = () =>
 			t
 				.captureCharFrame()
@@ -128,7 +115,6 @@ describe('rung 1 — preview auto-hide + override (#398)', () => {
 		expect(t.editor.composite).toBe(false);
 		expect(paneShown()).toBe(false);
 
-		// Widen: the pane comes back on its own (reversible).
 		t.resize(100, 24);
 		await t.renderOnce();
 		expect(t.editor.composite).toBe(true);
@@ -143,8 +129,8 @@ describe('rung 1 — preview auto-hide + override (#398)', () => {
 			width: 80,
 			height: 24,
 		});
-		expect(t.editor.composite).toBe(false); // auto-hidden at the floor
-		// The rail's preview button is the manual override (QA round 3: no v key).
+		expect(t.editor.composite).toBe(false);
+
 		await t.renderOnce();
 		const rows = t.captureCharFrame().split('\n');
 		const y = rows.findIndex((r) => /\bpreview\b/.test(r.slice(0, 30)));
@@ -173,19 +159,17 @@ describe('rung 2 — strips force focus (#398)', () => {
 			width: 80,
 			height: 24,
 		});
-		// The user never left strips…
+
 		expect(t.editor.view).toBe('strips');
-		// …but two wide Frames don't fit, so focus is rendered: its tab row shows
-		// the frames' `frame N` positions, and the hint line explains the fold.
+
 		const narrow = t.captureCharFrame();
 		expect(narrow).toContain('frame 0 │ frame 1');
 		expect(narrow).toContain('strips folded to focus');
 
-		// A wide terminal fits both Frames — strips return (the animation label shows).
 		t.resize(160, 24);
 		await t.renderOnce();
 		const wide = t.captureCharFrame();
-		// The strip's animation label (just the name now) shows — strips returned.
+
 		expect(wide).toContain('row');
 		expect(wide).not.toContain('strips folded to focus');
 	});
@@ -193,9 +177,6 @@ describe('rung 2 — strips force focus (#398)', () => {
 
 describe('rung 3 — folded edit box (#398)', () => {
 	test('the full edit box fits at the 80×24 floor; a huge palette folds it', async () => {
-		// Mouse-primary (ADR 0035): the `edit` box carries the only path to the
-		// animation/anchor menus and the canvas/preview toggles, so a standard doc
-		// keeps it whole at floor.
 		const t = await mount({
 			doc: emptySpriteDoc('fold', 'hat'),
 			id: 'fold',
@@ -208,8 +189,6 @@ describe('rung 3 — folded edit box (#398)', () => {
 		expect(full).toContain('canvas');
 		expect(full).toContain('preview');
 
-		// A palette long enough to overflow the rail folds the box (and the fold
-		// reverses when the terminal grows tall).
 		const colors = Object.fromEntries(
 			Array.from({ length: 90 }, (_, i) => [
 				String.fromCharCode(0x0100 + i),
@@ -228,8 +207,7 @@ describe('rung 3 — folded edit box (#398)', () => {
 			height: 24,
 		});
 		const folded = railText(t2.captureCharFrame());
-		// The fold collapses the edit box to a single row keeping the animation +
-		// anchor menus; the canvas + preview toggles drop until the terminal grows.
+
 		expect(folded).toContain('animation');
 		expect(folded).not.toContain('canvas');
 		expect(folded).not.toContain('preview');

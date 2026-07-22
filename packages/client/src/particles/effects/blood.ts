@@ -1,7 +1,3 @@
-// blood — the chip-hit spray: gravity-driven red specks that land, bounce
-// once, rest on the ground, then darken and fade. Every knob of the look
-// lives here (ADR 0013 amendment: one definition file per named effect).
-
 import { burstCount, type EffectDef } from '../profile';
 
 export const blood: EffectDef = {

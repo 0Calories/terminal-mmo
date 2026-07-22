@@ -1,6 +1,3 @@
-// Sprites leave the assets package raw (ADR 0033): id + role + text, never
-// compiled art. Compilation to Sprite objects stays in @mmo/render, preserving
-// ADR 0030's wall — sprite *code* is unreachable from the server.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import {
@@ -11,9 +8,9 @@ import {
 } from './store';
 
 export interface SpriteSource {
-	id: string; // filename without .sprite — globally unique identity (ADR 0011 zone precedent)
-	role: string; // first directory segment under sprites/, e.g. 'hats'
-	text: string; // raw file contents
+	id: string;
+	role: string;
+	text: string;
 }
 
 export function spriteSourcesFromEntries(
@@ -30,8 +27,6 @@ export function spriteSourcesFromEntries(
 	return map;
 }
 
-// Explicit-root scan for the forge's `sprite check [dir]` — `dir` is a sprites
-// tree root whose first-level directories are the roles.
 export function readSpriteSourcesFromDir(
 	dir: string,
 ): ReadonlyMap<string, SpriteSource> {

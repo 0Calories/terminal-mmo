@@ -11,19 +11,11 @@ import {
 import type { Speck } from '../src/particles/profile';
 import { seededRng } from './helpers';
 
-// The seeded property harness from the #353 diagnosis: over a wall-face and a
-// two-thick-lintel fixture, across many seeds, no colliding speck may ever be
-// inside a solid cell, no speck may ever be DRAWN embedded in solid (a settled
-// speck may sit in the visible ▄ surface cell — solid with air above — but
-// never in a wall-body cell), and every speck must reach extinction.
-
 const SEEDS = 30;
-// Past the longest maxLife (gore 7000ms) at 16ms frames, so extinction is provable.
+
 const FRAMES = 500;
 const DT = 16;
 
-// A floor plus a full-height wall face at x >= 20 — the wall-face fixture
-// (diagnosis: specks drawn motionless inside wall tiles at full alpha).
 function wallFace(): Terrain {
 	const rows: string[] = [];
 	for (let y = 0; y < 20; y++) {
@@ -35,8 +27,6 @@ function wallFace(): Terrain {
 	return parseTerrain(rows);
 }
 
-// A floor plus a two-cell-thick lintel overhead — the lintel fixture
-// (diagnosis: rising specks embed and rest inside the thick solid).
 function lintel(): Terrain {
 	const rows: string[] = [];
 	for (let y = 0; y < 24; y++) {
@@ -76,13 +66,10 @@ const FIXTURES: Fixture[] = [
 	},
 ];
 
-// The exact projection the engine paints with.
 function drawCell(p: Speck, t: Terrain): { col: number; row: number } {
 	return speckDrawCell(p, t);
 }
 
-// A drawn cell is embedded when it is solid below another solid — inside the
-// body of a wall/slab, never the visible ▄ surface row.
 function embedded(t: Terrain, col: number, row: number): boolean {
 	return isSolid(t, col, row) && isSolid(t, col, row - 1);
 }
@@ -104,7 +91,6 @@ for (const fx of FIXTURES) {
 				for (const p of pool.specks) {
 					if (!p.active || !p.profile.collide) continue;
 
-					// 1. No active colliding speck is ever inside a solid cell.
 					const cx = Math.floor(p.x);
 					const cy = Math.floor(p.y);
 					if (isSolid(fx.terrain, cx, cy)) {
@@ -113,8 +99,6 @@ for (const fx of FIXTURES) {
 						);
 					}
 
-					// 2. No speck is ever drawn embedded in solid; airborne specks may
-					// not be drawn in any solid cell at all.
 					const { col, row } = drawCell(p, fx.terrain);
 					const bad =
 						p.stage === 'airborne'
@@ -128,7 +112,6 @@ for (const fx of FIXTURES) {
 				}
 			}
 
-			// 3. Every speck reaches extinction.
 			expect(pool.activeCount).toBe(0);
 		}
 	});

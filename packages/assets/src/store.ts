@@ -1,24 +1,12 @@
-// The one asset store (ADR 0033): every zone and sprite the game ships reaches
-// the process through `loadAssetEntries`, via one of two strategies. In dev the
-// repo-root `sprites/` and `zones/` trees are re-read from disk on every call,
-// so the forge editors' write → re-read loop (and any hand edit) is picked up
-// without a rebuild. In a compiled binary the bundler defines
-// `MMO_EMBEDDED_ASSETS` (packages/cli/build.ts) and no asset directory is
-// needed at runtime.
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, sep } from 'node:path';
 
 declare const MMO_EMBEDDED_ASSETS: Record<string, string>;
 
-// Keys are repo-root-relative POSIX paths with their extension kept —
-// 'sprites/hats/cap.sprite', 'zones/town-01.zone', 'zones/catalogs.json' —
-// so both strategies (and the builder that embeds them) speak one format.
 export type AssetEntries = Record<string, string>;
 
 export const SPRITE_EXT = '.sprite';
 
-// 'sprites/hats/cap.sprite' → 'cap': the filename-minus-extension identity
-// rule (ADR 0031/0011) applied to an entry key. Shared by both doors.
 export function entryId(key: string, ext: string): string {
 	const last = key.slice(key.lastIndexOf('/') + 1);
 	return last.slice(0, -ext.length);
@@ -29,9 +17,6 @@ const ASSET_TREES = [
 	{ name: 'zones', exts: ['.zone', '.json'] },
 ] as const;
 
-// Try process.cwd() first (the Docker image and dev scripts run from the repo
-// root), then walk up from this file's directory a few levels so the tree is
-// still found when the process starts elsewhere (e.g. under a test runner).
 function findAssetDir(name: string): string | undefined {
 	const cwdCandidate = join(process.cwd(), name);
 	if (existsSync(cwdCandidate)) return cwdCandidate;

@@ -64,7 +64,6 @@ export interface RestoredAvatar {
 	bossDefeated: boolean;
 }
 
-// keyByHandle is case-insensitive, matching claimHandle.
 export function registryFromSaves(
 	entries: Array<[string, PlayerSave]>,
 ): AccountRegistry {
@@ -77,10 +76,6 @@ export function registryFromSaves(
 	return { handleByKey, keyByHandle };
 }
 
-// Pre-ADR-0031 Saves stored `hat` and `form` as numeric indices into the
-// render-side HATS / FORMS arrays. Map each through its frozen legacy order into
-// a sprite id; strings (post-migration Saves) pass through unchanged, so an
-// already-migrated Save is a no-op.
 type LegacyCosmetics = {
 	hue: number;
 	hat: string | number;

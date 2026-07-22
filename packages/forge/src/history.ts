@@ -32,7 +32,7 @@ export function undo<T>(h: History<T>): History<T> {
 	if (h.past.length === 0) return h;
 	const past = h.past.slice();
 	const prev = past.pop() as T;
-	// Reset the tag so a later same-tagged stroke can't merge across the undo.
+
 	return { past, present: prev, future: [h.present, ...h.future], tag: null };
 }
 

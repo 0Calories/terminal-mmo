@@ -18,12 +18,9 @@ import {
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
 function blankState(): SpriteEditorState {
-	// These exercise the paint-routing seam, so start on the pencil (the editor's
-	// launch default is now the select tool, which marquees rather than paints).
 	return setTool(initSpriteEditor(emptySpriteDoc('test', 'hat')), 'paint');
 }
 
-// The normalized event both devices target: a left/ink paint at pixel (2,1).
 const AT_2_1 = { x: 2, y: 1 };
 
 describe('normalizeMouse — device encoding → canonical event', () => {
@@ -126,8 +123,6 @@ describe('applyInput — the single entry point into the pure layer', () => {
 	});
 
 	test('secondary paints transparent ink regardless of the active ink', () => {
-		// Paint a pixel, then right-click it: transparent ink clears it even though
-		// the active ink is a colour.
 		let s = applyInput(
 			blankState(),
 			normalizeMouse({ pixel: { x: 0, y: 0 }, button: 'left' }),
@@ -141,22 +136,21 @@ describe('applyInput — the single entry point into the pure layer', () => {
 	});
 
 	test('right-button transparent ink coerces (punches the bg) instead of refusing', () => {
-		// Build a two-colour opaque cell, then right-click a fg pixel.
 		let s = applyInput(
 			blankState(),
 			normalizeMouse({ pixel: { x: 0, y: 0 }, button: 'left' }),
-		); // 'p' TL
+		);
 		s = setInk(s, colorInk('g'));
 		s = applyInput(
 			s,
 			normalizeMouse({ pixel: { x: 1, y: 1 }, button: 'left' }),
-		); // overpaint → opaque
+		);
 		expect(cellAt(s, 0, 0).bg).toBe('p');
 		s = applyInput(
 			s,
 			normalizeMouse({ pixel: { x: 1, y: 1 }, button: 'right' }),
 		);
-		expect(cellAt(s, 0, 0).bg).toBe(''); // punched, not refused
+		expect(cellAt(s, 0, 0).bg).toBe('');
 		expect(s.feedback).toContain('punched');
 	});
 
@@ -186,8 +180,6 @@ describe('applyInput — the single entry point into the pure layer', () => {
 
 describe('applyInput — momentary alt-click eyedrop (spec #397)', () => {
 	test('alt + a paint button samples the key under the Pixel instead of painting', () => {
-		// Light a 'g' Pixel, switch ink, then alt-click it: the ink becomes 'g'
-		// and no new paint lands.
 		let s = setInk(blankState(), colorInk('g'));
 		s = applyInput(
 			s,
@@ -200,7 +192,7 @@ describe('applyInput — momentary alt-click eyedrop (spec #397)', () => {
 			normalizeMouse({ pixel: { x: 0, y: 0 }, button: 'left', alt: true }),
 		);
 		expect(s.ink).toEqual(colorInk('g'));
-		expect(s.doc).toBe(before); // sampling never mutates the art
+		expect(s.doc).toBe(before);
 	});
 
 	test('alt-click eyedrops whatever tool is active', () => {
@@ -245,7 +237,7 @@ describe('routeWheel — spec #387 wheel grammar', () => {
 		const ctrl = { ...none, ctrl: true };
 		expect(routeWheel('up', ctrl)).toEqual({ kind: 'zoom', dir: 1 });
 		expect(routeWheel('down', ctrl)).toEqual({ kind: 'zoom', dir: -1 });
-		// A sideways ctrl-wheel has no zoom meaning; it stays a horizontal scroll.
+
 		expect(routeWheel('left', ctrl)).toEqual({
 			kind: 'scroll',
 			dx: -3,

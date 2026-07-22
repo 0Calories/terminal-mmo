@@ -1,7 +1,3 @@
-// The strategy switch itself: when the bundler-injected MMO_EMBEDDED_ASSETS
-// global exists, the whole store — both doors — serves from it and never
-// touches the filesystem. At runtime the `declare const` in store.ts resolves
-// through globalThis, so a test can stand in for the compiled-binary define.
 import { afterEach, expect, test } from 'bun:test';
 import type { AssetEntries } from '../src';
 import { loadSpriteSources } from '../src';
@@ -21,8 +17,6 @@ test('the embedded define switches every loader off the fs: both doors serve the
 		'sprites/hats/fez.sprite': 'fez-text',
 	};
 
-	// The real repo trees hold town-01 and five hats; seeing only the injected
-	// content proves the fs strategy was bypassed entirely.
 	expect(loadZones().map((z) => z.id)).toEqual(['t']);
 	expect(loadSpriteSources().get('fez')?.text).toBe('fez-text');
 	expect(spriteIds('hats')).toEqual(new Set(['fez']));

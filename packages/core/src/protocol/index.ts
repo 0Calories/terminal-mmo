@@ -1,5 +1,3 @@
-// protocol — the client/server wire messages and version gating.
-
 export { CHAT_MAX_LEN } from './constants';
 export {
 	type AvatarSnapshot,

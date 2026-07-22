@@ -24,10 +24,6 @@ const EVENTS: Record<string, CombatEvent> = {
 	swat: swatEvent(makeProjectile({ id: 3, x: 20, y: 8, vx: -9 }), -1),
 };
 
-/**
- * The owner predicts locally: `present` runs on the CombatEvent it just minted.
- * An observer receives the server's broadcast of the same event over the wire.
- */
 function ownerProjection(event: CombatEvent): Presentation {
 	return present([event]);
 }
@@ -51,7 +47,6 @@ function observerProjection(event: CombatEvent): Presentation {
 	return present(msg.events);
 }
 
-/** The realized presentation: the specks a routing spawns, plus the view shake and freeze it drives. */
 function realize(show: Presentation) {
 	const pool = new Pool(64);
 	const rng = seededRng(SEED);
@@ -80,8 +75,6 @@ describe('a CombatEvent routes to the same presentation for its owner and an obs
 			const owner = ownerProjection(event);
 			const observer = observerProjection(event);
 
-			// `source` is server-internal — it suppresses the echo and never crosses the wire,
-			// and present already drops it when routing to presentation.
 			expect(owner).toEqual(observer);
 			expect(realize(owner)).toEqual(realize(observer));
 		});

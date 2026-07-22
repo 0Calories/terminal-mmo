@@ -114,7 +114,7 @@ test('randomCosmetics spreads across the catalogs (not a constant)', () => {
 		forms.add(randomCosmetics(seed, hatIds, formIds).form);
 	}
 	expect(hats.size).toBeGreaterThan(1);
-	// draws spread across the supplied form pool
+
 	expect(forms.size).toBeGreaterThan(1);
 	for (const f of forms) expect(formIds).toContain(f);
 });

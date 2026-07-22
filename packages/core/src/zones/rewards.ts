@@ -1,6 +1,3 @@
-// The post-combat reward pass: XP, level-ups, loot rolls, respawn scheduling,
-// and the Avatar death list. Kept out of the tick file so zone orchestration
-// stays a pure drive → physics → Strike → resolve pipeline.
 import type { CombatEvent } from '../combat/combat';
 import { deathEvent } from '../combat/combat';
 import { skillsUnlockedBetween } from '../combat/skills';

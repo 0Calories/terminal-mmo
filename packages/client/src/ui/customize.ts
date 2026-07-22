@@ -32,17 +32,12 @@ export interface CustomizeFieldDef {
 	key: CustomizeFieldKey;
 	label: string;
 	count: number;
-	// Present for id-cycled fields (hat): the field's value is a string id, and
-	// this is the ordered pool of ids it cycles through, position by position.
+
 	options?: readonly string[];
 }
 
-// '' ("None") always leads, then the scanned ids in sorted order.
 const HAT_OPTIONS: readonly string[] = ['', ...HAT_IDS];
 
-// Forms are id-cycled like hats, but never empty (no leading ''): the scanned
-// Form ids in sorted order (ADR 0031), the same directory-scan registry the
-// server validates against.
 const FORM_OPTIONS: readonly string[] = FORM_IDS;
 
 const ALL_CUSTOMIZE_FIELDS: readonly CustomizeFieldDef[] = [
@@ -62,7 +57,6 @@ const ALL_CUSTOMIZE_FIELDS: readonly CustomizeFieldDef[] = [
 	{ key: 'nameplate', label: 'Nameplate', count: NAMEPLATE_COUNT },
 ];
 
-// Hide single-entry fields rather than render a dead `1/1` row.
 export const CUSTOMIZE_FIELDS: readonly CustomizeFieldDef[] =
 	ALL_CUSTOMIZE_FIELDS.filter((f) => f.count > 1);
 

@@ -107,9 +107,9 @@ describe('resolveColorKey', () => {
 describe('viewport scrolling', () => {
 	test('scrollAxis keeps the cursor within the viewport', () => {
 		expect(scrollAxis(0, 0, 10, 2)).toBe(0);
-		// Cursor beyond the right edge scrolls to keep the scrolloff margin.
+
 		expect(scrollAxis(0, 20, 10, 2)).toBe(13);
-		// Never negative.
+
 		expect(scrollAxis(5, 0, 10, 2)).toBe(0);
 	});
 	test('scrollViewport scrolls both axes', () => {
@@ -128,13 +128,12 @@ describe('fatbits zoom ladder', () => {
 	test('stepZoom walks the ladder and clamps at the ends', () => {
 		expect(stepZoom(2, 1)).toBe(3);
 		expect(stepZoom(2, -1)).toBe(1);
-		expect(stepZoom(1, -1)).toBe(1); // clamps at the bottom
-		expect(stepZoom(6, 1)).toBe(6); // clamps at the top
-		expect(stepZoom(4, 1)).toBe(6); // ×4 → ×6 (skips ×5, not on the ladder)
+		expect(stepZoom(1, -1)).toBe(1);
+		expect(stepZoom(6, 1)).toBe(6);
+		expect(stepZoom(4, 1)).toBe(6);
 	});
 
 	test('stepZoom snaps an off-ladder value onto the ladder first', () => {
-		// ×5 snaps to its nearest rung (×4) then steps from there.
 		expect(stepZoom(5, 1)).toBe(6);
 		expect(stepZoom(5, -1)).toBe(3);
 	});
@@ -143,7 +142,7 @@ describe('fatbits zoom ladder', () => {
 describe('fatbits screen ⇄ pixel geometry', () => {
 	test('each Pixel occupies zoom×zoom cells; screenToPixel is the inverse', () => {
 		const cam = { x: 0, y: 0 };
-		// At ×3, canvas cells 0..2 all map to Pixel 0, 3..5 to Pixel 1.
+
 		expect(screenToPixel(0, 0, cam, 3)).toEqual({ x: 0, y: 0 });
 		expect(screenToPixel(2, 2, cam, 3)).toEqual({ x: 0, y: 0 });
 		expect(screenToPixel(3, 6, cam, 3)).toEqual({ x: 1, y: 2 });
@@ -160,7 +159,7 @@ describe('fatbits screen ⇄ pixel geometry', () => {
 		const cam = { x: 1, y: 1 };
 		const px = screenToPixel(5, 7, cam, 2);
 		const back = pixelToScreen(px.x, px.y, cam, 2);
-		// The Pixel's top-left cell is within its own z×z block of cell (5,7).
+
 		expect(back.x).toBeLessThanOrEqual(5);
 		expect(back.y).toBeLessThanOrEqual(7);
 		expect(back.x + 2).toBeGreaterThan(5);
@@ -170,7 +169,7 @@ describe('fatbits screen ⇄ pixel geometry', () => {
 	test('visiblePixels floors the canvas span into whole Pixels', () => {
 		expect(visiblePixels(20, 2)).toBe(10);
 		expect(visiblePixels(21, 4)).toBe(5);
-		expect(visiblePixels(1, 4)).toBe(1); // always at least one
+		expect(visiblePixels(1, 4)).toBe(1);
 	});
 });
 
@@ -206,8 +205,7 @@ describe('status + help chrome', () => {
 		});
 		expect(line).toContain('buddy');
 		expect(line).toContain('(form)');
-		// v2 (ADR 0037): frames are unnamed, so the status surfaces the animation
-		// and the frame's 1-based flat position, not a frame name.
+
 		expect(line).toContain('idle');
 		expect(line).toContain('frame 1/3');
 		expect(line).toContain('paint');
@@ -216,7 +214,7 @@ describe('status + help chrome', () => {
 		expect(line).toContain('px (5,3)');
 		expect(line).toContain('cell (2,1)');
 		expect(line).toContain('BR');
-		// The save state ('*' when dirty) rides on the same line.
+
 		expect(line).toContain('*');
 	});
 
@@ -259,7 +257,7 @@ describe('dynamic p/a variants (spec #401, amended: session-selected, no clock)'
 		const v = variantPreviews(0, 0);
 		expect(v.p).toEqual(HUES[0]);
 		expect(v.a).toEqual(Object.values(RARITY_COLOR)[0]);
-		// The player-hue channel also matches the static representative preview.
+
 		expect(v.p).toEqual(SPRITE_PREVIEWS.p);
 	});
 
@@ -282,8 +280,7 @@ describe('variant options — session hue/accent selector (spec #401, in the rai
 			key: 'g',
 			baseline: 0,
 			anchors: {},
-			// v2 (ADR 0037): frames live inside the ordered animations array, not a
-			// top-level `frames`/`fps`/`animations` map.
+
 			animations: [
 				{
 					name: 'idle',
@@ -321,8 +318,8 @@ describe('variant options — session hue/accent selector (spec #401, in the rai
 		const options = variantOptions({ p: true, a: true }, { p: 2, a: 1 });
 		const ps = options.filter((s) => s.channel === 'p');
 		const as = options.filter((s) => s.channel === 'a');
-		expect(ps.length).toBe(HUES.length); // 8
-		expect(as.length).toBe(Object.values(RARITY_COLOR).length); // 5
+		expect(ps.length).toBe(HUES.length);
+		expect(as.length).toBe(Object.values(RARITY_COLOR).length);
 		expect(ps[2].active).toBe(true);
 		expect(ps.filter((s) => s.active).length).toBe(1);
 		expect(as[1].active).toBe(true);

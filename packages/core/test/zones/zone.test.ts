@@ -70,16 +70,14 @@ function zoneWith(monsters: Entity[], id = 'field-01'): Zone {
 	};
 }
 
-// Prime a swing mid-active so a connect lands this tick (hitbox is active-only).
 const MID_ACTIVE = SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
 function primeSwing(av: ServerAvatar): ServerAvatar {
 	av.avatar.attackT = MID_ACTIVE;
 	return av;
 }
 
-// A chaser parked mid-active (hitbox live this tick) to the LEFT of an Avatar at x=20, landing exactly one strike.
 function strikingCommitterAt20(): Entity {
-	const m = spawnMonster('chaser', 2, 16, y); // facing-right hitbox (21..27) covers x=20
+	const m = spawnMonster('chaser', 2, 16, y);
 	m.onGround = true;
 	m.facing = 1;
 	m.attackT = MID_ACTIVE;
@@ -114,7 +112,7 @@ test('stepZone keeps the melee hitbox live ONLY during the swing active phase', 
 	m.hp = 100;
 	const av = serverAvatar(7, 20);
 	av.avatar.facing = 1;
-	av.avatar.hurtT = 5; // i-framed, so the chaser's contact can't end the run early
+	av.avatar.hurtT = 5;
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	let sawWindupNoDamage = false;
 	let hitPhase: string | null = null;
@@ -140,7 +138,7 @@ test('a skill intent damages a Monster and the server folds its cooldown + log',
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), skill: 1 };
 	const next = stepZone(state, [intent], 16);
-	// Power Strike (20 dmg) hit, not the 8-dmg basic swing.
+
 	expect(next.zone.monsters[0].hp).toBe(ARCHETYPES.chaser.hp - 20);
 	const me = next.avatars[0];
 	expect(me.skillCooldowns?.['power-strike']).toBeGreaterThan(0);
@@ -151,7 +149,7 @@ test('a Monster hit emits one hit CombatEvent at the Monster, intensity scaled b
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	const av = primeSwing(serverAvatar(7, 20));
 	av.avatar.facing = 1;
-	av.avatar.hurtT = 1; // i-framed, so the chasing Monster's contact draws no blood
+	av.avatar.hurtT = 1;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
@@ -168,9 +166,9 @@ test('a Monster hit emits one hit CombatEvent at the Monster, intensity scaled b
 
 test('no CombatEvent is emitted when the hit lands on an i-framed Monster', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
-	m.hurtT = 0.5; // still invulnerable
+	m.hurtT = 0.5;
 	const av = serverAvatar(7, 20);
-	av.avatar.hurtT = 1; // i-framed, so the chasing Monster's contact draws no blood
+	av.avatar.hurtT = 1;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
@@ -190,7 +188,7 @@ test('the Avatar landing the killing blow earns the XP and, standing on the kill
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4;
 	const av = primeSwing(serverAvatar(7, 20));
-	// The Dungeon always drops, so the roll is deterministic.
+
 	const state: ZoneState = {
 		zone: zoneWith([m], 'dungeon-01'),
 		avatars: [av],
@@ -265,14 +263,13 @@ function holdSteps(state: ZoneState, ticks: number): ZoneState {
 }
 
 test('overlapping a Monster deals NO contact damage (passive contact damage removed)', () => {
-	// Parked in a fake recovery so it never commits — pure overlap, zero damage.
 	const m = spawnMonster('chaser', 2, 20, y);
 	m.onGround = true;
 	m.attackT = SWING_TOTAL;
 	const av = serverAvatar(7, 20);
 	const before = av.avatar.hp;
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
-	state = holdSteps(state, 3); // only the wind-up elapses — no active strike yet
+	state = holdSteps(state, 3);
 	expect(state.avatars[0].avatar.hp).toBe(before);
 	expect(state.avatars[0].avatar.hurtT).toBe(0);
 });
@@ -308,7 +305,7 @@ test('a committer cannot re-attack during its recovery — a punishable opening'
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
-	// Immune, so its stagger can't move the Avatar out of range — observe the swing only.
+
 	state.avatars[0].avatar.hurtT = 100;
 
 	let sawRecovery = false;
@@ -338,7 +335,6 @@ test('a committer cannot re-attack during its recovery — a punishable opening'
 });
 
 test('a committer in its active phase can Stagger a poise-broken Avatar (full hit-reaction payload)', () => {
-	// Poise pre-broken low, so the active hit Staggers.
 	const m = spawnMonster('chaser', 2, 20 + ARCHETYPES.chaser.melee.range, y);
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
@@ -385,14 +381,13 @@ test('the heavy brute commits a telegraphed swing and damages ONLY in its active
 });
 
 test('overlapping a brute deals NO contact damage (it is a committer, never a contact mob)', () => {
-	// Stacked but parked in a fake recovery so it never commits: pure overlap, zero damage.
 	const m = spawnMonster('brute', 2, 20, y);
 	m.onGround = true;
 	m.attackT = SWING_TOTAL;
 	const av = serverAvatar(7, 20);
 	const before = av.avatar.hp;
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
-	state = holdSteps(state, 3); // only the wind-up elapses — no active strike yet
+	state = holdSteps(state, 3);
 	expect(state.avatars[0].avatar.hp).toBe(before);
 	expect(state.avatars[0].avatar.hurtT).toBe(0);
 });
@@ -412,7 +407,7 @@ test('the brute attacks deliberately: a commit cool-down keeps it from re-swingi
 	const m = spawnMonster('brute', 2, 20 + ARCHETYPES.brute.melee.range, y);
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
-	// Immune, so its stagger can't move the Avatar out of range — observe cadence only.
+
 	av.avatar.hurtT = 100;
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 
@@ -442,7 +437,7 @@ test('the brute attacks deliberately: a commit cool-down keeps it from re-swingi
 test('a Dodge negates a Monster strike during its i-frame active window', () => {
 	const m = strikingCommitterAt20();
 	const av = serverAvatar(7, 20);
-	// dodgeT in the active window even after one tick of decay.
+
 	av.avatar.dodgeT = COMBAT.dodge.recovery + COMBAT.dodge.active * 0.5;
 	const before = av.avatar.hp;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
@@ -501,8 +496,7 @@ test('a Monster swing overlapping the Avatar across multiple active frames lands
 	expect(before - state.avatars[0].avatar.hp).toBe(
 		ARCHETYPES.chaser.melee.damage,
 	);
-	// Strip the i-frames so ONLY the per-swing ledger can gate the re-contact;
-	// the swing is still mid-active for several more ticks.
+
 	for (let i = 0; i < 3; i++) {
 		state.avatars[0].avatar.hurtT = 0;
 		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
@@ -524,14 +518,14 @@ test('a FRESH Monster swing clears the dedup ledger — the same Avatar is hit o
 	const drops: number[] = [];
 	let prevHp = before;
 	for (let i = 0; i < 120 && drops.length < 2; i++) {
-		state.avatars[0].avatar.hurtT = 0; // ledger, not i-frames, is the gate
+		state.avatars[0].avatar.hurtT = 0;
 		const held = holdAt(7, state.avatars[0].avatar);
 		state = stepZone(state, [{ ...held, x: 20, vx: 0 }], 16);
 		const hp = state.avatars[0].avatar.hp;
 		if (hp < prevHp) drops.push(prevHp - hp);
 		prevHp = hp;
 	}
-	// Two separate swings each landed exactly one full hit.
+
 	expect(drops).toEqual([
 		ARCHETYPES.chaser.melee.damage,
 		ARCHETYPES.chaser.melee.damage,
@@ -552,7 +546,6 @@ test('one active frame strikes EVERY overlapping Avatar — the melee Strike is 
 	);
 });
 
-// strikingCommitterAt20 hits from the LEFT: a frontal Guard needs facing -1; +1 is a rear hit.
 function guardIntent(
 	sessionId: number,
 	e: Entity,
@@ -581,7 +574,6 @@ test('Block: a frontal committer strike is chipped, not full, and drains Poise',
 });
 
 test('an unguarded committer chip emits a source-less hit event biased away from the Monster', () => {
-	// The hit is biased away from the committer at x=16, so dir +1.
 	const m = strikingCommitterAt20();
 	const av = serverAvatar(7, 20);
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
@@ -597,7 +589,7 @@ test('Block to a Poise break is a guard-break Stagger', () => {
 	const av = serverAvatar(7, 20, 'hero', CAPABILITY_UNLOCK.block);
 	av.avatar.facing = -1;
 	av.avatar.guardT = 0.5;
-	av.avatar.poise = COMBAT.guard.blockPoise - 1; // one block empties the pool
+	av.avatar.poise = COMBAT.guard.blockPoise - 1;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
 	const out = next.avatars[0].avatar;
@@ -609,7 +601,7 @@ test('Block to a Poise break is a guard-break Stagger', () => {
 test('Guard only protects the frontal arc — a rear strike ignores it', () => {
 	const m = strikingCommitterAt20();
 	const av = serverAvatar(7, 20, 'hero', CAPABILITY_UNLOCK.block);
-	av.avatar.facing = 1; // facing AWAY from the committer (rear hit)
+	av.avatar.facing = 1;
 	av.avatar.guardT = 0.5;
 	const hpBefore = av.avatar.hp;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
@@ -686,7 +678,7 @@ test('on death every recorded contributor earns shared XP and its own loot roll'
 	m.contributors = [7, 8];
 	const killer = primeSwing(serverAvatar(7, 20));
 	const helper = serverAvatar(8, 300);
-	helper.rngState = 999; // a distinct loot seed, to prove instancing
+	helper.rngState = 999;
 	const state: ZoneState = {
 		zone: zoneWith([m], 'dungeon-01'),
 		avatars: [killer, helper],
@@ -698,14 +690,14 @@ test('on death every recorded contributor earns shared XP and its own loot roll'
 		16,
 	);
 	expect(next.zone.monsters.length).toBe(0);
-	// Shared, not split: each contributor gets the FULL kill XP.
+
 	expect(next.avatars[0].progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
 	expect(next.avatars[1].progress.xp).toBe(xpForKill('chaser', 'dungeon-01'));
 	expect(next.avatars[0].inventory.length).toBe(1);
 	expect(next.avatars[1].inventory.length).toBe(0);
 	const helperDrops = (next.zone.drops ?? []).filter((d) => d.owner === 8);
 	expect(helperDrops.length).toBe(1);
-	// The helper's Drop is the dungeon-table roll off its OWN seed — loot never crosses.
+
 	const expected = rollDrop(
 		999,
 		next.avatars[1].progress.level,
@@ -718,7 +710,7 @@ test('on death every recorded contributor earns shared XP and its own loot roll'
 test('a kill that crosses a skill-unlock rung logs a specific "Unlocked: <skill> [<key>]!" line (#271)', () => {
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	m.hp = 4;
-	// One XP short of L3, so the kill tips exactly one level — only Power Strike unlocks.
+
 	const killer = primeSwing(serverAvatar(7, 20, 'hero', 2));
 	killer.progress = { level: 2, xp: xpToNext(2) - 1, gold: 0 };
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [killer], tick: 0 };
@@ -819,12 +811,12 @@ test('an Avatar dying emits a radial death CombatEvent at the death position, be
 	const m = strikingCommitterAt20();
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
-	// The killing contact also emits a hit event; the death burst is the radial one.
+
 	const death = next.events?.find(
 		(ev) => ev.dir === 0 && ev.intensity === COMBAT.deathBurstIntensity,
 	);
 	expect(death?.kind).toBe('death');
-	// at the death spot (~x 20), NOT the respawn point (SPAWN.x = 10)
+
 	expect(death?.x).toBeGreaterThanOrEqual(20);
 	expect(next.avatars[0].avatar.x).toBe(SPAWN.x);
 });
@@ -869,7 +861,7 @@ test('removeAvatar drops a disconnected session from the Zone', () => {
 	const av = serverAvatar(7, 20);
 	const state: ZoneState = { zone: zoneWith([]), avatars: [av], tick: 0 };
 	expect(removeAvatar(state, 7).avatars.length).toBe(0);
-	expect(removeAvatar(state, 99).avatars.length).toBe(1); // unknown id is a no-op
+	expect(removeAvatar(state, 99).avatars.length).toBe(1);
 });
 
 test('addAvatar spawns a Warrior at the safe point with its handle', () => {
@@ -881,7 +873,6 @@ test('addAvatar spawns a Warrior at the safe point with its handle', () => {
 });
 
 test('clientStepAvatar predicts platformer movement and decays the hurt timer', () => {
-	// attackT decay lives in resolveCombat now; clientStepAvatar only moves physics + decays hurtT.
 	const a = { ...spawnAvatar(20, y), attackT: 0.3, hurtT: 0.3 };
 	const predicted = clientStepAvatar(
 		flatTerrain(),
@@ -917,7 +908,7 @@ test('projectile damage emits one hit CombatEvent at the Avatar, dir = projectil
 
 test('an i-framed Avatar struck by a projectile emits no hit event', () => {
 	const av = serverAvatar(7, 20);
-	av.avatar.hurtT = 0.5; // still invulnerable
+	av.avatar.hurtT = 0.5;
 	const pr = makeProjectile({
 		x: 22,
 		y: av.avatar.y + 2,
@@ -953,22 +944,21 @@ test('a ranged poker telegraphs through stepZone: it commits a swing and fires o
 test('a crowded shooter NEVER fires inside keepDist — it repositions instead (ADR 0034)', () => {
 	const m = spawnMonster('shooter', 2, 50, y);
 	m.onGround = true;
-	const av = serverAvatar(7, 50); // point-blank, and staying there
+	const av = serverAvatar(7, 50);
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	for (let i = 0; i < 150; i++) {
-		// Pin the Avatar onto the shooter every tick so the gap never opens.
 		const mon = state.zone.monsters[0];
 		const held = holdAt(7, state.avatars[0].avatar);
 		state = stepZone(state, [{ ...held, x: mon.x, vx: 0 }], 16);
 		expect(state.zone.projectiles.length).toBe(0);
 	}
-	expect(state.zone.nextProjectileId).toBe(1); // not one shot, ever
-	expect(state.zone.monsters[0].x).toBeGreaterThan(50); // it spent the time backing off
+	expect(state.zone.nextProjectileId).toBe(1);
+	expect(state.zone.monsters[0].x).toBeGreaterThan(50);
 });
 
 test('the shooter releases every shot from its comfort band, never closer than keepDist', () => {
 	const { keepDist } = ARCHETYPES.shooter.ranged;
-	const m = spawnMonster('shooter', 2, 30, y); // adx 10: crowded, must reposition first
+	const m = spawnMonster('shooter', 2, 30, y);
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
@@ -990,15 +980,15 @@ test('an unaggroed Monster patrols: it turns at the world edge instead of walkin
 	const m = spawnMonster('chaser', 2, 220, y);
 	m.onGround = true;
 	m.facing = 1;
-	const av = serverAvatar(7, 10); // far outside aggro the whole time
+	const av = serverAvatar(7, 10);
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	let maxX = m.x;
 	for (let i = 0; i < 300; i++) {
 		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
 		maxX = Math.max(maxX, state.zone.monsters[0].x);
 	}
-	expect(maxX).toBeLessThanOrEqual(240 - BOX.w); // never left the world
-	expect(state.zone.monsters[0].x).toBeLessThan(220); // turned and walked back
+	expect(maxX).toBeLessThanOrEqual(240 - BOX.w);
+	expect(state.zone.monsters[0].x).toBeLessThan(220);
 	expect(state.zone.monsters[0].facing).toBe(-1);
 });
 
@@ -1008,9 +998,9 @@ test("the Brain's ai memory stays server-private: never in snapshots, never on t
 	const av = serverAvatar(7, 20);
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	state = stepZone(state, [holdAt(7, av.avatar)], 16);
-	// The Brain DID record memory on the server-side entity...
+
 	expect(state.zone.monsters[0].ai).toEqual({ state: 'attack' });
-	// ...but the snapshot omits it, and a wire round-trip carries no trace.
+
 	const snap = snapshotFor(state, 7);
 	expect(Object.keys(snap.monsters[0])).not.toContain('ai');
 	const decoded = decodeServerMessage(encodeServerMessage(snap));
@@ -1024,7 +1014,7 @@ test('an unguarded heavy projectile Staggers the Avatar on a Poise break, like a
 		y: av.avatar.y + 2,
 		vx: 36,
 		damage: 7,
-		poiseDamage: 20, // > the Avatar's pool (16) → break
+		poiseDamage: 20,
 		knockback: 40,
 		life: 1,
 	});
@@ -1066,7 +1056,7 @@ test('Swat: a live active melee frame DESTROYS a hostile shot', () => {
 	const av = primeSwing(serverAvatar(7, 20));
 	av.avatar.facing = 1;
 	const pr = makeProjectile({
-		x: 27, // inside the melee hitbox, outside the body box
+		x: 27,
 		y: av.avatar.y + 2,
 		vx: -36,
 		damage: 7,
@@ -1080,7 +1070,7 @@ test('Swat: a live active melee frame DESTROYS a hostile shot', () => {
 	const next = stepZone(state, [{ ...holdAt(7, av.avatar), attack: true }], 16);
 	expect(next.zone.projectiles.length).toBe(0);
 	expect(next.avatars[0].avatar.hp).toBe(av.avatar.hp);
-	// A LIGHT swat clink: intensity = the shot's own damage, targeting the projectile, source-less.
+
 	const clink = next.events?.find((e) => e.kind === 'swat');
 	expect(clink?.intensity).toBe(7);
 	expect(clink?.targetId).toBe(pr.id);
@@ -1133,7 +1123,7 @@ test('snapshotFor suppresses hit CombatEvents back to their originator and strip
 			},
 		],
 	};
-	// 7 caused the first burst → it is suppressed back to 7; 7 still sees 8's.
+
 	const forA = snapshotFor(state, 7);
 	expect(forA.events).toEqual([
 		{ kind: 'hit', targetId: 2, x: 2, y: 2, intensity: 5, dir: -1 },
@@ -1154,7 +1144,7 @@ test('snapshotFor carries an empty CombatEvent list when none were emitted', () 
 
 function attackRight(av: ServerAvatar): AvatarIntent {
 	av.avatar.facing = 1;
-	av.avatar.hurtT = 5; // ignore any contact damage so we read only the melee outcome
+	av.avatar.hurtT = 5;
 	return { ...holdAt(av.sessionId, av.avatar), attack: true };
 }
 
@@ -1236,7 +1226,7 @@ test('Hitstun locks control but not physics: a staggered Monster flies under Kno
 	state = stepZone(state, [attackRight(av)], 16);
 	expect(state.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0);
 	const brokenX = state.zone.monsters[0].x;
-	// A chaser's AI would home LEFT, but Hitstun suppresses it — the body drifts RIGHT under Knockback.
+
 	const a = state.avatars[0].avatar;
 	for (let i = 0; i < 5; i++) state = stepZone(state, [holdAt(7, a)], 16);
 	expect(state.zone.monsters[0].x).toBeGreaterThan(brokenX);
@@ -1252,7 +1242,7 @@ test('automatic post-hit i-frames are gone: a staggered Monster takes a second h
 	state = stepZone(state, [attackRight(av)], 16);
 	expect(state.zone.monsters[0].hp).toBe(100 - COMBAT.meleeDamage);
 	expect(state.zone.monsters[0].stunT ?? 0).toBeGreaterThan(0);
-	// A fresh swing clears the per-swing registry, so a second swing lands on the still-staggered Monster.
+
 	state.avatars[0].avatar.swingHits = [];
 	state.avatars[0].avatar.attackT = MID_ACTIVE;
 	state = stepZone(state, [attackRight(state.avatars[0])], 16);
@@ -1275,14 +1265,12 @@ test('a Staggered Monster surfaces the staggered action-flag in the snapshot', (
 });
 
 test('a default chaser Poise-breaks strictly before it dies (the break is observable)', () => {
-	// A tuning guard: the break must land before the kill, or the Stagger is never seen.
 	const hitsToBreak = Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage);
 	const hitsToKill = Math.ceil(ARCHETYPES.chaser.hp / COMBAT.meleeDamage);
 	expect(hitsToBreak).toBeLessThan(hitsToKill);
 });
 
 test('sustained real swings Stagger a chaser while it is still alive (regen is gated)', () => {
-	// The regen delay must hold Poise down across swings, or a break never lands before the kill.
 	const m = spawnMonster('chaser', 2, 20 + BOX.w, y);
 	let state: ZoneState = {
 		zone: zoneWith([m]),

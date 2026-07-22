@@ -15,7 +15,7 @@ import { COLORS, RARITY_RGBA } from '../theme';
 
 const LOG_WIDTH = 60;
 const LOG_HEIGHT = 6;
-const LINE_WIDTH = LOG_WIDTH - 1; // -1 leaves a column for the scrollbar
+const LINE_WIDTH = LOG_WIDTH - 1;
 const MAX_LINES = 200;
 
 const LOOTED_RE = /^Looted (common|uncommon|rare|epic|legendary) (.+)\.$/;
@@ -82,7 +82,7 @@ export class MessageLog {
 		);
 		this.input = new InputRenderable(ctx, {
 			flexGrow: 1,
-			// Match the server's relay clamp so a line that fits here isn't truncated on the wire.
+
 			maxLength: CHAT_MAX_LEN,
 			backgroundColor: COLORS.bg,
 			focusedBackgroundColor: COLORS.bg,
@@ -101,7 +101,6 @@ export class MessageLog {
 		return this.input.focused;
 	}
 
-	// Caller must consume the opening key so it isn't delivered to the freshly-focused input.
 	openChat(): void {
 		this.input.focus();
 	}

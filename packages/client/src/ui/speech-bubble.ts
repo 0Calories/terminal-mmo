@@ -24,7 +24,6 @@ function textContent(lines: readonly string[], fg: RGBA): BoxContent {
 	};
 }
 
-// Terrain is a █ foreground block, so every cell must re-supply the colour already under it or terrainBg bleeds through.
 function drawOverheadBox(
 	buf: OptimizedBuffer,
 	e: Entity,

@@ -15,13 +15,11 @@ test('right-pads ragged rows to the max width', () => {
 });
 
 test('mirrors glyphs: reverse + swap mirror-pairs', () => {
-	// '/(' -> reverse -> '(/' -> swap -> ')\\'
 	const s = new Sprite('\n/(\n', { defaultKey: 'x' });
 	expect(s.rows(-1)).toEqual([')\\']);
 });
 
 test('mirrors block-element glyphs by reflecting their lit quadrants', () => {
-	// '▌▖▛' -> reverse -> '▛▖▌' -> swap halves/quadrants -> '▜▗▐'
 	const s = new Sprite('\n▌▖▛\n', { defaultKey: 'x' });
 	expect(s.rows(-1)).toEqual(['▜▗▐']);
 });

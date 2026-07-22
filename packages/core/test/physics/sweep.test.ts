@@ -1,8 +1,6 @@
 import { expect, test } from 'bun:test';
 import { parseTerrain, sweepPoint } from '../../src/physics';
 
-// Rows 0-1 open sky, walls at rows 4-5 (2-thick, the stuck-speck shape),
-// a one-way platform at row 2 spanning x=4..7, and a wall column at x=9.
 const T = parseTerrain([
 	'..........',
 	'.........#',
@@ -31,8 +29,6 @@ test('ascending travel passes through a one-way platform', () => {
 });
 
 test('ascending travel is blocked by a wall underside (a rising speck cannot embed in a thick solid)', () => {
-	// Rising up the wall column (solid rows 1-5): travel stops clipped under
-	// the lowest wall cell instead of embedding deeper into the stack.
 	const hit = sweepPoint(T, 9.5, 6.5, 9.5, 0.5);
 	expect(hit).toEqual({ axis: 'y', cx: 9, cy: 5, x: 9.5, y: 6 });
 });
@@ -52,7 +48,6 @@ test('sideways travel passes through a one-way platform (horizontally transparen
 });
 
 test('fast descending travel cannot tunnel: the first surface wins, not the destination cell', () => {
-	// Crosses the platform row AND beyond in one step; the platform top hits.
 	const hit = sweepPoint(T, 5.5, 0.2, 5.5, 3.8);
 	expect(hit).toEqual({ axis: 'y', cx: 5, cy: 2, x: 5.5, y: 2 });
 });
@@ -63,8 +58,6 @@ test('a point resting exactly on a surface re-collides with it (down/right bound
 });
 
 test('the x leg resolves before the y leg on diagonal travel into a corner', () => {
-	// Down-and-right into the wall column: both legs would collide; the
-	// sideways block reports first (axis-separated, x then y).
 	const hit = sweepPoint(T, 8.5, 1.5, 9.5, 2.5);
 	expect(hit).toEqual({ axis: 'x', cx: 9, cy: 1, x: 9, y: 1.5 });
 });

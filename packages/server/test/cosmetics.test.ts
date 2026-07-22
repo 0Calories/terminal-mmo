@@ -1,5 +1,3 @@
-// Cosmetics request handling at its own home (ADR 0032): these tests moved
-// from the core world module when applyCosmetics was evicted to the server.
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets/meta';
 import { type Cosmetics, DEFAULT_COSMETICS } from '@mmo/core/entities';

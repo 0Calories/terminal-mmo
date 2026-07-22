@@ -1,9 +1,3 @@
-// Hat art registry (ADR 0031): hats live as `.sprite` files under
-// repo-root `sprites/hats/`, discovered by `loadSpriteSources` and compiled
-// here. A hat is pickable because its file exists on disk — there is no
-// hand-authored TS art or catalog of hat definitions any more. 'None' is the
-// absence of an id (`cosmetics.hat === ''`).
-
 import { loadSpriteSources, type SpriteSource } from '@mmo/assets';
 import type { Sprite } from './sprite';
 import { spriteFromDoc } from './sprite-compile';

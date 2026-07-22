@@ -34,7 +34,6 @@ test('a held jump does not scroll the camera vertically', () => {
 });
 
 test('the camera scrolls once the Avatar pushes past the band edge', () => {
-	// near-identical last centre so this is treated as walking, not a jump
 	const start: CameraState = {
 		cam: { x: 50, y: 11 },
 		center: { x: 111, y: 22.5 },
@@ -65,7 +64,6 @@ test('a teleport-sized jump snap-centres instead of chasing', () => {
 });
 
 test('walking never trips the teleport snap', () => {
-	// just under snapDeltaCells and inside the band, so the camera holds
 	const s0 = settled(100, 20);
 	const s1 = stepCamera(s0, Z, 100 + (CAMERA.snapDeltaCells - 1), 20, VIEW);
 	expect(s1.cam).toEqual(s0.cam);

@@ -161,7 +161,6 @@ test('createAvatar from a session the server is not holding is a silent no-op', 
 });
 
 test('a taken Handle is rejected with createRejected and does not spawn; the session stays held for a retry', () => {
-	// Handles must be unique — the server's Handle registry is shared across tests.
 	const a = makeIdentity();
 	const wa = fakeWs(20);
 	handshake(wa, a, 'zion', 0);
@@ -205,7 +204,7 @@ test('an invalid Handle is rejected with createRejected{invalid} and does not sp
 	const id = makeIdentity();
 	const w = fakeWs(30);
 	handshake(w, id, 'valid-placeholder', 0);
-	// "a" is too short for the 2–16 rule.
+
 	onMessage(
 		ws(w),
 		encodeClientMessage({
@@ -295,9 +294,6 @@ test('confirming an empty Handle field uses the auto-derived placeholder, still 
 	expect(avatarOf(currentWorld(), 40)?.handle).toBe('wanderer');
 });
 
-// validHatIds is the real scanned set (ADR 0031: cap, crown, party-hat,
-// top-hat, wizard) — 'no-such-hat' is dangling regardless, so it must fall
-// back to ''.
 test('createAvatar with a dangling hat id stores it as no-hat', () => {
 	const id = makeIdentity();
 	const w = fakeWs(70);

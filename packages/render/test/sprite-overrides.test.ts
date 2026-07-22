@@ -1,12 +1,3 @@
-// The `SpriteOverrides` seam (ADR 0031): `drawEntitySprite` accepts optional
-// work-in-progress art that replaces what the frozen id-keyed registries resolve.
-// The forge Composited preview relies on this to render the live (unsaved) doc
-// through the identical seat / mirror / recolor / swing-sample logic the game
-// uses. These tests pin the two guarantees the seam exists for:
-//   1. Passing an override that IS the registry's own art is pixel-identical to
-//      passing no override (the game path is byte-for-byte unchanged).
-//   2. Passing DIFFERENT art actually swaps the piece — and per-field presence is
-//      deliberate: `{ weapon }` never strips the hat; `{ hat: null }` does.
 import { expect, test } from 'bun:test';
 import { BOX, type Entity, type EntityType } from '@mmo/core/entities';
 import { parseTerrain } from '@mmo/core/physics';
@@ -148,8 +139,6 @@ function render(
 	return dump(buf);
 }
 
-// --- 1. identity: override with the registry's own art == no override --------
-
 test('override with identical body art is pixel-identical to no override', () => {
 	const e = makeEntity({
 		type: 'player',
@@ -159,7 +148,7 @@ test('override with identical body art is pixel-identical to no override', () =>
 		cosmetics: { hue: 2, hat: 'wizard', nameplate: 0, form: 'buddy' },
 	});
 	const base = render(e);
-	// buddy is what formById('buddy') resolves — injecting it must not move a pixel.
+
 	const injected = render(e, { body: formById('buddy') });
 	expect(injected).toBe(base);
 });
@@ -198,8 +187,6 @@ test('override with identical monster base art is pixel-identical to no override
 	expect(render(e, { base: spriteFor('chaser') })).toBe(base);
 });
 
-// --- 2. replacement: different art actually swaps the piece ------------------
-
 test('a hat override replaces the registry hat', () => {
 	const e = makeEntity({
 		type: 'player',
@@ -224,7 +211,7 @@ test('hat: null draws no hat; hat absent keeps the registry hat', () => {
 	const withHat = render(e);
 	const noHat = render(e, { hat: null });
 	expect(noHat).not.toBe(withHat);
-	// Same entity with the hat stripped by cosmetics — the null override must match.
+
 	const stripped = makeEntity({
 		type: 'player',
 		x: 8,
@@ -245,7 +232,7 @@ test('an overrides object with only weapon set does not strip the hat', () => {
 	const full = render(e);
 	const weapon = weaponSpriteById(0);
 	if (!weapon) throw new Error('expected default weapon art');
-	// Presence-based: `hat` is absent, so it falls back to the registry hat.
+
 	expect(render(e, { weapon })).toBe(full);
 });
 
@@ -257,7 +244,7 @@ test('a body override replaces the registry form', () => {
 		cosmetics: { hue: 0, hat: '', nameplate: 0, form: 'buddy' },
 	});
 	const buddy = render(e);
-	// A degenerate 1-cell body: whatever it is, it must differ from buddy.
+
 	const tiny = formById('buddy');
 	const swapped = render(e, {
 		body: { ...tiny, frames: { idle: hatById('wizard') as Sprite } },

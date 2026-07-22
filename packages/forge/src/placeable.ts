@@ -7,7 +7,6 @@ export type Placeable =
 	| { kind: 'npc'; id: string }
 	| { kind: 'portal'; target: string; arrival: [number, number] };
 
-// Must mirror parseZone's reserved glyphs; never allocated to a Placeable.
 const RESERVED = new Set(['#', '.', ' ']);
 
 const ALLOC_ALPHABET =

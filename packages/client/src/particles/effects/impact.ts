@@ -1,8 +1,3 @@
-// impact — the poise-break flash: a short-lived, non-colliding spark burst
-// that fades over its whole life instead of resting (#264). Purely the look;
-// the camera kick and hitstop a break also triggers are routed by the
-// presentation layer, not this file.
-
 import { burstCount, type EffectDef } from '../profile';
 
 export const impact: EffectDef = {

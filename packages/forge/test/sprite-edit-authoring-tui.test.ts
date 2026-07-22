@@ -1,7 +1,3 @@
-// Thin chrome smoke tests for the sprite-authoring TUI additions (issue #339):
-// the animation menu, the anchor marker on the canvas, the mirror view, and
-// animation playback. Logic is covered headlessly elsewhere; these assert keys
-// reach the pure ops and the Renderable draws the right thing.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -49,8 +45,6 @@ async function mount(opts: {
 	return { ...t, editor };
 }
 
-// Click the rail button whose label matches `re` in the rendered frame's rail
-// region (mouse-primary, QA round 3: the P/A/v/m/. keys died).
 async function clickRail(
 	t: Awaited<ReturnType<typeof mount>>,
 	re: RegExp,
@@ -69,8 +63,6 @@ async function clickRail(
 	throw new Error(`no rail button matching ${re}`);
 }
 
-// Click the Composited preview pane's ▶ play / ■ stop control (post-#351: play
-// moved off the rail to the pane's bottom border). Requires the pane visible.
 async function clickPanePlay(
 	t: Awaited<ReturnType<typeof mount>>,
 ): Promise<void> {
@@ -104,21 +96,19 @@ describe('animation menu', () => {
 			role: 'form',
 		});
 		await clickRail(t, /\banimation\b/);
-		t.editor.key(seq('c')); // create
+		t.editor.key(seq('c'));
 		for (const ch of 'wave') t.editor.key(seq(ch));
-		t.editor.key(key('return')); // confirm — action applied, menu stays open
+		t.editor.key(key('return'));
 		await t.renderOnce();
 		expect(
 			t.editor.state.doc.animations.find((a) => a.name === 'wave'),
 		).toBeDefined();
-		// The new animation is listed in the (still-open) menu.
+
 		expect(t.captureCharFrame()).toContain('wave');
 	});
 });
 
 describe('mouse-native anchors (ADR 0036)', () => {
-	// The form template: grip (4,2), head (2,0); active block at (RAIL_W=30, 1),
-	// zoom ×2 → cell (cx,cy) renders its marker at (30 + cx*4, 1 + cy*4).
 	const markerAt = (cx: number, cy: number) => ({
 		x: 30 + cx * 4,
 		y: 1 + cy * 4,
@@ -137,11 +127,11 @@ describe('mouse-native anchors (ADR 0036)', () => {
 		t.editor.mouseDrag({ button: 0, x: to.x, y: to.y });
 		t.editor.mouseUp();
 		expect(t.editor.state.doc.anchors.grip).toEqual({ x: 1, y: 1 });
-		// File-level: no override was authored on the Default frame.
+
 		expect(
 			allFrames(t.editor.state.doc).every((f) => f.anchors.grip === undefined),
 		).toBe(true);
-		// One undo step restores it.
+
 		t.editor.key(key('u'));
 		expect(t.editor.state.doc.anchors.grip).toEqual({ x: 4, y: 2 });
 	});
@@ -153,10 +143,10 @@ describe('mouse-native anchors (ADR 0036)', () => {
 			role: 'form',
 		});
 		t.editor.state = selectFrame(t.editor.state, 'walk 0');
-		t.editor.key(key('p')); // pencil: enter dives only for a non-gesture tool (default is select)
-		t.editor.key(key('return')); // focus the frame so its markers are on screen
+		t.editor.key(key('p'));
+		t.editor.key(key('return'));
 		await t.renderOnce();
-		// grip (4,2) is the bottom-most ✛ on screen; head (2,0) the top-most.
+
 		const marks = () => {
 			const rows = t.captureCharFrame().split('\n');
 			const out: { x: number; y: number }[] = [];
@@ -168,15 +158,15 @@ describe('mouse-native anchors (ADR 0036)', () => {
 		};
 		const grip = marks().at(-1);
 		if (!grip) throw new Error('no grip marker on screen');
-		// One cell left = 4 screen columns at zoom ×2.
+
 		const to = { x: grip.x - 4, y: grip.y };
 		t.editor.mouseDown({ button: 0, x: grip.x, y: grip.y });
 		t.editor.mouseDrag({ button: 0, x: to.x, y: to.y });
 		t.editor.mouseUp();
 		const walk0 = () => findFrame(t.editor.state.doc, 'walk 0')?.frame;
 		expect(walk0()?.anchors.grip).toEqual({ x: 3, y: 2 });
-		expect(t.editor.state.doc.anchors.grip).toEqual({ x: 4, y: 2 }); // doc untouched
-		// Right-click the (amber, overridden) marker at its new cell clears it.
+		expect(t.editor.state.doc.anchors.grip).toEqual({ x: 4, y: 2 });
+
 		await t.renderOnce();
 		t.editor.mouseDown({ button: 2, x: to.x, y: to.y });
 		t.editor.mouseUp();
@@ -192,7 +182,7 @@ describe('mouse-native anchors (ADR 0036)', () => {
 		await clickRail(t, /\banchor\b/);
 		expect(t.editor.anchorMenu).not.toBeNull();
 		await t.renderOnce();
-		// Click the 'head' row (row 1 under the title) inside the modal box.
+
 		const rows = t.captureCharFrame().split('\n');
 		let headRow = -1;
 		let headX = -1;
@@ -210,7 +200,7 @@ describe('mouse-native anchors (ADR 0036)', () => {
 		expect(t.editor.anchorMenu).toBeNull();
 		expect(t.editor.state.tool).toBe('anchor');
 		expect(t.editor.state.anchorName).toBe('head');
-		// The next canvas click places it — cell (1,0) is block cell → screen.
+
 		await t.renderOnce();
 		t.editor.mouseDown({ button: 0, x: 30 + 1 * 4, y: 1 + 0 * 4 });
 		t.editor.mouseUp();
@@ -223,18 +213,18 @@ describe('mouse-native anchors (ADR 0036)', () => {
 			id: 'buddy',
 			role: 'form',
 		});
-		// Author a custom doc-level anchor 'tail' via the menu's + new input.
+
 		await clickRail(t, /\banchor\b/);
 		t.editor.key(key('down'));
-		t.editor.key(key('down')); // + new
+		t.editor.key(key('down'));
 		t.editor.key(key('return'));
 		for (const ch of 'tail') t.editor.key(seq(ch));
-		t.editor.key(key('return')); // armed
+		t.editor.key(key('return'));
 		await t.renderOnce();
-		t.editor.mouseDown({ button: 0, x: 30, y: 1 }); // place at cell (0,0)
+		t.editor.mouseDown({ button: 0, x: 30, y: 1 });
 		t.editor.mouseUp();
 		expect(t.editor.state.doc.anchors.tail).toEqual({ x: 0, y: 0 });
-		// Reopen: tail shows a ✕, grip (required) does not.
+
 		await clickRail(t, /\banchor\b/);
 		await t.renderOnce();
 		const frame = t.captureCharFrame();
@@ -243,7 +233,7 @@ describe('mouse-native anchors (ADR 0036)', () => {
 		const gripRow = rows.find((r) => r.includes(' grip'));
 		expect(tailRow).toContain('✕');
 		expect(gripRow).not.toContain('✕');
-		// Click tail's ✕ (the right edge of the modal row) deletes it.
+
 		const y = rows.findIndex((r) => r.includes(' tail'));
 		const x = rows[y].indexOf('✕', rows[y].indexOf(' tail'));
 		t.editor.mouseDown({ button: 0, x, y });
@@ -268,24 +258,21 @@ describe('anchor marker', () => {
 			id: 'buddy',
 			role: 'form',
 		});
-		// grip/head anchors are declared in the template → markers on the canvas.
+
 		expect(t.captureCharFrame()).toContain('✛');
 	});
 
 	test('the marker overlays the art: its cell keeps the art colour, no opaque bg stamp (QA round 3)', async () => {
-		// A hat whose art fully lights the anchor cell — the marker at (0,0) sits
-		// over painted 'p' pixels, so its background must be the art's colour.
 		const { doc } = parseSpriteFile(
 			'{ "anchors": { "grip": [0, 0] }, "animations": [{ "name": "idle" }] }\n--- idle\n██\n██\n',
 			'lit',
 		);
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'lit', role: 'hat' });
-		// Move the cursor off the marker cell so its ring doesn't cover it.
+
 		for (let i = 0; i < 4; i++) t.editor.key(key('right'));
 		await t.renderOnce();
-		// The active frame's block starts at (RAIL_W=30, 1) in the strips view;
-		// anchor (0,0)'s marker sits at its origin cell.
+
 		const cap = t.captureSpans();
 		const cell = (x: number, y: number) => {
 			let col = 0;
@@ -310,16 +297,16 @@ describe('anchor marker', () => {
 			role: 'hat',
 		});
 		expect(t.captureCharFrame()).not.toContain('✛');
-		// Open the anchor menu, add a new anchor name, place it at the cursor.
+
 		await clickRail(t, /\banchor\b/);
-		t.editor.key(key('down')); // move to "+ new" (hat has no candidates)
-		t.editor.key(key('return')); // open name input
+		t.editor.key(key('down'));
+		t.editor.key(key('return'));
 		for (const ch of 'grip') t.editor.key(seq(ch));
-		t.editor.key(key('return')); // select → anchor tool active
+		t.editor.key(key('return'));
 		expect(t.editor.state.tool).toBe('anchor');
-		t.editor.key(key('space')); // place at cursor (0,0)
+		t.editor.key(key('space'));
 		expect(t.editor.state.doc.anchors.grip).toEqual({ x: 0, y: 0 });
-		// Move the cursor off the marked cell so its marker isn't covered.
+
 		for (let i = 0; i < 4; i++) t.editor.key(key('right'));
 		await t.renderOnce();
 		expect(t.captureCharFrame()).toContain('✛');
@@ -328,9 +315,6 @@ describe('anchor marker', () => {
 
 describe('mirror view (deleted, round 3)', () => {
 	test('the canvas-split mirror feature is gone — no rail mirror button, no split', async () => {
-		// ▐ (right half block) would have mirrored to ▌ (left half block) in the old
-		// mirror panel; with the feature deleted the panel never renders and there is
-		// no rail button to toggle it.
 		const { doc } = parseSpriteFile(
 			'{ "animations": [{ "name": "idle" }] }\n--- idle\n▐·\n··\n',
 			'flag',
@@ -338,14 +322,13 @@ describe('mirror view (deleted, round 3)', () => {
 		if (!doc) throw new Error('fixture failed to parse');
 		const t = await mount({ doc, id: 'flag', role: 'hat' });
 		await t.renderOnce();
-		// The rail carries no mirror button.
+
 		const railRows = t
 			.captureCharFrame()
 			.split('\n')
 			.map((r) => r.slice(0, 30));
 		expect(railRows.some((r) => /\bmirror\b/.test(r))).toBe(false);
-		// Drop the floating preview (whose avatar art may contain ▌) and confirm the
-		// canvas never paints the old mirror panel's mirrored ▌ glyph.
+
 		await clickRail(t, /\bpreview\b/);
 		await t.renderOnce();
 		expect(t.captureCharFrame()).not.toContain('▌');
@@ -372,10 +355,10 @@ describe('focus [+] tile clones the last frame (round 3)', () => {
 
 	test('clicking the [+] tile appends a clone of the last frame and selects it', async () => {
 		const t = await mount({ doc: twoFrameDoc(), id: 'clone', role: 'hat' });
-		// Drop the floating pane so the tile is never occluded by it.
+
 		await clickRail(t, /\bpreview\b/);
-		t.editor.key(key('tab')); // strips → focus
-		t.editor.key(key('right')); // step to the last frame so the tile is on-screen
+		t.editor.key(key('tab'));
+		t.editor.key(key('right'));
 		await t.renderOnce();
 		const before = t.editor.state.doc.animations[0].frames.length;
 		// biome-ignore lint/suspicious/noExplicitAny: reach the private focus geometry.
@@ -389,15 +372,12 @@ describe('focus [+] tile clones the last frame (round 3)', () => {
 		t.editor.mouseDown({ button: 0, x: tile.x0, y: midY });
 		t.editor.mouseUp();
 		expect(t.editor.state.doc.animations[0].frames.length).toBe(before + 1);
-		// The new (cloned) frame is active.
+
 		expect(t.editor.state.frame).toBe('idle 2');
 	});
 });
 
 describe('playback', () => {
-	// A two-frame animation whose frames put a block in different cells. In v2
-	// (ADR 0037) frames are unnamed — the 'idle' animation's two frames carry the
-	// positional labels 'idle 0' and 'idle 1'.
 	function animDoc(): SpriteDoc {
 		const frame = (lit: 0 | 1) => ({
 			rows: [lit === 0 ? '█ ' : ' █', '  '],
@@ -416,21 +396,18 @@ describe('playback', () => {
 	}
 
 	test('playback is not a trap: rail stop, pane stop and esc all end it; painting stays gated (ADR 0036)', async () => {
-		// Rail play button toggles off again.
 		const t1 = await mount({ doc: animDoc(), id: 'anim', role: 'hat' });
 		await clickPanePlay(t1);
 		expect(t1.editor.playing).toBe(true);
 		await clickPanePlay(t1);
 		expect(t1.editor.playing).toBe(false);
 
-		// esc stops playback.
 		const t2 = await mount({ doc: animDoc(), id: 'anim2', role: 'hat' });
 		await clickPanePlay(t2);
 		expect(t2.editor.playing).toBe(true);
 		t2.editor.key(key('escape'));
 		expect(t2.editor.playing).toBe(false);
 
-		// The preview pane's ■ stop control stops it.
 		const t3 = await mount({ doc: animDoc(), id: 'anim3', role: 'hat' });
 		await clickPanePlay(t3);
 		expect(t3.editor.playing).toBe(true);
@@ -449,7 +426,6 @@ describe('playback', () => {
 		t3.editor.mouseUp();
 		expect(t3.editor.playing).toBe(false);
 
-		// While playing, a canvas click paints nothing (playback gates paint only).
 		const t4 = await mount({ doc: animDoc(), id: 'anim4', role: 'hat' });
 		await clickPanePlay(t4);
 		const docBefore = t4.editor.state.doc;
@@ -464,14 +440,14 @@ describe('playback', () => {
 		const t = await mount({ doc: animDoc(), id: 'panewalk', role: 'hat' });
 		await t.renderOnce();
 		const rows = t.captureCharFrame().split('\n');
-		// Play lives on the pane's bottom border; walk was removed from the pane.
+
 		expect(rows.some((r) => r.includes('▶ play'))).toBe(true);
 		expect(rows.some((r) => r.includes('▶ walk'))).toBe(false);
 	});
 
 	test('the animation menu w entry starts walk playback (the pane auto-hides small)', async () => {
 		const t = await mount({ doc: animDoc(), id: 'menuwalk', role: 'hat' });
-		await clickRail(t, /\banimation\b/); // open the animation menu (mouse-native)
+		await clickRail(t, /\banimation\b/);
 		t.editor.key(key('w', { sequence: 'w' }));
 		expect(t.editor.playing).toBe(true);
 		// biome-ignore lint/suspicious/noExplicitAny: read the private play mode.
@@ -484,14 +460,13 @@ describe('playback', () => {
 		const docBefore = t.editor.state.doc;
 		const histBefore = t.editor.state.history;
 
-		await clickPanePlay(t); // start animation playback
+		await clickPanePlay(t);
 		expect(t.editor.playing).toBe(true);
-		// 260ms at 4fps → floor(0.26*4)=1 → frame 'idle 1'.
+
 		t.editor.tick(260);
 		await t.renderOnce();
 		expect(t.editor.displayFrame).toBe('idle 1');
 
-		// Playback is presentation only: the doc and history are untouched.
 		expect(t.editor.state.doc).toBe(docBefore);
 		expect(t.editor.state.history).toBe(histBefore);
 	});
@@ -500,7 +475,7 @@ describe('playback', () => {
 		const t = await mount({ doc: animDoc(), id: 'anim', role: 'hat' });
 		await clickPanePlay(t);
 		const docBefore = t.editor.state.doc;
-		t.editor.key(key('space')); // would paint — refused during playback
+		t.editor.key(key('space'));
 		expect(t.editor.state.doc).toBe(docBefore);
 		expect(t.editor.state.feedback).toContain('playback');
 	});

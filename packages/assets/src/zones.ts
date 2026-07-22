@@ -1,6 +1,3 @@
-// Zones leave the assets package parsed (ADR 0033): ready to simulate. Assets
-// depends on @mmo/core for the parser; core itself carries no fs or bundler
-// knowledge — it is "given content, simulate".
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Catalogs, parseZone, type Zone } from '@mmo/core/zones';
@@ -19,8 +16,6 @@ export function catalogsFromEntries(entries: AssetEntries): Catalogs {
 	return catalogsFromJson(entries[`zones/${CATALOGS_FILE}`]);
 }
 
-// Order matters downstream: the start Zone (a Town) is first — local-world
-// callers and the client's fallback both spawn into loadZones()[0].
 export function zonesFromEntries(entries: AssetEntries): Zone[] {
 	const catalogs = catalogsFromEntries(entries);
 	const zones = Object.keys(entries)
@@ -37,17 +32,12 @@ export function loadZones(): Zone[] {
 	return zonesFromEntries(loadAssetEntries());
 }
 
-// With a root: read that directory's catalogs.json (the forge editing an
-// explicit zone tree). Without: the shipped set, whichever strategy backs it.
 export function loadCatalogs(root?: string): Catalogs {
 	if (root === undefined) return catalogsFromEntries(loadAssetEntries());
 	const path = join(root, CATALOGS_FILE);
 	if (!existsSync(path)) return catalogsFromJson(undefined);
 	return catalogsFromJson(readFileSync(path, 'utf8'));
 }
-
-// --- Explicit-root zone reading: the forge's write → re-read loop. Discovery
-// and identity (id ⇄ filename) live here; writing stays in the forge.
 
 export interface LoadedZone {
 	id: string;

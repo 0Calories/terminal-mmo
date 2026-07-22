@@ -1,25 +1,11 @@
-// The generic speck simulator: a fixed pool advanced per render frame, with
-// terrain collision resolved through core physics' shared `sweepPoint`
-// (ADR 0013 amendment) — the engine owns no collision code of its own, so
-// specks, projectiles, and entities cannot disagree about what solid means.
-// One-way rule carried by the sweep: descending specks land on platform tops,
-// ascending specks pass through; only walls block sideways.
-//
-// Module-internal — the barrel exports only the ParticleEngine named-effect
-// surface; tests may reach in here for invariant assertions.
-
 import type { Terrain, Tint } from '@mmo/core/entities';
 import { isSolid, isWall, sweepPoint } from '@mmo/core/physics';
 import type { ColorStop, Profile, Speck } from './profile';
 
 export const POOL_SIZE = 2000;
 
-// Clipped travel stops a hair inside the empty cell rather than exactly on the
-// boundary, so `floor` (the sim cell, the draw cell, the next sweep's column)
-// never lands in the solid the speck just hit.
 const FACE_EPS = 1e-3;
 
-// Inert pool filler; every field is overwritten by the first spawn into the slot.
 const UNSPAWNED: Profile = {
 	gravity: 0,
 	restitution: 0,
@@ -66,7 +52,6 @@ export class Pool {
 		for (const p of this.specks) p.active = false;
 	}
 
-	// A free slot if any, else evict-oldest.
 	claim(): Speck {
 		let slot: Speck | null = null;
 		let oldest: Speck = this.specks[0];
@@ -139,10 +124,6 @@ function advance(p: Speck, dt: number, dtMs: number, t: Terrain): void {
 			p.x = nx;
 			p.y = ny;
 		} else if (isWall(t, Math.floor(p.x), Math.floor(p.y))) {
-			// A colliding speck whose own cell is solid dies instead of resting
-			// (the lintel bug's backstop: nothing may ever settle inside terrain).
-			// Wall-solid only: a speck rising through a one-way platform's cell
-			// is mid-pass, not embedded.
 			p.active = false;
 			return;
 		} else {
@@ -150,15 +131,12 @@ function advance(p: Speck, dt: number, dtMs: number, t: Terrain): void {
 			let y = ny;
 			let hit = sweepPoint(t, p.x, p.y, nx, ny);
 			if (hit && hit.axis === 'x') {
-				// Wall face: stop dead in the near empty column and let the
-				// vertical remainder of the travel resolve on its own.
 				x = nx > p.x ? hit.x - FACE_EPS : hit.x;
 				p.vx = 0;
 				hit = sweepPoint(t, x, p.y, x, ny);
 			}
 			if (hit && hit.axis === 'y') {
 				if (ny > p.y) {
-					// Landed on a top face: bounce once, rest the second time.
 					y = hit.y - FACE_EPS;
 					if (!p.bounced) {
 						p.vy = -Math.abs(p.vy) * prof.restitution;
@@ -171,9 +149,6 @@ function advance(p: Speck, dt: number, dtMs: number, t: Terrain): void {
 						p.stageMs = 0;
 					}
 				} else {
-					// Rising into an underside: clip there and let gravity reclaim
-					// it — the old engine never swept upward, which is how specks
-					// embedded inside thick solids.
 					y = hit.y;
 					p.vy = 0;
 				}
@@ -182,9 +157,6 @@ function advance(p: Speck, dt: number, dtMs: number, t: Terrain): void {
 			p.y = y;
 		}
 	} else if (p.stage === 'rest') {
-		// Terrain can change under a rested speck (#373): a rest embedded in a
-		// wall dies like an airborne speck would, and one whose support vanished
-		// is reclaimed by gravity (bounced stays set, so it re-rests on landing).
 		const col = Math.floor(p.x);
 		const row = Math.floor(p.y);
 		if (isWall(t, col, row)) {
@@ -243,7 +215,7 @@ export function speckColor(p: Speck): Rgba {
 	const span = hi.t - lo.t || 1;
 	const f = Math.max(0, Math.min(1, (t - lo.t) / span));
 	const lerp = (a: number, b: number) => Math.round(a + (b - a) * f);
-	// Colliding specks fade off the rest→fade stage; non-colliding sparks never rest, so fade off age instead.
+
 	const a = p.profile.collide
 		? p.stage === 'fade'
 			? fadeRamp(p.stageMs, p.profile.fadeMs)
@@ -261,14 +233,6 @@ export function speckGlyph(p: Speck): string {
 	return set[Math.min(set.length - 1, Math.floor(p.seed * set.length))];
 }
 
-/**
- * The world cell a speck paints. Colliding specks draw floor-aligned — the
- * cell the sim says they are in, which collision guarantees is never solid —
- * where the old round() column painted wall-adjacent specks into the wall
- * tile. A settled speck biases one row down into the visible `▄` surface cell
- * so blood sits flush on the ground line (#264). Non-colliding sparks keep
- * the nearest-cell projection; they never interact with terrain.
- */
 export function speckDrawCell(
 	p: Speck,
 	terrain: Terrain,

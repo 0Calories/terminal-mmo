@@ -1,5 +1,3 @@
-// Unit tests for the hat art registry (ADR 0031): pure compilation from
-// SpriteSource entries, independent of the module-level disk scan.
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';

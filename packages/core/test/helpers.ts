@@ -1,6 +1,3 @@
-// Shared fixture helpers. Tests that want the real authored content load it
-// through @mmo/assets (dev-only dependency); core's own source stays
-// content-free — "given content, simulate" (ADR 0033).
 import { ARCHETYPES } from '../src/entities/archetypes';
 import type { Projectile, Terrain } from '../src/entities/types';
 import { parseTerrain } from '../src/physics/terrain';

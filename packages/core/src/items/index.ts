@@ -1,5 +1,3 @@
-// items — loot rolls, item identity, vendor pricing, and the deterministic RNG they share.
-
 export { LOOT } from './constants';
 export {
 	AFFIXES,

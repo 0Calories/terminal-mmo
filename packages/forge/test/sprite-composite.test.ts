@@ -1,12 +1,3 @@
-// The Composited preview's fidelity contract (ADR 0031, #340): forge composes the
-// WIP doc THROUGH the shared renderer via the `SpriteOverrides` seam, so the
-// output is pixel-identical to the game. These tests pin that:
-//   (a) a hat doc composites at the body's head anchor exactly where a direct
-//       `drawEntitySprite` call (registry hat) seats it — pixel-identical;
-//   (b) a weapon phase composites identically to the golden scene path (direct
-//       call, registry weapon, same action);
-//   (c) the WIP doc's edits (not the saved file the registry holds) drive output.
-
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -86,20 +77,16 @@ function loadDoc(rel: string, id: string): SpriteDoc {
 	return doc;
 }
 
-// --- (a) hat seats exactly where drawEntitySprite would ---------------------
-
 test('a hat doc composites pixel-identically to the registry hat', () => {
 	const doc = loadDoc('sprites/hats/wizard.sprite', 'wizard');
 	const W = 24;
 	const H = 16;
 	const view = { facing: 1 as const, stance: 'idle', elapsedS: 0 };
 
-	// Composite path: WIP hat injected via the overrides seam.
 	const composite = new FakeBuffer(W, H);
 	const ok = renderComposite(composite, doc, 'hat', STYLE, view);
 	expect(ok).toBe(true);
 
-	// Direct path: the SAME entity, hat resolved from the registry (id 'wizard').
 	const built = buildComposite(doc, 'hat', view, { width: W, height: H });
 	if (!built?.entity.cosmetics) throw new Error('expected a hat composite');
 	const direct = new FakeBuffer(W, H);
@@ -113,11 +100,9 @@ test('a hat doc composites pixel-identically to the registry hat', () => {
 	expect(dump(composite)).toBe(dump(direct));
 });
 
-// --- the composite centers by its actual composed bounds --------------------
-
 test('a form composite fits its whole dressed avatar in a preview-pane-sized buffer (QA round 3)', () => {
 	const doc = loadDoc('sprites/forms/buddy.sprite', 'buddy');
-	// The floating preview pane's interior: (PREVIEW_W-2)×(PREVIEW_H-2) = 32×9.
+
 	const buf = new FakeBuffer(32, 9);
 	const ok = renderComposite(buf, doc, 'form', STYLE, {
 		facing: 1,
@@ -125,16 +110,15 @@ test('a form composite fits its whole dressed avatar in a preview-pane-sized buf
 		elapsedS: 0,
 	});
 	expect(ok).toBe(true);
-	// The buddy body must be visible — torso blocks and the feet row — not
-	// pushed below the fold with only the hat and sword tip showing.
+
 	const glyphs = new Set<string>();
 	for (let y = 0; y < buf.height; y++)
 		for (let x = 0; x < buf.width; x++) {
 			const c = buf.at(x, y);
 			if (c && c.ch !== ' ') glyphs.add(c.ch);
 		}
-	expect(glyphs).toContain('█'); // torso
-	expect(glyphs).toContain('▀'); // feet
+	expect(glyphs).toContain('█');
+	expect(glyphs).toContain('▀');
 });
 
 test('the composed bounds center within the buffer (no edge-flush art)', () => {
@@ -155,13 +139,11 @@ test('the composed bounds center within the buffer (no edge-flush art)', () => {
 				maxY = Math.max(maxY, y);
 			}
 		}
-	// Vertically centered: the top and bottom margins differ by at most one row.
+
 	const top = minY;
 	const bottom = buf.height - 1 - maxY;
 	expect(Math.abs(top - bottom)).toBeLessThanOrEqual(1);
 });
-
-// --- (b) weapon phases match the golden scene path --------------------------
 
 test('a weapon phase composites pixel-identically to the registry weapon', () => {
 	const doc = loadDoc('sprites/weapons/sword.sprite', 'sword');
@@ -177,15 +159,12 @@ test('a weapon phase composites pixel-identically to the registry weapon', () =>
 		if (!built) throw new Error('expected a weapon composite');
 		const direct = new FakeBuffer(W, H);
 		direct.clear(STYLE.bg);
-		// weapon 0 (sword) is what the entity already carries; drop the override so
-		// the piece resolves from the registry — identical compiled art.
+
 		drawEntitySprite(direct, built.entity, { x: 0, y: 0 }, STYLE);
 
 		expect(dump(composite)).toBe(dump(direct));
 	}
 });
-
-// --- (c) the WIP doc (not the saved file) drives output ---------------------
 
 test('editing the WIP doc changes the composite; the registry stays put', () => {
 	const doc = loadDoc('sprites/hats/wizard.sprite', 'wizard');
@@ -196,7 +175,6 @@ test('editing the WIP doc changes the composite; the registry stays put', () => 
 	const before = new FakeBuffer(W, H);
 	renderComposite(before, doc, 'hat', STYLE, view);
 
-	// Blank out the hat's art in the WIP doc — a change the saved file never saw.
 	const blanked: SpriteDoc = mapDocFrames(doc, (f) => ({
 		...f,
 		rows: f.rows.map((r) => ' '.repeat(r.length)),
@@ -204,11 +182,8 @@ test('editing the WIP doc changes the composite; the registry stays put', () => 
 	const after = new FakeBuffer(W, H);
 	renderComposite(after, blanked, 'hat', STYLE, view);
 
-	// The WIP edit must show through — a blanked hat renders differently.
 	expect(dump(after)).not.toBe(dump(before));
 
-	// And the registry-backed render of id 'wizard' still shows the SAVED art,
-	// proving the composite reads the live doc, not the frozen registry.
 	const built = buildComposite(doc, 'hat', view, { width: W, height: H });
 	if (!built?.entity.cosmetics) throw new Error('expected a hat composite');
 	const registry = new FakeBuffer(W, H);
@@ -225,10 +200,6 @@ test('editing the WIP doc changes the composite; the registry stays put', () => 
 	expect(dump(registry)).toBe(dump(before));
 });
 
-// --- (d) file-local colours render faithfully once merged (#393) ------------
-
-// A minimal monster doc whose 2×2 art paints an opaque block in a file-local
-// custom colour key 'z' — a key absent from the scene palette on purpose.
 function localColorDoc(): SpriteDoc {
 	return {
 		id: 'blob',
@@ -258,7 +229,6 @@ function firstGlyph(buf: FakeBuffer, ch: string): Cell | undefined {
 }
 
 test('styleWithLocalColors merges custom keys; local wins; empty is a no-op', () => {
-	// No customs ⇒ same reference, nothing allocated.
 	expect(
 		styleWithLocalColors(STYLE, {}, (r, g, b, a) => `${r},${g},${b},${a}`),
 	).toBe(STYLE);
@@ -267,12 +237,12 @@ test('styleWithLocalColors merges custom keys; local wins; empty is a no-op', ()
 		{ z: [11, 22, 33, 255], w: [1, 2, 3, 255] },
 		(r, g, b, a) => `${r},${g},${b},${a}`,
 	);
-	// A brand-new key is added…
+
 	expect(merged.palette.z).toBe('11,22,33,255');
-	// …and a file-local override of a global key wins over the scene palette.
+
 	expect(merged.palette.w).toBe('1,2,3,255');
 	expect(merged.palette.w).not.toBe(STYLE.palette.w);
-	// The base style is untouched.
+
 	expect(STYLE.palette.z).toBeUndefined();
 });
 
@@ -282,12 +252,9 @@ test('file-local colours render in the composite once merged into the style (#39
 	const H = 16;
 	const view = { facing: 1 as const, stance: 'idle', elapsedS: 0 };
 
-	// Base style: the file-local key 'z' is absent from the scene palette, so the
-	// renderer falls through to paletteDefault — today's bug, the preview lies.
 	const fallback = new FakeBuffer(W, H);
 	expect(renderComposite(fallback, doc, 'monster', STYLE, view)).toBe(true);
 
-	// Merged style: the doc's local colour is injected, so 'z' renders its real RGBA.
 	const merged = styleWithLocalColors(
 		STYLE,
 		doc.colors,
@@ -296,7 +263,6 @@ test('file-local colours render in the composite once merged into the style (#39
 	const faithful = new FakeBuffer(W, H);
 	expect(renderComposite(faithful, doc, 'monster', merged, view)).toBe(true);
 
-	// The art lands in both (same glyphs, same positions) — only the colour differs.
 	expect(dump(fallback).replace(/\|[^ ]*/g, '')).toBe(
 		dump(faithful).replace(/\|[^ ]*/g, ''),
 	);
@@ -326,11 +292,6 @@ test('facing flips the composite (mirroring goes through the renderer)', () => {
 	expect(dump(left)).not.toBe(dump(right));
 });
 
-// --- frame-level anchor overrides drive the composite (#351 QA round 5) -----
-
-// A minimal form doc with a Default frame plus a non-default frame; the
-// factory takes the non-default frame's anchor overrides so tests can compare
-// override vs no-override renders of the same art.
 function overrideFormDoc(
 	sitAnchors: Record<string, { x: number; y: number }>,
 ): SpriteDoc {
@@ -364,14 +325,11 @@ test('a frame-level head override moves the hat in the form composite, exactly l
 
 	const base = render(overrideFormDoc({}));
 
-	// The override must show through — for head just as for grip.
 	const headMoved = render(overrideFormDoc({ head: { x: 0, y: 2 } }));
 	expect(headMoved).not.toBe(base);
 	const gripMoved = render(overrideFormDoc({ grip: { x: 0, y: 2 } }));
 	expect(gripMoved).not.toBe(base);
 
-	// And it must land the hat exactly where the same value at the doc level
-	// would — the override IS the effective head for the displayed frame.
 	const doc = overrideFormDoc({});
 	const docLevel: SpriteDoc = {
 		...doc,
@@ -379,8 +337,6 @@ test('a frame-level head override moves the hat in the form composite, exactly l
 	};
 	expect(headMoved).toBe(render(docLevel));
 });
-
-// --- session dynamic variant → composite agreement (spec #401 amendment) ----
 
 test('the view hue drives the composite body hue; omitted → canonical 0', () => {
 	const doc = loadDoc('sprites/hats/cap.sprite', 'cap');

@@ -39,7 +39,7 @@ export class SnapshotBuffer {
 
 	push(snap: Snapshot, recvTimeMs: number): void {
 		this.frames.push({ snap, t: recvTimeMs });
-		// Keep the two most recent even past the window, so a bracketing pair survives sparse pushes.
+
 		const cutoff = recvTimeMs - MAX_HISTORY_MS;
 		let keepFrom = 0;
 		while (
@@ -50,7 +50,6 @@ export class SnapshotBuffer {
 		if (keepFrom > 0) this.frames = this.frames.slice(keepFrom);
 	}
 
-	// Clamps to the nearest end outside the buffered range — never extrapolates.
 	sample(renderTimeMs: number): Snapshot | null {
 		const frames = this.frames;
 		if (frames.length === 0) return null;

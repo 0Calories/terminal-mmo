@@ -1,5 +1,3 @@
-// Vendor request handling at its own home (ADR 0032): these tests moved from
-// the core world module when applySell/applyBuy were evicted to the server.
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets/meta';
 import type { Item, Npc } from '@mmo/core/entities';

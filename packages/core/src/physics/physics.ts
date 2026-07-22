@@ -1,54 +1,27 @@
-// physics — the Momentum-body integrator: input drive + impulses + gravity −
-// drag, then axis-separated collision through the shared sweep (ADR 0032).
-
 import { BOX } from '../entities/archetypes';
 import type { Facing, Terrain } from '../entities/types';
 import { DEFAULT_MASS, PHYS } from './constants';
 import { sweepColumn, sweepRow } from './sweep';
 
-/** An ability a Drive may commit; the zone tick resolves it against the committer's archetype profile — physics carries it, combat spends it. */
 export type AbilityId = 'swing' | 'fire';
 
-/**
- * The per-tick movement decision a controller feeds into physics — produced
- * from the net Intent for an Avatar, by a Brain for a Monster (glossary:
- * Drive). The simulation consumes Drives without caring who is driving.
- */
 export interface Drive {
 	moveX: -1 | 0 | 1;
 	jump: boolean;
-	/**
-	 * Aim decoupled from locomotion. The step turns a body toward its
-	 * velocity; `face` overrides that after the integration — a committing
-	 * melee squares up to its target, a shooter keeps eyes (and its muzzle)
-	 * on the target while backpedaling. Absent = let movement decide.
-	 */
+
 	face?: Facing;
-	/**
-	 * Attack commit — the ONLY way any attack starts (ADR 0034). Physics
-	 * ignores it; the zone tick resolves it against the archetype profile.
-	 */
+
 	commit?: AbilityId;
 }
 
 export const IDLE_DRIVE: Drive = { moveX: 0, jump: false };
 
-// The slice of an Entity an impulse touches (ADR 0032: narrow structural views
-// over the flat record; callers pass a full Entity and get a full Entity back).
-// Deliberately narrower than MomentumBody — only the impulse channel, so a
-// shove can be applied to anything that carries one.
 export interface ImpulseBody {
 	vy: number;
 	ivx?: number;
 	mass?: number;
 }
 
-/**
- * The glossary's Momentum body — the structural slice of an Entity the
- * integrator reads and writes: position + velocity + Mass, plus the drive and
- * collision channels (`speed`, `facing`, `onGround`). Generic-preserving:
- * callers pass a full Entity and get a full Entity back (ADR 0032).
- */
 export interface MomentumBody extends ImpulseBody {
 	x: number;
 	y: number;
@@ -58,7 +31,6 @@ export interface MomentumBody extends ImpulseBody {
 	onGround: boolean;
 }
 
-// Horizontal impulse rides the decaying ivx channel, not vx (input rewrites vx each tick).
 export function applyImpulse<E extends ImpulseBody>(
 	e: E,
 	ix: number,
@@ -84,9 +56,6 @@ export function stepEntity<B extends MomentumBody>(
 	let vy = src.vy;
 	if (drive.jump && src.onGround) vy = -PHYS.jump;
 
-	// Horizontal leg: sweep the leading edge across each row of the body's
-	// span. Only walls block sideways motion; platforms let a sideways-sliding
-	// body pass (the one-way rule, carried by the sweep).
 	let hitWall = false;
 	let x = src.x + vx * dt;
 	const top = Math.floor(src.y);
@@ -117,12 +86,6 @@ export function stepEntity<B extends MomentumBody>(
 		}
 	}
 
-	// Vertical leg: descend-sweep the feet across each column of the body's
-	// span — the sweep both encodes the came-from-above guard (a rising body
-	// never snaps onto a one-way platform) and lands fast falls on the FIRST
-	// crossed surface instead of the destination cell. A rising body never
-	// collides: platforms pass per the one-way rule, and entities have never
-	// head-bonked on walls (preserved behavior).
 	vy += PHYS.grav * dt;
 	const prevFeet = src.y + BOX.h;
 	let y = src.y + vy * dt;

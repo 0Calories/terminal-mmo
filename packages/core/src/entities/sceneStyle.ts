@@ -22,9 +22,6 @@ export function darken(q: RGBAQuad): RGBAQuad {
 	];
 }
 
-// The single standard colour palette (15 colours). Sub-palettes (SCENE_PALETTE,
-// HUES, NAMEPLATE_COLORS, RARITY_COLOR) are curated selections from this — one
-// source of truth for every rendered pixel and read colour.
 export const STANDARD_PALETTE = {
 	k: [64, 66, 82, 255],
 	n: [150, 156, 168, 255],
@@ -43,8 +40,6 @@ export const STANDARD_PALETTE = {
 	r: [245, 155, 205, 255],
 } as const satisfies Record<string, RGBAQuad>;
 
-// SCENE_PALETTE = the 11 keys usable in `.sprite` art (excludes the 4 curated
-// nameplate/hue/rarity families n b v r). Existing art keys unchanged.
 export const SCENE_PALETTE = {
 	p: STANDARD_PALETTE.p,
 	m: STANDARD_PALETTE.m,
@@ -59,8 +54,6 @@ export const SCENE_PALETTE = {
 	k: STANDARD_PALETTE.k,
 } as const satisfies Record<string, RGBAQuad>;
 
-// Body-recolour hues, order = wire hue ids (append-only, never reorder — ids
-// are wire-stable). Selection: p m f b v y c r.
 export const HUES = [
 	STANDARD_PALETTE.p,
 	STANDARD_PALETTE.m,
@@ -72,8 +65,6 @@ export const HUES = [
 	STANDARD_PALETTE.r,
 ] as const satisfies readonly RGBAQuad[];
 
-// Nameplate colours, order = wire nameplate ids (append-only, never reorder —
-// ids are wire-stable). Selection: n b f v m y c r.
 export const NAMEPLATE_COLORS = [
 	STANDARD_PALETTE.n,
 	STANDARD_PALETTE.b,

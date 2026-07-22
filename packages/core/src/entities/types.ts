@@ -3,7 +3,7 @@ export type Facing = 1 | -1;
 export interface Terrain {
 	w: number;
 	h: number;
-	cells: Uint8Array; // row-major: y * w + x
+	cells: Uint8Array;
 }
 
 export interface Control {
@@ -21,7 +21,6 @@ export interface Input extends Control {
 
 export type EntityType = 'player' | 'chaser' | 'shooter' | 'brute';
 
-/** The Monster archetypes — every EntityType except the player-controlled Avatar. */
 export type MonsterType = Exclude<EntityType, 'player'>;
 
 export type AttackPhase = 'windup' | 'active' | 'recovery';
@@ -39,10 +38,10 @@ export interface ActionState {
 
 export interface Cosmetics {
 	hue: number;
-	/** Sprite id from sprites/hats/*.sprite (scanned by the server); '' = no hat. */
+
 	hat: string;
 	nameplate: number;
-	/** Sprite id from sprites/forms/*.sprite (scanned by the server); never empty. */
+
 	form: string;
 }
 
@@ -72,10 +71,7 @@ export interface Entity {
 	dodgeCdT?: number;
 	guardT?: number;
 	swingHits?: number[];
-	/**
-	 * Brain-private memory (ADR 0034): read and written ONLY by this entity's
-	 * own Brain. Opaque to the tick and combat, and NEVER in snapshots/wire.
-	 */
+
 	ai?: unknown;
 	skillCooldowns?: Record<string, number>;
 	spawnIndex?: number;
@@ -113,7 +109,6 @@ export interface Box {
 	h: number;
 }
 
-// A Strike lands only on opposing-Faction victims; two Avatars share `players`, so PvE holds.
 export type Faction = 'players' | 'monsters';
 
 export interface Strike {
@@ -124,13 +119,9 @@ export interface Strike {
 	poiseDamage: number;
 	facing: Facing;
 	faction: Faction;
-	/**
-	 * Attacker origin at projection time — Guard's frontal-arc check faces this
-	 * x. Absent on a Projectile Strike: a shot always reads as frontal from its
-	 * travel direction (`facing`), whatever column its body occupies.
-	 */
+
 	attackerX?: number;
-	/** Impulse applied along `facing` when this Strike lands a Poise break. */
+
 	knockback: number;
 	knockbackUp: number;
 }
@@ -170,7 +161,6 @@ export interface PlayerProgress {
 	gold: number;
 }
 
-// Instanced loot: only `owner` sees or picks it up (snapshotFor streams each its own Drops).
 export interface Drop extends Box {
 	id: number;
 	owner: number;

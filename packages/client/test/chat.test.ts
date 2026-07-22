@@ -53,7 +53,7 @@ test('parseChatCommand reserves the slash namespace: unknown commands are a loca
 
 test('parseChatCommand lists the available emotes for /emotes (ADR 0020 §9)', () => {
 	const cmd = parseChatCommand('/emotes');
-	expect(cmd.kind).toBe('error'); // a local listing surfaced as a notice, not a wire round-trip
+	expect(cmd.kind).toBe('error');
 	if (cmd.kind === 'error') expect(cmd.message).toContain('wave');
 	expect(cmd.kind).not.toBe('emote');
 });
