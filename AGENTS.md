@@ -1,16 +1,18 @@
-# Agent instructions
+# terminal-mmo
+
+A persistent PvE side-scrolling MMORPG played entirely in the terminal —
+"MapleStory in a terminal," for developers.
 
 Design docs are the source of truth. Read the material relevant to the area you
-are changing:
+are changing: [`CONTEXT.md`](./CONTEXT.md) for domain language,
+[`docs/PRD.md`](./docs/PRD.md) for product scope, [`docs/adr/`](./docs/adr/) for
+architecture decisions, and [`CONTRIBUTING.md`](./CONTRIBUTING.md) for
+engineering conventions.
 
-- [`CONTEXT.md`](./CONTEXT.md) for domain language
-- [`docs/PRD.md`](./docs/PRD.md) for product scope
-- [`docs/adr/`](./docs/adr/) for architecture decisions
-- [`CONTRIBUTING.md`](./CONTRIBUTING.md) for engineering conventions
-
-Keep game logic pure and deterministic in `@mmo/core`. Use
-`@opentui/core/testing` for automated TUI checks and a real terminal for
-interactive checks. Run `bun run ci` before handing off code changes.
+All game logic lives in `@mmo/core` as pure, deterministic functions so the
+client and server cannot diverge. Run interactive TUI checks in a real terminal;
+use `@opentui/core/testing` for headless checks. Run `bun run ci` before handing
+off code changes.
 
 ## Code comments
 
@@ -18,3 +20,10 @@ Prefer self-explanatory code and names. Add a comment only when genuinely
 confusing or surprising code still needs a one- or two-line explanation of why
 it exists. Never narrate what the code already says or cite or restate ADRs in
 code comments.
+
+## Agent resources
+
+- Issues and PRDs: [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md)
+- Triage labels: [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md)
+- Domain docs: [`docs/agents/domain.md`](./docs/agents/domain.md)
+- Zone authoring: [`docs/agents/zone-authoring.md`](./docs/agents/zone-authoring.md)

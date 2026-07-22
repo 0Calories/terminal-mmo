@@ -67,6 +67,3 @@ override the target.
   diverge. Test behavior there, not rendering.
 - Design docs are the source of truth: [`CONTEXT.md`](./CONTEXT.md) (glossary),
   [`docs/PRD.md`](./docs/PRD.md), [`docs/adr/`](./docs/adr/).
-- Prefer self-explanatory code over comments. Keep only one- or two-line comments
-  that explain why genuinely confusing or surprising code exists. Do not narrate
-  what the code does or cite or restate ADRs in code comments.
