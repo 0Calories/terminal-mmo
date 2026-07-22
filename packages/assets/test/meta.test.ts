@@ -27,26 +27,15 @@ test('spriteIds for an unknown role returns an empty set, never throws', () => {
 	expect(spriteIds('hats', {})).toEqual(new Set());
 });
 
-test('spriteIds finds the real hat set (ADR 0031): cap, crown, party-hat, top-hat, wizard', () => {
-	const ids = spriteIds('hats');
-	for (const id of ['cap', 'crown', 'party-hat', 'top-hat', 'wizard'])
-		expect(ids.has(id)).toBe(true);
-});
-
-test('spriteIds finds the shipped Form set: the default buddy is a member', () => {
-	expect(spriteIds('forms').has('buddy')).toBe(true);
-});
-
 test('the store resolves the repo trees even when cwd is elsewhere (walk-up fallback)', () => {
 	savedCwd = process.cwd();
 	process.chdir(tmpdir());
-	expect(spriteIds('hats').has('cap')).toBe(true);
-	expect(loadZones().some((z) => z.id === 'town-01')).toBe(true);
+	expect(spriteIds('hats').size).toBeGreaterThan(0);
+	expect(loadZones().some((zone) => zone.type === 'town')).toBe(true);
 });
 
-test('loadZones through the meta door is the parsed, start-Town-first zone list', () => {
+test('loadZones through the meta door returns parsed Zones with a Town first', () => {
 	const zones = loadZones();
-	expect(zones[0].id).toBe('town-01');
+	expect(zones.length).toBeGreaterThan(0);
 	expect(zones[0].type).toBe('town');
-	expect(zones.length).toBeGreaterThanOrEqual(5);
 });

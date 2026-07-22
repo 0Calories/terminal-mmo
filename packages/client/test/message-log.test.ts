@@ -2,28 +2,19 @@ import { expect, test } from 'bun:test';
 import { isStyledText } from '@opentui/core';
 import { appendedTail, styleLogLine } from '../src/ui/message-log';
 
-test('appendedTail returns all of a fresh buffer on the first sync', () => {
-	expect(appendedTail([], ['a', 'b'])).toEqual(['a', 'b']);
-});
-
-test('appendedTail returns only the newly-appended tail', () => {
-	expect(appendedTail(['a', 'b'], ['a', 'b', 'c'])).toEqual(['c']);
-});
-
-test('appendedTail returns nothing when the buffer is unchanged', () => {
-	expect(appendedTail(['a', 'b'], ['a', 'b'])).toEqual([]);
-});
-
-test('appendedTail handles front eviction (append past the cap)', () => {
-	expect(appendedTail(['a', 'b', 'c'], ['b', 'c', 'd'])).toEqual(['d']);
-});
-
-test('appendedTail treats a fully-rotated window as all new', () => {
-	expect(appendedTail(['a', 'b'], ['x', 'y'])).toEqual(['x', 'y']);
-});
-
-test('appendedTail chooses the largest overlap so duplicate lines are not re-appended', () => {
-	expect(appendedTail(['hi', 'hi'], ['hi', 'hi', 'hi'])).toEqual(['hi']);
+test.each([
+	[[], ['a', 'b'], ['a', 'b']],
+	[['a', 'b'], ['a', 'b', 'c'], ['c']],
+	[['a', 'b'], ['a', 'b'], []],
+	[['a', 'b', 'c'], ['b', 'c', 'd'], ['d']],
+	[
+		['a', 'b'],
+		['x', 'y'],
+		['x', 'y'],
+	],
+	[['hi', 'hi'], ['hi', 'hi', 'hi'], ['hi']],
+] as const)('appendedTail returns only content not already presented', (seen, next, expected) => {
+	expect(appendedTail([...seen], [...next])).toEqual([...expected]);
 });
 
 test('styleLogLine leaves a non-loot line as a plain string', () => {

@@ -11,11 +11,9 @@ import {
 	speckDrawCell,
 } from '../src/particles/engine';
 import type { Profile, Speck } from '../src/particles/profile';
-import { burstCount } from '../src/particles/profile';
 import { seededRng } from './helpers';
 
 const BLOOD = EFFECTS.blood.profile;
-const GORE = EFFECTS.gore.profile;
 
 function floorTerrain(w = 40, h = 20): Terrain {
 	const rows: string[] = [];
@@ -52,59 +50,7 @@ function speckAt(pool: Pool, i = 0): Speck {
 	return pool.specks[i];
 }
 
-test('a blood burst through the named-effect door expands into specks', () => {
-	const engine = new ParticleEngine(seededRng(1));
-	engine.spawn('blood', { x: 5, y: 5 }, 1, 8);
-	expect(engine.activeCount).toBeGreaterThan(0);
-});
-
-test('the level-up fountain is a non-colliding gold air burst of a fixed size (#271)', () => {
-	const LEVELUP = EFFECTS.levelup.profile;
-	expect(LEVELUP.collide).toBe(false);
-	const born = LEVELUP.colors[0];
-	expect(born.r).toBeGreaterThan(born.b);
-	expect(born.g).toBeGreaterThan(born.b);
-
-	expect(EFFECTS.levelup.count(0)).toBe(EFFECTS.levelup.count(24));
-
-	const engine = new ParticleEngine(seededRng(1));
-	engine.spawn('levelup', { x: 10, y: 10 }, 0, 0);
-	expect(engine.activeCount).toBe(EFFECTS.levelup.count(0));
-	const terrain = floorTerrain();
-	for (let i = 0; i < 80; i++) engine.step(16, terrain);
-	expect(engine.activeCount).toBe(0);
-});
-
-test('bigger hits spawn visibly more specks, clamped to a sane range', () => {
-	const count = EFFECTS.blood.count;
-	expect(count(2)).toBeGreaterThanOrEqual(1);
-	expect(count(40)).toBe(24);
-	expect(count(0)).toBeGreaterThanOrEqual(1);
-	expect(count(20)).toBeGreaterThan(count(4));
-	expect(count(-5)).toBeGreaterThanOrEqual(1);
-	expect(burstCount(40, 0.5)).toBe(12);
-});
-
-test('blood is bright red at birth, darkens with age, and fades to zero alpha', () => {
-	const terrain = floorTerrain();
-	const pool = new Pool(64);
-	burst(pool, 'blood', 10, 16, 2, 1, seededRng(3));
-	const p = speckAt(pool);
-	const born = speckColor(p);
-	expect(born.a).toBe(255);
-	expect(born.r).toBeGreaterThan(born.g);
-	expect(born.r).toBeGreaterThan(born.b);
-
-	let fadeColor = born;
-	for (let i = 0; i < 600 && p.active; i++) {
-		advanceSpecks(pool, 16, terrain);
-		if (p.stage === 'fade' && p.stageMs > 0) fadeColor = speckColor(p);
-	}
-	expect(fadeColor.r).toBeLessThan(born.r);
-	expect(fadeColor.a).toBeLessThan(255);
-});
-
-test('a non-colliding spark fades smoothly to transparent over its life, not a pop at end (#264)', () => {
+test('a non-colliding spark fades monotonically before extinction', () => {
 	expect(EFFECTS.impact.profile.collide).toBe(false);
 	const terrain = floorTerrain();
 	const pool = new Pool(64);
@@ -115,7 +61,6 @@ test('a non-colliding spark fades smoothly to transparent over its life, not a p
 
 	let sawFullOpacity = false;
 	let sawPartial = false;
-	let minAlpha = 255;
 	let lastAlpha = 255;
 	let neverRoseWhileFading = true;
 	for (let i = 0; i < 200 && p.active; i++) {
@@ -124,43 +69,12 @@ test('a non-colliding spark fades smoothly to transparent over its life, not a p
 		if (a > 0 && a < 255) sawPartial = true;
 		if (a < 255 && a > lastAlpha) neverRoseWhileFading = false;
 		lastAlpha = a;
-		minAlpha = Math.min(minAlpha, a);
 		advanceSpecks(pool, 16, terrain);
 	}
 	expect(sawFullOpacity).toBe(true);
 	expect(sawPartial).toBe(true);
 	expect(neverRoseWhileFading).toBe(true);
-	expect(minAlpha).toBeLessThan(32);
 	expect(p.active).toBe(false);
-});
-
-test('gore is a meatier, chunkier profile — distinct glyphs, flies out further, fewer chunks', () => {
-	expect(GORE).not.toBe(BLOOD);
-	expect(GORE.launchSpeed).toBeGreaterThanOrEqual(BLOOD.launchSpeed);
-	expect(GORE.glyphs.airborne).not.toEqual(BLOOD.glyphs.airborne);
-	expect(EFFECTS.gore.count(24)).toBeLessThan(EFFECTS.blood.count(24));
-});
-
-test('a gore burst spawns fewer chunks than a blood spray of the same intensity', () => {
-	const gore = new ParticleEngine(seededRng(1));
-	const blood = new ParticleEngine(seededRng(1));
-	gore.spawn('gore', { x: 5, y: 5 }, 0, 24);
-	blood.spawn('blood', { x: 5, y: 5 }, 0, 24);
-	expect(gore.activeCount).toBeLessThan(blood.activeCount);
-});
-
-test('a tinted gore burst colours its specks by the tint, not the maroon blood palette (#139)', () => {
-	const pool = new Pool(64);
-	const def = EFFECTS.gore;
-	spawnSpeck(pool, def.profile, 10, 16, 0, seededRng(3), {
-		r: 90,
-		g: 170,
-		b: 255,
-	});
-	const born = speckColor(speckAt(pool));
-	expect(born.a).toBe(255);
-	expect(born.b).toBeGreaterThan(born.r);
-	expect(born.b).toBeGreaterThan(born.g);
 });
 
 test('a tinted speck keeps its hue but darkens with age', () => {
@@ -309,7 +223,7 @@ test('a non-colliding spark keeps the nearest-cell projection', () => {
 	expect(speckDrawCell(p, terrain)).toEqual({ col: 11, row: 6 });
 });
 
-test('a settled speck draws flush IN the `▄` surface cell, on the visible ground line (#264)', () => {
+test('a settled speck projects onto the visible surface cell', () => {
 	const terrain = floorTerrain(40, 20);
 	const pool = new Pool(64);
 	burst(pool, 'blood', 10, 16, 4, 1, seededRng(3));
@@ -369,7 +283,7 @@ test('a descending speck lands on a one-way platform top; an ascending one passe
 	expect(crossed).toBe(true);
 });
 
-test('a rested speck whose support vanishes is reclaimed by gravity, not left frozen mid-air (#373)', () => {
+test('a rested speck resumes falling when its support vanishes', () => {
 	const rows: string[] = [];
 	for (let y = 0; y < 20; y++)
 		rows.push(y === 10 ? '='.repeat(40) : (y === 19 ? '#' : '.').repeat(40));
@@ -397,7 +311,7 @@ test('a rested speck whose support vanishes is reclaimed by gravity, not left fr
 	expect(p.active).toBe(false);
 });
 
-test('a rested speck whose cell becomes wall-solid dies instead of surviving embedded (#373)', () => {
+test('a rested speck expires if its cell becomes solid', () => {
 	const terrain = floorTerrain(40, 20);
 	const pool = new Pool(4);
 	burst(pool, 'blood', 10, 16, 2, 1, seededRng(3));

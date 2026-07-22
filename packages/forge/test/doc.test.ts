@@ -15,105 +15,56 @@ import {
 } from '../src/doc';
 import { newZoneTemplate } from '../src/template';
 
-const sample: EditorDoc = {
-	header: { id: 'z', type: 'field' },
-	rows: ['...', '###'],
-};
+const sample = (): EditorDoc => ({
+	header: { type: 'field', spawns: { c: 'slime' } },
+	rows: ['.....', '#####'],
+});
 
-describe('EditorDoc round-trip', () => {
-	test('serializeDoc(parseDoc(text)) reproduces canonical .zone text', () => {
+describe('Zone document transformations', () => {
+	test('a canonical template parses and serializes byte-for-byte', () => {
 		const text = newZoneTemplate('field-7', 'field');
 		expect(serializeDoc(parseDoc(text))).toBe(text);
 	});
 
-	test('parseDoc rejects a missing delimiter and a bad header', () => {
-		expect(() => parseDoc('{"id":"z"}\n...\n')).toThrow('delimiter');
-		expect(() => parseDoc('{not json}\n---\n...\n')).toThrow('JSON');
-	});
-});
+	test('completed metadata and grid edits survive serialization and parsing', () => {
+		let authored = setZoneName(sample(), '  Sunny Meadow  ');
+		authored = setZoneType(authored, 'town');
+		authored = toggleSolid(authored, 1, 0);
+		authored = placeGlyph(authored, 3, 0, 'c');
+		authored = clearCell(authored, 1, 0);
 
-describe('lossless where parseZone is not', () => {
-	test('header keys parseZone discards survive a parse→serialize round-trip', () => {
+		const reparsed = parseDoc(serializeDoc(authored));
+		expect(zoneName(reparsed)).toBe('Sunny Meadow');
+		expect(zoneType(reparsed)).toBe('town');
+		expect(cellAt(reparsed, 1, 0)).toBe('.');
+		expect(cellAt(reparsed, 3, 0)).toBe('c');
+		expect(placedMonsterCount(reparsed)).toBe(1);
+	});
+
+	test('placing beyond a short row preserves the requested cell in the saved grid', () => {
+		const reparsed = parseDoc(serializeDoc(placeGlyph(sample(), 8, 0, 'c')));
+		expect(cellAt(reparsed, 8, 0)).toBe('c');
+	});
+
+	test('clearing a display name removes it from the serialized header', () => {
+		const cleared = setZoneName(setZoneName(sample(), 'Hub'), '   ');
+		const reparsed = parseDoc(serializeDoc(cleared));
+		expect(zoneName(reparsed)).toBeUndefined();
+		expect('name' in reparsed.header).toBe(false);
+	});
+
+	test('unknown header data is preserved losslessly', () => {
 		const text =
-			'{\n  "id": "z",\n  "type": "field",\n  "spawns": {\n    "z": "slime"\n  },\n  "loot": "gold"\n}\n---\n...\n###\n';
-		const doc = parseDoc(text);
-		expect(doc.header).toEqual({
-			id: 'z',
-			type: 'field',
-			spawns: { z: 'slime' },
-			loot: 'gold',
-		});
-		expect(serializeDoc(doc)).toBe(text);
+			'{\n  "type": "field",\n  "spawns": {\n    "z": "slime"\n  },\n  "loot": "gold"\n}\n---\n...\n###\n';
+		expect(serializeDoc(parseDoc(text))).toBe(text);
 	});
 });
 
-describe('grid edit ops', () => {
-	test('toggleSolid flips an empty cell to solid and back', () => {
-		const solid = toggleSolid(sample, 1, 0);
-		expect(cellAt(solid, 1, 0)).toBe('#');
-		expect(cellAt(toggleSolid(solid, 1, 0), 1, 0)).toBe('.');
-	});
-
-	test('placeGlyph stamps a glyph and clearCell resets it to empty', () => {
-		const placed = placeGlyph(sample, 0, 0, 'c');
-		expect(cellAt(placed, 0, 0)).toBe('c');
-		expect(cellAt(clearCell(placed, 0, 0), 0, 0)).toBe('.');
-	});
-
-	test('placing past a row end pads the row with empty cells', () => {
-		const placed = placeGlyph(sample, 5, 0, 'P');
-		expect(placed.rows[0]).toBe('...' + '..' + 'P');
-		expect(cellAt(placed, 5, 0)).toBe('P');
-	});
-
-	test('edit ops do not mutate the input doc', () => {
-		const before = sample.rows[0];
-		toggleSolid(sample, 0, 0);
-		expect(sample.rows[0]).toBe(before);
-	});
-});
-
-describe('header: display name + type (#99)', () => {
-	test('zoneName reads the optional name (undefined when absent)', () => {
-		expect(zoneName(sample)).toBeUndefined();
-		expect(zoneName({ header: { id: 'z', name: 'Hub' }, rows: [] })).toBe(
-			'Hub',
-		);
-	});
-
-	test('setZoneName sets a trimmed name and round-trips losslessly', () => {
-		const named = setZoneName(sample, '  Sunny Meadow  ');
-		expect(zoneName(named)).toBe('Sunny Meadow');
-		expect(zoneName(parseDoc(serializeDoc(named)))).toBe('Sunny Meadow');
-	});
-
-	test('setZoneName with an empty/whitespace name removes the key', () => {
-		const named = setZoneName(sample, 'Hub');
-		const cleared = setZoneName(named, '   ');
-		expect('name' in cleared.header).toBe(false);
-	});
-
-	test('setZoneName does not mutate the input doc', () => {
-		setZoneName(sample, 'X');
-		expect('name' in sample.header).toBe(false);
-	});
-
-	test('zoneType reads the type; setZoneType flips it immutably', () => {
-		expect(zoneType(sample)).toBe('field');
-		const town = setZoneType(sample, 'town');
-		expect(zoneType(town)).toBe('town');
-		expect(zoneType(sample)).toBe('field');
-	});
-
-	test('placedMonsterCount counts grid cells anchored to a spawn glyph', () => {
-		const doc: EditorDoc = {
-			header: { id: 'f', type: 'field', spawns: { c: 'goblin', s: 'archer' } },
-			rows: ['..c..s..c', '#########'],
-		};
-		expect(placedMonsterCount(doc)).toBe(3);
-		expect(placedMonsterCount(sample)).toBe(0);
-		expect(
-			placedMonsterCount({ header: { id: 'f', type: 'field' }, rows: ['ccc'] }),
-		).toBe(0);
+describe('Zone document format laws', () => {
+	test.each([
+		['missing delimiter', '{"type":"field"}\n...\n', 'delimiter'],
+		['malformed JSON header', '{not json}\n---\n...\n', 'JSON'],
+	] as const)('rejects %s', (_, text, message) => {
+		expect(() => parseDoc(text)).toThrow(message);
 	});
 });

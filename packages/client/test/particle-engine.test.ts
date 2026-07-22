@@ -61,7 +61,7 @@ test('a level-up burst needs no CombatEvent: the levelup effect is a spawn door 
 	expect(drawn(engine, 'airborne').length).toBeGreaterThan(0);
 });
 
-test('clear() drops every live speck — the zone-change reset (#373)', () => {
+test('clear drops every live speck from both render layers', () => {
 	const engine = new ParticleEngine(seededRng(SEED));
 	engine.spawn('blood', { x: 10, y: 10 }, 1, 8);
 	engine.step(DT, flatTerrain(W, H));

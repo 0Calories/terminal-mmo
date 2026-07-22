@@ -5,9 +5,8 @@ A persistent PvE side-scrolling MMORPG played entirely in the terminal —
 
 Design docs are the source of truth. Read the material relevant to the area you
 are changing: [`CONTEXT.md`](./CONTEXT.md) for domain language,
-[`docs/PRD.md`](./docs/PRD.md) for product scope, [`docs/adr/`](./docs/adr/) for
-architecture decisions, and [`CONTRIBUTING.md`](./CONTRIBUTING.md) for
-engineering conventions.
+accepted [`docs/adr/`](./docs/adr/) for product scope and architecture decisions,
+and [`CONTRIBUTING.md`](./CONTRIBUTING.md) for engineering conventions.
 
 All game logic lives in `@mmo/core` as pure, deterministic functions so the
 client and server cannot diverge. Run interactive TUI checks in a real terminal;

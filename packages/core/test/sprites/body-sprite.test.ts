@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { EMOTES } from '../../src/entities';
 import {
 	type BodyState,
 	bodyFrame,
@@ -16,6 +17,12 @@ const REST: BodyState = {
 	moving: false,
 	distanceX: 0,
 	staggered: false,
+};
+
+const emoteId = (lifetime: 'oneshot' | 'loop' | 'hold') => {
+	const id = EMOTES.find((emote) => emote.lifetime === lifetime)?.id;
+	if (!id) throw new Error(`catalog needs a ${lifetime} fixture`);
+	return id;
 };
 
 describe('bodyFrame (pure Animation selector / precedence ladder)', () => {
@@ -45,7 +52,7 @@ describe('bodyFrame (pure Animation selector / precedence ladder)', () => {
 		).toBe('windup');
 	});
 
-	test('walking distance-indexes the walk animation every STRIDE cells (ADR 0035)', () => {
+	test('walking distance-indexes the walk animation every configured stride', () => {
 		expect(bodyFrame({ ...REST, moving: true, distanceX: 0 })).toEqual({
 			animationId: 'walk',
 			frameIndex: 0,
@@ -73,54 +80,54 @@ describe('bodyFrame (pure Animation selector / precedence ladder)', () => {
 		expect(at(3 * STRIDE)).toBe(0);
 	});
 
-	test('an emote animations below walk: walking cancels it (ADR 0020 §6)', () => {
-		expect(bodyFrame({ ...REST, emote: 'wave' }).animationId).toBe(
-			'emote:wave',
-		);
+	test('an Emote animates below walk and combat in the precedence ladder', () => {
+		const emote = emoteId('oneshot');
+		expect(bodyFrame({ ...REST, emote }).animationId).toBe(`emote:${emote}`);
 		expect(
-			bodyFrame({ ...REST, emote: 'wave', moving: true, distanceX: 0 })
-				.animationId,
+			bodyFrame({ ...REST, emote, moving: true, distanceX: 0 }).animationId,
 		).toBe('walk');
 		expect(
-			bodyFrame({ ...REST, emote: 'wave', move: 'basic', phase: 'active' })
-				.animationId,
+			bodyFrame({ ...REST, emote, move: 'basic', phase: 'active' }).animationId,
 		).toBe('active');
 	});
 
-	test('an emote frame is sampled from emoteT so the sweep animates (ADR 0020 §9)', () => {
-		expect(bodyFrame({ ...REST, emote: 'wave', emoteT: 0 }).frameIndex).toBe(0);
+	test('an Emote frame is sampled deterministically from simulation time', () => {
+		const emote = emoteId('oneshot');
+		expect(bodyFrame({ ...REST, emote, emoteT: 0 }).frameIndex).toBe(0);
 		expect(
-			bodyFrame({ ...REST, emote: 'wave', emoteT: 1 / EMOTE_FPS }).frameIndex,
+			bodyFrame({ ...REST, emote, emoteT: 1 / EMOTE_FPS }).frameIndex,
 		).toBe(1);
 		expect(
-			bodyFrame({ ...REST, emote: 'wave', emoteT: 2 / EMOTE_FPS }).frameIndex,
+			bodyFrame({ ...REST, emote, emoteT: 2 / EMOTE_FPS }).frameIndex,
 		).toBe(2);
 	});
 
-	test('a loop emote advances its frame by elapsed emoteT, a hold freezes on frame 0 (ADR 0020 §9)', () => {
-		expect(bodyFrame({ ...REST, emote: 'dance', emoteT: 0 }).frameIndex).toBe(
-			0,
-		);
+	test('loop Emotes advance while hold Emotes freeze on their first frame', () => {
+		const loop = emoteId('loop');
+		const hold = emoteId('hold');
+		expect(bodyFrame({ ...REST, emote: loop, emoteT: 0 }).frameIndex).toBe(0);
 		expect(
-			bodyFrame({ ...REST, emote: 'dance', emoteT: 3 / EMOTE_FPS }).frameIndex,
+			bodyFrame({ ...REST, emote: loop, emoteT: 3 / EMOTE_FPS }).frameIndex,
 		).toBe(3);
-		expect(bodyFrame({ ...REST, emote: 'sit', emoteT: 0 }).frameIndex).toBe(0);
-		expect(bodyFrame({ ...REST, emote: 'sit', emoteT: 99 }).frameIndex).toBe(0);
+		expect(bodyFrame({ ...REST, emote: hold, emoteT: 0 }).frameIndex).toBe(0);
+		expect(bodyFrame({ ...REST, emote: hold, emoteT: 99 }).frameIndex).toBe(0);
 	});
 
-	test('a per-animation fps overrides EMOTE_FPS for that emote, changing frame progression (ADR 0031)', () => {
-		const fps = { 'emote:wave': 10 } as const;
+	test('a per-animation frame rate overrides the global Emote rate', () => {
+		const oneshot = emoteId('oneshot');
+		const loop = emoteId('loop');
+		const fps = { [`emote:${oneshot}`]: EMOTE_FPS * 2 };
 
 		expect(
-			bodyFrame({ ...REST, emote: 'wave', emoteT: 1 / EMOTE_FPS }, fps)
+			bodyFrame({ ...REST, emote: oneshot, emoteT: 1 / EMOTE_FPS }, fps)
 				.frameIndex,
 		).toBe(2);
 		expect(
-			bodyFrame({ ...REST, emote: 'wave', emoteT: 0.5 }, fps).frameIndex,
-		).toBe(5);
+			bodyFrame({ ...REST, emote: oneshot, emoteT: 0.5 }, fps).frameIndex,
+		).toBe(Math.floor(EMOTE_FPS));
 
 		expect(
-			bodyFrame({ ...REST, emote: 'dance', emoteT: 3 / EMOTE_FPS }, fps)
+			bodyFrame({ ...REST, emote: loop, emoteT: 3 / EMOTE_FPS }, fps)
 				.frameIndex,
 		).toBe(3);
 	});

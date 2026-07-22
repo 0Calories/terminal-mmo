@@ -26,7 +26,7 @@ function avatarOf(w: ServerWorld, sessionId: number) {
 	);
 }
 
-test('applyCosmetics in a Town stamps the new look on the live Avatar (rebroadcast + persist path) (#305)', () => {
+test('Town customization updates the authoritative Avatar appearance', () => {
 	const { world } = spawnNewAvatar(
 		makeWorld(),
 		7,
@@ -45,7 +45,7 @@ test('applyCosmetics in a Town stamps the new look on the live Avatar (rebroadca
 	expect(seen?.cosmetics).toEqual(next);
 });
 
-test('applyCosmetics clamps an out-of-range index at the apply boundary (#305)', () => {
+test('customization clamps untrusted cosmetic values at the server boundary', () => {
 	const { world } = spawnNewAvatar(
 		makeWorld(),
 		7,
@@ -69,7 +69,7 @@ test('applyCosmetics clamps an out-of-range index at the apply boundary (#305)',
 	});
 });
 
-test('applyCosmetics outside a Town is a silent no-op (Town-only re-customize) (#305)', () => {
+test('customization outside a Town is refused', () => {
 	const world = addSession(makeWorld(), 7, 'neo');
 	expect(zoneOf(world, 7)).toBe('field-01');
 	const res = applyCosmetics(world, 7, {
@@ -83,7 +83,7 @@ test('applyCosmetics outside a Town is a silent no-op (Town-only re-customize) (
 	expect(avatarOf(world, 7)?.cosmetics).toEqual(DEFAULT_COSMETICS);
 });
 
-test('applyCosmetics for an unplaced session is a silent no-op (#305)', () => {
+test('customization for an unplaced session is refused', () => {
 	const world = makeWorld();
 	const res = applyCosmetics(world, 999, {
 		hue: 1,

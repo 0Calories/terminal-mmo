@@ -9,12 +9,12 @@ in a terminal?* The answer is yes, and the experiment succeeded well enough that
 real ambition has moved on: a separate, non-terminal, commercial 2D side-scrolling
 MMORPG built on the same ideas (its own project, not this repo). This ADR records the
 decision to **freeze the terminal-mmo as a finished, showable tech demo and stop** —
-and exactly where that line sits — so that the bulk of the design tree (the M1–M4 PRD,
-the deep combat roadmap) is deliberately *not* built here.
+and exactly where that line sits — so that the bulk of the design tree (the original
+M1–M4 PRD, the deep combat roadmap) is deliberately *not* built here.
 
-It supersedes the MVP scope in [`docs/PRD.md`](../PRD.md) wherever the two conflict.
-The PRD's milestones M1–M4 and most of its "designed-for" systems are now out of scope;
-what ships is the arc below and nothing more.
+It supersedes the original MVP PRD, which is retained only in repository history.
+That PRD's milestones M1–M4 and most of its "designed-for" systems are now out of
+scope; what ships is the arc below and nothing more.
 
 ## What the demo is
 
@@ -180,8 +180,9 @@ by no milestone.
 
 ## Status of the PRD and prior ADRs
 
-[`docs/PRD.md`](../PRD.md) remains the historical record of the original ambition but is
-**no longer the build target**; this ADR is. Combat ADRs 0017/0019/0022 stand for what
-*was* built; the parts they describe that this ADR cuts (parry, reflect, lag-comp,
-per-weapon feel) are superseded for the demo. ADR 0004 (SSH auth) moves from designed to
-built; ADR 0006's ephemeral Handle is revised to a durable username.
+The original MVP PRD is preserved in repository history, not as an active design
+document or build target; this ADR is the accepted scope decision. Combat ADRs
+0017/0019/0022 stand for what *was* built; the parts they describe that this ADR cuts
+(parry, reflect, lag-comp, per-weapon feel) are superseded for the demo. ADR 0004 (SSH
+auth) moves from designed to built; ADR 0006's ephemeral Handle is revised to a durable
+username.

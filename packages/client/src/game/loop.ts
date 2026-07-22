@@ -69,6 +69,7 @@ export interface GameLoopDeps {
 	sound: SoundView;
 	localZone(id: string): Zone;
 	weapon: number;
+	now?(): number;
 
 	modalOpen(): boolean;
 
@@ -119,8 +120,9 @@ export class GameLoop {
 
 	frame = (dt: number): void => {
 		const { net, input, hud, playfield, sound } = this.deps;
+		const now = this.deps.now?.() ?? performance.now();
 		const modalActive = this.deps.modalOpen();
-		const inp = modalActive ? IDLE_INPUT : input.poll(performance.now());
+		const inp = modalActive ? IDLE_INPUT : input.poll(now);
 
 		if (net.zoneId && net.zoneId !== this.zoneId) {
 			this.zoneId = net.zoneId;
@@ -164,7 +166,7 @@ export class GameLoop {
 		}
 
 		const fps = this.meter(dt);
-		const view = net.sample(performance.now());
+		const view = net.sample(now);
 		net.decayBubbles(dt / 1000);
 		const game = snapshotToGame(
 			this.zone,

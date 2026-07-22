@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { parseTerrain, sweepPoint } from '../../src/physics';
 
-const T = parseTerrain([
+const terrain = parseTerrain([
 	'..........',
 	'.........#',
 	'....====.#',
@@ -10,54 +10,75 @@ const T = parseTerrain([
 	'####.....#',
 ]);
 
-test('clear travel returns null', () => {
-	expect(sweepPoint(T, 5.5, 3.2, 6.5, 3.8)).toBeNull();
-});
+const cases = [
+	{
+		name: 'clear travel',
+		from: [5.5, 3.2],
+		to: [6.5, 3.8],
+		hit: null,
+	},
+	{
+		name: 'descent to a wall top',
+		from: [1.5, 2.5],
+		to: [1.5, 4.5],
+		hit: { axis: 'y', cx: 1, cy: 4, x: 1.5, y: 4 },
+	},
+	{
+		name: 'descent to a one-way platform top',
+		from: [5.5, 0.5],
+		to: [5.5, 2.5],
+		hit: { axis: 'y', cx: 5, cy: 2, x: 5.5, y: 2 },
+	},
+	{
+		name: 'ascent through a one-way platform',
+		from: [5.5, 3.5],
+		to: [5.5, 0.5],
+		hit: null,
+	},
+	{
+		name: 'ascent to a wall underside',
+		from: [9.5, 6.5],
+		to: [9.5, 0.5],
+		hit: { axis: 'y', cx: 9, cy: 5, x: 9.5, y: 6 },
+	},
+	{
+		name: 'rightward travel to a wall',
+		from: [7.5, 3.5],
+		to: [9.5, 3.5],
+		hit: { axis: 'x', cx: 9, cy: 3, x: 9, y: 3.5 },
+	},
+	{
+		name: 'leftward travel to a wall',
+		from: [5.5, 4.5],
+		to: [2.5, 4.5],
+		hit: { axis: 'x', cx: 3, cy: 4, x: 4, y: 4.5 },
+	},
+	{
+		name: 'sideways travel through a one-way platform',
+		from: [2.5, 2.5],
+		to: [8.5, 2.5],
+		hit: null,
+	},
+	{
+		name: 'fast descent at its first crossed surface',
+		from: [5.5, 0.2],
+		to: [5.5, 3.8],
+		hit: { axis: 'y', cx: 5, cy: 2, x: 5.5, y: 2 },
+	},
+	{
+		name: 'diagonal travel with x resolved before y',
+		from: [8.5, 1.5],
+		to: [9.5, 2.5],
+		hit: { axis: 'x', cx: 9, cy: 1, x: 9, y: 1.5 },
+	},
+] as const;
 
-test('descending travel hits the first wall surface crossed', () => {
-	const hit = sweepPoint(T, 1.5, 2.5, 1.5, 4.5);
-	expect(hit).toEqual({ axis: 'y', cx: 1, cy: 4, x: 1.5, y: 4 });
-});
+for (const { name, from, to, hit } of cases) {
+	test(name, () => {
+		expect(sweepPoint(terrain, from[0], from[1], to[0], to[1])).toEqual(hit);
+	});
+}
 
-test('descending travel lands on a one-way platform top', () => {
-	const hit = sweepPoint(T, 5.5, 0.5, 5.5, 2.5);
-	expect(hit).toEqual({ axis: 'y', cx: 5, cy: 2, x: 5.5, y: 2 });
-});
-
-test('ascending travel passes through a one-way platform', () => {
-	expect(sweepPoint(T, 5.5, 3.5, 5.5, 0.5)).toBeNull();
-});
-
-test('ascending travel is blocked by a wall underside (a rising speck cannot embed in a thick solid)', () => {
-	const hit = sweepPoint(T, 9.5, 6.5, 9.5, 0.5);
-	expect(hit).toEqual({ axis: 'y', cx: 9, cy: 5, x: 9.5, y: 6 });
-});
-
-test('rightward travel is blocked by a wall, clipped to its left face', () => {
-	const hit = sweepPoint(T, 7.5, 3.5, 9.5, 3.5);
-	expect(hit).toEqual({ axis: 'x', cx: 9, cy: 3, x: 9, y: 3.5 });
-});
-
-test('leftward travel is blocked by a wall, clipped to its right face', () => {
-	const hit = sweepPoint(T, 5.5, 4.5, 2.5, 4.5);
-	expect(hit).toEqual({ axis: 'x', cx: 3, cy: 4, x: 4, y: 4.5 });
-});
-
-test('sideways travel passes through a one-way platform (horizontally transparent)', () => {
-	expect(sweepPoint(T, 2.5, 2.5, 8.5, 2.5)).toBeNull();
-});
-
-test('fast descending travel cannot tunnel: the first surface wins, not the destination cell', () => {
-	const hit = sweepPoint(T, 5.5, 0.2, 5.5, 3.8);
-	expect(hit).toEqual({ axis: 'y', cx: 5, cy: 2, x: 5.5, y: 2 });
-});
-
-test('a point resting exactly on a surface re-collides with it (down/right boundary convention)', () => {
-	const hit = sweepPoint(T, 1.5, 4, 1.5, 4.1);
-	expect(hit?.cy).toBe(4);
-});
-
-test('the x leg resolves before the y leg on diagonal travel into a corner', () => {
-	const hit = sweepPoint(T, 8.5, 1.5, 9.5, 2.5);
-	expect(hit).toEqual({ axis: 'x', cx: 9, cy: 1, x: 9, y: 1.5 });
+test('a point resting on a surface follows the down/right boundary convention', () => {
+	expect(sweepPoint(terrain, 1.5, 4, 1.5, 4.1)?.cy).toBe(4);
 });

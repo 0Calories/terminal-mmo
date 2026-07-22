@@ -39,6 +39,7 @@ export interface SoundSink {
 export interface PlayfieldOptions extends RenderableOptions {
 	now?: () => number;
 	rng?: () => number;
+	particles?: ParticleEngine;
 }
 
 export class PlayfieldRenderable extends Renderable {
@@ -89,10 +90,10 @@ export class PlayfieldRenderable extends Renderable {
 	}
 
 	constructor(ctx: RenderContext, options: PlayfieldOptions = {}) {
-		const { now, rng, ...renderable } = options;
+		const { now, rng, particles, ...renderable } = options;
 		super(ctx, { width: '100%', height: '100%', live: true, ...renderable });
 		this.now = now ?? (() => performance.now());
-		this.particles = new ParticleEngine(rng ?? Math.random);
+		this.particles = particles ?? new ParticleEngine(rng ?? Math.random);
 	}
 
 	protected renderSelf(buffer: OptimizedBuffer): void {

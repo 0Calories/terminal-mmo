@@ -124,7 +124,7 @@ describe('isClipped — pixels the current bounds would drop', () => {
 });
 
 describe('applyCanvasModal — one transform, resize semantics preserved', () => {
-	test('grows every frame together and shifts left-added anchors (matches old resize)', () => {
+	test('grows every frame together and shifts left-added anchors', () => {
 		const doc = mkDoc([frame('a', ['##', '##']), frame('b', ['##', '##'])], {
 			anchors: { grip: { x: 1, y: 1 } },
 		});

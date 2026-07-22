@@ -1,6 +1,4 @@
 import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { SpriteSource } from '@mmo/assets';
 import { DEFAULT_WEAPON, WEAPONS } from '@mmo/core/combat';
 import type { Entity } from '@mmo/core/entities';
@@ -14,15 +12,6 @@ import {
 	weaponSpriteById,
 } from '../src';
 
-const SWORD_TEXT = readFileSync(
-	join(import.meta.dir, '../../../sprites/weapons/sword.sprite'),
-	'utf8',
-);
-
-function swordSource(id = 'sword'): SpriteSource {
-	return { id, role: 'weapons', text: SWORD_TEXT };
-}
-
 const MINIMAL = `{ "accent": "s", "anchors": { "grip": [0, 0] }, "animations": [{ "name": "idle" }, { "name": "swing" }] }
 --- idle
 AB
@@ -34,30 +23,34 @@ AB
 AB
 `;
 
-test('the real sword.sprite compiles to a weapon with all phase frames and its accent', () => {
-	const registry = buildWeaponRegistry([swordSource()]);
-	const ws = registry.get('sword');
+function weaponSource(id = 'weapon'): SpriteSource {
+	return { id, role: 'weapons', text: MINIMAL };
+}
+
+test('a valid weapon source compiles its phase frames, accent, and grip', () => {
+	const registry = buildWeaponRegistry([weaponSource()]);
+	const ws = registry.get('weapon');
 	expect(ws).toBeDefined();
 	expect(ws?.frames.rest).toBeDefined();
 	expect(ws?.frames.swing).toHaveLength(3);
 	expect(ws?.accent).toBe('s');
 
-	expect(ws?.grip).toEqual({ x: -1, y: 2 });
+	expect(ws?.grip).toEqual({ x: 0, y: 0 });
 });
 
 test('a source outside the weapons role is ignored', () => {
-	const registry = buildWeaponRegistry([{ ...swordSource(), role: 'hats' }]);
+	const registry = buildWeaponRegistry([{ ...weaponSource(), role: 'hats' }]);
 	expect(registry.size).toBe(0);
 });
 
 test('a source with a broken header is skipped; the others still load', () => {
 	const registry = buildWeaponRegistry([
-		swordSource(),
+		weaponSource(),
 		{ id: 'broken', role: 'weapons', text: 'not valid json {{{' },
 		{ id: 'mini', role: 'weapons', text: MINIMAL },
 	]);
 	expect(registry.has('broken')).toBe(false);
-	expect(registry.has('sword')).toBe(true);
+	expect(registry.has('weapon')).toBe(true);
 	expect(registry.has('mini')).toBe(true);
 });
 
@@ -69,15 +62,15 @@ AB
 AB
 `;
 	const registry = buildWeaponRegistry([
-		swordSource(),
+		weaponSource(),
 		{ id: 'bad', role: 'weapons', text: bad },
 	]);
 	expect(registry.has('bad')).toBe(false);
-	expect(registry.has('sword')).toBe(true);
+	expect(registry.has('weapon')).toBe(true);
 });
 
 test('a dangling sprite id resolves to undefined (registry miss)', () => {
-	const registry = buildWeaponRegistry([swordSource()]);
+	const registry = buildWeaponRegistry([weaponSource()]);
 	expect(registry.get('does-not-exist')).toBeUndefined();
 });
 

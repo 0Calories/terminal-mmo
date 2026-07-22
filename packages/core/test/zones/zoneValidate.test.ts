@@ -1,25 +1,23 @@
 import { describe, expect, test } from 'bun:test';
-import { BOX } from '../../src/entities/archetypes';
-import type { Terrain } from '../../src/entities/types';
-import type { Portal, Zone } from '../../src/zones/types';
-import { parseZone } from '../../src/zones/zoneFormat';
-import type { Diagnostic } from '../../src/zones/zoneValidate';
+import { BOX, type Terrain } from '../../src/entities';
+import type { Portal, Zone } from '../../src/zones';
 import {
+	type Diagnostic,
 	findOrphanGlyphs,
 	validateZone,
 	validateZoneSet,
-} from '../../src/zones/zoneValidate';
+} from '../../src/zones';
 
 const monsters = [
-	{ id: 'goblin-01', behavior: 'chaser' as const, name: 'Goblin' },
-	{ id: 'archer-01', behavior: 'shooter' as const, name: 'Archer' },
+	{ id: 'test-chaser', behavior: 'chaser' as const, name: 'Chaser' },
 ];
-const npcs = [{ id: 'merchant-01', kind: 'vendor' as const, name: 'Merchant' }];
+const npcs = [{ id: 'test-vendor', kind: 'vendor' as const, name: 'Vendor' }];
 const catalogs = { monsters, npcs };
 
 const W = 30;
 const H = 12;
 const FLOOR = 10;
+const GROUND_Y = FLOOR - BOX.h;
 
 function flatTerrain(): Terrain {
 	const cells = new Uint8Array(W * H);
@@ -28,273 +26,220 @@ function flatTerrain(): Terrain {
 	return { w: W, h: H, cells };
 }
 
-const onGround = FLOOR - BOX.h;
-
-function zone(over: Partial<Zone>): Zone {
+function zone(overrides: Partial<Zone> = {}): Zone {
 	return {
-		id: 'field-01',
+		id: 'field-a',
 		type: 'field',
 		terrain: flatTerrain(),
 		monsters: [],
 		projectiles: [],
 		nextProjectileId: 1,
-		spawns: [{ type: 'chaser', x: 2, y: onGround }],
+		spawns: [{ type: 'chaser', x: 2, y: GROUND_Y }],
 		respawns: [],
 		nextMonsterId: 2,
 		portals: [],
-		...over,
+		...overrides,
 	};
 }
 
-const errs = (d: Diagnostic[]) => d.filter((x) => x.severity === 'error');
-const warns = (d: Diagnostic[]) => d.filter((x) => x.severity === 'warning');
-
-describe('validateZone — a well-formed Zone passes clean', () => {
-	test('a grounded field spawn + npc + portal yields no errors', () => {
-		const z = zone({
-			npcs: [
-				{
-					id: 1,
-					kind: 'vendor',
-					name: 'Merchant',
-					x: 20,
-					y: onGround,
-					w: 4,
-					h: BOX.h,
-				},
-			],
-			portals: [
-				{
-					x: 14,
-					y: FLOOR - 7,
-					w: 4,
-					h: 7,
-					target: 'town-01',
-					arrival: { x: 5, y: onGround },
-				},
-			],
-		});
-		expect(errs(validateZone(z, catalogs))).toEqual([]);
-	});
-
-	test('a parseZone-built Zone validates clean (integration)', () => {
-		const rows = Array.from({ length: H }, () => '.'.repeat(W).split(''));
-		for (let x = 0; x < W; x++) {
-			rows[10][x] = '#';
-			rows[11][x] = '#';
-		}
-		rows[onGround][2] = 'c';
-		rows[onGround][8] = 's';
-		rows[onGround][20] = 'm';
-		rows[FLOOR - 7][14] = 'a';
-		const header = JSON.stringify({
-			type: 'field',
-			spawns: { c: 'goblin-01', s: 'archer-01' },
-			npcs: { m: 'merchant-01' },
-			portals: { a: { target: 'town-01', arrival: [5, onGround] } },
-		});
-		const z = parseZone(
-			`${header}\n---\n${rows.map((r) => r.join('')).join('\n')}`,
-			catalogs,
-			'field-01',
-		);
-		expect(errs(validateZone(z, catalogs))).toEqual([]);
-	});
-});
-
-describe('validateZone — zone-type rules', () => {
-	test('a town with a spawn is an error', () => {
-		const d = errs(validateZone(zone({ type: 'town' }), catalogs));
-		expect(d).toHaveLength(1);
-		expect(d[0].message).toMatch(/town/i);
-	});
-
-	test('a field with no spawn is an error', () => {
-		const d = errs(validateZone(zone({ type: 'field', spawns: [] }), catalogs));
-		expect(d.some((x) => /field/i.test(x.message))).toBe(true);
-	});
-
-	test('a town with no spawn is clean', () => {
-		expect(
-			errs(validateZone(zone({ type: 'town', spawns: [] }), catalogs)),
-		).toEqual([]);
-	});
-});
-
-describe('validateZone — placement & walkability', () => {
-	test('a floating spawn (no ground beneath) is an error', () => {
-		const d = errs(
-			validateZone(
-				zone({ spawns: [{ type: 'chaser', x: 2, y: 0 }] }),
-				catalogs,
-			),
-		);
-		expect(d.some((x) => /float/i.test(x.message))).toBe(true);
-		expect(d[0].cell).toEqual({ x: 2, y: 0 });
-	});
-
-	test('a spawn embedded in solid terrain is an error', () => {
-		const d = errs(
-			validateZone(
-				zone({ spawns: [{ type: 'chaser', x: 2, y: FLOOR - 3 }] }),
-				catalogs,
-			),
-		);
-		expect(d.some((x) => /solid/i.test(x.message))).toBe(true);
-	});
-
-	test('a box extending out of bounds is an error', () => {
-		const d = errs(
-			validateZone(
-				zone({ spawns: [{ type: 'chaser', x: W - 1, y: onGround }] }),
-				catalogs,
-			),
-		);
-		expect(d.some((x) => /grid|bounds|outside/i.test(x.message))).toBe(true);
-	});
-
-	test('a floating npc is an error', () => {
-		const z = zone({
-			npcs: [
-				{
-					id: 1,
-					kind: 'vendor',
-					name: 'Merchant',
-					x: 20,
-					y: 0,
-					w: 4,
-					h: BOX.h,
-				},
-			],
-		});
-		expect(
-			errs(validateZone(z, catalogs)).some((x) => /float/i.test(x.message)),
-		).toBe(true);
-	});
-
-	test('a portal clipping solid terrain is an error', () => {
-		const z = zone({
-			portals: [
-				{
-					x: 14,
-					y: FLOOR - 5,
-					w: 4,
-					h: 7,
-					target: 'town-01',
-					arrival: { x: 5, y: onGround },
-				},
-			],
-		});
-		expect(
-			errs(validateZone(z, catalogs)).some((x) => /solid/i.test(x.message)),
-		).toBe(true);
-	});
-});
-
-describe('validateZone — catalog integrity', () => {
-	test('duplicate catalog ids are an error', () => {
-		const dup = {
-			monsters: [
-				...monsters,
-				{ id: 'goblin-01', behavior: 'chaser' as const, name: 'Dupe' },
-			],
-			npcs,
-		};
-		const d = errs(validateZone(zone({}), dup));
-		expect(d.some((x) => /duplicate/i.test(x.message))).toBe(true);
-	});
-});
-
-describe('validateZoneSet — whole-set integrity', () => {
-	const portal = (target: string, arrival = { x: 5, y: onGround }): Portal => ({
+function portal(target: string, arrival = { x: 5, y: GROUND_Y }): Portal {
+	return {
 		x: 14,
 		y: FLOOR - 7,
 		w: 4,
 		h: 7,
 		target,
 		arrival,
+	};
+}
+
+const errors = (diagnostics: Diagnostic[]) =>
+	diagnostics.filter(({ severity }) => severity === 'error');
+const warnings = (diagnostics: Diagnostic[]) =>
+	diagnostics.filter(({ severity }) => severity === 'warning');
+
+describe('per-Zone validation', () => {
+	test('a grounded field spawn, NPC, and portal are clean', () => {
+		const valid = zone({
+			npcs: [
+				{
+					id: 1,
+					kind: 'vendor',
+					name: 'Vendor',
+					x: 20,
+					y: GROUND_Y,
+					w: 4,
+					h: BOX.h,
+				},
+			],
+			portals: [portal('unresolved-until-set-validation')],
+		});
+		expect(errors(validateZone(valid, catalogs))).toEqual([]);
 	});
 
-	test('a portal to an unknown Zone is an error', () => {
-		const field = zone({ id: 'field-01', portals: [portal('nowhere-99')] });
-		const d = errs(validateZoneSet([field], catalogs));
+	for (const [name, candidate, pattern] of [
+		['town with a monster spawn', zone({ type: 'town' }), /town/i],
+		['field without a monster spawn', zone({ spawns: [] }), /field/i],
+		[
+			'floating spawn',
+			zone({ spawns: [{ type: 'chaser', x: 2, y: 0 }] }),
+			/float/i,
+		],
+		[
+			'spawn embedded in terrain',
+			zone({ spawns: [{ type: 'chaser', x: 2, y: FLOOR - 3 }] }),
+			/solid/i,
+		],
+		[
+			'spawn extending beyond bounds',
+			zone({ spawns: [{ type: 'chaser', x: W - 1, y: GROUND_Y }] }),
+			/grid|bounds|outside/i,
+		],
+		[
+			'floating NPC',
+			zone({
+				npcs: [
+					{
+						id: 1,
+						kind: 'vendor',
+						name: 'Vendor',
+						x: 20,
+						y: 0,
+						w: 4,
+						h: BOX.h,
+					},
+				],
+			}),
+			/float/i,
+		],
+		[
+			'portal clipping terrain',
+			zone({ portals: [{ ...portal('target'), y: FLOOR - 5 }] }),
+			/solid/i,
+		],
+	] as const) {
+		test(`${name} is rejected`, () => {
+			const diagnostics = errors(validateZone(candidate, catalogs));
+			expect(diagnostics.some(({ message }) => pattern.test(message))).toBe(
+				true,
+			);
+		});
+	}
+
+	test('a town without monster spawns is clean', () => {
 		expect(
-			d.some((x) => /unknown/i.test(x.message) && x.zoneId === 'field-01'),
-		).toBe(true);
+			errors(validateZone(zone({ type: 'town', spawns: [] }), catalogs)),
+		).toEqual([]);
 	});
 
-	test('an arrival landing in solid terrain is an error', () => {
-		const field = zone({
-			id: 'field-01',
-			portals: [portal('town-01', { x: 5, y: FLOOR })],
-		});
-		const town = zone({
-			id: 'town-01',
-			type: 'town',
-			spawns: [],
-			portals: [portal('field-01')],
-		});
-		const d = errs(validateZoneSet([field, town], catalogs));
-		expect(d.some((x) => /arrival/i.test(x.message))).toBe(true);
-	});
-
-	test('mutual portals validate clean (no one-way warning)', () => {
-		const field = zone({ id: 'field-01', portals: [portal('town-01')] });
-		const town = zone({
-			id: 'town-01',
-			type: 'town',
-			spawns: [],
-			portals: [portal('field-01')],
-		});
-		const all = validateZoneSet([field, town], catalogs);
-		expect(errs(all)).toEqual([]);
-		expect(warns(all)).toEqual([]);
-	});
-
-	test('a one-way portal is a warning, not an error', () => {
-		const field = zone({ id: 'field-01', portals: [portal('town-01')] });
-		const town = zone({ id: 'town-01', type: 'town', spawns: [], portals: [] });
-		const all = validateZoneSet([field, town], catalogs);
-		expect(errs(all)).toEqual([]);
-		expect(warns(all).some((x) => /one-way|return/i.test(x.message))).toBe(
-			true,
-		);
+	test('duplicate ids in either catalog are rejected', () => {
+		for (const duplicateCatalogs of [
+			{ monsters: [...monsters, monsters[0]], npcs },
+			{ monsters, npcs: [...npcs, npcs[0]] },
+		]) {
+			expect(
+				errors(validateZone(zone(), duplicateCatalogs)).some(({ message }) =>
+					/duplicate/i.test(message),
+				),
+			).toBe(true);
+		}
 	});
 });
 
-describe('findOrphanGlyphs — header keys must be used in the grid', () => {
+describe('whole-set validation', () => {
+	test('unknown targets and invalid arrival placement are errors', () => {
+		const cases = [
+			{
+				zones: [zone({ portals: [portal('missing')] })],
+				pattern: /unknown/i,
+			},
+			{
+				zones: [
+					zone({ portals: [portal('town', { x: 5, y: FLOOR })] }),
+					zone({
+						id: 'town',
+						type: 'town',
+						spawns: [],
+						portals: [portal('field-a')],
+					}),
+				],
+				pattern: /arrival/i,
+			},
+			{
+				zones: [
+					zone({ portals: [portal('town', { x: W, y: GROUND_Y })] }),
+					zone({
+						id: 'town',
+						type: 'town',
+						spawns: [],
+						portals: [portal('field-a')],
+					}),
+				],
+				pattern: /arrival/i,
+			},
+		] as const;
+
+		for (const { zones, pattern } of cases)
+			expect(
+				errors(validateZoneSet([...zones], catalogs)).some(({ message }) =>
+					pattern.test(message),
+				),
+			).toBe(true);
+	});
+
+	test('mutual portals are clean while a one-way link is warning-only', () => {
+		const field = zone({ portals: [portal('town')] });
+		const town = zone({
+			id: 'town',
+			type: 'town',
+			spawns: [],
+			portals: [portal('field-a')],
+		});
+		const mutual = validateZoneSet([field, town], catalogs);
+		expect(errors(mutual)).toEqual([]);
+		expect(warnings(mutual)).toEqual([]);
+
+		const oneWay = validateZoneSet([field, { ...town, portals: [] }], catalogs);
+		expect(errors(oneWay)).toEqual([]);
+		expect(
+			warnings(oneWay).some(({ message }) => /one-way|return/i.test(message)),
+		).toBe(true);
+	});
+});
+
+describe('orphan glyph validation', () => {
 	const grid = ['..........', '....c.....', '##########'].join('\n');
-	const file = (header: string) => `${header}\n---\n${grid}`;
+	const file = (header: object) => `${JSON.stringify(header)}\n---\n${grid}`;
 
-	test('a declared spawn glyph that never appears in the grid is an error', () => {
-		const text = file('{"type":"field","spawns":{"c":"chaser","z":"chaser"}}');
-		const d = findOrphanGlyphs(text, 'f');
-		expect(d).toHaveLength(1);
-		expect(d[0].severity).toBe('error');
-		expect(d[0].zoneId).toBe('f');
-		expect(d[0].message).toContain("'z'");
-	});
-
-	test('a file whose every declared glyph is placed has no orphans', () => {
-		const text = file('{"type":"field","spawns":{"c":"chaser"}}');
-		expect(findOrphanGlyphs(text)).toEqual([]);
-	});
-
-	test('orphan npc and portal keys are flagged too', () => {
-		const text = file(
-			'{"type":"field","spawns":{"c":"chaser"},' +
-				'"npcs":{"M":"merchant"},' +
-				'"portals":{"P":{"target":"town-01","arrival":[1,1]}}}',
+	test('every unused declared entity glyph is reported', () => {
+		const diagnostics = findOrphanGlyphs(
+			file({
+				type: 'field',
+				spawns: { c: 'test-chaser', z: 'test-chaser' },
+				npcs: { n: 'test-vendor' },
+				portals: { p: { target: 'town', arrival: [1, 1] } },
+			}),
+			'field-a',
 		);
-		const d = findOrphanGlyphs(text);
-		expect(d).toHaveLength(2);
-		expect(d.map((x) => x.message).join(' ')).toContain("'M'");
-		expect(d.map((x) => x.message).join(' ')).toContain("'P'");
-		expect(d.every((x) => x.severity === 'error')).toBe(true);
+		expect(diagnostics.map(({ message }) => message)).toEqual(
+			expect.arrayContaining([
+				expect.stringContaining("'z'"),
+				expect.stringContaining("'n'"),
+				expect.stringContaining("'p'"),
+			]),
+		);
+		expect(
+			diagnostics.every(
+				({ severity, zoneId }) => severity === 'error' && zoneId === 'field-a',
+			),
+		).toBe(true);
 	});
 
-	test('a malformed file (no delimiter / bad JSON header) yields nothing', () => {
-		expect(findOrphanGlyphs('{} no delimiter here')).toEqual([]);
+	test('fully used headers and malformed documents produce no orphan diagnostics', () => {
+		expect(
+			findOrphanGlyphs(file({ type: 'field', spawns: { c: 'test-chaser' } })),
+		).toEqual([]);
+		expect(findOrphanGlyphs('{} no delimiter')).toEqual([]);
 		expect(findOrphanGlyphs('{not json\n---\n....')).toEqual([]);
 	});
 });

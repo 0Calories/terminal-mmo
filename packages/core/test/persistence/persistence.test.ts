@@ -1,7 +1,13 @@
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets';
 import { DEFAULT_WEAPON } from '../../src/combat';
-import { DEFAULT_COSMETICS, type Item } from '../../src/entities';
+import {
+	DEFAULT_COSMETICS,
+	DEFAULT_FORM_ID,
+	type Item,
+	LEGACY_FORM_IDS,
+	LEGACY_HAT_IDS,
+} from '../../src/entities';
 import {
 	emptySave,
 	migrateSaveCosmetics,
@@ -13,149 +19,173 @@ import {
 import { addSession, createServerWorld, zoneStateOf } from '../../src/world';
 
 function freshAvatar() {
-	const w = addSession(
-		createServerWorld({
-			zones: loadZones(),
-			start: 'town-01',
-			town: 'town-01',
-		}),
+	const zones = loadZones();
+	const town = zones.find((zone) => zone.type === 'town')?.id;
+	if (!town) throw new Error('authored assets need a Town fixture');
+	const world = addSession(
+		createServerWorld({ zones, start: town, town }),
 		1,
 		'Cypher',
 	);
-	const sa = zoneStateOf(w, 1)?.avatars.find((a) => a.sessionId === 1);
-	if (!sa) throw new Error('no avatar');
-	return sa;
+	const avatar = zoneStateOf(world, 1)?.avatars.find((a) => a.sessionId === 1);
+	if (!avatar) throw new Error('no avatar');
+	return avatar;
 }
 
-test('emptySave is a level-1 blank slate returning to the given Town', () => {
-	const s = emptySave('Neo', 'town-01');
-	expect(s).toEqual({
-		handle: 'Neo',
-		progress: { level: 1, xp: 0, gold: 0 },
-		inventory: [],
-		equippedWeapon: DEFAULT_WEAPON,
-		cosmetics: DEFAULT_COSMETICS,
-		lastTown: 'town-01',
-		bossDefeated: false,
+describe('Save schema', () => {
+	test('a new Save uses configured defaults and the supplied durable identity', () => {
+		expect(emptySave('Neo', 'safe-town')).toEqual({
+			handle: 'Neo',
+			progress: { level: 1, xp: 0, gold: 0 },
+			inventory: [],
+			equippedWeapon: DEFAULT_WEAPON,
+			cosmetics: DEFAULT_COSMETICS,
+			lastTown: 'safe-town',
+			bossDefeated: false,
+		});
+	});
+
+	test('Avatar → Save → restored Avatar round-trips every durable field', () => {
+		const avatar = freshAvatar();
+		avatar.progress = { level: 3, xp: 4, gold: 5 };
+		avatar.inventory = [
+			{
+				id: 7,
+				base: 'Test Blade',
+				slot: 'weapon',
+				rarity: 'rare',
+				affixes: [],
+			},
+		];
+		avatar.avatar.weapon = 9;
+		avatar.cosmetics = {
+			hue: 1,
+			hat: 'test-hat',
+			nameplate: 2,
+			form: 'test-form',
+		};
+		avatar.lastTown = 'durable-town';
+		avatar.bossDefeated = true;
+		avatar.log = ['transient'];
+		avatar.rngState = 987;
+		avatar.skillCooldowns = { skill: 2 };
+
+		const save = saveFromAvatar(avatar, 'fallback-town');
+		expect(save).toEqual({
+			handle: avatar.handle,
+			progress: avatar.progress,
+			inventory: avatar.inventory,
+			equippedWeapon: avatar.avatar.weapon,
+			cosmetics: avatar.cosmetics,
+			lastTown: avatar.lastTown,
+			bossDefeated: avatar.bossDefeated,
+		});
+		expect(restoredFromSave(save)).toEqual({
+			progress: save.progress,
+			inventory: save.inventory,
+			equippedWeapon: save.equippedWeapon,
+			cosmetics: save.cosmetics,
+			lastTown: save.lastTown,
+			bossDefeated: save.bossDefeated,
+		});
+	});
+
+	test('the spawn Town wins over the flush fallback', () => {
+		const avatar = freshAvatar();
+		avatar.lastTown = 'spawn-town';
+		expect(saveFromAvatar(avatar, 'fallback-town').lastTown).toBe('spawn-town');
+	});
+
+	test('restoration clamps untrusted cosmetics', () => {
+		const save: PlayerSave = {
+			...emptySave('Neo', 'town'),
+			cosmetics: {
+				hue: 999,
+				hat: -1 as unknown as string,
+				nameplate: 4.5,
+				form: 7 as unknown as string,
+			},
+		};
+		expect(restoredFromSave(save).cosmetics).toEqual(DEFAULT_COSMETICS);
 	});
 });
 
-test('a fresh Avatar seeds lastTown to its spawn Town, not the flush fallback', () => {
-	const save = saveFromAvatar(freshAvatar(), 'some-other-town');
-	expect(save.lastTown).toBe('town-01');
-	expect(save.bossDefeated).toBe(false);
-	expect(save.equippedWeapon).toBe(DEFAULT_WEAPON);
-});
+describe('legacy cosmetic migration', () => {
+	for (const [kind, ids, fallback] of [
+		['hat', LEGACY_HAT_IDS, ''],
+		['form', LEGACY_FORM_IDS, DEFAULT_FORM_ID],
+	] as const) {
+		test(`numeric ${kind} indexes map through the frozen compatibility table`, () => {
+			for (const [index, id] of ids.entries()) {
+				const cosmetics = migrateSaveCosmetics({
+					hue: 0,
+					hat: kind === 'hat' ? index : '',
+					nameplate: 0,
+					form: kind === 'form' ? index : DEFAULT_FORM_ID,
+				});
+				expect(cosmetics[kind]).toBe(id);
+			}
+		});
 
-test('restoredFromSave clamps out-of-range cosmetics at the trust boundary', () => {
-	const save: PlayerSave = {
-		...emptySave('Neo', 'town-01'),
-		cosmetics: {
-			hue: 999,
-			hat: -1 as unknown as string,
-			nameplate: 4.5,
-			form: 'buddy',
-		},
-	};
-	const restored = restoredFromSave(save);
-	expect(restored.cosmetics).toEqual(DEFAULT_COSMETICS);
-});
+		test(`out-of-range numeric ${kind} indexes use the compatibility fallback`, () => {
+			for (const index of [-1, ids.length, 250]) {
+				const cosmetics = migrateSaveCosmetics({
+					hue: 0,
+					hat: kind === 'hat' ? index : '',
+					nameplate: 0,
+					form: kind === 'form' ? index : DEFAULT_FORM_ID,
+				});
+				expect(cosmetics[kind]).toBe(fallback);
+			}
+		});
+	}
 
-test('migrateSaveCosmetics maps a legacy numeric hat index through LEGACY_HAT_IDS', () => {
-	const base = { hue: 0, nameplate: 0, form: 'buddy' };
-	expect(migrateSaveCosmetics({ ...base, hat: 1 })).toEqual({
-		...base,
-		hat: 'cap',
-	});
-	expect(migrateSaveCosmetics({ ...base, hat: 5 })).toEqual({
-		...base,
-		hat: 'party-hat',
-	});
-	expect(migrateSaveCosmetics({ ...base, hat: 0 })).toEqual({
-		...base,
-		hat: '',
-	});
-});
-
-test('migrateSaveCosmetics maps an out-of-range legacy hat index to the empty (no-hat) id', () => {
-	const base = { hue: 0, nameplate: 0, form: 'buddy' };
-	expect(migrateSaveCosmetics({ ...base, hat: 250 })).toEqual({
-		...base,
-		hat: '',
-	});
-	expect(migrateSaveCosmetics({ ...base, hat: -1 })).toEqual({
-		...base,
-		hat: '',
+	test('already-migrated string ids pass through unchanged', () => {
+		const cosmetics = {
+			hue: 0,
+			hat: 'custom-hat',
+			nameplate: 0,
+			form: 'custom-form',
+		};
+		expect(migrateSaveCosmetics(cosmetics)).toEqual(cosmetics);
 	});
 });
 
-test('migrateSaveCosmetics maps a legacy numeric form index through LEGACY_FORM_IDS', () => {
-	const base = { hue: 0, hat: '', nameplate: 0 };
-
-	expect(migrateSaveCosmetics({ ...base, form: 0 })).toEqual({
-		...base,
-		form: 'buddy',
-	});
-});
-
-test('migrateSaveCosmetics maps an out-of-range legacy form index to the default Form', () => {
-	const base = { hue: 0, hat: '', nameplate: 0 };
-	expect(migrateSaveCosmetics({ ...base, form: 250 })).toEqual({
-		...base,
-		form: 'buddy',
-	});
-	expect(migrateSaveCosmetics({ ...base, form: -1 })).toEqual({
-		...base,
-		form: 'buddy',
-	});
-});
-
-test('migrateSaveCosmetics is a no-op for an already-migrated string hat + form', () => {
-	const c = { hue: 0, hat: 'cap', nameplate: 0, form: 'buddy' };
-	expect(migrateSaveCosmetics(c)).toEqual(c);
-});
-
-test('restoredFromSave migrates a numeric-hat + numeric-form Save written before ADR 0031', () => {
-	const save = {
-		...emptySave('Neo', 'town-01'),
-		cosmetics: { hue: 2, hat: 3, nameplate: 1, form: 0 },
-	} as unknown as PlayerSave;
-	const restored = restoredFromSave(save);
-	expect(restored.cosmetics).toEqual({
-		hue: 2,
-		hat: 'wizard',
-		nameplate: 1,
-		form: 'buddy',
-	});
-});
-
-test('a restored inventory keeps saved Items and mints fresh ids past the highest', () => {
+test('restored inventories retain Items and mint ids beyond the durable maximum', () => {
 	const items: Item[] = [
-		{ id: 4, base: 'Iron Sword', slot: 'weapon', rarity: 'rare', affixes: [] },
-		{ id: 9, base: 'Oak Shield', slot: 'armor', rarity: 'common', affixes: [] },
+		{ id: 4, base: 'Test Sword', slot: 'weapon', rarity: 'rare', affixes: [] },
+		{
+			id: 9,
+			base: 'Test Shield',
+			slot: 'armor',
+			rarity: 'common',
+			affixes: [],
+		},
 	];
-	const save: PlayerSave = { ...emptySave('Neo', 'town-01'), inventory: items };
-	const w = addSession(
-		createServerWorld({
-			zones: loadZones(),
-			start: 'town-01',
-			town: 'town-01',
-		}),
+	const zones = loadZones();
+	const town = zones.find((zone) => zone.type === 'town')?.id;
+	if (!town) throw new Error('authored assets need a Town fixture');
+	const restored = restoredFromSave({
+		...emptySave('Neo', town),
+		inventory: items,
+	});
+	const world = addSession(
+		createServerWorld({ zones, start: town, town }),
 		1,
 		'Neo',
 		undefined,
 		undefined,
-		restoredFromSave(save),
+		restored,
 	);
-	const sa = zoneStateOf(w, 1)?.avatars.find((a) => a.sessionId === 1);
-	expect(sa?.inventory).toEqual(items);
-	expect(sa?.nextId).toBe(10);
+	const avatar = zoneStateOf(world, 1)?.avatars.find((a) => a.sessionId === 1);
+	expect(avatar?.inventory).toEqual(items);
+	expect(avatar?.nextId).toBe(Math.max(...items.map((item) => item.id)) + 1);
 });
 
-test('registryFromSaves is case-insensitive on the reverse Handle index', () => {
-	const reg = registryFromSaves([
-		['key-a', { ...emptySave('NeoOne', 'town-01') }],
+test('registry restoration indexes Handles case-insensitively', () => {
+	const registry = registryFromSaves([
+		['key-a', emptySave('MixedCase', 'town')],
 	]);
-	expect(reg.handleByKey['key-a']).toBe('NeoOne');
-	expect(reg.keyByHandle.neoone).toBe('key-a');
+	expect(registry.handleByKey['key-a']).toBe('MixedCase');
+	expect(registry.keyByHandle.mixedcase).toBe('key-a');
 });

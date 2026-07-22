@@ -102,7 +102,7 @@ import {
 
 const mag = (k: Kick) => Math.max(Math.abs(k.x), Math.abs(k.y));
 
-test('applyKick clamps each axis to ±maxCells (≤2 cells)', () => {
+test('applyKick clamps each axis to its configured maximum', () => {
 	const k = applyKick(NO_KICK, 100, -100);
 	expect(k.x).toBe(CAMERA_KICK.maxCells);
 	expect(k.y).toBe(-CAMERA_KICK.maxCells);

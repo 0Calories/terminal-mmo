@@ -55,7 +55,7 @@ XY
 ZW
 `;
 
-test('spriteFromDoc carries the full effective anchor map, not just grip (#351 QA round 5)', () => {
+test('spriteFromDoc carries the full effective anchor map rather than only grip', () => {
 	const { doc, diagnostics } = parseSpriteFile(ANCHORED, 'anchored');
 	expect(diagnostics).toEqual([]);
 
@@ -226,7 +226,7 @@ EF
 GH
 `;
 
-test('compileWeaponSprite: the Default frame is the rest sprite; swing is a 3-frame phase array (ADR 0036)', () => {
+test('compileWeaponSprite: the default frame is rest and swing maps to attack phases', () => {
 	const { doc, diagnostics } = parseSpriteFile(WEAPON, 'sword');
 
 	expect(diagnostics.some((d) => d.severity === 'error')).toBe(false);

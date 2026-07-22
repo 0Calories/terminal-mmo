@@ -16,7 +16,7 @@ function blankState(): SpriteEditorState {
 	return initSpriteEditor(emptySpriteDoc('test', 'hat'));
 }
 
-describe('eyedropAt — sample the key, not the RGBA (spec #397)', () => {
+describe('eyedropAt — sample the key, not the RGBA', () => {
 	test('a lit Pixel yields its foreground key as the active ink', () => {
 		let s = setInk(blankState(), colorInk('g'));
 		s = paintPixel(s, 3, 2);

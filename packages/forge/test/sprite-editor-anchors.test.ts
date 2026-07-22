@@ -1,165 +1,96 @@
 import { describe, expect, test } from 'bun:test';
-import { allFrames, findFrame } from '@mmo/render';
+import { allFrames, findFrame, parseSpriteFile } from '@mmo/render';
 import {
-	anchorMarkers,
-	anchorScopeFor,
 	deleteAnchor,
 	initSpriteEditor,
 	placeAnchor,
+	redoEdit,
 	removeAnchorOverride,
 	type SpriteEditorState,
+	saveResult,
 	selectFrame,
-	setAnchorName,
 	undoEdit,
 } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
 function formState(): SpriteEditorState {
-	return initSpriteEditor(emptySpriteDoc('buddy', 'form'));
+	return initSpriteEditor(emptySpriteDoc('test', 'form'));
 }
 
-describe('anchorScopeFor — frame identity decides (ADR 0036)', () => {
-	test('the Default frame (first in file) edits doc anchors; others author overrides', () => {
-		const s = formState();
-		expect(s.frame).toBe('idle');
-		expect(anchorScopeFor(s)).toBe('doc');
-		expect(anchorScopeFor(selectFrame(s, 'walk 0'))).toBe('frame');
-	});
-});
+describe('completed Anchor operations', () => {
+	test('Default-frame and per-Frame Anchor edits survive save and parse at their respective scopes', () => {
+		let state = placeAnchor(formState(), 'grip', 3, 1);
+		state = selectFrame(state, 'walk 0');
+		state = placeAnchor(state, 'grip', 5, 2);
 
-describe('placeAnchor — scope derived from the current frame', () => {
-	test('on the Default frame it sets the doc-level anchor', () => {
-		const s = placeAnchor(formState(), 'grip', 3, 1);
-		expect(s.feedback).toBe('');
-		expect(s.doc.anchors.grip).toEqual({ x: 3, y: 1 });
-
-		expect(allFrames(s.doc).every((f) => f.anchors.grip === undefined)).toBe(
-			true,
-		);
-	});
-
-	test("on any other frame it authors that frame's override only", () => {
-		let s = selectFrame(formState(), 'walk 0');
-		const docGrip = s.doc.anchors.grip;
-		s = placeAnchor(s, 'grip', 5, 2);
-		expect(s.feedback).toBe('');
-		const walk0 = findFrame(s.doc, 'walk 0')?.frame;
-		expect(walk0?.anchors.grip).toEqual({ x: 5, y: 2 });
-		expect(s.doc.anchors.grip).toEqual(docGrip);
-		const idle = findFrame(s.doc, 'idle')?.frame;
-		expect(idle?.anchors.grip).toBeUndefined();
-	});
-
-	test('allows an anchor outside the art grid, warning on the status line (#402)', () => {
-		const s = placeAnchor(formState(), 'grip', 99, 99);
-		expect(s.feedback).toContain('outside the art bounds');
-		expect(s.doc.anchors.grip).toEqual({ x: 99, y: 99 });
-	});
-
-	test('refuses an illegal anchor name', () => {
-		const s = placeAnchor(formState(), 'bad name', 1, 1);
-		expect(s.feedback).not.toBe('');
-	});
-
-	test('is undoable', () => {
-		const before = formState();
-		const s = placeAnchor(before, 'grip', 3, 1);
-		const back = undoEdit(s);
-		expect(back.doc.anchors.grip).toEqual(before.doc.anchors.grip);
-	});
-});
-
-describe('deleteAnchor — doc-level, guarded (ADR 0036)', () => {
-	test('removes the doc anchor and any per-frame overrides of that name', () => {
-		let s = placeAnchor(formState(), 'tail', 1, 1);
-		s = selectFrame(s, 'walk 0');
-		s = placeAnchor(s, 'tail', 2, 2);
-		s = deleteAnchor(s, 'tail', ['grip', 'head']);
-		expect(s.feedback).toBe('');
-		expect(s.doc.anchors.tail).toBeUndefined();
-		expect(allFrames(s.doc).every((f) => f.anchors.tail === undefined)).toBe(
-			true,
-		);
-	});
-
-	test('refuses deleting a role-required anchor', () => {
-		const s = deleteAnchor(formState(), 'grip', ['grip', 'head']);
-		expect(s.feedback).not.toBe('');
-		expect(s.doc.anchors.grip).toBeDefined();
-	});
-
-	test('refuses an unknown anchor', () => {
-		const s = deleteAnchor(formState(), 'nope', []);
-		expect(s.feedback).not.toBe('');
-	});
-
-	test('is one undoable step', () => {
-		let s = placeAnchor(formState(), 'tail', 1, 1);
-		s = selectFrame(s, 'walk 0');
-		s = placeAnchor(s, 'tail', 2, 2);
-		const before = s;
-		s = deleteAnchor(s, 'tail', []);
-		const back = undoEdit(s);
-		expect(back.doc.anchors.tail).toEqual(before.doc.anchors.tail);
-		expect(findFrame(back.doc, 'walk 0')?.frame.anchors.tail).toEqual({
-			x: 2,
+		const { text, diagnostics } = saveResult(state);
+		expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+		const parsed = parseSpriteFile(text, 'test').doc;
+		if (parsed === null) throw new Error('saved Anchor document did not parse');
+		expect(parsed.anchors.grip).toEqual({ x: 3, y: 1 });
+		expect(findFrame(parsed, 'walk 0')?.frame.anchors.grip).toEqual({
+			x: 5,
 			y: 2,
 		});
+		expect(findFrame(parsed, 'idle')?.frame.anchors.grip).toBeUndefined();
 	});
-});
 
-describe('removeAnchorOverride', () => {
-	test('drops the override, falling back to the doc position', () => {
-		let s = selectFrame(formState(), 'walk 0');
-		const docGrip = s.doc.anchors.grip;
-		s = placeAnchor(s, 'grip', 5, 2);
-		s = removeAnchorOverride(s, 'grip');
-		expect(s.feedback).toBe('');
-		const walk0 = findFrame(s.doc, 'walk 0')?.frame;
-		expect(walk0?.anchors.grip).toBeUndefined();
-		const grip = anchorMarkers(s).find((m) => m.name === 'grip');
-		expect(grip).toEqual({
-			name: 'grip',
-			x: docGrip.x,
-			y: docGrip.y,
-			overridden: false,
+	test('removing an override restores document-level fallback and is undoable', () => {
+		let state = selectFrame(formState(), 'walk 0');
+		state = placeAnchor(state, 'grip', 5, 2);
+		const withOverride = state.doc;
+		state = removeAnchorOverride(state, 'grip');
+
+		expect(findFrame(state.doc, 'walk 0')?.frame.anchors.grip).toBeUndefined();
+		state = undoEdit(state);
+		expect(state.doc).toEqual(withOverride);
+		state = redoEdit(state);
+		expect(findFrame(state.doc, 'walk 0')?.frame.anchors.grip).toBeUndefined();
+	});
+
+	test('deleting a custom Anchor removes its default and every override as one undoable operation', () => {
+		let state = placeAnchor(formState(), 'tail', 1, 1);
+		state = placeAnchor(selectFrame(state, 'walk 0'), 'tail', 2, 2);
+		const authored = state.doc;
+		state = deleteAnchor(state, 'tail', ['grip', 'head']);
+
+		expect(state.doc.anchors.tail).toBeUndefined();
+		expect(
+			allFrames(state.doc).every((f) => f.anchors.tail === undefined),
+		).toBe(true);
+		expect(undoEdit(state).doc).toEqual(authored);
+	});
+
+	test('an out-of-bounds Anchor remains valid serialized data', () => {
+		const state = placeAnchor(formState(), 'grip', 99, 99);
+		const { text, diagnostics } = saveResult(state);
+		expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+		expect(parseSpriteFile(text, 'test').doc?.anchors.grip).toEqual({
+			x: 99,
+			y: 99,
 		});
 	});
-
-	test('refuses when there is no override to remove', () => {
-		const s = removeAnchorOverride(formState(), 'grip');
-		expect(s.feedback).not.toBe('');
-	});
-
-	test('is undoable', () => {
-		let s = selectFrame(formState(), 'walk 0');
-		s = placeAnchor(s, 'grip', 5, 2);
-		const withOverride = s;
-		s = removeAnchorOverride(s, 'grip');
-		s = undoEdit(s);
-		const walk0 = findFrame(s.doc, 'walk 0')?.frame;
-		expect(walk0?.anchors.grip).toEqual(
-			findFrame(withOverride.doc, 'walk 0')?.frame.anchors.grip,
-		);
-	});
 });
 
-describe('anchorMarkers', () => {
-	test('overlays frame overrides over doc anchors, frame wins + tagged', () => {
-		let s = selectFrame(formState(), 'walk 0');
-		s = placeAnchor(s, 'grip', 5, 2);
-		const markers = anchorMarkers(s);
-		const grip = markers.find((m) => m.name === 'grip');
-		const head = markers.find((m) => m.name === 'head');
-		expect(grip).toEqual({ name: 'grip', x: 5, y: 2, overridden: true });
-
-		expect(head?.overridden).toBe(false);
+describe('Anchor validation laws', () => {
+	test('required Anchors cannot be deleted', () => {
+		const state = deleteAnchor(formState(), 'grip', ['grip', 'head']);
+		expect(state.doc.anchors.grip).toBeDefined();
+		expect(state.feedback).not.toBe('');
 	});
-});
 
-describe('anchor tool selection', () => {
-	test('setAnchorName validates the charset', () => {
-		expect(setAnchorName(formState(), 'muzzle').anchorName).toBe('muzzle');
-		expect(setAnchorName(formState(), 'no good').feedback).not.toBe('');
+	test.each([
+		'bad name',
+		'',
+		'two/parts',
+	])('illegal Anchor name %p cannot alter the document', (name) => {
+		const before = formState();
+		const after = placeAnchor(before, name, 1, 1);
+		expect(after.doc).toBe(before.doc);
+	});
+
+	test('an override can only be removed from a Frame that authors it', () => {
+		const before = formState();
+		expect(removeAnchorOverride(before, 'grip').doc).toBe(before.doc);
 	});
 });

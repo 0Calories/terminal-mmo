@@ -61,9 +61,59 @@ A from-source (`dev`) client defaults to the local dev server, since a deployed
 server rejects a `dev` client at its version gate (ADR 0012). Set `MMO_SERVER` to
 override the target.
 
+## Engineering test strategy
+
+Test at the highest deterministic seam that owns the behavior:
+
+- Use a focused pure law in `@mmo/core` for simulation rules and invariants.
+- Use a package integration test when the behavior crosses public modules within
+  one package, such as protocol encoding or render composition.
+- Use an in-memory stack scenario only when the behavior must cross client,
+  protocol, server runtime, and authoritative World boundaries.
+
+Keep one happy-path proof at that seam instead of repeating it at every layer.
+Add narrower tests only for distinct edge cases. Prefer relational and
+configuration-derived outcomes over copied literals so tests remain valid when
+balanced values change.
+
+### Forge interactive terminal check
+
+Forge's headless tests verify authored documents, input parity, modal completion,
+and degradation state. They cannot prove how a terminal emulator renders tool
+glyphs and colours or how its native mouse capture behaves during a real drag.
+Before shipping Forge interaction or chrome changes, run these in a real terminal:
+
+```bash
+bun run forge sprite glyphs
+bun run forge sprite edit hat/<sprite-id>
+```
+
+Confirm that tool glyphs occupy one column without tofu, colours and transparent
+areas remain legible, keyboard focus is visible, and mouse press/drag/release is
+continuous when the pointer crosses the canvas and preview pane.
+
+## Canonical visual golden
+
+`packages/client/test/golden/playfield.txt` is the one broad pixel-level review
+artifact. It renders real shipped Sprite files in a composed scene with a manual
+clock and seeded randomness, so repeated runs are byte-for-byte deterministic.
+
+When the golden test fails, inspect the text diff first. Fix the rendering or
+asset regression when the visual change was unintended. When the change is
+intentional, regenerate it with:
+
+```bash
+bun run test:golden:update
+```
+
+Review the regenerated diff before accepting it; regeneration records approval
+of the new broad scene, not proof that every changed glyph is correct. Keep other
+rendering tests semantic—do not add component-level pixel snapshots.
+
 ## Conventions
 
 - Game logic is pure/deterministic in `@mmo/core` so client and server can't
   diverge. Test behavior there, not rendering.
-- Design docs are the source of truth: [`CONTEXT.md`](./CONTEXT.md) (glossary),
-  [`docs/PRD.md`](./docs/PRD.md), [`docs/adr/`](./docs/adr/).
+- Design docs are the source of truth: [`CONTEXT.md`](./CONTEXT.md) (glossary)
+  and accepted [`docs/adr/`](./docs/adr/) (product scope and architecture
+  decisions).

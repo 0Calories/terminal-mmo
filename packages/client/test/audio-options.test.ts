@@ -9,7 +9,7 @@ import {
 	volumeBar,
 } from '../src/ui/audio-options';
 
-test('arrows map to move (up/down) and adjust (left/right) by a volume step', () => {
+test('audio keys map to navigation, configured adjustment, mute, close, or no action', () => {
 	expect(audioKeyAction('up')).toEqual({ kind: 'move', delta: -1 });
 	expect(audioKeyAction('down')).toEqual({ kind: 'move', delta: 1 });
 	expect(audioKeyAction('left')).toEqual({
@@ -20,46 +20,44 @@ test('arrows map to move (up/down) and adjust (left/right) by a volume step', ()
 		kind: 'adjust',
 		delta: VOLUME_STEP,
 	});
-});
-
-test('m toggles mute; o and escape close; anything else is inert', () => {
 	expect(audioKeyAction('m')).toEqual({ kind: 'toggleMute' });
-	expect(audioKeyAction('o')).toEqual({ kind: 'close' });
 	expect(audioKeyAction('escape')).toEqual({ kind: 'close' });
 	expect(audioKeyAction('z')).toEqual({ kind: 'none' });
 });
 
-test('selection clamps within the row range, never wrapping past the ends', () => {
+test('selection clamps to the configured audio rows', () => {
 	expect(clampSelection(0, -1)).toBe(0);
 	expect(clampSelection(0, 1)).toBe(1);
 	expect(clampSelection(AUDIO_ROWS.length - 1, 1)).toBe(AUDIO_ROWS.length - 1);
 });
 
-test('volumeBar fills proportionally and shows a percentage', () => {
-	expect(volumeBar(1, 10)).toBe('██████████ 100%');
-	expect(volumeBar(0, 10)).toBe('░░░░░░░░░░ 0%');
-	expect(volumeBar(0.5, 10)).toBe('█████░░░░░ 50%');
-});
-
-test('rows list master + the three voiced buses, focusing the selected one', () => {
-	const rows = audioOptionsRows(AUDIO_DEFAULTS, 1);
-	expect(rows.map((r) => r.label)).toEqual([
-		'Master',
-		'Combat',
-		'Movement',
-		'UI',
+test('volume bars preserve width and report their proportional value', () => {
+	const empty = volumeBar(0, 10);
+	const half = volumeBar(0.5, 10);
+	const full = volumeBar(1, 10);
+	expect(
+		new Set([empty, half, full].map((bar) => bar.split(' ')[0].length)).size,
+	).toBe(1);
+	expect([empty, half, full]).toEqual([
+		expect.stringContaining('0%'),
+		expect.stringContaining('50%'),
+		expect.stringContaining('100%'),
 	]);
-	expect(rows[1].focused).toBe(true);
-	expect(rows[0].focused).toBe(false);
-	expect(rows[0].value).toContain('100%');
 });
 
-test('a row reflects its bus volume', () => {
-	const prefs = {
-		...AUDIO_DEFAULTS,
-		buses: { combat: 0.5, movement: 1, ui: 1 },
-	};
-	const rows = audioOptionsRows(prefs, 0);
-	expect(rows[1].label).toBe('Combat');
-	expect(rows[1].value).toContain('50%');
+test('audio rows mirror configuration and expose one focused row', () => {
+	const rows = audioOptionsRows(AUDIO_DEFAULTS, 1);
+	expect(rows).toHaveLength(AUDIO_ROWS.length);
+	expect(rows.filter((row) => row.focused)).toHaveLength(1);
+	expect(rows[1].focused).toBe(true);
+
+	const changed = audioOptionsRows(
+		{
+			...AUDIO_DEFAULTS,
+			buses: { ...AUDIO_DEFAULTS.buses, combat: 0.5 },
+		},
+		0,
+	);
+	const combat = AUDIO_ROWS.findIndex((row) => row.key === 'combat');
+	expect(changed[combat].value).toContain('50%');
 });

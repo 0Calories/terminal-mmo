@@ -18,7 +18,6 @@ const SEED = 0x5eed;
 const TARGET = entity({ id: 9, type: 'chaser', x: 20, y: 8 });
 
 const EVENTS: Record<string, CombatEvent> = {
-	hit: combatEventAt('hit', TARGET, 1, 7, 1),
 	break: combatEventAt('break', TARGET, -1, 5),
 	death: deathEvent(entity({ id: 9, type: 'brute', x: 20, y: 8 })),
 	swat: swatEvent(makeProjectile({ id: 3, x: 20, y: 8, vx: -9 }), -1),

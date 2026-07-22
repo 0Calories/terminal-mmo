@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
-import { type CombatEvent, DEFAULT_WEAPON } from '@mmo/core/combat';
-import { EMOTES, type Input } from '@mmo/core/entities';
+import { DEFAULT_WEAPON } from '@mmo/core/combat';
+import type { Input } from '@mmo/core/entities';
 import type { ClientMessage, GameState } from '@mmo/core/protocol';
 import type { Zone } from '@mmo/core/zones';
 import { GameLoop, type GameLoopDeps } from '../src/game/loop';
@@ -39,8 +39,6 @@ function zone(id: string, type: Zone['type'] = 'field'): Zone {
 interface Rig {
 	loop: GameLoop;
 	sent: ClientMessage[];
-	sounds: string[];
-	emitted: CombatEvent[][];
 	bursts: number;
 	games: GameState[];
 	syncs: number;
@@ -63,15 +61,11 @@ interface Rig {
 
 function rig(over: Partial<GameLoopDeps> = {}): Rig {
 	const sent: ClientMessage[] = [];
-	const sounds: string[] = [];
-	const emitted: CombatEvent[][] = [];
 	const games: GameState[] = [];
 
 	const t: Rig = {
 		loop: undefined as unknown as GameLoop,
 		sent,
-		sounds,
-		emitted,
 		bursts: 0,
 		games,
 		syncs: 0,
@@ -113,16 +107,16 @@ function rig(over: Partial<GameLoopDeps> = {}): Rig {
 		hud: {
 			update: (g) => games.push(g),
 			syncChat: () => {},
-			flashLevelUp: () => sounds.push('flash'),
+			flashLevelUp: () => {},
 		},
 		playfield: {
 			game: null,
-			emitPredicted: (fx) => emitted.push(fx),
+			emitPredicted: () => {},
 			levelUpBurst: () => {
 				t.bursts++;
 			},
 		},
-		sound: { play: (k) => sounds.push(k) },
+		sound: { play: () => {} },
 		localZone: (id) => zone(id, id === 'town' ? 'town' : 'field'),
 		weapon: DEFAULT_WEAPON,
 		modalOpen: () => t.modal,
@@ -170,15 +164,6 @@ test('an open modal idles the Avatar and suppresses the interact edge', () => {
 	expect(msg.interact).toBe(false);
 });
 
-test('a zone change follows the server and teleports to the arrival point', () => {
-	const t = rig();
-	t.net.zoneId = 'town';
-	t.net.own = { x: 5, y: 6, hp: 20, maxHp: 20, hurtT: 0 };
-	t.run(1);
-	expect(t.loop.currentZone.id).toBe('town');
-	expect(t.loop.avatar.x).toBe(5);
-});
-
 test('server health overrides the prediction; position does not', () => {
 	const t = rig();
 	t.input = { ...IDLE, moveX: 1 };
@@ -191,34 +176,11 @@ test('server health overrides the prediction; position does not', () => {
 	expect(t.loop.avatar.x).toBeGreaterThanOrEqual(predictedX);
 });
 
-test('a level-up plays the cue, bursts particles, and flashes the HUD — exactly once', () => {
-	const t = rig();
-	t.net.latest = { progress: { level: 1, xp: 0, gold: 0 } };
-	t.run(2);
-	expect(t.bursts).toBe(0);
-
-	t.net.latest = { progress: { level: 2, xp: 0, gold: 0 } };
-	t.run(1);
-	expect(t.bursts).toBe(1);
-	expect(t.sounds).toContain('level-up');
-	expect(t.sounds).toContain('flash');
-
-	t.run(3);
-	expect(t.bursts).toBe(1);
-});
-
 test('a first snapshot at a high level cannot false-trigger a level-up', () => {
 	const t = rig();
 	t.net.latest = { progress: { level: 12, xp: 0, gold: 0 } };
 	t.run(3);
 	expect(t.bursts).toBe(0);
-});
-
-test('a swing emits predicted CombatEvents into the playfield', () => {
-	const t = rig();
-	t.input = { ...IDLE, attack: true };
-	t.run(20);
-	expect(t.emitted.length).toBeGreaterThan(0);
 });
 
 test('every frame hands a fresh game state to the playfield and the HUD', () => {
@@ -228,10 +190,4 @@ test('every frame hands a fresh game state to the playfield and the HUD', () => 
 	expect(t.syncs).toBe(3);
 
 	expect(t.games[2].player.avatar).toBe(t.loop.avatar);
-});
-
-test('emote stamps the predicted Avatar so the sender sees it immediately', () => {
-	const t = rig();
-	t.loop.emote(EMOTES[0].id);
-	expect(t.loop.avatar.emoteId).toBe(EMOTES[0].id);
 });

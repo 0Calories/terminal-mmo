@@ -4,8 +4,8 @@ A persistent PvE side-scrolling MMORPG played entirely in the terminal —
 "MapleStory in a terminal," for developers. Pet project.
 
 > **Design docs are the source of truth:**
-> [`CONTEXT.md`](./CONTEXT.md) (glossary) · [`docs/PRD.md`](./docs/PRD.md) ·
-> [`docs/adr/`](./docs/adr/) (architecture decisions).
+> [`CONTEXT.md`](./CONTEXT.md) (glossary) · accepted
+> [`docs/adr/`](./docs/adr/) (product scope and architecture decisions).
 
 ## Play
 

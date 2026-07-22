@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
 import {
 	clamp01,
 	filledCells,
@@ -7,67 +7,79 @@ import {
 	xpProgress,
 } from '../../src/progression';
 
-test('fillRatio is the clamped fraction, guarding bad maxima', () => {
-	expect(fillRatio(50, 100)).toBe(0.5);
-	expect(fillRatio(0, 100)).toBe(0);
-	expect(fillRatio(100, 100)).toBe(1);
-	expect(fillRatio(150, 100)).toBe(1);
-	expect(fillRatio(-10, 100)).toBe(0);
-	expect(fillRatio(10, 0)).toBe(0);
-	expect(fillRatio(10, -5)).toBe(0);
-	expect(fillRatio(10, Number.NaN)).toBe(0);
+describe('bar ratio laws', () => {
+	for (const [name, value, expected] of [
+		['interior', 0.25, 0.25],
+		['below zero', -1, 0],
+		['above one', 2, 1],
+		['positive infinity', Number.POSITIVE_INFINITY, 1],
+		['negative infinity', Number.NEGATIVE_INFINITY, 0],
+		['NaN', Number.NaN, 0],
+	] as const) {
+		test(`clamp01 handles ${name}`, () =>
+			expect(clamp01(value)).toBe(expected));
+	}
+
+	for (const [current, maximum, expected] of [
+		[50, 100, 0.5],
+		[0, 100, 0],
+		[100, 100, 1],
+		[150, 100, 1],
+		[-10, 100, 0],
+		[10, 0, 0],
+		[10, -5, 0],
+		[10, Number.NaN, 0],
+	] as const) {
+		test(`fillRatio(${current}, ${maximum}) = ${expected}`, () => {
+			expect(fillRatio(current, maximum)).toBe(expected);
+		});
+	}
 });
 
-test('clamp01 pins to [0,1] and tames non-finite input', () => {
-	expect(clamp01(0.25)).toBe(0.25);
-	expect(clamp01(-1)).toBe(0);
-	expect(clamp01(2)).toBe(1);
-	expect(clamp01(Number.POSITIVE_INFINITY)).toBe(1);
-	expect(clamp01(Number.NEGATIVE_INFINITY)).toBe(0);
-	expect(clamp01(Number.NaN)).toBe(0);
+test('filledCells rounds interior values while preserving empty/full endpoints', () => {
+	for (const [ratio, width, expected] of [
+		[0, 10, 0],
+		[1, 10, 10],
+		[0.01, 10, 1],
+		[0.99, 10, 9],
+		[0.44, 10, 4],
+		[0.46, 10, 5],
+		[2, 10, 10],
+		[-1, 10, 0],
+		[0.5, 0, 0],
+	] as const)
+		expect(filledCells(ratio, width)).toBe(expected);
 });
 
-test('filledCells rounds to the nearest cell', () => {
-	expect(filledCells(0.5, 10)).toBe(5);
-	expect(filledCells(0, 10)).toBe(0);
-	expect(filledCells(1, 10)).toBe(10);
-	expect(filledCells(0.44, 10)).toBe(4);
-	expect(filledCells(0.46, 10)).toBe(5);
-	expect(filledCells(2, 10)).toBe(10);
-	expect(filledCells(-1, 10)).toBe(0);
-	expect(filledCells(0.5, 0)).toBe(0);
-});
+describe('XP bar laws', () => {
+	test('progress is derived from the configured next-level threshold', () => {
+		const level = Math.min(2, PROGRESSION.levelCap - 1);
+		const needed = PROGRESSION.xpBase * level;
+		const progress = xpProgress(level, needed / 4);
+		expect(progress).toEqual({
+			current: needed / 4,
+			needed,
+			ratio: 0.25,
+			atCap: false,
+		});
+	});
 
-test('filledCells keeps a pip alive near-empty and a gap open near-full', () => {
-	expect(filledCells(0.01, 10)).toBe(1);
-	expect(filledCells(0.99, 10)).toBe(9);
-	expect(filledCells(0, 10)).toBe(0);
-	expect(filledCells(1, 10)).toBe(10);
-});
+	test('banked XP clamps into the current rung', () => {
+		const level = Math.min(2, PROGRESSION.levelCap - 1);
+		const needed = PROGRESSION.xpBase * level;
+		expect(xpProgress(level, Number.MAX_SAFE_INTEGER)).toMatchObject({
+			current: needed,
+			ratio: 1,
+		});
+		expect(xpProgress(level, -1)).toMatchObject({ current: 0, ratio: 0 });
+	});
 
-test('xpProgress reports fraction toward the next level at level 1', () => {
-	const need = PROGRESSION.xpBase * 1;
-	const at = xpProgress(1, 10);
-	expect(at.needed).toBe(need);
-	expect(at.current).toBe(10);
-	expect(at.ratio).toBe(10 / need);
-	expect(at.atCap).toBe(false);
-});
-
-test('xpProgress clamps banked XP into [0, needed]', () => {
-	const over = xpProgress(2, 1_000_000);
-	expect(over.needed).toBe(PROGRESSION.xpBase * 2);
-	expect(over.current).toBe(over.needed);
-	expect(over.ratio).toBe(1);
-	const under = xpProgress(2, -5);
-	expect(under.current).toBe(0);
-	expect(under.ratio).toBe(0);
-});
-
-test('xpProgress reads full and maxed at the level cap', () => {
-	const capped = xpProgress(PROGRESSION.levelCap, 0);
-	expect(capped.atCap).toBe(true);
-	expect(capped.needed).toBe(0);
-	expect(capped.ratio).toBe(1);
-	expect(Number.isFinite(capped.ratio)).toBe(true);
+	test('the configured cap reports a finite full bar with no next threshold', () => {
+		expect(xpProgress(PROGRESSION.levelCap, 0)).toEqual({
+			current: 0,
+			needed: 0,
+			ratio: 1,
+			atCap: true,
+		});
+	});
 });

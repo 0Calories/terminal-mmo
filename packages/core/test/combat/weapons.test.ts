@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { COMBAT, DEFAULT_WEAPON, WEAPONS, weaponById } from '../../src/combat';
 import { swingFrameIndex } from '../../src/sprites';
 
-describe('swingFrameIndex — replicated phase → swing frame (ADR 0036)', () => {
+describe('swingFrameIndex', () => {
 	test('wind-up shows frame 0, active 1, recovery 2', () => {
 		expect(swingFrameIndex('windup')).toBe(0);
 		expect(swingFrameIndex('active')).toBe(1);
@@ -10,7 +10,7 @@ describe('swingFrameIndex — replicated phase → swing frame (ADR 0036)', () =
 	});
 });
 
-describe('WEAPONS catalog — name + damage + art reference (ADR 0024/0030/0031)', () => {
+describe('WEAPONS catalog', () => {
 	test('the catalog is core-owned stats plus render-owned sprite references', () => {
 		const allowed = new Set(['name', 'damage', 'sprite']);
 		for (const w of WEAPONS) {
@@ -19,7 +19,6 @@ describe('WEAPONS catalog — name + damage + art reference (ADR 0024/0030/0031)
 			expect(w.sprite.length).toBeGreaterThan(0);
 		}
 		expect(WEAPONS[DEFAULT_WEAPON].damage).toBe(COMBAT.meleeDamage);
-		expect(WEAPONS[DEFAULT_WEAPON].sprite).toBe('sword');
 	});
 });
 

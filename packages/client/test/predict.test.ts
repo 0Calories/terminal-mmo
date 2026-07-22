@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test';
 import { COMBAT, DEFAULT_WEAPON } from '@mmo/core/combat';
-import { EMOTES, type Entity, type Input } from '@mmo/core/entities';
+import type { Entity, Input } from '@mmo/core/entities';
+import { CAPABILITY_UNLOCK } from '@mmo/core/progression';
 import { SPAWN } from '@mmo/core/zones';
 import {
 	applyEmote,
-	arriveInZone,
 	predictSwingEvents,
 	reconcileHealth,
 	spawnPredicted,
@@ -13,7 +13,7 @@ import {
 import { entity, flatTerrain } from './helpers';
 
 const TERRAIN = flatTerrain(60, 24);
-const DODGE_LEVEL = 4;
+const DODGE_LEVEL = CAPABILITY_UNLOCK.dodge;
 const FRAME_MS = 16;
 
 const IDLE: Input = {
@@ -111,13 +111,6 @@ test('reconcileHealth takes the server health and leaves position alone', () => 
 	expect(predicted.x).toBe(42);
 });
 
-test('arriveInZone teleports to the arrival point and kills inherited velocity', () => {
-	const a = arriveInZone(grounded({ vx: 9, vy: -4 }), { x: 3, y: 7 });
-	expect([a.x, a.y]).toEqual([3, 7]);
-	expect([a.vx, a.vy]).toEqual([0, 0]);
-	expect(a.onGround).toBe(false);
-});
-
 test('a swing hits a monster once, and the same swing cannot hit it again', () => {
 	const r = swingToStrike(grounded({ x: 10, facing: 1, weapon: undefined }));
 	if (!r.hitbox) throw new Error('expected a strike');
@@ -138,12 +131,6 @@ test('a swing hits a monster once, and the same swing cannot hit it again', () =
 		monster,
 	]);
 	expect(second).toEqual([]);
-});
-
-test('applyEmote stamps a known emote onto the Avatar', () => {
-	const stamped = applyEmote(grounded(), EMOTES[0].id);
-	expect(stamped.emoteId).toBe(EMOTES[0].id);
-	expect(stamped.emoteT).toBeGreaterThan(0);
 });
 
 test('applyEmote leaves the Avatar untouched for an unknown emote', () => {

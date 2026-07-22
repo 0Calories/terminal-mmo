@@ -1,6 +1,5 @@
 import { expect, test } from 'bun:test';
 import { DEFAULT_COSMETICS, HUE_COUNT } from '@mmo/core/entities';
-import { HAT_IDS } from '@mmo/render';
 import {
 	CUSTOMIZE_FIELDS,
 	customizeRows,
@@ -16,9 +15,7 @@ test('right cycles the focused field forward', () => {
 	const s = initCustomize(DEFAULT_COSMETICS);
 	const { state } = reduceCustomize(s, 'right');
 	expect(state.cosmetics.hue).toBe(1);
-	expect(state.cosmetics.form).toBe('buddy');
-	expect(state.cosmetics.hat).toBe('');
-	expect(state.cosmetics.nameplate).toBe(0);
+	expect(state.cosmetics).toEqual({ ...DEFAULT_COSMETICS, hue: 1 });
 });
 
 test('left wraps the focused field from 0 to the last index', () => {
@@ -32,8 +29,8 @@ test('down moves focus to the next field, so right then cycles that field', () =
 	s = reduceCustomize(s, 'down').state;
 	expect(s.field).toBe(1);
 	const { state } = reduceCustomize(s, 'right');
-	expect(state.cosmetics.hat).toBe(HAT_IDS[0]);
-	expect(state.cosmetics.hue).toBe(0);
+	expect(state.cosmetics.hat).not.toBe(DEFAULT_COSMETICS.hat);
+	expect(state.cosmetics.hue).toBe(DEFAULT_COSMETICS.hue);
 });
 
 test('up wraps focus from the first field to the last', () => {
@@ -47,50 +44,19 @@ test('return confirms with the chosen cosmetics, leaving them unchanged', () => 
 	s = reduceCustomize(s, 'right').state;
 	const { state, confirm } = reduceCustomize(s, 'return');
 	expect(confirm).toBe(true);
-	expect(state.cosmetics).toEqual({
-		hue: 1,
-		hat: '',
-		nameplate: 0,
-		form: 'buddy',
-	});
+	expect(state.cosmetics).toEqual({ ...DEFAULT_COSMETICS, hue: 1 });
 });
 
-test('the single-option Form is hidden from the picker but still confirms as the buddy Form', () => {
-	expect(CUSTOMIZE_FIELDS.some((f) => f.key === 'form')).toBe(false);
-	let s = initCustomize(DEFAULT_COSMETICS);
-	s = reduceCustomize(s, 'right').state;
-	const { state, confirm } = reduceCustomize(s, 'return');
-	expect(confirm).toBe(true);
-	expect(state.cosmetics.form).toBe('buddy');
-});
-
-test('customizeRows yields one focused-marked row per field, hat named from catalog', () => {
+test('customizeRows yields one row per field and exactly one focus target', () => {
 	let s = initCustomize(DEFAULT_COSMETICS);
 	s = reduceCustomize(s, 'down').state;
 	const rows = customizeRows(s);
 	expect(rows).toHaveLength(CUSTOMIZE_FIELDS.length);
-	expect(rows[0]).toMatchObject({ label: 'Body hue', focused: false });
-	expect(rows[1]).toMatchObject({ label: 'Hat', value: 'None', focused: true });
-	expect(rows[0].value).toBe(`1/${HUE_COUNT}`);
-});
-
-test('hat cycles through the sorted scanned ids, None first, wrapping back to None', () => {
-	let s = initCustomize(DEFAULT_COSMETICS);
-	s = reduceCustomize(s, 'down').state;
-	expect(customizeRows(s)[1]).toMatchObject({ value: 'None' });
-
-	for (const id of HAT_IDS) {
-		s = reduceCustomize(s, 'right').state;
-		expect(s.cosmetics.hat).toBe(id);
-		expect(customizeRows(s)[1]).toMatchObject({ value: id });
+	expect(rows.filter((row) => row.focused)).toHaveLength(1);
+	for (const row of rows) {
+		expect(row.label.length).toBeGreaterThan(0);
+		expect(row.value.length).toBeGreaterThan(0);
 	}
-
-	s = reduceCustomize(s, 'right').state;
-	expect(s.cosmetics.hat).toBe('');
-	expect(customizeRows(s)[1]).toMatchObject({ value: 'None' });
-
-	const { state: back } = reduceCustomize(s, 'left');
-	expect(back.cosmetics.hat).toBe(HAT_IDS[HAT_IDS.length - 1]);
 });
 
 test('a key with no binding is a no-op and never confirms', () => {
@@ -100,12 +66,14 @@ test('a key with no binding is a no-op and never confirms', () => {
 	expect(state).toEqual(s);
 });
 
-test('filterHandleDraft keeps only legal characters and caps at the max length', () => {
-	expect(filterHandleDraft('neo')).toBe('neo');
-	expect(filterHandleDraft('Ne0-_')).toBe('Ne0-_');
-	expect(filterHandleDraft('ne o')).toBe('neo');
-	expect(filterHandleDraft('n!e@o#')).toBe('neo');
-	expect(filterHandleDraft('  n e o  ')).toBe('neo');
+test('filterHandleDraft keeps legal characters and caps length', () => {
+	for (const [draft, filtered] of [
+		['neo', 'neo'],
+		['Ne0-_', 'Ne0-_'],
+		['ne o', 'neo'],
+		['n!e@o#', 'neo'],
+	] as const)
+		expect(filterHandleDraft(draft)).toBe(filtered);
 	const full = 'a'.repeat(HANDLE_MAX_LEN);
 	expect(full.length).toBe(HANDLE_MAX_LEN);
 	expect(filterHandleDraft(`${full}bcd`)).toBe(full);

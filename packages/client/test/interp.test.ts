@@ -149,9 +149,9 @@ test('the roster follows the newer snapshot: joiners appear, leavers drop', () =
 test('the buffer prunes stale frames so a long session stays bounded', () => {
 	const buf = new SnapshotBuffer();
 	for (let i = 0; i <= 200; i++) buf.push(snap(i, [avatar(7, i, 0)]), i * 50);
-	expect(buf.size).toBeLessThanOrEqual(40);
-	expect(buf.size).toBeGreaterThanOrEqual(2);
-	const newest = 200 * 50;
-	const mid = buf.sample(newest - 25);
-	expect(mid?.avatars[0].x).toBe(199.5);
+	const retained = buf.size;
+	expect(retained).toBeLessThan(200);
+	for (let i = 201; i <= 400; i++) buf.push(snap(i, [avatar(7, i, 0)]), i * 50);
+	expect(buf.size).toBeLessThanOrEqual(retained + 1);
+	expect(buf.sample(400 * 50)?.avatars[0].x).toBe(400);
 });

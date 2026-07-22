@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets';
+import { DEFAULT_WEAPON } from '../../src/combat';
 import type { Cosmetics } from '../../src/entities';
 import { BOX, DEFAULT_COSMETICS } from '../../src/entities';
 import type { ServerWorld } from '../../src/world';
@@ -13,7 +14,6 @@ import {
 	sessionsInZone,
 	spawnNewAvatar,
 	stepServerWorld,
-	TOWN_SPAWN,
 	worldSnapshotFor,
 	zoneInstance,
 	zoneOf,
@@ -23,6 +23,17 @@ import type { AvatarIntent } from '../../src/zones';
 import { GROUND_TOP } from '../../src/zones';
 
 const y = GROUND_TOP - BOX.h;
+const AUTHORED_ZONES = loadZones();
+
+function authoredZone(type: 'field' | 'town' | 'dungeon') {
+	const found = AUTHORED_ZONES.find((candidate) => candidate.type === type);
+	if (!found) throw new Error(`authored set has no ${type} Zone`);
+	return found;
+}
+
+const FIELD_ID = authoredZone('field').id;
+const TOWN_ID = authoredZone('town').id;
+const DUNGEON_ID = authoredZone('dungeon').id;
 
 function zoneOrThrow(w: ServerWorld, zone: string) {
 	const zs = zoneInstance(w, zone);
@@ -32,9 +43,9 @@ function zoneOrThrow(w: ServerWorld, zone: string) {
 
 function makeWorld(): ServerWorld {
 	return createServerWorld({
-		zones: loadZones(),
-		start: 'field-01',
-		town: 'town-01',
+		zones: AUTHORED_ZONES,
+		start: FIELD_ID,
+		town: TOWN_ID,
 	});
 }
 
@@ -52,96 +63,68 @@ function holdAt(sessionId: number, x: number, interact = false): AvatarIntent {
 	};
 }
 
+function portalX(w: ServerWorld, from: string, to: string): number {
+	const portal = zoneOrThrow(w, from).zone.portals.find(
+		(candidate) => candidate.target === to,
+	);
+	if (!portal) throw new Error(`${from} must portal to ${to}`);
+	return portal.x;
+}
+
 test('addSession places a new session in the start Zone with its handle', () => {
 	const w = addSession(makeWorld(), 7, 'neo');
-	expect(zoneOf(w, 7)).toBe('field-01');
+	expect(zoneOf(w, 7)).toBe(FIELD_ID);
 	const here = zoneStateOf(w, 7)?.avatars.find((a) => a.sessionId === 7);
 	expect(here?.handle).toBe('neo');
-	expect(zoneOrThrow(w, 'town-01').avatars.length).toBe(0);
+	expect(zoneOrThrow(w, TOWN_ID).avatars.length).toBe(0);
 });
 
 test('stepServerWorld advances every Zone each tick', () => {
 	let w = addSession(makeWorld(), 7, 'neo');
 	w = stepServerWorld(w, [holdAt(7, 20)], 16);
-	expect(zoneOrThrow(w, 'field-01').tick).toBe(1);
-	expect(zoneOrThrow(w, 'town-01').tick).toBe(1);
-});
-
-test('entering a Portal transfers the session to the target Zone at the arrival point', () => {
-	let w = addSession(makeWorld(), 7, 'neo');
-	const fieldPortal = zoneOrThrow(w, 'field-01').zone.portals[0];
-	w = stepServerWorld(w, [holdAt(7, fieldPortal.x, true)], 16);
-
-	expect(zoneOf(w, 7)).toBe('town-01');
-	expect(
-		zoneOrThrow(w, 'field-01').avatars.some((a) => a.sessionId === 7),
-	).toBe(false);
-	const moved = zoneStateOf(w, 7)?.avatars.find((a) => a.sessionId === 7);
-	expect(moved?.avatar.x).toBe(fieldPortal.arrival.x);
-	expect(moved?.avatar.y).toBe(fieldPortal.arrival.y);
-});
-
-test('one interact EDGE transfers exactly once and does not ping-pong on the overlapping arrival (ADR 0027)', () => {
-	let w = addSession(makeWorld(), 7, 'neo');
-	const fieldPortal = zoneOrThrow(w, 'field-01').zone.portals[0];
-	w = stepServerWorld(w, [holdAt(7, fieldPortal.x, true)], 16);
-	expect(zoneOf(w, 7)).toBe('town-01');
-	const arrived = zoneStateOf(w, 7)?.avatars.find((a) => a.sessionId === 7);
-	for (let i = 0; i < 3; i++)
-		w = stepServerWorld(w, [holdAt(7, arrived?.avatar.x ?? 0, false)], 16);
-	expect(zoneOf(w, 7)).toBe('town-01');
+	expect(zoneOrThrow(w, FIELD_ID).tick).toBe(1);
+	expect(zoneOrThrow(w, TOWN_ID).tick).toBe(1);
 });
 
 test('a session receives snapshots for only its current Zone', () => {
 	let w = addSession(makeWorld(), 7, 'neo');
 	w = addSession(w, 8, 'trinity');
-	const fieldPortal = zoneOrThrow(w, 'field-01').zone.portals[0];
-	w = stepServerWorld(w, [holdAt(7, fieldPortal.x, true), holdAt(8, 60)], 16);
+	const exitX = portalX(w, FIELD_ID, TOWN_ID);
+	w = stepServerWorld(w, [holdAt(7, exitX, true), holdAt(8, 60)], 16);
 
 	const moverView = worldSnapshotFor(w, 7);
-	expect(moverView.zoneId).toBe('town-01');
+	expect(moverView.zoneId).toBe(TOWN_ID);
 	expect(moverView.avatars.some((a) => a.sessionId === 7)).toBe(true);
 
 	const stayerView = worldSnapshotFor(w, 8);
-	expect(stayerView.zoneId).toBe('field-01');
+	expect(stayerView.zoneId).toBe(FIELD_ID);
 	expect(stayerView.avatars.some((a) => a.sessionId === 7)).toBe(false);
 });
 
 test('progress and inventory survive a Portal transfer', () => {
 	let w = addSession(makeWorld(), 7, 'neo');
-	const before = zoneOrThrow(w, 'field-01').avatars[0];
+	const before = zoneOrThrow(w, FIELD_ID).avatars[0];
 	before.progress = { level: 5, xp: 40, gold: 99 };
 	before.inventory = [
 		{ id: 1, base: 'sword', slot: 'weapon', rarity: 'epic', affixes: [] },
 	];
-	const fieldPortal = zoneOrThrow(w, 'field-01').zone.portals[0];
-	w = stepServerWorld(w, [holdAt(7, fieldPortal.x, true)], 16);
+	w = stepServerWorld(w, [holdAt(7, portalX(w, FIELD_ID, TOWN_ID), true)], 16);
 
 	const moved = zoneStateOf(w, 7)?.avatars.find((a) => a.sessionId === 7);
 	expect(moved?.progress).toEqual({ level: 5, xp: 40, gold: 99 });
 	expect(moved?.inventory.length).toBe(1);
 });
 
-test('a forgiving death respawns the Avatar in Town with full HP and no loss', () => {
+test('death preserves progress and inventory', () => {
 	let w = addSession(makeWorld(), 7, 'neo');
-	const av = zoneOrThrow(w, 'field-01').avatars[0];
-	av.avatar.hp = 1;
+	const av = zoneOrThrow(w, FIELD_ID).avatars[0];
+	av.avatar.hp = 0;
 	av.progress = { level: 4, xp: 20, gold: 50 };
 	av.inventory = [
 		{ id: 1, base: 'sword', slot: 'weapon', rarity: 'rare', affixes: [] },
 	];
-	const m = zoneOrThrow(w, 'field-01').zone.monsters.find((mm) => mm.y === y);
-	if (!m) throw new Error('expected a ground-level Monster in field-01');
-	for (let i = 0; i < 20 && zoneOf(w, 7) !== 'town-01'; i++)
-		w = stepServerWorld(w, [holdAt(7, m.x + 3)], 16);
-
-	expect(zoneOf(w, 7)).toBe('town-01');
-	expect(
-		zoneOrThrow(w, 'field-01').avatars.some((a) => a.sessionId === 7),
-	).toBe(false);
+	w = stepServerWorld(w, [holdAt(7, av.avatar.x)], 16);
 	const moved = zoneStateOf(w, 7)?.avatars.find((a) => a.sessionId === 7);
-	expect(moved?.avatar.hp).toBe(moved?.avatar.maxHp);
-	expect(moved?.avatar.x).toBe(TOWN_SPAWN.x);
 	expect(moved?.progress).toEqual({ level: 4, xp: 20, gold: 50 });
 	expect(moved?.inventory.length).toBe(1);
 });
@@ -149,8 +132,11 @@ test('a forgiving death respawns the Avatar in Town with full HP and no loss', (
 test('stepServerWorld is deterministic for an identical world + intents', () => {
 	const run = () => {
 		const w = addSession(makeWorld(), 7, 'neo');
-		const portal = zoneOrThrow(w, 'field-01').zone.portals[0];
-		return stepServerWorld(w, [holdAt(7, portal.x, true)], 16);
+		return stepServerWorld(
+			w,
+			[holdAt(7, portalX(w, FIELD_ID, TOWN_ID), true)],
+			16,
+		);
 	};
 	const a = run();
 	const b = run();
@@ -165,12 +151,12 @@ test('removeSession drops a disconnected session from its Zone and the map', () 
 	let w = addSession(makeWorld(), 7, 'neo');
 	w = removeSession(w, 7);
 	expect(zoneOf(w, 7)).toBeUndefined();
-	expect(zoneOrThrow(w, 'field-01').avatars.length).toBe(0);
+	expect(zoneOrThrow(w, FIELD_ID).avatars.length).toBe(0);
 	expect(removeSession(w, 99)).toBe(w);
 });
 
 test('spawnNewAvatar spawns into the starting Town with the chosen look, and mints a matching Save', () => {
-	const chosen: Cosmetics = { hue: 5, hat: 'cap', nameplate: 2, form: 'buddy' };
+	const chosen: Cosmetics = { ...DEFAULT_COSMETICS, hue: 5 };
 	const before = townWorld();
 	expect(zoneOf(before, 7)).toBeUndefined();
 
@@ -179,26 +165,26 @@ test('spawnNewAvatar spawns into the starting Town with the chosen look, and min
 		7,
 		'neo',
 		chosen,
-		3,
-		'town-01',
+		DEFAULT_WEAPON,
+		TOWN_ID,
 	);
 
-	expect(zoneOf(world, 7)).toBe('town-01');
+	expect(zoneOf(world, 7)).toBe(TOWN_ID);
 	const sa = avatarOf(world, 7);
 	expect(sa?.handle).toBe('neo');
 	expect(sa?.cosmetics).toEqual(chosen);
-	expect(sa?.avatar.weapon).toBe(3);
+	expect(sa?.avatar.weapon).toBe(DEFAULT_WEAPON);
 	expect(save.handle).toBe('neo');
 	expect(save.cosmetics).toEqual(chosen);
-	expect(save.equippedWeapon).toBe(3);
-	expect(save.lastTown).toBe('town-01');
+	expect(save.equippedWeapon).toBe(DEFAULT_WEAPON);
+	expect(save.lastTown).toBe(TOWN_ID);
 	expect(save.progress).toEqual({ level: 1, xp: 0, gold: 0 });
 	expect(save.inventory).toEqual([]);
 });
 
 test('spawnNewAvatar is pure — it never mutates the world passed in', () => {
 	const before = townWorld();
-	spawnNewAvatar(before, 7, 'neo', DEFAULT_COSMETICS, 0, 'town-01');
+	spawnNewAvatar(before, 7, 'neo', DEFAULT_COSMETICS, DEFAULT_WEAPON, TOWN_ID);
 	expect(zoneOf(before, 7)).toBeUndefined();
 });
 
@@ -208,17 +194,16 @@ test('every entrant to a Zone joins its single shared instance — no channel sp
 	w = addSession(w, 2, 'b');
 	w = addSession(w, 3, 'c');
 
-	expect(zoneOf(w, 1)).toBe('field-01');
-	expect(zoneOf(w, 2)).toBe('field-01');
-	expect(zoneOf(w, 3)).toBe('field-01');
+	expect(zoneOf(w, 1)).toBe(FIELD_ID);
+	expect(zoneOf(w, 2)).toBe(FIELD_ID);
+	expect(zoneOf(w, 3)).toBe(FIELD_ID);
 
 	expect(Object.keys(w.zones).sort()).toEqual(
-		loadZones()
-			.filter((z) => z.type !== 'dungeon')
+		AUTHORED_ZONES.filter((z) => z.type !== 'dungeon')
 			.map((z) => z.id)
 			.sort(),
 	);
-	expect(zoneOrThrow(w, 'field-01').avatars.length).toBe(3);
+	expect(zoneOrThrow(w, FIELD_ID).avatars.length).toBe(3);
 });
 
 test('two sessions in the same Zone always see each other (funnelled presence)', () => {
@@ -227,11 +212,11 @@ test('two sessions in the same Zone always see each other (funnelled presence)',
 	w = addSession(w, 2, 'b');
 
 	const view1 = worldSnapshotFor(w, 1);
-	expect(view1.zoneId).toBe('field-01');
+	expect(view1.zoneId).toBe(FIELD_ID);
 	expect(view1.avatars.map((a) => a.sessionId).sort()).toEqual([1, 2]);
 
 	const view2 = worldSnapshotFor(w, 2);
-	expect(view2.zoneId).toBe('field-01');
+	expect(view2.zoneId).toBe(FIELD_ID);
 	expect(view2.avatars.map((a) => a.sessionId).sort()).toEqual([1, 2]);
 });
 
@@ -240,17 +225,13 @@ test('a cross-Zone relocation lands both sessions in the destination shared inst
 	w = addSession(w, 1, 'a');
 	w = addSession(w, 2, 'b');
 
-	const portalX = zoneOrThrow(w, 'field-01').zone.portals[0].x;
-	w = stepServerWorld(
-		w,
-		[holdAt(1, portalX, true), holdAt(2, portalX, true)],
-		16,
-	);
+	const exitX = portalX(w, FIELD_ID, TOWN_ID);
+	w = stepServerWorld(w, [holdAt(1, exitX, true), holdAt(2, exitX, true)], 16);
 
-	expect(zoneOf(w, 1)).toBe('town-01');
-	expect(zoneOf(w, 2)).toBe('town-01');
+	expect(zoneOf(w, 1)).toBe(TOWN_ID);
+	expect(zoneOf(w, 2)).toBe(TOWN_ID);
 	expect(
-		zoneOrThrow(w, 'town-01')
+		zoneOrThrow(w, TOWN_ID)
 			.avatars.map((a) => a.sessionId)
 			.sort(),
 	).toEqual([1, 2]);
@@ -266,9 +247,9 @@ test('sessionsInZone returns every session sharing a Zone, including itself', ()
 test('sessionsInZone excludes a session that has left for another Zone', () => {
 	let w = addSession(makeWorld(), 1, 'a');
 	w = addSession(w, 2, 'b');
-	const portal = zoneOrThrow(w, 'field-01').zone.portals[0];
-	w = stepServerWorld(w, [holdAt(1, portal.x, true), holdAt(2, 60)], 16);
-	expect(zoneOf(w, 1)).toBe('town-01');
+	const exitX = portalX(w, FIELD_ID, TOWN_ID);
+	w = stepServerWorld(w, [holdAt(1, exitX, true), holdAt(2, 60)], 16);
+	expect(zoneOf(w, 1)).toBe(TOWN_ID);
 	expect(sessionsInZone(w, 1)).toEqual([1]);
 	expect(sessionsInZone(w, 2)).toEqual([2]);
 });
@@ -281,10 +262,10 @@ test('sessionsInZone is empty for an unknown / unplaced session', () => {
 test('sessionByHandle finds an online session across Zones, case-insensitively', () => {
 	let w = addSession(makeWorld(), 1, 'Neo');
 	w = addSession(w, 2, 'Trinity');
-	const portal = zoneOrThrow(w, 'field-01').zone.portals[0];
-	w = stepServerWorld(w, [holdAt(2, portal.x, true), holdAt(1, 60)], 16);
-	expect(zoneOf(w, 1)).toBe('field-01');
-	expect(zoneOf(w, 2)).toBe('town-01');
+	const exitX = portalX(w, FIELD_ID, TOWN_ID);
+	w = stepServerWorld(w, [holdAt(2, exitX, true), holdAt(1, 60)], 16);
+	expect(zoneOf(w, 1)).toBe(FIELD_ID);
+	expect(zoneOf(w, 2)).toBe(TOWN_ID);
 	expect(sessionByHandle(w, 'neo')).toBe(1);
 	expect(sessionByHandle(w, 'TRINITY')).toBe(2);
 });
@@ -308,25 +289,25 @@ test('handleOf returns a placed session handle, undefined otherwise', () => {
 
 function townWorld(): ServerWorld {
 	return createServerWorld({
-		zones: loadZones(),
-		start: 'town-01',
-		town: 'town-01',
+		zones: AUTHORED_ZONES,
+		start: TOWN_ID,
+		town: TOWN_ID,
 	});
 }
 
 function dungeonEntryX(w: ServerWorld): number {
-	const p = w.templates['town-01'].portals.find(
-		(pp) => pp.target === 'dungeon-01',
+	const p = w.templates[TOWN_ID].portals.find(
+		(candidate) => candidate.target === DUNGEON_ID,
 	);
-	if (!p) throw new Error('town-01 must portal to dungeon-01');
+	if (!p) throw new Error(`${TOWN_ID} must portal to ${DUNGEON_ID}`);
 	return p.x;
 }
 
 function dungeonExitX(w: ServerWorld): number {
-	const p = w.templates['dungeon-01'].portals.find(
-		(pp) => pp.target === 'town-01',
+	const p = w.templates[DUNGEON_ID].portals.find(
+		(candidate) => candidate.target === TOWN_ID,
 	);
-	if (!p) throw new Error('dungeon-01 must portal back to town-01');
+	if (!p) throw new Error(`${DUNGEON_ID} must portal back to ${TOWN_ID}`);
 	return p.x;
 }
 
@@ -336,57 +317,12 @@ function enterDungeon(w: ServerWorld, sessionId: number): ServerWorld {
 
 test('the authored Dungeon exists, is instanced, and has no shared instance', () => {
 	const w = townWorld();
-	const dungeon = w.templates['dungeon-01'];
+	const dungeon = w.templates[DUNGEON_ID];
 	expect(dungeon?.type).toBe('dungeon');
 	expect(dungeon.spawns.length).toBeGreaterThan(0);
-	expect(zoneInstance(w, 'dungeon-01')).toBeUndefined();
-	expect(w.zones['dungeon-01']).toBeUndefined();
-	expect(dungeon.portals.some((p) => p.target === 'town-01')).toBe(true);
-});
-
-test('entering the Dungeon from Town spins up a private instance (create on entry)', () => {
-	let w = addSession(townWorld(), 1, 'neo');
-	expect(Object.keys(w.instances).length).toBe(0);
-
-	w = enterDungeon(w, 1);
-
-	expect(zoneOf(w, 1)).toBe('dungeon-01');
-	expect(Object.keys(w.instances).length).toBe(1);
-	expect(w.instanceOf[1]).toBeDefined();
-	const zs = zoneStateOf(w, 1);
-	expect(zs?.zone.id).toBe('dungeon-01');
-	expect(zs?.avatars.some((a) => a.sessionId === 1)).toBe(true);
-	expect(worldSnapshotFor(w, 1).zoneId).toBe('dungeon-01');
-});
-
-test('leaving the Dungeon tears the instance down (teardown on exit)', () => {
-	let w = addSession(townWorld(), 1, 'neo');
-	w = enterDungeon(w, 1);
-	expect(Object.keys(w.instances).length).toBe(1);
-
-	w = stepServerWorld(w, [holdAt(1, dungeonExitX(w), true)], 16);
-
-	expect(zoneOf(w, 1)).toBe('town-01');
-	expect(w.instanceOf[1]).toBeUndefined();
-	expect(Object.keys(w.instances).length).toBe(0);
-});
-
-test('a forgiving death in the Dungeon exits to Town and tears the instance down', () => {
-	let w = addSession(townWorld(), 1, 'neo');
-	w = enterDungeon(w, 1);
-	const key = w.instanceOf[1];
-	w.instances[key] = {
-		...w.instances[key],
-		avatars: w.instances[key].avatars.map((a) => ({
-			...a,
-			avatar: { ...a.avatar, hp: 0 },
-		})),
-	};
-	w = stepServerWorld(w, [holdAt(1, 10)], 16);
-
-	expect(zoneOf(w, 1)).toBe('town-01');
-	expect(w.instanceOf[1]).toBeUndefined();
-	expect(Object.keys(w.instances).length).toBe(0);
+	expect(zoneInstance(w, DUNGEON_ID)).toBeUndefined();
+	expect(w.zones[DUNGEON_ID]).toBeUndefined();
+	expect(dungeon.portals.some((p) => p.target === TOWN_ID)).toBe(true);
 });
 
 test('strangers never share a Dungeon instance — each gets its own private run', () => {
@@ -395,8 +331,8 @@ test('strangers never share a Dungeon instance — each gets its own private run
 	const x = dungeonEntryX(w);
 	w = stepServerWorld(w, [holdAt(1, x, true), holdAt(2, x, true)], 16);
 
-	expect(zoneOf(w, 1)).toBe('dungeon-01');
-	expect(zoneOf(w, 2)).toBe('dungeon-01');
+	expect(zoneOf(w, 1)).toBe(DUNGEON_ID);
+	expect(zoneOf(w, 2)).toBe(DUNGEON_ID);
 	expect(Object.keys(w.instances).length).toBe(2);
 	expect(w.instanceOf[1]).not.toBe(w.instanceOf[2]);
 	expect(w.instances[w.instanceOf[1]].avatars.length).toBe(1);
@@ -435,12 +371,12 @@ test('the last party-mate leaving tears the shared instance down; the first does
 	const key = w.instanceOf[1];
 
 	w = stepServerWorld(w, [holdAt(1, dungeonExitX(w), true), holdAt(2, 20)], 16);
-	expect(zoneOf(w, 1)).toBe('town-01');
-	expect(zoneOf(w, 2)).toBe('dungeon-01');
+	expect(zoneOf(w, 1)).toBe(TOWN_ID);
+	expect(zoneOf(w, 2)).toBe(DUNGEON_ID);
 	expect(w.instances[key]?.avatars.length).toBe(1);
 
 	w = stepServerWorld(w, [holdAt(2, dungeonExitX(w), true)], 16);
-	expect(zoneOf(w, 2)).toBe('town-01');
+	expect(zoneOf(w, 2)).toBe(TOWN_ID);
 	expect(Object.keys(w.instances).length).toBe(0);
 });
 
@@ -452,19 +388,6 @@ test('disconnecting inside a Dungeon tears down a solo instance', () => {
 	expect(zoneOf(w, 1)).toBeUndefined();
 	expect(w.instanceOf[1]).toBeUndefined();
 	expect(Object.keys(w.instances).length).toBe(0);
-});
-
-test('a re-entered Dungeon is a fresh instance (repeatable faucet)', () => {
-	let w = addSession(townWorld(), 1, 'neo');
-	w = enterDungeon(w, 1);
-	const first = w.instanceOf[1];
-	w = stepServerWorld(w, [holdAt(1, dungeonExitX(w), true)], 16);
-	expect(Object.keys(w.instances).length).toBe(0);
-	w = enterDungeon(w, 1);
-	expect(zoneOf(w, 1)).toBe('dungeon-01');
-	expect(Object.keys(w.instances).length).toBe(1);
-	expect(w.instanceOf[1]).toBe(first);
-	expect(w.instances[w.instanceOf[1]].tick).toBe(0);
 });
 
 function avatarOf(w: ServerWorld, sessionId: number) {

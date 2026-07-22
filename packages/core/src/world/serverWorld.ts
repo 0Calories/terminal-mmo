@@ -142,9 +142,16 @@ export function handleOf(
 	world: ServerWorld,
 	sessionId: number,
 ): string | undefined {
+	return avatarOf(world, sessionId)?.handle;
+}
+
+export function avatarOf(
+	world: ServerWorld,
+	sessionId: number,
+): ServerAvatar | undefined {
 	return zoneStateOf(world, sessionId)?.avatars.find(
-		(a) => a.sessionId === sessionId,
-	)?.handle;
+		(avatar) => avatar.sessionId === sessionId,
+	);
 }
 
 export function avatarBox(x: number, y: number): Box {

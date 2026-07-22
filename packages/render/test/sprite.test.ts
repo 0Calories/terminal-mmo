@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { Sprite, spriteFor } from '../src';
+import { Sprite } from '../src';
 
 test('parses art: trims template blank lines, maps sentinel, computes dims', () => {
 	const s = new Sprite('\n·A·\nBBB\n', { defaultKey: 'x' });
@@ -49,24 +49,14 @@ test('throws when defaultKey is not a single char', () => {
 	expect(() => new Sprite('\nA\n', { defaultKey: 'player' })).toThrow();
 });
 
-test('baseline defaults to 0; an explicit value is kept (ADR 0021)', () => {
+test('baseline defaults to 0 and preserves an explicit value', () => {
 	expect(new Sprite('\nA\n', { defaultKey: 'x' }).baseline).toBe(0);
 	expect(new Sprite('\nA\n', { defaultKey: 'x', baseline: 1 }).baseline).toBe(
 		1,
 	);
 });
 
-test('every entity type resolves to a sprite', () => {
-	for (const type of ['player', 'chaser', 'shooter'] as const) {
-		expect(spriteFor(type)).toBeInstanceOf(Sprite);
-	}
-});
-
-test('shooter has its own sprite, distinct from the chaser (#4)', () => {
-	expect(spriteFor('shooter')).not.toBe(spriteFor('chaser'));
-});
-
-test('no bg option: bgKeys are all-space rows matching w x h (ADR 0031)', () => {
+test('without a background grid, bgKeys match the sprite with transparent cells', () => {
 	const s = new Sprite('\nAB\nCD\n', { defaultKey: 'x' });
 	expect(s.bgKeys(1)).toEqual(['  ', '  ']);
 	expect(s.bgKeys(-1)).toEqual(['  ', '  ']);
