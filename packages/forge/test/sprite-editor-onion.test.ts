@@ -1,7 +1,3 @@
-// Headless tests for pure onion-skin sourcing (spec #387, simplified round 3).
-// Onion is a plain on/off toggle now: the active Frame ghosts only its immediate
-// PREVIOUS Frame (wrap-aware). WHICH Frame ghosts is a pure function of the
-// Animation's Frame list and the active Frame — asserted here with no screen.
 import { describe, expect, test } from 'bun:test';
 import { ghostColor, previousGhostFrame } from '../src/sprite-editor/onion';
 
@@ -38,7 +34,7 @@ describe('ghostColor — tint blended over the canvas background', () => {
 	test('lower intensity fades further toward the canvas background', () => {
 		const near = ghostColor('prev', 1, bg);
 		const far = ghostColor('prev', 0.5, bg);
-		// The farther (dimmer) ghost sits closer to the bg red than the near one.
+
 		expect(Math.abs(far[0] - bg[0])).toBeLessThan(Math.abs(near[0] - bg[0]));
 		expect(far[3]).toBe(255);
 	});

@@ -24,9 +24,6 @@ const emote =
 	(id: EmoteId): CommandHandler =>
 	() => ({ kind: 'emote', emote: id });
 
-// The one registry of every chat command. Duplicate names are a compile error
-// (duplicate object keys), and the EmoteId half of the satisfies check makes
-// forgetting to register a newly added emote one too.
 const COMMANDS = {
 	w: whisper,
 	whisper,

@@ -1,34 +1,14 @@
-// The `.sprite` asset file format (ADR 0031, v2 per ADR 0037): pure
-// parse/serialize between `.sprite` text (JSON header + unnamed visible-glyph
-// frame sections bound by `--- <animation> <index>`, with optional
-// `@colors`/`@bg` grids) and a SpriteDoc. Grammar errors are diagnostics, never
-// throws. Parse <-> serialize round-trips losslessly for any diagnostics-free
-// document.
-//
-// Format v2 (ADR 0037): the header's `animations` is an ordered ARRAY of
-// `{ name, fps?, anchors? }` objects — the single source of animation order and
-// metadata. Frames are unnamed: a grid section binds by `--- <animation>
-// <index>` (the index omitted for a single-frame animation), the frame count is
-// derived from the sections, and per-frame anchor overrides live on the owning
-// animation object keyed by frame index. The Default frame is frame 0 of the
-// first animation.
 import { type RGBAQuad, SCENE_PALETTE } from '@mmo/core/entities';
 import { SENTINEL } from './sprite';
 
-// The dynamic recolor keys, reserved because their meaning is assigned at
-// render time rather than declared in a file's `colors` header: 'p' is the
-// cosmetic hue recolor key, 'a' is the weapon accent key (see CONTEXT.md and
-// `WEAPON_ACCENT_KEY` in `./weapon-sprite`).
 const RESERVED_KEYS = new Set(['p', 'a']);
-// The default color key applied to inked cells when a file declares none.
+
 const DEFAULT_KEY = 'p';
-// Animation names share the identifier charset (letters, digits, `:_-`).
+
 const ANIMATION_NAME_RE = /^[A-Za-z0-9:_-]+$/;
-// The implied per-animation playback rate (EMOTE_FPS in @mmo/core): serialized
-// files omit fps entries equal to it.
+
 const DEFAULT_ANIMATION_FPS = 5;
-// A grid section header: `--- <animation>` (single-frame) or `--- <animation>
-// <index>` (one frame of a multi-frame animation).
+
 const SECTION_RE = /^---\s+(\S+)(?:\s+(\d+))?\s*$/;
 
 export type SpriteSeverity = 'error' | 'warning';
@@ -37,9 +17,7 @@ export interface SpriteDiagnostic {
 	severity: SpriteSeverity;
 	spriteId: string;
 	message: string;
-	// The section a diagnostic is about, as its `<animation> <index>` label (or
-	// bare `<animation>` for a single-frame animation) — frames are unnamed, so
-	// this is their positional identity, not a name.
+
 	frame?: string;
 	cell?: { x: number; y: number };
 }
@@ -49,9 +27,6 @@ export interface SpriteAnchor {
 	y: number;
 }
 
-// One unnamed frame: its glyph/colour/bg grids plus this frame's per-index anchor
-// overrides (empty when it inherits the doc-level anchors unchanged). Its
-// identity is its (animation, index) position, never a name.
 export interface SpriteFrameDoc {
 	rows: readonly string[];
 	colors: readonly string[];
@@ -59,9 +34,6 @@ export interface SpriteFrameDoc {
 	anchors: Readonly<Record<string, SpriteAnchor>>;
 }
 
-// One animation: an ordered, non-empty list of frames, an optional playback fps
-// (absent means the default rate), and its name. The array of these on a
-// SpriteDoc is the authority on animation order (ADR 0037).
 export interface SpriteAnimationDoc {
 	name: string;
 	fps?: number;
@@ -72,33 +44,21 @@ export interface SpriteDoc {
 	id: string;
 	key: string;
 	baseline: number;
-	// The accent palette key a weapon's dynamic `a` channel resolves to at render
-	// time (see `WEAPON_ACCENT_KEY`). Optional and role-agnostic in the format;
-	// only the weapon compiler consumes it. Absent for non-weapon sprites.
+
 	accent?: string;
 	anchors: Readonly<Record<string, SpriteAnchor>>;
 	animations: readonly SpriteAnimationDoc[];
 	colors: Readonly<Record<string, RGBAQuad>>;
 }
 
-// The flat, in-order list of every frame across every animation — the shared
-// "all frames" view whole-file transforms (resize/crop/trim) and previews
-// iterate over. The Default frame is `allFrames(doc)[0]`.
 export function allFrames(doc: SpriteDoc): SpriteFrameDoc[] {
 	return doc.animations.flatMap((a) => a.frames);
 }
 
-// The Default frame — frame 0 of the first animation (ADR 0037) — or undefined
-// for a doc with no animations.
 export function defaultFrame(doc: SpriteDoc): SpriteFrameDoc | undefined {
 	return doc.animations[0]?.frames[0];
 }
 
-// A frame's positional identity within a doc: its owning animation, its index
-// there, and a canonical label — `<animation>` for a single-frame animation,
-// `<animation> <index>` otherwise, matching the `--- ...` section syntax. Frames
-// are unnamed (ADR 0037); this label is their stable string identity for UI and
-// the compiler's frame lookup.
 export interface FrameLocation {
 	animation: SpriteAnimationDoc;
 	index: number;
@@ -106,7 +66,6 @@ export interface FrameLocation {
 	label: string;
 }
 
-// The canonical label for frame `index` of `animation` (see FrameLocation).
 export function frameLabelAt(
 	animation: SpriteAnimationDoc,
 	index: number,
@@ -116,7 +75,6 @@ export function frameLabelAt(
 		: `${animation.name} ${index}`;
 }
 
-// Every frame's location, in doc order — the flat, labeled view of the doc.
 export function frameLocations(doc: SpriteDoc): FrameLocation[] {
 	const out: FrameLocation[] = [];
 	for (const animation of doc.animations) {
@@ -132,8 +90,6 @@ export function frameLocations(doc: SpriteDoc): FrameLocation[] {
 	return out;
 }
 
-// Resolve a canonical frame label to its location, or undefined when no frame
-// carries it.
 export function findFrame(
 	doc: SpriteDoc,
 	label: string,
@@ -141,9 +97,6 @@ export function findFrame(
 	return frameLocations(doc).find((l) => l.label === label);
 }
 
-// Rebuild a doc's animations by mapping every frame through `fn`, preserving the
-// animation nesting. The one seam whole-file grid transforms pass through so they
-// never reason about the animation grouping.
 export function mapDocFrames(
 	doc: SpriteDoc,
 	fn: (frame: SpriteFrameDoc) => SpriteFrameDoc,
@@ -157,7 +110,6 @@ export function mapDocFrames(
 	};
 }
 
-// Where a diagnostic occurred within a sprite file, beyond the sprite itself.
 interface DiagnosticLocation {
 	frame?: string;
 	cell?: { x: number; y: number };
@@ -169,8 +121,6 @@ type Reporter = (
 	at?: DiagnosticLocation,
 ) => void;
 
-// Creates a `report` closure bound to one sprite's diagnostics array/id, so
-// helpers push diagnostics without threading `(diagnostics, id)` everywhere.
 function createReporter(diagnostics: SpriteDiagnostic[], id: string): Reporter {
 	return (severity, message, at) => {
 		diagnostics.push({
@@ -191,14 +141,10 @@ function isNonNegInt(v: unknown): v is number {
 	return typeof v === 'number' && Number.isInteger(v) && v >= 0;
 }
 
-// Anchors are seat *offsets*, not in-bounds cell references, so they may be any
-// integer — a weapon grip legitimately sits one cell left of its art (x = -1).
-// Out-of-range values still warn (a typo guard) but are not rejected.
 function isInt(v: unknown): v is number {
 	return typeof v === 'number' && Number.isInteger(v);
 }
 
-// Drop leading/trailing all-blank lines; right-pad to widest row.
 function gridFromLines(raw: readonly string[]): string[] {
 	const lines = raw.slice();
 	while (lines.length > 0 && lines[0].trim() === '') lines.shift();
@@ -264,8 +210,6 @@ function parseAnchorEntries(
 	return out;
 }
 
-// One declared animation from the header array: its name, optional fps, and its
-// per-frame-index anchor overrides (keyed by numeric index).
 interface HeaderAnimation {
 	name: string;
 	fps?: number;
@@ -471,14 +415,12 @@ function knownColorKey(
 	return k in SCENE_PALETTE || RESERVED_KEYS.has(k) || k in fileColors;
 }
 
-// The glyph/colour/bg grids of one parsed section (anchors resolved later).
 interface SectionGrids {
 	rows: string[];
 	colors: string[];
 	bg: string[];
 }
 
-// A raw parsed section header before it is bound to an animation frame.
 interface RawSection {
 	animation: string;
 	index: number | null;
@@ -527,7 +469,6 @@ export function parseSpriteFile(
 		report,
 	);
 
-	// Locate every section start and its (animation, index) binding.
 	const rawSections: RawSection[] = [];
 	for (let i = 0; i < lines.length; i++) {
 		const m = SECTION_RE.exec(lines[i]);
@@ -550,7 +491,6 @@ export function parseSpriteFile(
 				: lines.length;
 	}
 
-	// Parse each section's grids, keyed by its label.
 	const gridsByLabel = new Map<string, SectionGrids>();
 	for (const sec of rawSections) {
 		const grids = parseSectionGrids(
@@ -562,9 +502,6 @@ export function parseSpriteFile(
 		if (grids !== null) gridsByLabel.set(sec.label, grids);
 	}
 
-	// Bind sections to their declared animations. A section naming an animation
-	// the header does not declare is an error (ADR 0037 rejects the "sections mint
-	// animations" alternative). Group the valid sections per animation.
 	const declared = new Map(header.animations.map((a) => [a.name, a]));
 	const sectionsByAnimation = new Map<string, RawSection[]>();
 	for (const sec of rawSections) {
@@ -588,8 +525,7 @@ export function parseSpriteFile(
 			report('error', `animation '${decl.name}' has no frame sections`);
 			continue;
 		}
-		// Resolve each section to a frame index. A single bare section is frame 0;
-		// otherwise every section must carry an explicit, contiguous index from 0.
+
 		const byIndex = new Map<number, RawSection>();
 		let indexError = false;
 		if (secs.length === 1 && secs[0].index === null) {
@@ -636,8 +572,6 @@ export function parseSpriteFile(
 			const sec = byIndex.get(i) as RawSection;
 			const grids = gridsByLabel.get(sec.label);
 			if (grids === undefined) {
-				// The section's grids failed to parse (e.g. empty frame) — already
-				// reported; drop the whole animation to keep indices contiguous.
 				allGridsPresent = false;
 				break;
 			}
@@ -658,7 +592,6 @@ export function parseSpriteFile(
 		}
 		if (!allGridsPresent) continue;
 
-		// A per-index override pointing past the frame count is a dropped typo.
 		for (const idx of decl.overrides.keys()) {
 			if (idx >= count) {
 				report(
@@ -680,7 +613,6 @@ export function parseSpriteFile(
 		return { doc: null, diagnostics };
 	}
 
-	// Anchor bounds check (effective = file-level merged with frame overrides).
 	for (const a of animations) {
 		a.frames.forEach((f, i) => {
 			const effective = { ...header.anchors, ...f.anchors };
@@ -711,8 +643,6 @@ export function parseSpriteFile(
 	return { doc, diagnostics };
 }
 
-// Parse one section's content into resolved glyph/colour/bg grids, or null when
-// the frame is empty (reported). Split out so the parse loop stays readable.
 function parseSectionGrids(
 	content: readonly string[],
 	label: string,
@@ -744,7 +674,6 @@ function parseSectionGrids(
 		),
 	);
 
-	// Colors grid.
 	let colorsGrid: string[] | null = null;
 	if (split.colorsLines !== null) {
 		const raw = gridFromLines(split.colorsLines);
@@ -793,7 +722,6 @@ function parseSectionGrids(
 		colorRows.push(rowOut);
 	}
 
-	// Bg grid.
 	let bgGrid: string[] | null = null;
 	if (split.bgLines !== null) {
 		const raw = gridFromLines(split.bgLines);
@@ -849,16 +777,6 @@ function toGlyphRow(row: string): string {
 	return row.replaceAll(' ', SENTINEL);
 }
 
-// ---------------------------------------------------------------------------
-// Header formatting (ADR 0036/0037): saves must not churn hand-compacted
-// headers. The emitted style is deterministic: the header object lists one field
-// per tab-indented line; every VALUE renders inline when its whole line fits the
-// width budget, otherwise its object expands one entry per line (recursively);
-// arrays — anchor coordinates, colours, and the animations array — expand one
-// element per line when the whole array would overflow, else stay inline. Each
-// animation object stays on ONE line (ADR 0037's compact-header discipline).
-// ---------------------------------------------------------------------------
-
 const HEADER_LINE_BUDGET = 78;
 
 function inlineJson(value: unknown): string {
@@ -878,9 +796,7 @@ function inlineJson(value: unknown): string {
 function headerValue(value: unknown, indent: string): string {
 	const inline = inlineJson(value);
 	if (indent.length + inline.length <= HEADER_LINE_BUDGET) return inline;
-	// An overflowing array of objects (the animations array) expands one element
-	// per line, each element still inline. A plain coordinate/colour array never
-	// reaches here (those fit the budget); if one somehow does, keep it inline.
+
 	if (Array.isArray(value)) {
 		if (value.every((v) => isPlainObject(v) || Array.isArray(v))) {
 			const inner = `${indent}\t`;
@@ -910,8 +826,6 @@ function formatHeader(header: Record<string, unknown>): string {
 	return `{\n${body}\n}`;
 }
 
-// The header `animations` array: one object per animation, in doc order, each
-// carrying its name, any non-default fps, and any per-index anchor overrides.
 function serializeAnimations(doc: SpriteDoc): Record<string, unknown>[] {
 	return doc.animations.map((a) => {
 		const obj: Record<string, unknown> = { name: a.name };
@@ -938,8 +852,7 @@ export function serializeSpriteFile(doc: SpriteDoc): string {
 			Object.entries(doc.anchors).map(([n, a]) => [n, [a.x, a.y]]),
 		);
 	}
-	// The animations array is always present — it is the authority on order and
-	// the exhaustive frame binding (ADR 0037).
+
 	header.animations = serializeAnimations(doc);
 	if (Object.keys(doc.colors).length > 0) {
 		header.colors = Object.fromEntries(

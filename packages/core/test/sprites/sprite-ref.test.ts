@@ -1,7 +1,3 @@
-// Pins the Monster/NPC art-reference crumbs (ADR 0031) and proves the
-// server-visible sprite metadata (the death-tint `defaultKey`) stays core-owned.
-// Everything here imports from @mmo/core ONLY: the deterministic sim / server
-// reads its identity crumbs from core, never from @mmo/render's art.
 import { expect, test } from 'bun:test';
 import { entityTint } from '../../src/combat';
 import { type Entity, SCENE_PALETTE } from '../../src/entities';
@@ -13,10 +9,6 @@ import {
 	spriteMetaFor,
 } from '../../src/sprites';
 
-// The art references this migration introduces — the ids that key the
-// `.sprite` files under sprites/monsters/ and sprites/npcs/ (chaser, shooter,
-// brute, merchant). Behaviour/stats stay elsewhere; these are art
-// bindings only.
 test('the Monster/NPC sprite references are the migrated ids', () => {
 	expect(MONSTER_SPRITE_REF).toEqual({
 		chaser: 'chaser',
@@ -36,10 +28,6 @@ test('the reference resolvers return the crumb id (player has no Monster art)', 
 	expect(npcSpriteRef('vendor')).toBe('merchant');
 });
 
-// The death-tint crumb the server reads is `spriteMetaFor(type).defaultKey`, a
-// palette key resolved to an RGB in core (BODY_PALETTE === SCENE_PALETTE). This
-// data must NOT come from @mmo/render — this file, importing core alone, computes
-// the full death tint, proving the server never needs the art package.
 test('the death-tint crumb (defaultKey) is core-owned, not render-owned', () => {
 	const monster = (type: Entity['type']): Entity => ({
 		id: 1,
@@ -59,8 +47,7 @@ test('the death-tint crumb (defaultKey) is core-owned, not render-owned', () => 
 	for (const type of ['chaser', 'shooter', 'brute'] as const) {
 		const key = spriteMetaFor(type).defaultKey;
 		const [r, g, b] = SCENE_PALETTE[key as keyof typeof SCENE_PALETTE];
-		// entityTint (authoritative combat's death tint) === the core palette
-		// colour of the core-owned defaultKey crumb.
+
 		expect(entityTint(monster(type))).toEqual({ r, g, b });
 	}
 });

@@ -1,7 +1,3 @@
-// entities — the flat Entity record and its per-kind factories, one archetype
-// profile per Monster kind, Npc placements, cosmetics identity, emotes, and
-// the shared palette/hue tables.
-
 export {
 	ARCHETYPES,
 	type ArchetypeProfile,

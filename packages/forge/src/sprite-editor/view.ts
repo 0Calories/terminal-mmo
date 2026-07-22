@@ -1,8 +1,3 @@
-// Pure presentation helpers for the Sprite editor TUI (ADR 0031). No I/O and no
-// `@opentui/core` import lives here — the `tui.ts` glue wires these to a screen
-// buffer and keyboard. Everything is a deterministic function over the pure
-// editor state so it is unit-testable headlessly, exactly like the zone editor's
-// `editor.ts` helpers.
 import { type Facing, HUES, type RGBAQuad } from '@mmo/core/entities';
 import { RARITY_COLOR } from '@mmo/core/items';
 import { mirrorAnchorX } from '@mmo/core/sprites';
@@ -16,12 +11,6 @@ import {
 import type { AnchorMarker, DynamicPreviews } from './state';
 import type { SpriteRole } from './templates';
 
-// ---------------------------------------------------------------------------
-// Roles ⇄ on-disk directories (sprites/<dir>/<id>.sprite)
-// ---------------------------------------------------------------------------
-
-// The `sprites/` sub-directory each role's files live under (ADR 0031: directory
-// = role, filename = id).
 const ROLE_DIRS: Record<SpriteRole, string> = {
 	form: 'forms',
 	weapon: 'weapons',
@@ -42,12 +31,6 @@ export function roleForDir(dir: string): SpriteRole | undefined {
 	return DIR_ROLES[dir];
 }
 
-// ---------------------------------------------------------------------------
-// Role-required-animation / anchor hints (ROLE_PROFILES is keyed by directory name)
-// ---------------------------------------------------------------------------
-
-// Required animations a doc of this role is missing — a non-blocking authoring hint,
-// not a refusal (deleting a required animation is allowed, just surfaced here).
 export function missingRequiredAnimations(
 	doc: SpriteDoc,
 	role: SpriteRole,
@@ -58,12 +41,10 @@ export function missingRequiredAnimations(
 	return profile.animations.filter((p) => !names.has(p));
 }
 
-// The role's full required-anchor list (movable, never deletable — ADR 0036).
 export function requiredAnchors(role: SpriteRole): readonly string[] {
 	return ROLE_PROFILES[dirForRole(role)]?.anchors ?? [];
 }
 
-// Required doc-level anchors this doc is missing.
 export function missingRequiredAnchors(
 	doc: SpriteDoc,
 	role: SpriteRole,
@@ -73,7 +54,6 @@ export function missingRequiredAnchors(
 	return profile.anchors.filter((a) => !(a in doc.anchors));
 }
 
-// One-line hint of what a role still needs (empty when the doc is complete).
 export function requiredHintLine(doc: SpriteDoc, role: SpriteRole): string {
 	const animations = missingRequiredAnimations(doc, role);
 	const anchors = missingRequiredAnchors(doc, role);
@@ -85,15 +65,11 @@ export function requiredHintLine(doc: SpriteDoc, role: SpriteRole): string {
 }
 
 export interface EditTarget {
-	// The bare sprite id (filename without extension).
 	id: string;
-	// The role, resolved from a `<dir>/<id>` prefix; undefined for a bare id.
+
 	role?: SpriteRole;
 }
 
-// Parse the `forge sprite edit <arg>` argument. `forms/buddy` → {id:'buddy',
-// role:'form'}; a bare `buddy` → {id:'buddy'} (the caller searches for it, and if
-// missing cannot know which template to use — a role is required to create).
 export function parseEditArg(arg: string): EditTarget | undefined {
 	if (!arg) return undefined;
 	const clean = arg.replace(/\.sprite$/, '');
@@ -102,29 +78,16 @@ export function parseEditArg(arg: string): EditTarget | undefined {
 	const dir = clean.slice(0, slash);
 	const id = clean.slice(slash + 1);
 	if (!id) return undefined;
-	// Take the last path segment as the role dir (handles `sprites/forms/buddy`).
+
 	const dirSeg = dir.slice(dir.lastIndexOf('/') + 1);
 	return { id, role: roleForDir(dirSeg) };
 }
 
-// ---------------------------------------------------------------------------
-// Representative dynamic-channel preview colors
-// ---------------------------------------------------------------------------
-
-// The p/a dynamic recolor channels have no fixed color in a file — the game
-// assigns them at render time. The editor previews them with representative
-// RGBAs so painted `p`/`a` cells look plausible: a mid player hue, a bright
-// weapon accent. Passed everywhere the editor resolves colors.
 export const SPRITE_PREVIEWS: DynamicPreviews = {
 	p: [255, 150, 40, 255],
 	a: [120, 200, 255, 255],
 };
 
-// The real core palettes the dynamic p/a channels cycle through when previewing
-// painted art (spec #387/#401): `p` steps every player body HUE, `a` steps every
-// rarity accent, so the artist sees the art the way every player/weapon variant
-// will render it, rather than one frozen representative colour. Kept as arrays so
-// the cycle is a pure function of a phase index.
 export const PLAYER_HUE_CYCLE: readonly RGBAQuad[] = HUES;
 export const ACCENT_CYCLE: readonly RGBAQuad[] = Object.values(RARITY_COLOR);
 
@@ -133,11 +96,6 @@ function cycleAt(cycle: readonly RGBAQuad[], phase: number): RGBAQuad {
 	return cycle[((phase % n) + n) % n];
 }
 
-// The p/a preview colours for a session-selected variant pair (spec #401 as
-// amended: no clock — the artist picks the variant on the strip and every
-// surface resolves dynamics through it). Each channel indexes its own core
-// palette and wraps; (0,0) is the canonical representative (the first HUE,
-// matching `SPRITE_PREVIEWS.p`, and the first rarity accent).
 export function variantPreviews(p: number, a: number): DynamicPreviews {
 	return {
 		p: cycleAt(PLAYER_HUE_CYCLE, p),
@@ -145,19 +103,11 @@ export function variantPreviews(p: number, a: number): DynamicPreviews {
 	};
 }
 
-// ---------------------------------------------------------------------------
-// Variant strip (spec #401 amendment) — the one-row hue/accent selector shown
-// over the strips canvas when the doc's art actually paints a dynamic key.
-// ---------------------------------------------------------------------------
-
 export interface DynamicUsage {
 	p: boolean;
 	a: boolean;
 }
 
-// Whether any Frame's art paints the dynamic p/a keys: fg keys count (a
-// SENTINEL fg resolves to the doc default key), and so do opaque bg keys
-// (a SENTINEL/blank bg is transparency, never a key).
 export function docDynamicUsage(doc: SpriteDoc): DynamicUsage {
 	const usage = { p: false, a: false };
 	const mark = (key: string) => {
@@ -172,9 +122,6 @@ export function docDynamicUsage(doc: SpriteDoc): DynamicUsage {
 	return usage;
 }
 
-// One selectable variant swatch: a hue (p) or rarity accent (a) the session can
-// wear. Flat data — the rail lays them out (QA round 3: the variant strip lives
-// in the rail beside the ink grid, so the canvas never layout-jumps).
 export interface VariantOption {
 	channel: 'p' | 'a';
 	index: number;
@@ -182,9 +129,6 @@ export interface VariantOption {
 	active: boolean;
 }
 
-// The selectable variants: one option per player hue, then one per rarity
-// accent — each channel present only when the art paints its key; empty when
-// neither does. Click-only (no key binding); the active pair is marked.
 export function variantOptions(
 	usage: DynamicUsage,
 	active: { p: number; a: number },
@@ -204,14 +148,6 @@ export function variantOptions(
 	return out;
 }
 
-// ---------------------------------------------------------------------------
-// Color-key resolution
-// ---------------------------------------------------------------------------
-
-// Resolve a color key to its RGBA the way the game would: '' is transparent
-// (null); the reserved dynamic keys resolve to their preview colors; otherwise a
-// file-local color wins over the global scene palette. Unknown keys → null so
-// the caller can fall back to a default ink.
 export function resolveColorKey(
 	key: string,
 	local: Readonly<Record<string, RGBAQuad>>,
@@ -224,13 +160,6 @@ export function resolveColorKey(
 	return local[key] ?? global[key] ?? null;
 }
 
-// ---------------------------------------------------------------------------
-// Viewport scrolling (in cell coordinates)
-// ---------------------------------------------------------------------------
-
-// Keep `cursor` within `viewLen`, leaving a `scrolloff` margin where possible.
-// Mirrors the zone editor's scrollAxis (deliberately duplicated to keep this
-// module free of zone dependencies).
 export function scrollAxis(
 	cam: number,
 	cursor: number,
@@ -264,26 +193,12 @@ export function scrollViewport(
 	};
 }
 
-// ---------------------------------------------------------------------------
-// Fatbits geometry (spec #387) — a Pixel renders as z×z terminal cells at zoom
-// ×z. The camera tracks the cursor in PIXEL coordinates (its top-left visible
-// Pixel); native aspect is 1:2 (half a cell each axis) so magnification stays
-// faithful — no aspect squaring. The same geometry drives both the cursor
-// highlight and the mouse's screen→Pixel resolution, so keyboard and mouse see
-// one canvas.
-// ---------------------------------------------------------------------------
-
-// The zoom ladder and its default (×2). Zoom is a presentation concern — it
-// never lives in the pure editor state.
 export const ZOOM_LADDER = [1, 2, 3, 4, 6] as const;
 export const DEFAULT_ZOOM = 2;
 
-// Step to the neighbouring zoom on the ladder (`dir` +1 zooms in, −1 out);
-// clamps at the ends and snaps an off-ladder value onto it first.
 export function stepZoom(zoom: number, dir: number): number {
 	let cur = ZOOM_LADDER.indexOf(zoom as (typeof ZOOM_LADDER)[number]);
 	if (cur < 0) {
-		// Snap to the nearest ladder rung, then step from there.
 		cur = ZOOM_LADDER.reduce(
 			(best, z, i) =>
 				Math.abs(z - zoom) < Math.abs(ZOOM_LADDER[best] - zoom) ? i : best,
@@ -294,13 +209,10 @@ export function stepZoom(zoom: number, dir: number): number {
 	return ZOOM_LADDER[next];
 }
 
-// How many whole Pixels a canvas of `screenLen` terminal cells shows at `zoom`.
 export function visiblePixels(screenLen: number, zoom: number): number {
 	return Math.max(1, Math.floor(screenLen / zoom));
 }
 
-// The Pixel a canvas cell `(sx,sy)` shows, given the pixel-space camera and
-// zoom. The inverse of `pixelToScreen`.
 export function screenToPixel(
 	sx: number,
 	sy: number,
@@ -310,7 +222,6 @@ export function screenToPixel(
 	return { x: cam.x + Math.floor(sx / zoom), y: cam.y + Math.floor(sy / zoom) };
 }
 
-// The top-left canvas cell of a Pixel's z×z block (may be off-screen/negative).
 export function pixelToScreen(
 	px: number,
 	py: number,
@@ -320,25 +231,16 @@ export function pixelToScreen(
 	return { x: (px - cam.x) * zoom, y: (py - cam.y) * zoom };
 }
 
-// ---------------------------------------------------------------------------
-// Mirror view — the true left-facing render of the current frame
-// ---------------------------------------------------------------------------
-
-// The overlay glyph marking an anchor's cell on the canvas (distinct from art).
 export const ANCHOR_MARKER = '✛';
 
 export interface MirrorRender {
 	rows: readonly string[];
 	colors: readonly string[];
 	bg: readonly string[];
-	// Rendered width in cells (the left grid's row length after compilation).
+
 	width: number;
 }
 
-// Compile the frame to a runtime Sprite and read its LEFT-facing output — the
-// exact glyph/colour/bg grids the game shows when the entity faces left, with
-// the glyph MIRROR table already applied. Read-only: painting stays on the
-// right-facing canvas.
 export function mirrorRender(doc: SpriteDoc, frameName: string): MirrorRender {
 	const sprite = spriteFromDoc(doc, frameName);
 	const left: Facing = -1;
@@ -351,8 +253,6 @@ export function mirrorRender(doc: SpriteDoc, frameName: string): MirrorRender {
 	};
 }
 
-// Mirror anchor markers across the rendered width so they sit on the left-facing
-// art where the game would place them.
 export function mirrorAnchorMarkers(
 	markers: readonly AnchorMarker[],
 	width: number,
@@ -364,22 +264,11 @@ export function mirrorAnchorMarkers(
 	}));
 }
 
-// ---------------------------------------------------------------------------
-// Cursor quadrant marker
-// ---------------------------------------------------------------------------
-
-// The single-quadrant block glyph for a cursor bit (0..3), used to show WHICH
-// sub-pixel of the highlighted cell the pixel cursor sits on: ▘ TL, ▝ TR, ▖ BL,
-// ▗ BR.
 const QUADRANT_MARKERS = ['▘', '▝', '▖', '▗'] as const;
 
 export function quadrantMarker(bit: number): string {
 	return QUADRANT_MARKERS[bit] ?? '▘';
 }
-
-// ---------------------------------------------------------------------------
-// Status + help chrome
-// ---------------------------------------------------------------------------
 
 export interface SpriteStatusModel {
 	id: string;
@@ -388,16 +277,16 @@ export interface SpriteStatusModel {
 	frameIdx: number;
 	frameCount: number;
 	tool: string;
-	// The active ink label ('transparent', or a colour key).
+
 	ink: string;
-	// The cursor in both grains: the Pixel it sits on and the cell owning it.
+
 	pixel: { x: number; y: number };
 	cell: { x: number; y: number };
 	bit: number;
-	// The current fatbits zoom (the ×z on the ladder).
+
 	zoom: number;
 	dirty: boolean;
-	// Optional animation / anchor-tool context (issue #339).
+
 	animation?: string;
 	anchorName?: string;
 	anchorScope?: string;
@@ -409,13 +298,10 @@ export function bitName(bit: number): string {
 	return BIT_NAMES[bit] ?? '?';
 }
 
-// The persistent status line's LEFT content — tool, Pixel + cell coordinates,
-// zoom, ink, and save state. The coercion feedback is drawn right-aligned on the
-// same row (see `composeStatusLine`); save diagnostics render separately.
 export function spriteStatusLine(m: SpriteStatusModel): string {
 	const dirty = m.dirty ? ' *' : '';
 	const animation = m.animation ? ` · animation ${m.animation}` : '';
-	// In the anchor tool, surface which anchor + scope the next placement targets.
+
 	const tool =
 		m.tool === 'anchor' && m.anchorName
 			? `anchor ${m.anchorName}@${m.anchorScope ?? 'doc'}`
@@ -423,9 +309,6 @@ export function spriteStatusLine(m: SpriteStatusModel): string {
 	return `${m.id} (${m.role})${dirty}${animation} · frame ${m.frameIdx + 1}/${m.frameCount} · ${tool} · ×${m.zoom} · ink ${m.ink} · px (${m.pixel.x},${m.pixel.y}) cell (${m.cell.x},${m.cell.y}) ${bitName(m.bit)}`;
 }
 
-// Compose the status row: `left` at column 0, `right` (the coercion feedback)
-// flush against the right edge of `width`, with at least one space between them.
-// When they cannot both fit, the left content wins and the right is dropped.
 export function composeStatusLine(
 	left: string,
 	right: string,
@@ -435,13 +318,12 @@ export function composeStatusLine(
 	const l = left.slice(0, width);
 	if (!right) return l;
 	const r = right.slice(0, width);
-	// Need room for the left text, a gap, and the right text.
+
 	if (l.length + 1 + r.length > width) return l;
 	const pad = width - l.length - r.length;
 	return l + ' '.repeat(pad) + r;
 }
 
-// A short summary of save diagnostics for the inline status area.
 export function saveDiagSummary(
 	diags: { severity: string; message: string }[],
 ): string {

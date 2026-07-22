@@ -2,7 +2,6 @@ import type { Terrain } from '../entities/types';
 
 export const CELL = { empty: 0, wall: 1, platform: 2 } as const;
 
-// Undefined when `ch` isn't terrain at all (an entity anchor the caller resolves separately).
 export function terrainCell(ch: string): number | undefined {
 	if (ch === '#') return CELL.wall;
 	if (ch === '=') return CELL.platform;
@@ -14,7 +13,6 @@ export function cellGlyph(cell: number): string {
 	return cell === CELL.wall ? '#' : cell === CELL.platform ? '=' : '.';
 }
 
-// Vertically solid: a body lands on a wall or platform. Above the world is open sky.
 export function isSolid(t: Terrain, cx: number, cy: number): boolean {
 	if (cx < 0 || cx >= t.w) return true;
 	if (cy < 0) return false;
@@ -22,7 +20,6 @@ export function isSolid(t: Terrain, cx: number, cy: number): boolean {
 	return t.cells[cy * t.w + cx] !== CELL.empty;
 }
 
-// Only WALLS block left/right motion, so a body rising through a platform keeps its vx.
 export function isWall(t: Terrain, cx: number, cy: number): boolean {
 	if (cx < 0 || cx >= t.w) return true;
 	if (cy < 0) return false;

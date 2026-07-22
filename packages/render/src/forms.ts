@@ -1,10 +1,3 @@
-// Form (body) art registry (ADR 0031): Forms live as `.sprite` files under
-// repo-root `sprites/forms/`, discovered by `loadSpriteSources` and compiled
-// here — the exact hats.ts pattern applied to full-body sprites. A Form is
-// pickable because its file exists on disk and passes the `forms` role profile;
-// there is no hand-authored TS body art any more. Unlike hats, a Form is never
-// absent: an unknown/dangling id falls back to the default Form.
-
 import { loadSpriteSources, type SpriteSource } from '@mmo/assets';
 import { DEFAULT_FORM_ID } from '@mmo/core/entities';
 import type { BodySprite } from './body-sprite';
@@ -12,9 +5,6 @@ import { Sprite } from './sprite';
 import { compileBodySprite } from './sprite-compile';
 import { acceptSprite } from './sprite-validate';
 
-// A guard body used only when the disk/embedded scan yields no Forms at all (a
-// broken install or a bare test env with no `sprites/` tree). It is not art —
-// one transparent cell keeps the renderer from crashing on a missing default.
 const PLACEHOLDER_BODY: BodySprite = {
 	frames: { idle: new Sprite('·', { defaultKey: 'p' }) },
 	grip: { x: 0, y: 0 },
@@ -27,9 +17,7 @@ export function buildFormRegistry(
 	const registry = new Map<string, BodySprite>();
 	for (const source of sources) {
 		if (source.role !== 'forms') continue;
-		// A Form that fails to parse or does not satisfy the role profile (missing
-		// animations/anchors or an unknown emote) is skipped rather than compiled into a
-		// broken body.
+
 		const doc = acceptSprite(source, 'forms');
 		if (doc === null) continue;
 		registry.set(source.id, compileBodySprite(doc));
@@ -41,9 +29,6 @@ const registry = buildFormRegistry(loadSpriteSources().values());
 
 export const FORM_IDS: readonly string[] = [...registry.keys()].sort();
 
-// Resolve a cosmetic form id to its BodySprite. A dangling or unknown id (or
-// `undefined`) falls back to the default Form; if even that is missing, the
-// in-code placeholder guards against a render-time crash.
 export function formById(id: string | undefined): BodySprite {
 	return (
 		(id !== undefined ? registry.get(id) : undefined) ??

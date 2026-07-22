@@ -7,23 +7,18 @@ import { createTestRenderer } from '@opentui/core/testing';
 import { PlayfieldRenderable } from '../src/render/playfield';
 import { GOLDEN_VIEW, goldenGame, manualClock, seededRng } from './helpers';
 
-// The baseline every client-modularization phase diffs against: a refactor that changes this
-// frame changed what players see. Regenerate deliberately with `MMO_UPDATE_GOLDEN=1 bun test`.
 const GOLDEN_PATH = join(import.meta.dir, 'golden', 'playfield.txt');
 const SEED = 0xc0ffee;
 const FRAME_MS = 16;
 
-// The impact of the scripted `break` triggers a hitstop, and a frozen frame draws nothing.
 const HITSTOP_FRAMES = 5;
 
-// Render frames outrun snapshots, so `tick` only moves when a new snapshot lands.
 interface FrameOpts {
 	events?: CombatEvent[];
 	tick?: number;
 	zoneId?: string;
 }
 
-// Every kind of CombatEvent at once: blood + gore + impact particles, a camera kick and a hitstop.
 function scriptedEvents(game: GameState): CombatEvent[] {
 	const [a, b] = game.world.zones.town.monsters;
 	return [
@@ -59,13 +54,12 @@ async function mountPlayfield() {
 	return { ...t, playfield, game, frame, frames };
 }
 
-/** Renders the scripted scene and returns the settled char frame. */
 async function renderGoldenFrame(): Promise<string> {
 	const { frame, frames, game, captureCharFrame } = await mountPlayfield();
 
 	await frame({ tick: 1 });
 	await frame({ tick: 2, events: scriptedEvents(game) });
-	// Long enough for the hitstop to lapse and the surviving specks to fly and settle.
+
 	await frames(14);
 
 	return captureCharFrame();
@@ -95,7 +89,7 @@ test('a re-sent snapshot spawns its effects once, not once per frame', async () 
 
 	await frame({ tick: 1 });
 	await frame({ tick: 2, events });
-	// The repeat must land after the hitstop, or the frozen frame swallows it before the gate.
+
 	await frames(HITSTOP_FRAMES);
 	await frame({ events });
 	await frames(8);
@@ -104,9 +98,6 @@ test('a re-sent snapshot spawns its effects once, not once per frame', async () 
 });
 
 test('a zone change clears carried-over particles: old-zone specks never render in the new zone (#373)', async () => {
-	// The same arrival with and without a burst back in town must render the
-	// same dungeon frame once the kick has drained — town's specks (alive for
-	// seconds otherwise) may not follow the player through the door.
 	const arrive = async (townEvents: boolean) => {
 		const { frame, frames, game, captureCharFrame } = await mountPlayfield();
 		await frame({ tick: 1 });
@@ -126,7 +117,7 @@ test('a zone change resets the gate, so entry effects fire even on a colliding t
 		await frame({ tick: 1 });
 		await frame({ tick: 2, events: scriptedEvents(game) });
 		await frames(HITSTOP_FRAMES);
-		// The dungeon's first snapshot reuses tick 2; without the reset its effects are swallowed.
+
 		await frame({ events, zoneId: 'dungeon' });
 		await frames(8);
 		return captureCharFrame();

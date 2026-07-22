@@ -36,7 +36,6 @@ function caps(kitty: boolean): TerminalCapabilities {
 	} as TerminalCapabilities;
 }
 
-// sentinels unique to each overlay's interior, so compositing decides which is on top
 const NOTICE_BODY = 'Press any key to continue';
 const CREATOR_BODY = 'Nameplate';
 
@@ -59,7 +58,6 @@ test('the self-contained notice draws above the creator as a blocking pre-gate',
 	notice.attach(renderer.root);
 	creator.attach(renderer.root);
 
-	// baseline: the creator interior renders here, so its later absence means the notice covered it
 	creator.show();
 	await renderOnce();
 	expect(captureCharFrame()).toContain(CREATOR_BODY);

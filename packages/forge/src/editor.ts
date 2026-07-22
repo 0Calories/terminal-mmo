@@ -351,7 +351,6 @@ export interface FootBox {
 	h: number;
 }
 
-// The anchor glyph is the box's top-left corner.
 export function footprintBox(p: Placeable, x: number, y: number): FootBox {
 	switch (p.kind) {
 		case 'monster':
@@ -399,7 +398,6 @@ export function ghostEntity(
 	return undefined;
 }
 
-// Must match the runtime's isSolid (incl. the implicit floor below the canvas).
 function gridSolid(
 	doc: EditorDoc,
 	ext: { w: number; h: number },
@@ -475,7 +473,6 @@ export function groundSnap(
 	return { x, y };
 }
 
-// Must mirror the renderer's draw order (higher = in front on overlap).
 const ENTITY_LAYER: Record<Placeable['kind'], number> = {
 	monster: 3,
 	npc: 2,
@@ -685,7 +682,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				cam.y = next.y;
 			}
 
-			// Shift the scene camera by the chrome inset; rulers/footer overpaint the bleed.
 			renderZoneScene(
 				buf,
 				scene,
@@ -749,7 +745,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 						: st === 'airborne'
 							? C.ghostAir
 							: C.ghostBad;
-				// Composite onto the tint; swapping to lighter glyphs garbled block sprites.
+
 				const b = bg.toInts();
 				const fade = (fg?: typeof C.selBg): typeof C.selBg | undefined => {
 					if (!fg) return fg;
@@ -829,7 +825,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				const lbl = String(wy).padStart(GUTTER_W - 1, ' ');
 				buf.drawText(lbl, 0, y, hot ? C.hot : C.rulerFg, C.chromeBg);
 			}
-			buf.fillRect(0, 0, GUTTER_W, RULER_H, C.chromeBg); // corner
+			buf.fillRect(0, 0, GUTTER_W, RULER_H, C.chromeBg);
 
 			const toolbarRow = H - FOOTER_H;
 			buf.fillRect(0, toolbarRow, W, 1, C.chromeBg);
@@ -1179,7 +1175,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		exitOnCtrlC: true,
 		backgroundColor: '#10121a',
 		useMouse: true,
-		// Kitty keyboard: lets the terminal report the Cmd/super modifier for undo/redo.
+
 		useKittyKeyboard: {},
 	});
 	const view = new EditRenderable(renderer);
@@ -1444,7 +1440,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		ctrl: boolean;
 		meta?: boolean;
 		shift?: boolean;
-		// macOS Cmd arrives as super/meta/option depending on terminal; treat any as Cmd.
+
 		super?: boolean;
 		option?: boolean;
 		sequence?: string;
@@ -1575,10 +1571,8 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			return;
 		}
 
-		// ^s, not bare s: s is a movement key.
 		if (k.ctrl && k.name === 's') return save();
 
-		// Check before toolByKey so Ctrl/Cmd-R isn't read as the Rectangle tool.
 		const cmd = k.super === true || k.meta === true || k.option === true;
 		if ((k.ctrl || cmd) && k.name === 'z') return k.shift ? doRedo() : doUndo();
 		if ((k.ctrl || cmd) && (k.name === 'r' || k.name === 'y')) return doRedo();
@@ -1635,7 +1629,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				namePrompt = zoneName(doc) ?? '';
 				return;
 			case 't': {
-				// A populated Field→Town invalidates its monsters, so require a second `t`.
 				const target = zoneType(doc) === 'field' ? 'town' : 'field';
 				if (
 					target === 'town' &&

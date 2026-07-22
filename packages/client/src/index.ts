@@ -49,7 +49,7 @@ const renderer = await createCliRenderer({
 	targetFps: RENDER_FPS,
 	exitOnCtrlC: true,
 	backgroundColor: '#10121a',
-	// events: true reports key releases, needed for continuous held movement.
+
 	useKittyKeyboard: { events: true },
 });
 
@@ -95,7 +95,7 @@ function quit(message?: string) {
 	try {
 		(renderer as unknown as { destroy?: () => void }).destroy?.();
 	} catch {}
-	// Print after teardown so it lands on the normal screen, not the cleared alt-screen.
+
 	if (audioDegraded)
 		console.error('audio disabled after repeated engine errors this session');
 	if (identityNotice) console.error(identityNotice);

@@ -1,9 +1,3 @@
-// Selection, floating move & whole-Frame shift (spec #387, #399). The float
-// lifecycle is pure state over the editor state: lift → nudge/drag → drop (one
-// undo step) → the coercion rules; Esc restores losslessly; transparent Pixels
-// skip; Glyph stamps travel only when fully enclosed and land on the nearest
-// cell; out-of-bounds drops clip. Gestures reach the pure layer through the one
-// normalized input seam, so keyboard/mouse parity is structural.
 import { describe, expect, test } from 'bun:test';
 import {
 	applyInput,
@@ -35,25 +29,19 @@ import {
 } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
-// A 6×4-cell (12×8-Pixel) all-transparent hat frame.
 function blankState(): SpriteEditorState {
 	return initSpriteEditor(emptySpriteDoc('test', 'hat'));
 }
 
-// The doc as the canvas + Composited preview render it while a float rides.
 function displayed(s: SpriteEditorState): SpriteEditorState {
 	return { ...s, doc: floatDisplayDoc(s) };
 }
 
-// ---------------------------------------------------------------------------
-// Lift → move → drop lifecycle
-// ---------------------------------------------------------------------------
-
 describe('floating move — lift, drop, one undo step', () => {
 	function selected(): SpriteEditorState {
 		let s = setInk(blankState(), colorInk('g'));
-		s = paintPixel(s, 0, 0); // lit (0,0)
-		s = paintPixel(s, 1, 0); // lit (1,0)
+		s = paintPixel(s, 0, 0);
+		s = paintPixel(s, 1, 0);
 		return setSelection(s, { x0: 0, y0: 0, x1: 1, y1: 1 });
 	}
 
@@ -61,9 +49,9 @@ describe('floating move — lift, drop, one undo step', () => {
 		const s0 = selected();
 		const s = beginFloat(s0, { x: 0, y: 0 });
 		expect(s.float).not.toBeNull();
-		expect(s.float?.pixels).toHaveLength(2); // the two lit Pixels
-		expect(s.history.past.length).toBe(s0.history.past.length); // lift is free
-		// At a zero offset the float sits exactly on its source — art unchanged.
+		expect(s.float?.pixels).toHaveLength(2);
+		expect(s.history.past.length).toBe(s0.history.past.length);
+
 		const d = displayed(s);
 		expect(readPixel(d, 0, 0)).toBe(true);
 		expect(readPixel(d, 1, 0)).toBe(true);
@@ -71,11 +59,11 @@ describe('floating move — lift, drop, one undo step', () => {
 
 	test('a nudge floats the art live — source transparent, float at the offset', () => {
 		let s = beginFloat(selected(), { x: 0, y: 0 });
-		s = nudgeFloat(s, 2, 0); // right one cell
+		s = nudgeFloat(s, 2, 0);
 		const d = displayed(s);
-		expect(readPixel(d, 0, 0)).toBe(false); // source hole
+		expect(readPixel(d, 0, 0)).toBe(false);
 		expect(readPixel(d, 1, 0)).toBe(false);
-		expect(readPixel(d, 2, 0)).toBe(true); // moved
+		expect(readPixel(d, 2, 0)).toBe(true);
 		expect(readPixel(d, 3, 0)).toBe(true);
 	});
 
@@ -88,23 +76,22 @@ describe('floating move — lift, drop, one undo step', () => {
 		expect(s.history.past.length).toBe(before + 1);
 		expect(readPixel(s, 0, 0)).toBe(false);
 		expect(readPixel(s, 2, 0)).toBe(true);
-		// A single undo backs the whole lift+drop out at once.
+
 		s = undoEdit(s);
 		expect(readPixel(s, 0, 0)).toBe(true);
 		expect(readPixel(s, 2, 0)).toBe(false);
 	});
 
 	test('the drop resolves through the standard coercion rules', () => {
-		// Land a 'g' Pixel into a cell that already holds a different fg: overpaint.
 		let s = setInk(blankState(), colorInk('r'));
-		s = paintPixel(s, 4, 0); // 'r' at (4,0) — cell (2,0)
+		s = paintPixel(s, 4, 0);
 		s = setInk(s, colorInk('g'));
 		s = paintPixel(s, 0, 0);
 		s = setSelection(s, { x0: 0, y0: 0, x1: 0, y1: 0 });
 		s = beginFloat(s, { x: 0, y: 0 });
-		s = nudgeFloat(s, 5, 0); // (0,0) → (5,0), same cell (2,0) as the 'r'
+		s = nudgeFloat(s, 5, 0);
 		s = commitFloat(s);
-		// Overpaint: the touched Pixel is the lone new fg 'g', the old 'r' demoted.
+
 		expect(cellAt(s, 2, 0).fg).toBe('g');
 		expect(cellAt(s, 2, 0).bg).toBe('r');
 	});
@@ -115,7 +102,7 @@ describe('floating move — lift, drop, one undo step', () => {
 		s = nudgeFloat(s, 3, 2);
 		s = cancelFloat(s);
 		expect(s.float).toBeNull();
-		expect(s.doc).toBe(s0.doc); // doc object never changed
+		expect(s.doc).toBe(s0.doc);
 		expect(readPixel(s, 0, 0)).toBe(true);
 		expect(readPixel(s, 1, 0)).toBe(true);
 	});
@@ -131,14 +118,10 @@ describe('floating move — lift, drop, one undo step', () => {
 	});
 });
 
-// ---------------------------------------------------------------------------
-// Transparent Pixels skip
-// ---------------------------------------------------------------------------
-
 describe('transparent float Pixels skip on landing', () => {
 	test('only lit Pixels are lifted — transparent ones are never queued', () => {
 		let s = setInk(blankState(), colorInk('g'));
-		s = paintPixel(s, 0, 0); // only (0,0) lit inside the selection
+		s = paintPixel(s, 0, 0);
 		s = setSelection(s, { x0: 0, y0: 0, x1: 1, y1: 1 });
 		s = beginFloat(s);
 		expect(s.float?.pixels).toHaveLength(1);
@@ -147,29 +130,25 @@ describe('transparent float Pixels skip on landing', () => {
 
 	test('a transparent float Pixel never erases the art underneath it', () => {
 		let s = setInk(blankState(), colorInk('g'));
-		s = paintPixel(s, 0, 0); // the one lit Pixel of the float
+		s = paintPixel(s, 0, 0);
 		s = setInk(s, colorInk('r'));
-		s = paintPixel(s, 2, 2); // underlying art, in cell (1,1)
-		s = setSelection(s, { x0: 0, y0: 0, x1: 3, y1: 1 }); // spans cells (0,0)+(1,0)
+		s = paintPixel(s, 2, 2);
+		s = setSelection(s, { x0: 0, y0: 0, x1: 3, y1: 1 });
 		s = beginFloat(s);
-		s = nudgeFloat(s, 0, 2); // down one cell: lit (0,0)→(0,2), rest transparent
+		s = nudgeFloat(s, 0, 2);
 		s = commitFloat(s);
-		expect(readPixel(s, 0, 2)).toBe(true); // lit Pixel landed
+		expect(readPixel(s, 0, 2)).toBe(true);
 		expect(cellAt(s, 0, 1).fg).toBe('g');
-		// The underlying 'r' at (2,2) is untouched — the transparent Pixels skipped.
+
 		expect(readPixel(s, 2, 2)).toBe(true);
 		expect(cellAt(s, 1, 1).fg).toBe('r');
 	});
 });
 
-// ---------------------------------------------------------------------------
-// Glyph stamps as atomic passengers
-// ---------------------------------------------------------------------------
-
 describe('Glyph stamps travel only when fully enclosed', () => {
 	test('a fully-enclosed stamp travels and lands on the nearest cell', () => {
-		let s = stampGlyph(blankState(), 1, 1, '@'); // stamp in cell (1,1)
-		s = setSelection(s, { x0: 2, y0: 2, x1: 3, y1: 3 }); // exactly cell (1,1)
+		let s = stampGlyph(blankState(), 1, 1, '@');
+		s = setSelection(s, { x0: 2, y0: 2, x1: 3, y1: 3 });
 		s = beginFloat(s);
 		expect(s.float?.stamps).toHaveLength(1);
 		expect(s.float?.stamps[0]).toMatchObject({
@@ -177,35 +156,31 @@ describe('Glyph stamps travel only when fully enclosed', () => {
 			cellY: 1,
 			glyph: '@',
 		});
-		s = nudgeFloat(s, 2, 0); // +2 Pixels → +1 cell, rounding to the cell grid
+		s = nudgeFloat(s, 2, 0);
 		s = commitFloat(s);
-		expect(cellAt(s, 1, 1).glyph).toBe(' '); // source cleared
-		expect(cellAt(s, 2, 1).glyph).toBe('@'); // landed, owning its cell
+		expect(cellAt(s, 1, 1).glyph).toBe(' ');
+		expect(cellAt(s, 2, 1).glyph).toBe('@');
 	});
 
 	test('a partially-covered stamp stays put', () => {
 		let s = stampGlyph(blankState(), 1, 1, '@');
-		s = setSelection(s, { x0: 2, y0: 2, x1: 2, y1: 2 }); // one Pixel of the cell
+		s = setSelection(s, { x0: 2, y0: 2, x1: 2, y1: 2 });
 		s = beginFloat(s);
 		expect(s.float?.stamps).toHaveLength(0);
 		s = nudgeFloat(s, 2, 0);
 		s = commitFloat(s);
-		expect(cellAt(s, 1, 1).glyph).toBe('@'); // never moved
+		expect(cellAt(s, 1, 1).glyph).toBe('@');
 	});
 });
-
-// ---------------------------------------------------------------------------
-// Out-of-bounds clip, delete, select-all, whole-Frame shift
-// ---------------------------------------------------------------------------
 
 describe('out-of-bounds drops clip with feedback', () => {
 	test('a Pixel dropped past the edge clips and never grows the canvas', () => {
 		let s = setInk(blankState(), colorInk('g'));
-		s = paintPixel(s, 11, 7); // bottom-right Pixel
+		s = paintPixel(s, 11, 7);
 		const ext0 = frameExtent(currentFrame(s));
 		s = setSelection(s, { x0: 11, y0: 7, x1: 11, y1: 7 });
 		s = beginFloat(s, { x: 11, y: 7 });
-		s = nudgeFloat(s, 2, 0); // (11,7) → (13,7), past the 12-wide edge
+		s = nudgeFloat(s, 2, 0);
 		s = commitFloat(s);
 		expect(s.feedback).toContain('clipped');
 		expect(frameExtent(currentFrame(s))).toEqual(ext0);
@@ -223,7 +198,7 @@ describe('delete clears the selection contents as one undo step', () => {
 		expect(readPixel(s, 0, 0)).toBe(false);
 		expect(readPixel(s, 1, 0)).toBe(false);
 		expect(s.history.past.length).toBe(before + 1);
-		expect(s.selection).not.toBeNull(); // kept for further ops
+		expect(s.selection).not.toBeNull();
 	});
 });
 
@@ -238,7 +213,7 @@ describe('whole-Frame shift = select-all + float', () => {
 		s = paintPixel(s, 0, 0);
 		s = paintPixel(s, 5, 3);
 		s = selectAll(s);
-		s = nudgeFloat(s, 2, 0); // lifts the select-all, shifts one cell right
+		s = nudgeFloat(s, 2, 0);
 		expect(s.float).not.toBeNull();
 		const d = displayed(s);
 		expect(readPixel(d, 0, 0)).toBe(false);
@@ -246,10 +221,6 @@ describe('whole-Frame shift = select-all + float', () => {
 		expect(readPixel(d, 7, 3)).toBe(true);
 	});
 });
-
-// ---------------------------------------------------------------------------
-// Gesture grammar through the normalized input seam (device parity)
-// ---------------------------------------------------------------------------
 
 describe('select marquee — anchor gesture, device parity', () => {
 	function viaMouse(): SpriteEditorState {
@@ -307,7 +278,7 @@ describe('select marquee — anchor gesture, device parity', () => {
 			normalizeMouse({ pixel: { x: 3, y: 2 }, button: 'left', phase: 'drag' }),
 		);
 		expect(s.shape?.tool).toBe('select');
-		expect(s.selection).toBeNull(); // not committed until release
+		expect(s.selection).toBeNull();
 	});
 });
 
@@ -325,7 +296,7 @@ describe('move float — mouse drag reaches the same art as a keyboard nudge', (
 			s,
 			normalizeMouse({ pixel: { x: 0, y: 0 }, button: 'left', phase: 'down' }),
 		);
-		expect(s.float).not.toBeNull(); // grabbed inside the selection → lifted
+		expect(s.float).not.toBeNull();
 		s = applyInput(
 			s,
 			normalizeMouse({ pixel: { x: 2, y: 0 }, button: 'left', phase: 'drag' }),

@@ -170,7 +170,6 @@ test('clear() drops a pending interact edge so it cannot fire after a mode switc
 });
 
 test('a fresh press is dropped on the SHORT window without release events (ADR 0024 §5)', () => {
-	// terminals without Kitty key-release never call release(), so held keys drop after an idle window
 	const input = new InputState('keyboard');
 	input.press('d', 0);
 	expect(input.poll(130).moveX).toBe(1);

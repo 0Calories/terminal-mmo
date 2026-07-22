@@ -1,8 +1,3 @@
-// Headless tests for whole-file sizing (issue #402): load-normalize to the union
-// bounding box (baseline-driven vertical growth), whole-file edge resize with
-// Anchor/baseline compensation, crop / crop-to-selection, save-trim, and the
-// parser round-trip through a non-uniform (sword-modeled) fixture. Pure doc
-// transforms are tested state → action → expected doc + feedback.
 import { describe, expect, test } from 'bun:test';
 import type { RGBAQuad } from '@mmo/core/entities';
 import {
@@ -29,11 +24,6 @@ import {
 } from '../src/sprite-editor/state';
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
 
-// Build a frame from glyph rows; colors/bg default to blank (the tests below care
-// about art + Anchor/baseline geometry, not the fg/bg grids).
-// A named frame — v2 frames are unnamed, but the tests key by a memorable name;
-// mkDoc turns each into its own single-frame animation of that name (the `name`
-// field is harmless extra data the resize transforms ignore).
 type NamedFrame = SpriteFrameDoc & { name: string };
 
 function frame(
@@ -95,7 +85,6 @@ describe('content bounds', () => {
 });
 
 describe('normalizeDoc — load-normalize to the union bbox', () => {
-	// A sword-modeled non-uniform file: a short idle Frame and a tall active Frame.
 	function nonUniform(): SpriteDoc {
 		return mkDoc(
 			[
@@ -114,13 +103,12 @@ describe('normalizeDoc — load-normalize to the union bbox', () => {
 	test('grows shorter Frames to the union size with transparent margin', () => {
 		const out = normalizeDoc(nonUniform());
 		expect(isUniform(out)).toBe(true);
-		// union W = 5, H = 4.
+
 		const idle = frameByName(out, 'idle');
 		expect(sizeOf(idle as SpriteFrameDoc)).toEqual({ w: 5, h: 4 });
-		// Vertical growth is on TOP (ground contact preserved): the idle art keeps
-		// its bottom row, a blank row is added above, and each row is right-padded.
+
 		expect(idle?.rows).toEqual(['     ', 'AB   ', 'CD   ', 'EF   ']);
-		// The tall Frame was already the union size, so it is untouched.
+
 		expect(frameByName(out, 'active')?.rows).toEqual([
 			'GHIJK',
 			'LMNOP',
@@ -135,12 +123,11 @@ describe('normalizeDoc — load-normalize to the union bbox', () => {
 
 	test('Anchors follow the per-Frame vertical shift via overrides', () => {
 		const out = normalizeDoc(nonUniform());
-		// The doc-level anchor (used by the untouched tall Frame) is unchanged.
+
 		expect(out.anchors.grip).toEqual({ x: 0, y: 0 });
-		// active grew by 0 rows → no override.
+
 		expect(frameByName(out, 'active')?.anchors.grip).toBeUndefined();
-		// idle grew by 1 top row → an override shifts the effective grip down by 1,
-		// so it still points at the same art cell.
+
 		expect(frameByName(out, 'idle')?.anchors.grip).toEqual({ x: 0, y: 1 });
 	});
 });
@@ -217,9 +204,9 @@ describe('cropDocToCells — crop with compensation', () => {
 		});
 		const out = cropDocToCells(doc, 1, 1, 2, 2);
 		expect(allFrames(out)[0].rows).toEqual(['FG', 'JK']);
-		// left removed 1 → x-1; top removed 1 → y-1.
+
 		expect(out.anchors.grip).toEqual({ x: 1, y: 1 });
-		// bottom removed 1 row (row 3) → baseline 1 - 1 = 0.
+
 		expect(out.baseline).toBe(0);
 	});
 });
@@ -234,11 +221,11 @@ describe('trimDoc — save trims to the union content bbox', () => {
 			{ anchors: { grip: { x: 1, y: 1 } }, baseline: 1 },
 		);
 		const out = trimDoc(doc);
-		// union content: x 1..2, y 1..2 → 2×2.
+
 		expect(allFrames(out)[0].rows).toEqual(['##', '##']);
 		expect(allFrames(out)[1].rows).toEqual(['# ', '  ']);
 		expect(out.anchors.grip).toEqual({ x: 0, y: 0 });
-		// bottom removed 1 row → baseline 1 - 1 = 0.
+
 		expect(out.baseline).toBe(0);
 	});
 
@@ -254,7 +241,6 @@ describe('trimDoc — save trims to the union content bbox', () => {
 });
 
 describe('parser round-trip through the editor', () => {
-	// A non-uniform file: 2×3 idle, 5×4 active with a blank top row of its own.
 	const NON_UNIFORM = [
 		'{"key":"a","anchors":{"grip":[0,0]},"animations":[{"name":"idle"},{"name":"active"}]}',
 		'--- idle',
@@ -272,18 +258,18 @@ describe('parser round-trip through the editor', () => {
 	test('load-normalize → save-trim uniformizes a non-uniform file', () => {
 		const parsed = parseSpriteFile(NON_UNIFORM, 'blade');
 		expect(parsed.doc).not.toBeNull();
-		// The frames start non-uniform.
+
 		expect(isUniform(parsed.doc as SpriteDoc)).toBe(false);
 
 		const state = initSpriteEditor(parsed.doc as SpriteDoc);
-		// In-editor, load-normalize made every Frame one size.
+
 		expect(isUniform(state.doc)).toBe(true);
 
 		const { text, diagnostics } = saveResult(state);
 		expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
 		const reparsed = parseSpriteFile(text, 'blade');
 		expect(isUniform(reparsed.doc as SpriteDoc)).toBe(true);
-		// A second load-normalize → save-trim is now a no-op (stable).
+
 		const again = saveResult(initSpriteEditor(reparsed.doc as SpriteDoc));
 		expect(again.text).toBe(text);
 	});
@@ -299,7 +285,7 @@ describe('parser round-trip through the editor', () => {
 			'###',
 			'',
 		].join('\n');
-		// The serializer's canonical form of this uniform tight file.
+
 		const canonical = serializeSpriteFile(
 			parseSpriteFile(raw, 'walker').doc as SpriteDoc,
 		);

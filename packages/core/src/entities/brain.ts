@@ -1,13 +1,3 @@
-// Monster Brains — the decision layer (ADR 0034). A Brain's entire output is
-// a decision, never an effect: `brain(entity, view) → { drive, ai }`. Each
-// archetype is one small state machine over its profile's ability table
-// (patrol/chase/strike for the melee kinds; patrol/reposition/attack for the
-// shooter). Nothing outside a Brain initiates an attack; a Brain never applies
-// damage, never moves anything, and its `ai` memory is private to it — the
-// tick threads it through opaquely and it never crosses the wire.
-
-// A Brain's output type is physics-owned: the Drive is the shared decision
-// packet every controller (Intent or Brain) feeds into the step (ADR 0032).
 import { type Drive, IDLE_DRIVE } from '../physics/physics';
 import { isSolid, isWall } from '../physics/terrain';
 import {
@@ -18,23 +8,20 @@ import {
 } from './archetypes';
 import type { Entity, Facing, MonsterType, Terrain } from './types';
 
-/** The limited slice of its Zone a Brain may perceive. */
 export interface BrainView {
 	terrain: Terrain;
-	/** Nearest Avatar's x, or null when the Zone holds none. */
+
 	targetX: number | null;
 }
 
 export interface BrainResult {
 	drive: Drive;
-	/** Next tick's private memory (stored on Entity.ai) — opaque outside this Brain. */
+
 	ai: unknown;
 }
 
 export type Brain = (m: Entity, view: BrainView) => BrainResult;
 
-// Patrol: walk the current facing, turn at a wall or a ledge. Probed pre-step
-// from the Brain's view of the terrain (the Brain decides; physics executes).
 function patrolDrive(m: Entity, t: Terrain): Drive {
 	const dir = m.facing;
 	if (!m.onGround) return { moveX: dir, jump: false };
@@ -56,7 +43,6 @@ function patrolDrive(m: Entity, t: Terrain): Drive {
 const stunned = (m: Entity) => (m.stunT ?? 0) > 0;
 const committed = (m: Entity) => m.attackT > 0;
 
-// The one perception every FSM shares: the signed and absolute gap to the target.
 function gapTo(
 	m: Entity,
 	targetX: number | null,
@@ -68,9 +54,6 @@ function gapTo(
 
 const toward = (dx: number): Facing => (dx >= 0 ? 1 : -1);
 
-// Melee FSM (chaser, brute): patrol → chase inside aggro → commit `swing` in
-// range once off cooldown. States re-derive from distance each tick, so no
-// memory is needed; `ai` threads through untouched.
 function meleeBrain(p: MeleeProfile): Brain {
 	return (m, view) => {
 		if (stunned(m) || committed(m)) return { drive: IDLE_DRIVE, ai: m.ai };
@@ -88,7 +71,6 @@ function meleeBrain(p: MeleeProfile): Brain {
 	};
 }
 
-/** The shooter Brain's explicit states — recorded in its private `ai` memory. */
 export type ShooterState = 'patrol' | 'reposition' | 'attack';
 interface ShooterAi {
 	state: ShooterState;
@@ -100,16 +82,8 @@ function shooterAi(ai: unknown): ShooterAi {
 		: { state: 'patrol' };
 }
 
-// Hysteresis at the band's inner edge: a repositioning shooter opens a little
-// MORE than keepDist before it settles into attack. The prior state — its ai
-// memory — decides, so the FSM cannot flip-flop on the boundary (this is the
-// sequencing ADR 0034 kept memory for: "reposition, THEN attack").
 const SETTLE_MARGIN = 2;
 
-// Shooter FSM: patrol outside aggro; inside aggro, reposition until the target
-// sits in the comfort band [keepDist, aggro), and ONLY the attack state may
-// commit `fire` — a crowded shooter backs off first instead of firing
-// point-blank (the deliberate behavior fix of ADR 0034).
 function shooterBrain(p: RangedProfile): Brain {
 	return (m, view) => {
 		const ai = shooterAi(m.ai);
@@ -132,8 +106,6 @@ function shooterBrain(p: RangedProfile): Brain {
 	};
 }
 
-// One Brain per Monster archetype (ADR 0034): adding an archetype = one
-// profile in ARCHETYPES + one entry here; the tick and combat stay untouched.
 export const BRAINS: Record<MonsterType, Brain> = {
 	chaser: meleeBrain(ARCHETYPES.chaser.melee),
 	brute: meleeBrain(ARCHETYPES.brute.melee),

@@ -1,7 +1,3 @@
-// Session placement in a ZoneState and the snapshot projection: the world's
-// business (sessions belong to the whole), kept out of the zone tick so zones/
-// stays free of persistence/protocol/progression concerns.
-
 import type { CombatEvent } from '../combat/combat';
 import { actionFlags, actionStateOf, IDLE_ACTION } from '../combat/combat';
 import { DEFAULT_WEAPON } from '../combat/weapons';
@@ -77,8 +73,6 @@ export function removeAvatar(state: ZoneState, sessionId: number): ZoneState {
 	};
 }
 
-// `source` is server-internal (used to filter out an avatar's own hit events
-// below) and never crosses the wire — strip it before it reaches the client.
 function stripSource(e: CombatEvent): CombatEvent {
 	if (e.kind !== 'hit') return e;
 	const { source: _source, ...rest } = e;

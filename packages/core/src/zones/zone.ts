@@ -229,8 +229,6 @@ export function stepZone(
 	let nextDropId = zone.nextDropId ?? 1;
 	const lootTable = lootTableFor(zone.id);
 
-	// Strikes against Avatars (Faction 'monsters'): melee committers' active
-	// frames plus travelling Projectiles — all land in resolveHitsOnAvatars.
 	const hostileStrikes: Strike[] = [];
 	const advanced: Entity[] = [];
 	for (const m0 of zone.monsters) {
@@ -243,9 +241,6 @@ export function stepZone(
 		m.poiseT = Math.max(0, (m.poiseT ?? 0) - dt);
 		if ((m.poiseT ?? 0) <= 0) m.poise = regenPoise(m, dt);
 
-		// The uniform controller seam (ADR 0034): the Brain decides, the tick
-		// executes. All archetype behavior lives in BRAINS + ARCHETYPES; the
-		// tick only threads the Brain's private `ai` memory through opaquely.
 		const target = nearestAvatar(avatars, m.x);
 		const view: BrainView = {
 			terrain: t,
@@ -260,7 +255,6 @@ export function stepZone(
 
 		const melee = meleeProfileOf(m.type);
 		if (drive.commit === 'swing' && melee)
-			// A fresh commit is a fresh swing: its dedup ledger starts empty.
 			m = {
 				...m,
 				attackT: SWING_TOTAL,
@@ -269,8 +263,6 @@ export function stepZone(
 			};
 		else if (drive.commit === 'fire') m = { ...m, attackT: SWING_TOTAL };
 
-		// A ranged archetype releases its shot on the windup→active edge: the
-		// wind-up stays a readable cue, and the fire cooldown starts at release.
 		const ranged = rangedProfileOf(m.type);
 		if (
 			ranged &&
@@ -281,8 +273,6 @@ export function stepZone(
 			m = { ...m, attackCdT: ranged.fireCooldown };
 		}
 
-		// Project, never apply (ADR 0022/0034): the active frames emit a Strike;
-		// resolveHitsOnAvatars owns guard/damage/poise/knockback application.
 		if (melee && meleeActive(m.attackT))
 			hostileStrikes.push({
 				attackerId: m.id,
@@ -300,8 +290,6 @@ export function stepZone(
 		advanced.push(m);
 	}
 
-	// Projectiles travel; a live Avatar swing swats a shot before it can
-	// strike; each survivor projects this tick's body as a Strike.
 	const flying: Projectile[] = [];
 	for (const pr0 of zone.projectiles) {
 		const pr = stepProjectile(t, pr0, dt);
@@ -325,9 +313,6 @@ export function stepZone(
 		});
 	}
 
-	// The single resolve pass on Avatars (ADR 0022's guard hub): every hostile
-	// Strike lands here, after all projection. A landed projectile Strike is
-	// consumed (the shot despawns); melee dedups per swing via the ledger.
 	const monsterSwingHits = new Map<number, Set<number>>(
 		advanced.map((m) => [m.id, new Set(m.swingHits ?? [])]),
 	);
@@ -351,7 +336,6 @@ export function stepZone(
 	const deadMonsters: Entity[] = [];
 	for (const m of hitsOnMonsters.monsters) {
 		if (m.hp > 0) {
-			// Persist the swing ledger: the active window spans multiple ticks.
 			monsters.push({
 				...m,
 				swingHits: [...(monsterSwingHits.get(m.id) ?? [])],

@@ -24,9 +24,6 @@ const IDLE: Input = {
 	interact: false,
 };
 
-// Feet flush on TERRAIN's ground top (row 22, body height 5): the old y=20
-// embedded the body 3 rows into the floor, which only "worked" because the
-// pre-sweep collision checked destination cells alone.
 function grounded(over: Partial<Entity> = {}): Entity {
 	return entity({
 		id: 1,
@@ -77,7 +74,6 @@ test('a dodge cannot start mid-dodge', () => {
 	expect(step(mid, { moveX: 1, dodge: true }, DODGE_LEVEL).dodging).toBe(false);
 });
 
-// A swing only strikes once it crosses out of windup, several frames after the key.
 function swingToStrike(a: Entity) {
 	let cur = a;
 	for (let i = 0; i < 60; i++) {

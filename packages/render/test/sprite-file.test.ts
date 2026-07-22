@@ -1,9 +1,6 @@
 import { expect, test } from 'bun:test';
 import { parseSpriteFile, type SpriteDoc, serializeSpriteFile } from '../src';
 
-// A v2 rich file (ADR 0037): the header's `animations` is an ordered array, a
-// multi-frame animation binds sections by `--- <animation> <index>`, fps lives on
-// the animation object, and per-frame anchor overrides key by frame index.
 const RICH = `{
 	"key": "e",
 	"baseline": 2,
@@ -65,7 +62,7 @@ test('happy path: rich file parses with zero diagnostics and precise doc fields'
 
 	const wave1 = d.animations[1].frames[1];
 	expect(wave1.rows).toEqual(['XY', 'ZW']);
-	// The per-index override lands on frame 1 of `wave`.
+
 	expect(wave1.anchors).toEqual({ grip: { x: 0, y: 1 } });
 });
 
@@ -162,7 +159,7 @@ AB
 `;
 	const { doc, diagnostics } = parseSpriteFile(text, 'buddy');
 	expect(diagnostics).toEqual([]);
-	// A save of an untouched doc reproduces the hand-compacted header verbatim.
+
 	expect(serializeSpriteFile(doc as SpriteDoc)).toBe(text);
 });
 
@@ -582,8 +579,7 @@ test('duplicate frame index -> error, later section ignored', () => {
 		'{ "animations": [{ "name": "walk" }] }\n--- walk 0\nAB\n--- walk 0\nCD\n',
 		'x',
 	);
-	// A duplicate index drops the whole animation (no valid contiguous binding),
-	// leaving no valid animations.
+
 	expect(doc).toBeNull();
 	expect(
 		diagnostics.some(

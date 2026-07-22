@@ -126,7 +126,7 @@ async function agentSign(
 	w.u8(AGENTC_SIGN_REQUEST);
 	w.string(blob);
 	w.string(payload);
-	w.u32(0); // flags: none
+	w.u32(0);
 	const reply = await agentRoundTrip(sockPath, w.finish());
 	if (!reply) throw new Error('ssh-agent did not answer the sign request');
 	const r = new SshBlobReader(reply);
@@ -148,7 +148,6 @@ function defaultPubKeyRaw(sshDir: string): Uint8Array | null {
 	}
 }
 
-// wantRaw pins selection to one key so a different loaded key can't silently take over the Save.
 async function agentIdentity(
 	sockPath: string,
 	sshDir: string,
@@ -174,7 +173,6 @@ async function agentIdentity(
 	};
 }
 
-// PKCS8 header for ed25519 (RFC 8410); append the 32-byte seed to get the DER node:crypto imports.
 const ED25519_PKCS8_PREFIX = Uint8Array.from(
 	Buffer.from('302e020100300506032b657004220420', 'hex'),
 );
@@ -222,7 +220,7 @@ function fileIdentity(
 		privBlock === null
 	)
 		return null;
-	// Passphrase-protected file is skipped, not decrypted — use the agent for those.
+
 	if (new TextDecoder().decode(cipher) !== 'none') return null;
 	const pub = parsePublicKeyBlob(pubBlob);
 	if (!pub) return null;
@@ -233,7 +231,7 @@ function fileIdentity(
 	pr.u32();
 	const algo = pr.string();
 	pr.string();
-	const priv = pr.string(); // 64 bytes: seed || public
+	const priv = pr.string();
 	if (
 		algo === null ||
 		priv === null ||
@@ -284,7 +282,7 @@ function identityFromPkcs8(pem: string): SshIdentity | null {
 		return null;
 	}
 	if (priv.asymmetricKeyType !== 'ed25519') return null;
-	// Ed25519 private JWK carries the public bytes in x (RFC 8037).
+
 	const jwk = priv.export({ format: 'jwk' }) as { x?: string };
 	if (!jwk.x) return null;
 	const raw = new Uint8Array(Buffer.from(jwk.x, 'base64url'));
@@ -314,13 +312,13 @@ function mintGeneratedIdentity(keyPath: string): {
 } {
 	const { privateKey } = generateKeyPairSync('ed25519');
 	const pem = privateKey.export({ format: 'pem', type: 'pkcs8' }) as string;
-	// A freshly generated key always parses, so identityFromPkcs8 can't be null here.
+
 	const identity = identityFromPkcs8(pem) as SshIdentity;
 	let persisted = false;
 	try {
 		mkdirSync(dirname(keyPath), { recursive: true });
 		writeFileSync(keyPath, pem, { mode: 0o600 });
-		chmodSync(keyPath, 0o600); // enforce 0600 even if the file pre-existed
+		chmodSync(keyPath, 0o600);
 		persisted = true;
 	} catch {}
 	return { identity, persisted };
@@ -405,15 +403,10 @@ export async function discoverSshIdentity(
 	env: Record<string, string | undefined> = process.env,
 	sshDir: string = join(homedir(), '.ssh'),
 ): Promise<DiscoveredIdentity> {
-	// Escape hatch for running a second local client alongside a real session
-	// (e.g. to observer-watch your own avatar): mint a fresh, never-persisted
-	// identity every launch. The anchor/agent/file flow below is skipped
-	// entirely, so the server's one-session-per-key rule stays intact — a
-	// guest is always a brand-new key, never the developer's real one.
 	if (env.MMO_GUEST && env.MMO_GUEST !== '0') {
 		const { privateKey } = generateKeyPairSync('ed25519');
 		const pem = privateKey.export({ format: 'pem', type: 'pkcs8' }) as string;
-		// A freshly generated key always parses, so identityFromPkcs8 can't be null here.
+
 		const identity = identityFromPkcs8(pem) as SshIdentity;
 		return { ok: true, identity, notice: GUEST_NOTICE };
 	}
@@ -427,7 +420,7 @@ export async function discoverSshIdentity(
 			: null;
 	const generated =
 		anchor?.source === 'generated' ? readGeneratedIdentity(keyPath) : null;
-	// A corrupt external-anchor line resolves to no candidate, never an unpinned probe that could grab a different key.
+
 	const external =
 		anchor?.source === 'generated'
 			? null

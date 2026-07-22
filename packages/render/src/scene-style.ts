@@ -8,8 +8,6 @@ import {
 } from '@mmo/core/entities';
 import type { RenderStyle } from './render';
 
-// Realizes the @mmo/core scene palette (plain RGBA data the sim references for tint)
-// into a renderer-ready RenderStyle in the caller's cell-colour type C.
 export type ColorFactory<C> = (r: number, g: number, b: number, a: number) => C;
 
 export function buildSceneStyle<C>(toColor: ColorFactory<C>): RenderStyle<C> {

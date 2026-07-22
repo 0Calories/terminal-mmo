@@ -1,7 +1,3 @@
-// The write side of the forge's write → re-read loop. Reading (discovery,
-// identity, parsing) lives in @mmo/assets (ADR 0033); the forge re-reads
-// through it after every write, so the file — not code — stays where zone
-// content lives (ADR 0031).
 import { existsSync, renameSync, writeFileSync } from 'node:fs';
 import { zonePath } from '@mmo/assets';
 

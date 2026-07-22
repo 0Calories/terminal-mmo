@@ -1,5 +1,3 @@
-// mulberry32; state threaded explicitly (value + next state) for determinism.
-
 export interface Rng {
 	value: number;
 	state: number;

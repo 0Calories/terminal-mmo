@@ -1,4 +1,3 @@
-// Headless tests for the animation- and anchor-menu reducers (issue #339).
 import { describe, expect, test } from 'bun:test';
 import {
 	type AnimationRow,
@@ -14,8 +13,6 @@ import {
 const ch = (c: string): MenuKey => ({ name: 'char', char: c });
 const k = (name: string): MenuKey => ({ name });
 
-// Narrow a still-open menu (the reducers return `null` only when the overlay
-// closes; these flows stay open until the asserted step).
 function open<T>(menu: T | null): T {
 	if (menu === null) throw new Error('expected the menu to stay open');
 	return menu;
@@ -81,8 +78,8 @@ describe('animation menu', () => {
 	});
 
 	test('reorder uses the frame cursor', () => {
-		let m = openAnimationMenu(ANIMATIONS, 'cheer'); // index 2, 2 frames
-		m = open(animationMenuKey(m, k('right')).menu); // frameIndex → 1
+		let m = openAnimationMenu(ANIMATIONS, 'cheer');
+		m = open(animationMenuKey(m, k('right')).menu);
 		const r = animationMenuKey(m, ch('<'));
 		expect(r.action).toEqual({
 			type: 'reorder',
@@ -109,8 +106,8 @@ describe('animation menu', () => {
 	});
 
 	test('syncAnimationMenu keeps the selection on a live animation', () => {
-		const m = openAnimationMenu(ANIMATIONS, 'cheer'); // index 2
-		const next = syncAnimationMenu(m, ANIMATIONS.slice(0, 2)); // cheer removed
+		const m = openAnimationMenu(ANIMATIONS, 'cheer');
+		const next = syncAnimationMenu(m, ANIMATIONS.slice(0, 2));
 		expect(next.index).toBe(1);
 	});
 });
@@ -142,17 +139,17 @@ describe('anchor menu — mouse-native (ADR 0036)', () => {
 
 	test('the delete zone deletes a non-required anchor and is inert on required ones', () => {
 		const m = openAnchorMenu(NAMES, 'grip', REQUIRED);
-		const rDel = anchorMenuClick(m, 2, true); // 'tail'
+		const rDel = anchorMenuClick(m, 2, true);
 		expect(rDel.action).toEqual({ type: 'delete', name: 'tail' });
-		const rReq = anchorMenuClick(m, 0, true); // 'grip' is required
+		const rReq = anchorMenuClick(m, 0, true);
 		expect(rReq.action).toBeUndefined();
 	});
 
 	test('the trailing + new row opens a name input (keyboard path)', () => {
 		let m = openAnchorMenu(NAMES, 'grip', REQUIRED);
-		m = open(anchorMenuKey(m, k('down')).menu); // head
-		m = open(anchorMenuKey(m, k('down')).menu); // tail
-		m = open(anchorMenuKey(m, k('down')).menu); // + new (index 3)
+		m = open(anchorMenuKey(m, k('down')).menu);
+		m = open(anchorMenuKey(m, k('down')).menu);
+		m = open(anchorMenuKey(m, k('down')).menu);
 		expect(m.index).toBe(3);
 		m = open(anchorMenuKey(m, k('enter')).menu);
 		expect(m.input).not.toBeNull();

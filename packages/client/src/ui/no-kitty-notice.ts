@@ -41,7 +41,7 @@ export class NoKittyNotice {
 			bottom: 0,
 			justifyContent: 'center',
 			alignItems: 'center',
-			zIndex: 40, // above the creator (z30) and every z20 modal
+			zIndex: 40,
 			visible: false,
 		});
 

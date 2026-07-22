@@ -91,7 +91,7 @@ test('migrateSaveCosmetics maps an out-of-range legacy hat index to the empty (n
 
 test('migrateSaveCosmetics maps a legacy numeric form index through LEGACY_FORM_IDS', () => {
 	const base = { hue: 0, hat: '', nameplate: 0 };
-	// index 0 was the only shipped Form, 'buddy'
+
 	expect(migrateSaveCosmetics({ ...base, form: 0 })).toEqual({
 		...base,
 		form: 'buddy',

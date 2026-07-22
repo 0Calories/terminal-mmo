@@ -1,7 +1,3 @@
-// gore — the death burst: meatier, chunkier specks than blood that fly out
-// further and linger longer, but in fewer pieces. Tinted per victim by the
-// spawn call, so a body's gore matches its palette.
-
 import { burstCount, type EffectDef } from '../profile';
 
 export const gore: EffectDef = {

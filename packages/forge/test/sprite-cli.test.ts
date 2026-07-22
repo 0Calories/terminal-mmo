@@ -150,8 +150,6 @@ describe('sprite CLI', () => {
 		).toBe(1);
 	});
 
-	// The headless Composited preview (#386): `render --composite` replaces the
-	// dead standalone `forge sprite preview` TUI as the agent-facing surface.
 	test('render --composite: dumps the game-drawn art with a stance header', () => {
 		mkdirSync(join(root, 'monsters'), { recursive: true });
 		writeFileSync(join(root, 'monsters', 'slime.sprite'), VALID);
@@ -201,8 +199,6 @@ describe('sprite CLI', () => {
 		expect(output().toLowerCase()).toContain('usage');
 	});
 
-	// Write a complete, valid set covering every @mmo/core catalog/reference id so
-	// the whole-set reference check resolves cleanly.
 	function writeCompleteSet(): void {
 		const weapon = `{"anchors":{"grip":[0,0]},"animations":[{"name":"idle"},{"name":"swing"}]}
 --- idle
@@ -237,8 +233,7 @@ AB
 
 	test('check: a set whose only diagnostics are warnings stays green (exit 0)', () => {
 		writeCompleteSet();
-		// An unknown header field is a warning, not an error, so the set still
-		// resolves and `check` must exit 0 while printing the warning.
+
 		mkdirSync(join(root, 'hats'), { recursive: true });
 		writeFileSync(
 			join(root, 'hats', 'warn.sprite'),
@@ -251,7 +246,6 @@ AB
 	});
 
 	test('check: dangling catalog references fail with exit 1', () => {
-		// Only a hat present — the weapon/monster/npc catalog references dangle.
 		mkdirSync(join(root, 'hats'), { recursive: true });
 		writeFileSync(
 			join(root, 'hats', 'cap.sprite'),
@@ -283,10 +277,6 @@ AB
 });
 
 describe('findSpriteFile', () => {
-	// The launch forms `forge sprite edit <dir>/<id>` and the unified picker's
-	// reconstructed `dirForRole(role)/id` argument must resolve against the
-	// sprites root, not only cwd — a slash id that silently missed the root used
-	// to fall through to "create a fresh empty template" (the empty-canvas bug).
 	test('a role/id slash form resolves under the sprites root when cwd is elsewhere', () => {
 		mkdirSync(join(root, 'forms'), { recursive: true });
 		const path = join(root, 'forms', 'buddy.sprite');
@@ -325,10 +315,10 @@ describe('sprite glyphs — rail icon eyeball check', () => {
 	test('prints every tool glyph with its fallback in one row, exit 0', () => {
 		expect(runSprite(['glyphs'], deps())).toBe(0);
 		const row = output();
-		expect(row).toContain('✎'); // pencil candidate
-		expect(row).toContain('⌖'); // select fallback
+		expect(row).toContain('✎');
+		expect(row).toContain('⌖');
 		expect(row).toContain('pencil');
-		// One row: the whole point is a single glance in the terminal.
+
 		expect(row.trim()).not.toContain('\n');
 	});
 });

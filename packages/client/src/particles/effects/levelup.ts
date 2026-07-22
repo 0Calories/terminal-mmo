@@ -1,7 +1,3 @@
-// levelup — the client-only gold fountain on a level-up (#271). Off the wire
-// and the sim entirely: spawned by intent from the game loop, never routed
-// from a CombatEvent, and always a fixed-size radial burst.
-
 import type { EffectDef } from '../profile';
 
 const SPECKS = 28;

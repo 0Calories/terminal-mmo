@@ -1,6 +1,5 @@
 import type { Input } from '@mmo/core/entities';
 
-// No key-release events on non-Kitty terminals: promote a key's idle window short→long once auto-repeat confirms, so taps stay crisp and walks survive repeat gaps.
 const HELD_SHORT_MS = 140;
 const HELD_LONG_MS = 300;
 const HELD_CONFIRM_MS = 600;
@@ -55,7 +54,7 @@ export class InputState {
 	private releaseCapable = false;
 	private mouseAttack = false;
 	private mouseGuard = false;
-	// Edge-triggered: latched on the rising edge, read once per network send (not poll) so a fast poll can't swallow or re-fire it.
+
 	private interactEdge = false;
 	private readonly bindings: Readonly<Record<string, Action>>;
 

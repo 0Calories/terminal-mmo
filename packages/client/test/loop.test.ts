@@ -7,7 +7,7 @@ import { GameLoop, type GameLoopDeps } from '../src/game/loop';
 import { flatTerrain } from './helpers';
 
 const FRAME_MS = 16;
-// 1000/30 ms per send: the third 16ms frame is the first to cross it.
+
 const FRAMES_PER_SEND = 3;
 
 const IDLE: Input = {
@@ -18,7 +18,6 @@ const IDLE: Input = {
 	interact: false,
 };
 
-// Tall enough to hold SPAWN.y with ground beneath it, else the Avatar spawns out of the world.
 function zone(id: string, type: Zone['type'] = 'field'): Zone {
 	return {
 		id,
@@ -195,7 +194,7 @@ test('server health overrides the prediction; position does not', () => {
 test('a level-up plays the cue, bursts particles, and flashes the HUD — exactly once', () => {
 	const t = rig();
 	t.net.latest = { progress: { level: 1, xp: 0, gold: 0 } };
-	t.run(2); // first snapshot seeds prevLevel without firing
+	t.run(2);
 	expect(t.bursts).toBe(0);
 
 	t.net.latest = { progress: { level: 2, xp: 0, gold: 0 } };
@@ -227,7 +226,7 @@ test('every frame hands a fresh game state to the playfield and the HUD', () => 
 	t.run(3);
 	expect(t.games).toHaveLength(3);
 	expect(t.syncs).toBe(3);
-	// Absent a snapshot the fused state carries the predicted Avatar itself, not a copy.
+
 	expect(t.games[2].player.avatar).toBe(t.loop.avatar);
 });
 

@@ -18,7 +18,6 @@ function grounded(type: 'chaser' | 'brute' | 'shooter', x: number): Entity {
 	return m;
 }
 
-// Ground columns 0..groundEnd only — a ledge to the right (the left edge is the world wall).
 function islandTerrain(w = 60, groundEnd = 30): Terrain {
 	const rows: string[] = [];
 	for (let cy = 0; cy < GROUND_TOP; cy++) rows.push('.'.repeat(w));
@@ -27,7 +26,6 @@ function islandTerrain(w = 60, groundEnd = 30): Terrain {
 	return parseTerrain(rows);
 }
 
-// Flat ground plus one full-height wall column.
 function walledTerrain(w = 60, wallX = 30): Terrain {
 	const rows: string[] = [];
 	for (let cy = 0; cy < GROUND_TOP + 3; cy++) {
@@ -39,11 +37,9 @@ function walledTerrain(w = 60, wallX = 30): Terrain {
 	return parseTerrain(rows);
 }
 
-// ---- melee Brain (chaser/brute): patrol → chase → swing ----
-
 test('the melee Brain chases: moveX homes on a target inside aggro, no commit out of range', () => {
 	const m = grounded('chaser', 50);
-	const r = BRAINS.chaser(m, view(40)); // adx 10 < aggro 22, > range 4
+	const r = BRAINS.chaser(m, view(40));
 	expect(r.drive.moveX).toBe(-1);
 	expect(r.drive.jump).toBe(false);
 	expect(r.drive.commit).toBeUndefined();
@@ -51,13 +47,13 @@ test('the melee Brain chases: moveX homes on a target inside aggro, no commit ou
 
 test('the melee Brain stands still inside its deadzone', () => {
 	const m = grounded('chaser', 50);
-	const r = BRAINS.chaser(m, view(51)); // adx 1 < deadzone 2
+	const r = BRAINS.chaser(m, view(51));
 	expect(r.drive.moveX).toBe(0);
 });
 
 test('the melee Brain commits swing in range once off cooldown, squaring up to the target', () => {
 	const m = grounded('chaser', 50);
-	const r = BRAINS.chaser(m, view(47)); // adx 3 <= range 4
+	const r = BRAINS.chaser(m, view(47));
 	expect(r.drive.commit).toBe('swing');
 	expect(r.drive.face).toBe(-1);
 });
@@ -86,14 +82,14 @@ test('a stunned Brain goes limp: idle drive', () => {
 test('out of aggro the melee Brain patrols its facing', () => {
 	const m = grounded('chaser', 50);
 	m.facing = -1;
-	const r = BRAINS.chaser(m, view(200)); // adx 150 >= aggro
+	const r = BRAINS.chaser(m, view(200));
 	expect(r.drive.moveX).toBe(-1);
 	expect(r.drive.commit).toBeUndefined();
 });
 
 test('patrol turns at a ledge', () => {
 	const t = islandTerrain();
-	const m = grounded('chaser', 27); // lead column 31 has no floor
+	const m = grounded('chaser', 27);
 	m.facing = 1;
 	const r = BRAINS.chaser(m, view(null, t));
 	expect(r.drive.moveX).toBe(-1);
@@ -101,7 +97,7 @@ test('patrol turns at a ledge', () => {
 
 test('patrol turns at a wall', () => {
 	const t = walledTerrain();
-	const m = grounded('chaser', 24.5); // body ends flush against the wall at 30
+	const m = grounded('chaser', 24.5);
 	m.facing = 1;
 	const r = BRAINS.chaser(m, view(null, t));
 	expect(r.drive.moveX).toBe(-1);
@@ -109,7 +105,7 @@ test('patrol turns at a wall', () => {
 
 test('airborne patrol keeps heading — no ground probing mid-fall', () => {
 	const t = islandTerrain();
-	const m = spawnMonster('chaser', 2, 27, y - 5); // over the ledge, falling
+	const m = spawnMonster('chaser', 2, 27, y - 5);
 	m.facing = 1;
 	const r = BRAINS.chaser(m, view(null, t));
 	expect(r.drive.moveX).toBe(1);
@@ -118,15 +114,13 @@ test('airborne patrol keeps heading — no ground probing mid-fall', () => {
 test('the brute runs the melee Brain over its OWN profile (commits at brute range)', () => {
 	const adx5 = view(45);
 	const brute = grounded('brute', 50);
-	expect(BRAINS.brute(brute, adx5).drive.commit).toBe('swing'); // adx 5 <= brute range 5
+	expect(BRAINS.brute(brute, adx5).drive.commit).toBe('swing');
 	const chaser = grounded('chaser', 50);
-	expect(BRAINS.chaser(chaser, adx5).drive.commit).toBeUndefined(); // > chaser range 4
+	expect(BRAINS.chaser(chaser, adx5).drive.commit).toBeUndefined();
 	expect(ARCHETYPES.brute.melee.range).toBeGreaterThan(
 		ARCHETYPES.chaser.melee.range,
 	);
 });
-
-// ---- shooter Brain: patrol → reposition → attack (the ADR 0034 spacing fix) ----
 
 test('the shooter Brain patrols outside aggro', () => {
 	const m = grounded('shooter', 50);
@@ -139,17 +133,17 @@ test('the shooter Brain patrols outside aggro', () => {
 
 test('inside keepDist the shooter REPOSITIONS: backs away, eyes on the target, never fires', () => {
 	const m = grounded('shooter', 30);
-	m.attackCdT = 0; // off cooldown — old AI would have fired here
-	const r = BRAINS.shooter(m, view(25)); // adx 5 < keepDist 20
-	expect(r.drive.moveX).toBe(1); // away from the target...
-	expect(r.drive.face).toBe(-1); // ...while facing it
+	m.attackCdT = 0;
+	const r = BRAINS.shooter(m, view(25));
+	expect(r.drive.moveX).toBe(1);
+	expect(r.drive.face).toBe(-1);
 	expect(r.drive.commit).toBeUndefined();
 	expect(r.ai).toEqual({ state: 'reposition' });
 });
 
 test('in the comfort band the shooter ATTACKS: holds ground and commits fire', () => {
 	const m = grounded('shooter', 50);
-	const r = BRAINS.shooter(m, view(20)); // adx 30: keepDist <= 30 < aggro
+	const r = BRAINS.shooter(m, view(20));
 	expect(r.drive.moveX).toBe(0);
 	expect(r.drive.face).toBe(-1);
 	expect(r.drive.commit).toBe('fire');
@@ -170,7 +164,7 @@ test('reposition → attack sequencing: fire is committed only once the band is 
 	const targetX = 25;
 	const states: string[] = [];
 	let committedFire = false;
-	// Walk the FSM by hand: back the shooter off one cell per step, threading ai.
+
 	for (let i = 0; i < 30 && !committedFire; i++) {
 		const r = BRAINS.shooter(m, view(targetX));
 		states.push((r.ai as { state: string }).state);
@@ -185,24 +179,24 @@ test('reposition → attack sequencing: fire is committed only once the band is 
 	expect(committedFire).toBe(true);
 	expect(states[0]).toBe('reposition');
 	expect(states.at(-1)).toBe('attack');
-	// One clean transition: reposition while crowded, attack once spaced.
+
 	expect(states.includes('reposition')).toBe(true);
 	expect(states.indexOf('attack')).toBe(states.lastIndexOf('reposition') + 1);
 });
 
 test('the band edge has hysteresis: at the same distance, the prior state (ai memory) decides', () => {
 	const { keepDist } = ARCHETYPES.shooter.ranged;
-	const targetX = 50 - (keepDist + 1); // just past keepDist, inside the settle margin
+	const targetX = 50 - (keepDist + 1);
 	const repositioning = grounded('shooter', 50);
 	repositioning.ai = { state: 'reposition' };
 	const r1 = BRAINS.shooter(repositioning, view(targetX));
-	expect(r1.drive.commit).toBeUndefined(); // still opening the gap
+	expect(r1.drive.commit).toBeUndefined();
 	expect(r1.drive.moveX).toBe(1);
 	expect(r1.ai).toEqual({ state: 'reposition' });
 	const attacking = grounded('shooter', 50);
 	attacking.ai = { state: 'attack' };
 	const r2 = BRAINS.shooter(attacking, view(targetX));
-	expect(r2.drive.commit).toBe('fire'); // holds the band down to keepDist
+	expect(r2.drive.commit).toBe('fire');
 	expect(r2.ai).toEqual({ state: 'attack' });
 });
 

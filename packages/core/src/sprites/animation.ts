@@ -1,10 +1,6 @@
 import { emoteById } from '../entities/emote';
 import type { AttackPhase, Facing, MoveId } from '../entities/types';
 
-// Animation *selection* + animation identity — the deterministic, art-free half of a sprite
-// that the shared sim reasons about (owner and observers must agree on the Animation;
-// the actual glyph grids live in @mmo/render).
-
 export type EmoteAnimationId = `emote:${string}`;
 export type AnimationId =
 	| 'idle'
@@ -16,10 +12,6 @@ export type AnimationId =
 	| 'hurt'
 	| EmoteAnimationId;
 
-// The swing frame a replicated attack phase selects (ADR 0036): weapons author
-// a Default (rest) frame plus one `swing` animation of exactly three frames,
-// indexed by phase — timing authority stays in the replicated phase durations,
-// so a swing fps is ignored and owner/observers agree by construction.
 export function swingFrameIndex(phase: AttackPhase): 0 | 1 | 2 {
 	if (phase === 'windup') return 0;
 	if (phase === 'active') return 1;
@@ -44,15 +36,9 @@ export interface BodyState {
 
 export function bodyFrame(
 	s: BodyState,
-	// Per-animation playback rates (art-authored, replicated via the compiled body,
-	// ADR 0031). Selection stays deterministic: a multi-frame emote's frame index
-	// is emoteT × the animation's fps. An animation absent from the map uses EMOTE_FPS, so a
-	// body that declares no custom rate animates exactly as before.
+
 	fps?: Readonly<Record<string, number>>,
-	// How many frames the body's `walk` animation carries (ADR 0035): the gait is
-	// distance-indexed into them, so an artist adding a third walk frame extends
-	// the cycle with no type change. Replicated art data, so owner and observers
-	// agree. Defaults to the canonical two-frame gait.
+
 	walkFrameCount = 2,
 ): {
 	animationId: AnimationId;

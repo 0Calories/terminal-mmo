@@ -1,12 +1,3 @@
-// The `@opentui/core` shell for the unified asset picker (spec #387, issue
-// #403). Bare `forge` mounts this over every editable asset; `forge sprite edit`
-// / `forge zone edit` with no target mount it pre-filtered. It renders the pure
-// `PickerState` (model.ts), routes keys/clicks through the model's reducers, and
-// hands the resolved `LaunchTarget` back to the shell, which tears the picker
-// down and boots the matching editor. Keys (spec): typeahead filters, arrows
-// navigate, enter opens, `n` new sprite, esc quits; click selects/opens. The
-// picker has no preview mode. It degrades with a simple min-size placard — not
-// the editor's full ladder.
 import { existsSync } from 'node:fs';
 import { listZoneIds, readSpriteSourcesFromDir } from '@mmo/assets';
 import type { OptimizedBuffer, RenderContext } from '@opentui/core';
@@ -40,8 +31,6 @@ import {
 	visibleEntries,
 } from './model';
 
-// A keyboard event as opentui's keyInput delivers it (the subset the picker
-// reads — mirrors the sprite editor's SpriteKey).
 export interface PickerKey {
 	name: string;
 	sequence?: string;
@@ -50,31 +39,26 @@ export interface PickerKey {
 	shift?: boolean;
 }
 
-// A mouse event as opentui's Renderable delivers it.
 export interface PickerMouse {
 	button: number;
 	x: number;
 	y: number;
 }
 
-// Below this floor the picker shows a placard instead of the list (spec #387:
-// a simple min-size guard, not the editor's ladder).
 const MIN_W = 48;
 const MIN_H = 12;
 
-const HEADER_ROWS = 3; // title + query + blank
+const HEADER_ROWS = 3;
 const FOOTER_ROWS = 1;
 
 export interface PickerOpts {
 	inventory: AssetInventory;
 	filterKind: AssetKind | null;
-	// Launch the matching editor for the chosen target (the shell tears the
-	// picker down first).
+
 	onLaunch: (target: LaunchTarget) => void;
 	onQuit: () => void;
 }
 
-// The kind label shown in the title (all assets, or the pre-filtered kind).
 function titleFor(kind: AssetKind | null): string {
 	if (kind === 'sprite') return 'forge · pick a sprite';
 	if (kind === 'zone') return 'forge · pick a zone';
@@ -85,9 +69,9 @@ export class AssetPicker extends Renderable {
 	state: PickerState;
 	private readonly onLaunch: (target: LaunchTarget) => void;
 	private readonly onQuit: () => void;
-	// Scroll offset (in entry rows) keeping the cursor visible.
+
 	private scroll = 0;
-	// The last render's clickable entry rects: screen row → visible-entry index.
+
 	private rowHits: { y: number; index: number }[] = [];
 
 	// biome-ignore lint/suspicious/noExplicitAny: opentui ctor ctx type
@@ -102,8 +86,6 @@ export class AssetPicker extends Renderable {
 	attach(root: { add: (r: Renderable) => void }): void {
 		root.add(this);
 	}
-
-	// ---- keyboard ----
 
 	key(k: PickerKey): void {
 		if (this.state.newSprite) {
@@ -130,12 +112,12 @@ export class AssetPicker extends Renderable {
 				this.state = backspaceQuery(this.state);
 				return;
 		}
-		// `n` opens the new-sprite flow (reserved from typeahead, spec #387).
+
 		if (k.name === 'n' && !k.ctrl && !k.meta) {
 			this.state = beginNewSprite(this.state);
 			return;
 		}
-		// Any other printable char is typeahead (spaces excluded — ids carry none).
+
 		const ch = k.sequence ?? '';
 		if (ch.length === 1 && ch >= ' ' && ch !== ' ') {
 			this.state = typeQuery(this.state, ch);
@@ -165,7 +147,7 @@ export class AssetPicker extends Renderable {
 			}
 			return;
 		}
-		// id phase.
+
 		if (k.name === 'return' || k.name === 'enter') {
 			const target = commitNewSprite(this.state);
 			if (target) this.onLaunch(target);
@@ -179,8 +161,6 @@ export class AssetPicker extends Renderable {
 		if (ch.length === 1) this.state = newSpriteTypeId(this.state, ch);
 	}
 
-	// ---- mouse: click selects + opens (spec #387) ----
-
 	private mouseDown(e: PickerMouse): void {
 		if (this.state.newSprite || e.button !== 0) return;
 		const hit = this.rowHits.find((h) => h.y === e.y);
@@ -189,8 +169,6 @@ export class AssetPicker extends Renderable {
 		const target = pickerLaunch(this.state);
 		if (target) this.onLaunch(target);
 	}
-
-	// ---- render ----
 
 	protected renderSelf(buf: OptimizedBuffer): void {
 		const W = buf.width;
@@ -222,7 +200,6 @@ export class AssetPicker extends Renderable {
 			return;
 		}
 
-		// Title + query.
 		buf.fillRect(0, 0, W, 1, chromeBg);
 		buf.drawText(
 			titleFor(this.state.filterKind).slice(0, W),
@@ -244,7 +221,6 @@ export class AssetPicker extends Renderable {
 		const listH = Math.max(1, H - HEADER_ROWS - FOOTER_ROWS);
 		this.renderList(buf, listTop, listH, { text, dim, hot, cursorBg, bg });
 
-		// Footer hint.
 		const footRow = H - 1;
 		buf.fillRect(0, footRow, W, 1, chromeBg);
 		buf.drawText(
@@ -271,8 +247,6 @@ export class AssetPicker extends Renderable {
 			return;
 		}
 
-		// Build a flat row list: section headers interleaved with entries, each
-		// entry tagged with its visible-entry index (the cursor's coordinate).
 		type Row =
 			| { kind: 'header'; label: string; count: number }
 			| { kind: 'entry'; label: string; index: number };
@@ -292,8 +266,6 @@ export class AssetPicker extends Renderable {
 			});
 		}
 
-		// Keep the cursor's row on screen: find it, then scroll so it sits inside
-		// the window.
 		const cursorRow = rows.findIndex(
 			(r) => r.kind === 'entry' && r.index === this.state.cursor,
 		);
@@ -371,7 +343,6 @@ export class AssetPicker extends Renderable {
 			return;
 		}
 
-		// id phase.
 		const role = newSpriteRole(this.state);
 		buf.drawText(`role: ${role ? dirForRole(role) : ''}`, 0, 2, c.dim, c.bg);
 		buf.drawText('id:', 0, 4, c.dim, c.bg);
@@ -388,13 +359,6 @@ export class AssetPicker extends Renderable {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Inventory reading (the only I/O — the model stays pure)
-// ---------------------------------------------------------------------------
-
-// Read every editable sprite under `spritesRoot`, resolving each file's role
-// directory to a Sprite role (unknown dirs are skipped — they carry no template
-// and no editor). Ids come from the filenames.
 export function readSpriteInventory(
 	spritesRoot: string,
 ): AssetInventory['sprites'] {
@@ -408,7 +372,6 @@ export function readSpriteInventory(
 	return sprites;
 }
 
-// Assemble the full inventory the picker lists from the two content roots.
 export function readInventory(
 	spritesRoot: string,
 	zonesRoot: string,
@@ -419,9 +382,6 @@ export function readInventory(
 	};
 }
 
-// The `forge` (bare) / `forge sprite edit` / `forge zone edit` (no-target)
-// entry point: mount the picker, wait for a launch or quit, then dispatch the
-// resolved target to the matching editor (reusing its template-on-new path).
 export async function runPicker(
 	filterKind: AssetKind | null,
 	deps: { spritesRoot: string; zonesRoot: string; log: (l: string) => void },
@@ -439,9 +399,6 @@ export async function runPicker(
 	const teardown = () =>
 		(renderer as unknown as { destroy?: () => void }).destroy?.();
 
-	// The picker is a one-way launcher: Enter/click resolves a target, the shell
-	// tears the picker's renderer down, then boots the matching editor (which
-	// owns the terminal until the artist quits). Quitting the picker exits.
 	const launch = await new Promise<LaunchTarget | null>((resolve) => {
 		const picker = new AssetPicker(renderer, {
 			inventory,
@@ -462,8 +419,6 @@ export async function runPicker(
 		process.exit(0);
 	}
 
-	// Dispatch to the matching editor via its existing CLI entry, reconstructing
-	// the direct-argument form so template-on-new and load paths are unchanged.
 	const spriteDeps: CliDeps = { root: deps.spritesRoot, log: deps.log };
 	const zoneDeps: CliDeps = { root: deps.zonesRoot, log: deps.log };
 	if (launch.kind === 'sprite') {

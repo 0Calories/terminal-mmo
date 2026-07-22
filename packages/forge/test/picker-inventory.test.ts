@@ -1,6 +1,3 @@
-// The picker's only I/O: reading the two content roots into the pure model's
-// AssetInventory (spec #387, issue #403). Sprite files map by role directory
-// (unknown dirs are skipped — no template, no editor); zones list by filename.
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -21,7 +18,7 @@ beforeEach(() => {
 	};
 	write(join(spritesRoot, 'forms', 'buddy.sprite'));
 	write(join(spritesRoot, 'hats', 'cap.sprite'));
-	write(join(spritesRoot, 'mystery', 'orphan.sprite')); // unknown role dir
+	write(join(spritesRoot, 'mystery', 'orphan.sprite'));
 	write(join(zonesRoot, 'town-01.zone'));
 	write(join(zonesRoot, 'field-01.zone'));
 });

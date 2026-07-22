@@ -13,7 +13,6 @@ import { parseTerrain } from '@mmo/core/physics';
 import type { GameState, PlayerState } from '@mmo/core/protocol';
 import { NPC_BOX, PORTAL_BOX, type Zone } from '@mmo/core/zones';
 
-// mulberry32 with the state threaded for us — the same generator the sim seeds from.
 export function seededRng(seed: number): () => number {
 	let state = seed | 0;
 	return () => {
@@ -23,7 +22,6 @@ export function seededRng(seed: number): () => number {
 	};
 }
 
-// A clock the test advances by hand, so `dt` per frame is fixed rather than wall time.
 export function manualClock(stepMs: number) {
 	let t = 0;
 	return {
@@ -83,7 +81,6 @@ const GROUND = '#'.repeat(80);
 const patch = (at: number, run: string) =>
 	SKY.slice(0, at) + run + SKY.slice(at + run.length);
 
-// 80x28, wider and taller than the 60x20 view, so the camera clamps rather than showing sky.
 const ROWS = [
 	...Array(12).fill(SKY),
 	patch(26, '====='),
@@ -97,7 +94,6 @@ const STEP = STEP_Y - BOX.h;
 
 function goldenZone(id: string): Zone {
 	const npcs: Npc[] = [
-		// Overlapping the Avatar's box, so the frame carries the "talk to" interact prompt.
 		{ id: 1, kind: 'vendor', name: 'Mira', x: 17, y: FLOOR, ...NPC_BOX },
 	];
 
@@ -150,13 +146,7 @@ function goldenZone(id: string): Zone {
 	};
 }
 
-/**
- * The fixed scene the golden frame renders: two zones (so a zone change is drivable),
- * a player mid-swing, a co-present Avatar with a Handle and a speech bubble, monsters,
- * an NPC, a drop, a portal, and an in-flight Projectile.
- */
 export function goldenGame(): GameState {
-	// Mid-swing and weaponless, so the frame carries the melee telegraph glyph.
 	const avatar = entity({
 		id: 1,
 		type: 'player',
@@ -170,7 +160,6 @@ export function goldenGame(): GameState {
 		cosmetics: { hue: 2, hat: 'cap', nameplate: 3, form: 'buddy' },
 	});
 
-	// Equipped, so the frame carries the composited weapon layer, a Handle and a bubble.
 	const other = entity({
 		id: 2,
 		type: 'player',

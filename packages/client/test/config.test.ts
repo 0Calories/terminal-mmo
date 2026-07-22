@@ -116,7 +116,6 @@ test('a rewrite preserves unknown keys already on disk', () => {
 });
 
 test('a failed write degrades to in-memory and returns false, never throws', () => {
-	// parent path is a FILE, so mkdir/write fails
 	const filePath = join(tmp(), 'afile');
 	writeFileSync(filePath, 'x');
 	const store = new ConfigStore(join(filePath, 'config.json'));

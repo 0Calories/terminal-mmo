@@ -1,6 +1,3 @@
-// Headless tests for the Sprite editor's animation-management ops (issue #339):
-// create/switch/delete animations, add/reorder frames within an animation, per-animation fps,
-// and the role-required-animation/anchor hints. Every mutation is undoable.
 import { describe, expect, test } from 'bun:test';
 import {
 	addFrameToAnimation,
@@ -23,9 +20,6 @@ import {
 	undoEdit,
 } from '../src/sprite-editor/state';
 
-// v2 (ADR 0037): fps lives per-animation on the ordered animations array, not a
-// top-level `doc.fps` map. Read a named animation's authored fps (undefined when
-// cleared) straight off its entry.
 function fpsOf(s: SpriteEditorState, animation: string): number | undefined {
 	return s.doc.animations.find((a) => a.name === animation)?.fps;
 }
@@ -86,7 +80,7 @@ describe('addFrameToAnimation', () => {
 		s = addFrameToAnimation(s, 'cheer');
 		expect(s.feedback).toBe('');
 		expect(animationFrames(s, 'cheer')).toHaveLength(2);
-		// The new frame is now current and exists as a frame section.
+
 		expect(frameNames(s)).toContain(s.frame);
 		expect(animationFrames(s, 'cheer')).toContain(s.frame);
 	});
@@ -108,10 +102,10 @@ describe('addFrameToAnimation', () => {
 describe('cloneFrameToAnimation (the focus [+] tile, round 3)', () => {
 	test('appends a clone of the last frame carrying its art, and selects it', () => {
 		let s = createAnimation(formState(), 'cheer');
-		s = paintPixel(s, 1, 1); // paint the source frame
+		s = paintPixel(s, 1, 1);
 		s = cloneFrameToAnimation(s, 'cheer');
 		expect(animationFrames(s, 'cheer')).toHaveLength(2);
-		// The new frame is active and is a copy of the one it follows.
+
 		expect(s.frame).toBe('cheer 1');
 		expect(readPixel(s, 1, 1)).toBe(true);
 	});
@@ -135,19 +129,14 @@ describe('deleteAnimation', () => {
 		const s = deleteAnimation(formState(), 'walk');
 		expect(s.feedback).toBe('');
 		expect(animationNames(s)).not.toContain('walk');
-		// walk's frames belong to walk alone (v2: frames are index-bound to one
-		// animation), so their labels go with it.
+
 		expect(frameNames(s)).not.toContain('walk 0');
 		expect(frameNames(s)).not.toContain('walk 1');
 	});
 
 	test('deleting one animation leaves other animations’ frames intact', () => {
-		// v2 has no cross-animation frame sharing (frames are index-bound to a
-		// single animation, ADR 0037); deleting one animation must not disturb the
-		// frames of any other. Add two independent animations, delete one, and the
-		// survivor's frame stays.
-		let s = createAnimation(formState(), 'wave'); // wave: [wave]
-		s = createAnimation(s, 'flex'); // flex: [flex]
+		let s = createAnimation(formState(), 'wave');
+		s = createAnimation(s, 'flex');
 		s = deleteAnimation(s, 'flex');
 		expect(animationNames(s)).not.toContain('flex');
 		expect(frameNames(s)).toContain('wave');
@@ -191,12 +180,11 @@ describe('selectAnimation', () => {
 
 describe('reorderFrame', () => {
 	test('swaps adjacent frames within an animation', () => {
-		let s = createAnimation(formState(), 'combo'); // combo: single frame 'combo'
-		s = addFrameToAnimation(s, 'combo'); // combo 0, combo 1; current is 'combo 1'
+		let s = createAnimation(formState(), 'combo');
+		s = addFrameToAnimation(s, 'combo');
 		expect(animationFrames(s, 'combo')).toEqual(['combo 0', 'combo 1']);
-		// v2 frame labels are positional (ADR 0037), so a swap can't be read off the
-		// labels — mark the second frame's content and watch it move to index 0.
-		s = paintPixel(s, 0, 0); // paints the current frame, 'combo 1'
+
+		s = paintPixel(s, 0, 0);
 		expect(readPixel(selectFrame(s, 'combo 1'), 0, 0)).toBe(true);
 		expect(readPixel(selectFrame(s, 'combo 0'), 0, 0)).toBe(false);
 		s = reorderFrame(s, 'combo', 0, 1);
@@ -259,7 +247,7 @@ describe('required-animation/anchor hints', () => {
 
 	test('deleting a required animation surfaces it as missing (allowed, hinted)', () => {
 		const s = deleteAnimation(formState(), 'walk');
-		expect(s.feedback).toBe(''); // allowed, not refused
+		expect(s.feedback).toBe('');
 		expect(missingRequiredAnimations(s.doc, 'form')).toContain('walk');
 	});
 

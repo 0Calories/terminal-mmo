@@ -139,7 +139,6 @@ export function drawPlayfield(
 		STYLE,
 	);
 
-	// Resting/fading blood behind the Sprites (airborne blood is drawn in front, below).
 	fx.particles.draw(buf, cam, 'settled');
 
 	const onPortal = zone.portals.find((pr) => aabbOverlap(entityBox(p), pr));
@@ -190,7 +189,6 @@ export function drawPlayfield(
 
 	for (const m of zone.monsters) drawSwing(buf, m, cam, sw, sh);
 
-	// Flash only just after the skill fires, mirroring the melee flash window.
 	for (let slot = 1; ; slot++) {
 		const skill = skillForSlot(player.class ?? 'warrior', slot);
 		if (!skill) break;
@@ -209,12 +207,10 @@ export function drawPlayfield(
 
 	fx.dodges.draw(buf, cam, sw, sh);
 
-	// The local Avatar drawn last, on top of everyone.
 	drawEntitySprite(buf, p, cam, STYLE, zone.terrain);
 	drawSwing(buf, p, cam, sw, sh);
 	drawGuard(buf, p, cam, sw, sh);
 
-	// Airborne blood in front of the Sprites, still below the over-head bubbles so chat stays legible.
 	fx.particles.draw(buf, cam, 'airborne');
 
 	drawNameplates(buf, others, cam, zone.terrain, STYLE);

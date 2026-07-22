@@ -46,9 +46,6 @@ export function runSprite(argv: string[], deps: CliDeps): number {
 	}
 }
 
-// One row of every rail tool glyph (with its fallback where one exists), so an
-// artist can eyeball tofu or double-width rendering in their own terminal
-// before the rail commits to a glyph.
 function cmdGlyphs(deps: CliDeps): number {
 	const row = RAIL_TOOLS.map((t) => {
 		const fb = TOOL_GLYPH_FALLBACKS[t.tool];
@@ -74,10 +71,6 @@ export function formatSpriteDiagnostics(diags: SpriteDiagnostic[]): string {
 
 export function findSpriteFile(root: string, id: string): string | undefined {
 	if (id.includes('/') || id.endsWith('.sprite')) {
-		// A slash id is tried as a filesystem path first (cwd-relative or
-		// absolute), then against the sprites root — `forms/buddy` and the
-		// picker's `dirForRole(role)/id` launch form both mean "under root"
-		// when no such path exists where the tool was run.
 		const candidates = isAbsolute(id)
 			? [id]
 			: [resolve(process.cwd(), id), join(root, id)];
@@ -100,9 +93,6 @@ export function findSpriteFile(root: string, id: string): string | undefined {
 	return undefined;
 }
 
-// Whole-set validation, the sprite analogue of `zone check`: load every
-// `.sprite` under the root, run the pure set validator, print the diagnostics,
-// and exit non-zero on any error (warnings alone stay green). CI's gate.
 function cmdCheck(args: string[], deps: CliDeps): number {
 	const dir = args[0]
 		? isAbsolute(args[0])
@@ -197,8 +187,6 @@ function cmdRender(args: string[], deps: CliDeps): number {
 	return hasError(diagnostics) ? 1 : 0;
 }
 
-// A glyph-only CellBuffer: colors are discarded, characters land in a grid.
-// The agent-facing analogue of the zone-authoring TextBuffer pattern.
 class TextGrid implements CellBuffer<null> {
 	readonly grid: string[][];
 	constructor(
@@ -219,15 +207,9 @@ class TextGrid implements CellBuffer<null> {
 	}
 }
 
-// The viewport the composite is centered in before trimming — roomy enough for
-// every current role (bodies ~10×8 plus hat headroom and weapon reach).
 const COMPOSITE_W = 48;
 const COMPOSITE_H = 24;
 
-// `render --composite`: the Composited preview as a headless glyph dump — the
-// sprite drawn the way the game draws it (a hat seated on a body, a weapon in
-// the hand), through the same shared core as the editor pane (#386). This is
-// the agent-facing surface: TTY previews are blind to agents.
 function cmdRenderComposite(
 	path: string,
 	doc: SpriteDoc,
@@ -274,8 +256,6 @@ function cmdRenderComposite(
 	deps.log(`stances: ${stances.map((s) => s.id).join(' · ')}`);
 	deps.log('');
 
-	// Trim the viewport to the painted bounding box, then dot the blanks like
-	// the plain frame dump so whitespace is visible.
 	const rows = buf.grid.map((r) => r.join(''));
 	const inked = rows.map((r, y) => (r.trim() ? y : -1)).filter((y) => y >= 0);
 	if (inked.length === 0) {

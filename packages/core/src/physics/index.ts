@@ -1,7 +1,3 @@
-// physics — the single owner of terrain-collision truth: solidity queries and
-// the bidirectional sweep, under two integrators (the Momentum-body step and
-// the projectile step). Owns the Drive and MomentumBody views (ADR 0032).
-
 export {
 	DEFAULT_MASS,
 	PHYS,

@@ -1,5 +1,3 @@
-// Cosmetics request handling: the server's business, not the world
-// simulation's (ADR 0032). A look change is only honoured in a Town.
 import type { Cosmetics } from '@mmo/core/entities';
 import {
 	type ServerWorld,

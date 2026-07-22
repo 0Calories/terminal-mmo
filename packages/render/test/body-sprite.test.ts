@@ -94,11 +94,11 @@ describe('formFrame (Animation resolution + idle fallback)', () => {
 		const d1 = formFrame(form, 'emote:dance', 1);
 		expect(d0).not.toBe(idle);
 		expect(d1.rows(1)).not.toEqual(d0.rows(1));
-		// A 2-frame animation wraps: index 2 == index 0.
+
 		expect(formFrame(form, 'emote:dance', 2).rows(1)).toEqual(d0.rows(1));
 		const s0 = formFrame(form, 'emote:sit', 0);
 		expect(s0).not.toBe(idle);
-		// A single-frame animation ignores the frame index.
+
 		expect(formFrame(form, 'emote:sit', 1)).toBe(s0);
 	});
 

@@ -56,7 +56,6 @@ test('return confirms with the chosen cosmetics, leaving them unchanged', () => 
 });
 
 test('the single-option Form is hidden from the picker but still confirms as the buddy Form', () => {
-	// The demo ships exactly one Form (buddy), so the picker row is hidden.
 	expect(CUSTOMIZE_FIELDS.some((f) => f.key === 'form')).toBe(false);
 	let s = initCustomize(DEFAULT_COSMETICS);
 	s = reduceCustomize(s, 'right').state;
@@ -77,7 +76,7 @@ test('customizeRows yields one focused-marked row per field, hat named from cata
 
 test('hat cycles through the sorted scanned ids, None first, wrapping back to None', () => {
 	let s = initCustomize(DEFAULT_COSMETICS);
-	s = reduceCustomize(s, 'down').state; // focus the Hat field
+	s = reduceCustomize(s, 'down').state;
 	expect(customizeRows(s)[1]).toMatchObject({ value: 'None' });
 
 	for (const id of HAT_IDS) {
@@ -86,12 +85,10 @@ test('hat cycles through the sorted scanned ids, None first, wrapping back to No
 		expect(customizeRows(s)[1]).toMatchObject({ value: id });
 	}
 
-	// One more step past the last id wraps back to None.
 	s = reduceCustomize(s, 'right').state;
 	expect(s.cosmetics.hat).toBe('');
 	expect(customizeRows(s)[1]).toMatchObject({ value: 'None' });
 
-	// Cycling left from None wraps to the last scanned id.
 	const { state: back } = reduceCustomize(s, 'left');
 	expect(back.cosmetics.hat).toBe(HAT_IDS[HAT_IDS.length - 1]);
 });

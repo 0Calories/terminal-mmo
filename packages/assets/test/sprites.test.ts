@@ -1,6 +1,3 @@
-// Sprites leave @mmo/assets raw (id + role + text; ADR 0033). The entries
-// tests inject an embedded-style map (the compiled-binary strategy); the dir
-// and cwd tests exercise the fs-scan strategy.
 import { afterEach, describe, expect, it } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

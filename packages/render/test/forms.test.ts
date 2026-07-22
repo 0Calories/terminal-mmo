@@ -1,6 +1,3 @@
-// Unit tests for the Form art registry (ADR 0031): pure compilation from
-// SpriteSource entries, independent of the module-level disk scan — the hats.ts
-// registry pattern applied to full-body sprites.
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,7 +14,6 @@ function buddySource(id = 'buddy'): SpriteSource {
 	return { id, role: 'forms', text: BUDDY_TEXT };
 }
 
-// A minimal valid forms source: idle/walk + grip/head, no emotes.
 const MINIMAL = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
 	"animations": [{ "name": "idle" }, { "name": "walk" }]
@@ -46,7 +42,7 @@ test('the real buddy.sprite compiles to a body with its full animation repertoir
 		'jump',
 		'walk',
 	]);
-	// multi-frame animations are arrays; single-frame animations are lone Sprites
+
 	expect(Array.isArray(body?.frames['emote:wave'])).toBe(true);
 	expect(Array.isArray(body?.frames['emote:dance'])).toBe(true);
 	expect(Array.isArray(body?.frames.idle)).toBe(false);
@@ -69,7 +65,6 @@ test('a source with a broken header is skipped; the others still load', () => {
 });
 
 test('a source that fails the forms role profile is skipped', () => {
-	// missing walk animation and head anchor -> role profile error -> not registered
 	const bad = `{ "anchors": { "grip": [0, 0] }, "animations": [{ "name": "idle" }] }
 --- idle
 AB
@@ -105,7 +100,7 @@ AB
 test('FORM_IDS is sorted and the module registry resolves the default Form', () => {
 	expect([...FORM_IDS]).toEqual([...FORM_IDS].sort());
 	expect(FORM_IDS).toContain(DEFAULT_FORM_ID);
-	// A dangling id and undefined both fall back to the default Form.
+
 	const dflt = formById(DEFAULT_FORM_ID);
 	expect(formById('does-not-exist')).toBe(dflt);
 	expect(formById(undefined)).toBe(dflt);

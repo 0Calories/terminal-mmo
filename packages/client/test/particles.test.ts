@@ -34,8 +34,6 @@ function wallTerrain(w = 40, h = 20, wallX = 25): Terrain {
 	return parseTerrain(rows);
 }
 
-// A burst through the module-internal engine pieces — what the public
-// named-effect spawn expands into.
 function burst(
 	pool: Pool,
 	effect: keyof typeof EFFECTS,
@@ -66,7 +64,7 @@ test('the level-up fountain is a non-colliding gold air burst of a fixed size (#
 	const born = LEVELUP.colors[0];
 	expect(born.r).toBeGreaterThan(born.b);
 	expect(born.g).toBeGreaterThan(born.b);
-	// intensity does not change the fountain
+
 	expect(EFFECTS.levelup.count(0)).toBe(EFFECTS.levelup.count(24));
 
 	const engine = new ParticleEngine(seededRng(1));
@@ -203,7 +201,7 @@ test('when the pool is full the newest burst evicts the oldest specks', () => {
 	const borns = pool.specks.filter((p) => p.active).map((p) => p.born);
 	expect(pool.activeCount).toBe(4);
 	const maxBorn = Math.max(...borns);
-	// every survivor is among the newest `size` births — the oldest were evicted
+
 	expect(Math.min(...borns)).toBeGreaterThan(maxBorn - 4);
 });
 
@@ -232,13 +230,12 @@ test('a speck runs the full lifecycle: airborne → bounce → rest → fade →
 	expect(sawRest).toBe(true);
 	expect(sawFade).toBe(true);
 	expect(p.active).toBe(false);
-	// rests in the empty cell just above the surface, never inside it
+
 	expect(isSolid(terrain, Math.floor(10), Math.floor(restY))).toBe(false);
 	expect(isSolid(terrain, Math.floor(10), Math.floor(restY) + 1)).toBe(true);
 });
 
 test('a falling speck resolves through the shared sweep and never penetrates the ground', () => {
-	// tall arena so a speck exceeds 1 cell/frame and would tunnel without swept collision
 	const terrain = floorTerrain(40, 80);
 	const pool = new Pool(64);
 	burst(pool, 'blood', 10, 2, 24, 1, seededRng(5));
@@ -287,7 +284,6 @@ function speck(over: Partial<Speck>): Speck {
 }
 
 test('a colliding speck draws floor-aligned in its own sim cell — never rounded into the floor', () => {
-	// y=18.6 keeps the sim cell (18) empty, but the old round() draw sank it into the floor at 19
 	const terrain = floorTerrain(40, 20);
 	const p = speck({ x: 10, y: 18.6 });
 	expect(isSolid(terrain, 10, Math.round(p.y))).toBe(true);
@@ -298,7 +294,6 @@ test('a colliding speck draws floor-aligned in its own sim cell — never rounde
 });
 
 test('a wall-adjacent speck draws floor-aligned in the empty column — never rounded into the wall tile', () => {
-	// x=24.6 keeps the sim column (24) empty, but the old round() draw painted it into the wall at 25
 	const terrain = wallTerrain(40, 20, 25);
 	const p = speck({ x: 24.6, y: 10 });
 	expect(isSolid(terrain, Math.round(p.x), 10)).toBe(true);
@@ -315,7 +310,6 @@ test('a non-colliding spark keeps the nearest-cell projection', () => {
 });
 
 test('a settled speck draws flush IN the `▄` surface cell, on the visible ground line (#264)', () => {
-	// a top-surface solid renders as a lower-half `▄`, so a settled speck draws into that cell, not the empty one above
 	const terrain = floorTerrain(40, 20);
 	const pool = new Pool(64);
 	burst(pool, 'blood', 10, 16, 4, 1, seededRng(3));
@@ -338,7 +332,7 @@ test('a settled speck draws flush IN the `▄` surface cell, on the visible grou
 test('a colliding speck whose own cell is solid dies instead of resting', () => {
 	const terrain = floorTerrain(40, 20);
 	const pool = new Pool(4);
-	// planted inside the floor — the backstop for anything that ever embeds
+
 	spawnSpeck(pool, BLOOD, 10, 19.5, 0, seededRng(1));
 	expect(pool.activeCount).toBe(1);
 	advanceSpecks(pool, 16, terrain);
@@ -346,14 +340,13 @@ test('a colliding speck whose own cell is solid dies instead of resting', () => 
 });
 
 test('a descending speck lands on a one-way platform top; an ascending one passes through', () => {
-	// platform row at y=10 with open air above and below
 	const rows: string[] = [];
 	for (let y = 0; y < 20; y++)
 		rows.push(y === 10 ? '='.repeat(40) : (y === 19 ? '#' : '.').repeat(40));
 	const terrain = parseTerrain(rows);
 
 	const pool = new Pool(4);
-	// falling from above: lands on the platform, never below it
+
 	spawnSpeck(pool, BLOOD, 10, 5, 0, seededRng(1));
 	const faller = speckAt(pool);
 	faller.vx = 0;
@@ -363,7 +356,6 @@ test('a descending speck lands on a one-way platform top; an ascending one passe
 	expect(faller.stage).toBe('rest');
 	expect(Math.floor(faller.y)).toBe(9);
 
-	// rising from below: passes straight through the platform row
 	const up = new Pool(4);
 	spawnSpeck(up, BLOOD, 10, 12, 0, seededRng(1));
 	const riser = speckAt(up);
@@ -378,8 +370,6 @@ test('a descending speck lands on a one-way platform top; an ascending one passe
 });
 
 test('a rested speck whose support vanishes is reclaimed by gravity, not left frozen mid-air (#373)', () => {
-	// rest on a one-way platform at y=10, then swap to a terrain where only the
-	// floor at y=19 exists — the platform is gone from under the speck
 	const rows: string[] = [];
 	for (let y = 0; y < 20; y++)
 		rows.push(y === 10 ? '='.repeat(40) : (y === 19 ? '#' : '.').repeat(40));
@@ -396,7 +386,6 @@ test('a rested speck whose support vanishes is reclaimed by gravity, not left fr
 	expect(p.stage).toBe('rest');
 	expect(Math.floor(p.y)).toBe(9);
 
-	// the zone's terrain changes under it: back to airborne, falls, re-rests on the real floor
 	advanceSpecks(pool, 16, floorOnly);
 	expect(p.stage).toBe('airborne');
 	for (let i = 0; i < 400 && p.stage === 'airborne'; i++)
@@ -404,7 +393,6 @@ test('a rested speck whose support vanishes is reclaimed by gravity, not left fr
 	expect(p.stage).toBe('rest');
 	expect(Math.floor(p.y)).toBe(18);
 
-	// and it still extinguishes: the fade timer runs to cull
 	for (let i = 0; i < 600 && p.active; i++) advanceSpecks(pool, 16, floorOnly);
 	expect(p.active).toBe(false);
 });

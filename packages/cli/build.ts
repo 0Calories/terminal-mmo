@@ -1,7 +1,6 @@
 import { chmodSync } from 'node:fs';
 import { join } from 'node:path';
-// This build script runs unbundled, so loadAssetEntries takes the fs-scan
-// strategy: the binary embeds exactly what the store reads in dev (ADR 0033).
+
 import { loadAssetEntries } from '@mmo/assets';
 
 const here = import.meta.dir;

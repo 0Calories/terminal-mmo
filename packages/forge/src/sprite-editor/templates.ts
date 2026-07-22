@@ -1,8 +1,3 @@
-// Fresh-`.sprite` templates per Sprite role (ADR 0031). Each role gets the
-// frames and anchors its validation profile will require, on a small
-// sentinel-filled (fully transparent) canvas — a blank slate the editor grows
-// as the artist paints. The templates parse cleanly (no diagnostics) so a
-// just-created sprite is immediately valid.
 import type { RGBAQuad } from '@mmo/core/entities';
 import type {
 	SpriteAnimationDoc,
@@ -22,13 +17,10 @@ function blankFrame(): SpriteFrameDoc {
 }
 
 interface RoleTemplate {
-	// Ordered animations, each with its frame count; the first is the Default
-	// frame's owner (ADR 0037), so forms/weapons lead with idle/rest.
 	animations: { name: string; frameCount: number }[];
 	anchors: Record<string, [number, number]>;
 }
 
-// Anchors sit inside the canvas so a fresh template parses without warnings.
 const ROLE_TEMPLATES: Record<SpriteRole, RoleTemplate> = {
 	form: {
 		animations: [

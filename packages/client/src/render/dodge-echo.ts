@@ -53,11 +53,6 @@ type DodgeTrack = {
 	sinceSampleMs: number;
 };
 
-/**
- * Watches entities across frames and turns dodge motion into echoes: one at the
- * pre-dodge origin the frame a dodge starts, then a sample every interval while
- * it lasts.
- */
 export class DodgeTracker {
 	private echoes: DodgeEcho[] = [];
 	private track = new Map<number, DodgeTrack>();
@@ -123,7 +118,7 @@ export function drawDodgeEchoes(
 		const col = RGBA.fromInts(ECHO_RGB[0], ECHO_RGB[1], ECHO_RGB[2], alpha);
 		const sprite = spriteFor(echo.type);
 		const rows = sprite.rows(echo.facing);
-		// Sprite anchor must mirror drawEntitySprite: feet to the box bottom.
+
 		const baseX = echo.x - Math.floor((sprite.w - BOX.w) / 2);
 		const baseY = echo.y + BOX.h - sprite.h;
 		for (let ry = 0; ry < rows.length; ry++) {

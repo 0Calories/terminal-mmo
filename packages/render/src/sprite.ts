@@ -1,6 +1,5 @@
 import type { Facing } from '@mmo/core/entities';
 
-// `·` (U+00B7): a transparent cell that survives whitespace trimming, unlike a space.
 export const SENTINEL = '·';
 
 const MIRROR: Record<string, string> = {
@@ -63,15 +62,11 @@ function reverseRows(rows: readonly string[]): string[] {
 export interface SpriteOptions {
 	defaultKey: string;
 	colors?: string;
-	// Per-cell bg key (ADR 0031). A cell is either one color + transparency
-	// (the `colors` channel) or two colors fully opaque — never both.
+
 	bg?: string;
 	grip?: { x: number; y: number };
 	baseline?: number;
-	// Named seat points (ADR 0031), e.g. `grip` (weapon) and `head` (hat). The
-	// legacy `grip` option folds into this map when set. Frames carry their own
-	// per-frame overrides here; the renderer prefers a frame's anchor over the
-	// BodySprite's.
+
 	anchors?: Readonly<Record<string, { x: number; y: number }>>;
 }
 

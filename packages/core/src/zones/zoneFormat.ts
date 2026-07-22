@@ -106,7 +106,7 @@ export function parseZone(text: string, catalogs: Catalogs, id: string): Zone {
 	const monsters: Entity[] = [];
 	const npcs: Npc[] = [];
 	const portals: Portal[] = [];
-	let nextMonsterId = 2; // Avatar is id 1
+	let nextMonsterId = 2;
 	let nextNpcId = 1;
 
 	for (let y = 0; y < h; y++) {

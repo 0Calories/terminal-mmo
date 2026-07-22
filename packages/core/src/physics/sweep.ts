@@ -1,33 +1,6 @@
-// sweep — the terrain-collision primitive: point travel through the cell grid.
-//
-// One primitive answers "what does a point travelling from A to B hit?" for
-// any direction, and it carries the global one-way rule (ADR 0026, #262):
-// descending travel lands on Walls AND One-way platform tops; ascending and
-// sideways travel is blocked by Walls only. Both integrators — the
-// Momentum-body step and the projectile step — resolve terrain through these
-// sweeps, and the client particle engine rebuilds on `sweepPoint` (#362), so
-// "what blocks a moving point" has exactly one answer. (The old downward-only
-// particle sweep is the cautionary tale: rising specks embedded in ≥2-thick
-// solids because nothing swept upward.)
-//
-// Boundary conventions (the ones the entity integrator has always used,
-// generalized from "check the destination cell" to "check every cell crossed",
-// so fast travel cannot tunnel):
-// - Moving down/right, a point at an exact cell boundary is touching the next
-//   cell — a body resting on surface row r re-collides with r every tick.
-// - Moving up/left, an exact boundary belongs to floor(coord) — leaving your
-//   own cell is not a collision.
-
 import type { Terrain } from '../entities/types';
 import { isSolid, isWall } from './terrain';
 
-/**
- * First blocking row for a point travelling fromY→toY within column `col`;
- * null = clear. Carries the one-way rule vertically: descending hits any
- * solid (a One-way platform lands), ascending hits Walls only (a platform
- * passes). Module-internal — the barrel exports `sweepPoint`; the integrators
- * in this module compose the axis legs directly over box spans.
- */
 export function sweepColumn(
 	t: Terrain,
 	col: number,
@@ -46,11 +19,6 @@ export function sweepColumn(
 	return null;
 }
 
-/**
- * First blocking column for a point travelling fromX→toX within row `row`;
- * null = clear. Only Walls block sideways travel — One-way platforms are
- * horizontally transparent (the one-way rule). Module-internal, as above.
- */
 export function sweepRow(
 	t: Terrain,
 	row: number,
@@ -70,23 +38,15 @@ export function sweepRow(
 }
 
 export interface SweepHit {
-	/** Which leg of the axis-separated travel collided. */
 	axis: 'x' | 'y';
-	/** The solid cell that blocked travel. */
+
 	cx: number;
 	cy: number;
-	/** Travel clipped to the hit cell's near face. */
+
 	x: number;
 	y: number;
 }
 
-/**
- * Point travel for any direction, axis-separated x-then-y (the order both
- * integrators use): the x leg runs at the departure row, the y leg at the
- * arrival column. Returns the first hit with the clipped stop position, or
- * null for clear travel. A bounce/rest caller (particles, #362) zeroes the
- * blocked axis at `hit.x/hit.y` and re-sweeps the remaining leg.
- */
 export function sweepPoint(
 	t: Terrain,
 	fromX: number,

@@ -1,4 +1,3 @@
-// Headless tests for the pure animation-playback math (issue #339).
 import { describe, expect, test } from 'bun:test';
 import { EMOTE_FPS } from '@mmo/core/sprites';
 import {
@@ -10,7 +9,6 @@ import {
 
 describe('playbackFrame', () => {
 	test('cycles frames at the given fps', () => {
-		// 4 fps over a 3-frame animation: 0.0s→0, 0.25s→1, 0.5s→2, 0.75s→0 (wrap).
 		expect(playbackFrame(3, 0, 4)).toBe(0);
 		expect(playbackFrame(3, 0.25, 4)).toBe(1);
 		expect(playbackFrame(3, 0.5, 4)).toBe(2);

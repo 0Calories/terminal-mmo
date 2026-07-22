@@ -1,14 +1,8 @@
-// Entity archetype tuning — the per-kind footprint plus exactly one data
-// profile per Monster archetype (ADR 0032/0034: the scatter across world's
-// spawnStats, combat's meleeProfileOf, and hardcoded shooter constants merges
-// here; adding an archetype = adding a profile).
-
 import { DEFAULT_MASS } from '../physics/constants';
 import type { EntityType, MonsterType } from './types';
 
 export const BOX = { w: 5, h: 5 } as const;
 
-/** Tuning for a Melee committer's telegraphed swing and its approach envelope. */
 export interface MeleeProfile {
 	damage: number;
 	poise: number;
@@ -18,7 +12,6 @@ export interface MeleeProfile {
 	commitCd: number;
 }
 
-/** The Projectile a ranged archetype fires. */
 export interface ProjectileSpec {
 	speed: number;
 	life: number;
@@ -28,7 +21,6 @@ export interface ProjectileSpec {
 	knockbackUp: number;
 }
 
-/** Tuning for a ranged archetype's comfort band and fire cycle. */
 export interface RangedProfile {
 	aggro: number;
 	keepDist: number;
@@ -51,8 +43,7 @@ const CHASER = {
 	mass: DEFAULT_MASS,
 	melee: {
 		damage: 8,
-		// Historically read COMBAT.poiseDamage (same value); owned here now —
-		// retuning the avatar's poise damage no longer moves the chaser's.
+
 		poise: 8,
 		range: 4,
 		aggro: 22,
@@ -95,9 +86,6 @@ const SHOOTER = {
 	},
 } as const satisfies ArchetypeProfile;
 
-// The single door to archetype tuning (ADR 0032 rejected two doors to one
-// symbol): keyed lookup for factories/helpers, concrete member types for
-// callers that read a specific archetype (e.g. ARCHETYPES.shooter.ranged).
 export const ARCHETYPES = {
 	chaser: CHASER,
 	shooter: SHOOTER,

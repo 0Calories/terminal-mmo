@@ -1,10 +1,3 @@
-// Chrome smoke tests for the Composited preview (issues #340, #393): the editor's
-// always-on floating pane. The composition math is covered pixel-exactly in
-// sprite-composite.test.ts; these assert the keys reach the pure ops and the
-// Renderables draw the right thing. (The standalone `forge sprite preview` TUI
-// died in #386 — the headless surface is `sprite render --composite`, covered
-// in sprite-cli.test.ts.)
-
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,9 +29,6 @@ describe('editor floating preview pane', () => {
 		return { ...t, editor };
 	}
 
-	// Whether the floating pane renders: its bordered ' preview ' title shows in
-	// the canvas region (right of the rail — the rail's own 'preview' button
-	// always shows and must not count).
 	function paneShown(t: Awaited<ReturnType<typeof mountEditor>>): boolean {
 		return t
 			.captureCharFrame()
@@ -46,7 +36,6 @@ describe('editor floating preview pane', () => {
 			.some((r) => r.slice(30).includes('preview'));
 	}
 
-	// Click the rail's preview toggle button (QA round 3: the v key died).
 	async function clickPreviewButton(
 		t: Awaited<ReturnType<typeof mountEditor>>,
 	): Promise<void> {
@@ -68,15 +57,15 @@ describe('editor floating preview pane', () => {
 			loadDoc('sprites/forms/buddy.sprite', 'buddy'),
 			'form',
 		);
-		// Always-on: the pane and its controls render without any keypress.
+
 		expect(t.editor.composite).toBe(true);
 		expect(paneShown(t)).toBe(true);
-		// The rail button is the degradation override: toggling off drops the pane.
+
 		await clickPreviewButton(t);
 		expect(t.editor.composite).toBe(false);
 		await t.renderOnce();
 		expect(paneShown(t)).toBe(false);
-		// And back on.
+
 		await clickPreviewButton(t);
 		expect(t.editor.composite).toBe(true);
 		await t.renderOnce();
@@ -102,13 +91,10 @@ describe('editor floating preview pane', () => {
 		await clickPreviewButton(t);
 		await t.renderOnce();
 		const off = t.captureCharFrame();
-		// Dropping the floating pane (avatar art + border) changes the frame.
+
 		expect(off).not.toBe(on);
 	});
 
-	// The pane docks top-right at a fixed native size (PREVIEW_W=34), so at 100×24
-	// its bottom control row sits at y=10 and its controls start at x=68 (`flip …`)
-	// / x=76 (`▶ play`) — mirroring renderPreviewPane's layout.
 	const CONTROL_ROW = 10;
 	const FLIP_X = 69;
 	const PLAY_X = 78;
@@ -139,7 +125,7 @@ describe('editor floating preview pane', () => {
 			'hat',
 		);
 		const before = t.editor.state;
-		// Interior of the floating pane (top-right), above the control row.
+
 		t.editor.mouseDown({ button: 0, x: 80, y: 4 });
 		t.editor.mouseUp();
 		expect(t.editor.state).toBe(before);
@@ -147,13 +133,13 @@ describe('editor floating preview pane', () => {
 
 	test('the key map documents the preview toggle as a rail button (QA round 3)', () => {
 		const bindings = SPRITE_KEYMAP.flatMap((g) => g.bindings);
-		// The preview toggle lives on the rail's `edit` box (round 3).
+
 		expect(
 			bindings.some(
 				(b) => b.keys === 'edit box' && b.label.includes('preview'),
 			),
 		).toBe(true);
-		// No v binding survives.
+
 		expect(bindings.some((b) => b.keys === 'v')).toBe(false);
 	});
 });

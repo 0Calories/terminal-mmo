@@ -23,7 +23,6 @@ export function spawnPredicted(weapon: number): Entity {
 	return spawnAvatar(SPAWN.x, SPAWN.y, { weapon });
 }
 
-// A zone change teleports the Avatar: take the server's arrival point and kill inherited velocity.
 export function arriveInZone(
 	predicted: Entity,
 	arrival: Pick<Entity, 'x' | 'y'>,
@@ -56,7 +55,6 @@ export function stepPrediction(
 	inp: Input,
 	ctx: PredictContext,
 ): PredictResult {
-	// Apply the dodge impulse before physics so clientStepAvatar integrates it this frame.
 	const dodging =
 		(inp.dodge ?? false) &&
 		canStartDodge(prev, inp.moveX) &&
@@ -72,7 +70,6 @@ export function stepPrediction(
 		ctx.dtMs,
 	);
 
-	// Must fold through the same shared function the server runs, else prediction diverges.
 	const fold = stepAvatarCombat(
 		avatar,
 		{
@@ -97,10 +94,6 @@ export function stepPrediction(
 	};
 }
 
-/**
- * Health is authoritative; position is not. The snapshot echoes our pos ~1 RTT stale,
- * so snapping to it would drag the Avatar backward.
- */
 export function reconcileHealth(
 	predicted: Entity,
 	own: Pick<Entity, 'hp' | 'maxHp' | 'hurtT'>,
@@ -110,12 +103,6 @@ export function reconcileHealth(
 	predicted.hurtT = own.hurtT;
 }
 
-/**
- * Show this swing's hits immediately rather than waiting a round trip. Records the
- * targets on `predicted.swingHits` so one swing can't hit the same monster twice.
- * Returns the optimistic `hit` CombatEvents; routing into presentation happens
- * where they're consumed (see render/present.ts, ADR 0029).
- */
 export function predictSwingEvents(
 	predicted: Entity,
 	hitbox: Box,

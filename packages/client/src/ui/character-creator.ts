@@ -63,7 +63,6 @@ export const VPAD = 1;
 const PREVIEW_W = PLAYER.w + 12;
 export const PREVIEW_H = MAX_HAT_H + PLAYER.h + NAMEPLATE_H + 2 * VPAD;
 
-// Anchor the Sprite at a fixed y (headroom for the tallest hat) so cycling hats never shifts the body.
 export function previewAvatar(cosmetics: Cosmetics, name: string): Entity {
 	const spriteTop = VPAD + MAX_HAT_H;
 	const spriteLeft = Math.round((PREVIEW_W - PLAYER.w) / 2);
@@ -93,7 +92,6 @@ class PreviewRenderable extends Renderable {
 	);
 
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
-		// buffered: own frame buffer, else renderZoneScene's clear wipes the root buffer.
 		super(ctx, { live: true, buffered: true, ...options });
 	}
 
@@ -280,7 +278,6 @@ export class CharacterCreator {
 		this.container.visible = false;
 	}
 
-	// Blur while frozen: a keystroke on the focused input would bypass key()'s busy guard.
 	setBusy(busy: boolean): void {
 		this.busy = busy;
 		if (busy) this.handleInput.blur();
@@ -299,7 +296,6 @@ export class CharacterCreator {
 		this.refresh();
 	}
 
-	// Dispatched before the focused input; swallowed keys never also reach the field.
 	key(k: CreatorKey): CreatorResult | null {
 		if (this.busy) return null;
 		const { name } = k;
@@ -318,7 +314,7 @@ export class CharacterCreator {
 				cosmetics: this.state.cosmetics,
 			};
 		}
-		// On the name row, leave the key for the focused input (don't swallow).
+
 		if (this.nameFocused) return null;
 		const { state } = reduceCustomize(this.state, name);
 		this.state = state;

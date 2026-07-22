@@ -1,7 +1,3 @@
-// Unit tests for the weapon art registry (ADR 0031): pure compilation from
-// SpriteSource entries plus catalog-index resolution — the forms.ts/hats.ts
-// registry pattern applied to weapon art, with the extra catalog-reference hop
-// (WEAPONS[i].sprite -> registry) that the wire-replicated numeric index rides.
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -27,7 +23,6 @@ function swordSource(id = 'sword'): SpriteSource {
 	return { id, role: 'weapons', text: SWORD_TEXT };
 }
 
-// A minimal valid weapons source: a Default frame + 3-frame swing + grip.
 const MINIMAL = `{ "accent": "s", "anchors": { "grip": [0, 0] }, "animations": [{ "name": "idle" }, { "name": "swing" }] }
 --- idle
 AB
@@ -46,7 +41,7 @@ test('the real sword.sprite compiles to a weapon with all phase frames and its a
 	expect(ws?.frames.rest).toBeDefined();
 	expect(ws?.frames.swing).toHaveLength(3);
 	expect(ws?.accent).toBe('s');
-	// The sword's grip sits one cell left of its art (a negative offset).
+
 	expect(ws?.grip).toEqual({ x: -1, y: 2 });
 });
 
@@ -67,7 +62,6 @@ test('a source with a broken header is skipped; the others still load', () => {
 });
 
 test('a source that fails the weapons role profile is skipped', () => {
-	// missing the swing animation and the grip anchor -> role profile error.
 	const bad = `{ "animations": [{ "name": "idle" }, { "name": "windup" }] }
 --- idle
 AB
@@ -94,13 +88,10 @@ test('WEAPON_SPRITE_IDS is sorted and every catalog entry resolves to art', () =
 		expect(ws).toBeDefined();
 		expect(typeof ws?.accent).toBe('string');
 	}
-	// An out-of-range index falls back to the default weapon's art (like the
-	// core catalog itself), never crashing or returning a foreign sprite.
+
 	expect(weaponSpriteById(9999)).toBe(weaponSpriteById(DEFAULT_WEAPON));
 	expect(weaponSpriteById(undefined)).toBe(weaponSpriteById(DEFAULT_WEAPON));
 });
-
-// --- Rendering an entity holding a weapon never crashes ------------------
 
 interface Cell {
 	ch: string;

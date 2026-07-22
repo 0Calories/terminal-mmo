@@ -1,6 +1,5 @@
 import type { AvatarIntent } from '@mmo/core/zones';
 
-// Consumes (mutates) the pending collections so each edge fires exactly once.
 export function foldPendingEdges(
 	intents: Iterable<AvatarIntent>,
 	pendingEmotes: Map<number, string>,

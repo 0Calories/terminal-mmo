@@ -21,7 +21,7 @@ function opensshPrivateKeyFile(seed: Uint8Array, pub: Uint8Array): string {
 	pubBlob.string(pub);
 
 	const priv = new SshBlobWriter();
-	priv.u32(0xc0ffee42); // check ints: an equal pair, arbitrary when unencrypted
+	priv.u32(0xc0ffee42);
 	priv.u32(0xc0ffee42);
 	priv.string('ssh-ed25519');
 	priv.string(pub);
@@ -31,7 +31,7 @@ function opensshPrivateKeyFile(seed: Uint8Array, pub: Uint8Array): string {
 	priv.string(seedPub);
 	priv.string('test@synthetic');
 	let block = priv.finish();
-	// pad 1,2,3… to the 8-byte cipher block
+
 	const pad = (8 - (block.length % 8)) % 8;
 	const padded = new Uint8Array(block.length + pad);
 	padded.set(block);
@@ -160,7 +160,6 @@ test('an anchored external key that is unreachable refuses WITHOUT minting a new
 });
 
 test('a read-only home degrades to an ephemeral in-memory key with a warning, no lockout', async () => {
-	// parent is a file, so key-file and anchor writes both throw (stands in for a read-only home)
 	const dir = mkdtempSync(join(tmpdir(), 'mmo-ro-'));
 	const filePath = join(dir, 'afile');
 	writeFileSync(filePath, 'x');
@@ -272,7 +271,7 @@ test('planIdentity: an external anchor uses the SAME key, and never re-anchors i
 		publicKey: encodePublicKeyLine(pub),
 		source: 'external' as const,
 	};
-	// a returning key with a different comment is still the same identity
+
 	expect(planIdentity(anchor, fakeIdentity(line), null)).toEqual({
 		kind: 'external',
 		writeAnchor: false,

@@ -1,18 +1,3 @@
-// One-time migration: `.sprite` format v1 → v2 (ADR 0037). Rewrites every
-// `sprites/**/*.sprite` in place, committed alongside the parser cutover.
-//
-// v1: the header's `animations` was a map name→frame-name[], with a top-level
-// `fps` map and a top-level `frames` per-frame-name anchor-override map; a frame
-// referenced by no animation was an IMPLICIT single-frame animation named after
-// the frame. v2: `animations` is an ordered array of `{ name, fps?, anchors? }`
-// (anchors keyed by frame INDEX), frames are unnamed and bound by `--- <animation>
-// <index>` sections, and every animation is explicit.
-//
-// Strategy: parse the v1 header + sections, replicate v1's animation resolution
-// (explicit + implicit) in the OLD serializer's canonical order (idle, walk, jump
-// lead, then existing order), emit that as parseable v2 text with each frame's
-// body carried VERBATIM (so art is byte-identical), then parse+re-serialize it
-// through the v2 codec so the committed files land in canonical form.
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseSpriteFile, serializeSpriteFile } from '../packages/render/src';
@@ -33,7 +18,6 @@ interface V1Header {
 
 const SECTION_RE = /^---\s+(\S+)\s*$/;
 
-// Split a v1 file into (header JSON text, [{ name, body }] sections in order).
 function splitV1(text: string): {
 	header: V1Header;
 	sections: { name: string; body: string[] }[];
@@ -59,16 +43,13 @@ function splitV1(text: string): {
 			cur.body.push(lines[i]);
 		}
 	}
-	// Trim a trailing blank line off each body (the final newline).
+
 	for (const s of sections)
 		while (s.body.length > 0 && s.body[s.body.length - 1].trim() === '')
 			s.body.pop();
 	return { header, sections };
 }
 
-// Replicate v1 animation resolution: explicit animations (filtered to real
-// frames), then implicit single-frame animations for every unconsumed frame — in
-// the OLD serializer's canonical order.
 function resolveAnimations(
 	header: V1Header,
 	sections: { name: string; body: string[] }[],
@@ -84,15 +65,13 @@ function resolveAnimations(
 		excluded.add(name);
 		for (const f of list) excluded.add(f);
 	}
-	// v1 doc.animations insertion order: explicit (header order) then implicit
-	// (section order).
+
 	const ordered: { name: string; frames: string[] }[] = [];
 	for (const [name, list] of Object.entries(explicit))
 		ordered.push({ name, frames: list });
 	for (const s of sections)
 		if (!excluded.has(s.name)) ordered.push({ name: s.name, frames: [s.name] });
 
-	// Canonical order: idle, walk, jump lead; then the rest keep their order.
 	const leads = CANONICAL_LEADS.filter((n) =>
 		ordered.some((a) => a.name === n),
 	);
@@ -111,7 +90,6 @@ function migrate(text: string, id: string): string {
 	const bodyOf = new Map(sections.map((s) => [s.name, s.body]));
 	const animations = resolveAnimations(header, sections);
 
-	// Build a parseable v2 header + relabeled sections (bodies verbatim).
 	const v2Animations = animations.map((a) => {
 		const entry: Record<string, unknown> = { name: a.name };
 		if (header.fps?.[a.name] !== undefined) entry.fps = header.fps[a.name];
@@ -143,7 +121,6 @@ function migrate(text: string, id: string): string {
 	}
 	const v2Text = `${out.join('\n')}\n`;
 
-	// Canonicalize through the v2 codec (and prove it parses clean).
 	const { doc, diagnostics } = parseSpriteFile(v2Text, id);
 	if (doc === null)
 		throw new Error(

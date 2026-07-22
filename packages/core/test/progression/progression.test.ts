@@ -44,7 +44,7 @@ test('xpForKill scales by monster archetype and zone depth', () => {
 	expect(xpForKill('chaser', 'field-02')).toBeLessThan(
 		xpForKill('chaser', 'dungeon-01'),
 	);
-	// tuned values: archetype base × zone depth, floored
+
 	expect(xpForKill('chaser', 'field-01')).toBe(5);
 	expect(xpForKill('brute', 'field-03')).toBe(28);
 	expect(xpForKill('chaser', 'dungeon-01')).toBe(12);

@@ -36,7 +36,7 @@ test('compiles a single frame doc with transparency, custom key, colors, bg, bas
 	expect(sprite.w).toBe(2);
 	expect(sprite.h).toBe(2);
 	expect(sprite.baseline).toBe(2);
-	// frame-level grip override wins over doc-level grip
+
 	expect(sprite.grip).toEqual({ x: 0, y: 1 });
 });
 
@@ -58,15 +58,14 @@ ZW
 test('spriteFromDoc carries the full effective anchor map, not just grip (#351 QA round 5)', () => {
 	const { doc, diagnostics } = parseSpriteFile(ANCHORED, 'anchored');
 	expect(diagnostics).toEqual([]);
-	// Default frame: doc-level anchors flow through untouched.
+
 	const idle = spriteFromDoc(doc as SpriteDoc, 'idle');
 	expect(idle.anchors).toEqual({
 		grip: { x: 1, y: 0 },
 		head: { x: 1, y: 1 },
 		tail: { x: 0, y: 1 },
 	});
-	// Overriding frame: its head override wins; every other anchor falls
-	// back to the doc level — exactly the frame-anchor overlay rule.
+
 	const sit = spriteFromDoc(doc as SpriteDoc, 'sit');
 	expect(sit.anchors).toEqual({
 		grip: { x: 1, y: 0 },
@@ -127,7 +126,7 @@ test('mirrored facing works and does not throw', () => {
 	const left = sprite.rows(-1);
 	expect(right).toEqual(['(AB', ' CD']);
 	expect(left).not.toEqual(right);
-	// row reversed, and '(' mirrors to ')'
+
 	expect(left).toEqual(['BA)', 'DC ']);
 });
 
@@ -169,7 +168,6 @@ test('compileBodySprite: multi-frame animation is an array, single-frame is a Sp
 	expect(diagnostics).toEqual([]);
 	const body = compileBodySprite(doc as SpriteDoc);
 
-	// multi-frame animation -> array
 	const walk = body.frames.walk;
 	expect(Array.isArray(walk)).toBe(true);
 	const walkArr = walk as readonly Sprite[];
@@ -177,7 +175,6 @@ test('compileBodySprite: multi-frame animation is an array, single-frame is a Sp
 	expect(walkArr[0].rows(1)).toEqual(['AB', 'CD']);
 	expect(walkArr[1].rows(1)).toEqual(['EF', 'GH']);
 
-	// single-frame animation -> Sprite, not array
 	const idle = body.frames.idle;
 	expect(Array.isArray(idle)).toBe(false);
 	expect((idle as Sprite).rows(1)).toEqual(['XY', 'ZW']);
@@ -192,7 +189,7 @@ test('compileBodySprite: doc-level anchors seed body grip/head and frame anchors
 	expect(body.baseline).toBe(1);
 
 	const walkArr = body.frames.walk as readonly Sprite[];
-	// frame 0 inherits doc anchors; frame 1 overrides grip (frame wins), keeps head
+
 	expect(walkArr[0].anchors.grip).toEqual({ x: 1, y: 0 });
 	expect(walkArr[0].anchors.head).toEqual({ x: 0, y: 0 });
 	expect(walkArr[1].anchors.grip).toEqual({ x: 1, y: 1 });
@@ -231,7 +228,7 @@ GH
 
 test('compileWeaponSprite: the Default frame is the rest sprite; swing is a 3-frame phase array (ADR 0036)', () => {
 	const { doc, diagnostics } = parseSpriteFile(WEAPON, 'sword');
-	// The negative grip trips only the out-of-bounds warning, never an error.
+
 	expect(diagnostics.some((d) => d.severity === 'error')).toBe(false);
 	const ws = compileWeaponSprite(doc as SpriteDoc);
 

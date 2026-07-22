@@ -1,9 +1,3 @@
-// Golden-frame regression tests: pin the exact rendered output of every
-// existing TypeScript-authored sprite in @mmo/render. A later change adds a
-// second (bg) color channel to `Sprite` and the blit path; these snapshots
-// prove existing art renders pixel-identically after that change.
-//
-// Tests against CURRENT behaviour only — do not modify any source file.
 import { expect, test } from 'bun:test';
 import { BOX, type Entity, type EntityType } from '@mmo/core/entities';
 import { parseTerrain } from '@mmo/core/physics';
@@ -135,8 +129,6 @@ function dump(buf: FakeBuffer): string {
 	return rows.join('\n');
 }
 
-// --- 1. Raw grid goldens -----------------------------------------------
-
 interface SpriteGrid {
 	w: number;
 	h: number;
@@ -184,9 +176,6 @@ test('golden: hat sprites', () => {
 	}
 });
 
-// buddy is now compiled from sprites/forms/buddy.sprite (ADR 0031) rather than
-// hand-authored TS. These snapshots pin that the compiled frames are pixel-for-
-// pixel identical to the pre-migration art.
 test('golden: buddy form frames', () => {
 	for (const [animationId, frame] of Object.entries(formById('buddy').frames)) {
 		const isArr = Array.isArray(frame);
@@ -208,8 +197,6 @@ test('golden: sword weapon frames', () => {
 		expect(spriteGrid(f)).toMatchSnapshot(`sword: swing[${i}]`);
 	});
 });
-
-// --- 2. Composited scene goldens ----------------------------------------
 
 test('golden scene: full avatar facing right', () => {
 	const buf = new FakeBuffer(24, 16);

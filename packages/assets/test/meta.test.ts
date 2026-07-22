@@ -1,7 +1,3 @@
-// @mmo/assets/meta — the server's door. Absorbs the old server sprite-scan
-// tests: set-membership for cosmetic-id sanitization, backed by the same
-// store as the full door (fs-scan here; entries injection proves the
-// embedded strategy).
 import { afterEach, expect, test } from 'bun:test';
 import { tmpdir } from 'node:os';
 import { loadZones, spriteIds } from '../src/meta';
@@ -42,8 +38,6 @@ test('spriteIds finds the shipped Form set: the default buddy is a member', () =
 });
 
 test('the store resolves the repo trees even when cwd is elsewhere (walk-up fallback)', () => {
-	// Mirrors the old server findHatsDir test: from a cwd with no asset trees,
-	// the walk-up from this package's directory still finds the real content.
 	savedCwd = process.cwd();
 	process.chdir(tmpdir());
 	expect(spriteIds('hats').has('cap')).toBe(true);

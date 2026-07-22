@@ -1,5 +1,3 @@
-// Field respawn scheduling at the zone-tick seam (moved from the old
-// single-player runtime's coverage when sim.ts died).
 import { expect, test } from 'bun:test';
 import { COMBAT, SWING_TOTAL } from '../../src/combat';
 import type { SpawnPoint } from '../../src/entities';
@@ -21,7 +19,6 @@ import { flatTerrain } from '../helpers';
 
 const y = GROUND_TOP - BOX.h;
 
-// Prime a swing mid-active so a connect lands this tick (hitbox is active-only).
 const MID_ACTIVE = SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
 
 function fieldSpawnState(monsterHp: number): ZoneState {

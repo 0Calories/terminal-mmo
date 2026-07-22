@@ -29,7 +29,7 @@ test('renders a well-formed PCM16 mono WAV header', () => {
 test('sample count matches the requested duration', () => {
 	const wav = renderWav({ ...JUMP, durationMs: 100 });
 	const expectedSamples = Math.round((100 / 1000) * SAMPLE_RATE);
-	// 44-byte header + 2 bytes per PCM16 sample
+
 	expect(wav.length).toBe(44 + expectedSamples * 2);
 
 	const view = new DataView(wav.buffer);

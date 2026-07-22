@@ -1,5 +1,3 @@
-// persistence — SSH-key auth, account registry, and player save round-tripping.
-
 export {
 	type AccountRegistry,
 	AUTH_CONTEXT,

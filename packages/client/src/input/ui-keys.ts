@@ -1,7 +1,6 @@
 import type { ShopView } from '../ui/shop';
 import type { Scheme } from './movement';
 
-// Structurally OpenTUI's parsed key, narrowed to what the dispatch and the creator read.
 export interface Key {
 	name: string;
 	sequence: string;
@@ -10,7 +9,6 @@ export interface Key {
 	preventDefault(): void;
 }
 
-// Some terminals report `?` only as a sequence, not a name.
 export function isHelpKey(k: { name: string; sequence?: string }): boolean {
 	return k.name === '?' || k.sequence === '?';
 }
@@ -29,17 +27,13 @@ interface Overlay {
 export interface LobbyKeyDeps {
 	noKittyNotice: { readonly open: boolean };
 	dismissNoKittyNotice(): void;
-	// The creator is mounted only for a brand-new account.
+
 	creating(): boolean;
 	submitCreator(k: Key): void;
 	blip(): void;
 	quit(): void;
 }
 
-/**
- * Before the world exists there is at most one thing on screen: the no-Kitty notice,
- * then either the Avatar creator or an empty field waiting on the server.
- */
 export function lobbyKeyHandler(deps: LobbyKeyDeps): (k: Key) => void {
 	return (k) => {
 		if (deps.noKittyNotice.open) {
@@ -75,7 +69,7 @@ export interface GameKeyDeps {
 	sellSelected(): void;
 	openShop(): void;
 	merchantUnder(): boolean;
-	// Absent until the player first opens it, so this is a getter rather than a field.
+
 	recustomize(): Overlay | null;
 	submitRecustomize(k: Key): void;
 	openRecustomize(): void;
@@ -84,7 +78,7 @@ export interface GameKeyDeps {
 	notice(text: string): void;
 	toggleMute(): void;
 	blip(): void;
-	// Held keys would stay stuck down behind a modal that swallows the key-release.
+
 	clearHeldKeys(): void;
 	pressMovement(name: string): void;
 	quit(): void;
@@ -118,10 +112,6 @@ function shopKeyHandler(deps: GameKeyDeps): (name: string) => void {
 	};
 }
 
-/**
- * The in-game key dispatch, ordered as a stack: the topmost overlay consumes the key,
- * and only a key that falls through every overlay reaches the Avatar.
- */
 export function gameKeyHandler(deps: GameKeyDeps): (k: Key) => void {
 	const handleShopKey = shopKeyHandler(deps);
 	return (k) => {
@@ -174,7 +164,6 @@ export function gameKeyHandler(deps: GameKeyDeps): (k: Key) => void {
 			return;
 		}
 		if (k.name === 'return') {
-			// Consume this Enter: the input subscribes during this same dispatch and would else submit an empty line.
 			k.preventDefault();
 			deps.hud.openChat();
 			deps.clearHeldKeys();

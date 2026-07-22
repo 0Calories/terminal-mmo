@@ -1,6 +1,5 @@
 import type { TerminalCapabilities } from '@opentui/core';
 
-// Fail-open: warn only when the probe resolved and reports absent; strict === false keeps non-booleans silent.
 export function shouldWarnNoKitty(
 	capabilities: TerminalCapabilities | null | undefined,
 ): boolean {
@@ -18,18 +17,13 @@ interface Notice {
 export interface KittyProbeDeps {
 	notice: Notice;
 	capabilities(): TerminalCapabilities | null | undefined;
-	// Called whenever the notice's visibility changed, so the modal gate can reconcile.
+
 	onNoticeChanged(): void;
 	settleMs?: number;
 	setTimer?(fn: () => void, ms: number): unknown;
 	clearTimer?(handle: unknown): void;
 }
 
-/**
- * OpenTUI's kitty_keyboard false-defaults before the async probe resolves, so warn only
- * once the probe burst settles quiet with the flag still false — else capable terminals
- * like Ghostty falsely warn.
- */
 export class KittyProbe {
 	private confirmed = false;
 	private timer: unknown = null;
@@ -43,7 +37,7 @@ export class KittyProbe {
 		this.clearTimer =
 			deps.clearTimer ??
 			((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
-		// Act on a positive only; the pre-probe default false isn't authoritative.
+
 		if (deps.capabilities()?.kitty_keyboard === true) this.confirmed = true;
 	}
 

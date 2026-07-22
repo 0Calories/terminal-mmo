@@ -48,7 +48,7 @@ const WIDE = parseTerrain([
 	floor,
 	floor,
 ]);
-// One-way platform (`=`) at row 8, x=2..7; ground floor at rows 18-19.
+
 const PLATFORM = parseTerrain([
 	'............',
 	'............',

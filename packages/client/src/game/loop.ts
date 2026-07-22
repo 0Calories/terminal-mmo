@@ -33,7 +33,6 @@ interface InputSource {
 	consumeInteract(): boolean;
 }
 
-// The slices of the client's collaborators the loop actually touches.
 interface NetView {
 	readonly sessionId: number;
 	readonly zoneId: string;
@@ -70,9 +69,9 @@ export interface GameLoopDeps {
 	sound: SoundView;
 	localZone(id: string): Zone;
 	weapon: number;
-	// A modal swallows movement: the Avatar idles while a menu or the chat line has focus.
+
 	modalOpen(): boolean;
-	// Run after the frame's game state is built — the HUD-adjacent views that mirror it.
+
 	syncViews(): void;
 }
 
@@ -92,18 +91,13 @@ function fpsMeter() {
 	};
 }
 
-/**
- * The client's per-frame tick: poll input, predict the local Avatar forward, send the
- * prediction upstream on a fixed cadence, and hand the fused state to the renderer.
- * Owns the predicted Avatar — the one piece of game state the client authors itself.
- */
 export class GameLoop {
 	private zoneId = 'field-01';
 	private zone: Zone;
 	private predicted: Entity;
 	private sendAcc = 0;
 	private readonly meter = fpsMeter();
-	// null until the first snapshot so a reconnect at an already-high level can't false-trigger.
+
 	private prevLevel: number | null = null;
 
 	constructor(private readonly deps: GameLoopDeps) {

@@ -26,11 +26,6 @@ import { DEFAULT_WEAPON, type Weapon, weaponById } from './weapons';
 
 const BODY_PALETTE: Record<string, RGBAQuad> = SCENE_PALETTE;
 
-// The slice of an Entity that combat resolution reads and writes (ADR 0032:
-// modules declare narrow structural views over the flat record, never the
-// whole bag). The impulse channel (vy/ivx/mass) is here because a poise break
-// knocks the victim back. Signatures stay generic-preserving: callers pass a
-// full Entity and get a full Entity back.
 export interface Combatant {
 	id: number;
 	x: number;
@@ -55,8 +50,6 @@ export interface Combatant {
 	contributors?: number[];
 }
 
-// Generic-preserving update over the flat record: E in, E out (Object.assign
-// keeps the intersection assignable to E where an object spread would not).
 function patch<E extends Combatant>(e: E, p: Partial<Combatant>): E {
 	return Object.assign({}, e, p);
 }
@@ -130,7 +123,6 @@ export function dodgeReady(e: Combatant): boolean {
 	);
 }
 
-// Evaluate BEFORE the hop ungrounds the body — the movement conditions can't be re-derived post-physics.
 export function canStartDodge(e: Combatant, moveX: number): boolean {
 	return dodgeReady(e) && e.onGround && moveX !== 0;
 }
@@ -213,7 +205,6 @@ export function guardRaised(guardT: number): boolean {
 	return guardT > 0;
 }
 
-// A hit from behind (defender facing away) ignores Guard; a same-column attacker counts as frontal.
 export function facingToward(
 	defender: Pick<Combatant, 'x' | 'facing'>,
 	attackerX: number,
@@ -545,17 +536,6 @@ export function resolveHitsOnMonsters<E extends Combatant>(
 	return { monsters: resolved, events };
 }
 
-// The Guard hub (ADR 0022): the ONE pass that lands monster-Faction Strikes on
-// Avatars — melee and Projectile contacts share the guard/damage/poise/break
-// application. Nothing outside this pass may apply damage, poise, or knockback
-// to an Avatar. The kinds differ only in contact arity: a melee swing is
-// multi-contact, deduped per swing by the `swingHits` ledger (attackerId →
-// victims already hit, kept on the source entity across ticks); a Projectile
-// is single-contact — no ledger, it lands at most once and its attackerId
-// joins `consumed` for the caller to despawn the shot.
-// Strikes resolve in emission order with in-pass i-frame consumption — the
-// same rule as resolveHitsOnMonsters (ADR 0022's nearest-attacker-wins rule
-// stays future work; this preserves the pre-Strike behavior, per #358).
 export function resolveHitsOnAvatars<E extends Combatant>(
 	avatars: E[],
 	strikes: Strike[],
@@ -576,8 +556,7 @@ export function resolveHitsOnAvatars<E extends Combatant>(
 				hits.add(a.id);
 				swingHits.set(s.attackerId, hits);
 			}
-			// Melee guards against the attacker's actual position; a Strike
-			// without an origin (a shot) reads as frontal from its travel side.
+
 			const attackerX = s.attackerX ?? a.x - s.facing;
 			const g = resolveGuard(a, attackerX, s.damage);
 			const unguarded =
@@ -595,7 +574,6 @@ export function resolveHitsOnAvatars<E extends Combatant>(
 				na = patch(na, { stunT: COMBAT.hitstun });
 				events.push(combatEventAt('break', a, s.facing, s.damage));
 			} else if (g.result !== 'block') {
-				// Chip blood sprays away from the attack's origin.
 				const away: -1 | 0 | 1 =
 					a.x === attackerX ? 0 : a.x > attackerX ? 1 : -1;
 				events.push(combatEventAt('hit', a, away, s.damage));

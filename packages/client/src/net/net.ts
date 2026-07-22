@@ -41,7 +41,7 @@ export class NetClient {
 	chatLog: string[] = [];
 	bubbles = new Map<number, Bubble>();
 	rejected: string | null = null;
-	// Unlike onReject, does NOT close the connection — caller keeps the creator open to retry.
+
 	onCreateRejected: (reason: 'taken' | 'invalid') => void = () => {};
 	onSpawned: () => void = () => {};
 	private spawnNotified = false;
@@ -75,12 +75,11 @@ export class NetClient {
 			const msg = decodeServerMessage(new Uint8Array(ev.data as ArrayBuffer));
 			this.ingest(msg, performance.now());
 		};
-		// Swallow errors — an unhandled ws error event would tear the process down.
+
 		this.ws.onerror = () => {};
 	}
 
 	ingest(msg: ServerMessage, recvTimeMs: number) {
-		// Sent directly, not via send(): signing is async and this is pre-welcome, before the ready-gate opens.
 		if (msg.t === 'challenge') {
 			this.identity.signChallenge(msg.nonce).then(
 				(signature) => {
@@ -102,11 +101,11 @@ export class NetClient {
 			this.isNewAccount = msg.isNew;
 			if (msg.handle) {
 				this.handle = msg.handle;
-				// New account claims its Handle only at createAvatar (after welcome), so defer to spawn.
+
 				if (!msg.isNew) this.signedInAs(msg.handle);
 			}
 			this.ready = true;
-			// After ready flips, so a createAvatar sent from the callback passes the send() gate.
+
 			this.onWelcome(msg.isNew);
 			return;
 		}
@@ -139,7 +138,7 @@ export class NetClient {
 			this.onCreateRejected(msg.reason);
 			return;
 		}
-		// Zone change: drop prior frames so interp never eases across two unrelated coord spaces.
+
 		if (msg.zoneId !== this.zoneId) {
 			this.zoneId = msg.zoneId;
 			this.buffer = new SnapshotBuffer();
@@ -148,7 +147,7 @@ export class NetClient {
 		this.buffer.push(msg, recvTimeMs);
 		if (!this.spawnNotified) {
 			this.spawnNotified = true;
-			// New account: read the claimed name off the own Avatar snapshot (claimed only at createAvatar).
+
 			if (this.isNewAccount) {
 				const claimed = this.ownAvatar()?.handle;
 				if (claimed) this.signedInAs(claimed);

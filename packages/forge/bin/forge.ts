@@ -20,8 +20,6 @@ const [domain, ...rest] = process.argv.slice(2);
 if (domain === 'zone') {
 	if (rest[0] === 'preview') await runPreview(rest.slice(1), deps);
 	else if (rest[0] === 'play') await runPlay(rest.slice(1), deps);
-	// `forge zone edit` with a target edits it directly; with no target it opens
-	// the unified picker pre-filtered to zones (spec #387).
 	else if (rest[0] === 'edit')
 		if (rest[1]) await runEdit(rest.slice(1), deps);
 		else await runPicker('zone', pickerDeps);
@@ -32,8 +30,6 @@ if (domain === 'zone') {
 		else await runPicker('sprite', pickerDeps);
 	else process.exit(runSprite(rest, spriteDeps));
 } else if (!domain) {
-	// Bare `forge`: the single entry point — the picker over every editable asset
-	// (sprites grouped by role, zones as their own section) (spec #387).
 	await runPicker(null, pickerDeps);
 } else {
 	log(

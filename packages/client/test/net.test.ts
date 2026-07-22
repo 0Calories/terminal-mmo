@@ -207,7 +207,7 @@ test('NetClient samples co-present motion interpolated INTERP_DELAY_MS in the pa
 	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest(snapAt(40), 1000);
 	net.ingest(snapAt(60), 1050);
-	// sampling looks back INTERP_DELAY_MS to t=1025, midway between the 40 and 60 frames
+
 	const view = net.sample(1025 + INTERP_DELAY_MS);
 	expect(view?.avatars[0].x).toBe(50);
 	net.close();
@@ -226,7 +226,7 @@ test('NetClient drops the interpolation buffer (and tracks the Zone) on a Zone c
 	town.zoneId = 'town-01';
 	net.ingest(town, 1050);
 	expect(net.zoneId).toBe('town-01');
-	// no cross-zone interpolation: sampling midway yields only the new zone's frame
+
 	const view = net.sample(1025 + INTERP_DELAY_MS);
 	expect(view?.zoneId).toBe('town-01');
 	expect(view?.avatars[0].x).toBe(12);
@@ -330,7 +330,7 @@ test('NetClient.ingest opens a Speech bubble keyed to the sender, replacing the 
 test('NetClient.decayBubbles expires a bubble after its length-scaled ttl', () => {
 	const net = new NetClient('ws://127.0.0.1:1', 'tester', FAKE_IDENTITY);
 	net.ingest({ t: 'chat', sessionId: 5, handle: 'neo', text: 'gg' }, 1000);
-	// ttl floor is 3s: alive at 2s, expired at 4s
+
 	net.decayBubbles(2);
 	expect(net.bubbles.has(5)).toBe(true);
 	net.decayBubbles(2);
@@ -389,7 +389,7 @@ test('NetClient.ingest applies the welcome handshake and tracks the latest snaps
 	);
 	expect(net.sessionId).toBe(7);
 	expect(net.ready).toBe(true);
-	// server may resolve the key to a different durable Handle; the client adopts it
+
 	expect(net.handle).toBe('Tester');
 	net.ingest(snapAt(42), 1000);
 	expect(net.latest?.avatars[0].x).toBe(42);
@@ -467,7 +467,7 @@ test('NetClient surfaces a signer failure as a rejection (#235)', async () => {
 		saw.reason = r;
 	});
 	net.ingest({ t: 'challenge', nonce: Uint8Array.of(1) }, 0);
-	// two microtask hops: the rejected sign promise, then the failure handler
+
 	await Promise.resolve();
 	await Promise.resolve();
 	expect(saw.reason).toBe('ssh-agent refused to sign');

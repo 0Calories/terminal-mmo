@@ -57,8 +57,6 @@ function partyLeaderOf(world: ServerWorld, sessionId: number): number {
 	return world.party[sessionId] ?? sessionId;
 }
 
-// Module-internal (not in the barrel): localSession seeds a direct-play
-// Dungeon instance under the same key a portal entry would use.
 export function instanceKey(zone: ZoneId, leader: number): string {
 	return `${zone}#${leader}`;
 }
@@ -104,12 +102,10 @@ export function zoneInstance(
 	return world.zones[zone];
 }
 
-// Includes the session itself, so a chat sender receives its own line.
 export function sessionsInZone(
 	world: ServerWorld,
 	sessionId: number,
 ): number[] {
-	// Two runs of the same Dungeon must never hear each other, so group by instance id.
 	const inst = world.instanceOf[sessionId];
 	if (inst !== undefined) {
 		const out: number[] = [];
@@ -126,7 +122,6 @@ export function sessionsInZone(
 	return out;
 }
 
-// Case-insensitive; a duplicated handle resolves to the lowest sessionId for determinism.
 export function sessionByHandle(
 	world: ServerWorld,
 	handle: string,
@@ -156,8 +151,6 @@ export function avatarBox(x: number, y: number): Box {
 	return { x, y, w: BOX.w, h: BOX.h };
 }
 
-// The world's one write door to a placed avatar: request handlers (vendor,
-// cosmetics, …) live outside this module and update sessions through it.
 export function updateAvatar(
 	world: ServerWorld,
 	sessionId: number,
@@ -310,7 +303,6 @@ export function stepServerWorld(
 ): ServerWorld {
 	const byId = new Map(intents.map((i) => [i.sessionId, i]));
 
-	// Detection runs on the reported (pre-step) position, off the logical Zone template.
 	const portalDest = new Map<
 		number,
 		{ dest: ZoneId; arrival: Move['arrival'] }
@@ -333,7 +325,6 @@ export function stepServerWorld(
 	const instanceOf = { ...world.instanceOf };
 	const moves: Move[] = [];
 
-	// Portal-takers are pulled out first — their transition tick runs no movement or combat.
 	const stepSim = (zs: ZoneState): ZoneState => {
 		const staying: ServerAvatar[] = [];
 		const stayingIds = new Set<number>();
@@ -358,7 +349,6 @@ export function stepServerWorld(
 	let zones = mapSims(world.zones, stepSim);
 	let instances = mapSims(world.instances, stepSim);
 
-	// stepZone respawned the Avatar in place; relocate it to Town (exiting any Dungeon).
 	const reapDeaths = (zs: ZoneState): ZoneState => {
 		const dying = new Set(zs.deaths ?? []);
 		if (dying.size === 0) return zs;
@@ -373,7 +363,6 @@ export function stepServerWorld(
 	zones = mapSims(zones, reapDeaths);
 	instances = mapSims(instances, reapDeaths);
 
-	// Deterministic order so simultaneous arrivals land consistently.
 	moves.sort((a, b) => a.sa.sessionId - b.sa.sessionId);
 	for (const m of moves) {
 		const moved = reposition(m.sa, m.arrival.x, m.arrival.y);
@@ -385,7 +374,6 @@ export function stepServerWorld(
 			destType === 'town' ? { ...logged, lastTown: m.dest } : logged;
 		location[m.sa.sessionId] = m.dest;
 		if (destType === 'dungeon') {
-			// Reuse the party's instance if a friend is already inside, else spin a fresh one.
 			const key = instanceKey(m.dest, partyLeaderOf(world, m.sa.sessionId));
 			const inst = instances[key] ?? createZoneState(world.templates[m.dest]);
 			instances[key] = { ...inst, avatars: [...inst.avatars, withLog] };

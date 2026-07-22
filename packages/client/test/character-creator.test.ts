@@ -13,7 +13,6 @@ import {
 } from '../src/ui/character-creator';
 import { CUSTOMIZE_FIELDS } from '../src/ui/customize';
 
-// undo previewAvatar's inverse of drawEntitySprite's placement (offset up by BOX.h - PLAYER.h)
 const spriteTopOf = (hat: string) =>
 	previewAvatar({ hue: 0, hat, nameplate: 0, form: 'buddy' }, 'name').y +
 	(BOX.h - PLAYER.h);

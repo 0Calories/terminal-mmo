@@ -1,6 +1,3 @@
-// @mmo/render — presentation: the Sprite class, glyph-grid art (forms, hats, weapons,
-// monsters), and the `render.ts` drawing code. Depends on @mmo/core (sim + sprite
-// metadata); depended on by client + forge, never the server.
 export { type BodySprite, formFrame, walkFrameCount } from './body-sprite';
 export { buildFormRegistry, FORM_IDS, formById } from './forms';
 export { buildHatRegistry, HAT_IDS, hatById } from './hats';

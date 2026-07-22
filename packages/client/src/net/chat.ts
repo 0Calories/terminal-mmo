@@ -6,10 +6,6 @@ export interface ChatSink {
 	notice(text: string): void;
 }
 
-/**
- * Wire a submitted chat line. Returns the emote id when the line fired one, so the
- * caller can predict it locally rather than wait for the snapshot to echo it back.
- */
 export function sendChatLine(net: ChatSink, text: string): string | null {
 	const line = text.trim();
 	if (!line) return null;

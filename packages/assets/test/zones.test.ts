@@ -1,7 +1,3 @@
-// Zones leave @mmo/assets parsed (ADR 0033). Real-tree tests exercise the
-// fs-scan strategy against the authored repo-root zones/; the *FromEntries
-// tests inject an embedded-style map, proving the compiled-binary strategy
-// without a bundler.
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -99,15 +95,13 @@ test('the shared Player spawn point lands on walkable ground in the start Town',
 	expect(grounded).toBe(true);
 });
 
-// --- Embedded strategy, proven with an injected entries map. ---
-
 describe('zonesFromEntries (the embedded-map strategy)', () => {
 	test('parses every zones/*.zone against zones/catalogs.json, town first', () => {
 		const zones = zonesFromEntries({
-			'zones/f.zone': FIELD_TEXT, // sorts before t.zone — the Town must still lead
+			'zones/f.zone': FIELD_TEXT,
 			'zones/t.zone': TOWN_TEXT,
 			'zones/catalogs.json': CATALOGS_JSON,
-			'sprites/hats/cap.sprite': 'not a zone', // other-kind entries are ignored
+			'sprites/hats/cap.sprite': 'not a zone',
 		});
 		expect(zones.map((z) => z.id)).toEqual(['t', 'f']);
 		expect(zones[0].type).toBe('town');
@@ -120,8 +114,6 @@ describe('zonesFromEntries (the embedded-map strategy)', () => {
 		expect(zones.map((z) => z.id)).toEqual(['t']);
 	});
 });
-
-// --- The dev loop: a hand-edited .zone is picked up on re-read, no rebuild. ---
 
 describe('loadZones (fs-scan strategy)', () => {
 	const cleanupDirs: string[] = [];

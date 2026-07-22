@@ -28,7 +28,7 @@ function flatTerrain(): Terrain {
 	return { w: W, h: H, cells };
 }
 
-const onGround = FLOOR - BOX.h; // y so a 5-tall box rests on the floor (rows 5..9)
+const onGround = FLOOR - BOX.h;
 
 function zone(over: Partial<Zone>): Zone {
 	return {
@@ -134,7 +134,6 @@ describe('validateZone — placement & walkability', () => {
 	});
 
 	test('a spawn embedded in solid terrain is an error', () => {
-		// y=FLOOR-3: box rows 7..11 stay in-bounds but overlap solid rows 10,11
 		const d = errs(
 			validateZone(
 				zone({ spawns: [{ type: 'chaser', x: 2, y: FLOOR - 3 }] }),
@@ -174,7 +173,6 @@ describe('validateZone — placement & walkability', () => {
 	});
 
 	test('a portal clipping solid terrain is an error', () => {
-		// y=FLOOR-5: 7-tall box rows 5..11 stay in-bounds but overlap solid rows 10,11
 		const z = zone({
 			portals: [
 				{
@@ -264,7 +262,6 @@ describe('validateZoneSet — whole-set integrity', () => {
 	});
 });
 
-// Orphan-key detection reads the RAW .zone text, so its fixtures are text, not Zones.
 describe('findOrphanGlyphs — header keys must be used in the grid', () => {
 	const grid = ['..........', '....c.....', '##########'].join('\n');
 	const file = (header: string) => `${header}\n---\n${grid}`;

@@ -1,5 +1,3 @@
-// combat — melee/guard/dodge resolution, combat events, skills, weapons, projectiles.
-
 export {
 	ACTION_FLAG,
 	type ArcCell,

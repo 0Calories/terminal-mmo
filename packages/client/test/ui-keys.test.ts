@@ -128,8 +128,6 @@ test('close and unrelated keys produce no blip', () => {
 		expect(isMenuBlipKey(k)).toBe(false);
 });
 
-// --- lobby ---
-
 function lobby(over: Partial<LobbyKeyDeps> = {}) {
 	const calls: string[] = [];
 	const notice = { open: false };
@@ -175,8 +173,6 @@ test('lobby: a menu key blips before reaching the creator', () => {
 	l.handle(key('down'));
 	expect(l.calls).toEqual(['blip', 'submit']);
 });
-
-// --- in-game dispatch, ordered as an overlay stack ---
 
 test('the no-Kitty notice swallows every key', () => {
 	const t = harness();
@@ -249,8 +245,6 @@ test('the recustomize modal takes escape itself and forwards everything else', (
 	expect(t.recustomize.open).toBe(false);
 });
 
-// q is deliberately checked before the overlays, so it quits from anywhere the
-// overlays let it through — and process.exit means the fall-through never lands.
 test('q quits, and only an overlay that consumes keys can shield it', () => {
 	const t = harness();
 	gameKeyHandler(t.deps)(key('q'));
