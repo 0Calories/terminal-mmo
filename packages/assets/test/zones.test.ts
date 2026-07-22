@@ -13,20 +13,17 @@ import {
 } from '../src';
 import { CATALOGS_JSON, FIELD_TEXT, TOWN_TEXT } from './fixtures';
 
-test('loadZones parses the authored Field and Town from the repo-root zones/', () => {
+test('loadZones parses every authored Zone kind and initializes placed entities', () => {
 	const zones = loadZones();
-	const field = zones.find((z) => z.id === 'field-01');
-	const town = zones.find((z) => z.id === 'town-01');
+	const field = zones.find((zone) => zone.type === 'field');
+	const town = zones.find((zone) => zone.type === 'town');
+	const dungeon = zones.find((zone) => zone.type === 'dungeon');
 
-	expect(field?.type).toBe('field');
 	expect(field?.spawns.length).toBeGreaterThan(0);
 	expect(field?.monsters.length).toBe(field?.spawns.length);
-	expect(field?.portals[0]?.target).toBe('town-01');
-
-	expect(town?.type).toBe('town');
 	expect(town?.spawns.length).toBe(0);
 	expect(town?.npcs?.some((n) => n.kind === 'vendor')).toBe(true);
-	expect(town?.portals[0]?.target).toBe('field-01');
+	expect(dungeon?.monsters.length).toBe(dungeon?.spawns.length);
 });
 
 test('the authored Zone set validates clean (the CI `zone check` invariant)', () => {
@@ -36,55 +33,24 @@ test('the authored Zone set validates clean (the CI `zone check` invariant)', ()
 	expect(errors).toEqual([]);
 });
 
-test('round-trip portals: you can leave Town for the Field and return', () => {
+test('authored Portal targets resolve and include a round trip from Town', () => {
 	const zones = loadZones();
-	const field = zones.find((z) => z.id === 'field-01');
-	const town = zones.find((z) => z.id === 'town-01');
-	expect(town?.portals.some((p) => p.target === 'field-01')).toBe(true);
-	expect(field?.portals.some((p) => p.target === 'town-01')).toBe(true);
-});
+	const byId = new Map(zones.map((zone) => [zone.id, zone]));
+	for (const zone of zones)
+		for (const portal of zone.portals)
+			expect(byId.has(portal.target)).toBe(true);
 
-test('hub-and-spoke: Town portals to all three Fields, each returns to Town (D3, #239)', () => {
-	const zones = loadZones();
-	const town = zones.find((z) => z.id === 'town-01');
-	for (const id of ['field-01', 'field-02', 'field-03']) {
-		expect(town?.portals.some((p) => p.target === id)).toBe(true);
-		const field = zones.find((z) => z.id === id);
-		expect(field?.type).toBe('field');
-		expect(field?.portals.some((p) => p.target === 'town-01')).toBe(true);
-	}
-});
-
-test('difficulty rises with distance: pokers only Field 2+, Brute only in Field 3 (D3, #239)', () => {
-	const behaviors = (id: string) =>
-		new Set(
-			loadZones()
-				.find((z) => z.id === id)
-				?.spawns.map((s) => s.type),
-		);
-
-	expect(behaviors('field-01')).toEqual(new Set(['chaser']));
-	expect(behaviors('field-02').has('shooter')).toBe(true);
-	expect(behaviors('field-02').has('brute')).toBe(false);
-	expect(behaviors('field-03').has('brute')).toBe(true);
-	expect(behaviors('field-03').has('shooter')).toBe(true);
-});
-
-test('the Dungeon is authored: a combat Zone entered from Town, round-tripping (D3, #240)', () => {
-	const zones = loadZones();
-	const dungeon = zones.find((z) => z.id === 'dungeon-01');
-	const town = zones.find((z) => z.id === 'town-01');
-
-	expect(dungeon?.type).toBe('dungeon');
-	expect(dungeon?.spawns.length).toBeGreaterThan(0);
-	expect(dungeon?.monsters.length).toBe(dungeon?.spawns.length);
-	expect(town?.portals.some((p) => p.target === 'dungeon-01')).toBe(true);
-	expect(dungeon?.portals.some((p) => p.target === 'town-01')).toBe(true);
+	const town = zones.find((zone) => zone.type === 'town');
+	if (!town) throw new Error('expected an authored Town');
+	const destination = town.portals
+		.map((portal) => byId.get(portal.target))
+		.find((zone) => zone?.portals.some((portal) => portal.target === town.id));
+	expect(destination).toBeDefined();
 });
 
 test('the shared Player spawn point lands on walkable ground in the start Town', () => {
 	const town = loadZones()[0];
-	expect(town.id).toBe('town-01');
+	expect(town.type).toBe('town');
 	const t = town.terrain;
 	for (let y = SPAWN.y; y < SPAWN.y + BOX.h; y++)
 		for (let x = SPAWN.x; x < SPAWN.x + BOX.w; x++)

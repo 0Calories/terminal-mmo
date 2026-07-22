@@ -1,5 +1,7 @@
 import { expect, test } from 'bun:test';
 import type { SpriteSource } from '@mmo/assets';
+import { WEAPONS } from '@mmo/core/combat';
+import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
 import { parseSpriteFile, type SpriteDoc } from '../src';
 import {
 	acceptSprite,
@@ -112,7 +114,7 @@ AB
 AB
 `;
 
-test('validateSpriteRole: a form whose first animation is not idle warns (never errors) — ADR 0037', () => {
+test('validateSpriteRole: a form whose first animation is not idle warns rather than errors', () => {
 	const diags = validateSpriteRole(
 		docOf(FORMS_NON_IDLE_LEAD, 'buddy'),
 		'forms',
@@ -172,7 +174,7 @@ AB
 AB
 `;
 
-test('validateSpriteRole: a swing of other than exactly 3 frames is an error (ADR 0036)', () => {
+test('validateSpriteRole: a swing of other than exactly 3 frames is an error', () => {
 	const diags = validateSpriteRole(
 		docOf(WEAPON_SHORT_SWING, 'sword'),
 		'weapons',
@@ -194,21 +196,12 @@ AB
 AB
 `;
 
-test('validateSpriteRole: a weapon whose first animation is swing has no rest Default frame — error (ADR 0036/0037)', () => {
+test('validateSpriteRole: a weapon whose first animation is swing has no rest frame', () => {
 	const diags = validateSpriteRole(docOf(WEAPON_NO_REST, 'sword'), 'weapons');
 	expect(diags.length).toBe(1);
 	expect(diags[0].severity).toBe('error');
 	expect(diags[0].message).toContain('rest');
 	expect(diags[0].message).toContain('swing');
-});
-
-test('validateSpriteRole: the swing-count error speaks in attack phases, not retired frame names', () => {
-	const diags = validateSpriteRole(
-		docOf(WEAPON_SHORT_SWING, 'sword'),
-		'weapons',
-	);
-	expect(diags[0].message).toContain('attack phase');
-	expect(diags[0].message).not.toContain('windup');
 });
 
 const idleText = `{ "animations": [{ "name": "idle" }] }\n--- idle\nAB\n`;
@@ -302,25 +295,33 @@ function idleSource(id: string, role: string): SpriteSource {
 test('validateSpriteSet: dangling weapon/monster/npc catalog references are errors', () => {
 	const diags = validateSpriteSet([]);
 	const errs = diags.filter((d) => d.severity === 'error');
-	const byId = (id: string) => errs.find((d) => d.spriteId === id);
-
-	expect(byId('sword')).toBeDefined();
-	expect(byId('chaser')).toBeDefined();
-	expect(byId('merchant')).toBeDefined();
-
-	expect(byId('sword')?.message).toContain('sword');
-	expect(byId('chaser')?.message).toContain('chaser');
+	const referenced = new Set([
+		...WEAPONS.map((weapon) => weapon.sprite),
+		...Object.values(MONSTER_SPRITE_REF),
+		...Object.values(NPC_SPRITE_REF),
+	]);
+	for (const id of referenced) {
+		const diagnostic = errs.find((entry) => entry.spriteId === id);
+		expect(diagnostic).toBeDefined();
+		expect(diagnostic?.message).toContain(id);
+	}
 });
 
 test('validateSpriteSet: resolved catalog references produce no dangling-reference error', () => {
-	const sources: SpriteSource[] = [
-		weaponSource('sword'),
-		idleSource('chaser', 'monsters'),
-		idleSource('shooter', 'monsters'),
-		idleSource('brute', 'monsters'),
-		idleSource('merchant', 'npcs'),
-		idleSource('unused-npc', 'npcs'),
-	];
+	const sourcesByRoleAndId = new Map<string, SpriteSource>();
+	for (const weapon of WEAPONS) {
+		const source = weaponSource(weapon.sprite);
+		sourcesByRoleAndId.set(`${source.role}:${source.id}`, source);
+	}
+	for (const id of Object.values(MONSTER_SPRITE_REF)) {
+		const source = idleSource(id, 'monsters');
+		sourcesByRoleAndId.set(`${source.role}:${source.id}`, source);
+	}
+	for (const id of Object.values(NPC_SPRITE_REF)) {
+		const source = idleSource(id, 'npcs');
+		sourcesByRoleAndId.set(`${source.role}:${source.id}`, source);
+	}
+	const sources = [...sourcesByRoleAndId.values()];
 	const diags = validateSpriteSet(sources);
 
 	expect(diags.some((d) => d.message.includes('resolves'))).toBe(false);

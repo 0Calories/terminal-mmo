@@ -27,13 +27,13 @@ function source(id: string, role: string): SpriteSource {
 	};
 }
 
-test('FORM_IDS contains the shipped default Form, which resolves to a body', () => {
+test('FORM_IDS contains the configured default Form, which resolves to a body', () => {
 	expect(FORM_IDS).toContain(DEFAULT_FORM_ID);
 	expect(formById(DEFAULT_FORM_ID).frames.idle).toBeDefined();
 });
 
-test('HAT_IDS is the five known hats, sorted lexicographically', () => {
-	expect(HAT_IDS).toEqual(['cap', 'crown', 'party-hat', 'top-hat', 'wizard']);
+test('HAT_IDS is sorted independently of registry discovery order', () => {
+	expect(HAT_IDS).toEqual([...HAT_IDS].sort());
 });
 
 test('every hat id resolves to art; an unknown/empty id is bareheaded', () => {
@@ -43,7 +43,10 @@ test('every hat id resolves to art; an unknown/empty id is bareheaded', () => {
 });
 
 test("every entity's art defaultKey/baseline matches the @mmo/core sprite metadata", () => {
-	const types: readonly EntityType[] = ['player', 'chaser', 'shooter', 'brute'];
+	const types: readonly EntityType[] = [
+		'player',
+		...(Object.keys(MONSTER_SPRITE_REF) as EntityType[]),
+	];
 	for (const type of types) {
 		const art = spriteFor(type);
 		const meta = spriteMetaFor(type);
@@ -60,7 +63,7 @@ test('every WEAPONS catalog id resolves to weapon art with an accent colour', ()
 	}
 });
 
-test('every core Monster/NPC sprite reference resolves to shipped art', () => {
+test('every core Monster/NPC sprite reference resolves to registered art', () => {
 	for (const type of Object.keys(MONSTER_SPRITE_REF) as EntityType[]) {
 		expect(spriteFor(type).w).toBeGreaterThan(0);
 	}

@@ -1,48 +1,39 @@
 import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { SpriteSource } from '@mmo/assets';
 import { buildHatRegistry, HAT_IDS, hatById } from '../src/hats';
 
-const SPRITES_DIR = join(import.meta.dir, '../../../sprites/hats');
+const HAT = `{ "animations": [{ "name": "idle" }] }
+--- idle
+▲
+`;
 
-const REAL_FILES = ['cap', 'crown', 'wizard', 'top-hat', 'party-hat'] as const;
-
-function realSource(id: string): SpriteSource {
-	const text = readFileSync(join(SPRITES_DIR, `${id}.sprite`), 'utf8');
-	return { id, role: 'hats', text };
+function source(id: string, role = 'hats'): SpriteSource {
+	return { id, role, text: HAT };
 }
 
-test('five real hat sources compile to five ids, sorted', () => {
-	const registry = buildHatRegistry(REAL_FILES.map(realSource));
-	expect([...registry.keys()].sort()).toEqual([
-		'cap',
-		'crown',
-		'party-hat',
-		'top-hat',
-		'wizard',
-	]);
+test('hat sources compile into a registry independent of module ids', () => {
+	const registry = buildHatRegistry([source('zeta'), source('alpha')]);
+	expect(new Set(registry.keys())).toEqual(new Set(['alpha', 'zeta']));
 });
 
 test('a source with a broken header is skipped; the others still load', () => {
 	const sources: SpriteSource[] = [
-		...REAL_FILES.map(realSource),
+		source('valid'),
 		{ id: 'broken', role: 'hats', text: 'not valid json {{{' },
 	];
 	const registry = buildHatRegistry(sources);
 	expect(registry.has('broken')).toBe(false);
-	expect(registry.size).toBe(5);
+	expect(registry.has('valid')).toBe(true);
 });
 
 test('a source outside the hats role is ignored', () => {
-	const registry = buildHatRegistry([
-		{ id: 'buddy', role: 'forms', text: realSource('cap').text },
-	]);
+	const registry = buildHatRegistry([source('body', 'forms')]);
 	expect(registry.size).toBe(0);
 });
 
-test('the module-level HAT_IDS matches the five known ids sorted', () => {
-	expect(HAT_IDS).toEqual(['cap', 'crown', 'party-hat', 'top-hat', 'wizard']);
+test('the module hat registry is sorted and every id resolves', () => {
+	expect(HAT_IDS).toEqual([...HAT_IDS].sort());
+	for (const id of HAT_IDS) expect(hatById(id)).not.toBeNull();
 });
 
 test("hatById('') and hatById('nope') are null", () => {

@@ -9,6 +9,7 @@ export {
 export {
 	addSession,
 	avatarBox,
+	avatarOf,
 	createServerWorld,
 	handleOf,
 	joinParty,

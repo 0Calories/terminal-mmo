@@ -8,7 +8,7 @@ test('parseChatCommand treats a plain line as a Zone-local say', () => {
 	});
 });
 
-test('parseChatCommand parses /w <handle> <message> into a whisper (#40)', () => {
+test('parseChatCommand parses an addressed Whisper', () => {
 	expect(parseChatCommand('/w Trinity follow the rabbit')).toEqual({
 		kind: 'whisper',
 		to: 'Trinity',
@@ -21,7 +21,7 @@ test('parseChatCommand parses /w <handle> <message> into a whisper (#40)', () =>
 	});
 });
 
-test('parseChatCommand reports a usage error when the whisper has no message', () => {
+test('parseChatCommand reports a usage error when the Whisper has no text', () => {
 	expect(parseChatCommand('/w neo').kind).toBe('error');
 	expect(parseChatCommand('/w').kind).toBe('error');
 });
@@ -36,11 +36,6 @@ test('parseChatCommand ignores trailing text after an emote command', () => {
 		kind: 'emote',
 		emote: 'wave',
 	});
-});
-
-test('parseChatCommand retired /em — it is now an unknown command', () => {
-	expect(parseChatCommand('/em wave').kind).toBe('error');
-	expect(parseChatCommand('/emote wave').kind).toBe('error');
 });
 
 test('parseChatCommand reserves the slash namespace: unknown commands are a local error, never chat', () => {

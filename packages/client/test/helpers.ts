@@ -116,7 +116,7 @@ function goldenZone(id: string): Zone {
 		},
 	];
 
-	const projectiles = [makeProjectile({ id: 1, x: 38, y: FLOOR + 1, vx: -8 })];
+	const projectiles = [makeProjectile({ id: 1, x: 48, y: FLOOR + 1, vx: -8 })];
 
 	return {
 		id,
@@ -124,7 +124,7 @@ function goldenZone(id: string): Zone {
 		terrain: parseTerrain(ROWS),
 		monsters: [
 			entity({ id: 10, type: 'chaser', x: 34, y: FLOOR, facing: -1 }),
-			entity({ id: 11, type: 'brute', x: 44, y: STEP, facing: 1 }),
+			entity({ id: 11, type: 'brute', x: 54, y: STEP, facing: 1 }),
 		],
 		projectiles,
 		nextProjectileId: 2,
@@ -133,7 +133,7 @@ function goldenZone(id: string): Zone {
 		nextMonsterId: 12,
 		portals: [
 			{
-				x: 56,
+				x: 66,
 				y: GROUND_Y - PORTAL_BOX.h,
 				...PORTAL_BOX,
 				target: 'dungeon',
@@ -150,20 +150,21 @@ export function goldenGame(): GameState {
 	const avatar = entity({
 		id: 1,
 		type: 'player',
-		x: 20,
+		x: 40,
 		y: FLOOR,
 		facing: 1,
 		hp: 70,
 		maxHp: 100,
 		name: 'Neo',
 		attackT: SWING_TOTAL * 0.55,
+		weapon: DEFAULT_WEAPON,
 		cosmetics: { hue: 2, hat: 'cap', nameplate: 3, form: 'buddy' },
 	});
 
 	const other = entity({
 		id: 2,
 		type: 'player',
-		x: 40,
+		x: 50,
 		y: FLOOR,
 		facing: -1,
 		hp: 90,

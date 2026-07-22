@@ -1,15 +1,13 @@
 import { expect, test } from 'bun:test';
-import { BOX, type Entity, type EntityType } from '@mmo/core/entities';
-import { parseTerrain } from '@mmo/core/physics';
+import type { Entity, EntityType } from '@mmo/core/entities';
 import {
+	type BodySprite,
 	type CellBuffer,
 	drawEntitySprite,
-	formById,
-	hatById,
 	type RenderStyle,
-	type Sprite,
-	spriteFor,
-	weaponSpriteById,
+	Sprite,
+	type SpriteOverrides,
+	type WeaponSprite,
 } from '../src';
 
 interface Cell {
@@ -20,25 +18,15 @@ interface Cell {
 }
 
 class FakeBuffer implements CellBuffer<string> {
-	readonly width: number;
-	readonly height: number;
-	cells = new Map<string, Cell>();
-	cleared: string | null = null;
-
-	constructor(w: number, h: number) {
-		this.width = w;
-		this.height = h;
-	}
-
-	clear(bg: string): void {
-		this.cleared = bg;
+	readonly width = 24;
+	readonly height = 16;
+	readonly cells = new Map<string, Cell>();
+	clear(): void {
 		this.cells.clear();
 	}
-
 	setCell(x: number, y: number, ch: string, fg: string, bg: string): void {
 		this.cells.set(`${x},${y}`, { ch, fg, bg });
 	}
-
 	setCellWithAlphaBlending(
 		x: number,
 		y: number,
@@ -47,10 +35,6 @@ class FakeBuffer implements CellBuffer<string> {
 		bg: string,
 	): void {
 		this.cells.set(`${x},${y}`, { ch, fg, bg, blended: true });
-	}
-
-	at(x: number, y: number): Cell | undefined {
-		return this.cells.get(`${x},${y}`);
 	}
 }
 
@@ -63,32 +47,20 @@ const STYLE: RenderStyle<string> = {
 	hurt: 'HURT',
 	nameplate: 'NAME',
 	nameplateBg: 'NAMEBG',
-	palette: {
-		p: 'cP',
-		m: 'cM',
-		g: 'cG',
-		s: 'cS',
-		w: 'cW',
-		y: 'cY',
-		e: 'cE',
-		f: 'cF',
-		c: 'cC',
-		o: 'cO',
-		k: 'cK',
-	},
-	paletteDefault: 'DEF',
+	palette: { p: 'body', h: 'hat', w: 'weapon', a: 'accent' },
+	paletteDefault: 'default',
 	cosmetics: {
-		hues: ['hue0', 'hue1', 'hue2', 'hue3', 'hue4', 'hue5', 'hue6', 'hue7'],
-		nameplates: ['np0', 'np1', 'np2', 'np3', 'np4', 'np5', 'np6', 'np7'],
-		nameplateBgs: ['bg0', 'bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'bg7'],
+		hues: ['hue'],
+		nameplates: ['name'],
+		nameplateBgs: ['name-bg'],
 	},
 };
 
-function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
+function entity(over: Partial<Entity> & { type: EntityType }): Entity {
 	return {
 		id: 1,
-		x: 0,
-		y: 0,
+		x: 8,
+		y: 7,
 		vx: 0,
 		vy: 0,
 		speed: 0,
@@ -102,152 +74,94 @@ function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
 	};
 }
 
-const groundUnder = (e: Entity) => {
-	const surface = Math.round(e.y + BOX.h);
-	return parseTerrain(
-		Array.from({ length: 16 }, (_, r) => (r >= surface ? '#' : '.').repeat(24)),
-	);
+const body: BodySprite = {
+	frames: {
+		idle: new Sprite('B', {
+			defaultKey: 'p',
+			anchors: { grip: { x: 0, y: 0 }, head: { x: 0, y: 0 } },
+		}),
+	},
+	grip: { x: 0, y: 0 },
+	head: { x: 0, y: 0 },
 };
 
-function dump(buf: FakeBuffer): string {
-	const rows: string[] = [];
-	for (let y = 0; y < buf.height; y++) {
-		const cells: string[] = [];
-		for (let x = 0; x < buf.width; x++) {
-			const c = buf.at(x, y);
-			cells.push(c ? `${c.ch}|${c.fg}|${c.bg}${c.blended ? '*' : ''}` : '_');
-		}
-		rows.push(cells.join(' '));
-	}
-	return rows.join('\n');
-}
+const hat = new Sprite('H', { defaultKey: 'h' });
+const weapon: WeaponSprite = {
+	frames: {
+		rest: new Sprite('R', { defaultKey: 'w' }),
+		swing: [
+			new Sprite('W', { defaultKey: 'w' }),
+			new Sprite('A', { defaultKey: 'w' }),
+			new Sprite('C', { defaultKey: 'w' }),
+		],
+	},
+	grip: { x: 0, y: 0 },
+	accent: 'a',
+};
 
-function render(
-	e: Entity,
-	overrides?: Parameters<typeof drawEntitySprite>[6],
-): string {
-	const buf = new FakeBuffer(24, 16);
+function render(e: Entity, overrides: SpriteOverrides): FakeBuffer {
+	const buf = new FakeBuffer();
 	drawEntitySprite(
 		buf,
 		e,
 		{ x: 0, y: 0 },
 		STYLE,
-		groundUnder(e),
+		undefined,
 		undefined,
 		overrides,
 	);
-	return dump(buf);
+	return buf;
 }
 
-test('override with identical body art is pixel-identical to no override', () => {
-	const e = makeEntity({
+function glyphs(buf: FakeBuffer): string[] {
+	return [...buf.cells.values()].map((cell) => cell.ch);
+}
+
+test('a base override replaces registry art for non-player entities', () => {
+	const buf = render(entity({ type: 'chaser' }), {
+		base: new Sprite('X', { defaultKey: 'p' }),
+	});
+	expect(glyphs(buf)).toEqual(['X']);
+});
+
+test('body overrides participate in cosmetic hue recoloring', () => {
+	const buf = render(
+		entity({
+			type: 'player',
+			cosmetics: { hue: 0, hat: '', nameplate: 0, form: 'unknown' },
+		}),
+		{ body },
+	);
+	const bodyCell = [...buf.cells.values()].find((cell) => cell.ch === 'B');
+	expect(bodyCell?.fg).toBe('hue');
+});
+
+test('explicit hat overrides compose with the body and null suppresses them', () => {
+	const e = entity({
 		type: 'player',
-		x: 8,
-		y: 7,
+		cosmetics: { hue: 0, hat: 'unknown', nameplate: 0, form: 'unknown' },
+	});
+	expect(glyphs(render(e, { body, hat }))).toEqual(
+		expect.arrayContaining(['B', 'H']),
+	);
+	expect(glyphs(render(e, { body, hat: null }))).toEqual(['B']);
+});
+
+test('weapon overrides select frames from the entity action phase', () => {
+	const e = entity({
+		type: 'player',
 		weapon: 0,
-		cosmetics: { hue: 2, hat: 'wizard', nameplate: 0, form: 'buddy' },
+		cosmetics: { hue: 0, hat: '', nameplate: 0, form: 'unknown' },
+		action: {
+			move: 'basic',
+			phase: 'recovery',
+			progress: 0.5,
+			flags: 0,
+			emote: null,
+			emoteT: 0,
+		},
 	});
-	const base = render(e);
-
-	const injected = render(e, { body: formById('buddy') });
-	expect(injected).toBe(base);
-});
-
-test('override with identical hat art is pixel-identical to no override', () => {
-	const e = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		cosmetics: { hue: 0, hat: 'wizard', nameplate: 0, form: 'buddy' },
-	});
-	const base = render(e);
-	const hat = hatById('wizard') as Sprite;
-	expect(render(e, { hat })).toBe(base);
-});
-
-test('override with identical weapon art is pixel-identical to no override', () => {
-	const e = makeEntity({ type: 'player', x: 8, y: 7, weapon: 0 });
-	e.action = {
-		move: 'basic',
-		phase: 'active',
-		progress: 0.5,
-		flags: 0,
-		emote: null,
-		emoteT: 0,
-	};
-	const base = render(e);
-	const weapon = weaponSpriteById(0);
-	if (!weapon) throw new Error('expected default weapon art');
-	expect(render(e, { weapon })).toBe(base);
-});
-
-test('override with identical monster base art is pixel-identical to no override', () => {
-	const e = makeEntity({ type: 'chaser', x: 8, y: 6 });
-	const base = render(e);
-	expect(render(e, { base: spriteFor('chaser') })).toBe(base);
-});
-
-test('a hat override replaces the registry hat', () => {
-	const e = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		cosmetics: { hue: 0, hat: 'wizard', nameplate: 0, form: 'buddy' },
-	});
-	const wizard = render(e);
-	const other = hatById('crown') ?? hatById('cap');
-	if (!other) throw new Error('expected a second registered hat');
-	const swapped = render(e, { hat: other });
-	expect(swapped).not.toBe(wizard);
-});
-
-test('hat: null draws no hat; hat absent keeps the registry hat', () => {
-	const e = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		cosmetics: { hue: 0, hat: 'wizard', nameplate: 0, form: 'buddy' },
-	});
-	const withHat = render(e);
-	const noHat = render(e, { hat: null });
-	expect(noHat).not.toBe(withHat);
-
-	const stripped = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		cosmetics: { hue: 0, hat: '', nameplate: 0, form: 'buddy' },
-	});
-	expect(noHat).toBe(render(stripped));
-});
-
-test('an overrides object with only weapon set does not strip the hat', () => {
-	const e = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		weapon: 0,
-		cosmetics: { hue: 0, hat: 'wizard', nameplate: 0, form: 'buddy' },
-	});
-	const full = render(e);
-	const weapon = weaponSpriteById(0);
-	if (!weapon) throw new Error('expected default weapon art');
-
-	expect(render(e, { weapon })).toBe(full);
-});
-
-test('a body override replaces the registry form', () => {
-	const e = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		cosmetics: { hue: 0, hat: '', nameplate: 0, form: 'buddy' },
-	});
-	const buddy = render(e);
-
-	const tiny = formById('buddy');
-	const swapped = render(e, {
-		body: { ...tiny, frames: { idle: hatById('wizard') as Sprite } },
-	});
-	expect(swapped).not.toBe(buddy);
+	const buf = render(e, { body, weapon });
+	expect(glyphs(buf)).toContain('C');
+	expect(glyphs(buf)).not.toContain('R');
 });

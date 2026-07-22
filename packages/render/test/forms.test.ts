@@ -1,17 +1,10 @@
 import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { SpriteSource } from '@mmo/assets';
 import { DEFAULT_FORM_ID } from '@mmo/core/entities';
 import { buildFormRegistry, FORM_IDS, formById } from '../src';
 
-const BUDDY_TEXT = readFileSync(
-	join(import.meta.dir, '../../../sprites/forms/buddy.sprite'),
-	'utf8',
-);
-
-function buddySource(id = 'buddy'): SpriteSource {
-	return { id, role: 'forms', text: BUDDY_TEXT };
+function formSource(id = 'form'): SpriteSource {
+	return { id, role: 'forms', text: MINIMAL };
 }
 
 const MINIMAL = `{
@@ -29,38 +22,29 @@ AB
 CD
 `;
 
-test('the real buddy.sprite compiles to a body with its full animation repertoire', () => {
-	const registry = buildFormRegistry([buddySource()]);
-	const body = registry.get('buddy');
+test('a valid Form source compiles its required Animations and anchors', () => {
+	const registry = buildFormRegistry([formSource()]);
+	const body = registry.get('form');
 	expect(body).toBeDefined();
-	const animations = Object.keys(body?.frames ?? {}).sort();
-	expect(animations).toEqual([
-		'emote:dance',
-		'emote:sit',
-		'emote:wave',
-		'idle',
-		'jump',
-		'walk',
-	]);
-
-	expect(Array.isArray(body?.frames['emote:wave'])).toBe(true);
-	expect(Array.isArray(body?.frames['emote:dance'])).toBe(true);
+	expect(body?.grip).toEqual({ x: 1, y: 0 });
+	expect(body?.head).toEqual({ x: 0, y: 0 });
 	expect(Array.isArray(body?.frames.idle)).toBe(false);
+	expect(Array.isArray(body?.frames.walk)).toBe(true);
 });
 
 test('a source outside the forms role is ignored', () => {
-	const registry = buildFormRegistry([{ ...buddySource(), role: 'hats' }]);
+	const registry = buildFormRegistry([{ ...formSource(), role: 'hats' }]);
 	expect(registry.size).toBe(0);
 });
 
 test('a source with a broken header is skipped; the others still load', () => {
 	const registry = buildFormRegistry([
-		buddySource(),
+		formSource(),
 		{ id: 'broken', role: 'forms', text: 'not valid json {{{' },
 		{ id: 'mini', role: 'forms', text: MINIMAL },
 	]);
 	expect(registry.has('broken')).toBe(false);
-	expect(registry.has('buddy')).toBe(true);
+	expect(registry.has('form')).toBe(true);
 	expect(registry.has('mini')).toBe(true);
 });
 
@@ -70,11 +54,11 @@ test('a source that fails the forms role profile is skipped', () => {
 AB
 `;
 	const registry = buildFormRegistry([
-		buddySource(),
+		formSource(),
 		{ id: 'bad', role: 'forms', text: bad },
 	]);
 	expect(registry.has('bad')).toBe(false);
-	expect(registry.has('buddy')).toBe(true);
+	expect(registry.has('form')).toBe(true);
 });
 
 test('a source authoring an unregistered emote animation is skipped (role error)', () => {

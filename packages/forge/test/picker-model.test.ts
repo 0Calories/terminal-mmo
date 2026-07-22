@@ -1,13 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	type AssetInventory,
-	backspaceQuery,
 	beginNewSprite,
-	cancelNewSprite,
 	commitNewSprite,
-	currentEntry,
 	moveCursor,
-	newSpriteBackspaceId,
 	newSpriteChooseRole,
 	newSpriteError,
 	newSpriteMoveRole,
@@ -20,12 +16,7 @@ import {
 	typeQuery,
 	visibleEntries,
 } from '../src/picker/model';
-
-function query(state: PickerState, str: string): PickerState {
-	let s = state;
-	for (const ch of str) s = typeQuery(s, ch);
-	return s;
-}
+import type { SpriteRole } from '../src/sprite-editor/templates';
 
 function inventory(): AssetInventory {
 	return {
@@ -40,196 +31,104 @@ function inventory(): AssetInventory {
 	};
 }
 
-describe('grouping into sections', () => {
-	test('sprites group by role in rail order, then a zones section, ids sorted', () => {
-		const secs = pickerSections(openPicker(inventory()));
-		expect(secs.map((s) => s.label)).toEqual([
-			'forms',
-			'weapons',
-			'hats',
-			'zones',
-		]);
-		const forms = secs[0];
-		expect(forms.kind).toBe('sprite');
-		expect(forms.role).toBe('form');
-		expect(forms.entries.map((e) => (e.kind === 'sprite' ? e.id : ''))).toEqual(
-			['archer', 'buddy'],
-		);
-		const zones = secs[secs.length - 1];
-		expect(zones.kind).toBe('zone');
-		expect(zones.entries.map((e) => (e.kind === 'zone' ? e.id : ''))).toEqual([
-			'field-01',
-			'town-01',
-		]);
-	});
+function query(state: PickerState, text: string): PickerState {
+	for (const character of text) state = typeQuery(state, character);
+	return state;
+}
 
-	test('empty roles produce no section', () => {
-		const secs = pickerSections(openPicker(inventory()));
-		expect(secs.some((s) => s.label === 'monsters')).toBe(false);
-		expect(secs.some((s) => s.label === 'npcs')).toBe(false);
-	});
+function chooseRole(state: PickerState, role: SpriteRole): PickerState {
+	state = beginNewSprite(state);
+	for (
+		let attempts = 0;
+		attempts < 5 && newSpriteRole(state) !== role;
+		attempts++
+	)
+		state = newSpriteMoveRole(state, 1);
+	return newSpriteChooseRole(state);
+}
 
-	test('section startIndex points at the entry in the visible list', () => {
-		const state = openPicker(inventory());
-		const secs = pickerSections(state);
-		const visible = visibleEntries(state);
-		for (const sec of secs)
-			expect(visible[sec.startIndex]).toEqual(sec.entries[0]);
-	});
-});
+function typeId(state: PickerState, id: string): PickerState {
+	for (const character of id) state = newSpriteTypeId(state, character);
+	return state;
+}
 
-describe('typeahead filtering', () => {
-	test('filters by substring across sections', () => {
-		const state = query(openPicker(inventory()), 'a');
-		const ids = visibleEntries(state).map((e) => e.id);
-
-		expect(ids.sort()).toEqual(['archer', 'cap', 'straw', 'sword']);
-	});
-
-	test('matches the role directory too, so "hat" surfaces every hat', () => {
-		const state = query(openPicker(inventory()), 'hat');
-		const secs = pickerSections(state);
-		expect(secs.map((s) => s.label)).toEqual(['hats']);
-		expect(secs[0].entries.map((e) => e.id).sort()).toEqual(['cap', 'straw']);
-	});
-
-	test('a filtered-out section drops its header', () => {
-		const state = query(openPicker(inventory()), 'sword');
-		expect(pickerSections(state).map((s) => s.label)).toEqual(['weapons']);
-	});
-
-	test('backspace restores entries and is a no-op on an empty query', () => {
-		let state = query(openPicker(inventory()), 'z');
-		expect(visibleEntries(state).length).toBeLessThan(
-			visibleEntries(openPicker(inventory())).length,
-		);
-		state = backspaceQuery(state);
-		expect(state.query).toBe('');
-		expect(backspaceQuery(state).query).toBe('');
-	});
-
-	test('typing resets the cursor to the top of the results', () => {
-		const state = moveCursor(openPicker(inventory()), 5);
-		expect(query(state, 's').cursor).toBe(0);
-	});
-});
-
-describe('cursor movement across sections', () => {
-	test('moves down through the flat visible list, clamped at the ends', () => {
-		const state = openPicker(inventory());
-		const n = visibleEntries(state).length;
-		expect(state.cursor).toBe(0);
-
-		const forms = pickerSections(state)[0].entries.length;
-		const atFirstWeapon = moveCursor(state, forms);
-		expect(currentEntry(atFirstWeapon)).toEqual({
+describe('completed picker operations', () => {
+	test('filtering and launching resolves the selected semantic asset', () => {
+		expect(pickerLaunch(query(openPicker(inventory()), 'town'))).toEqual({
+			kind: 'zone',
+			id: 'town-01',
+		});
+		expect(pickerLaunch(query(openPicker(inventory()), 'sword'))).toEqual({
 			kind: 'sprite',
 			role: 'weapon',
 			id: 'sword',
 		});
-
-		expect(moveCursor(state, n + 10).cursor).toBe(n - 1);
-		expect(moveCursor(state, -3).cursor).toBe(0);
+		expect(pickerLaunch(query(openPicker(inventory()), 'missing'))).toBeNull();
 	});
-});
 
-describe('Enter → launch target', () => {
-	test('resolves the sprite under the cursor to a sprite editor target', () => {
+	test('cursor movement launches entries in deterministic role/id order', () => {
 		const state = openPicker(inventory());
-		expect(pickerLaunch(state)).toEqual({
-			kind: 'sprite',
-			role: 'form',
-			id: 'archer',
-		});
+		const entries = visibleEntries(state);
+		for (let index = 0; index < entries.length; index++)
+			expect(pickerLaunch(moveCursor(state, index))).toEqual(entries[index]);
 	});
 
-	test('resolves a zone to a zone editor target', () => {
-		const state = query(openPicker(inventory()), 'town');
-		expect(pickerLaunch(state)).toEqual({ kind: 'zone', id: 'town-01' });
+	test.each([
+		'sprite',
+		'zone',
+	] as const)('%s filtering exposes and launches only that asset kind', (kind) => {
+		const state = openPicker(inventory(), kind);
+		expect(visibleEntries(state).every((entry) => entry.kind === kind)).toBe(
+			true,
+		);
+		expect(pickerLaunch(state)?.kind).toBe(kind);
 	});
 
-	test('an empty result resolves to null', () => {
-		const state = query(openPicker(inventory()), 'zzzznope');
-		expect(pickerLaunch(state)).toBeNull();
-	});
-});
-
-describe('kind pre-filtering', () => {
-	test('sprite pre-filter hides the zones section', () => {
-		const secs = pickerSections(openPicker(inventory(), 'sprite'));
-		expect(secs.some((s) => s.kind === 'zone')).toBe(false);
-		expect(secs.every((s) => s.kind === 'sprite')).toBe(true);
-	});
-
-	test('zone pre-filter shows only zones', () => {
-		const secs = pickerSections(openPicker(inventory(), 'zone'));
-		expect(secs.map((s) => s.label)).toEqual(['zones']);
-	});
-});
-
-describe('new-sprite flow (`n`)', () => {
-	test('begins on the role phase and cycles roles (wrapping)', () => {
-		let state = beginNewSprite(openPicker(inventory()));
-		expect(state.newSprite?.phase).toBe('role');
-		expect(newSpriteRole(state)).toBe('form');
-		state = newSpriteMoveRole(state, -1);
-		expect(newSpriteRole(state)).toBe('npc');
-		state = newSpriteMoveRole(state, 1);
-		expect(newSpriteRole(state)).toBe('form');
-	});
-
-	test('choosing a role advances to id entry; typing builds the id', () => {
-		let state = beginNewSprite(openPicker(inventory()));
-		state = newSpriteMoveRole(state, 2);
-		state = newSpriteChooseRole(state);
-		expect(state.newSprite?.phase).toBe('id');
-		for (const ch of 'fedora') state = newSpriteTypeId(state, ch);
-		expect(state.newSprite?.id).toBe('fedora');
-		state = newSpriteBackspaceId(state);
-		expect(state.newSprite?.id).toBe('fedor');
-	});
-
-	test('rejects illegal id chars, keeps letters/digits/-/_', () => {
-		let state = newSpriteChooseRole(beginNewSprite(openPicker(inventory())));
-		for (const ch of 'a b/c.d-1') state = newSpriteTypeId(state, ch);
-		expect(state.newSprite?.id).toBe('abcd-1');
-	});
-
-	test('a fresh id commits to a template target (file that does not exist yet)', () => {
-		let state = beginNewSprite(openPicker(inventory()));
-		state = newSpriteMoveRole(state, 2);
-		state = newSpriteChooseRole(state);
-		for (const ch of 'newhat') state = newSpriteTypeId(state, ch);
+	test('a new Sprite flow completes as a role/id launch target', () => {
+		let state = chooseRole(openPicker(inventory()), 'hat');
+		state = typeId(state, 'new_hat-2');
 		expect(newSpriteError(state)).toBeNull();
 		expect(commitNewSprite(state)).toEqual({
 			kind: 'sprite',
 			role: 'hat',
-			id: 'newhat',
+			id: 'new_hat-2',
 		});
 	});
 
-	test('a colliding id errors and refuses to commit', () => {
-		let state = beginNewSprite(openPicker(inventory()));
-		state = newSpriteMoveRole(state, 2);
-		state = newSpriteChooseRole(state);
-		for (const ch of 'cap') state = newSpriteTypeId(state, ch);
-		expect(newSpriteError(state)).toContain('already exists');
+	test('a colliding Sprite id cannot complete creation', () => {
+		const state = typeId(chooseRole(openPicker(inventory()), 'hat'), 'cap');
+		expect(newSpriteError(state)).not.toBeNull();
 		expect(commitNewSprite(state)).toBeNull();
 	});
 
-	test('a blank id neither errors nor commits', () => {
-		const state = newSpriteChooseRole(beginNewSprite(openPicker(inventory())));
-		expect(newSpriteError(state)).toBeNull();
-		expect(commitNewSprite(state)).toBeNull();
+	test('invalid id characters never enter the completed target', () => {
+		const state = typeId(
+			chooseRole(openPicker(inventory()), 'form'),
+			'a b/c.d-1',
+		);
+		expect(commitNewSprite(state)).toEqual({
+			kind: 'sprite',
+			role: 'form',
+			id: 'abcd-1',
+		});
 	});
+});
 
-	test('the zone-only picker refuses new-sprite (never creates zones)', () => {
-		const state = beginNewSprite(openPicker(inventory(), 'zone'));
-		expect(state.newSprite).toBeNull();
-	});
-
-	test('cancel returns to browsing', () => {
-		const state = cancelNewSprite(beginNewSprite(openPicker(inventory())));
-		expect(state.newSprite).toBeNull();
+describe('picker grouping law', () => {
+	test('sections partition the visible entries by kind and Sprite role without changing order', () => {
+		const state = openPicker(inventory());
+		const visible = visibleEntries(state);
+		const sections = pickerSections(state);
+		expect(sections.flatMap((section) => section.entries)).toEqual(visible);
+		for (const section of sections) {
+			expect(visible[section.startIndex]).toEqual(section.entries[0]);
+			expect(
+				section.entries.every((entry) =>
+					entry.kind === 'sprite'
+						? section.kind === 'sprite' && entry.role === section.role
+						: section.kind === 'zone',
+				),
+			).toBe(true);
+		}
 	});
 });

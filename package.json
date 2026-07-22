@@ -18,6 +18,7 @@
 		"zones:play": "bun run packages/forge/bin/forge.ts zone play",
 		"zones:edit": "bun run packages/forge/bin/forge.ts zone edit",
 		"test": "bun test",
+		"test:golden:update": "MMO_UPDATE_GOLDEN=1 bun test packages/client/test/golden-frame.test.ts",
 		"typecheck": "bun run --filter '*' typecheck",
 		"depcruise": "depcruise packages --config .dependency-cruiser.cjs",
 		"lint": "biome lint .",

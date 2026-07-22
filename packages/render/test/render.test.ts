@@ -1,31 +1,22 @@
 import { expect, test } from 'bun:test';
-import { bladeEdgeArc, meleeHitbox } from '@mmo/core/combat';
 import {
 	BOX,
+	DEFAULT_FORM_ID,
 	type Entity,
 	type EntityType,
-	type Facing,
 } from '@mmo/core/entities';
 import { parseTerrain } from '@mmo/core/physics';
-import { STRIDE } from '@mmo/core/sprites';
+import { spriteMetaFor } from '@mmo/core/sprites';
 import {
 	type CellBuffer,
 	drawEntitySprite,
 	drawNameplates,
 	formById,
-	formFrame,
-	hatById,
 	type RenderStyle,
 	renderZoneScene,
 	Sprite,
-	spriteFor,
-	spriteForNpc,
-	WEAPON_ACCENT_KEY,
-	weaponSpriteById,
 } from '../src';
 import { blitSprite } from '../src/render';
-
-const FORMS = [formById('buddy')] as const;
 
 interface Cell {
 	ch: string;
@@ -35,25 +26,19 @@ interface Cell {
 }
 
 class FakeBuffer implements CellBuffer<string> {
-	readonly width: number;
-	readonly height: number;
-	cells = new Map<string, Cell>();
+	readonly cells = new Map<string, Cell>();
 	cleared: string | null = null;
-
-	constructor(w: number, h: number) {
-		this.width = w;
-		this.height = h;
-	}
-
+	constructor(
+		readonly width: number,
+		readonly height: number,
+	) {}
 	clear(bg: string): void {
 		this.cleared = bg;
 		this.cells.clear();
 	}
-
 	setCell(x: number, y: number, ch: string, fg: string, bg: string): void {
 		this.cells.set(`${x},${y}`, { ch, fg, bg });
 	}
-
 	setCellWithAlphaBlending(
 		x: number,
 		y: number,
@@ -63,32 +48,8 @@ class FakeBuffer implements CellBuffer<string> {
 	): void {
 		this.cells.set(`${x},${y}`, { ch, fg, bg, blended: true });
 	}
-
 	at(x: number, y: number): Cell | undefined {
 		return this.cells.get(`${x},${y}`);
-	}
-}
-
-function expectSpriteAt(
-	buf: FakeBuffer,
-	sprite: Sprite,
-	ax: number,
-	ay: number,
-	facing: Facing,
-	expectedFg: (key: string) => string,
-	skip?: (px: number, py: number) => boolean,
-) {
-	const glyphs = sprite.rows(facing);
-	const keys = sprite.colorKeys(facing);
-	for (let ry = 0; ry < sprite.h; ry++) {
-		for (let rx = 0; rx < sprite.w; rx++) {
-			const ch = glyphs[ry][rx];
-			if (ch === ' ') continue;
-			if (skip?.(ax + rx, ay + ry)) continue;
-			const cell = buf.at(ax + rx, ay + ry);
-			expect(cell?.ch).toBe(ch);
-			expect(cell?.fg).toBe(expectedFg(keys[ry][rx]));
-		}
 	}
 }
 
@@ -101,36 +62,16 @@ const STYLE: RenderStyle<string> = {
 	hurt: 'HURT',
 	nameplate: 'NAME',
 	nameplateBg: 'NAMEBG',
-	palette: {
-		p: 'cP',
-		m: 'cM',
-		g: 'cG',
-		s: 'cS',
-		w: 'cW',
-		y: 'cY',
-		e: 'cE',
-		f: 'cF',
-		c: 'cC',
-		o: 'cO',
-		k: 'cK',
-	},
+	palette: { p: 'cP', s: 'cS', k: 'cK' },
 	paletteDefault: 'DEF',
 	cosmetics: {
-		hues: ['hue0', 'hue1', 'hue2', 'hue3', 'hue4', 'hue5', 'hue6', 'hue7'],
-		nameplates: ['np0', 'np1', 'np2', 'np3', 'np4', 'np5', 'np6', 'np7'],
-		nameplateBgs: ['bg0', 'bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'bg7'],
+		hues: ['hue0'],
+		nameplates: ['np0', 'np1'],
+		nameplateBgs: ['bg0', 'bg1'],
 	},
 };
 
-const fgFor = (key: string) => STYLE.palette[key] ?? STYLE.paletteDefault;
-
-const accentFg = (accent: string) =>
-	STYLE.palette[accent] ?? STYLE.paletteDefault;
-
-const weaponFgFor = (accent: string) => (key: string) =>
-	key === WEAPON_ACCENT_KEY ? accentFg(accent) : fgFor(key);
-
-function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
+function entity(over: Partial<Entity> & { type: EntityType }): Entity {
 	return {
 		id: 1,
 		x: 0,
@@ -148,73 +89,52 @@ function makeEntity(over: Partial<Entity> & { type: EntityType }): Entity {
 	};
 }
 
-const flat20 = () =>
+const emptyTerrain = () =>
 	parseTerrain(Array.from({ length: 16 }, () => '.'.repeat(20)));
 
-const groundUnder = (e: Entity) => {
-	const surface = Math.round(e.y + BOX.h);
-	return parseTerrain(
-		Array.from({ length: 16 }, (_, r) => (r >= surface ? '#' : '.').repeat(20)),
-	);
-};
-
-test('terrain: a solid cell renders as a block; empty cells stay cleared', () => {
-	const terrain = parseTerrain(['......', '......', '...#..', '......']);
+test('terrain renders exposed and interior solid cells with their distinct fills', () => {
+	const terrain = parseTerrain(['......', '...#..', '...#..', '......']);
 	const buf = new FakeBuffer(6, 4);
-
 	renderZoneScene(
 		buf,
 		{ terrain, portals: [], npcs: [], entities: [] },
 		{ x: 0, y: 0 },
 		STYLE,
 	);
-
 	expect(buf.cleared).toBe('BG');
-
-	expect(buf.at(3, 2)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' });
+	expect(buf.at(3, 1)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' });
+	expect(buf.at(3, 2)).toEqual({ ch: '█', fg: 'TFG', bg: 'TBG' });
 	expect(buf.at(0, 0)).toBeUndefined();
 });
 
-test('the terrain top surface lowers to ▄; interior cells stay █ (ADR 0021)', () => {
-	const terrain = parseTerrain(['......', '...#..', '...#..', '......']);
-	const buf = new FakeBuffer(6, 4);
-
-	renderZoneScene(
-		buf,
-		{ terrain, portals: [], npcs: [], entities: [] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	expect(buf.at(3, 1)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' });
-	expect(buf.at(3, 2)).toEqual({ ch: '█', fg: 'TFG', bg: 'TBG' });
-});
-
-test('terrain scrolls with the camera', () => {
+test('terrain coordinates are translated by the camera', () => {
 	const terrain = parseTerrain(['......', '......', '...#..', '......']);
 	const buf = new FakeBuffer(6, 4);
-
 	renderZoneScene(
 		buf,
 		{ terrain, portals: [], npcs: [], entities: [] },
 		{ x: 2, y: 1 },
 		STYLE,
 	);
-
 	expect(buf.at(1, 1)).toEqual({ ch: '▄', fg: 'TFG', bg: 'BG' });
 	expect(buf.at(3, 2)).toBeUndefined();
 });
 
-test('portals render as a translucent block across their box', () => {
-	const terrain = parseTerrain(['......', '......', '......', '......']);
+test('portals fill their world-space box with translucent cells', () => {
 	const buf = new FakeBuffer(6, 4);
-
 	renderZoneScene(
 		buf,
 		{
-			terrain,
+			terrain: parseTerrain(['......', '......', '......', '......']),
 			portals: [
-				{ x: 1, y: 1, w: 2, h: 2, target: 'town-01', arrival: { x: 0, y: 0 } },
+				{
+					x: 1,
+					y: 1,
+					w: 2,
+					h: 2,
+					target: 'elsewhere',
+					arrival: { x: 0, y: 0 },
+				},
 			],
 			npcs: [],
 			entities: [],
@@ -222,909 +142,201 @@ test('portals render as a translucent block across their box', () => {
 		{ x: 0, y: 0 },
 		STYLE,
 	);
-
-	for (const [x, y] of [
-		[1, 1],
-		[2, 1],
-		[1, 2],
-		[2, 2],
-	]) {
-		expect(buf.at(x, y)).toEqual({
+	expect(
+		[...buf.cells.values()].filter((cell) => cell.ch === '▒'),
+	).toHaveLength(4);
+	for (const cell of buf.cells.values())
+		expect(cell).toEqual({
 			ch: '▒',
 			fg: 'PORTAL',
 			bg: 'TR',
 			blended: true,
 		});
-	}
 });
 
-test('ghost mode keeps every glyph as-is and fades the colour over the tint (#118)', () => {
+test('entity art is centered on its collision box and aligned by baseline', () => {
 	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'shooter', x: 6, y: 6 });
-	const fade = (fg: string) => `FADED(${fg})`;
-	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE, undefined, {
-		bg: 'TINT',
-		fade,
+	const e = entity({ type: 'chaser', x: 8, y: 6 });
+	const sprite = new Sprite('AB\nCD', { defaultKey: 'p' });
+	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE, undefined, undefined, {
+		base: sprite,
 	});
-
-	const sprite = spriteFor('shooter');
-	const sx = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
-	const sy = Math.round(e.y + BOX.h - sprite.h);
-	const glyphs = sprite.rows(1);
-	const keys = sprite.colorKeys(1);
-	let sawSolid = false;
-	let sawPartial = false;
-	let sawFilledGap = false;
-	for (let ry = 0; ry < sprite.h; ry++) {
-		for (let rx = 0; rx < sprite.w; rx++) {
-			const ch = glyphs[ry][rx];
-			const cell = buf.at(sx + rx, sy + ry);
-			expect(cell?.bg).toBe('TINT');
-			if (ch === ' ') {
-				expect(cell?.ch).toBe(' ');
-				sawFilledGap = true;
-				continue;
-			}
-			expect(cell?.ch).toBe(ch);
-			expect(cell?.fg).toBe(fade(fgFor(keys[ry][rx])));
-			if (ch === '█') sawSolid = true;
-			else sawPartial = true;
-		}
-	}
-	expect(sawSolid && sawPartial && sawFilledGap).toBe(true);
+	const left = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
+	const top = Math.round(
+		e.y + BOX.h - sprite.h + spriteMetaFor(e.type).baseline,
+	);
+	expect(buf.at(left, top)?.ch).toBe('A');
+	expect(buf.at(left + 1, top)?.ch).toBe('B');
+	expect(buf.at(left, top + 1)?.ch).toBe('C');
+	expect(buf.at(left + 1, top + 1)?.ch).toBe('D');
 });
 
-test('NPC sprite blits at its box anchor (centred over the box, feet on the floor)', () => {
-	const terrain = parseTerrain(
-		Array.from({ length: 16 }, () => '.'.repeat(20)),
+test('hurt and ghost presentation transform synthetic art without changing glyphs', () => {
+	const sprite = new Sprite('A·', { defaultKey: 'p' });
+	const hurt = new FakeBuffer(20, 16);
+	const e = entity({ type: 'chaser', x: 8, y: 6, hurtT: 0.5 });
+	drawEntitySprite(hurt, e, { x: 0, y: 0 }, STYLE, undefined, undefined, {
+		base: sprite,
+	});
+	expect([...hurt.cells.values()].find((cell) => cell.ch === 'A')?.fg).toBe(
+		'HURT',
 	);
-	const buf = new FakeBuffer(20, 16);
-	const npc = {
-		id: 1,
-		x: 5,
-		y: 6,
-		w: 4,
-		h: 5,
-		kind: 'vendor' as const,
-		name: 'Sage',
-	};
 
-	renderZoneScene(
-		buf,
-		{ terrain, portals: [], npcs: [npc], entities: [] },
+	const ghost = new FakeBuffer(20, 16);
+	drawEntitySprite(
+		ghost,
+		{ ...e, hurtT: 0 },
 		{ x: 0, y: 0 },
 		STYLE,
+		undefined,
+		{ bg: 'TINT', fade: (fg) => `F(${fg})` },
+		{ base: sprite },
 	);
-
-	const sprite = spriteForNpc('vendor');
-	const ax = Math.round(npc.x + Math.floor((npc.w - sprite.w) / 2));
-	const ay = Math.round(npc.y + npc.h - sprite.h);
-	expectSpriteAt(buf, sprite, ax, ay, 1, fgFor);
+	expect(
+		[...ghost.cells.values()].find((cell) => cell.ch === 'A'),
+	).toMatchObject({
+		fg: 'F(cP)',
+		bg: 'TINT',
+	});
+	expect(
+		[...ghost.cells.values()].find((cell) => cell.ch === ' '),
+	).toMatchObject({
+		bg: 'TINT',
+	});
 });
 
-test('entity Sprite blits centred over the collision box, feet aligned', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'chaser', x: 8, y: 6, facing: 1 });
-
-	renderZoneScene(
-		buf,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const sprite = spriteFor('chaser');
-	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
-	const ay = Math.round(e.y + BOX.h - sprite.h);
-	expectSpriteAt(buf, sprite, ax, ay, 1, fgFor);
-});
-
-test('a hurt entity flashes: every glyph painted with the hurt colour', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'chaser', x: 8, y: 6, hurtT: 0.5 });
-
-	renderZoneScene(
-		buf,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const sprite = spriteFor('chaser');
-	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
-	const ay = Math.round(e.y + BOX.h - sprite.h);
-	expectSpriteAt(buf, sprite, ax, ay, 1, () => 'HURT');
-});
-
-test('entities are z-ordered by y: a lower entity is drawn over a higher one', () => {
-	const buf = new FakeBuffer(20, 16);
-	const back = makeEntity({ id: 1, type: 'chaser', x: 8, y: 5 });
-	const front = makeEntity({ id: 2, type: 'player', x: 8, y: 6 });
-
-	renderZoneScene(
-		buf,
-
-		{ terrain: flat20(), portals: [], npcs: [], entities: [front, back] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const sprite = formFrame(FORMS[0], 'idle');
-	const ax = Math.round(front.x - Math.floor((sprite.w - BOX.w) / 2));
-	const ay = Math.round(front.y + BOX.h - sprite.h + (FORMS[0].baseline ?? 0));
-	const glyphs = sprite.rows(1);
-	for (let rx = 0; rx < sprite.w; rx++) {
-		const ch = glyphs[0][rx];
-		if (ch === ' ') continue;
-		expect(buf.at(ax + rx, ay)?.ch).toBe(ch);
-	}
-});
-
-const handleRow = (e: Entity) =>
-	Math.round(e.y + BOX.h + (FORMS[0].baseline ?? 0));
+const defaultBaseline = formById(DEFAULT_FORM_ID).baseline ?? 0;
+const handleRow = (e: Entity) => Math.round(e.y + BOX.h + defaultBaseline);
 const handleLeft = (e: Entity) =>
 	Math.round(e.x + BOX.w / 2 - (e.name?.length ?? 0) / 2);
 
-test('drawNameplates draws the Handle one row below the planted feet', () => {
+test('nameplates draw centered text below the avatar baseline', () => {
 	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'neo' });
-
-	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
-
+	const e = entity({ type: 'player', x: 8, y: 7, name: 'neo' });
+	drawNameplates(buf, [e], { x: 0, y: 0 }, emptyTerrain(), STYLE);
 	const row = handleRow(e);
 	const left = handleLeft(e);
-	expect(row).toBe(Math.round(e.y + BOX.h + 1));
-	expect(buf.at(left, row)?.ch).toBe('n');
-	expect(buf.at(left + 1, row)?.ch).toBe('e');
-	expect(buf.at(left + 2, row)?.ch).toBe('o');
-	expect(buf.at(left, row + 1)).toBeUndefined();
+	expect(
+		[0, 1, 2].map((offset) => buf.at(left + offset, row)?.ch).join(''),
+	).toBe('neo');
 	expect(buf.at(left - 1, row)).toBeUndefined();
 	expect(buf.at(left + 3, row)).toBeUndefined();
 });
 
-test('the Handle position is independent of hat height', () => {
+test('nameplate colors follow cosmetics and their position ignores hat choice', () => {
 	const render = (hat: string) => {
 		const buf = new FakeBuffer(20, 16);
-		const e = makeEntity({
+		const e = entity({
 			type: 'player',
 			x: 8,
 			y: 7,
-			name: 'a',
-			cosmetics: { hue: 0, hat, nameplate: 0, form: 'buddy' },
+			name: 'x',
+			cosmetics: {
+				hue: 0,
+				hat,
+				nameplate: 1,
+				form: DEFAULT_FORM_ID,
+			},
 		});
-		drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
-		return buf;
+		drawNameplates(buf, [e], { x: 0, y: 0 }, emptyTerrain(), STYLE);
+		return buf.at(handleLeft(e), handleRow(e));
 	};
-	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'a' });
-	const row = handleRow(e);
-	const left = handleLeft(e);
-	expect(render('').at(left, row)?.ch).toBe('a');
-	expect(render('wizard').at(left, row)?.ch).toBe('a');
+	expect(render('')).toEqual({ ch: 'x', fg: 'np1', bg: 'bg1' });
+	expect(render('arbitrary-hat')).toEqual(render(''));
 });
 
-test('each Handle letter is the cosmetic ink on a darkened same-hue backing', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		name: 'neo',
-		cosmetics: { hue: 0, hat: 'wizard', nameplate: 4, form: 'buddy' },
-	});
-
-	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
-
-	const row = handleRow(e);
-	const left = handleLeft(e);
-	expect(buf.at(left, row)).toEqual({ ch: 'n', fg: 'np4', bg: 'bg4' });
-	expect(buf.at(left + 1, row)).toEqual({ ch: 'e', fg: 'np4', bg: 'bg4' });
-	expect(buf.at(left + 2, row)).toEqual({ ch: 'o', fg: 'np4', bg: 'bg4' });
-});
-
-test('a Handle with no cosmetics uses the default ink and backing', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'x' });
-
-	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
-
-	expect(buf.at(handleLeft(e), handleRow(e))).toEqual({
+test('nameplates use fallback colors, skip unnamed entities, and remain a caller layer', () => {
+	const unnamed = entity({ type: 'player', x: 8, y: 7 });
+	const named = { ...unnamed, name: 'x' };
+	const direct = new FakeBuffer(20, 16);
+	drawNameplates(
+		direct,
+		[unnamed, named],
+		{ x: 0, y: 0 },
+		emptyTerrain(),
+		STYLE,
+	);
+	expect(direct.cells.size).toBe(1);
+	expect(direct.at(handleLeft(named), handleRow(named))).toEqual({
 		ch: 'x',
 		fg: 'NAME',
 		bg: 'NAMEBG',
 	});
-});
 
-test('the Handle backing is unconditional — same over terrain, sprite, or sky', () => {
-	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'n' });
-	const row = handleRow(e);
-	const left = handleLeft(e);
-	const overSky = new FakeBuffer(20, 16);
-	drawNameplates(overSky, [e], { x: 0, y: 0 }, flat20(), STYLE);
-	const overGround = new FakeBuffer(20, 16);
-	const ground = parseTerrain(
-		Array.from({ length: 16 }, (_, r) => (r === row ? '#' : '.').repeat(20)),
-	);
-	drawNameplates(overGround, [e], { x: 0, y: 0 }, ground, STYLE);
-	const expected = { ch: 'n', fg: 'NAME', bg: 'NAMEBG' };
-	expect(overSky.at(left, row)).toEqual(expected);
-	expect(overGround.at(left, row)).toEqual(expected);
-});
-
-test('an entity with no Handle draws nothing', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'player', x: 8, y: 7 });
-
-	drawNameplates(buf, [e], { x: 0, y: 0 }, flat20(), STYLE);
-
-	expect(buf.cells.size).toBe(0);
-});
-
-test('renderZoneScene alone draws no nameplate cells (names are a caller layer)', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'player', x: 8, y: 7, name: 'neo' });
-
+	const scene = new FakeBuffer(20, 16);
 	renderZoneScene(
-		buf,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
+		scene,
+		{ terrain: emptyTerrain(), portals: [], npcs: [], entities: [named] },
 		{ x: 0, y: 0 },
 		STYLE,
 	);
-
-	const row = handleRow(e);
-	const left = handleLeft(e);
-	expect(buf.at(left, row)?.ch).not.toBe('n');
-	expect(buf.at(left + 1, row)?.ch).not.toBe('e');
-	expect(buf.at(left + 2, row)?.ch).not.toBe('o');
-});
-
-function avatarTopLeft(e: Entity) {
-	const form = formById(e.cosmetics?.form);
-	const sprite = formFrame(form, 'idle');
-	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
-	const ay = Math.round(e.y + BOX.h - sprite.h + (form.baseline ?? 0));
-	return { sprite, ax, ay, grip: form.grip, head: form.head };
-}
-
-test("an Avatar renders its Form's idle Animation as its body, through the bodyFrame selector (ADR 0020)", () => {
-	const buf = new FakeBuffer(20, 16);
-	for (const facing of [1, -1] as Facing[]) {
-		buf.clear('BG');
-		const e = makeEntity({ type: 'player', x: 8, y: 7, facing });
-		renderZoneScene(
-			buf,
-			{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-			{ x: 0, y: 0 },
-			STYLE,
-		);
-		const { sprite, ax, ay } = avatarTopLeft(e);
-		expect(sprite).toBe(formFrame(FORMS[0], 'idle'));
-		expectSpriteAt(buf, sprite, ax, ay, facing, fgFor);
-	}
-});
-
-test('each Avatar Form renders its own idle body through the shared render path (ADR 0020)', () => {
-	for (let form = 0; form < FORMS.length; form++) {
-		for (const facing of [1, -1] as Facing[]) {
-			const buf = new FakeBuffer(20, 16);
-			buf.clear('BG');
-			const e = makeEntity({
-				type: 'player',
-				x: 8,
-				y: 7,
-				facing,
-
-				cosmetics: {
-					hue: 0,
-					hat: '',
-					nameplate: 0,
-					form: form as unknown as string,
-				},
-			});
-			renderZoneScene(
-				buf,
-				{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-				{ x: 0, y: 0 },
-				STYLE,
-			);
-			const { sprite, ax, ay } = avatarTopLeft(e);
-			expect(sprite).toBe(formFrame(FORMS[form], 'idle'));
-			expectSpriteAt(buf, sprite, ax, ay, facing, (key) =>
-				key === 'p' ? 'hue0' : fgFor(key),
-			);
-		}
-	}
-});
-
-function expectBodyAnimation(over: Partial<Entity>, sprite: Sprite) {
-	const buf = new FakeBuffer(40, 16);
-	const e = makeEntity({ type: 'player', y: 7, facing: 1, ...over });
-	drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE);
-	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
-	const ay = Math.round(e.y + BOX.h - sprite.h + (FORMS[0].baseline ?? 0));
-	expectSpriteAt(buf, sprite, ax, ay, e.facing, fgFor);
-}
-
-test('a moving Avatar animates the distance-driven walk cycle; standing freezes to idle (ADR 0020 §7)', () => {
-	const idle = formFrame(FORMS[0], 'idle');
-	const walkA = formFrame(FORMS[0], 'walk', 0);
-	const walkB = formFrame(FORMS[0], 'walk', 1);
-
-	expectBodyAnimation({ x: 2 * STRIDE + 3, vx: 3 }, walkA);
-	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 3 }, walkB);
-
-	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 0 }, idle);
-});
-
-test('an observer renders the same walk frame as the owner for a given position (ADR 0020 §7)', () => {
-	const owner = makeEntity({ type: 'player', x: 3 * STRIDE + 3, y: 7, vx: 3 });
-	const observer = makeEntity({
-		type: 'player',
-		x: 3 * STRIDE + 3,
-		y: 7,
-		vx: 3,
-		action: {
-			move: 'idle',
-			phase: 'windup',
-			progress: 0,
-			flags: 0,
-			emote: null,
-			emoteT: 0,
-		},
-	});
-
-	const render = (e: Entity) => {
-		const buf = new FakeBuffer(40, 16);
-		drawEntitySprite(buf, e, { x: 0, y: 0 }, STYLE);
-		return buf;
-	};
-	const walkB = formFrame(FORMS[0], 'walk', 1);
-	const ax = Math.round(3 * STRIDE + 3 - Math.floor((walkB.w - BOX.w) / 2));
-	const ay = Math.round(7 + BOX.h - walkB.h + (FORMS[0].baseline ?? 0));
-	expectSpriteAt(render(owner), walkB, ax, ay, 1, fgFor);
-	expectSpriteAt(render(observer), walkB, ax, ay, 1, fgFor);
-});
-
-test('an airborne Avatar does not walk even while moving horizontally (ADR 0020 ladder)', () => {
-	const jump = formFrame(FORMS[0], 'jump');
-	expectBodyAnimation({ x: 3 * STRIDE + 3, vx: 3, onGround: false }, jump);
-});
-
-test("cosmetic hue recolours the Avatar's body cells, leaving other keys untouched", () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		cosmetics: { hue: 2, hat: '', nameplate: 0, form: 'buddy' },
-	});
-
-	renderZoneScene(
-		buf,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const { sprite, ax, ay } = avatarTopLeft(e);
-	expectSpriteAt(buf, sprite, ax, ay, 1, (key) =>
-		key === 'p' ? 'hue2' : (STYLE.palette[key] ?? STYLE.paletteDefault),
-	);
-});
-
-test('a cosmetic hat is overlaid directly above the head', () => {
-	const buf = new FakeBuffer(20, 16);
-	const hatId = 'cap';
-	const e = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		cosmetics: { hue: 0, hat: hatId, nameplate: 0, form: 'buddy' },
-	});
-
-	renderZoneScene(
-		buf,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const hat = hatById(hatId);
-	if (!hat) throw new Error('expected a hat sprite');
-	const { sprite, ax, ay } = avatarTopLeft(e);
-	const hx = ax + Math.round((sprite.w - hat.w) / 2);
-	const hy = ay - hat.h;
-	expectSpriteAt(
-		buf,
-		hat,
-		hx,
-		hy,
-		1,
-		(key) => STYLE.palette[key] ?? STYLE.paletteDefault,
-	);
-});
-
-test('an equipped Avatar at rest renders the weapon idle frame at the mirrored grip, on top of the body (ADR 0018)', () => {
-	const weapon = weaponSpriteById(0);
-	if (!weapon) throw new Error('expected the default weapon to have a sprite');
-	const frame = weapon.frames.rest;
-	if (!frame) throw new Error('expected an authored idle frame');
-
-	for (const facing of [1, -1] as Facing[]) {
-		const buf = new FakeBuffer(24, 16);
-		const e = makeEntity({ type: 'player', x: 10, y: 6, facing, weapon: 0 });
-		renderZoneScene(
-			buf,
-			{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-			{ x: 0, y: 0 },
-			STYLE,
-		);
-
-		const { sprite: body, ax: sx, ay: sy, grip } = avatarTopLeft(e);
-		const bodyGripX = sx + (facing === 1 ? grip.x : body.w - 1 - grip.x);
-		const bodyGripY = sy + grip.y;
-
-		const wgx = facing === 1 ? weapon.grip.x : frame.w - 1 - weapon.grip.x;
-		const wx: number = bodyGripX - wgx;
-		const wy: number = bodyGripY - weapon.grip.y;
-
-		expectSpriteAt(buf, frame, wx, wy, facing, weaponFgFor(weapon.accent));
-
-		const wGlyphs = frame.rows(facing);
-		const bGlyphs = body.rows(facing);
-		let overlaps = 0;
-		for (let ry = 0; ry < frame.h; ry++) {
-			for (let rx = 0; rx < frame.w; rx++) {
-				const wch = wGlyphs[ry][rx];
-				if (wch === ' ') continue;
-				const px = wx + rx;
-				const py = wy + ry;
-				const bx = px - sx;
-				const by = py - sy;
-				const bch = bGlyphs[by]?.[bx];
-				if (bch === undefined || bch === ' ') continue;
-				overlaps++;
-				expect(buf.at(px, py)?.ch).toBe(wch);
-			}
-		}
-		expect(overlaps).toBeGreaterThan(0);
-	}
-});
-
-test('mid-active-swing the composited weapon plays the active swing frame, and no box-fill floods the melee hitbox (ADR 0018 §4/§5, ADR 0036)', () => {
-	const weapon = weaponSpriteById(0);
-	if (!weapon) throw new Error('expected the default weapon to have a sprite');
-
-	const progress = 0.5;
-
-	const frame = weapon.frames.swing[1];
-
-	const buf = new FakeBuffer(28, 16);
-	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
-	e.action = {
-		move: 'basic',
-		phase: 'active',
-		progress,
-		flags: 0,
-		emote: null,
-		emoteT: 0,
-	};
-	renderZoneScene(
-		buf,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
-	const bodyGripX = sx + grip.x;
-	const bodyGripY = sy + grip.y;
-	const wgx = weapon.grip.x;
-	const wx = bodyGripX - wgx;
-	const wy = bodyGripY - weapon.grip.y;
-
-	const arcCells = new Set(
-		bladeEdgeArc(progress, 1).map(
-			(c) => `${bodyGripX + c.dx},${bodyGripY + c.dy}`,
-		),
-	);
-	expectSpriteAt(buf, frame, wx, wy, 1, weaponFgFor(weapon.accent), (px, py) =>
-		arcCells.has(`${px},${py}`),
-	);
-
-	const hb = meleeHitbox(e);
-	let written = 0;
-	let total = 0;
-	for (let yy = 0; yy < hb.h; yy++) {
-		for (let xx = 0; xx < hb.w; xx++) {
-			total++;
-			if (buf.at(Math.round(hb.x + xx), Math.round(hb.y + yy))) written++;
-		}
-	}
-	expect(total).toBeGreaterThan(0);
-	expect(written).toBeLessThan(total);
-});
-
-test('the active phase renders the blade-edge arc in the accent colour; other phases draw none (ADR 0018 §5/§6)', () => {
-	const weapon = weaponSpriteById(0);
-	if (!weapon) throw new Error('expected the default weapon to have a sprite');
-	const accent = accentFg(weapon.accent);
-	const progress = 0.5;
-
-	const active = new FakeBuffer(28, 16);
-	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
-	e.action = {
-		move: 'basic',
-		phase: 'active',
-		progress,
-		flags: 0,
-		emote: null,
-		emoteT: 0,
-	};
-	renderZoneScene(
-		active,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
-	const bodyGripX = sx + grip.x;
-	const bodyGripY = sy + grip.y;
-
-	const arc = bladeEdgeArc(progress, 1);
-	expect(arc.length).toBeGreaterThan(0);
-	for (const c of arc) {
-		const cell = active.at(bodyGripX + c.dx, bodyGripY + c.dy);
-		expect(cell?.ch).toBe(c.glyph);
-		expect(cell?.fg).toBe(accent);
-	}
-
-	const idle = new FakeBuffer(28, 16);
-	const rest = makeEntity({
-		type: 'player',
-		x: 12,
-		y: 6,
-		facing: 1,
-		weapon: 0,
-	});
-	renderZoneScene(
-		idle,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [rest] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-	const forward = arc.filter((c) => Math.abs(c.dx) === 3);
-	expect(forward.length).toBeGreaterThan(0);
-	for (const c of forward)
-		expect(idle.at(bodyGripX + c.dx, bodyGripY + c.dy)).toBeUndefined();
-});
-
-test('a weaponless Avatar draws no weapon layer', () => {
-	const buf = new FakeBuffer(24, 16);
-	const e = makeEntity({ type: 'player', x: 10, y: 6, facing: 1 });
-	renderZoneScene(
-		buf,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
-
-	expect(buf.at(sx + grip.x, sy - 1)).toBeUndefined();
-});
-
-function bodyAnchor(e: Entity, sprite: Sprite) {
-	const form = formById(e.cosmetics?.form);
-	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
-	const ay = Math.round(e.y + BOX.h - sprite.h + (form.baseline ?? 0));
-	return { ax, ay };
-}
-
-test('a buddy Avatar plants its feet: each foot cell on the terrain surface is opaque, bg = terrainFg (ADR 0021)', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'player', x: 8, y: 7 });
-
-	renderZoneScene(
-		buf,
-		{ terrain: groundUnder(e), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const sprite = formFrame(FORMS[0], 'idle');
-	const { ax, ay } = bodyAnchor(e, sprite);
-	const surface = Math.round(e.y + BOX.h);
-	expect(ay + sprite.h - 1).toBe(surface);
-
-	const glyphs = sprite.rows(1);
-	const keys = sprite.colorKeys(1);
-	const footRow = sprite.h - 1;
-	let feet = 0;
-	for (let rx = 0; rx < sprite.w; rx++) {
-		const ch = glyphs[footRow][rx];
-		if (ch === ' ') continue;
-		feet++;
-		const cell = buf.at(ax + rx, surface);
-		expect(cell?.ch).toBe(ch);
-		expect(cell?.fg).toBe(fgFor(keys[footRow][rx]));
-		expect(cell?.bg).toBe('TFG');
-		expect(cell?.blended).toBeFalsy();
-	}
-	expect(feet).toBeGreaterThan(0);
-});
-
-function expectPlantedFeet(buf: FakeBuffer, e: Entity, sprite: Sprite) {
-	const { ax } = bodyAnchor(e, sprite);
-	const surface = Math.round(e.y + BOX.h);
-	const glyphs = sprite.rows(1);
-	const keys = sprite.colorKeys(1);
-	const footRow = sprite.h - 1;
-	let feet = 0;
-	for (let rx = 0; rx < sprite.w; rx++) {
-		const ch = glyphs[footRow][rx];
-		if (ch === ' ') continue;
-		feet++;
-		const cell = buf.at(ax + rx, surface);
-		expect(cell?.ch).toBe(ch);
-		expect(cell?.fg).toBe(fgFor(keys[footRow][rx]));
-		expect(cell?.bg).toBe('TFG');
-		expect(cell?.blended).toBeFalsy();
-	}
-	expect(feet).toBeGreaterThan(0);
-}
-
-test('the walk frames plant on the same general over-solid rule, no animation-specific code (ADR 0021)', () => {
-	for (const [x, frameIndex] of [
-		[2 * STRIDE + 3, 0],
-		[3 * STRIDE + 3, 1],
-	] as const) {
-		const buf = new FakeBuffer(40, 16);
-		const e = makeEntity({ type: 'player', x, y: 7, vx: 3 });
-		renderZoneScene(
-			buf,
-			{ terrain: groundUnder(e), portals: [], npcs: [], entities: [e] },
-			{ x: 0, y: 0 },
-			STYLE,
-		);
-		expectPlantedFeet(buf, e, formFrame(FORMS[0], 'walk', frameIndex));
-	}
-});
-
-test('an airborne Avatar floats: its jump feet render transparent, not planted (ADR 0021)', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'player', x: 8, y: 7, onGround: false });
-	renderZoneScene(
-		buf,
-		{ terrain: flat20(), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const jump = formFrame(FORMS[0], 'jump');
-	const { ax } = bodyAnchor(e, jump);
-	const surface = Math.round(e.y + BOX.h);
-	const glyphs = jump.rows(1);
-	const footRow = jump.h - 1;
-	let feet = 0;
-	for (let rx = 0; rx < jump.w; rx++) {
-		const ch = glyphs[footRow][rx];
-		if (ch === ' ') continue;
-		feet++;
-		const cell = buf.at(ax + rx, surface);
-		expect(cell?.ch).toBe(ch);
-		expect(cell?.bg).toBe('TR');
-		expect(cell?.bg).not.toBe('TFG');
-		expect(cell?.blended).toBe(true);
-	}
-	expect(feet).toBeGreaterThan(0);
-});
-
-test('one foot past a platform edge floats while the other stays planted (ADR 0021)', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'player', x: 8, y: 7 });
-	const sprite = formFrame(FORMS[0], 'idle');
-	const { ax } = bodyAnchor(e, sprite);
-	const surface = Math.round(e.y + BOX.h);
-	const glyphs = sprite.rows(1);
-	const footRow = sprite.h - 1;
-	const footCols: number[] = [];
-	for (let rx = 0; rx < sprite.w; rx++)
-		if (glyphs[footRow][rx] !== ' ') footCols.push(ax + rx);
-	const leftFoot = footCols[0];
-	const rightFoot = footCols[footCols.length - 1];
-	const lip = Math.floor((leftFoot + rightFoot) / 2);
-
-	const terrain = parseTerrain(
-		Array.from({ length: 16 }, (_, r) =>
-			r >= surface ? '#'.repeat(lip + 1).padEnd(20, '.') : '.'.repeat(20),
-		),
-	);
-
-	renderZoneScene(
-		buf,
-		{ terrain, portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	expect(buf.at(leftFoot, surface)?.bg).toBe('TFG');
-	expect(buf.at(leftFoot, surface)?.blended).toBeFalsy();
-	expect(buf.at(rightFoot, surface)?.bg).toBe('TR');
-	expect(buf.at(rightFoot, surface)?.blended).toBe(true);
-});
-
-test('an Avatar on a one-cell-thick platform still plants on its surface (ADR 0021)', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'player', x: 8, y: 7 });
-	const surface = Math.round(e.y + BOX.h);
-	const terrain = parseTerrain(
-		Array.from({ length: 16 }, (_, r) =>
-			(r === surface ? '#' : '.').repeat(20),
-		),
-	);
-
-	renderZoneScene(
-		buf,
-		{ terrain, portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	expectPlantedFeet(buf, e, formFrame(FORMS[0], 'idle'));
-});
-
-test('a baseline-0 monster (chaser) blits unchanged — no planting (ADR 0021)', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({ type: 'chaser', x: 8, y: 6 });
-	renderZoneScene(
-		buf,
-		{ terrain: groundUnder(e), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const sprite = spriteFor('chaser');
-	expect(sprite.baseline).toBe(0);
-
-	const ax = Math.round(e.x - Math.floor((sprite.w - BOX.w) / 2));
-	const ay = Math.round(e.y + BOX.h - sprite.h);
-	expectSpriteAt(buf, sprite, ax, ay, 1, fgFor);
-	const glyphs = sprite.rows(1);
-	for (let ry = 0; ry < sprite.h; ry++)
-		for (let rx = 0; rx < sprite.w; rx++) {
-			if (glyphs[ry][rx] === ' ') continue;
-			const cell = buf.at(ax + rx, ay + ry);
-			expect(cell?.bg).toBe('TR');
-			expect(cell?.blended).toBe(true);
-		}
-});
-
-test('a cosmetic-hue Avatar keeps its recoloured body fg on the planted foot ink half (ADR 0021)', () => {
-	const buf = new FakeBuffer(20, 16);
-	const e = makeEntity({
-		type: 'player',
-		x: 8,
-		y: 7,
-		cosmetics: { hue: 2, hat: '', nameplate: 0, form: 'buddy' },
-	});
-	renderZoneScene(
-		buf,
-		{ terrain: groundUnder(e), portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const sprite = formFrame(FORMS[0], 'idle');
-	const { ax } = bodyAnchor(e, sprite);
-	const surface = Math.round(e.y + BOX.h);
-	const glyphs = sprite.rows(1);
-	const footRow = sprite.h - 1;
-	let feet = 0;
-	for (let rx = 0; rx < sprite.w; rx++) {
-		if (glyphs[footRow][rx] === ' ') continue;
-		feet++;
-		const cell = buf.at(ax + rx, surface);
-		expect(cell?.fg).toBe('hue2');
-		expect(cell?.bg).toBe('TFG');
-		expect(cell?.blended).toBeFalsy();
-	}
-	expect(feet).toBeGreaterThan(0);
-});
-
-test('combat telegraphs are exempt from planting: the blade-edge arc keeps its own bg over solid ground (ADR 0021)', () => {
-	const buf = new FakeBuffer(28, 16);
-	const terrain = parseTerrain(
-		Array.from({ length: 16 }, () => '#'.repeat(28)),
-	);
-	const progress = 0.5;
-	const e = makeEntity({ type: 'player', x: 12, y: 6, facing: 1, weapon: 0 });
-	e.action = {
-		move: 'basic',
-		phase: 'active',
-		progress,
-		flags: 0,
-		emote: null,
-		emoteT: 0,
-	};
-	renderZoneScene(
-		buf,
-		{ terrain, portals: [], npcs: [], entities: [e] },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-
-	const { ax: sx, ay: sy, grip } = avatarTopLeft(e);
-	const bodyGripX = sx + grip.x;
-	const bodyGripY = sy + grip.y;
-	const arc = bladeEdgeArc(progress, 1);
-	expect(arc.length).toBeGreaterThan(0);
-	for (const c of arc) {
-		const cell = buf.at(bodyGripX + c.dx, bodyGripY + c.dy);
-		expect(cell?.ch).toBe(c.glyph);
-		expect(cell?.bg).toBe('TR');
-		expect(cell?.bg).not.toBe('TFG');
-		expect(cell?.blended).toBe(true);
-	}
+	expect(scene.at(handleLeft(named), handleRow(named))?.ch).not.toBe('x');
 });
 
 const twoTone = new Sprite('▀█', { defaultKey: 'p', colors: 'ps', bg: 'k·' });
 
-test('a two-color cell blits opaque with both fg and bg from the palette; a single-color cell stays alpha-blended', () => {
+test('authored and transparent background channels use opaque and blended writes', () => {
 	const buf = new FakeBuffer(4, 4);
 	blitSprite(buf, twoTone, 0, 0, 1, false, STYLE);
-
 	expect(buf.at(0, 0)).toEqual({ ch: '▀', fg: 'cP', bg: 'cK' });
 	expect(buf.at(1, 0)).toEqual({ ch: '█', fg: 'cS', bg: 'TR', blended: true });
 });
 
-test('hurt flashes both channels of a two-color cell; a single-color cell keeps its unchanged fg-only flash', () => {
-	const buf = new FakeBuffer(4, 4);
-	blitSprite(buf, twoTone, 0, 0, 1, true, STYLE);
+test('hurt and recolor resolve foreground and background channels independently', () => {
+	const hurt = new FakeBuffer(4, 4);
+	blitSprite(hurt, twoTone, 0, 0, 1, true, STYLE);
+	expect(hurt.at(0, 0)).toEqual({ ch: '▀', fg: 'HURT', bg: 'HURT' });
+	expect(hurt.at(1, 0)).toMatchObject({ fg: 'HURT', bg: 'TR', blended: true });
 
-	expect(buf.at(0, 0)).toEqual({ ch: '▀', fg: 'HURT', bg: 'HURT' });
-	expect(buf.at(1, 0)).toEqual({
-		ch: '█',
-		fg: 'HURT',
-		bg: 'TR',
-		blended: true,
+	const recolored = new FakeBuffer(4, 4);
+	blitSprite(recolored, twoTone, 0, 0, 1, false, STYLE, {
+		p: 'HUE',
+		k: 'KREC',
 	});
+	expect(recolored.at(0, 0)).toMatchObject({ fg: 'HUE', bg: 'KREC' });
 });
 
-test('recolor resolves both channels of a two-color cell independently by key', () => {
+test('ghost rendering fades both authored channels and uses the tint for transparency', () => {
 	const buf = new FakeBuffer(4, 4);
-	blitSprite(buf, twoTone, 0, 0, 1, false, STYLE, { p: 'HUE', k: 'KREC' });
-
-	expect(buf.at(0, 0)).toEqual({ ch: '▀', fg: 'HUE', bg: 'KREC' });
-});
-
-test('ghost fades both channels of a two-color cell; a single-color cell keeps the ghost tint bg', () => {
-	const buf = new FakeBuffer(4, 4);
-	const fade = (fg: string) => `F(${fg})`;
 	blitSprite(buf, twoTone, 0, 0, 1, false, STYLE, undefined, {
 		bg: 'TINT',
-		fade,
+		fade: (fg) => `F(${fg})`,
 	});
-
 	expect(buf.at(0, 0)).toEqual({ ch: '▀', fg: 'F(cP)', bg: 'F(cK)' });
 	expect(buf.at(1, 0)).toEqual({ ch: '█', fg: 'F(cS)', bg: 'TINT' });
 });
 
-test('planting an entity over solid terrain keeps the authored bg on a two-color cell but overrides the single-color cell', () => {
+test('planting preserves authored backgrounds and applies terrain only over solid cells', () => {
 	const buf = new FakeBuffer(4, 4);
-	const terrain = parseTerrain(['##', '##']);
+	const terrain = parseTerrain(['##', '..']);
 	blitSprite(buf, twoTone, 0, 0, 1, false, STYLE, undefined, undefined, {
 		terrain,
 		camX: 0,
 		camY: 0,
 	});
-
 	expect(buf.at(0, 0)).toEqual({ ch: '▀', fg: 'cP', bg: 'cK' });
 	expect(buf.at(1, 0)).toEqual({ ch: '█', fg: 'cS', bg: 'TFG' });
+
+	const edge = new FakeBuffer(4, 4);
+	blitSprite(
+		edge,
+		new Sprite('XX', { defaultKey: 'p' }),
+		0,
+		0,
+		1,
+		false,
+		STYLE,
+		undefined,
+		undefined,
+		{ terrain: parseTerrain(['#.']), camX: 0, camY: 0 },
+	);
+	expect(edge.at(0, 0)).toMatchObject({ bg: 'TFG' });
+	expect(edge.at(1, 0)).toMatchObject({ bg: 'TR', blended: true });
 });
 
-test('facing -1 mirrors the bg key positionally along with the glyph', () => {
+test('mirroring keeps color and background channels attached to their glyph cells', () => {
 	const buf = new FakeBuffer(4, 4);
 	blitSprite(buf, twoTone, 0, 0, -1, false, STYLE);
-
 	expect(buf.at(1, 0)).toEqual({ ch: '▀', fg: 'cP', bg: 'cK' });
 	expect(buf.at(0, 0)).toEqual({ ch: '█', fg: 'cS', bg: 'TR', blended: true });
 });

@@ -206,7 +206,7 @@ test('re-customize ladder navigation never reaches a name row', async () => {
 	expect(seen).toEqual(new Set(CUSTOMIZE_FIELDS.map((f) => f.key)));
 });
 
-test('creation, by contrast, keeps the name row in the ladder (no regression)', async () => {
+test('creation keeps the name row in the focus ladder', async () => {
 	const { cc } = await mountCreator();
 	expect(cc.focusedRow).toBe('name');
 	cc.key(key('down'));

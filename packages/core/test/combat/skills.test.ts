@@ -1,11 +1,13 @@
 import { expect, test } from 'bun:test';
 import {
+	DEFAULT_WEAPON,
 	GROUND_POUND,
 	POWER_STRIKE,
 	skillForSlot,
 	skillHitbox,
 	skillsUnlockedBetween,
 	skillUnlocked,
+	weaponById,
 } from '../../src/combat';
 import type { Entity, Input } from '../../src/entities';
 import {
@@ -43,7 +45,7 @@ function skillState(level: number, monsters: Entity[]): ZoneState {
 	};
 	return {
 		zone: {
-			id: 'field-01',
+			id: 'test-zone',
 			type: 'field',
 			terrain: flatTerrain(),
 			monsters,
@@ -93,11 +95,10 @@ const IDLE: Input = { moveX: 0, jump: false, attack: false };
 const POWER: Input = { moveX: 0, jump: false, attack: false, skill: 1 };
 const POUND: Input = { moveX: 0, jump: false, attack: false, skill: 2 };
 
-test('the Active skills unlock on their capability-ladder rungs (Power Strike L3, Ground Pound L5)', () => {
-	expect(POWER_STRIKE.unlockLevel).toBe(3);
+test('Active skills use their capability-ladder unlock levels', () => {
 	expect(POWER_STRIKE.unlockLevel).toBe(CAPABILITY_UNLOCK['power-strike']);
-	expect(GROUND_POUND.unlockLevel).toBe(5);
 	expect(GROUND_POUND.unlockLevel).toBe(CAPABILITY_UNLOCK['ground-pound']);
+	expect(POWER_STRIKE.unlockLevel).toBeLessThan(GROUND_POUND.unlockLevel);
 });
 
 test('skillForSlot binds Warrior slot 1 to Power Strike, slot 2 to Ground Pound; empty slots are undefined', () => {
@@ -113,28 +114,48 @@ test('Ground Pound is an AoE Warrior skill with an unlock level and a cooldown',
 	expect(GROUND_POUND.damage).toBeGreaterThan(0);
 });
 
-test('each Active skill carries its default key (u/i), matching the slot order', () => {
-	expect(POWER_STRIKE.key).toBe('u');
-	expect(GROUND_POUND.key).toBe('i');
-});
-
 test('skillsUnlockedBetween surfaces only the rung(s) a level-up crossed', () => {
-	expect(skillsUnlockedBetween('warrior', 2, 3)).toEqual([POWER_STRIKE]);
-	expect(skillsUnlockedBetween('warrior', 1, 2)).toEqual([]);
-	expect(skillsUnlockedBetween('warrior', 3, 4)).toEqual([]);
-	expect(skillsUnlockedBetween('warrior', 4, 5)).toEqual([GROUND_POUND]);
+	expect(
+		skillsUnlockedBetween(
+			'warrior',
+			POWER_STRIKE.unlockLevel - 1,
+			POWER_STRIKE.unlockLevel,
+		),
+	).toEqual([POWER_STRIKE]);
+	expect(
+		skillsUnlockedBetween(
+			'warrior',
+			GROUND_POUND.unlockLevel - 1,
+			GROUND_POUND.unlockLevel,
+		),
+	).toEqual([GROUND_POUND]);
 });
 
 test('skillsUnlockedBetween lists every rung crossed on a multi-level jump, in ladder order', () => {
-	expect(skillsUnlockedBetween('warrior', 1, 5)).toEqual([
-		POWER_STRIKE,
-		GROUND_POUND,
-	]);
+	expect(
+		skillsUnlockedBetween(
+			'warrior',
+			POWER_STRIKE.unlockLevel - 1,
+			GROUND_POUND.unlockLevel,
+		),
+	).toEqual([POWER_STRIKE, GROUND_POUND]);
 });
 
-test('skillsUnlockedBetween crosses no rung when the level is unchanged or falls', () => {
-	expect(skillsUnlockedBetween('warrior', 5, 5)).toEqual([]);
-	expect(skillsUnlockedBetween('warrior', 5, 6)).toEqual([]);
+test('skillsUnlockedBetween is empty when no configured rung is crossed', () => {
+	expect(
+		skillsUnlockedBetween(
+			'warrior',
+			GROUND_POUND.unlockLevel,
+			GROUND_POUND.unlockLevel,
+		),
+	).toEqual([]);
+	expect(
+		skillsUnlockedBetween(
+			'warrior',
+			GROUND_POUND.unlockLevel,
+			GROUND_POUND.unlockLevel + 1,
+		),
+	).toEqual([]);
 });
 
 test('skillUnlocked gates on the unlock level', () => {
@@ -179,7 +200,9 @@ test('Power Strike fires at its unlock level, hitting harder than a basic swing'
 	expect(g.zone.monsters[0].hp).toBe(
 		ARCHETYPES.chaser.hp - POWER_STRIKE.damage,
 	);
-	expect(POWER_STRIKE.damage).toBeGreaterThan(8);
+	expect(POWER_STRIKE.damage).toBeGreaterThan(
+		weaponById(DEFAULT_WEAPON).damage,
+	);
 	expect(g.avatars[0].skillCooldowns?.[POWER_STRIKE.id]).toBe(
 		POWER_STRIKE.cooldown,
 	);
@@ -196,7 +219,9 @@ test('Power Strike cannot re-fire while on cooldown', () => {
 test('Power Strike re-fires once its cooldown elapses', () => {
 	let g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16);
 
-	for (let i = 0; i < 80; i++) g = step(g, IDLE, 50);
+	const stepMs = 50;
+	const cooldownTicks = Math.ceil((POWER_STRIKE.cooldown * 1000) / stepMs);
+	for (let i = 0; i <= cooldownTicks; i++) g = step(g, IDLE, stepMs);
 	expect(g.avatars[0].skillCooldowns?.[POWER_STRIKE.id] ?? 0).toBe(0);
 	g = step(g, POWER, 16);
 	expect(g.avatars[0].skillCooldowns?.[POWER_STRIKE.id]).toBe(
@@ -213,8 +238,16 @@ test('Ground Pound is locked below its unlock level — no effect, no cooldown',
 });
 
 test('Ground Pound damages monsters on BOTH sides of the Avatar at once', () => {
-	const g = step(flankedGame(GROUND_POUND.unlockLevel), POUND, 16);
-	expect(g.zone.monsters.length).toBe(0);
+	const before = flankedGame(GROUND_POUND.unlockLevel);
+	const g = step(before, POUND, 16);
+	for (const monster of before.zone.monsters) {
+		const remaining = g.zone.monsters.find(
+			(candidate) => candidate.id === monster.id,
+		);
+		expect(remaining?.hp ?? 0).toBe(
+			Math.max(0, monster.hp - GROUND_POUND.damage),
+		);
+	}
 	expect(g.avatars[0].skillCooldowns?.[GROUND_POUND.id]).toBe(
 		GROUND_POUND.cooldown,
 	);

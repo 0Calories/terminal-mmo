@@ -131,7 +131,7 @@ test('one-way platform: descending with feet below the surface does not land', (
 	expect(e.y).toBeGreaterThan(3.5);
 });
 
-test('one-way platform: horizontal movement is preserved while rising through it (#262 halt regression)', () => {
+test('one-way platform: horizontal movement is preserved while rising through it', () => {
 	const ground = '#'.repeat(40);
 	const PLATFORM_WIDE = parseTerrain([
 		...Array(8).fill('.'.repeat(40)),

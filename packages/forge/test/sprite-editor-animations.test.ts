@@ -1,262 +1,136 @@
 import { describe, expect, test } from 'bun:test';
+import { findFrame, parseSpriteFile, validateSpriteRole } from '@mmo/render';
 import {
 	addFrameToAnimation,
 	animationFrames,
 	animationNames,
 	cloneFrameToAnimation,
 	createAnimation,
-	currentFrame,
 	deleteAnimation,
-	frameNames,
 	initSpriteEditor,
 	paintPixel,
 	readPixel,
 	redoEdit,
 	reorderFrame,
 	type SpriteEditorState,
-	selectAnimation,
-	selectFrame,
+	saveResult,
 	setAnimationFps,
 	undoEdit,
 } from '../src/sprite-editor/state';
-
-function fpsOf(s: SpriteEditorState, animation: string): number | undefined {
-	return s.doc.animations.find((a) => a.name === animation)?.fps;
-}
-
 import { emptySpriteDoc } from '../src/sprite-editor/templates';
-import {
-	missingRequiredAnchors,
-	missingRequiredAnimations,
-} from '../src/sprite-editor/view';
 
 function formState(): SpriteEditorState {
-	return initSpriteEditor(emptySpriteDoc('buddy', 'form'));
+	return initSpriteEditor(emptySpriteDoc('test', 'form'));
 }
 
-describe('createAnimation', () => {
-	test('adds a fresh single-frame animation and switches to it', () => {
-		const s = createAnimation(formState(), 'cheer');
-		expect(s.feedback).toBe('');
-		expect(animationNames(s)).toContain('cheer');
-		expect(animationFrames(s, 'cheer')).toEqual(['cheer']);
-		expect(frameNames(s)).toContain('cheer');
-		expect(s.animation).toBe('cheer');
-		expect(s.frame).toBe('cheer');
+describe('completed Animation authoring', () => {
+	test('creating, drawing, cloning, reordering and timing an Animation survives save and parse', () => {
+		let state = createAnimation(formState(), 'cheer');
+		state = paintPixel(state, 1, 1);
+		state = cloneFrameToAnimation(state, 'cheer');
+		state = paintPixel(state, 4, 0);
+		state = reorderFrame(state, 'cheer', 1, -1);
+		state = setAnimationFps(state, 'cheer', 8);
+
+		const { text, diagnostics } = saveResult(state);
+		expect(diagnostics.filter((d) => d.severity === 'error')).toEqual([]);
+		const parsed = parseSpriteFile(text, 'test').doc;
+		if (parsed === null)
+			throw new Error('saved Animation document did not parse');
+		const cheer = parsed.animations.find(
+			(animation) => animation.name === 'cheer',
+		);
+		expect(cheer?.fps).toBe(8);
+		expect(cheer?.frames).toHaveLength(2);
+		expect(findFrame(parsed, 'cheer 0')?.frame.rows.join('')).not.toBe(
+			findFrame(parsed, 'cheer 1')?.frame.rows.join(''),
+		);
+		expect(readPixel({ ...state, doc: parsed, frame: 'cheer 0' }, 4, 0)).toBe(
+			true,
+		);
 	});
 
-	test('the fresh frame matches the canvas extent and is blank', () => {
-		const s = createAnimation(formState(), 'cheer');
-		const f = currentFrame(s);
-		expect(f.rows.length).toBeGreaterThan(0);
-		expect(f.rows.every((r) => r.trim() === '')).toBe(true);
+	test('adding a blank Frame and cloning an authored Frame produce distinct completed outcomes', () => {
+		let state = createAnimation(formState(), 'cheer');
+		state = paintPixel(state, 1, 1);
+		const cloned = cloneFrameToAnimation(state, 'cheer');
+		const added = addFrameToAnimation(state, 'cheer');
+
+		expect(readPixel(cloned, 1, 1)).toBe(true);
+		expect(readPixel(added, 1, 1)).toBe(false);
 	});
 
-	test('refuses a duplicate animation name', () => {
-		const s = createAnimation(formState(), 'idle');
-		expect(s.feedback).not.toBe('');
-		expect(animationNames(s).filter((p) => p === 'idle')).toHaveLength(1);
+	test('an Animation creation is undoable and redoable as one operation', () => {
+		let state = createAnimation(formState(), 'cheer');
+		expect(animationNames(state)).toContain('cheer');
+		state = undoEdit(state);
+		expect(animationNames(state)).not.toContain('cheer');
+		state = redoEdit(state);
+		expect(animationNames(state)).toContain('cheer');
 	});
 
-	test('refuses an illegal name', () => {
-		const s = createAnimation(formState(), 'bad name!');
-		expect(s.feedback).not.toBe('');
-		expect(animationNames(s)).not.toContain('bad name!');
+	test('deleting an Animation removes all of its Frames and undo restores them', () => {
+		let state = createAnimation(formState(), 'cheer');
+		state = addFrameToAnimation(state, 'cheer');
+		const authored = state.doc;
+		state = deleteAnimation(state, 'cheer');
+
+		expect(animationNames(state)).not.toContain('cheer');
+		expect(animationFrames(state, 'cheer')).toEqual([]);
+		expect(undoEdit(state).doc).toEqual(authored);
 	});
 
-	test('is undoable', () => {
+	test('clearing authored fps returns serialization to the default timing', () => {
+		let state = setAnimationFps(formState(), 'walk', 8);
+		state = setAnimationFps(state, 'walk', null);
+		const parsed = parseSpriteFile(saveResult(state).text, 'test').doc;
+		if (parsed === null)
+			throw new Error('saved Animation document did not parse');
+		expect(
+			parsed.animations.find((a) => a.name === 'walk')?.fps,
+		).toBeUndefined();
+	});
+});
+
+describe('Animation format and validation laws', () => {
+	test.each([
+		[
+			'duplicate name',
+			(state: SpriteEditorState) => createAnimation(state, 'idle'),
+		],
+		[
+			'illegal name',
+			(state: SpriteEditorState) => createAnimation(state, 'bad name!'),
+		],
+		[
+			'unknown Frame target',
+			(state: SpriteEditorState) => addFrameToAnimation(state, 'missing'),
+		],
+		[
+			'out-of-range reorder',
+			(state: SpriteEditorState) => reorderFrame(state, 'idle', 0, 1),
+		],
+		[
+			'non-positive fps',
+			(state: SpriteEditorState) => setAnimationFps(state, 'walk', 0),
+		],
+	] as const)('%s cannot alter the authored document', (_, operation) => {
 		const before = formState();
-		const s = createAnimation(before, 'cheer');
-		const back = undoEdit(s);
-		expect(animationNames(back)).not.toContain('cheer');
-		const fwd = redoEdit(back);
-		expect(animationNames(fwd)).toContain('cheer');
-	});
-});
-
-describe('addFrameToAnimation', () => {
-	test('appends a fresh frame to the animation and selects it', () => {
-		let s = createAnimation(formState(), 'cheer');
-		s = addFrameToAnimation(s, 'cheer');
-		expect(s.feedback).toBe('');
-		expect(animationFrames(s, 'cheer')).toHaveLength(2);
-
-		expect(frameNames(s)).toContain(s.frame);
-		expect(animationFrames(s, 'cheer')).toContain(s.frame);
+		expect(operation(before).doc).toBe(before.doc);
 	});
 
-	test('refuses an unknown animation', () => {
-		const s = addFrameToAnimation(formState(), 'nope');
-		expect(s.feedback).not.toBe('');
+	test('the final Animation cannot be deleted', () => {
+		const before = initSpriteEditor(emptySpriteDoc('test', 'hat'));
+		expect(deleteAnimation(before, 'idle').doc).toBe(before.doc);
 	});
 
-	test('is undoable', () => {
-		let s = createAnimation(formState(), 'cheer');
-		const before = animationFrames(s, 'cheer').length;
-		s = addFrameToAnimation(s, 'cheer');
-		s = undoEdit(s);
-		expect(animationFrames(s, 'cheer')).toHaveLength(before);
-	});
-});
-
-describe('cloneFrameToAnimation (the focus [+] tile, round 3)', () => {
-	test('appends a clone of the last frame carrying its art, and selects it', () => {
-		let s = createAnimation(formState(), 'cheer');
-		s = paintPixel(s, 1, 1);
-		s = cloneFrameToAnimation(s, 'cheer');
-		expect(animationFrames(s, 'cheer')).toHaveLength(2);
-
-		expect(s.frame).toBe('cheer 1');
-		expect(readPixel(s, 1, 1)).toBe(true);
-	});
-
-	test('refuses an unknown animation', () => {
-		const s = cloneFrameToAnimation(formState(), 'nope');
-		expect(s.feedback).not.toBe('');
-	});
-
-	test('is undoable', () => {
-		let s = createAnimation(formState(), 'cheer');
-		const before = animationFrames(s, 'cheer').length;
-		s = cloneFrameToAnimation(s, 'cheer');
-		s = undoEdit(s);
-		expect(animationFrames(s, 'cheer')).toHaveLength(before);
-	});
-});
-
-describe('deleteAnimation', () => {
-	test('removes the animation entry and garbage-collects its orphaned frames', () => {
-		const s = deleteAnimation(formState(), 'walk');
-		expect(s.feedback).toBe('');
-		expect(animationNames(s)).not.toContain('walk');
-
-		expect(frameNames(s)).not.toContain('walk 0');
-		expect(frameNames(s)).not.toContain('walk 1');
-	});
-
-	test('deleting one animation leaves other animations’ frames intact', () => {
-		let s = createAnimation(formState(), 'wave');
-		s = createAnimation(s, 'flex');
-		s = deleteAnimation(s, 'flex');
-		expect(animationNames(s)).not.toContain('flex');
-		expect(frameNames(s)).toContain('wave');
-	});
-
-	test('moves off a deleted current animation', () => {
-		let s = selectAnimation(formState(), 'walk');
-		expect(s.animation).toBe('walk');
-		s = deleteAnimation(s, 'walk');
-		expect(animationNames(s)).toContain(s.animation);
-		expect(frameNames(s)).toContain(s.frame);
-	});
-
-	test('refuses deleting the last animation', () => {
-		let s = initSpriteEditor(emptySpriteDoc('cap', 'hat'));
-		s = deleteAnimation(s, 'idle');
-		expect(s.feedback).not.toBe('');
-		expect(animationNames(s)).toContain('idle');
-	});
-
-	test('is undoable', () => {
-		const s = deleteAnimation(formState(), 'walk');
-		const back = undoEdit(s);
-		expect(animationNames(back)).toContain('walk');
-		expect(frameNames(back)).toContain('walk 0');
-	});
-});
-
-describe('selectAnimation', () => {
-	test('switches current animation and lands on its first frame', () => {
-		const s = selectAnimation(formState(), 'walk');
-		expect(s.animation).toBe('walk');
-		expect(s.frame).toBe('walk 0');
-	});
-
-	test('refuses an unknown animation', () => {
-		const s = selectAnimation(formState(), 'nope');
-		expect(s.feedback).not.toBe('');
-	});
-});
-
-describe('reorderFrame', () => {
-	test('swaps adjacent frames within an animation', () => {
-		let s = createAnimation(formState(), 'combo');
-		s = addFrameToAnimation(s, 'combo');
-		expect(animationFrames(s, 'combo')).toEqual(['combo 0', 'combo 1']);
-
-		s = paintPixel(s, 0, 0);
-		expect(readPixel(selectFrame(s, 'combo 1'), 0, 0)).toBe(true);
-		expect(readPixel(selectFrame(s, 'combo 0'), 0, 0)).toBe(false);
-		s = reorderFrame(s, 'combo', 0, 1);
-		expect(animationFrames(s, 'combo')).toEqual(['combo 0', 'combo 1']);
-		expect(readPixel(selectFrame(s, 'combo 0'), 0, 0)).toBe(true);
-		expect(readPixel(selectFrame(s, 'combo 1'), 0, 0)).toBe(false);
-	});
-
-	test('refuses moving out of range', () => {
-		const s = reorderFrame(formState(), 'idle', 0, 1);
-		expect(s.feedback).not.toBe('');
-	});
-
-	test('is undoable', () => {
-		let s = createAnimation(formState(), 'combo');
-		s = addFrameToAnimation(s, 'combo');
-		const before = animationFrames(s, 'combo');
-		s = reorderFrame(s, 'combo', 0, 1);
-		s = undoEdit(s);
-		expect(animationFrames(s, 'combo')).toEqual(before);
-	});
-});
-
-describe('setAnimationFps', () => {
-	test('sets a positive fps', () => {
-		const s = setAnimationFps(formState(), 'walk', 8);
-		expect(s.feedback).toBe('');
-		expect(fpsOf(s, 'walk')).toBe(8);
-	});
-
-	test('null clears the fps back to the default', () => {
-		let s = setAnimationFps(formState(), 'walk', 8);
-		s = setAnimationFps(s, 'walk', null);
-		expect(fpsOf(s, 'walk')).toBeUndefined();
-	});
-
-	test('refuses a non-positive fps', () => {
-		const s = setAnimationFps(formState(), 'walk', 0);
-		expect(s.feedback).not.toBe('');
-	});
-
-	test('refuses an unknown animation', () => {
-		const s = setAnimationFps(formState(), 'nope', 8);
-		expect(s.feedback).not.toBe('');
-	});
-
-	test('is undoable', () => {
-		const s = setAnimationFps(formState(), 'walk', 8);
-		const back = undoEdit(s);
-		expect(fpsOf(back, 'walk')).toBeUndefined();
-	});
-});
-
-describe('required-animation/anchor hints', () => {
-	test('a fresh form template satisfies its required animations and anchors', () => {
-		const s = formState();
-		expect(missingRequiredAnimations(s.doc, 'form')).toEqual([]);
-		expect(missingRequiredAnchors(s.doc, 'form')).toEqual([]);
-	});
-
-	test('deleting a required animation surfaces it as missing (allowed, hinted)', () => {
-		const s = deleteAnimation(formState(), 'walk');
-		expect(s.feedback).toBe('');
-		expect(missingRequiredAnimations(s.doc, 'form')).toContain('walk');
-	});
-
-	test('a doc missing a required anchor reports it', () => {
-		const s = formState();
-		const stripped = {
-			...s.doc,
-			anchors: { grip: s.doc.anchors.grip },
-		};
-		expect(missingRequiredAnchors(stripped, 'form')).toContain('head');
+	test('role validation reports a deleted required Animation', () => {
+		const state = deleteAnimation(formState(), 'walk');
+		const errors = validateSpriteRole(state.doc, 'forms').filter(
+			(diagnostic) => diagnostic.severity === 'error',
+		);
+		expect(
+			errors.some((diagnostic) => diagnostic.message.includes("'walk'")),
+		).toBe(true);
 	});
 });

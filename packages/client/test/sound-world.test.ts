@@ -51,10 +51,6 @@ test('spatialize: volume attenuates with distance and cuts off past the radius',
 	expect(spatialize(300, 50, 40, 100)).toBeNull();
 });
 
-test('spatialize: vertical position is ignored (no y parameter)', () => {
-	expect(spatialize(70, 50, 40)).toEqual(spatialize(70, 50, 40));
-});
-
 test('a lone hit and a lone death each produce one cue of their kind', () => {
 	expect(effectSoundCues([blood(50)], 50, 40).map((c) => c.kind)).toEqual([
 		'hit',

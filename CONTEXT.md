@@ -214,18 +214,24 @@ the simulation stays IO-free.
 _Avoid_: Snapshot (that's the per-tick wire frame), checkpoint, profile, savegame
 
 **Chat**:
-Real-time text communication between Players. The first form is **Zone chat**: a
-message is relayed to every session in the sender's Zone and shown
-in each recipient's chat log, attributed to the sender's Handle. (Whisper comes
-later; **Emote** is a separate, body-animation mechanism.)
+Real-time text communication between Players. **Zone chat** is relayed to every
+session in the sender's Zone and shown in each recipient's chat log, attributed
+to the sender's Handle; **Whisper** is its private form. **Emote** is a separate,
+body-animation mechanism.
 _Avoid_: Say, talk, message
+
+**Whisper**:
+Private **Chat** addressed by the recipient's **Handle** and delivered only to
+the sender and recipient. A Whisper appears in their chat logs and never produces
+a **Speech bubble**.
+_Avoid_: Direct message, DM, tell, private message
 
 **Speech bubble**:
 The ephemeral, bordered text that floats above a chatting Avatar's head, showing
-their latest Chat message to everyone who can see that Avatar. A purely
-client-side, decorative rendering of a Chat message (like a Sprite): it attaches
-to the Avatar by session id, tracks the Avatar as it moves, and expires on a
-timer — the chat log stays the durable record.
+their latest Zone chat message to everyone who can see that Avatar. A purely
+client-side, decorative rendering of Zone chat (like a Sprite): it attaches to
+the Avatar by session id, tracks the Avatar as it moves, and expires on a timer —
+the chat log stays the durable record; a **Whisper** never produces one.
 _Avoid_: Chat bubble, balloon, callout, tooltip
 
 **Emote**:

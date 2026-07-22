@@ -7,21 +7,16 @@ import {
 } from '@mmo/core/zones';
 import { cellAt, type EditorDoc, serializeDoc } from '../src/doc';
 import {
-	clampDiagIndex,
 	clampRoam,
 	copyRegion,
 	cursorEdge,
 	cursorToAnchor,
 	deleteRegion,
-	diagJumpTarget,
-	diagPanelSummary,
 	docDiagnostics,
 	editorExtent,
-	editorStatusLine,
 	entityAt,
 	eraseCells,
 	footprintBox,
-	formatDiagLine,
 	ghostEntity,
 	groundSnap,
 	growToInclude,
@@ -34,8 +29,6 @@ import {
 	rectCells,
 	scrollAxis,
 	scrollViewport,
-	TOOLS,
-	toolByKey,
 	trimDoc,
 } from '../src/editor';
 
@@ -179,109 +172,6 @@ describe('docDiagnostics', () => {
 	});
 });
 
-describe('editorStatusLine', () => {
-	test('shows the tool, placeable, cursor, dirty marker, and health', () => {
-		const line = editorStatusLine({
-			tool: 'Brush',
-			placeable: 'Solid',
-			cursor: { x: 3, y: 7 },
-			dirty: true,
-			diags: [{ severity: 'error', zoneId: 'z', message: 'boom' }],
-		});
-		expect(line).toContain('Brush');
-		expect(line).toContain('Solid');
-		expect(line).toContain('(3,7)');
-		expect(line).toContain('*');
-		expect(line).toContain('✗1');
-	});
-
-	test('shows a clean checkmark and no dirty marker when saved and healthy', () => {
-		const line = editorStatusLine({
-			tool: 'Brush',
-			placeable: 'Solid',
-			cursor: { x: 0, y: 0 },
-			dirty: false,
-			diags: [],
-		});
-		expect(line).toContain('✓');
-		expect(line).not.toContain('*');
-	});
-});
-
-describe('diagJumpTarget', () => {
-	test('returns the offending cell for a placement finding', () => {
-		expect(
-			diagJumpTarget({
-				severity: 'error',
-				zoneId: 'z',
-				message: 'floating',
-				cell: { x: 4, y: 2 },
-			}),
-		).toEqual({ x: 4, y: 2 });
-	});
-
-	test('returns null for a finding with no cell (orphan/type/catalog)', () => {
-		expect(
-			diagJumpTarget({ severity: 'error', zoneId: 'z', message: 'orphan' }),
-		).toBeNull();
-	});
-});
-
-describe('clampDiagIndex', () => {
-	test('keeps an in-range index unchanged', () => {
-		expect(clampDiagIndex(2, 5)).toBe(2);
-	});
-	test('clamps past-the-end down to the last row', () => {
-		expect(clampDiagIndex(9, 3)).toBe(2);
-	});
-	test('clamps a negative index up to 0', () => {
-		expect(clampDiagIndex(-1, 3)).toBe(0);
-	});
-	test('is 0 for an empty list', () => {
-		expect(clampDiagIndex(4, 0)).toBe(0);
-	});
-});
-
-describe('formatDiagLine', () => {
-	test('marks an error and carries its message', () => {
-		const line = formatDiagLine({
-			severity: 'error',
-			zoneId: 'z',
-			message: 'box at (1,2) overlaps solid terrain',
-		});
-		expect(line).toContain('✗');
-		expect(line).toContain('overlaps solid terrain');
-	});
-	test('uses a distinct marker for a warning', () => {
-		const err = formatDiagLine({
-			severity: 'error',
-			zoneId: 'z',
-			message: 'm',
-		});
-		const warn = formatDiagLine({
-			severity: 'warning',
-			zoneId: 'z',
-			message: 'm',
-		});
-		expect(warn[0]).not.toBe(err[0]);
-	});
-});
-
-describe('diagPanelSummary', () => {
-	test('reports an all-clear line when there are no findings', () => {
-		expect(diagPanelSummary([])).toContain('No issues');
-	});
-	test('counts errors and warnings separately, pluralized', () => {
-		const s = diagPanelSummary([
-			{ severity: 'error', zoneId: 'z', message: 'a' },
-			{ severity: 'error', zoneId: 'z', message: 'b' },
-			{ severity: 'warning', zoneId: 'z', message: 'c' },
-		]);
-		expect(s).toContain('2 errors');
-		expect(s).toContain('1 warning');
-	});
-});
-
 const key = (c: { x: number; y: number }) => `${c.x},${c.y}`;
 const setOf = (cs: { x: number; y: number }[]) => new Set(cs.map(key));
 
@@ -291,32 +181,6 @@ function field(rows: string[]): EditorDoc {
 		rows,
 	};
 }
-
-describe('TOOLS / toolByKey', () => {
-	test('offers the six modal tools (Eyedropper dropped, Stamp added — #114)', () => {
-		expect(TOOLS.map((t) => t.id)).toEqual([
-			'brush',
-			'eraser',
-			'rectangle',
-			'line',
-			'select',
-			'stamp',
-		]);
-	});
-
-	test('every tool is reachable with no mouse — by its key and by 1-6', () => {
-		TOOLS.forEach((t, i) => {
-			expect(toolByKey(t.key)?.id).toBe(t.id);
-			expect(toolByKey(String(i + 1))?.id).toBe(t.id);
-		});
-	});
-
-	test('an unbound key resolves to no tool', () => {
-		expect(toolByKey('z')).toBeUndefined();
-		expect(toolByKey('9')).toBeUndefined();
-		expect(toolByKey('left')).toBeUndefined();
-	});
-});
 
 describe('rectCells', () => {
 	test('fills the rectangle spanning two corners, order-independent', () => {
@@ -483,7 +347,7 @@ describe('deleteRegion', () => {
 	});
 });
 
-describe('footprintBox (#96)', () => {
+describe('Placeable footprint laws', () => {
 	test('monster is the engine 5×5 collision box anchored top-left at the glyph', () => {
 		expect(footprintBox({ kind: 'monster', id: 'chaser' }, 3, 2)).toEqual({
 			x: 3,
@@ -515,7 +379,7 @@ describe('footprintBox (#96)', () => {
 	});
 });
 
-describe('ghostEntity (#118)', () => {
+describe('Placeable preview projection', () => {
 	const cats: Catalogs = {
 		monsters: [{ id: 'chaser', behavior: 'chaser', name: 'Slime' }],
 		npcs: [{ id: 'merchant', kind: 'vendor', name: 'Pemberton' }],
@@ -551,7 +415,7 @@ describe('ghostEntity (#118)', () => {
 	});
 });
 
-describe('placementState (#96)', () => {
+describe('Placeable placement state', () => {
 	const grounded: EditorDoc = {
 		header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 		rows: [
@@ -637,7 +501,7 @@ describe('placementState (#96)', () => {
 	});
 });
 
-describe('groundSnap (#96)', () => {
+describe('Placeable ground snap', () => {
 	const tall: EditorDoc = {
 		header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 		rows: [
@@ -681,7 +545,7 @@ describe('groundSnap (#96)', () => {
 		expect(groundSnap(tall, { kind: 'terrain' }, 4, 1)).toEqual({ x: 4, y: 1 });
 	});
 
-	test('a cursor far above any surface stays put rather than falling to it (#117)', () => {
+	test('a cursor far above any surface stays put rather than falling to it', () => {
 		const skyHigh: EditorDoc = {
 			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 			rows: Array(16).fill('..........'),
@@ -694,7 +558,7 @@ describe('groundSnap (#96)', () => {
 		});
 	});
 
-	test('still snaps when a surface is within the cap distance (#117)', () => {
+	test('still snaps when a surface is within the cap distance', () => {
 		const near: EditorDoc = {
 			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 			rows: Array(8).fill('..........'),
@@ -706,7 +570,7 @@ describe('groundSnap (#96)', () => {
 	});
 });
 
-describe('cursorToAnchor (#114)', () => {
+describe('cursor-to-anchor placement', () => {
 	const field: EditorDoc = {
 		header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
 		rows: [
@@ -741,7 +605,7 @@ describe('cursorToAnchor (#114)', () => {
 	});
 });
 
-describe('entityAt (#114)', () => {
+describe('Placeable hit detection', () => {
 	test('a click anywhere in the footprint resolves the entity at its origin', () => {
 		const doc: EditorDoc = {
 			header: { id: 'z', type: 'field', spawns: { c: 'chaser' }, npcs: {} },

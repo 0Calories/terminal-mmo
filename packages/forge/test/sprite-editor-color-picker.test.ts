@@ -77,7 +77,7 @@ describe('openColorPicker', () => {
 		expect(p.rgba).toEqual([10, 20, 30, 255]);
 	});
 
-	test('reserved p/a inks are never edited — they open DEFINE instead (spec #401)', () => {
+	test('reserved p/a inks are never edited — they open DEFINE instead', () => {
 		for (const key of ['p', 'a']) {
 			const s = setInk(blankState(), colorInk(key));
 			const p = openColorPicker(s, PALETTE_KEYS);

@@ -151,7 +151,7 @@ test('applyBuy deducts the re-derived price, appends the good, and logs it', () 
 	expect(sa?.log.at(-1)).toContain('Bought');
 });
 
-test('two buys mint distinct Item ids (nextId advances)', () => {
+test('two buys mint distinct Item ids', () => {
 	const { w } = sellWorld([], 100);
 	const first = applyBuy(w, 1, 0);
 	const second = applyBuy(first.world, 1, 0);

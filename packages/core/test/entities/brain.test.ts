@@ -18,6 +18,8 @@ function grounded(type: 'chaser' | 'brute' | 'shooter', x: number): Entity {
 	return m;
 }
 
+const targetLeftBy = (monster: Entity, gap: number) => monster.x - gap;
+
 function islandTerrain(w = 60, groundEnd = 30): Terrain {
 	const rows: string[] = [];
 	for (let cy = 0; cy < GROUND_TOP; cy++) rows.push('.'.repeat(w));
@@ -39,7 +41,8 @@ function walledTerrain(w = 60, wallX = 30): Terrain {
 
 test('the melee Brain chases: moveX homes on a target inside aggro, no commit out of range', () => {
 	const m = grounded('chaser', 50);
-	const r = BRAINS.chaser(m, view(40));
+	const { range, aggro } = ARCHETYPES.chaser.melee;
+	const r = BRAINS.chaser(m, view(targetLeftBy(m, (range + aggro) / 2)));
 	expect(r.drive.moveX).toBe(-1);
 	expect(r.drive.jump).toBe(false);
 	expect(r.drive.commit).toBeUndefined();
@@ -47,13 +50,19 @@ test('the melee Brain chases: moveX homes on a target inside aggro, no commit ou
 
 test('the melee Brain stands still inside its deadzone', () => {
 	const m = grounded('chaser', 50);
-	const r = BRAINS.chaser(m, view(51));
+	const r = BRAINS.chaser(
+		m,
+		view(targetLeftBy(m, ARCHETYPES.chaser.melee.deadzone / 2)),
+	);
 	expect(r.drive.moveX).toBe(0);
 });
 
 test('the melee Brain commits swing in range once off cooldown, squaring up to the target', () => {
 	const m = grounded('chaser', 50);
-	const r = BRAINS.chaser(m, view(47));
+	const r = BRAINS.chaser(
+		m,
+		view(targetLeftBy(m, ARCHETYPES.chaser.melee.range)),
+	);
 	expect(r.drive.commit).toBe('swing');
 	expect(r.drive.face).toBe(-1);
 });
@@ -61,28 +70,31 @@ test('the melee Brain commits swing in range once off cooldown, squaring up to t
 test('a cooling-down melee Brain closes in but holds its swing', () => {
 	const m = grounded('chaser', 50);
 	m.attackCdT = 1;
-	const r = BRAINS.chaser(m, view(47));
+	const r = BRAINS.chaser(
+		m,
+		view(targetLeftBy(m, ARCHETYPES.chaser.melee.range)),
+	);
 	expect(r.drive.commit).toBeUndefined();
 });
 
 test('a committed Brain is locked in: idle drive, no re-commit', () => {
 	const m = grounded('chaser', 50);
 	m.attackT = 0.2;
-	const r = BRAINS.chaser(m, view(47));
+	const r = BRAINS.chaser(m, view(targetLeftBy(m, 1)));
 	expect(r.drive).toEqual(IDLE_DRIVE);
 });
 
 test('a stunned Brain goes limp: idle drive', () => {
 	const m = grounded('chaser', 50);
 	m.stunT = 0.2;
-	const r = BRAINS.chaser(m, view(47));
+	const r = BRAINS.chaser(m, view(targetLeftBy(m, 1)));
 	expect(r.drive).toEqual(IDLE_DRIVE);
 });
 
 test('out of aggro the melee Brain patrols its facing', () => {
 	const m = grounded('chaser', 50);
 	m.facing = -1;
-	const r = BRAINS.chaser(m, view(200));
+	const r = BRAINS.chaser(m, view(m.x + ARCHETYPES.chaser.melee.aggro));
 	expect(r.drive.moveX).toBe(-1);
 	expect(r.drive.commit).toBeUndefined();
 });
@@ -111,15 +123,18 @@ test('airborne patrol keeps heading — no ground probing mid-fall', () => {
 	expect(r.drive.moveX).toBe(1);
 });
 
-test('the brute runs the melee Brain over its OWN profile (commits at brute range)', () => {
-	const adx5 = view(45);
-	const brute = grounded('brute', 50);
-	expect(BRAINS.brute(brute, adx5).drive.commit).toBe('swing');
-	const chaser = grounded('chaser', 50);
-	expect(BRAINS.chaser(chaser, adx5).drive.commit).toBeUndefined();
-	expect(ARCHETYPES.brute.melee.range).toBeGreaterThan(
-		ARCHETYPES.chaser.melee.range,
-	);
+test('every melee Brain uses its own configured commit range', () => {
+	for (const type of ['chaser', 'brute'] as const) {
+		const monster = grounded(type, 50);
+		const { range } = ARCHETYPES[type].melee;
+		expect(
+			BRAINS[type](monster, view(targetLeftBy(monster, range))).drive.commit,
+		).toBe('swing');
+		expect(
+			BRAINS[type](monster, view(targetLeftBy(monster, range + 0.01))).drive
+				.commit,
+		).toBeUndefined();
+	}
 });
 
 test('the shooter Brain patrols outside aggro', () => {
@@ -131,19 +146,23 @@ test('the shooter Brain patrols outside aggro', () => {
 	expect(r.ai).toEqual({ state: 'patrol' });
 });
 
-test('inside keepDist the shooter REPOSITIONS: backs away, eyes on the target, never fires', () => {
+test('inside keepDist the shooter repositions without firing', () => {
 	const m = grounded('shooter', 30);
 	m.attackCdT = 0;
-	const r = BRAINS.shooter(m, view(25));
+	const r = BRAINS.shooter(
+		m,
+		view(targetLeftBy(m, ARCHETYPES.shooter.ranged.keepDist - 1)),
+	);
 	expect(r.drive.moveX).toBe(1);
 	expect(r.drive.face).toBe(-1);
 	expect(r.drive.commit).toBeUndefined();
 	expect(r.ai).toEqual({ state: 'reposition' });
 });
 
-test('in the comfort band the shooter ATTACKS: holds ground and commits fire', () => {
+test('in the comfort band the shooter holds ground and commits fire', () => {
 	const m = grounded('shooter', 50);
-	const r = BRAINS.shooter(m, view(20));
+	const { keepDist, aggro } = ARCHETYPES.shooter.ranged;
+	const r = BRAINS.shooter(m, view(targetLeftBy(m, (keepDist + aggro) / 2)));
 	expect(r.drive.moveX).toBe(0);
 	expect(r.drive.face).toBe(-1);
 	expect(r.drive.commit).toBe('fire');
@@ -153,7 +172,8 @@ test('in the comfort band the shooter ATTACKS: holds ground and commits fire', (
 test('in the band but on cooldown the shooter holds fire', () => {
 	const m = grounded('shooter', 50);
 	m.attackCdT = 1;
-	const r = BRAINS.shooter(m, view(20));
+	const { keepDist, aggro } = ARCHETYPES.shooter.ranged;
+	const r = BRAINS.shooter(m, view(targetLeftBy(m, (keepDist + aggro) / 2)));
 	expect(r.drive.commit).toBeUndefined();
 	expect(r.ai).toEqual({ state: 'attack' });
 });
@@ -161,7 +181,7 @@ test('in the band but on cooldown the shooter holds fire', () => {
 test('reposition → attack sequencing: fire is committed only once the band is restored', () => {
 	const { keepDist } = ARCHETYPES.shooter.ranged;
 	let m = grounded('shooter', 30);
-	const targetX = 25;
+	const targetX = targetLeftBy(m, keepDist - 1);
 	const states: string[] = [];
 	let committedFire = false;
 
@@ -184,20 +204,29 @@ test('reposition → attack sequencing: fire is committed only once the band is 
 	expect(states.indexOf('attack')).toBe(states.lastIndexOf('reposition') + 1);
 });
 
-test('the band edge has hysteresis: at the same distance, the prior state (ai memory) decides', () => {
-	const { keepDist } = ARCHETYPES.shooter.ranged;
-	const targetX = 50 - (keepDist + 1);
+test('the band edge has hysteresis: prior AI state can decide at the same distance', () => {
 	const repositioning = grounded('shooter', 50);
 	repositioning.ai = { state: 'reposition' };
-	const r1 = BRAINS.shooter(repositioning, view(targetX));
-	expect(r1.drive.commit).toBeUndefined();
-	expect(r1.drive.moveX).toBe(1);
-	expect(r1.ai).toEqual({ state: 'reposition' });
-	const attacking = grounded('shooter', 50);
-	attacking.ai = { state: 'attack' };
-	const r2 = BRAINS.shooter(attacking, view(targetX));
-	expect(r2.drive.commit).toBe('fire');
-	expect(r2.ai).toEqual({ state: 'attack' });
+	const attacking = { ...repositioning, ai: { state: 'attack' } };
+	const { keepDist, aggro } = ARCHETYPES.shooter.ranged;
+	const hysteresisGap = Array.from(
+		{ length: Math.ceil(aggro - keepDist) * 4 },
+		(_, index) => keepDist + index / 4,
+	).find((gap) => {
+		const target = view(targetLeftBy(repositioning, gap));
+		return (
+			(BRAINS.shooter(repositioning, target).ai as { state: string }).state !==
+			(BRAINS.shooter(attacking, target).ai as { state: string }).state
+		);
+	});
+	if (hysteresisGap === undefined)
+		throw new Error('configured band has no hysteresis');
+
+	const target = view(targetLeftBy(repositioning, hysteresisGap));
+	expect(BRAINS.shooter(repositioning, target).ai).toEqual({
+		state: 'reposition',
+	});
+	expect(BRAINS.shooter(attacking, target).ai).toEqual({ state: 'attack' });
 });
 
 test('a committed shooter is locked in: idle drive, aim frozen', () => {

@@ -9,28 +9,20 @@ import {
 	spriteMetaFor,
 } from '../../src/sprites';
 
-test('the Monster/NPC sprite references are the migrated ids', () => {
-	expect(MONSTER_SPRITE_REF).toEqual({
-		chaser: 'chaser',
-		shooter: 'shooter',
-		brute: 'brute',
-	});
-	expect(NPC_SPRITE_REF).toEqual({
-		vendor: 'merchant',
-	});
-});
-
-test('the reference resolvers return the crumb id (player has no Monster art)', () => {
-	expect(monsterSpriteRef('chaser')).toBe('chaser');
-	expect(monsterSpriteRef('shooter')).toBe('shooter');
-	expect(monsterSpriteRef('brute')).toBe('brute');
+test('Sprite reference resolvers agree with their configured semantic mappings', () => {
+	for (const [type, spriteId] of Object.entries(MONSTER_SPRITE_REF))
+		expect(monsterSpriteRef(type as keyof typeof MONSTER_SPRITE_REF)).toBe(
+			spriteId,
+		);
 	expect(monsterSpriteRef('player')).toBeUndefined();
-	expect(npcSpriteRef('vendor')).toBe('merchant');
+	for (const [kind, spriteId] of Object.entries(NPC_SPRITE_REF))
+		expect(npcSpriteRef(kind as keyof typeof NPC_SPRITE_REF)).toBe(spriteId);
 });
 
-test('the death-tint crumb (defaultKey) is core-owned, not render-owned', () => {
+test('entity death tint is derived from core-owned Sprite metadata', () => {
 	const monster = (type: Entity['type']): Entity => ({
 		id: 1,
+		type,
 		x: 0,
 		y: 0,
 		vx: 0,
@@ -42,12 +34,12 @@ test('the death-tint crumb (defaultKey) is core-owned, not render-owned', () => 
 		maxHp: 1,
 		hurtT: 0,
 		attackT: 0,
-		type,
 	});
-	for (const type of ['chaser', 'shooter', 'brute'] as const) {
+	for (const type of Object.keys(MONSTER_SPRITE_REF) as Array<
+		keyof typeof MONSTER_SPRITE_REF
+	>) {
 		const key = spriteMetaFor(type).defaultKey;
 		const [r, g, b] = SCENE_PALETTE[key as keyof typeof SCENE_PALETTE];
-
 		expect(entityTint(monster(type))).toEqual({ r, g, b });
 	}
 });

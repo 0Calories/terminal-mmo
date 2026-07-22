@@ -13,7 +13,7 @@ describe('newZoneTemplate', () => {
 		expect(validateZone(zone, catalogs)).toEqual([]);
 	});
 
-	test('a fresh template carries an editable display name (#99)', () => {
+	test('a fresh template carries an editable display name', () => {
 		const zone = parseZone(
 			newZoneTemplate('town-99', 'town'),
 			catalogs,

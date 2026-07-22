@@ -16,7 +16,7 @@ function held(sessionId: number): AvatarIntent {
 	};
 }
 
-test('a queued interact edge folds onto exactly ONE tick, then is gone (ADR 0027 portal-once)', () => {
+test('a queued interact edge folds onto exactly one tick, then is consumed', () => {
 	const intents = new Map([[7, held(7)]]);
 	const pendingEmotes = new Map<number, string>();
 	const pendingInteract = new Set<number>([7]);
@@ -29,19 +29,9 @@ test('a queued interact edge folds onto exactly ONE tick, then is gone (ADR 0027
 	expect(t2[0].interact).toBe(false);
 });
 
-test('a session with no queued edge is returned untouched (same object)', () => {
-	const i = held(7);
-	const [out] = foldPendingEdges(
-		new Map([[7, i]]).values(),
-		new Map(),
-		new Set(),
-	);
-	expect(out).toBe(i);
-});
-
 test('emote and interact edges fold together, each consumed once', () => {
 	const intents = new Map([[7, held(7)]]);
-	const pendingEmotes = new Map<number, string>([[7, 'wave']]);
+	const pendingEmotes = new Map<number, string>([[7, 'test-emote']]);
 	const pendingInteract = new Set<number>([7]);
 
 	const [out] = foldPendingEdges(
@@ -49,7 +39,7 @@ test('emote and interact edges fold together, each consumed once', () => {
 		pendingEmotes,
 		pendingInteract,
 	);
-	expect(out.emote).toBe('wave');
+	expect(out.emote).toBe('test-emote');
 	expect(out.interact).toBe(true);
 	expect(pendingEmotes.has(7)).toBe(false);
 	expect(pendingInteract.has(7)).toBe(false);

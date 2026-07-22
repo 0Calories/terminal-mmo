@@ -154,7 +154,7 @@ describe('loadSpriteSources (fs-scan strategy)', () => {
 	});
 });
 
-it('the real repo sprite tree loads: every shipped role is present', () => {
+it('the real repo sprite tree loads every supported role', () => {
 	const map = loadSpriteSources();
 	const roles = new Set([...map.values()].map((s) => s.role));
 	for (const role of ['forms', 'hats', 'monsters', 'npcs', 'weapons'])
