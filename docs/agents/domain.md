@@ -26,3 +26,10 @@ If the concept you need isn't in the glossary yet, that's a signal — either yo
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
 > _Contradicts ADR-0001 (world topology and authority) — but worth reopening because…_
+
+## Keep ADRs out of code comments
+
+Use ADRs to guide the implementation, not as prose to copy into source files.
+Prefer clear code and names; comment only when a genuinely confusing or surprising
+choice still needs a one- or two-line explanation of why it exists. Never narrate
+what the code already says or cite or restate an ADR in a code comment.

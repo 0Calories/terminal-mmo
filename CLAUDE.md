@@ -12,6 +12,13 @@ All game logic lives in `@mmo/core` as pure, deterministic functions so the
 client and (M2) server can never diverge. Run interactive TUI checks in a real
 terminal; use `@opentui/core/testing` for headless/automated checks.
 
+## Code comments
+
+Prefer self-explanatory code over comments. Add a comment only when the reason for
+confusing or surprising code cannot be made clear in the code itself; keep it to
+one or two lines explaining **why**, never **what**. Do not cite or restate ADRs in
+code comments—the ADR is the record of the decision.
+
 ## Agent skills
 
 ### Issue tracker
