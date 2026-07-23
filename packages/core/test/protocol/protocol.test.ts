@@ -293,6 +293,20 @@ function comprehensiveSnapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 				hurtT: 0,
 				action: { ...IDLE_ACTION, flags: ACTION_FLAG.staggered },
 			},
+			{
+				id: 4,
+				type: 'slime',
+				x: 12,
+				y: 32,
+				vx: 6,
+				vy: -2,
+				facing: 1,
+				onGround: false,
+				hp: 24,
+				maxHp: 24,
+				hurtT: 0,
+				action: IDLE_ACTION,
+			},
 		],
 		projectiles: [
 			{

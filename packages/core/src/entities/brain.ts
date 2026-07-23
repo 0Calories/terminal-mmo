@@ -31,11 +31,17 @@ function wallAhead(m: Entity, t: Terrain, dir: Facing): boolean {
 	return false;
 }
 
+function footProbe(m: Entity, dir: Facing): { lead: number; footY: number } {
+	return {
+		lead: dir === 1 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x),
+		footY: Math.ceil(m.y + BOX.h),
+	};
+}
+
 function patrolDrive(m: Entity, t: Terrain): Drive {
 	const dir = m.facing;
 	if (!m.onGround) return { moveX: dir, jump: false };
-	const lead = dir === 1 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x);
-	const footY = Math.ceil(m.y + BOX.h);
+	const { lead, footY } = footProbe(m, dir);
 	const turn = wallAhead(m, t, dir) || !isSolid(t, lead, footY);
 	return { moveX: turn ? (dir === 1 ? -1 : 1) : dir, jump: false };
 }
@@ -91,8 +97,7 @@ function hopSpan(speed: number): number {
 }
 
 function hopLandsOnGround(m: Entity, t: Terrain, dir: Facing): boolean {
-	const lead = dir === 1 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x);
-	const footY = Math.ceil(m.y + BOX.h);
+	const { lead, footY } = footProbe(m, dir);
 	const span = hopSpan(m.speed);
 	for (let step = 1; step <= span; step++)
 		if (!isSolid(t, lead + dir * step, footY)) return false;

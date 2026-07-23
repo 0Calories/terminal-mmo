@@ -20,7 +20,6 @@ import {
 	spawnMonster,
 } from '../../src/entities';
 import { lootTableFor, rollDrop } from '../../src/items';
-import { parseTerrain } from '../../src/physics';
 import { CAPABILITY_UNLOCK, xpForKill } from '../../src/progression';
 import { decodeServerMessage, encodeServerMessage } from '../../src/protocol';
 import { addAvatar, removeAvatar, snapshotFor } from '../../src/world';
@@ -33,7 +32,7 @@ import {
 	stepZone,
 	type Zone,
 } from '../../src/zones';
-import { flatTerrain, makeProjectile } from '../helpers';
+import { flatTerrain, islandTerrain, makeProjectile } from '../helpers';
 
 const y = GROUND_TOP - BOX.h;
 const TEST_ZONE_ID = 'test-zone';
@@ -540,11 +539,7 @@ test('a Slime locomotes by hopping: it leaves the ground and travels', () => {
 
 test('a patrolling Slime never hops off its platform', () => {
 	const groundEnd = 30;
-	const rows: string[] = [];
-	for (let cy = 0; cy < GROUND_TOP; cy++) rows.push('.'.repeat(60));
-	for (let cy = GROUND_TOP; cy < GROUND_TOP + 3; cy++)
-		rows.push('#'.repeat(groundEnd + 1) + '.'.repeat(60 - groundEnd - 1));
-	const island = parseTerrain(rows);
+	const island = islandTerrain(60, groundEnd);
 	const m = spawnMonster('slime', 2, 13, y);
 	m.onGround = true;
 	let state: ZoneState = {

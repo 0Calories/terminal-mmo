@@ -3,7 +3,7 @@ import type { BrainView, Entity, Terrain } from '../../src/entities';
 import { ARCHETYPES, BOX, BRAINS, spawnMonster } from '../../src/entities';
 import { IDLE_DRIVE, parseTerrain } from '../../src/physics';
 import { GROUND_TOP } from '../../src/zones';
-import { flatTerrain } from '../helpers';
+import { flatTerrain, islandTerrain } from '../helpers';
 
 const y = GROUND_TOP - BOX.h;
 const flat = flatTerrain();
@@ -22,14 +22,6 @@ function grounded(
 }
 
 const targetLeftBy = (monster: Entity, gap: number) => monster.x - gap;
-
-function islandTerrain(w = 60, groundEnd = 30): Terrain {
-	const rows: string[] = [];
-	for (let cy = 0; cy < GROUND_TOP; cy++) rows.push('.'.repeat(w));
-	for (let cy = GROUND_TOP; cy < GROUND_TOP + 3; cy++)
-		rows.push('#'.repeat(groundEnd + 1) + '.'.repeat(w - groundEnd - 1));
-	return parseTerrain(rows);
-}
 
 function walledTerrain(w = 60, wallX = 30): Terrain {
 	const rows: string[] = [];

@@ -43,7 +43,6 @@ const CHASER = {
 	mass: DEFAULT_MASS,
 	melee: {
 		damage: 11,
-
 		poise: 10,
 		range: 4,
 		aggro: 22,
