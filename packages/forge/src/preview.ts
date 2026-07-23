@@ -1,14 +1,12 @@
 import { watch } from 'node:fs';
 import { loadCatalogs, loadZone } from '@mmo/assets';
 import type { Zone } from '@mmo/core/zones';
-import {
-	buildSceneStyle,
-	drawNameplates,
-	renderZoneScene,
-	type ZoneScene,
-} from '@mmo/render';
+import type { ZoneScene } from '@mmo/render';
+import type { Compositor } from '@mmo/render/compositor';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
+import { encodeToBuffer } from './render/compositor-encode';
+import { composeZone, compositorFor } from './render/zone-compose';
 
 export interface Cam {
 	x: number;
@@ -60,10 +58,12 @@ export async function runPreview(args: string[], deps: CliDeps): Promise<void> {
 	}
 
 	const { createCliRenderer, Renderable, RGBA } = await import('@opentui/core');
-	const style = buildSceneStyle((r, g, b, a) => RGBA.fromInts(r, g, b, a));
+	const statusFg = RGBA.fromInts(232, 232, 238, 255);
+	const statusBg = RGBA.fromInts(34, 40, 54, 255);
 	let scene = sceneOf(first.zone);
 	let status = statusLine(first.zone);
 	const cam: Cam = { x: 0, y: 0 };
+	let compositor: Compositor | null = null;
 
 	class PreviewRenderable extends Renderable {
 		// biome-ignore lint/suspicious/noExplicitAny: opentui ctor ctx type
@@ -81,12 +81,13 @@ export async function runPreview(args: string[], deps: CliDeps): Promise<void> {
 			);
 			cam.x = next.x;
 			cam.y = next.y;
-			renderZoneScene(buf, scene, cam, style);
-			drawNameplates(buf, scene.entities, cam, scene.terrain, style);
+			compositor = compositorFor(compositor, buf.width, buf.height);
+			composeZone(compositor, scene, cam);
+			encodeToBuffer(compositor, buf);
 			for (let x = 0; x < buf.width; x++)
-				buf.setCell(x, 0, ' ', style.paletteDefault, style.terrainBg);
+				buf.setCell(x, 0, ' ', statusFg, statusBg);
 			for (let i = 0; i < status.length && i < buf.width; i++)
-				buf.setCell(i, 0, status[i], style.paletteDefault, style.terrainBg);
+				buf.setCell(i, 0, status[i], statusFg, statusBg);
 		}
 	}
 

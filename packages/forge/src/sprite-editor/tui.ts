@@ -4,11 +4,8 @@ import type { RGBAQuad } from '@mmo/core/entities';
 import { STANDARD_PALETTE } from '@mmo/core/entities';
 import {
 	allFrames,
-	buildSceneStyle,
-	type CellBuffer,
 	frameLocations,
 	parseSpriteFile,
-	type RenderStyle,
 	SENTINEL,
 	type SpriteDiagnostic,
 	type SpriteDoc,
@@ -20,6 +17,7 @@ import {
 	RGBA,
 } from '@opentui/core';
 import type { CliDeps } from '../cli';
+import { encodeSurface } from '../render/compositor-encode';
 import { findSpriteFile, formatSpriteDiagnostics } from '../sprite-cli';
 import {
 	type CanvasModal,
@@ -52,6 +50,8 @@ import {
 	typeHex,
 } from './colorPicker';
 import {
+	baseCompositeStyle,
+	type CompositeStyle,
 	renderComposite,
 	renderPlainFrame,
 	styleWithLocalColors,
@@ -281,33 +281,6 @@ function toMenuKey(k: SpriteKey): MenuKey {
 	return { name: k.name };
 }
 
-class RegionBuffer implements CellBuffer<RGBA> {
-	constructor(
-		private readonly buf: OptimizedBuffer,
-		private readonly ox: number,
-		private readonly oy: number,
-		readonly width: number,
-		readonly height: number,
-	) {}
-	clear(bg: RGBA): void {
-		this.buf.fillRect(this.ox, this.oy, this.width, this.height, bg);
-	}
-	setCell(x: number, y: number, ch: string, fg: RGBA, bg: RGBA): void {
-		if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
-		this.buf.setCell(this.ox + x, this.oy + y, ch, fg, bg);
-	}
-	setCellWithAlphaBlending(
-		x: number,
-		y: number,
-		ch: string,
-		fg: RGBA,
-		bg: RGBA,
-	): void {
-		if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
-		this.buf.setCellWithAlphaBlending(this.ox + x, this.oy + y, ch, fg, bg);
-	}
-}
-
 interface Palette {
 	bg: RGBA;
 	grid: RGBA;
@@ -354,7 +327,7 @@ export class SpriteEditor extends Renderable {
 	view: CanvasView = 'strips';
 
 	helpOpen = false;
-	private readonly sceneStyle: RenderStyle<RGBA>;
+	private readonly sceneStyle: CompositeStyle;
 	awaitingStamp = false;
 
 	playMode: PlayMode = 'none';
@@ -480,9 +453,7 @@ export class SpriteEditor extends Renderable {
 
 		this.globalPalette = opts.globalPalette ?? STANDARD_PALETTE;
 		this.isSwatchDoubleClick = createDoubleClickDetector(opts.now ?? Date.now);
-		this.sceneStyle = buildSceneStyle((r, g, b, a) =>
-			RGBA.fromInts(r, g, b, a),
-		);
+		this.sceneStyle = baseCompositeStyle();
 
 		this.onMouseDown = (e) => this.mouseDown(e);
 		this.onMouseDrag = (e) => this.mouseDrag(e);
@@ -2475,26 +2446,31 @@ export class SpriteEditor extends Renderable {
 		const iy = y0 + 1;
 		const iw = paneW - 2;
 		const ih = paneH - 2;
-		const toRGBA = (r: number, g: number, b: number, a: number) =>
-			RGBA.fromInts(r, g, b, a);
 
 		const previews = this.dynamicPreviews();
 		const style = styleWithLocalColors(
-			styleWithLocalColors(this.sceneStyle, this.state.doc.colors, toRGBA),
+			styleWithLocalColors(this.sceneStyle, this.state.doc.colors),
 			{ p: previews.p, a: previews.a },
-			toRGBA,
 		);
-		const region = new RegionBuffer(buf, ix, iy, iw, ih);
 
 		const previewDoc = floatDisplayDoc(this.state);
-		const ok = renderComposite(region, previewDoc, this.role, style, {
-			facing: this.previewFacing,
-
-			stance: frameName,
-			elapsedS: 0,
-			hue: this.variant.p,
-		});
-		if (!ok) buf.drawText('keep drawing…'.slice(0, iw), ix, iy, C.dim, C.bg);
+		const surface = renderComposite(
+			previewDoc,
+			this.role,
+			style,
+			{
+				facing: this.previewFacing,
+				stance: frameName,
+				elapsedS: 0,
+				hue: this.variant.p,
+			},
+			{ width: iw, height: ih },
+		);
+		if (surface)
+			encodeSurface(surface, (x, y, ch, fg, bg) =>
+				buf.setCell(ix + x, iy + y, ch, fg, bg),
+			);
+		else buf.drawText('keep drawing…'.slice(0, iw), ix, iy, C.dim, C.bg);
 
 		const flipText = `flip ${this.previewFacing === 1 ? '→' : '←'}`;
 		const animPlaying = this.playMode === 'animation';
@@ -2757,13 +2733,10 @@ export class SpriteEditor extends Renderable {
 		const inBox = (sx: number, sy: number) =>
 			sx >= inX0 && sx < inX1 && sy >= inY0 && sy < inY1;
 
-		const toRGBA = (r: number, g: number, b: number, a: number) =>
-			RGBA.fromInts(r, g, b, a);
 		const previews = this.dynamicPreviews();
 		const style = styleWithLocalColors(
-			styleWithLocalColors(this.sceneStyle, this.state.doc.colors, toRGBA),
+			styleWithLocalColors(this.sceneStyle, this.state.doc.colors),
 			{ p: previews.p, a: previews.a },
-			toRGBA,
 		);
 		const labels = frameLocations(this.state.doc).map((f) => f.label);
 		const plains = labels.map((label) =>
@@ -2802,7 +2775,11 @@ export class SpriteEditor extends Renderable {
 				}
 				const d = defaultPlain?.at(cx, cy) ?? null;
 				if (d) {
-					buf.setCell(sx, sy, d.ch, d.fg, d.bg ?? bgLayer);
+					const fg = RGBA.fromInts(d.fg[0], d.fg[1], d.fg[2], d.fg[3]);
+					const bg = d.bg
+						? RGBA.fromInts(d.bg[0], d.bg[1], d.bg[2], d.bg[3])
+						: bgLayer;
+					buf.setCell(sx, sy, d.ch, fg, bg);
 					continue;
 				}
 

@@ -16,8 +16,8 @@ import {
 	drawEntitySprite,
 	drawNpcSprite,
 	type GhostStyle,
-	renderZoneScene,
 } from '@mmo/render';
+import type { Compositor } from '@mmo/render/compositor';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import {
@@ -44,6 +44,8 @@ import {
 	portalCandidates,
 } from './portalForm';
 import { type Cam, sceneOf } from './preview';
+import { encodeToBuffer } from './render/compositor-encode';
+import { composeZone, compositorFor } from './render/zone-compose';
 
 export function editorExtent(doc: EditorDoc): { w: number; h: number } {
 	return {
@@ -621,6 +623,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let dirty = false;
 	let diags = docDiagnostics(doc, catalogs, id);
 	let scene = sceneOf(loaded.zone);
+	let sceneCompositor: Compositor | null = null;
 	let quitPrompt = false;
 	let namePrompt: string | null = null;
 	let pendingTownToggle = false;
@@ -682,12 +685,12 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				cam.y = next.y;
 			}
 
-			renderZoneScene(
-				buf,
-				scene,
-				{ x: cam.x - GUTTER_W, y: cam.y - RULER_H },
-				style,
-			);
+			sceneCompositor = compositorFor(sceneCompositor, buf.width, buf.height);
+			composeZone(sceneCompositor, scene, {
+				x: cam.x - GUTTER_W,
+				y: cam.y - RULER_H,
+			});
+			encodeToBuffer(sceneCompositor, buf);
 
 			const ext = editorExtent(doc);
 			const sx = (wx: number) => GUTTER_W + (wx - cam.x);
