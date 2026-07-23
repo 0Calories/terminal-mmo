@@ -12,6 +12,12 @@ export interface PaintOptions {
 	readonly paletteDefault: RGBA;
 	/** Per-key overrides (hue, weapon accent, hurt); highest precedence. */
 	readonly recolor?: SpritePalette;
+	/**
+	 * Paint every primitive in this one colour at its own alpha, ignoring the
+	 * resolved palette — a flat silhouette for placement ghosts. A translucent
+	 * tint composites source-over so the scene beneath reveals through it.
+	 */
+	readonly tint?: RGBA;
 }
 
 function resolve(
@@ -46,13 +52,18 @@ export function paintSprite(
 		compositor.setPixel(
 			originPx + p.px,
 			originPy + p.py,
-			resolve(p.key, sprite, opts),
+			opts.tint ?? resolve(p.key, sprite, opts),
 		);
 	}
 	for (const g of side.glyphs) {
-		const fg = resolve(g.fgKey, sprite, opts);
-		const bg =
-			g.bgKey !== undefined ? resolve(g.bgKey, sprite, opts) : undefined;
+		const fg = opts.tint ?? resolve(g.fgKey, sprite, opts);
+		// A tinted silhouette derives its backdrop from the composed scene so the
+		// glyph reveals what it sits over; only untinted stamps keep an authored bg.
+		const bg = opts.tint
+			? undefined
+			: g.bgKey !== undefined
+				? resolve(g.bgKey, sprite, opts)
+				: undefined;
 		compositor.stampGlyph(
 			opts.cellX + g.cellX,
 			opts.cellY + g.cellY,

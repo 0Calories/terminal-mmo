@@ -20,3 +20,4 @@ export {
 	drawDrops,
 	drawPortals,
 } from './world-floor';
+export type { ZoneScene } from './zone-scene';

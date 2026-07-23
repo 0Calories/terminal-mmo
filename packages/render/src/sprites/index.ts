@@ -1,4 +1,10 @@
-export { actorFootDepth, npcFootDepth, paintActor, paintNpc } from './actors';
+export {
+	actorFootDepth,
+	npcFootDepth,
+	type PaintActorOptions,
+	paintActor,
+	paintNpc,
+} from './actors';
 export {
 	type CompiledFacing,
 	type CompiledSprite,

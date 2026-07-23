@@ -267,6 +267,7 @@ function paintWeapon(
 	grip: { x: number; y: number },
 	st: AnimState,
 	hurt: boolean,
+	tint: RGBA | undefined,
 ): void {
 	if (e.weapon === undefined) return;
 	const ref = weaponById(e.weapon).sprite;
@@ -297,6 +298,7 @@ function paintWeapon(
 		palette: PALETTE,
 		paletteDefault: PALETTE_DEFAULT,
 		recolor,
+		...(tint ? { tint } : {}),
 	});
 
 	if (st.phase === 'active') {
@@ -305,7 +307,7 @@ function paintWeapon(
 				bodyGripX + c.dx,
 				bodyGripY + c.dy,
 				c.glyph,
-				accent,
+				tint ?? accent,
 			);
 	}
 }
@@ -318,6 +320,7 @@ function paintHat(
 	bodyW: number,
 	head: { x: number; y: number } | undefined,
 	hurt: boolean,
+	tint: RGBA | undefined,
 ): void {
 	const hatId = e.cosmetics?.hat;
 	if (hatId === undefined) return;
@@ -336,18 +339,28 @@ function paintHat(
 		palette: PALETTE,
 		paletteDefault: PALETTE_DEFAULT,
 		...(recolor ? { recolor } : {}),
+		...(tint ? { tint } : {}),
 	});
+}
+
+/** Paint an assembled actor or NPC as a flat translucent silhouette instead of
+ *  its real colours — a placement ghost for the Forge zone editor. */
+export interface PaintActorOptions {
+	readonly tint?: RGBA;
 }
 
 /**
  * Compose one actor (local Avatar, remote Avatar, or Monster) atomically into
  * the shared surface: body, then grip-anchored weapon and blade arc, then hat.
- * Hurt tint and cosmetic hue thread through {@link paintSprite}'s recolor.
+ * Hurt tint and cosmetic hue thread through {@link paintSprite}'s recolor. An
+ * optional {@link PaintActorOptions.tint} paints the whole actor as one flat
+ * silhouette.
  */
 export function paintActor(
 	compositor: Compositor,
 	e: Entity,
 	cam: { x: number; y: number },
+	opts?: PaintActorOptions,
 ): void {
 	const st = animStateOf(e);
 	const { sprite, baseline } = resolveBody(e, st);
@@ -355,6 +368,7 @@ export function paintActor(
 	const sx = Math.round(e.x - Math.floor((bodyW - BOX.w) / 2) - cam.x);
 	const sy = Math.round(e.y + BOX.h - sprite.heightCells + baseline - cam.y);
 	const hurt = e.hurtT > 0.3;
+	const tint = opts?.tint;
 	const grip = sprite.anchors.grip;
 	const head = sprite.anchors.head;
 
@@ -372,17 +386,20 @@ export function paintActor(
 		palette: PALETTE,
 		paletteDefault: PALETTE_DEFAULT,
 		...(bodyRecolor ? { recolor: bodyRecolor } : {}),
+		...(tint ? { tint } : {}),
 	});
 
-	if (grip) paintWeapon(compositor, e, sx, sy, bodyW, grip, st, hurt);
-	paintHat(compositor, e, sx, sy, bodyW, head, hurt);
+	if (grip) paintWeapon(compositor, e, sx, sy, bodyW, grip, st, hurt, tint);
+	paintHat(compositor, e, sx, sy, bodyW, head, hurt, tint);
 }
 
-/** Compose a stationary NPC's idle sprite, centred on its box like the sim. */
+/** Compose a stationary NPC's idle sprite, centred on its box like the sim. An
+ *  optional {@link PaintActorOptions.tint} paints it as a flat silhouette. */
 export function paintNpc(
 	compositor: Compositor,
 	n: Npc,
 	cam: { x: number; y: number },
+	opts?: PaintActorOptions,
 ): void {
 	const ref = NPC_SPRITE_REF[n.kind];
 	const doc = npcDocs.get(ref);
@@ -399,5 +416,6 @@ export function paintNpc(
 		facing: 1,
 		palette: PALETTE,
 		paletteDefault: PALETTE_DEFAULT,
+		...(opts?.tint ? { tint: opts.tint } : {}),
 	});
 }

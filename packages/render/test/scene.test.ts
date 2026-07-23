@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test';
 import {
+	BOX,
 	type Drop,
 	darken,
 	type Entity,
+	NAMEPLATE_COLORS,
 	type Projectile,
 	SCENE_COLORS,
 	type Terrain,
@@ -20,7 +22,7 @@ import {
 	drawProjectiles,
 	drawTerrain,
 } from '@mmo/render/scene';
-import { paintActor } from '@mmo/render/sprites';
+import { actorFootDepth, paintActor } from '@mmo/render/sprites';
 
 const TERRAIN_FG = SCENE_COLORS.terrainFg;
 const NO_CAM = { x: 0, y: 0 };
@@ -238,4 +240,46 @@ test('a native nameplate plants an opaque plate that does not reveal the scene b
 	expect(eq(cell.fg, SCENE_COLORS.nameplate)).toBe(true);
 	expect(eq(cell.bg, darken(SCENE_COLORS.nameplate))).toBe(true);
 	expect(eq(cell.bg, TERRAIN_FG)).toBe(false);
+});
+
+test('a nameplate centres its text on the actor box at the planted foot depth', () => {
+	const c = new Compositor(20, 12);
+	const name = 'neo';
+	const e = chaser({ id: 1, x: 6, y: 3, name });
+	drawNameplates(c, [e], NO_CAM);
+
+	const row = Math.round(actorFootDepth(e));
+	const left = Math.round(e.x + BOX.w / 2 - name.length / 2);
+	const text = [0, 1, 2].map((i) => c.cell(left + i, row).char).join('');
+	expect(text).toBe('neo');
+	// The cell just left of the centred text is untouched (blank sky), proving the
+	// plate is centred, not left-anchored.
+	expect(c.cell(left - 1, row).char).toBe(' ');
+});
+
+test('a nameplate cosmetic index selects its ink and darkened plate colour', () => {
+	const c = new Compositor(20, 12);
+	const name = 'x';
+	const e = chaser({
+		id: 1,
+		x: 6,
+		y: 3,
+		name,
+		cosmetics: { hue: 0, hat: '', nameplate: 1, form: 'buddy' },
+	});
+	drawNameplates(c, [e], NO_CAM);
+
+	const row = Math.round(actorFootDepth(e));
+	const left = Math.round(e.x + BOX.w / 2 - name.length / 2);
+	const cell = c.cell(left, row);
+	expect(cell.char).toBe('x');
+	expect(eq(cell.fg, NAMEPLATE_COLORS[1])).toBe(true);
+	expect(eq(cell.bg, darken(NAMEPLATE_COLORS[1]))).toBe(true);
+});
+
+test('an unnamed actor draws no nameplate', () => {
+	const c = new Compositor(20, 12);
+	drawNameplates(c, [chaser({ id: 1, x: 6, y: 3 })], NO_CAM);
+	for (const row of c.surface())
+		for (const cell of row) expect(cell.char).toBe(' ');
 });

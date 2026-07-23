@@ -2,10 +2,9 @@ import { expect, test } from 'bun:test';
 import { activeZone } from '@mmo/core/protocol';
 import { Compositor } from '@mmo/render/compositor';
 import { paintActor } from '@mmo/render/sprites';
-import { type OptimizedBuffer, RGBA } from '@opentui/core';
+import type { OptimizedBuffer, RGBA } from '@opentui/core';
 import { ParticleEngine } from '../src/particles';
 import { initCameraState, stepCamera } from '../src/render/camera';
-import { CompositorSink } from '../src/render/compositor-sink';
 import { DodgeTracker } from '../src/render/dodge-echo';
 import { drawPlayfield } from '../src/render/scene';
 import { entity, GOLDEN_VIEW, goldenGame, seededRng } from './helpers';
@@ -105,17 +104,10 @@ test('the composed frame carries each back-to-front pass: terrain, projectile co
 
 test('a native actor composes over terrain and reveals the composed backdrop, not a guess', () => {
 	const compositor = new Compositor(24, 12);
-	const sink = new CompositorSink(compositor);
 	// Pass 1: a solid terrain field (opaque glyph stamps flatten to terrain bg).
 	for (let y = 0; y < 12; y++)
 		for (let x = 0; x < 24; x++)
-			sink.setCell(
-				x,
-				y,
-				'█',
-				RGBA.fromInts(...TERRAIN_FG),
-				RGBA.fromInts(...TERRAIN_BG),
-			);
+			compositor.stampGlyph(x, y, '█', TERRAIN_FG, TERRAIN_BG);
 
 	// Pass 3: a monster with transparent quadrants painted over the terrain.
 	paintActor(compositor, entity({ id: 1, type: 'chaser', x: 8, y: 4 }), {
@@ -139,22 +131,10 @@ test('a native actor composes over terrain and reveals the composed backdrop, no
 
 test('a front stamp wins the cell and derives its backdrop from the composed underlay', () => {
 	const compositor = new Compositor(1, 1);
-	const sink = new CompositorSink(compositor);
-	sink.setCell(
-		0,
-		0,
-		'█',
-		RGBA.fromInts(...TERRAIN_FG),
-		RGBA.fromInts(...TERRAIN_BG),
-	);
-	// A later translucent combat glyph (pass 5) over pass-1 terrain.
-	sink.setCellWithAlphaBlending(
-		0,
-		0,
-		'✦',
-		RGBA.fromInts(255, 245, 200, 255),
-		RGBA.fromInts(0, 0, 0, 0),
-	);
+	compositor.stampGlyph(0, 0, '█', TERRAIN_FG, TERRAIN_BG);
+	// A later translucent combat glyph (pass 5) over pass-1 terrain: no authored
+	// backdrop, so it derives one from the composed terrain beneath.
+	compositor.stampGlyph(0, 0, '✦', [255, 245, 200, 255]);
 
 	const cell = compositor.cell(0, 0);
 	expect(cell.char).toBe('✦');

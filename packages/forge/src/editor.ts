@@ -1,5 +1,11 @@
 import { loadCatalogs, loadZone, loadZoneSet } from '@mmo/assets';
-import { BOX, type Entity, type Npc, spawnMonster } from '@mmo/core/entities';
+import {
+	BOX,
+	type Entity,
+	type Npc,
+	SCENE_COLORS,
+	spawnMonster,
+} from '@mmo/core/entities';
 import {
 	type Catalogs,
 	type Diagnostic,
@@ -11,13 +17,8 @@ import {
 	ZONE_MAX,
 	type Zone,
 } from '@mmo/core/zones';
-import {
-	buildSceneStyle,
-	drawEntitySprite,
-	drawNpcSprite,
-	type GhostStyle,
-} from '@mmo/render';
-import type { Compositor } from '@mmo/render/compositor';
+import type { Compositor, RGBA as RGBA8 } from '@mmo/render/compositor';
+import { paintActor, paintNpc } from '@mmo/render/sprites';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import {
@@ -368,7 +369,8 @@ export function footprintBox(p: Placeable, x: number, y: number): FootBox {
 
 export const GHOST_GLYPH = '░';
 
-const GHOST_OPACITY = 0.5;
+/** Placement-ghost silhouette opacity as an 8-bit alpha (~50%). */
+const GHOST_ALPHA = 128;
 
 export function ghostEntity(
 	catalogs: Catalogs,
@@ -646,7 +648,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	};
 
 	const { createCliRenderer, Renderable, RGBA } = await import('@opentui/core');
-	const style = buildSceneStyle((r, g, b, a) => RGBA.fromInts(r, g, b, a));
 	const C = {
 		chromeBg: RGBA.fromInts(22, 25, 34, 255),
 		rulerFg: RGBA.fromInts(110, 120, 140, 255),
@@ -656,6 +657,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		cursorBg: RGBA.fromInts(245, 215, 95, 255),
 		cursorFg: RGBA.fromInts(20, 22, 30, 255),
 		floorFg: RGBA.fromInts(60, 70, 92, 255),
+		floorBg: RGBA.fromInts(...SCENE_COLORS.terrainBg),
 		textFg: RGBA.fromInts(232, 232, 238, 255),
 		dimFg: RGBA.fromInts(140, 148, 164, 255),
 		hot: RGBA.fromInts(245, 215, 95, 255),
@@ -690,6 +692,46 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				x: cam.x - GUTTER_W,
 				y: cam.y - RULER_H,
 			});
+			// Placement ghost: the about-to-be-placed actor/NPC as a translucent
+			// silhouette composed into the scene before the single encode (ADR 0038).
+			// Colour tracks whether the anchor is grounded, airborne, or blocked.
+			const ghostP = stampP;
+			const ghost =
+				ghostP && TOOLS[toolIdx].id === 'stamp' && !anchor
+					? (() => {
+							const a = cursorToAnchor(
+								doc,
+								ghostP,
+								cursor.x,
+								cursor.y,
+								freePlace,
+							);
+							const st = placementState(doc, ghostP, a.x, a.y);
+							const bg =
+								st === 'grounded'
+									? C.ghostOk
+									: st === 'airborne'
+										? C.ghostAir
+										: C.ghostBad;
+							return {
+								a,
+								bg,
+								placeable: ghostP,
+								drawable: ghostEntity(catalogs, ghostP, a.x, a.y),
+							};
+						})()
+					: null;
+			if (ghost?.drawable) {
+				const [gr, gg, gb] = ghost.bg.toInts();
+				const tint: RGBA8 = [gr, gg, gb, GHOST_ALPHA];
+				const sceneCam = { x: cam.x - GUTTER_W, y: cam.y - RULER_H };
+				if (ghost.drawable.kind === 'entity')
+					paintActor(sceneCompositor, ghost.drawable.entity, sceneCam, {
+						tint,
+					});
+				else paintNpc(sceneCompositor, ghost.drawable.npc, sceneCam, { tint });
+			}
+
 			encodeToBuffer(sceneCompositor, buf);
 
 			const ext = editorExtent(doc);
@@ -701,7 +743,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			const floorY = sy(ext.h);
 			if (inCanvasY(floorY))
 				for (let x = GUTTER_W; x < W; x++)
-					buf.setCell(x, floorY, '─', C.floorFg, style.terrainBg);
+					buf.setCell(x, floorY, '─', C.floorFg, C.floorBg);
 
 			const cx = sx(cursor.x);
 			const cy = sy(cursor.y);
@@ -738,52 +780,17 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				tint(cells, C.gestureBg);
 			}
 
-			const ghostP = stampP;
-			if (ghostP && TOOLS[toolIdx].id === 'stamp' && !anchor) {
-				const a = cursorToAnchor(doc, ghostP, cursor.x, cursor.y, freePlace);
-				const st = placementState(doc, ghostP, a.x, a.y);
-				const bg =
-					st === 'grounded'
-						? C.ghostOk
-						: st === 'airborne'
-							? C.ghostAir
-							: C.ghostBad;
-
-				const b = bg.toInts();
-				const fade = (fg?: typeof C.selBg): typeof C.selBg | undefined => {
-					if (!fg) return fg;
-					const f = fg.toInts();
-					const mix = (i: number) =>
-						Math.round(f[i] * GHOST_OPACITY + b[i] * (1 - GHOST_OPACITY));
-					return RGBA.fromInts(mix(0), mix(1), mix(2), 255);
-				};
-				const ghostStyle: GhostStyle<typeof C.selBg | undefined> = {
-					bg,
-					fade,
-				};
-				const sceneCam = { x: cam.x - GUTTER_W, y: cam.y - RULER_H };
-				const ghost = ghostEntity(catalogs, ghostP, a.x, a.y);
-				if (ghost?.kind === 'entity') {
-					drawEntitySprite(
-						buf,
-						ghost.entity,
-						sceneCam,
-						style,
-						undefined,
-						ghostStyle,
-					);
-				} else if (ghost?.kind === 'npc') {
-					drawNpcSprite(buf, ghost.npc, sceneCam, style, ghostStyle);
-				} else {
-					const box = footprintBox(ghostP, a.x, a.y);
-					for (let wy = box.y; wy < box.y + box.h; wy++)
-						for (let wx = box.x; wx < box.x + box.w; wx++) {
-							const px = sx(wx);
-							const py = sy(wy);
-							if (inCanvasX(px) && inCanvasY(py))
-								buf.setCell(px, py, GHOST_GLYPH, C.cursorFg, bg);
-						}
-				}
+			// Non-actor placeables (Terrain, Portal) preview as a translucent
+			// footprint box drawn as editor chrome over the encoded scene.
+			if (ghost && !ghost.drawable) {
+				const box = footprintBox(ghost.placeable, ghost.a.x, ghost.a.y);
+				for (let wy = box.y; wy < box.y + box.h; wy++)
+					for (let wx = box.x; wx < box.x + box.w; wx++) {
+						const px = sx(wx);
+						const py = sy(wy);
+						if (inCanvasX(px) && inCanvasY(py))
+							buf.setCell(px, py, GHOST_GLYPH, C.cursorFg, ghost.bg);
+					}
 				if (inCanvasX(cx) && inCanvasY(cy)) {
 					const here = cellAt(doc, cursor.x, cursor.y);
 					buf.setCell(
@@ -795,7 +802,6 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 					);
 				}
 			}
-
 			const edge = cursorEdge(cursor, cam, viewW, viewH);
 			if (edge.dx || edge.dy) {
 				const ax = edge.dx < 0 ? GUTTER_W : edge.dx > 0 ? W - 1 : cx;
