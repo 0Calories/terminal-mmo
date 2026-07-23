@@ -1,8 +1,4 @@
-import {
-	BOX,
-	type MeleeProfile,
-	meleeProfileOf,
-} from '../entities/archetypes';
+import { BOX, type MeleeProfile, meleeProfileOf } from '../entities/archetypes';
 import { HUES, type RGBAQuad, SCENE_PALETTE } from '../entities/sceneStyle';
 import type {
 	ActionState,
@@ -103,8 +99,12 @@ export function attackProgressAt(
 
 /** The phase timings an entity's attack timer runs on: its pounce profile if
  *  it leaps, else the shared swing. */
-export function attackTimingsOf(type: EntityType | undefined): AttackPhaseTimings {
-	return (type !== undefined ? meleeProfileOf(type)?.pounce : null) ?? COMBAT.swing;
+export function attackTimingsOf(
+	type: EntityType | undefined,
+): AttackPhaseTimings {
+	return (
+		(type !== undefined ? meleeProfileOf(type)?.pounce : null) ?? COMBAT.swing
+	);
 }
 
 export const SWING_TOTAL = attackTotal(COMBAT.swing);

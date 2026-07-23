@@ -1,9 +1,5 @@
 import { expect, test } from 'bun:test';
-import {
-	attackPhaseAt,
-	COMBAT,
-	meleeKnockback,
-} from '../../src/combat';
+import { attackPhaseAt, COMBAT, meleeKnockback } from '../../src/combat';
 import type { AttackPhase, Entity } from '../../src/entities';
 import {
 	ARCHETYPES,
@@ -81,7 +77,10 @@ const slimePhase = (m: Entity): AttackPhase | null =>
 	attackPhaseAt(m.attackT, POUNCE);
 
 test('the slime pounce commits only within leap range and off cooldown', () => {
-	const inRange = stateWith(groundedSlime(20 + MELEE.range), serverAvatar(7, 20));
+	const inRange = stateWith(
+		groundedSlime(20 + MELEE.range),
+		serverAvatar(7, 20),
+	);
 	const committed = step(inRange);
 	expect(committed.zone.monsters[0].attackT).toBeGreaterThan(0);
 	const snap = snapshotFor(committed, 7);

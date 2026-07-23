@@ -82,7 +82,14 @@ const pouncing = (
 	phase: 'windup' | 'active' | 'recovery',
 	over: Partial<Entity> = {},
 ): Partial<Entity> => ({
-	action: { move: 'basic', phase, progress: 0.1, flags: 0, emote: null, emoteT: 0 },
+	action: {
+		move: 'basic',
+		phase,
+		progress: 0.1,
+		flags: 0,
+		emote: null,
+		emoteT: 0,
+	},
 	...over,
 });
 
@@ -102,7 +109,14 @@ test('a pouncing slime shows its authored squash/airborne/wobble body frames', (
 test('a phase-bound telegraph samples its frames by phase progress', () => {
 	const at = (progress: number) => {
 		const e = entity({ id: 1, type: 'slime' });
-		e.action = { move: 'basic', phase: 'windup', progress, flags: 0, emote: null, emoteT: 0 };
+		e.action = {
+			move: 'basic',
+			phase: 'windup',
+			progress,
+			flags: 0,
+			emote: null,
+			emoteT: 0,
+		};
 		return paintOf(e);
 	};
 	expect(at(0.95)).not.toBe(at(0.05));
@@ -116,9 +130,15 @@ test('a slime traversal hop has no airborne frames authored and falls back to id
 
 test('an idle-only monster renders exactly as today in every action state', () => {
 	const idle = paintOf(entity({ id: 1, type: 'chaser' }));
-	expect(paintOf(entity({ id: 1, type: 'chaser', ...pouncing('windup') }))).toBe(idle);
-	expect(paintOf(entity({ id: 1, type: 'chaser', ...pouncing('active') }))).toBe(idle);
-	expect(paintOf(entity({ id: 1, type: 'chaser', onGround: false }))).toBe(idle);
+	expect(
+		paintOf(entity({ id: 1, type: 'chaser', ...pouncing('windup') })),
+	).toBe(idle);
+	expect(
+		paintOf(entity({ id: 1, type: 'chaser', ...pouncing('active') })),
+	).toBe(idle);
+	expect(paintOf(entity({ id: 1, type: 'chaser', onGround: false }))).toBe(
+		idle,
+	);
 });
 
 test('authoring attack frames suppresses the overlay glyph; idle-only monsters keep it', () => {

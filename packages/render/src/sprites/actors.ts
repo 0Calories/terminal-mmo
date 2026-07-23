@@ -273,7 +273,8 @@ function resolveBody(e: Entity, st: AnimState): Body {
 		doc.animations.find((a) => a.name === name) ??
 		doc.animations.find((a) => a.name === 'idle') ??
 		doc.animations[0];
-	if (anim === undefined) return { sprite: placeholder(), baseline: doc.baseline };
+	if (anim === undefined)
+		return { sprite: placeholder(), baseline: doc.baseline };
 	const phaseBound = anim.name !== 'idle' && anim.name !== 'airborne';
 	const frameIndex = phaseBound
 		? phaseFrameIndex(st.progress, anim.frames.length)
