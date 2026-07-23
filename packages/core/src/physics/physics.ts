@@ -3,7 +3,7 @@ import type { Facing, Terrain } from '../entities/types';
 import { DEFAULT_MASS, PHYS } from './constants';
 import { sweepColumn, sweepRow } from './sweep';
 
-export type AbilityId = 'swing' | 'fire';
+export type AbilityId = 'swing' | 'fire' | 'pounce';
 
 export interface Drive {
 	moveX: -1 | 0 | 1;

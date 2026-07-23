@@ -193,14 +193,31 @@ test('an aggroed slime traversal-hops toward its target', () => {
 	expect(hop.drive.moveX).toBe(-1);
 });
 
-test('the slime Brain never commits an attack, even on top of its target', () => {
+test('the slime commits a pounce in leap range once off cooldown, squaring up', () => {
 	const m = grounded('slime', 50);
-	m.attackCdT = 0;
+	const r = BRAINS.slime(m, view(targetLeftBy(m, ARCHETYPES.slime.melee.range)));
+	expect(r.drive.commit).toBe('pounce');
+	expect(r.drive.face).toBe(-1);
+	expect(r.drive.jump).toBe(false);
+});
+
+test('a cooling-down slime keeps traversal-hopping without committing', () => {
+	const m = grounded('slime', 50);
+	m.attackCdT = 1;
 	for (let i = 0; i < 200; i++) {
 		const r = BRAINS.slime(m, view(m.x + 1));
 		m.ai = r.ai;
 		expect(r.drive.commit).toBeUndefined();
 	}
+});
+
+test('beyond leap range the slime approaches instead of committing', () => {
+	const m = grounded('slime', 50);
+	const r = BRAINS.slime(
+		m,
+		view(targetLeftBy(m, ARCHETYPES.slime.melee.range + 0.01)),
+	);
+	expect(r.drive.commit).toBeUndefined();
 });
 
 test('a stunned slime Brain goes limp: idle drive', () => {
