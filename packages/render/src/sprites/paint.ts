@@ -3,9 +3,17 @@ import type { Compositor, RGBA } from '../compositor';
 import type { CompiledSprite, SpritePalette } from './compile';
 
 export interface PaintOptions {
-	/** Top-left cell origin; primitives are cell-aligned (half-cell is #451). */
-	readonly cellX: number;
-	readonly cellY: number;
+	/**
+	 * Top-left origin in sub-cell Pixels (2 Pixels per cell), placing the sprite at
+	 * half-cell resolution on both axes (ADR 0038). Pixel primitives land at the
+	 * exact Pixel; Glyph primitives snap to the nearest cell of this origin.
+	 * Takes precedence over {@link cellX}/{@link cellY} when provided.
+	 */
+	readonly originPx?: number;
+	readonly originPy?: number;
+	/** Cell-aligned origin — equivalent to `originPx/originPy = cell * 2`. */
+	readonly cellX?: number;
+	readonly cellY?: number;
 	readonly facing?: Facing;
 	/** Scene palette resolved beneath the sprite's own doc palette. */
 	readonly palette: SpritePalette;
@@ -34,9 +42,10 @@ function resolve(
 }
 
 /**
- * Paint a compiled Sprite frame into a Compositor at a cell origin and facing,
- * resolving every colour KEY through the palettes and optional recolor. Pixels
- * composite source-over; Glyph stamps are atomic cells.
+ * Paint a compiled Sprite frame into a Compositor at a Pixel origin (or cell
+ * origin) and facing, resolving every colour KEY through the palettes and
+ * optional recolor. Pixel primitives composite source-over at half-cell
+ * resolution; Glyph stamps are atomic cells snapped to the nearest cell.
  */
 export function paintSprite(
 	compositor: Compositor,
@@ -45,8 +54,12 @@ export function paintSprite(
 ): void {
 	const facing = opts.facing ?? 1;
 	const side = facing === 1 ? sprite.right : sprite.left;
-	const originPx = opts.cellX * 2;
-	const originPy = opts.cellY * 2;
+	const originPx = opts.originPx ?? (opts.cellX ?? 0) * 2;
+	const originPy = opts.originPy ?? (opts.cellY ?? 0) * 2;
+	// Glyph primitives stay cell-snapped even at a half-cell Pixel origin: snap the
+	// origin to its nearest cell so sprite stamps never land between cells.
+	const glyphCellX = Math.round(originPx / 2);
+	const glyphCellY = Math.round(originPy / 2);
 
 	for (const p of side.pixels) {
 		compositor.setPixel(
@@ -65,8 +78,8 @@ export function paintSprite(
 				? resolve(g.bgKey, sprite, opts)
 				: undefined;
 		compositor.stampGlyph(
-			opts.cellX + g.cellX,
-			opts.cellY + g.cellY,
+			glyphCellX + g.cellX,
+			glyphCellY + g.cellY,
 			g.char,
 			fg,
 			bg,
