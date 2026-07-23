@@ -5,6 +5,10 @@ export {
 	EMOTE_FPS,
 	type EmoteAnimationId,
 	mirrorAnchorX,
+	type MonsterAnimationName,
+	type MonsterBodyState,
+	monsterAnimation,
+	phaseFrameIndex,
 	STRIDE,
 	swingFrameIndex,
 } from './animation';

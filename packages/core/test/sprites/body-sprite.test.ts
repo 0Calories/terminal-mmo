@@ -4,6 +4,9 @@ import {
 	type BodyState,
 	bodyFrame,
 	EMOTE_FPS,
+	type MonsterBodyState,
+	monsterAnimation,
+	phaseFrameIndex,
 	STRIDE,
 } from '../../src/sprites';
 
@@ -111,6 +114,42 @@ describe('bodyFrame (pure Animation selector / precedence ladder)', () => {
 		).toBe(3);
 		expect(bodyFrame({ ...REST, emote: hold, emoteT: 0 }).frameIndex).toBe(0);
 		expect(bodyFrame({ ...REST, emote: hold, emoteT: 99 }).frameIndex).toBe(0);
+	});
+
+	test('monster selector: an Attack phase names its body Animation, active reads "attack"', () => {
+		const attacking = (phase: MonsterBodyState['phase']): MonsterBodyState => ({
+			move: 'basic',
+			phase,
+			airborne: false,
+		});
+		expect(monsterAnimation(attacking('windup'))).toBe('windup');
+		expect(monsterAnimation(attacking('active'))).toBe('attack');
+		expect(monsterAnimation(attacking('recovery'))).toBe('recovery');
+	});
+
+	test('monster selector: off-ground reads airborne, but an Attack phase outranks it', () => {
+		expect(
+			monsterAnimation({ move: 'idle', phase: null, airborne: true }),
+		).toBe('airborne');
+		expect(
+			monsterAnimation({ move: 'basic', phase: 'active', airborne: true }),
+		).toBe('attack');
+	});
+
+	test('monster selector: everything else is idle', () => {
+		expect(
+			monsterAnimation({ move: 'idle', phase: null, airborne: false }),
+		).toBe('idle');
+	});
+
+	test('phase-bound frames sample by phase progress, never fps', () => {
+		expect(phaseFrameIndex(0, 2)).toBe(0);
+		expect(phaseFrameIndex(0.49, 2)).toBe(0);
+		expect(phaseFrameIndex(0.5, 2)).toBe(1);
+		expect(phaseFrameIndex(1, 2)).toBe(1);
+		expect(phaseFrameIndex(0.99, 3)).toBe(2);
+		expect(phaseFrameIndex(-0.5, 3)).toBe(0);
+		expect(phaseFrameIndex(0.7, 1)).toBe(0);
 	});
 
 	test('a per-animation frame rate overrides the global Emote rate', () => {
