@@ -1,18 +1,4 @@
-import {
-	ACTION_FLAG,
-	aabbOverlap,
-	entityBox,
-	guardOverlayCell,
-	guardOverlayGlyph,
-	guardRaised,
-	skillForSlot,
-	skillHitbox,
-	swingOverlay,
-	swingOverlayCell,
-	swingPhase,
-	swingProgress,
-} from '@mmo/core/combat';
-import type { AttackPhase, Entity } from '@mmo/core/entities';
+import { aabbOverlap, entityBox } from '@mmo/core/combat';
 import { itemLabel } from '@mmo/core/items';
 import { activeZone, type GameState } from '@mmo/core/protocol';
 import {
@@ -22,10 +8,14 @@ import {
 	type RenderStyle,
 	spriteForNpc,
 } from '@mmo/render';
-import type { Compositor } from '@mmo/render/compositor';
+import type { Compositor, RGBA as RGBA8 } from '@mmo/render/compositor';
 import {
 	drawDrops,
+	drawGuard,
 	drawPortals,
+	drawProjectiles,
+	drawSkillTelegraphs,
+	drawSwing,
 	drawTerrain,
 	sortActorsByDepth,
 } from '@mmo/render/scene';
@@ -46,6 +36,13 @@ const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 	RGBA.fromInts(r, g, b, a),
 );
 
+// Combat glyph colours as the compositor's 8-bit model. The client theme stays
+// the single source of truth (the HUD reads the same colours); pass 5 threads
+// these into the native scene draws instead of guessing a background.
+const COMBAT_TELEGRAPH: RGBA8 = C.telegraph.toInts();
+const COMBAT_GUARD: RGBA8 = C.guard.toInts();
+const COMBAT_PROJECTILE: RGBA8 = C.projectile.toInts();
+
 function drawText(
 	buf: CellBuffer<RGBA>,
 	x: number,
@@ -63,74 +60,14 @@ function drawText(
 	}
 }
 
-function swingRenderState(
-	e: Entity,
-): { phase: AttackPhase; progress: number } | null {
-	if (e.action && e.action.move !== 'idle')
-		return { phase: e.action.phase, progress: e.action.progress };
-	const phase = swingPhase(e.attackT);
-	return phase ? { phase, progress: swingProgress(e.attackT) } : null;
-}
-
-function drawSwing(
-	buf: CellBuffer<RGBA>,
-	e: Entity,
-	cam: { x: number; y: number },
-	sw: number,
-	sh: number,
-) {
-	if (e.weapon !== undefined) return;
-	const st = swingRenderState(e);
-	if (!st) return;
-	const move = e.action && e.action.move !== 'idle' ? e.action.move : 'basic';
-	const overlay = swingOverlay(move, st.phase, e.facing);
-	if (!overlay) return;
-	const cell = swingOverlayCell(e, st.phase);
-	const ax = Math.round(cell.x - cam.x);
-	const ay = Math.round(cell.y - cam.y);
-	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
-		buf.setCellWithAlphaBlending(
-			ax,
-			ay,
-			overlay.glyph,
-			C.telegraph,
-			C.transparent,
-		);
-}
-
-function isGuarding(e: Entity): boolean {
-	if (e.action) return (e.action.flags & ACTION_FLAG.guarding) !== 0;
-	return guardRaised(e.guardT ?? 0);
-}
-
-function drawGuard(
-	buf: CellBuffer<RGBA>,
-	e: Entity,
-	cam: { x: number; y: number },
-	sw: number,
-	sh: number,
-) {
-	if (!isGuarding(e)) return;
-	const cell = guardOverlayCell(e);
-	const ax = Math.round(cell.x - cam.x);
-	const ay = Math.round(cell.y - cam.y);
-	if (ax >= 0 && ax < sw && ay >= 0 && ay < sh)
-		buf.setCellWithAlphaBlending(
-			ax,
-			ay,
-			guardOverlayGlyph(),
-			C.guard,
-			C.transparent,
-		);
-}
-
 /**
  * Compose one live playfield frame into the shared sub-cell {@link Compositor}
  * in the accepted back-to-front pass order (ADR 0038), then encode to OpenTUI
- * exactly once. Terrain and world-floor visuals compose natively via the
- * `@mmo/render/scene` module and actors via {@link paintActor}; the remaining
- * producers (settled particles, combat, labels, bubbles) draw through the
- * {@link CompositorSink} bridge, so nothing but the final encode reaches OpenTUI.
+ * exactly once. Terrain, world-floor, and combat visuals compose natively via
+ * the `@mmo/render/scene` module and actors via {@link paintActor}; the
+ * remaining producers (settled and airborne particles, labels, bubbles) draw
+ * through the {@link CompositorSink} bridge, so nothing but the final encode
+ * reaches OpenTUI.
  */
 export function drawPlayfield(
 	buf: OptimizedBuffer,
@@ -191,46 +128,30 @@ export function drawPlayfield(
 	// Pass 4: the local Avatar (native), kept at the top of the crowd.
 	paintActor(compositor, p, cam);
 
-	// Pass 5: combat — swings, guards, telegraphs, airborne particles, projectiles.
+	// Pass 5: combat — swings, guards, skill telegraphs, airborne particles, and
+	// projectiles, composed natively so each glyph reveals the actors and Terrain
+	// beneath it. The airborne-particle slot stays bridged (#447 owns it).
 	for (const e of others) {
-		drawSwing(sink, e, cam, sw, sh);
-		drawGuard(sink, e, cam, sw, sh);
+		drawSwing(compositor, e, cam, COMBAT_TELEGRAPH);
+		drawGuard(compositor, e, cam, COMBAT_GUARD);
 	}
-	for (const m of zone.monsters) drawSwing(sink, m, cam, sw, sh);
-	drawSwing(sink, p, cam, sw, sh);
-	drawGuard(sink, p, cam, sw, sh);
+	for (const m of zone.monsters)
+		drawSwing(compositor, m, cam, COMBAT_TELEGRAPH);
+	drawSwing(compositor, p, cam, COMBAT_TELEGRAPH);
+	drawGuard(compositor, p, cam, COMBAT_GUARD);
 
-	for (let slot = 1; ; slot++) {
-		const skill = skillForSlot(player.class ?? 'warrior', slot);
-		if (!skill) break;
-		const cd = player.skillCooldowns?.[skill.id] ?? 0;
-		if (cd <= skill.cooldown - 0.15) continue;
-		const hb = skillHitbox(p, skill);
-		for (let yy = 0; yy < hb.h; yy++) {
-			for (let xx = 0; xx < hb.w; xx++) {
-				const px = Math.round(hb.x + xx - cam.x);
-				const py = Math.round(hb.y + yy - cam.y);
-				if (px >= 0 && px < sw && py >= 0 && py < sh)
-					sink.setCellWithAlphaBlending(
-						px,
-						py,
-						'✦',
-						C.telegraph,
-						C.transparent,
-					);
-			}
-		}
-	}
+	drawSkillTelegraphs(
+		compositor,
+		p,
+		player.class ?? 'warrior',
+		player.skillCooldowns ?? {},
+		cam,
+		COMBAT_TELEGRAPH,
+	);
 
 	fx.particles.draw(sink, cam, 'airborne');
 
-	for (const pr of zone.projectiles) {
-		const px = Math.round(pr.x - cam.x);
-		const py = Math.round(pr.y - cam.y);
-		if (px < 0 || px >= sw || py < 0 || py >= sh) continue;
-		const ch = pr.vx < 0 ? '◄' : pr.vx > 0 ? '►' : '●';
-		sink.setCellWithAlphaBlending(px, py, ch, C.projectile, C.transparent);
-	}
+	drawProjectiles(compositor, zone.projectiles, cam, COMBAT_PROJECTILE);
 
 	// Pass 6: identity, drop, and interaction labels.
 	const onPortal = zone.portals.find((pr) => aabbOverlap(entityBox(p), pr));

@@ -5,6 +5,12 @@ export {
 	type DepthKey,
 	sortActorsByDepth,
 } from './actor-order';
+export {
+	drawGuard,
+	drawProjectiles,
+	drawSkillTelegraphs,
+	drawSwing,
+} from './combat';
 export { drawTerrain } from './terrain';
 export {
 	DODGE_ECHO_LIFE_MS,
