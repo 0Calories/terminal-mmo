@@ -65,6 +65,43 @@ export function bodyFrame(
 	return { animationId: 'idle', frameIndex: 0 };
 }
 
+export type MonsterAnimationName =
+	| 'idle'
+	| 'windup'
+	| 'attack'
+	| 'recovery'
+	| 'airborne';
+
+export interface MonsterBodyState {
+	move: MoveId;
+	phase: AttackPhase | null;
+	airborne: boolean;
+}
+
+/**
+ * The pure Monster body-Animation selector (ADR 0039): an Attack phase names
+ * its telegraph Animation — the active phase reads `attack` — off-ground reads
+ * `airborne`, everything else rests on `idle`. Resolving a missing Animation
+ * back to `idle` is the sprite registry's job, so an idle-only Monster renders
+ * exactly as before.
+ */
+export function monsterAnimation(s: MonsterBodyState): MonsterAnimationName {
+	if (s.move === 'basic' && s.phase !== null)
+		return s.phase === 'active' ? 'attack' : s.phase;
+	if (s.airborne) return 'airborne';
+	return 'idle';
+}
+
+/**
+ * Samples a phase-bound Animation by phase *progress*, never fps (the ADR 0036
+ * weapon-swing rule): more frames smooth the telegraph but can never change
+ * its duration or desync it from the hitbox timing.
+ */
+export function phaseFrameIndex(progress: number, frameCount: number): number {
+	const count = Math.max(1, Math.floor(frameCount));
+	return Math.min(count - 1, Math.max(0, Math.floor(progress * count)));
+}
+
 export function mirrorAnchorX(
 	x: number,
 	width: number,
