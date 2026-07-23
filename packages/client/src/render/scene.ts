@@ -20,10 +20,10 @@ import {
 	type CellBuffer,
 	drawNameplates,
 	type RenderStyle,
-	renderZoneScene,
 	spriteForNpc,
 } from '@mmo/render';
 import type { Compositor } from '@mmo/render/compositor';
+import { drawDrops, drawPortals, drawTerrain } from '@mmo/render/scene';
 import { paintActor, paintNpc } from '@mmo/render/sprites';
 import { type OptimizedBuffer, RGBA } from '@opentui/core';
 import type { ParticleEngine } from '../particles';
@@ -117,9 +117,10 @@ function drawGuard(
 /**
  * Compose one live playfield frame into the shared sub-cell {@link Compositor}
  * in the accepted back-to-front pass order (ADR 0038), then encode to OpenTUI
- * exactly once. Actors compose natively via {@link paintActor}; every other
- * producer draws through the {@link CompositorSink} bridge, so nothing but the
- * final encode reaches OpenTUI.
+ * exactly once. Terrain and world-floor visuals compose natively via the
+ * `@mmo/render/scene` module and actors via {@link paintActor}; the remaining
+ * producers (settled particles, combat, labels, bubbles) draw through the
+ * {@link CompositorSink} bridge, so nothing but the final encode reaches OpenTUI.
  */
 export function drawPlayfield(
 	buf: OptimizedBuffer,
@@ -138,26 +139,18 @@ export function drawPlayfield(
 	const others = game.others ?? [];
 	const npcs = zone.npcs ?? [];
 	const sink = new CompositorSink(compositor);
+	compositor.clear();
 
-	// Pass 1 + portals: Terrain and portal glyphs (bridged; actors omitted so
-	// the native passes below own them and nothing double-draws).
-	renderZoneScene(
-		sink,
-		{ terrain: zone.terrain, portals: zone.portals, npcs: [], entities: [] },
-		cam,
-		STYLE,
-	);
+	// Pass 1: Terrain, composed natively as the sub-cell backdrop.
+	drawTerrain(compositor, zone.terrain, cam);
 
-	// Pass 2: world-floor visuals — settled particles, drop glyphs, dodge echoes.
+	// Pass 2: world-floor visuals below actors — portals, settled particles, drop
+	// glyphs, dodge echoes. Settled particles stay bridged until #447; their slot
+	// is preserved here.
+	drawPortals(compositor, zone.portals, cam);
 	fx.particles.draw(sink, cam, 'settled');
-	for (const d of zone.drops ?? []) {
-		const col = RARITY_RGBA[d.item.rarity];
-		const gx = Math.round(d.x + d.w / 2) - camX;
-		const gy = Math.round(d.y + d.h - 1) - camY;
-		if (gx >= 0 && gx < sw && gy >= 0 && gy < sh)
-			sink.setCellWithAlphaBlending(gx, gy, '◆', col, C.transparent);
-	}
-	fx.dodges.draw(sink, cam, sw, sh);
+	drawDrops(compositor, zone.drops ?? [], cam);
+	fx.dodges.draw(compositor, cam);
 
 	// Pass 3: NPCs, Monsters, and remote Avatars (native). NPCs draw behind the
 	// crowd; monsters and remote avatars are foot-depth sorted (full determinism

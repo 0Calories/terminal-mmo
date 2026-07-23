@@ -8,6 +8,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./compositor": "./src/compositor/index.ts",
+		"./scene": "./src/scene/index.ts",
 		"./sprites": "./src/sprites/index.ts"
 	},
 	"scripts": {
