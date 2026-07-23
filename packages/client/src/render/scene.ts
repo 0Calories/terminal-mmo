@@ -1,17 +1,13 @@
 import { aabbOverlap, entityBox } from '@mmo/core/combat';
-import { itemLabel } from '@mmo/core/items';
+import { itemLabel, RARITY_COLOR } from '@mmo/core/items';
 import { activeZone, type GameState } from '@mmo/core/protocol';
-import {
-	buildSceneStyle,
-	type CellBuffer,
-	drawNameplates,
-	type RenderStyle,
-	spriteForNpc,
-} from '@mmo/render';
+import { spriteForNpc } from '@mmo/render';
 import type { Compositor, RGBA as RGBA8 } from '@mmo/render/compositor';
 import {
 	drawDrops,
 	drawGuard,
+	drawLabel,
+	drawNameplates,
 	drawPortals,
 	drawProjectiles,
 	drawSkillTelegraphs,
@@ -25,16 +21,12 @@ import {
 	paintActor,
 	paintNpc,
 } from '@mmo/render/sprites';
-import { type OptimizedBuffer, RGBA } from '@opentui/core';
+import type { OptimizedBuffer } from '@opentui/core';
 import type { ParticleEngine } from '../particles';
-import { COLORS as C, RARITY_RGBA } from '../theme';
+import { COLORS as C } from '../theme';
 import { drawSpeechBubble } from '../ui/speech-bubble';
 import { CompositorSink, encodeToBuffer } from './compositor-sink';
 import type { DodgeTracker } from './dodge-echo';
-
-const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
-	RGBA.fromInts(r, g, b, a),
-);
 
 // Combat glyph colours as the compositor's 8-bit model. The client theme stays
 // the single source of truth (the HUD reads the same colours); pass 5 threads
@@ -43,30 +35,17 @@ const COMBAT_TELEGRAPH: RGBA8 = C.telegraph.toInts();
 const COMBAT_GUARD: RGBA8 = C.guard.toInts();
 const COMBAT_PROJECTILE: RGBA8 = C.projectile.toInts();
 
-function drawText(
-	buf: CellBuffer<RGBA>,
-	x: number,
-	y: number,
-	text: string,
-	fg: typeof C.hud,
-	sw: number,
-	sh: number,
-) {
-	if (y < 0 || y >= sh) return;
-	for (let i = 0; i < text.length; i++) {
-		const px = x + i;
-		if (px < 0 || px >= sw) continue;
-		buf.setCellWithAlphaBlending(px, y, text[i], fg, C.transparent);
-	}
-}
+// Interaction-label colours in the compositor's 8-bit model (pass 6).
+const LABEL_PORTAL: RGBA8 = C.portal.toInts();
+const LABEL_VENDOR: RGBA8 = C.vendor.toInts();
 
 /**
  * Compose one live playfield frame into the shared sub-cell {@link Compositor}
  * in the accepted back-to-front pass order (ADR 0038), then encode to OpenTUI
- * exactly once. Terrain, world-floor, and combat visuals compose natively via
- * the `@mmo/render/scene` module and actors via {@link paintActor}; the
- * remaining producers (settled and airborne particles, labels, bubbles) draw
- * through the {@link CompositorSink} bridge, so nothing but the final encode
+ * exactly once. Terrain, world-floor, combat, labels, and Speech bubbles compose
+ * natively via the `@mmo/render/scene` module and actors via {@link paintActor};
+ * only the settled and airborne particle slots still draw through the
+ * {@link CompositorSink} bridge (issue #447), so nothing but the final encode
  * reaches OpenTUI.
  */
 export function drawPlayfield(
@@ -153,19 +132,19 @@ export function drawPlayfield(
 
 	drawProjectiles(compositor, zone.projectiles, cam, COMBAT_PROJECTILE);
 
-	// Pass 6: identity, drop, and interaction labels.
+	// Pass 6: identity, drop, and interaction labels, composed natively so each
+	// glyph derives its backdrop from the scene beneath. Nameplates keep their
+	// deliberate opaque plate; interaction and drop labels reveal the real scene.
 	const onPortal = zone.portals.find((pr) => aabbOverlap(entityBox(p), pr));
 	if (onPortal) {
 		const dest = game.world.zones[onPortal.target]?.type ?? 'zone';
 		const label = `↵ e  enter the ${dest.charAt(0).toUpperCase()}${dest.slice(1)}`;
-		drawText(
-			sink,
+		drawLabel(
+			compositor,
 			Math.round(onPortal.x) - camX,
 			Math.round(onPortal.y) - camY - 1,
 			label,
-			C.portal,
-			sw,
-			sh,
+			LABEL_PORTAL,
 		);
 	}
 	const onNpc = npcs.find((n) => aabbOverlap(entityBox(p), n));
@@ -174,28 +153,32 @@ export function drawPlayfield(
 		const sx =
 			Math.round(onNpc.x + Math.floor((onNpc.w - sprite.w) / 2)) - camX;
 		const sy = Math.round(onNpc.y + onNpc.h - sprite.h) - camY;
-		drawText(sink, sx, sy - 1, `↵ e  talk to ${onNpc.name}`, C.vendor, sw, sh);
+		drawLabel(
+			compositor,
+			sx,
+			sy - 1,
+			`↵ e  talk to ${onNpc.name}`,
+			LABEL_VENDOR,
+		);
 	}
 	for (const d of zone.drops ?? []) {
-		const col = RARITY_RGBA[d.item.rarity];
+		const col = RARITY_COLOR[d.item.rarity];
 		const gx = Math.round(d.x + d.w / 2) - camX;
 		const gy = Math.round(d.y + d.h - 1) - camY;
 		const label = itemLabel(d.item);
-		drawText(
-			sink,
+		drawLabel(
+			compositor,
 			gx - Math.floor(label.length / 2),
 			gy - 1,
 			label,
 			col,
-			sw,
-			sh,
 		);
 	}
-	drawNameplates(sink, others, cam, zone.terrain, STYLE);
+	drawNameplates(compositor, others, cam);
 
-	// Pass 7: speech bubbles, frontmost.
-	for (const e of others) drawSpeechBubble(sink, e, cam, zone.terrain, sw, sh);
-	drawSpeechBubble(sink, p, cam, zone.terrain, sw, sh);
+	// Pass 7: speech bubbles, frontmost — composed natively over the real scene.
+	for (const e of others) drawSpeechBubble(compositor, e, cam, sw, sh);
+	drawSpeechBubble(compositor, p, cam, sw, sh);
 
 	// Encode the composed surface into OpenTUI exactly once.
 	encodeToBuffer(compositor, buf);

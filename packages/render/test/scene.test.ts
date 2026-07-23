@@ -1,7 +1,9 @@
 import { expect, test } from 'bun:test';
 import {
 	type Drop,
+	darken,
 	type Entity,
+	type Projectile,
 	SCENE_COLORS,
 	type Terrain,
 } from '@mmo/core/entities';
@@ -12,13 +14,18 @@ import {
 	type DodgeEcho,
 	drawDodgeEchoes,
 	drawDrops,
+	drawLabel,
+	drawNameplates,
 	drawPortals,
+	drawProjectiles,
 	drawTerrain,
 } from '@mmo/render/scene';
 import { paintActor } from '@mmo/render/sprites';
 
 const TERRAIN_FG = SCENE_COLORS.terrainFg;
 const NO_CAM = { x: 0, y: 0 };
+const solidField = (w: number, h: number): Terrain =>
+	parseTerrain(Array(h).fill('#'.repeat(w)));
 
 function eq(a: RGBA, b: RGBA): boolean {
 	return a[0] === b[0] && a[1] === b[1] && a[2] === b[2] && a[3] === b[3];
@@ -183,4 +190,52 @@ test('a fully faded echo draws nothing', () => {
 
 	for (const row of c.surface())
 		for (const cell of row) expect(cell.char).toBe(' ');
+});
+
+const VENDOR: RGBA = [255, 200, 90, 255];
+const PROJECTILE: RGBA = [255, 120, 80, 255];
+
+test('an interaction label composes above combat and derives its backdrop from the composed scene', () => {
+	const c = new Compositor(8, 4);
+	drawTerrain(c, solidField(8, 4), NO_CAM);
+	// Pass 5: a combat projectile occupies the cell.
+	drawProjectiles(
+		c,
+		[{ x: 2, y: 1, vx: 1 } as unknown as Projectile],
+		NO_CAM,
+		PROJECTILE,
+	);
+	// Pass 6: a label over the same cell, drawn after combat.
+	drawLabel(c, 2, 1, 'X', VENDOR);
+
+	const cell = c.cell(2, 1);
+	// The label wins the cell over the combat glyph beneath it.
+	expect(cell.char).toBe('X');
+	expect(eq(cell.fg, VENDOR)).toBe(true);
+	// Its backdrop is the real composed terrain, never a guessed background.
+	expect(eq(cell.bg, TERRAIN_FG)).toBe(true);
+});
+
+test('a native nameplate plants an opaque plate that does not reveal the scene beneath', () => {
+	const c = new Compositor(20, 12);
+	drawTerrain(c, solidField(20, 12), NO_CAM);
+	drawNameplates(c, [chaser({ id: 1, x: 6, y: 3, name: 'Ann' })], NO_CAM);
+
+	let found: { x: number; y: number } | null = null;
+	const rows = c.surface();
+	for (let y = 0; y < rows.length && !found; y++)
+		for (let x = 0; x < rows[y].length; x++)
+			if (rows[y][x].char === 'A') {
+				found = { x, y };
+				break;
+			}
+	expect(found).not.toBeNull();
+
+	const cell = c.cell(found!.x, found!.y);
+	expect(cell.char).toBe('A');
+	// The plate is a deliberate opaque chip: ink and darkened plate colour, not a
+	// frosted reveal of the terrain composed beneath it.
+	expect(eq(cell.fg, SCENE_COLORS.nameplate)).toBe(true);
+	expect(eq(cell.bg, darken(SCENE_COLORS.nameplate))).toBe(true);
+	expect(eq(cell.bg, TERRAIN_FG)).toBe(false);
 });

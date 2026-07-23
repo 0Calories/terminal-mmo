@@ -1,9 +1,16 @@
-import { BOX, type Entity, type Terrain } from '@mmo/core/entities';
-import { isSolid } from '@mmo/core/physics';
-import { type CellBuffer, spriteFor } from '@mmo/render';
-import type { RGBA } from '@opentui/core';
+import { BOX, type Entity } from '@mmo/core/entities';
+import { spriteFor } from '@mmo/render';
+import type { Compositor, RGBA } from '@mmo/render/compositor';
 import { COLORS as C } from '../theme';
 import { layoutBubble } from './bubble';
+
+const BUBBLE_FG: RGBA = C.bubbleFg.toInts();
+const BUBBLE_BORDER: RGBA = C.bubbleBorder.toInts();
+// Translucent frost (alpha 128) laid over the composed scene, and the opaque
+// `▒` shade for empty interior cells. Both read as the same frosted tone over
+// terrain (ADR 0016).
+const BUBBLE_BG: RGBA = C.bubbleBg.toInts();
+const BUBBLE_SHADE: RGBA = C.bubbleShade.toInts();
 
 type BoxCell = { ch: string; fg: RGBA } | null;
 
@@ -25,10 +32,9 @@ function textContent(lines: readonly string[], fg: RGBA): BoxContent {
 }
 
 function drawOverheadBox(
-	buf: CellBuffer<RGBA>,
+	compositor: Compositor,
 	e: Entity,
 	cam: { x: number; y: number },
-	terrain: Terrain,
 	sw: number,
 	sh: number,
 	content: BoxContent,
@@ -39,17 +45,12 @@ function drawOverheadBox(
 	const boxW = content.w + 2;
 	const boxH = content.h + 2;
 
-	const camX = Math.round(cam.x);
-	const camY = Math.round(cam.y);
 	const cx = e.x + BOX.w / 2 - cam.x;
 	const tailY = top - 2;
 	const tailX = Math.round(cx);
 	const topY = tailY - boxH;
 	let left = Math.round(cx - boxW / 2);
 	left = Math.max(0, Math.min(left, sw - boxW));
-
-	const baseAt = (px: number, py: number) =>
-		isSolid(terrain, px + camX, py + camY) ? C.terrainFg : C.bg;
 
 	for (let ry = 0; ry < boxH; ry++) {
 		const py = topY + ry;
@@ -60,36 +61,38 @@ function drawOverheadBox(
 			if (px < 0 || px >= sw) continue;
 			const lastCol = rx === boxW - 1;
 			const isBorder = ry === 0 || lastRow || rx === 0 || lastCol;
-			const base = baseAt(px, py);
 			if (isBorder) {
 				let ch = '│';
 				if (ry === 0) ch = rx === 0 ? '╭' : lastCol ? '╮' : '─';
 				else if (lastRow) ch = rx === 0 ? '╰' : lastCol ? '╯' : '─';
-				buf.setCell(px, py, ch, border, base);
+				compositor.stampGlyph(px, py, ch, border);
 				continue;
 			}
 			const c = content.cell(rx - 1, ry - 1);
 			if (c) {
-				buf.setCell(px, py, ' ', base, base);
-				buf.setCellWithAlphaBlending(px, py, c.ch, c.fg, C.bubbleBg);
+				// Frost the interior as translucent sub-cell pixels over the composed
+				// scene, then stamp the glyph so it derives that frosted backdrop —
+				// ADR 0016's look composed against the real pixels (ADR 0038), never a
+				// sampled-terrain guess.
+				compositor.fillPixelRect(px * 2, py * 2, 2, 2, BUBBLE_BG);
+				compositor.stampGlyph(px, py, c.ch, c.fg);
 			} else {
-				buf.setCell(px, py, '▒', C.bubbleShade, base);
+				compositor.stampGlyph(px, py, '▒', BUBBLE_SHADE);
 			}
 		}
 	}
 	if (tailY >= 0 && tailY < sh && tailX >= 0 && tailX < sw)
-		buf.setCell(tailX, tailY, '▼', border, baseAt(tailX, tailY));
+		compositor.stampGlyph(tailX, tailY, '▼', border);
 }
 
 export function drawSpeechBubble(
-	buf: CellBuffer<RGBA>,
+	compositor: Compositor,
 	e: Entity,
 	cam: { x: number; y: number },
-	terrain: Terrain,
 	sw: number,
 	sh: number,
 ) {
 	if (!e.bubble) return;
-	const content = textContent(layoutBubble(e.bubble), C.bubbleFg);
-	drawOverheadBox(buf, e, cam, terrain, sw, sh, content, C.bubbleBorder);
+	const content = textContent(layoutBubble(e.bubble), BUBBLE_FG);
+	drawOverheadBox(compositor, e, cam, sw, sh, content, BUBBLE_BORDER);
 }

@@ -11,6 +11,7 @@ export {
 	drawSkillTelegraphs,
 	drawSwing,
 } from './combat';
+export { drawLabel, drawNameplates } from './labels';
 export { drawTerrain } from './terrain';
 export {
 	DODGE_ECHO_LIFE_MS,
