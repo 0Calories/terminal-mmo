@@ -12,6 +12,7 @@ export const levelup: EffectDef = {
 		maxLifeMs: 1000,
 		launchSpeed: 16,
 		launchSpread: 12,
+		primitive: 'glyph',
 		glyphs: {
 			airborne: ['★', '✦', '✧', '•', '＊'],
 			rest: ['·'],

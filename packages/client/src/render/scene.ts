@@ -25,7 +25,7 @@ import type { OptimizedBuffer } from '@opentui/core';
 import type { ParticleEngine } from '../particles';
 import { COLORS as C } from '../theme';
 import { drawSpeechBubble } from '../ui/speech-bubble';
-import { CompositorSink, encodeToBuffer } from './compositor-sink';
+import { encodeToBuffer } from './compositor-sink';
 import type { DodgeTracker } from './dodge-echo';
 
 // Combat glyph colours as the compositor's 8-bit model. The client theme stays
@@ -42,11 +42,10 @@ const LABEL_VENDOR: RGBA8 = C.vendor.toInts();
 /**
  * Compose one live playfield frame into the shared sub-cell {@link Compositor}
  * in the accepted back-to-front pass order (ADR 0038), then encode to OpenTUI
- * exactly once. Terrain, world-floor, combat, labels, and Speech bubbles compose
- * natively via the `@mmo/render/scene` module and actors via {@link paintActor};
- * only the settled and airborne particle slots still draw through the
- * {@link CompositorSink} bridge (issue #447), so nothing but the final encode
- * reaches OpenTUI.
+ * exactly once. Every pass — Terrain, world-floor, actors, combat, Particles,
+ * labels, and Speech bubbles — composes natively via the `@mmo/render/scene`
+ * module, {@link paintActor}, and the {@link ParticleEngine}, so nothing but the
+ * final encode reaches OpenTUI.
  */
 export function drawPlayfield(
 	buf: OptimizedBuffer,
@@ -64,17 +63,15 @@ export function drawPlayfield(
 	const camY = Math.round(cam.y);
 	const others = game.others ?? [];
 	const npcs = zone.npcs ?? [];
-	const sink = new CompositorSink(compositor);
 	compositor.clear();
 
 	// Pass 1: Terrain, composed natively as the sub-cell backdrop.
 	drawTerrain(compositor, zone.terrain, cam);
 
 	// Pass 2: world-floor visuals below actors — portals, settled particles, drop
-	// glyphs, dodge echoes. Settled particles stay bridged until #447; their slot
-	// is preserved here.
+	// glyphs, dodge echoes.
 	drawPortals(compositor, zone.portals, cam);
-	fx.particles.draw(sink, cam, 'settled');
+	fx.particles.draw(compositor, cam, 'settled');
 	drawDrops(compositor, zone.drops ?? [], cam);
 	fx.dodges.draw(compositor, cam);
 
@@ -109,7 +106,7 @@ export function drawPlayfield(
 
 	// Pass 5: combat — swings, guards, skill telegraphs, airborne particles, and
 	// projectiles, composed natively so each glyph reveals the actors and Terrain
-	// beneath it. The airborne-particle slot stays bridged (#447 owns it).
+	// beneath it.
 	for (const e of others) {
 		drawSwing(compositor, e, cam, COMBAT_TELEGRAPH);
 		drawGuard(compositor, e, cam, COMBAT_GUARD);
@@ -128,7 +125,7 @@ export function drawPlayfield(
 		COMBAT_TELEGRAPH,
 	);
 
-	fx.particles.draw(sink, cam, 'airborne');
+	fx.particles.draw(compositor, cam, 'airborne');
 
 	drawProjectiles(compositor, zone.projectiles, cam, COMBAT_PROJECTILE);
 

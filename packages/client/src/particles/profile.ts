@@ -2,6 +2,14 @@ import type { Tint } from '@mmo/core/entities';
 
 export type Stage = 'airborne' | 'rest' | 'fade';
 
+/**
+ * How a profile's specks render (ADR 0038). `pixel` specks are fine sub-cell
+ * colours composited translucently against the composed scene; `glyph` specks
+ * stamp a character snapped to the nearest cell, deriving their backdrop from
+ * the scene beneath. Every profile makes this choice explicitly.
+ */
+export type ParticlePrimitive = 'pixel' | 'glyph';
+
 export interface ColorStop {
 	t: number;
 	r: number;
@@ -18,7 +26,9 @@ export interface Profile {
 	maxLifeMs: number;
 	launchSpeed: number;
 	launchSpread: number;
-	glyphs: { airborne: string[]; rest: string[] };
+	primitive: ParticlePrimitive;
+	/** Character set for `glyph` profiles; `pixel` profiles render no glyph. */
+	glyphs?: { airborne: string[]; rest: string[] };
 	colors: ColorStop[];
 }
 

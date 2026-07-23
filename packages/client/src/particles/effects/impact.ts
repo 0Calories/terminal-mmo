@@ -10,6 +10,7 @@ export const impact: EffectDef = {
 		maxLifeMs: 360,
 		launchSpeed: 26,
 		launchSpread: 16,
+		primitive: 'glyph',
 		glyphs: {
 			airborne: ['✦', '✧', '•', '◦', '＊'],
 			rest: ['·'],
