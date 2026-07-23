@@ -44,14 +44,17 @@ a compatibility renderer.
 - A terminal cell can carry only two colours. When composition exposes more, colour
   candidates survive in front-to-back order and lower Pixels map to the surviving
   colour with the smallest squared-RGB distance. Stable RGBA ordering resolves the
-  final tie.
+  final tie. An exposed transparent quadrant is the scene backdrop showing through:
+  it always survives as the cell background, so an empty quadrant never adopts a
+  nearby opaque colour.
 - A Glyph stamp is an atomic cell representation. Without an authored background,
   it takes the colour covering the most underlying Pixels; equal coverage prefers
   the rearmost colour, then stable RGBA order. An authored background stays opaque.
 - The frontmost representation owns a cell. A front Glyph replaces a lower Pixel
   glyph; front Pixel content replaces a lower Glyph and retains only its flattened
-  backdrop. Font-shape-aware merging is impossible to do consistently across
-  terminal emulators.
+  remnant — the Glyph's foreground at its approximate ink coverage over its
+  backdrop, approximating its rendered look. Font-shape-aware merging is impossible
+  to do consistently across terminal emulators.
 - Sprite Glyph stamps must occupy exactly one terminal column. Dynamic world text
   is grapheme- and display-width-aware instead: a two-column grapheme is one atomic
   overlay across two cells, and Speech bubbles wrap by displayed columns.

@@ -122,7 +122,8 @@ test('a native actor composes over terrain and reveals the composed backdrop, no
 			if (
 				cell.char !== '█' &&
 				cell.char !== ' ' &&
-				cell.bg.every((n, i) => n === TERRAIN_BG[i])
+				// The full-block stamp's remnant is its visible foreground colour.
+				cell.bg.every((n, i) => n === TERRAIN_FG[i])
 			)
 				revealed++;
 	// At least one partial-coverage actor cell shows the composed terrain beneath.
@@ -138,6 +139,7 @@ test('a front stamp wins the cell and derives its backdrop from the composed und
 
 	const cell = compositor.cell(0, 0);
 	expect(cell.char).toBe('✦');
-	// The backdrop is the real terrain beneath, not a passed-in guess.
-	expect([...cell.bg]).toEqual([...TERRAIN_BG]);
+	// The backdrop is the terrain block's remnant — its visible foreground — not
+	// a passed-in guess.
+	expect([...cell.bg]).toEqual([...TERRAIN_FG]);
 });

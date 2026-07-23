@@ -26,9 +26,10 @@ export function encodeToBuffer(
 	for (let y = 0; y < compositor.heightCells; y++) {
 		for (let x = 0; x < compositor.widthCells; x++) {
 			compositor.readCellInto(x, y, out);
-			const bg = out.bg[3] > 0 ? out.bg : SCENE_BG;
-			// Flatten fg over bg in place; `out.fg` is fresh scratch each cell.
-			compositeOverInto(out.fg, bg, out.fg);
+			// Flatten a transparent or translucent bg onto the sky, then fg over bg,
+			// both in place; `out` is fresh scratch each cell.
+			if (out.bg[3] !== 255) compositeOverInto(out.bg, SCENE_BG, out.bg);
+			compositeOverInto(out.fg, out.bg, out.fg);
 			// A wide grapheme's lead cell emits the two-column glyph; its
 			// continuation cell is already covered by that glyph, so blank it and
 			// let the terminal's width advance own the neighbour.
@@ -38,7 +39,7 @@ export function encodeToBuffer(
 				y,
 				char,
 				RGBA.fromInts(out.fg[0], out.fg[1], out.fg[2], 255),
-				RGBA.fromInts(bg[0], bg[1], bg[2], 255),
+				RGBA.fromInts(out.bg[0], out.bg[1], out.bg[2], 255),
 			);
 		}
 	}

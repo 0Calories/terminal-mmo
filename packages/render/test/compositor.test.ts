@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { Compositor, type RGBA } from '../src/compositor';
+import { Compositor, compositeOver, type RGBA } from '../src/compositor';
 
 const RED: RGBA = [255, 0, 0, 255];
 const GREEN: RGBA = [0, 255, 0, 255];
@@ -87,6 +87,20 @@ describe('law 4: two-colour reduction', () => {
 		// MID ties -> maps to smaller RGBA (BLACK/fg, bit0); GRAY->bg; BLACK->fg(4,8).
 		expect(cell.char).toBe('▙');
 	});
+
+	test('an exposed transparent quadrant survives as the background', () => {
+		// A foot pixel beside empty air atop a ground half: the empty quadrant must
+		// read as the scene backdrop, never adopt the nearby ground colour.
+		const c = new Compositor(1, 1);
+		const GROUND: RGBA = [62, 74, 85, 255];
+		c.fillPixelRect(0, 1, 2, 1, GROUND); // bottom half: ground surface
+		c.setPixel(0, 0, RED); // top-left: foot; top-right stays empty
+		const cell = c.cell(0, 0);
+		expect(cell.fg).toEqual(RED);
+		expect(cell.bg).toEqual(TRANSPARENT);
+		// Ground is nearer black than RED, so it joins the transparent background.
+		expect(cell.char).toBe('▘');
+	});
 });
 
 describe('law 5: glyph backdrop', () => {
@@ -136,15 +150,29 @@ describe('law 6: representation precedence', () => {
 		expect(cell.bg).toEqual(GREEN);
 	});
 
-	test('front pixel content replaces a lower glyph, retaining its backdrop', () => {
+	test('front pixel content replaces a lower glyph, retaining its remnant', () => {
 		const c = new Compositor(1, 1);
 		const backdrop: RGBA = [20, 20, 20, 255];
 		c.stampGlyph(0, 0, 'H', WHITE, backdrop);
 		c.setPixel(0, 0, RED); // drawn after the glyph -> pixels win
 		const cell = c.cell(0, 0);
-		expect(cell.char).toBe('▘'); // TL foreground over the glyph backdrop
+		expect(cell.char).toBe('▘'); // TL foreground over the glyph remnant
 		expect(cell.fg).toEqual(RED);
-		expect(cell.bg).toEqual(backdrop);
+		// The remnant approximates the glyph's rendered look: its foreground at
+		// its ink coverage over its backdrop, not the bare backdrop.
+		expect(cell.bg).toEqual(compositeOver([255, 255, 255, 128], backdrop));
+	});
+
+	test('pixels crossing a glyph reveal its remnant, not the sky', () => {
+		const c = new Compositor(1, 1);
+		const PORTAL: RGBA = [120, 80, 200, 255];
+		c.stampGlyph(0, 0, '▒', PORTAL); // over empty sky: derived backdrop is clear
+		c.setPixel(0, 0, WHITE);
+		c.setPixel(0, 1, WHITE); // left column drawn over the portal cell
+		const cell = c.cell(0, 0);
+		expect(cell.char).toBe('▌');
+		expect(cell.fg).toEqual(WHITE);
+		expect(cell.bg).toEqual([120, 80, 200, 128]);
 	});
 });
 

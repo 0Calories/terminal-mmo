@@ -1,6 +1,7 @@
 import { glyphFromQuadrants } from '../quadrant';
 import {
 	compositeOver,
+	compositeOverInto,
 	type MutableRGBA,
 	type RGBA,
 	TRANSPARENT,
@@ -49,6 +50,33 @@ const NONE = -1;
 const WIDE_NONE = 0;
 const WIDE_LEAD = 1;
 const WIDE_CONT = 2;
+
+/**
+ * Approximate fraction of a cell a glyph's foreground ink covers, used to
+ * flatten a glyph into the Pixel remnant it leaves beneath itself. Blocks and
+ * shades are exact; every other glyph assumes half coverage.
+ */
+const GLYPH_COVERAGE: Record<string, number> = {
+	' ': 0,
+	'█': 1,
+	'▓': 0.75,
+	'▒': 0.5,
+	'░': 0.25,
+	'▀': 0.5,
+	'▄': 0.5,
+	'▌': 0.5,
+	'▐': 0.5,
+	'▚': 0.5,
+	'▞': 0.5,
+	'▘': 0.25,
+	'▝': 0.25,
+	'▖': 0.25,
+	'▗': 0.25,
+	'▙': 0.75,
+	'▛': 0.75,
+	'▜': 0.75,
+	'▟': 0.75,
+};
 
 function assertPositiveInt(name: string, value: number): void {
 	if (!Number.isInteger(value) || value <= 0) {
@@ -100,6 +128,9 @@ export class Compositor {
 	private readonly distCount = new Int32Array(4);
 	/** Backdrop scratch for the stamp path's dominant-coverage derivation. */
 	private readonly scratchBackdrop: MutableRGBA = [0, 0, 0, 0];
+	/** Scratch pair for the stamp path's flattened glyph remnant. */
+	private readonly scratchInkFg: MutableRGBA = [0, 0, 0, 0];
+	private readonly scratchRemnant: MutableRGBA = [0, 0, 0, 0];
 	/** Cell scratch backing the object-returning {@link cell}/{@link surface}. */
 	private readonly scratchOut = createCellOut();
 
@@ -192,9 +223,14 @@ export class Compositor {
 			this.dominantBackdropInto(cellX, cellY, this.scratchBackdrop);
 			backdrop = this.scratchBackdrop;
 		}
-		// The glyph is atomic: flatten the Pixels beneath to its backdrop so later
+		// The glyph is atomic: flatten the Pixels beneath to its remnant so later
 		// Pixels composite against it and cover only their own sub-cells.
-		this.flattenCell(cellX, cellY, backdrop, order);
+		this.flattenCell(
+			cellX,
+			cellY,
+			this.glyphRemnant(char, fg, backdrop),
+			order,
+		);
 
 		const ci = cellY * this.widthCells + cellX;
 		this.glyphChar[ci] = char;
@@ -233,7 +269,12 @@ export class Compositor {
 			this.dominantBackdropInto(cellX, cellY, this.scratchBackdrop);
 			leadBg = this.scratchBackdrop;
 		}
-		this.flattenCell(cellX, cellY, leadBg, leadOrder);
+		this.flattenCell(
+			cellX,
+			cellY,
+			this.glyphRemnant(grapheme, fg, leadBg),
+			leadOrder,
+		);
 		const li = cellY * this.widthCells + cellX;
 		this.glyphChar[li] = grapheme;
 		this.writeColor(this.glyphFg, li, fg);
@@ -248,7 +289,14 @@ export class Compositor {
 			this.dominantBackdropInto(cellX + 1, cellY, this.scratchBackdrop);
 			contBg = this.scratchBackdrop;
 		}
-		this.flattenCell(cellX + 1, cellY, contBg, contOrder);
+		// The continuation cell is visually covered by the wide glyph's right half,
+		// so it flattens to the same remnant as the lead.
+		this.flattenCell(
+			cellX + 1,
+			cellY,
+			this.glyphRemnant(grapheme, fg, contBg),
+			contOrder,
+		);
 		const ri = cellY * this.widthCells + cellX + 1;
 		this.glyphChar[ri] = ' ';
 		this.writeColor(this.glyphFg, ri, fg);
@@ -337,6 +385,24 @@ export class Compositor {
 		this.pixels[off + 2] = out[2];
 		this.pixels[off + 3] = out[3];
 		this.pixelOrder[si] = order;
+	}
+
+	/**
+	 * The flattened colour a glyph leaves in the Pixels beneath it: its foreground
+	 * at its ink coverage over its backdrop, approximating the glyph's rendered
+	 * look. Front Pixels drawn later reveal this remnant instead of the bare
+	 * backdrop — an actor crossing a portal shows the portal colour, not the sky
+	 * behind it. A blank glyph covers nothing and leaves the backdrop itself.
+	 */
+	private glyphRemnant(char: string, fg: RGBA, backdrop: RGBA): RGBA {
+		const coverage = GLYPH_COVERAGE[char] ?? 0.5;
+		if (coverage === 0) return backdrop;
+		this.scratchInkFg[0] = fg[0];
+		this.scratchInkFg[1] = fg[1];
+		this.scratchInkFg[2] = fg[2];
+		this.scratchInkFg[3] = Math.round(fg[3] * coverage);
+		compositeOverInto(this.scratchInkFg, backdrop, this.scratchRemnant);
+		return this.scratchRemnant;
 	}
 
 	private flattenCell(
@@ -483,15 +549,30 @@ export class Compositor {
 			return;
 		}
 
-		// Survivors are the two frontmost distinct colours (most recently written);
-		// stable RGBA order breaks any recency tie. Select the top two directly
-		// rather than sorting, so nothing is allocated.
-		let fgIdx = 0;
-		for (let j = 1; j < n; j++) if (this.distBetter(j, fgIdx)) fgIdx = j;
-		let bgIdx = -1;
+		// An exposed transparent quadrant is the scene backdrop showing through: it
+		// always survives as the background, so an empty quadrant never adopts a
+		// nearby opaque colour (a foot's air neighbour must read as sky, not
+		// ground). Otherwise survivors are the two frontmost distinct colours (most
+		// recently written); stable RGBA order breaks any recency tie. Select
+		// directly rather than sorting, so nothing is allocated.
+		let transparentIdx = -1;
 		for (let j = 0; j < n; j++) {
-			if (j === fgIdx) continue;
-			if (bgIdx < 0 || this.distBetter(j, bgIdx)) bgIdx = j;
+			if (p[this.quadOff[this.distRep[j]] + 3] === 0) {
+				transparentIdx = j;
+				break;
+			}
+		}
+		let fgIdx = -1;
+		for (let j = 0; j < n; j++) {
+			if (j === transparentIdx) continue;
+			if (fgIdx < 0 || this.distBetter(j, fgIdx)) fgIdx = j;
+		}
+		let bgIdx = transparentIdx;
+		if (bgIdx < 0) {
+			for (let j = 0; j < n; j++) {
+				if (j === fgIdx) continue;
+				if (bgIdx < 0 || this.distBetter(j, bgIdx)) bgIdx = j;
+			}
 		}
 		const fgOff = this.quadOff[this.distRep[fgIdx]];
 		const bgOff = this.quadOff[this.distRep[bgIdx]];

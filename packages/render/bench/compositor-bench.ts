@@ -112,9 +112,9 @@ function encode(c: Compositor): number {
 	for (let y = 0; y < c.heightCells; y++) {
 		for (let x = 0; x < c.widthCells; x++) {
 			c.readCellInto(x, y, out);
-			const bg = out.bg[3] > 0 ? out.bg : SCENE_BG;
-			compositeOverInto(out.fg, bg, fg);
-			sum += out.char.charCodeAt(0) + fg[0] + bg[0] + (out.wide ? 1 : 0);
+			if (out.bg[3] !== 255) compositeOverInto(out.bg, SCENE_BG, out.bg);
+			compositeOverInto(out.fg, out.bg, fg);
+			sum += out.char.charCodeAt(0) + fg[0] + out.bg[0] + (out.wide ? 1 : 0);
 		}
 	}
 	return sum;

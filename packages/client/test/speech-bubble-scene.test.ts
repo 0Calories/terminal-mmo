@@ -97,9 +97,13 @@ test('a bubble is frontmost: it wins its cell over a combat glyph and frosts the
 	const cell = c.cell(at.x, at.y);
 	// The bubble is frontmost — its text glyph wins over the combat glyph.
 	expect(cell.char).toBe('h');
-	// Frosted over the real terrain the combat glyph sat on, not a guess.
+	// Frosted over the combat glyph's remnant on the real terrain, not a guess.
 	expect(cell.bg[3]).toBe(255);
-	expect(eq(cell.bg, compositeOver(FROST, TERRAIN_FG))).toBe(true);
+	const remnant = compositeOver(
+		[TELEGRAPH[0], TELEGRAPH[1], TELEGRAPH[2], 128],
+		TERRAIN_FG,
+	);
+	expect(eq(cell.bg, compositeOver(FROST, remnant))).toBe(true);
 });
 
 test('a wide grapheme in a bubble renders as one atomic two-cell overlay, frosted', () => {

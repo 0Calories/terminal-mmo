@@ -11,7 +11,7 @@ import {
 } from '@mmo/core/entities';
 import { RARITY_COLOR } from '@mmo/core/items';
 import { parseTerrain } from '@mmo/core/physics';
-import { Compositor, type RGBA } from '@mmo/render/compositor';
+import { Compositor, compositeOver, type RGBA } from '@mmo/render/compositor';
 import {
 	type DodgeEcho,
 	drawDodgeEchoes,
@@ -214,8 +214,11 @@ test('an interaction label composes above combat and derives its backdrop from t
 	// The label wins the cell over the combat glyph beneath it.
 	expect(cell.char).toBe('X');
 	expect(eq(cell.fg, VENDOR)).toBe(true);
-	// Its backdrop is the real composed terrain, never a guessed background.
-	expect(eq(cell.bg, TERRAIN_FG)).toBe(true);
+	// Its backdrop is the composed scene beneath — the projectile glyph's remnant
+	// over the terrain, never a guessed background.
+	expect(eq(cell.bg, compositeOver([255, 120, 80, 128], TERRAIN_FG))).toBe(
+		true,
+	);
 });
 
 test('a native nameplate plants an opaque plate that does not reveal the scene beneath', () => {
