@@ -1,6 +1,11 @@
 {
 	"monsters": [
 		{
+			"id": "slime",
+			"behavior": "slime",
+			"name": "Slime"
+		},
+		{
 			"id": "chaser",
 			"behavior": "chaser",
 			"name": "Chaser"

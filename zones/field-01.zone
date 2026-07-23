@@ -2,7 +2,7 @@
   "name": "Green Verge",
   "type": "field",
   "spawns": {
-    "a": "chaser"
+    "a": "slime"
   },
   "portals": {
     "P": {
