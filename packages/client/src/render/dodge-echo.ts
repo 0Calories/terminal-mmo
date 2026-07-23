@@ -1,7 +1,7 @@
 import { dodgePhase } from '@mmo/core/combat';
 import { BOX, type Entity } from '@mmo/core/entities';
-import { spriteFor } from '@mmo/render';
-import { type OptimizedBuffer, RGBA } from '@opentui/core';
+import { type CellBuffer, spriteFor } from '@mmo/render';
+import { RGBA } from '@opentui/core';
 import { COLORS as C } from '../theme';
 
 export const SAMPLE_INTERVAL_MS = 90;
@@ -94,7 +94,7 @@ export class DodgeTracker {
 	}
 
 	draw(
-		buf: OptimizedBuffer,
+		buf: CellBuffer<RGBA>,
 		cam: { x: number; y: number },
 		sw: number,
 		sh: number,
@@ -104,7 +104,7 @@ export class DodgeTracker {
 }
 
 export function drawDodgeEchoes(
-	buf: OptimizedBuffer,
+	buf: CellBuffer<RGBA>,
 	list: readonly DodgeEcho[],
 	cam: { x: number; y: number },
 	sw: number,

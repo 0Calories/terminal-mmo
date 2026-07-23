@@ -1,7 +1,7 @@
 import { BOX, type Entity, type Terrain } from '@mmo/core/entities';
 import { isSolid } from '@mmo/core/physics';
-import { spriteFor } from '@mmo/render';
-import type { OptimizedBuffer, RGBA } from '@opentui/core';
+import { type CellBuffer, spriteFor } from '@mmo/render';
+import type { RGBA } from '@opentui/core';
 import { COLORS as C } from '../theme';
 import { layoutBubble } from './bubble';
 
@@ -25,7 +25,7 @@ function textContent(lines: readonly string[], fg: RGBA): BoxContent {
 }
 
 function drawOverheadBox(
-	buf: OptimizedBuffer,
+	buf: CellBuffer<RGBA>,
 	e: Entity,
 	cam: { x: number; y: number },
 	terrain: Terrain,
@@ -82,7 +82,7 @@ function drawOverheadBox(
 }
 
 export function drawSpeechBubble(
-	buf: OptimizedBuffer,
+	buf: CellBuffer<RGBA>,
 	e: Entity,
 	cam: { x: number; y: number },
 	terrain: Terrain,

@@ -1,11 +1,12 @@
 import type { Terrain } from '@mmo/core/entities';
-import { type OptimizedBuffer, RGBA } from '@opentui/core';
+import type { CellBuffer } from '@mmo/render';
+import { RGBA } from '@opentui/core';
 import { COLORS as C } from '../theme';
 import { type Pool, speckColor, speckDrawCell, speckGlyph } from './engine';
 import type { Speck } from './profile';
 
 export function drawSpecks(
-	buf: OptimizedBuffer,
+	buf: CellBuffer<RGBA>,
 	pool: Pool,
 	cam: { x: number; y: number },
 	terrain: Terrain,

@@ -1,5 +1,6 @@
 import type { Terrain, Tint } from '@mmo/core/entities';
-import type { OptimizedBuffer } from '@opentui/core';
+import type { CellBuffer } from '@mmo/render';
+import type { RGBA } from '@opentui/core';
 import { drawSpecks } from './draw';
 import { EFFECTS, type EffectName } from './effects';
 import { advanceSpecks, Pool, spawnSpeck } from './engine';
@@ -46,7 +47,7 @@ export class ParticleEngine {
 	}
 
 	draw(
-		buf: OptimizedBuffer,
+		buf: CellBuffer<RGBA>,
 		cam: { x: number; y: number },
 		layer: ParticleLayer,
 	): void {

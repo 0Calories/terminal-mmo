@@ -1,3 +1,4 @@
+export { paintActor, paintNpc } from './actors';
 export {
 	type CompiledFacing,
 	type CompiledSprite,

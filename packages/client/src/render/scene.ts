@@ -17,16 +17,19 @@ import { itemLabel } from '@mmo/core/items';
 import { activeZone, type GameState } from '@mmo/core/protocol';
 import {
 	buildSceneStyle,
-	drawEntitySprite,
+	type CellBuffer,
 	drawNameplates,
 	type RenderStyle,
 	renderZoneScene,
 	spriteForNpc,
 } from '@mmo/render';
+import type { Compositor } from '@mmo/render/compositor';
+import { paintActor, paintNpc } from '@mmo/render/sprites';
 import { type OptimizedBuffer, RGBA } from '@opentui/core';
 import type { ParticleEngine } from '../particles';
 import { COLORS as C, RARITY_RGBA } from '../theme';
 import { drawSpeechBubble } from '../ui/speech-bubble';
+import { CompositorSink, encodeToBuffer } from './compositor-sink';
 import type { DodgeTracker } from './dodge-echo';
 
 const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
@@ -34,7 +37,7 @@ const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
 );
 
 function drawText(
-	buf: OptimizedBuffer,
+	buf: CellBuffer<RGBA>,
 	x: number,
 	y: number,
 	text: string,
@@ -60,7 +63,7 @@ function swingRenderState(
 }
 
 function drawSwing(
-	buf: OptimizedBuffer,
+	buf: CellBuffer<RGBA>,
 	e: Entity,
 	cam: { x: number; y: number },
 	sw: number,
@@ -91,7 +94,7 @@ function isGuarding(e: Entity): boolean {
 }
 
 function drawGuard(
-	buf: OptimizedBuffer,
+	buf: CellBuffer<RGBA>,
 	e: Entity,
 	cam: { x: number; y: number },
 	sw: number,
@@ -111,42 +114,109 @@ function drawGuard(
 		);
 }
 
+/**
+ * Compose one live playfield frame into the shared sub-cell {@link Compositor}
+ * in the accepted back-to-front pass order (ADR 0038), then encode to OpenTUI
+ * exactly once. Actors compose natively via {@link paintActor}; every other
+ * producer draws through the {@link CompositorSink} bridge, so nothing but the
+ * final encode reaches OpenTUI.
+ */
 export function drawPlayfield(
 	buf: OptimizedBuffer,
+	compositor: Compositor,
 	game: GameState,
 	cam: { x: number; y: number },
 	fx: { particles: ParticleEngine; dodges: DodgeTracker },
 ) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
-	const sw = buf.width;
-	const sh = buf.height;
+	const sw = compositor.widthCells;
+	const sh = compositor.heightCells;
 	const p = player.avatar;
 	const camX = Math.round(cam.x);
 	const camY = Math.round(cam.y);
 	const others = game.others ?? [];
 	const npcs = zone.npcs ?? [];
+	const sink = new CompositorSink(compositor);
 
+	// Pass 1 + portals: Terrain and portal glyphs (bridged; actors omitted so
+	// the native passes below own them and nothing double-draws).
 	renderZoneScene(
-		buf,
-		{
-			terrain: zone.terrain,
-			portals: zone.portals,
-			npcs,
-			entities: [...zone.monsters, ...others],
-		},
+		sink,
+		{ terrain: zone.terrain, portals: zone.portals, npcs: [], entities: [] },
 		cam,
 		STYLE,
 	);
 
-	fx.particles.draw(buf, cam, 'settled');
+	// Pass 2: world-floor visuals — settled particles, drop glyphs, dodge echoes.
+	fx.particles.draw(sink, cam, 'settled');
+	for (const d of zone.drops ?? []) {
+		const col = RARITY_RGBA[d.item.rarity];
+		const gx = Math.round(d.x + d.w / 2) - camX;
+		const gy = Math.round(d.y + d.h - 1) - camY;
+		if (gx >= 0 && gx < sw && gy >= 0 && gy < sh)
+			sink.setCellWithAlphaBlending(gx, gy, '◆', col, C.transparent);
+	}
+	fx.dodges.draw(sink, cam, sw, sh);
 
+	// Pass 3: NPCs, Monsters, and remote Avatars (native). NPCs draw behind the
+	// crowd; monsters and remote avatars are foot-depth sorted (full determinism
+	// is #444).
+	for (const n of npcs) paintNpc(compositor, n, cam);
+	const crowd = [...zone.monsters, ...others].sort((a, b) => a.y - b.y);
+	for (const e of crowd) paintActor(compositor, e, cam);
+
+	// Pass 4: the local Avatar (native), kept at the top of the crowd.
+	paintActor(compositor, p, cam);
+
+	// Pass 5: combat — swings, guards, telegraphs, airborne particles, projectiles.
+	for (const e of others) {
+		drawSwing(sink, e, cam, sw, sh);
+		drawGuard(sink, e, cam, sw, sh);
+	}
+	for (const m of zone.monsters) drawSwing(sink, m, cam, sw, sh);
+	drawSwing(sink, p, cam, sw, sh);
+	drawGuard(sink, p, cam, sw, sh);
+
+	for (let slot = 1; ; slot++) {
+		const skill = skillForSlot(player.class ?? 'warrior', slot);
+		if (!skill) break;
+		const cd = player.skillCooldowns?.[skill.id] ?? 0;
+		if (cd <= skill.cooldown - 0.15) continue;
+		const hb = skillHitbox(p, skill);
+		for (let yy = 0; yy < hb.h; yy++) {
+			for (let xx = 0; xx < hb.w; xx++) {
+				const px = Math.round(hb.x + xx - cam.x);
+				const py = Math.round(hb.y + yy - cam.y);
+				if (px >= 0 && px < sw && py >= 0 && py < sh)
+					sink.setCellWithAlphaBlending(
+						px,
+						py,
+						'✦',
+						C.telegraph,
+						C.transparent,
+					);
+			}
+		}
+	}
+
+	fx.particles.draw(sink, cam, 'airborne');
+
+	for (const pr of zone.projectiles) {
+		const px = Math.round(pr.x - cam.x);
+		const py = Math.round(pr.y - cam.y);
+		if (px < 0 || px >= sw || py < 0 || py >= sh) continue;
+		const ch = pr.vx < 0 ? '◄' : pr.vx > 0 ? '►' : '●';
+		sink.setCellWithAlphaBlending(px, py, ch, C.projectile, C.transparent);
+	}
+
+	// Pass 6: identity, drop, and interaction labels.
 	const onPortal = zone.portals.find((pr) => aabbOverlap(entityBox(p), pr));
 	if (onPortal) {
 		const dest = game.world.zones[onPortal.target]?.type ?? 'zone';
 		const label = `↵ e  enter the ${dest.charAt(0).toUpperCase()}${dest.slice(1)}`;
 		drawText(
-			buf,
+			sink,
 			Math.round(onPortal.x) - camX,
 			Math.round(onPortal.y) - camY - 1,
 			label,
@@ -161,18 +231,15 @@ export function drawPlayfield(
 		const sx =
 			Math.round(onNpc.x + Math.floor((onNpc.w - sprite.w) / 2)) - camX;
 		const sy = Math.round(onNpc.y + onNpc.h - sprite.h) - camY;
-		drawText(buf, sx, sy - 1, `↵ e  talk to ${onNpc.name}`, C.vendor, sw, sh);
+		drawText(sink, sx, sy - 1, `↵ e  talk to ${onNpc.name}`, C.vendor, sw, sh);
 	}
-
 	for (const d of zone.drops ?? []) {
 		const col = RARITY_RGBA[d.item.rarity];
 		const gx = Math.round(d.x + d.w / 2) - camX;
 		const gy = Math.round(d.y + d.h - 1) - camY;
-		if (gx >= 0 && gx < sw && gy >= 0 && gy < sh)
-			buf.setCellWithAlphaBlending(gx, gy, '◆', col, C.transparent);
 		const label = itemLabel(d.item);
 		drawText(
-			buf,
+			sink,
 			gx - Math.floor(label.length / 2),
 			gy - 1,
 			label,
@@ -181,48 +248,12 @@ export function drawPlayfield(
 			sh,
 		);
 	}
+	drawNameplates(sink, others, cam, zone.terrain, STYLE);
 
-	for (const e of others) {
-		drawSwing(buf, e, cam, sw, sh);
-		drawGuard(buf, e, cam, sw, sh);
-	}
+	// Pass 7: speech bubbles, frontmost.
+	for (const e of others) drawSpeechBubble(sink, e, cam, zone.terrain, sw, sh);
+	drawSpeechBubble(sink, p, cam, zone.terrain, sw, sh);
 
-	for (const m of zone.monsters) drawSwing(buf, m, cam, sw, sh);
-
-	for (let slot = 1; ; slot++) {
-		const skill = skillForSlot(player.class ?? 'warrior', slot);
-		if (!skill) break;
-		const cd = player.skillCooldowns?.[skill.id] ?? 0;
-		if (cd <= skill.cooldown - 0.15) continue;
-		const hb = skillHitbox(p, skill);
-		for (let yy = 0; yy < hb.h; yy++) {
-			for (let xx = 0; xx < hb.w; xx++) {
-				const px = Math.round(hb.x + xx - cam.x);
-				const py = Math.round(hb.y + yy - cam.y);
-				if (px >= 0 && px < sw && py >= 0 && py < sh)
-					buf.setCellWithAlphaBlending(px, py, '✦', C.telegraph, C.transparent);
-			}
-		}
-	}
-
-	fx.dodges.draw(buf, cam, sw, sh);
-
-	drawEntitySprite(buf, p, cam, STYLE, zone.terrain);
-	drawSwing(buf, p, cam, sw, sh);
-	drawGuard(buf, p, cam, sw, sh);
-
-	fx.particles.draw(buf, cam, 'airborne');
-
-	drawNameplates(buf, others, cam, zone.terrain, STYLE);
-
-	for (const e of others) drawSpeechBubble(buf, e, cam, zone.terrain, sw, sh);
-	drawSpeechBubble(buf, p, cam, zone.terrain, sw, sh);
-
-	for (const pr of zone.projectiles) {
-		const px = Math.round(pr.x - cam.x);
-		const py = Math.round(pr.y - cam.y);
-		if (px < 0 || px >= sw || py < 0 || py >= sh) continue;
-		const ch = pr.vx < 0 ? '◄' : pr.vx > 0 ? '►' : '●';
-		buf.setCellWithAlphaBlending(px, py, ch, C.projectile, C.transparent);
-	}
+	// Encode the composed surface into OpenTUI exactly once.
+	encodeToBuffer(compositor, buf);
 }
