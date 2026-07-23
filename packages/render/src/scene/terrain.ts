@@ -6,10 +6,11 @@ const TERRAIN: RGBA = SCENE_COLORS.terrainFg;
 
 /**
  * Draw Terrain as the composed backdrop with sub-cell Pixels (ADR 0038, pass 1).
- * An interior cell fills all four quadrants; a surface cell fills only the two
- * bottom quadrants and leaves the top two transparent, so the sky backdrop shows
- * and planted sprites reveal the composed ground through their own transparent
- * quadrants (ADR 0021's `▄` surface, made composition-correct). Every write is
+ * Every solid cell fills all four quadrants, so the visible ground top lands on
+ * a cell boundary: a planted actor's foot row overwrites the ground's top half
+ * and every foot cell mixes at most two colours at any half-cell offset. (The
+ * former half-cell `▄` surface put the ground top mid-cell, forcing three-colour
+ * foot cells no two-colour reduction could render cleanly.) Every write is
  * clipped by the compositor.
  */
 export function drawTerrain(
@@ -34,10 +35,7 @@ export function drawTerrain(
 		for (let wx = wx0; wx <= wx0 + sw + 1; wx++) {
 			if (wx < 0 || wx >= terrain.w || !isSolid(terrain, wx, wy)) continue;
 			const px = wx * 2 - camPx;
-			// Surface cell: only the bottom half is ground; the top stays transparent.
-			if (!isSolid(terrain, wx, wy - 1))
-				compositor.fillPixelRect(px, py + 1, 2, 1, TERRAIN);
-			else compositor.fillPixelRect(px, py, 2, 2, TERRAIN);
+			compositor.fillPixelRect(px, py, 2, 2, TERRAIN);
 		}
 	}
 }

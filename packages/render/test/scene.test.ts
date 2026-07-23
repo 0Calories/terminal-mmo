@@ -59,7 +59,7 @@ function floorField(): Terrain {
 const SURFACE_Y = 2;
 const INTERIOR_Y = 3;
 
-test('terrain composes as the sub-cell backdrop: interior fills a full block, surface only its lower half', () => {
+test('terrain composes as the sub-cell backdrop: every solid cell fills a full block', () => {
 	const c = new Compositor(4, 4);
 	drawTerrain(c, floorField(), NO_CAM);
 
@@ -67,21 +67,13 @@ test('terrain composes as the sub-cell backdrop: interior fills a full block, su
 	expect(interior.char).toBe('█');
 	expect(eq(interior.fg, TERRAIN_FG)).toBe(true);
 
+	// The surface cell is full-height too: the visible ground top lands on the
+	// cell boundary so planted feet never share a three-colour cell with it.
 	const surface = c.cell(0, SURFACE_Y);
-	expect(surface.char).toBe('▄');
+	expect(surface.char).toBe('█');
 	expect(eq(surface.fg, TERRAIN_FG)).toBe(true);
-});
 
-test('the surface cell keeps sky above ground: its upper half stays transparent', () => {
-	const c = new Compositor(4, 4);
-	drawTerrain(c, floorField(), NO_CAM);
-
-	// The lower-half `▄` leaves the top quadrants transparent so the encoder's sky
-	// backdrop shows through — the ground never bleeds a solid band upward.
-	const surface = c.cell(0, SURFACE_Y);
-	expect(surface.bg[3]).toBe(0);
-
-	// The two rows above the surface are pure sky (no terrain drawn).
+	// The rows above the surface are pure sky (no terrain drawn).
 	expect(c.cell(0, 0).char).toBe(' ');
 	expect(c.cell(0, 1).char).toBe(' ');
 });
