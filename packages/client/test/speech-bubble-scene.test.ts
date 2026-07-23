@@ -102,6 +102,46 @@ test('a bubble is frontmost: it wins its cell over a combat glyph and frosts the
 	expect(eq(cell.bg, compositeOver(FROST, TERRAIN_FG))).toBe(true);
 });
 
+test('a wide grapheme in a bubble renders as one atomic two-cell overlay, frosted', () => {
+	const c = new Compositor(40, 24);
+	fillTerrain(c);
+	drawSpeechBubble(c, bubbler('字'), NO_CAM, 40, 24);
+
+	const at = findChar(c, '字');
+	expect(at).not.toBeNull();
+	const lead = c.cell(at!.x, at!.y);
+	expect(lead.wide).toBe('lead');
+	// The continuation cell is blanked so the terminal renders the glyph once.
+	const cont = c.cell(at!.x + 1, at!.y);
+	expect(cont.wide).toBe('cont');
+	// Both cells share the frosted backdrop over the composed terrain.
+	expect(eq(lead.bg, compositeOver(FROST, TERRAIN_FG))).toBe(true);
+	expect(eq(cont.bg, compositeOver(FROST, TERRAIN_FG))).toBe(true);
+});
+
+test('a bubble box sizes to displayed columns: a wide grapheme widens the border', () => {
+	// One CJK grapheme is two columns, so the interior is two cells wide and the
+	// box spans four columns of border-to-border width.
+	const c = new Compositor(40, 24);
+	drawSpeechBubble(c, bubbler('字'), NO_CAM, 40, 24);
+	const rows = c.surface();
+	let topBorderWidth = 0;
+	for (const row of rows) {
+		let run = 0;
+		let best = 0;
+		for (const cell of row) {
+			if (cell.char === '─' || cell.char === '╭' || cell.char === '╮') run++;
+			else {
+				best = Math.max(best, run);
+				run = 0;
+			}
+		}
+		topBorderWidth = Math.max(topBorderWidth, best, run);
+	}
+	// 2 interior columns + 2 border corners = 4-wide box.
+	expect(topBorderWidth).toBe(4);
+});
+
 test('an empty interior cell still renders the frosted shade glyph', () => {
 	const c = new Compositor(40, 24);
 	fillTerrain(c);

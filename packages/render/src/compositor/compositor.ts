@@ -8,17 +8,30 @@ import {
 	TRANSPARENT,
 } from './rgba';
 
+/**
+ * How a cell participates in a two-column grapheme (dynamic world text only):
+ * `lead` carries the wide glyph and owns both columns; `cont` is the trailing
+ * cell the terminal already covers, so the encoder blanks it.
+ */
+export type WideMark = 'lead' | 'cont';
+
 /** A finished terminal-neutral cell: one glyph over exactly two colours. */
 export interface Cell {
 	readonly char: string;
 	readonly fg: RGBA;
 	readonly bg: RGBA;
+	readonly wide?: WideMark;
 }
 
 const EMPTY_CELL: Cell = { char: ' ', fg: TRANSPARENT, bg: TRANSPARENT };
 
 /** Sub-pixel bit within a cell: bit = localX + 2 * localY (matches quadrant masks). */
 const NONE = -1;
+
+/** Wide-glyph role stored per cell (0 none, 1 lead, 2 continuation). */
+const WIDE_NONE = 0;
+const WIDE_LEAD = 1;
+const WIDE_CONT = 2;
 
 function assertPositiveInt(name: string, value: number): void {
 	if (!Number.isInteger(value) || value <= 0) {
@@ -51,6 +64,8 @@ export class Compositor {
 	/** Per-cell flattened glyph backdrop (authored bg, else dominant coverage). */
 	private readonly glyphBg: Uint8ClampedArray;
 	private readonly glyphOrder: Int32Array;
+	/** Wide-glyph role per cell: WIDE_NONE, WIDE_LEAD, or WIDE_CONT. */
+	private readonly glyphWide: Uint8Array;
 
 	private seq = 0;
 
@@ -70,6 +85,7 @@ export class Compositor {
 		this.glyphFg = new Uint8ClampedArray(cellCount * 4);
 		this.glyphBg = new Uint8ClampedArray(cellCount * 4);
 		this.glyphOrder = new Int32Array(cellCount);
+		this.glyphWide = new Uint8Array(cellCount);
 		this.clear();
 	}
 
@@ -81,6 +97,7 @@ export class Compositor {
 		this.glyphFg.fill(0);
 		this.glyphBg.fill(0);
 		this.glyphOrder.fill(NONE);
+		this.glyphWide.fill(WIDE_NONE);
 		this.seq = 0;
 	}
 
@@ -144,6 +161,48 @@ export class Compositor {
 		this.writeColor(this.glyphFg, ci, fg);
 		this.writeColor(this.glyphBg, ci, backdrop);
 		this.glyphOrder[ci] = order;
+		this.glyphWide[ci] = WIDE_NONE;
+	}
+
+	/**
+	 * Stamp a two-column grapheme as one atomic overlay across cell X and X+1
+	 * (ADR 0038: dynamic world text is display-width-aware). The lead cell carries
+	 * the grapheme; the continuation cell is blanked so the terminal renders the
+	 * wide glyph once and the neighbour is never a stray half. If the pair would
+	 * straddle the right edge (only the first column fits), the whole grapheme is
+	 * dropped so no partial output remains. Clipped.
+	 */
+	stampWideGlyph(
+		cellX: number,
+		cellY: number,
+		grapheme: string,
+		fg: RGBA,
+		bg?: RGBA,
+	): void {
+		if (cellY < 0 || cellY >= this.heightCells) return;
+		// Atomic clip: both columns must fit, else emit nothing.
+		if (cellX < 0 || cellX + 1 >= this.widthCells) return;
+
+		const leadOrder = this.seq++;
+		const contOrder = this.seq++;
+
+		const leadBg = bg ?? this.dominantBackdrop(cellX, cellY);
+		this.flattenCell(cellX, cellY, leadBg, leadOrder);
+		const li = cellY * this.widthCells + cellX;
+		this.glyphChar[li] = grapheme;
+		this.writeColor(this.glyphFg, li, fg);
+		this.writeColor(this.glyphBg, li, leadBg);
+		this.glyphOrder[li] = leadOrder;
+		this.glyphWide[li] = WIDE_LEAD;
+
+		const contBg = bg ?? this.dominantBackdrop(cellX + 1, cellY);
+		this.flattenCell(cellX + 1, cellY, contBg, contOrder);
+		const ri = cellY * this.widthCells + cellX + 1;
+		this.glyphChar[ri] = ' ';
+		this.writeColor(this.glyphFg, ri, fg);
+		this.writeColor(this.glyphBg, ri, contBg);
+		this.glyphOrder[ri] = contOrder;
+		this.glyphWide[ri] = WIDE_CONT;
 	}
 
 	/** Finished terminal-neutral cell at cell coords. Throws if out of bounds. */
@@ -275,10 +334,16 @@ export class Compositor {
 			// Frontmost representation owns the cell. No Pixel drawn after the glyph
 			// ⇒ the glyph overlay wins, over its own flattened backdrop.
 			if (maxPix <= gOrder) {
+				const wide = this.glyphWide[ci];
 				return {
 					char: this.glyphChar[ci] as string,
 					fg: this.readColor(this.glyphFg, ci),
 					bg: this.readColor(this.glyphBg, ci),
+					...(wide === WIDE_LEAD
+						? { wide: 'lead' as const }
+						: wide === WIDE_CONT
+							? { wide: 'cont' as const }
+							: {}),
 				};
 			}
 		}

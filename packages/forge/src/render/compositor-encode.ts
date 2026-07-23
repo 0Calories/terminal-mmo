@@ -41,10 +41,14 @@ export function encodeSurface(
 			const cell = row[x];
 			const bg = cell.bg[3] > 0 ? cell.bg : SCENE_BG;
 			const fg = compositeOver(cell.fg, bg);
+			// A wide grapheme's lead cell emits the two-column glyph; its
+			// continuation cell is already covered by that glyph, so blank it and
+			// let the terminal's width advance own the neighbour.
+			const char = cell.wide === 'cont' ? ' ' : cell.char;
 			set(
 				x,
 				y,
-				cell.char,
+				char,
 				RGBA.fromInts(fg[0], fg[1], fg[2], 255),
 				RGBA.fromInts(bg[0], bg[1], bg[2], 255),
 			);

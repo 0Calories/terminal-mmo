@@ -283,3 +283,43 @@ test('an unnamed actor draws no nameplate', () => {
 	for (const row of c.surface())
 		for (const cell of row) expect(cell.char).toBe(' ');
 });
+
+test('a label advances by displayed columns: a wide grapheme spans two cells atomically', () => {
+	const c = new Compositor(8, 1);
+	// 'A字B': A at col 0, wide 字 across cols 1-2, B at col 3.
+	drawLabel(c, 0, 0, 'A字B', VENDOR);
+	expect(c.cell(0, 0).char).toBe('A');
+	const lead = c.cell(1, 0);
+	expect(lead.char).toBe('字');
+	expect(lead.wide).toBe('lead');
+	expect(c.cell(2, 0).wide).toBe('cont');
+	expect(c.cell(3, 0).char).toBe('B');
+});
+
+test('a combining grapheme is one label cell of one column', () => {
+	const c = new Compositor(8, 1);
+	drawLabel(c, 0, 0, 'é!', VENDOR); // e + combining acute, then '!'
+	expect(c.cell(0, 0).char).toBe('é');
+	expect(c.cell(0, 0).wide).toBeUndefined();
+	// The next column is the following grapheme, not a split code unit.
+	expect(c.cell(1, 0).char).toBe('!');
+});
+
+test('a nameplate with wide graphemes centres and sizes by displayed columns', () => {
+	const c = new Compositor(20, 12);
+	// Two CJK graphemes = 4 displayed columns.
+	const e = chaser({ id: 1, x: 6, y: 3, name: '道場' });
+	drawNameplates(c, [e], NO_CAM);
+
+	const row = Math.round(actorFootDepth(e));
+	const cx = e.x + BOX.w / 2;
+	const left = Math.round(cx - 4 / 2); // centred on 4 columns, not 2 code units
+	const lead = c.cell(left, row);
+	expect(lead.char).toBe('道');
+	expect(lead.wide).toBe('lead');
+	expect(c.cell(left + 1, row).wide).toBe('cont');
+	expect(c.cell(left + 2, row).char).toBe('場');
+	expect(c.cell(left + 3, row).wide).toBe('cont');
+	// The cell just left of the plate is untouched, proving column-centred layout.
+	expect(c.cell(left - 1, row).char).toBe(' ');
+});

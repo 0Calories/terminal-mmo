@@ -6,7 +6,37 @@ import {
 	SCENE_COLORS,
 } from '@mmo/core/entities';
 import type { Compositor, RGBA } from '../compositor';
-import { actorFootDepth } from '../sprites';
+import {
+	actorFootDepth,
+	displayColumns,
+	segmentGraphemes,
+	textColumns,
+} from '../sprites';
+
+/**
+ * Stamp text one grapheme cluster per cell, advancing by displayed columns. A
+ * two-column grapheme is one atomic overlay across its two cells; zero-width
+ * clusters (already folded into their base) contribute nothing. Returns the
+ * columns consumed.
+ */
+function stampText(
+	compositor: Compositor,
+	x: number,
+	y: number,
+	text: string,
+	fg: RGBA,
+	bg?: RGBA,
+): number {
+	let col = 0;
+	for (const g of segmentGraphemes(text)) {
+		const cols = displayColumns(g);
+		if (cols === 0) continue;
+		if (cols === 2) compositor.stampWideGlyph(x + col, y, g, fg, bg);
+		else compositor.stampGlyph(x + col, y, g, fg, bg);
+		col += cols;
+	}
+	return col;
+}
 
 const NAMEPLATE_INK: RGBA = SCENE_COLORS.nameplate;
 const NAMEPLATE_BG: RGBA = darken(SCENE_COLORS.nameplate);
@@ -14,11 +44,11 @@ const NAMEPLATE_INKS: readonly RGBA[] = NAMEPLATE_COLORS;
 const NAMEPLATE_BGS: readonly RGBA[] = NAMEPLATE_COLORS.map(darken);
 
 /**
- * Cell-aligned world text (ADR 0038, pass 6). Each character stamps as one atomic
- * cell with no authored background, so the compositor derives its backdrop from
- * the composed scene beneath — the label reveals the real pixels it sits over,
- * never a guessed colour. Width-awareness is deferred (issue #452); one column
- * per character. Clipped by the compositor.
+ * Cell-aligned world text (ADR 0038, pass 6). Each grapheme cluster stamps as one
+ * atomic cell with no authored background, so the compositor derives its backdrop
+ * from the composed scene beneath — the label reveals the real pixels it sits
+ * over, never a guessed colour. Text advances by displayed columns; a two-column
+ * grapheme is one atomic overlay across two cells. Clipped by the compositor.
  */
 export function drawLabel(
 	compositor: Compositor,
@@ -27,8 +57,7 @@ export function drawLabel(
 	text: string,
 	fg: RGBA,
 ): void {
-	for (let i = 0; i < text.length; i++)
-		compositor.stampGlyph(x + i, y, text[i], fg);
+	stampText(compositor, x, y, text, fg);
 }
 
 /**
@@ -51,9 +80,8 @@ export function drawNameplates(
 		const bg =
 			(idx !== undefined ? NAMEPLATE_BGS[idx] : undefined) ?? NAMEPLATE_BG;
 		const cx = e.x + BOX.w / 2 - cam.x;
-		const left = Math.round(cx - e.name.length / 2);
+		const left = Math.round(cx - textColumns(e.name) / 2);
 		const py = Math.round(actorFootDepth(e) - cam.y);
-		for (let i = 0; i < e.name.length; i++)
-			compositor.stampGlyph(left + i, py, e.name[i], ink, bg);
+		stampText(compositor, left, py, e.name, ink, bg);
 	}
 }

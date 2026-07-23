@@ -51,3 +51,60 @@ export function displayColumns(grapheme: string): number {
 	}
 	return width;
 }
+
+const ZWJ = 0x200d;
+const VS16 = 0xfe0f;
+
+let segmenter: Intl.Segmenter | undefined;
+let segmenterResolved = false;
+
+function graphemeSegmenter(): Intl.Segmenter | undefined {
+	if (segmenterResolved) return segmenter;
+	segmenterResolved = true;
+	if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+		segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+	}
+	return segmenter;
+}
+
+/**
+ * Minimal fallback cluster splitter for runtimes without `Intl.Segmenter`. It
+ * keeps combining marks, ZWJ joins, and the VS-16 emoji selector attached to
+ * their base so a cluster stays one atomic overlay.
+ */
+function fallbackSegment(text: string): string[] {
+	const out: string[] = [];
+	let cur = '';
+	let joinNext = false;
+	for (const ch of text) {
+		const cp = ch.codePointAt(0) ?? 0;
+		const attaches = joinNext || isZeroWidth(cp) || cp === VS16 || cp === ZWJ;
+		if (cur === '') cur = ch;
+		else if (attaches) cur += ch;
+		else {
+			out.push(cur);
+			cur = ch;
+		}
+		joinNext = cp === ZWJ;
+	}
+	if (cur) out.push(cur);
+	return out;
+}
+
+/**
+ * Split text into grapheme clusters. A combining sequence (base + marks) and a
+ * ZWJ/VS-16 emoji sequence each stay one cluster, so dynamic world text iterates
+ * user-perceived characters instead of UTF-16 code units.
+ */
+export function segmentGraphemes(text: string): string[] {
+	const seg = graphemeSegmenter();
+	if (seg) return Array.from(seg.segment(text), (s) => s.segment);
+	return fallbackSegment(text);
+}
+
+/** Total terminal columns text occupies, summed over its grapheme clusters. */
+export function textColumns(text: string): number {
+	let cols = 0;
+	for (const g of segmentGraphemes(text)) cols += displayColumns(g);
+	return cols;
+}

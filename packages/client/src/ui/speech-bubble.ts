@@ -1,6 +1,7 @@
 import { BOX, type Entity } from '@mmo/core/entities';
 import { spriteFor } from '@mmo/render';
 import type { Compositor, RGBA } from '@mmo/render/compositor';
+import { displayColumns, segmentGraphemes } from '@mmo/render/sprites';
 import { COLORS as C } from '../theme';
 import { layoutBubble } from './bubble';
 
@@ -12,21 +13,41 @@ const BUBBLE_BORDER: RGBA = C.bubbleBorder.toInts();
 const BUBBLE_BG: RGBA = C.bubbleBg.toInts();
 const BUBBLE_SHADE: RGBA = C.bubbleShade.toInts();
 
-type BoxCell = { ch: string; fg: RGBA } | null;
+// A column within the content grid: a glyph (single- or two-column lead), the
+// continuation of a two-column grapheme to its left, or empty interior.
+type BoxCol = { ch: string; fg: RGBA; cols: 1 | 2 } | 'cont' | null;
 
 interface BoxContent {
 	w: number;
 	h: number;
-	cell(x: number, y: number): BoxCell;
+	col(x: number, y: number): BoxCol;
+}
+
+/** Expand one line into per-column entries, spaces reading as empty interior. */
+function lineColumns(line: string, fg: RGBA): BoxCol[] {
+	const cols: BoxCol[] = [];
+	for (const g of segmentGraphemes(line)) {
+		const w = displayColumns(g);
+		if (w === 0) continue;
+		if (g === ' ') {
+			cols.push(null);
+		} else if (w === 2) {
+			cols.push({ ch: g, fg, cols: 2 });
+			cols.push('cont');
+		} else {
+			cols.push({ ch: g, fg, cols: 1 });
+		}
+	}
+	return cols;
 }
 
 function textContent(lines: readonly string[], fg: RGBA): BoxContent {
+	const grid = lines.map((l) => lineColumns(l, fg));
 	return {
-		w: Math.max(1, ...lines.map((l) => l.length)),
+		w: Math.max(1, ...grid.map((c) => c.length)),
 		h: lines.length,
-		cell(x, y) {
-			const ch = lines[y]?.[x];
-			return ch && ch !== ' ' ? { ch, fg } : null;
+		col(x, y) {
+			return grid[y]?.[x] ?? null;
 		},
 	};
 }
@@ -68,14 +89,19 @@ function drawOverheadBox(
 				compositor.stampGlyph(px, py, ch, border);
 				continue;
 			}
-			const c = content.cell(rx - 1, ry - 1);
+			const c = content.col(rx - 1, ry - 1);
+			// The continuation column of a wide grapheme is drawn atomically by its
+			// lead; leave it untouched here.
+			if (c === 'cont') continue;
 			if (c) {
 				// Frost the interior as translucent sub-cell pixels over the composed
 				// scene, then stamp the glyph so it derives that frosted backdrop —
 				// ADR 0016's look composed against the real pixels (ADR 0038), never a
-				// sampled-terrain guess.
-				compositor.fillPixelRect(px * 2, py * 2, 2, 2, BUBBLE_BG);
-				compositor.stampGlyph(px, py, c.ch, c.fg);
+				// sampled-terrain guess. A two-column grapheme frosts and stamps as one
+				// atomic overlay across both cells.
+				compositor.fillPixelRect(px * 2, py * 2, c.cols * 2, 2, BUBBLE_BG);
+				if (c.cols === 2) compositor.stampWideGlyph(px, py, c.ch, c.fg);
+				else compositor.stampGlyph(px, py, c.ch, c.fg);
 			} else {
 				compositor.stampGlyph(px, py, '▒', BUBBLE_SHADE);
 			}

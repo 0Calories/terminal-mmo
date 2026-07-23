@@ -1,4 +1,4 @@
-export { type Cell, Compositor } from './compositor';
+export { type Cell, Compositor, type WideMark } from './compositor';
 export {
 	compositeOver,
 	type RGBA,
