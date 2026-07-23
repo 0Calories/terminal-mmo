@@ -1,23 +1,15 @@
 import { dodgePhase } from '@mmo/core/combat';
-import { BOX, type Entity } from '@mmo/core/entities';
-import { spriteFor } from '@mmo/render';
-import { type OptimizedBuffer, RGBA } from '@opentui/core';
-import { COLORS as C } from '../theme';
+import type { Entity } from '@mmo/core/entities';
+import type { Compositor } from '@mmo/render/compositor';
+import {
+	DODGE_ECHO_LIFE_MS,
+	type DodgeEcho,
+	drawDodgeEchoes,
+} from '@mmo/render/scene';
+
+export { DODGE_ECHO_LIFE_MS, type DodgeEcho } from '@mmo/render/scene';
 
 export const SAMPLE_INTERVAL_MS = 90;
-const FADE_MS = 300;
-const PEAK_ALPHA = 235;
-const ECHO_RGB: readonly [number, number, number] = [150, 220, 255];
-
-export const DODGE_ECHO_LIFE_MS = FADE_MS;
-
-export interface DodgeEcho {
-	x: number;
-	y: number;
-	facing: Entity['facing'];
-	type: Entity['type'];
-	ageMs: number;
-}
 
 export function isDodging(e: Entity): boolean {
 	return e.action?.move === 'dodge' || dodgePhase(e.dodgeT ?? 0) !== null;
@@ -93,43 +85,7 @@ export class DodgeTracker {
 		this.echoes = stepDodgeEchoes(this.echoes, dtMs);
 	}
 
-	draw(
-		buf: OptimizedBuffer,
-		cam: { x: number; y: number },
-		sw: number,
-		sh: number,
-	): void {
-		drawDodgeEchoes(buf, this.echoes, cam, sw, sh);
-	}
-}
-
-export function drawDodgeEchoes(
-	buf: OptimizedBuffer,
-	list: readonly DodgeEcho[],
-	cam: { x: number; y: number },
-	sw: number,
-	sh: number,
-): void {
-	for (const echo of list) {
-		const fade = 1 - echo.ageMs / FADE_MS;
-		if (fade <= 0) continue;
-		const alpha = Math.round(PEAK_ALPHA * fade);
-		if (alpha <= 0) continue;
-		const col = RGBA.fromInts(ECHO_RGB[0], ECHO_RGB[1], ECHO_RGB[2], alpha);
-		const sprite = spriteFor(echo.type);
-		const rows = sprite.rows(echo.facing);
-
-		const baseX = echo.x - Math.floor((sprite.w - BOX.w) / 2);
-		const baseY = echo.y + BOX.h - sprite.h;
-		for (let ry = 0; ry < rows.length; ry++) {
-			const row = rows[ry];
-			for (let rx = 0; rx < row.length; rx++) {
-				if (row[rx] === ' ') continue;
-				const px = Math.round(baseX + rx - cam.x);
-				const py = Math.round(baseY + ry - cam.y);
-				if (px >= 0 && px < sw && py >= 0 && py < sh)
-					buf.setCellWithAlphaBlending(px, py, row[rx], col, C.transparent);
-			}
-		}
+	draw(compositor: Compositor, cam: { x: number; y: number }): void {
+		drawDodgeEchoes(compositor, this.echoes, cam);
 	}
 }

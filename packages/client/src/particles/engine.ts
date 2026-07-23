@@ -15,7 +15,7 @@ const UNSPAWNED: Profile = {
 	maxLifeMs: 1,
 	launchSpeed: 0,
 	launchSpread: 0,
-	glyphs: { airborne: [' '], rest: [' '] },
+	primitive: 'pixel',
 	colors: [{ t: 0, r: 0, g: 0, b: 0 }],
 };
 
@@ -228,23 +228,8 @@ export function speckColor(p: Speck): Rgba {
 }
 
 export function speckGlyph(p: Speck): string {
-	const set =
-		p.stage === 'airborne' ? p.profile.glyphs.airborne : p.profile.glyphs.rest;
+	const glyphs = p.profile.glyphs;
+	if (!glyphs) return ' ';
+	const set = p.stage === 'airborne' ? glyphs.airborne : glyphs.rest;
 	return set[Math.min(set.length - 1, Math.floor(p.seed * set.length))];
-}
-
-export function speckDrawCell(
-	p: Speck,
-	terrain: Terrain,
-): { col: number; row: number } {
-	if (!p.profile.collide) return { col: Math.round(p.x), row: Math.round(p.y) };
-	const col = Math.floor(p.x);
-	let row = Math.floor(p.y);
-	if (
-		p.stage !== 'airborne' &&
-		!isSolid(terrain, col, row) &&
-		isSolid(terrain, col, row + 1)
-	)
-		row += 1;
-	return { col, row };
 }

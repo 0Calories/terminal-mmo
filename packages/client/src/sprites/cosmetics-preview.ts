@@ -4,59 +4,24 @@ import {
 	type Entity,
 	HUES,
 	NAMEPLATE_COLORS,
-	SCENE_PALETTE,
 } from '@mmo/core/entities';
-import {
-	type CellBuffer,
-	drawNameplates,
-	HAT_IDS,
-	type RenderStyle,
-	renderZoneScene,
-} from '@mmo/render';
+import { HAT_IDS } from '@mmo/render';
+import { Compositor } from '@mmo/render/compositor';
+import { drawNameplates } from '@mmo/render/scene';
+import { paintActor } from '@mmo/render/sprites';
 
-class TextBuffer implements CellBuffer<string> {
-	readonly width: number;
-	readonly height: number;
-	grid: string[][];
-	constructor(w: number, h: number) {
-		this.width = w;
-		this.height = h;
-		this.grid = Array.from({ length: h }, () =>
-			Array.from({ length: w }, () => ' '),
-		);
-	}
-	clear(): void {
-		for (const row of this.grid) row.fill(' ');
-	}
-	setCell(x: number, y: number, ch: string): void {
-		if (x >= 0 && x < this.width && y >= 0 && y < this.height)
-			this.grid[y][x] = ch;
-	}
-	setCellWithAlphaBlending(x: number, y: number, ch: string): void {
-		this.setCell(x, y, ch);
-	}
-	toString(): string {
-		return this.grid.map((r) => r.join('').replace(/\s+$/, '')).join('\n');
-	}
+/** Read a composed surface as plain text, trimming trailing blanks per row. */
+function surfaceToText(compositor: Compositor): string {
+	return compositor
+		.surface()
+		.map((row) =>
+			row
+				.map((cell) => cell.char)
+				.join('')
+				.replace(/\s+$/, ''),
+		)
+		.join('\n');
 }
-
-const STYLE: RenderStyle<string> = {
-	bg: 'bg',
-	terrainFg: 't',
-	terrainBg: 't',
-	portal: 'p',
-	transparent: 'tr',
-	hurt: 'h',
-	nameplate: 'name',
-	nameplateBg: 'namebg',
-	palette: Object.fromEntries(Object.keys(SCENE_PALETTE).map((k) => [k, k])),
-	paletteDefault: '?',
-	cosmetics: {
-		hues: HUES.map((_, i) => `hue${i}`),
-		nameplates: NAMEPLATE_COLORS.map((_, i) => `np${i}`),
-		nameplateBgs: NAMEPLATE_COLORS.map((_, i) => `npbg${i}`),
-	},
-};
 
 function avatar(cosmetics: Cosmetics): Entity {
 	return {
@@ -79,17 +44,12 @@ function avatar(cosmetics: Cosmetics): Entity {
 }
 
 function frame(title: string, cosmetics: Cosmetics): string {
-	const buf = new TextBuffer(16, 11);
-	const terrain = { w: 16, h: 11, cells: new Uint8Array(16 * 11) };
+	const compositor = new Compositor(16, 11);
 	const entities = [avatar(cosmetics)];
-	renderZoneScene(
-		buf,
-		{ terrain, portals: [], npcs: [], entities },
-		{ x: 0, y: 0 },
-		STYLE,
-	);
-	drawNameplates(buf, entities, { x: 0, y: 0 }, terrain, STYLE);
-	return `${title}\n${buf.toString()}`;
+	const cam = { x: 0, y: 0 };
+	for (const e of entities) paintActor(compositor, e, cam);
+	drawNameplates(compositor, entities, cam);
+	return `${title}\n${surfaceToText(compositor)}`;
 }
 
 console.log(

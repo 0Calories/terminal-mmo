@@ -3,8 +3,6 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { readSpriteSourcesFromDir } from '@mmo/assets';
 import {
 	allFrames,
-	buildSceneStyle,
-	type CellBuffer,
 	frameLabelAt,
 	parseSpriteFile,
 	type SpriteDiagnostic,
@@ -13,6 +11,7 @@ import {
 } from '@mmo/render';
 import type { CliDeps } from './cli';
 import {
+	baseCompositeStyle,
 	previewStances,
 	RAIL_TOOLS,
 	renderComposite,
@@ -187,26 +186,6 @@ function cmdRender(args: string[], deps: CliDeps): number {
 	return hasError(diagnostics) ? 1 : 0;
 }
 
-class TextGrid implements CellBuffer<null> {
-	readonly grid: string[][];
-	constructor(
-		readonly width: number,
-		readonly height: number,
-	) {
-		this.grid = Array.from({ length: height }, () => Array(width).fill(' '));
-	}
-	clear(_bg: null): void {
-		for (const row of this.grid) row.fill(' ');
-	}
-	setCell(x: number, y: number, ch: string): void {
-		if (y >= 0 && y < this.height && x >= 0 && x < this.width)
-			this.grid[y][x] = ch;
-	}
-	setCellWithAlphaBlending(x: number, y: number, ch: string): void {
-		this.setCell(x, y, ch);
-	}
-}
-
 const COMPOSITE_W = 48;
 const COMPOSITE_H = 24;
 
@@ -234,18 +213,15 @@ function cmdRenderComposite(
 		return 1;
 	}
 
-	const style = styleWithLocalColors(
-		buildSceneStyle(() => null),
-		doc.colors,
-		() => null,
+	const style = styleWithLocalColors(baseCompositeStyle(), doc.colors);
+	const surface = renderComposite(
+		doc,
+		role,
+		style,
+		{ facing: 1, stance, elapsedS: 0 },
+		{ width: COMPOSITE_W, height: COMPOSITE_H },
 	);
-	const buf = new TextGrid(COMPOSITE_W, COMPOSITE_H);
-	const drew = renderComposite(buf, doc, role, style, {
-		facing: 1,
-		stance,
-		elapsedS: 0,
-	});
-	if (!drew) {
+	if (!surface) {
 		deps.log(
 			`render: '${doc.id}' cannot composite yet — the ${role} is missing required anchors or animations (run plain render for diagnostics)`,
 		);
@@ -256,7 +232,7 @@ function cmdRenderComposite(
 	deps.log(`stances: ${stances.map((s) => s.id).join(' · ')}`);
 	deps.log('');
 
-	const rows = buf.grid.map((r) => r.join(''));
+	const rows = surface.map((r) => r.map((cell) => cell.char).join(''));
 	const inked = rows.map((r, y) => (r.trim() ? y : -1)).filter((y) => y >= 0);
 	if (inked.length === 0) {
 		deps.log('(nothing drawn)');

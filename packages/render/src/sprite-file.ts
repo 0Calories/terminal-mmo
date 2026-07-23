@@ -137,8 +137,8 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 	return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function isNonNegInt(v: unknown): v is number {
-	return typeof v === 'number' && Number.isInteger(v) && v >= 0;
+function isNonNegHalfStep(v: unknown): v is number {
+	return typeof v === 'number' && Number.isInteger(v * 2) && v >= 0;
 }
 
 function isInt(v: unknown): v is number {
@@ -342,10 +342,10 @@ function parseHeaderObject(
 
 	let baseline = 0;
 	if (header.baseline !== undefined) {
-		if (isNonNegInt(header.baseline)) {
+		if (isNonNegHalfStep(header.baseline)) {
 			baseline = header.baseline;
 		} else {
-			report('error', "invalid 'baseline': must be an integer >= 0");
+			report('error', "invalid 'baseline': must be a multiple of 0.5, >= 0");
 		}
 	}
 

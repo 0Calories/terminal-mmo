@@ -15,18 +15,7 @@ export {
 	spriteFor,
 	spriteForNpc,
 } from './registry';
-export {
-	type CellBuffer,
-	drawEntitySprite,
-	drawNameplates,
-	drawNpcSprite,
-	type GhostStyle,
-	type RenderStyle,
-	renderZoneScene,
-	type SpriteOverrides,
-	type ZoneScene,
-} from './render';
-export { buildSceneStyle, type ColorFactory } from './scene-style';
+export type { ZoneScene } from './scene';
 export { mirrorGlyph, SENTINEL, Sprite } from './sprite';
 export {
 	compileBodySprite,

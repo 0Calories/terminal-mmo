@@ -13,7 +13,7 @@ import { Hud } from './ui/hud';
 import { NoKittyNotice, NoticeGate } from './ui/no-kitty-notice';
 import { CLIENT_VERSION } from './version';
 
-const RENDER_FPS = Number(process.env.MMO_FPS) || 120;
+const RENDER_FPS = Number(process.env.MMO_FPS) || 60;
 const SERVER = resolveServerUrl(process.env.MMO_SERVER, CLIENT_VERSION);
 const SCHEME = process.env.MMO_SCHEME === 'mouse' ? 'mouse' : 'keyboard';
 const INTERACT_KEY = SCHEME === 'mouse' ? 'f' : 'e';

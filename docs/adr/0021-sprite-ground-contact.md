@@ -1,8 +1,12 @@
 ---
-status: accepted
+status: accepted (per-cell Terrain sampling superseded by ADR 0038)
 ---
 
 # Sprite ground contact: planted feet via per-sprite baseline + per-cell terrain compositing
+
+> **Note:** The planted baseline and half-height Terrain surface remain accepted.
+> [ADR 0038](./0038-sub-cell-scene-compositor.md) supersedes `PlantContext` and manual
+> Terrain sampling with transparent Pixels revealing the composed Terrain beneath.
 
 The redesigned humanoid Form ("buddy", `FORMS[0]`) authors its feet as the
 upper-half block `▀`, which inks only the **top half** of its cell and leaves the

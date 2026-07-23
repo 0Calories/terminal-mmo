@@ -3,15 +3,13 @@ import type { EntityType } from '../entities/types';
 
 export interface SpriteMeta {
 	defaultKey: string;
-
-	baseline: number;
 }
 
 const ENTITY_SPRITE_META: Record<EntityType, SpriteMeta> = {
-	player: { defaultKey: 'p', baseline: 0 },
-	chaser: { defaultKey: 'm', baseline: 0 },
-	shooter: { defaultKey: 'o', baseline: 0 },
-	brute: { defaultKey: 's', baseline: 0 },
+	player: { defaultKey: 'p' },
+	chaser: { defaultKey: 'm' },
+	shooter: { defaultKey: 'o' },
+	brute: { defaultKey: 's' },
 };
 
 export function spriteMetaFor(type: EntityType): SpriteMeta {

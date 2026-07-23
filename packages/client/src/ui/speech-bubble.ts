@@ -1,34 +1,61 @@
-import { BOX, type Entity, type Terrain } from '@mmo/core/entities';
-import { isSolid } from '@mmo/core/physics';
+import { BOX, type Entity } from '@mmo/core/entities';
 import { spriteFor } from '@mmo/render';
-import type { OptimizedBuffer, RGBA } from '@opentui/core';
+import type { Compositor, RGBA } from '@mmo/render/compositor';
+import { displayColumns, segmentGraphemes } from '@mmo/render/sprites';
 import { COLORS as C } from '../theme';
 import { layoutBubble } from './bubble';
 
-type BoxCell = { ch: string; fg: RGBA } | null;
+const BUBBLE_FG: RGBA = C.bubbleFg.toInts();
+const BUBBLE_BORDER: RGBA = C.bubbleBorder.toInts();
+// Translucent frost (alpha 128) laid over the composed scene, and the opaque
+// `▒` shade for empty interior cells. Both read as the same frosted tone over
+// terrain (ADR 0016).
+const BUBBLE_BG: RGBA = C.bubbleBg.toInts();
+const BUBBLE_SHADE: RGBA = C.bubbleShade.toInts();
+
+// A column within the content grid: a glyph (single- or two-column lead), the
+// continuation of a two-column grapheme to its left, or empty interior.
+type BoxCol = { ch: string; fg: RGBA; cols: 1 | 2 } | 'cont' | null;
 
 interface BoxContent {
 	w: number;
 	h: number;
-	cell(x: number, y: number): BoxCell;
+	col(x: number, y: number): BoxCol;
+}
+
+/** Expand one line into per-column entries, spaces reading as empty interior. */
+function lineColumns(line: string, fg: RGBA): BoxCol[] {
+	const cols: BoxCol[] = [];
+	for (const g of segmentGraphemes(line)) {
+		const w = displayColumns(g);
+		if (w === 0) continue;
+		if (g === ' ') {
+			cols.push(null);
+		} else if (w === 2) {
+			cols.push({ ch: g, fg, cols: 2 });
+			cols.push('cont');
+		} else {
+			cols.push({ ch: g, fg, cols: 1 });
+		}
+	}
+	return cols;
 }
 
 function textContent(lines: readonly string[], fg: RGBA): BoxContent {
+	const grid = lines.map((l) => lineColumns(l, fg));
 	return {
-		w: Math.max(1, ...lines.map((l) => l.length)),
+		w: Math.max(1, ...grid.map((c) => c.length)),
 		h: lines.length,
-		cell(x, y) {
-			const ch = lines[y]?.[x];
-			return ch && ch !== ' ' ? { ch, fg } : null;
+		col(x, y) {
+			return grid[y]?.[x] ?? null;
 		},
 	};
 }
 
 function drawOverheadBox(
-	buf: OptimizedBuffer,
+	compositor: Compositor,
 	e: Entity,
 	cam: { x: number; y: number },
-	terrain: Terrain,
 	sw: number,
 	sh: number,
 	content: BoxContent,
@@ -39,17 +66,12 @@ function drawOverheadBox(
 	const boxW = content.w + 2;
 	const boxH = content.h + 2;
 
-	const camX = Math.round(cam.x);
-	const camY = Math.round(cam.y);
 	const cx = e.x + BOX.w / 2 - cam.x;
 	const tailY = top - 2;
 	const tailX = Math.round(cx);
 	const topY = tailY - boxH;
 	let left = Math.round(cx - boxW / 2);
 	left = Math.max(0, Math.min(left, sw - boxW));
-
-	const baseAt = (px: number, py: number) =>
-		isSolid(terrain, px + camX, py + camY) ? C.terrainFg : C.bg;
 
 	for (let ry = 0; ry < boxH; ry++) {
 		const py = topY + ry;
@@ -60,36 +82,43 @@ function drawOverheadBox(
 			if (px < 0 || px >= sw) continue;
 			const lastCol = rx === boxW - 1;
 			const isBorder = ry === 0 || lastRow || rx === 0 || lastCol;
-			const base = baseAt(px, py);
 			if (isBorder) {
 				let ch = '│';
 				if (ry === 0) ch = rx === 0 ? '╭' : lastCol ? '╮' : '─';
 				else if (lastRow) ch = rx === 0 ? '╰' : lastCol ? '╯' : '─';
-				buf.setCell(px, py, ch, border, base);
+				compositor.stampGlyph(px, py, ch, border);
 				continue;
 			}
-			const c = content.cell(rx - 1, ry - 1);
+			const c = content.col(rx - 1, ry - 1);
+			// The continuation column of a wide grapheme is drawn atomically by its
+			// lead; leave it untouched here.
+			if (c === 'cont') continue;
 			if (c) {
-				buf.setCell(px, py, ' ', base, base);
-				buf.setCellWithAlphaBlending(px, py, c.ch, c.fg, C.bubbleBg);
+				// Frost the interior as translucent sub-cell pixels over the composed
+				// scene, then stamp the glyph so it derives that frosted backdrop —
+				// ADR 0016's look composed against the real pixels (ADR 0038), never a
+				// sampled-terrain guess. A two-column grapheme frosts and stamps as one
+				// atomic overlay across both cells.
+				compositor.fillPixelRect(px * 2, py * 2, c.cols * 2, 2, BUBBLE_BG);
+				if (c.cols === 2) compositor.stampWideGlyph(px, py, c.ch, c.fg);
+				else compositor.stampGlyph(px, py, c.ch, c.fg);
 			} else {
-				buf.setCell(px, py, '▒', C.bubbleShade, base);
+				compositor.stampGlyph(px, py, '▒', BUBBLE_SHADE);
 			}
 		}
 	}
 	if (tailY >= 0 && tailY < sh && tailX >= 0 && tailX < sw)
-		buf.setCell(tailX, tailY, '▼', border, baseAt(tailX, tailY));
+		compositor.stampGlyph(tailX, tailY, '▼', border);
 }
 
 export function drawSpeechBubble(
-	buf: OptimizedBuffer,
+	compositor: Compositor,
 	e: Entity,
 	cam: { x: number; y: number },
-	terrain: Terrain,
 	sw: number,
 	sh: number,
 ) {
 	if (!e.bubble) return;
-	const content = textContent(layoutBubble(e.bubble), C.bubbleFg);
-	drawOverheadBox(buf, e, cam, terrain, sw, sh, content, C.bubbleBorder);
+	const content = textContent(layoutBubble(e.bubble), BUBBLE_FG);
+	drawOverheadBox(compositor, e, cam, sw, sh, content, BUBBLE_BORDER);
 }

@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test';
-import type { SpriteSource } from '@mmo/assets';
+import { loadSpriteSources, type SpriteSource } from '@mmo/assets';
 import { WEAPONS } from '@mmo/core/combat';
 import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
 import { parseSpriteFile, type SpriteDoc } from '../src';
 import {
 	acceptSprite,
+	validatePixelOnlyArt,
 	validateSpriteRole,
 	validateSpriteSet,
 } from '../src/sprite-validate';
@@ -204,8 +205,8 @@ test('validateSpriteRole: a weapon whose first animation is swing has no rest fr
 	expect(diags[0].message).toContain('swing');
 });
 
-const idleText = `{ "animations": [{ "name": "idle" }] }\n--- idle\nAB\n`;
-const nonIdleText = `{ "animations": [{ "name": "x" }] }\n--- x\nAB\n`;
+const idleText = `{ "animations": [{ "name": "idle" }] }\n--- idle\n██\n`;
+const nonIdleText = `{ "animations": [{ "name": "x" }] }\n--- x\n██\n`;
 
 test('validateSpriteRole: hats/monsters/npcs require only idle', () => {
 	for (const role of ['hats', 'monsters', 'npcs']) {
@@ -351,6 +352,59 @@ test('validateSpriteSet: an unresolvable color key is an error, not a silent fal
 				d.message.includes('unknown color key'),
 		),
 	).toBe(false);
+});
+
+const HAT_WITH_STAMP = `{ "animations": [{ "name": "idle" }] }
+--- idle
+·▲·
+·█·
+@colors
+·y·
+·m·
+`;
+
+test('validatePixelOnlyArt: a movement-capable role rejects an arbitrary Glyph stamp', () => {
+	for (const role of ['forms', 'weapons', 'hats', 'monsters']) {
+		const diags = validatePixelOnlyArt(docOf(HAT_WITH_STAMP, 'stampy'), role);
+		const stamp = diags.find((d) => d.message.includes('Glyph stamp'));
+		expect(stamp).toBeDefined();
+		expect(stamp?.severity).toBe('error');
+		expect(stamp?.spriteId).toBe('stampy');
+		expect(stamp?.frame).toBe('idle');
+		expect(stamp?.cell).toEqual({ x: 1, y: 0 });
+		expect(stamp?.message).toContain("'▲'");
+		expect(stamp?.message).toContain(role);
+	}
+});
+
+test('validatePixelOnlyArt: quadrant/half-block art in a moving role is accepted', () => {
+	const doc = docOf(
+		`{ "animations": [{ "name": "idle" }] }\n--- idle\n▄█▄\n█▀█\n`,
+		'ok',
+	);
+	expect(validatePixelOnlyArt(doc, 'hats')).toEqual([]);
+});
+
+test('validatePixelOnlyArt: npcs are not movement-capable, so Glyph stamps are allowed', () => {
+	expect(
+		validatePixelOnlyArt(docOf(HAT_WITH_STAMP, 'shopkeep'), 'npcs'),
+	).toEqual([]);
+});
+
+test('validateSpriteSet: the shipped moving-role sprites carry no arbitrary Glyph stamps', () => {
+	const diags = validateSpriteSet(loadSpriteSources().values());
+	expect(diags.some((d) => d.message.includes('Glyph stamp'))).toBe(false);
+});
+
+test('validateSpriteSet: an arbitrary stamp in a moving role aggregates as an error', () => {
+	const diags = validateSpriteSet([
+		{ id: 'stampy', role: 'hats', text: HAT_WITH_STAMP },
+	]);
+	const stamp = diags.find(
+		(d) => d.spriteId === 'stampy' && d.message.includes('Glyph stamp'),
+	);
+	expect(stamp).toBeDefined();
+	expect(stamp?.severity).toBe('error');
 });
 
 test('validateSpriteSet: reserved p/a redefinition surfaces as an aggregated error', () => {

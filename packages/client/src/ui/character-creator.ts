@@ -5,15 +5,10 @@ import {
 	type Entity,
 } from '@mmo/core/entities';
 import { maxHpForLevel } from '@mmo/core/progression';
-import {
-	buildSceneStyle,
-	drawNameplates,
-	HAT_IDS,
-	hatById,
-	type RenderStyle,
-	renderZoneScene,
-	spriteFor,
-} from '@mmo/render';
+import { HAT_IDS, hatById, spriteFor } from '@mmo/render';
+import { Compositor } from '@mmo/render/compositor';
+import { drawNameplates } from '@mmo/render/scene';
+import { paintActor } from '@mmo/render/sprites';
 import {
 	BoxRenderable,
 	InputRenderable,
@@ -23,9 +18,9 @@ import {
 	type RenderableOptions,
 	type Renderable as RenderableType,
 	type RenderContext,
-	RGBA,
 	TextRenderable,
 } from '@opentui/core';
+import { encodeToBuffer } from '../render/compositor-sink';
 import { COLORS } from '../theme';
 import {
 	CUSTOMIZE_FIELDS,
@@ -51,10 +46,6 @@ export interface CreatorResult {
 	handle: string;
 	cosmetics: Cosmetics;
 }
-
-const STYLE: RenderStyle<RGBA> = buildSceneStyle((r, g, b, a) =>
-	RGBA.fromInts(r, g, b, a),
-);
 
 export const PLAYER = spriteFor('player');
 export const NAMEPLATE_H = 2;
@@ -91,23 +82,27 @@ class PreviewRenderable extends Renderable {
 		'',
 	);
 
+	private compositor: Compositor | null = null;
+
 	constructor(ctx: RenderContext, options: RenderableOptions = {}) {
 		super(ctx, { live: true, buffered: true, ...options });
 	}
 
 	protected renderSelf(buffer: OptimizedBuffer): void {
-		const terrain = {
-			w: buffer.width,
-			h: buffer.height,
-			cells: new Uint8Array(buffer.width * buffer.height),
-		};
-		renderZoneScene(
-			buffer,
-			{ terrain, portals: [], npcs: [], entities: [this.avatar] },
-			{ x: 0, y: 0 },
-			STYLE,
-		);
-		drawNameplates(buffer, [this.avatar], { x: 0, y: 0 }, terrain, STYLE);
+		const w = Math.max(1, buffer.width);
+		const h = Math.max(1, buffer.height);
+		if (
+			!this.compositor ||
+			this.compositor.widthCells !== w ||
+			this.compositor.heightCells !== h
+		)
+			this.compositor = new Compositor(w, h);
+		const compositor = this.compositor;
+		const cam = { x: 0, y: 0 };
+		compositor.clear();
+		paintActor(compositor, this.avatar, cam);
+		drawNameplates(compositor, [this.avatar], cam);
+		encodeToBuffer(compositor, buffer);
 	}
 }
 

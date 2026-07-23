@@ -8,7 +8,6 @@ import {
 	Pool,
 	spawnSpeck,
 	speckColor,
-	speckDrawCell,
 } from '../src/particles/engine';
 import type { Profile, Speck } from '../src/particles/profile';
 import { seededRng } from './helpers';
@@ -177,70 +176,6 @@ test('specks spraying sideways into a wall never embed in the solid terrain', ()
 			expect(isSolid(terrain, cx, Math.floor(p.y))).toBe(false);
 		}
 	}
-});
-
-function speck(over: Partial<Speck>): Speck {
-	return {
-		active: true,
-		profile: BLOOD,
-		x: 0,
-		y: 0,
-		vx: 0,
-		vy: 0,
-		stage: 'airborne',
-		bounced: false,
-		ageMs: 0,
-		stageMs: 0,
-		born: 0,
-		seed: 0,
-		...over,
-	};
-}
-
-test('a colliding speck draws floor-aligned in its own sim cell — never rounded into the floor', () => {
-	const terrain = floorTerrain(40, 20);
-	const p = speck({ x: 10, y: 18.6 });
-	expect(isSolid(terrain, 10, Math.round(p.y))).toBe(true);
-	const { col, row } = speckDrawCell(p, terrain);
-	expect(col).toBe(10);
-	expect(row).toBe(18);
-	expect(isSolid(terrain, col, row)).toBe(false);
-});
-
-test('a wall-adjacent speck draws floor-aligned in the empty column — never rounded into the wall tile', () => {
-	const terrain = wallTerrain(40, 20, 25);
-	const p = speck({ x: 24.6, y: 10 });
-	expect(isSolid(terrain, Math.round(p.x), 10)).toBe(true);
-	const { col, row } = speckDrawCell(p, terrain);
-	expect(col).toBe(24);
-	expect(row).toBe(10);
-	expect(isSolid(terrain, col, row)).toBe(false);
-});
-
-test('a non-colliding spark keeps the nearest-cell projection', () => {
-	const terrain = floorTerrain(40, 20);
-	const p = speck({ profile: EFFECTS.impact.profile, x: 10.6, y: 5.6 });
-	expect(speckDrawCell(p, terrain)).toEqual({ col: 11, row: 6 });
-});
-
-test('a settled speck projects onto the visible surface cell', () => {
-	const terrain = floorTerrain(40, 20);
-	const pool = new Pool(64);
-	burst(pool, 'blood', 10, 16, 4, 1, seededRng(3));
-	let settled: Speck | undefined;
-	for (let i = 0; i < 600 && !settled; i++) {
-		advanceSpecks(pool, 16, terrain);
-		settled = pool.specks.find(
-			(p) => p.active && (p.stage === 'rest' || p.stage === 'fade'),
-		);
-	}
-	expect(settled).toBeDefined();
-	const p = settled as Speck;
-	expect(isSolid(terrain, Math.floor(p.x), Math.floor(p.y))).toBe(false);
-	const { col, row } = speckDrawCell(p, terrain);
-	expect(isSolid(terrain, col, row)).toBe(true);
-	expect(isSolid(terrain, col, row - 1)).toBe(false);
-	expect(row).toBe(Math.floor(p.y) + 1);
 });
 
 test('a colliding speck whose own cell is solid dies instead of resting', () => {

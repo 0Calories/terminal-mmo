@@ -10,10 +10,7 @@ export const blood: EffectDef = {
 		maxLifeMs: 6000,
 		launchSpeed: 14,
 		launchSpread: 10,
-		glyphs: {
-			airborne: ['▄', '▖', '▗', '▘', '▝'],
-			rest: ['▄', '▃', '▖', '▗'],
-		},
+		primitive: 'pixel',
 		colors: [
 			{ t: 0, r: 220, g: 40, b: 40 },
 			{ t: 0.5, r: 150, g: 25, b: 25 },

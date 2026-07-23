@@ -1,6 +1,7 @@
 import type { CombatEvent } from '@mmo/core/combat';
 import { BOX } from '@mmo/core/entities';
 import { activeZone, type GameState } from '@mmo/core/protocol';
+import { Compositor } from '@mmo/render/compositor';
 import {
 	type OptimizedBuffer,
 	Renderable,
@@ -52,6 +53,7 @@ export class PlayfieldRenderable extends Renderable {
 	private hitstop: Hitstop = NO_HITSTOP;
 	private readonly particles: ParticleEngine;
 	private readonly dodges = new DodgeTracker();
+	private compositor: Compositor | null = null;
 	private lastParticleTick = -1;
 	private lastZoneId: string | null = null;
 	private lastTime = 0;
@@ -161,9 +163,21 @@ export class PlayfieldRenderable extends Renderable {
 				this.sound.play(cue.kind, { volume: cue.volume, pan: cue.pan });
 		}
 
-		drawPlayfield(buffer, this.game, cam, {
+		drawPlayfield(buffer, this.compositorFor(buffer), this.game, cam, {
 			particles: this.particles,
 			dodges: this.dodges,
 		});
+	}
+
+	private compositorFor(buffer: OptimizedBuffer): Compositor {
+		const w = Math.max(1, buffer.width);
+		const h = Math.max(1, buffer.height);
+		if (
+			!this.compositor ||
+			this.compositor.widthCells !== w ||
+			this.compositor.heightCells !== h
+		)
+			this.compositor = new Compositor(w, h);
+		return this.compositor;
 	}
 }

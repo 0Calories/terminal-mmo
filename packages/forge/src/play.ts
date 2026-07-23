@@ -7,15 +7,13 @@ import {
 	localZoneState,
 	stepLocalWorld,
 } from '@mmo/core/world';
-import {
-	buildSceneStyle,
-	drawEntitySprite,
-	renderZoneScene,
-	type ZoneScene,
-} from '@mmo/render';
+import type { ZoneScene } from '@mmo/render';
+import type { Compositor } from '@mmo/render/compositor';
 import type { OptimizedBuffer } from '@opentui/core';
 import type { CliDeps } from './cli';
 import { type Cam, clampPreviewCam } from './preview';
+import { encodeToBuffer } from './render/compositor-encode';
+import { composeZone, compositorFor } from './render/zone-compose';
 
 export function playSceneOf(lw: LocalWorld): ZoneScene {
 	const zone = mustZoneState(lw).zone;
@@ -145,10 +143,12 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 	}
 
 	const { createCliRenderer, Renderable, RGBA } = await import('@opentui/core');
-	const style = buildSceneStyle((r, g, b, a) => RGBA.fromInts(r, g, b, a));
+	const statusFg = RGBA.fromInts(232, 232, 238, 255);
+	const statusBg = RGBA.fromInts(34, 40, 54, 255);
 
 	let lw = createLocalWorld(zones, id);
 	const input = new PlayInput();
+	let compositor: Compositor | null = null;
 
 	class PlayRenderable extends Renderable {
 		// biome-ignore lint/suspicious/noExplicitAny: opentui ctor ctx type
@@ -167,13 +167,14 @@ export async function runPlay(args: string[], deps: CliDeps): Promise<void> {
 				buf.width,
 				buf.height,
 			);
-			renderZoneScene(buf, scene, cam, style);
-			drawEntitySprite(buf, a, cam, style, scene.terrain);
+			compositor = compositorFor(compositor, buf.width, buf.height);
+			composeZone(compositor, scene, cam, a);
+			encodeToBuffer(compositor, buf);
 			const status = playStatusLine(lw);
 			for (let x = 0; x < buf.width; x++)
-				buf.setCell(x, 0, ' ', style.paletteDefault, style.terrainBg);
+				buf.setCell(x, 0, ' ', statusFg, statusBg);
 			for (let i = 0; i < status.length && i < buf.width; i++)
-				buf.setCell(i, 0, status[i], style.paletteDefault, style.terrainBg);
+				buf.setCell(i, 0, status[i], statusFg, statusBg);
 		}
 	}
 

@@ -1,5 +1,5 @@
 import type { Terrain, Tint } from '@mmo/core/entities';
-import type { OptimizedBuffer } from '@opentui/core';
+import type { Compositor } from '@mmo/render/compositor';
 import { drawSpecks } from './draw';
 import { EFFECTS, type EffectName } from './effects';
 import { advanceSpecks, Pool, spawnSpeck } from './engine';
@@ -46,18 +46,15 @@ export class ParticleEngine {
 	}
 
 	draw(
-		buf: OptimizedBuffer,
+		compositor: Compositor,
 		cam: { x: number; y: number },
 		layer: ParticleLayer,
 	): void {
 		if (!this.terrain) return;
 		drawSpecks(
-			buf,
-			this.pool,
+			compositor,
+			this.pool.specks,
 			cam,
-			this.terrain,
-			buf.width,
-			buf.height,
 			layer === 'airborne'
 				? (p) => p.stage === 'airborne'
 				: (p) => p.stage !== 'airborne',

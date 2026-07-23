@@ -10,10 +10,7 @@ export const gore: EffectDef = {
 		maxLifeMs: 7000,
 		launchSpeed: 18,
 		launchSpread: 12,
-		glyphs: {
-			airborne: ['▆', '▅', '▄', '▓', '▃'],
-			rest: ['▅', '▄', '▓', '▃'],
-		},
+		primitive: 'pixel',
 		colors: [
 			{ t: 0, r: 200, g: 30, b: 30 },
 			{ t: 0.5, r: 120, g: 18, b: 18 },
