@@ -1,3 +1,4 @@
+import { PHYS } from '../physics/constants';
 import { type Drive, IDLE_DRIVE } from '../physics/physics';
 import { isSolid, isWall } from '../physics/terrain';
 import {
@@ -22,21 +23,20 @@ export interface BrainResult {
 
 export type Brain = (m: Entity, view: BrainView) => BrainResult;
 
-function patrolDrive(m: Entity, t: Terrain): Drive {
-	const dir = m.facing;
-	if (!m.onGround) return { moveX: dir, jump: false };
+function wallAhead(m: Entity, t: Terrain, dir: Facing): boolean {
 	const top = Math.floor(m.y);
 	const bot = Math.ceil(m.y + BOX.h) - 1;
 	const wallCol = dir === 1 ? Math.ceil(m.x + BOX.w) : Math.floor(m.x) - 1;
-	let wallAhead = false;
-	for (let cy = top; cy <= bot; cy++)
-		if (isWall(t, wallCol, cy)) {
-			wallAhead = true;
-			break;
-		}
+	for (let cy = top; cy <= bot; cy++) if (isWall(t, wallCol, cy)) return true;
+	return false;
+}
+
+function patrolDrive(m: Entity, t: Terrain): Drive {
+	const dir = m.facing;
+	if (!m.onGround) return { moveX: dir, jump: false };
 	const lead = dir === 1 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x);
 	const footY = Math.ceil(m.y + BOX.h);
-	const turn = wallAhead || !isSolid(t, lead, footY);
+	const turn = wallAhead(m, t, dir) || !isSolid(t, lead, footY);
 	return { moveX: turn ? (dir === 1 ? -1 : 1) : dir, jump: false };
 }
 
@@ -68,6 +68,62 @@ function meleeBrain(p: MeleeProfile): Brain {
 		if (gap && gap.adx <= p.range && (m.attackCdT ?? 0) <= 0)
 			drive = { ...drive, face: toward(gap.dx), commit: 'swing' };
 		return { drive, ai: m.ai };
+	};
+}
+
+interface SlimeAi {
+	restT: number;
+}
+
+function slimeAi(ai: unknown): SlimeAi {
+	return typeof ai === 'object' && ai !== null && 'restT' in ai
+		? (ai as SlimeAi)
+		: { restT: 0 };
+}
+
+// Rests are counted in Brain calls — one per fixed 16ms zone tick.
+const SLIME_REST = { patrol: 45, approach: 15 } as const;
+
+// Columns a full hop can carry the slime (speed × ballistic airtime), plus
+// one for the drift of the landing tick.
+function hopSpan(speed: number): number {
+	return Math.ceil((speed * 2 * PHYS.jump) / PHYS.grav) + 1;
+}
+
+function hopLandsOnGround(m: Entity, t: Terrain, dir: Facing): boolean {
+	const lead = dir === 1 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x);
+	const footY = Math.ceil(m.y + BOX.h);
+	const span = hopSpan(m.speed);
+	for (let step = 1; step <= span; step++)
+		if (!isSolid(t, lead + dir * step, footY)) return false;
+	return true;
+}
+
+function slimeBrain(p: MeleeProfile): Brain {
+	return (m, view) => {
+		if (stunned(m) || committed(m)) return { drive: IDLE_DRIVE, ai: m.ai };
+		const ai = slimeAi(m.ai);
+		if (!m.onGround) return { drive: { moveX: m.facing, jump: false }, ai };
+		if (ai.restT > 0)
+			return { drive: { moveX: 0, jump: false }, ai: { restT: ai.restT - 1 } };
+		const gap = gapTo(m, view.targetX);
+		if (gap && gap.adx < p.aggro) {
+			if (gap.adx < p.deadzone)
+				return { drive: { moveX: 0, jump: false }, ai };
+			return {
+				drive: { moveX: toward(gap.dx), jump: true },
+				ai: { restT: SLIME_REST.approach },
+			};
+		}
+		const t = view.terrain;
+		const safe = (dir: Facing) =>
+			!wallAhead(m, t, dir) && hopLandsOnGround(m, t, dir);
+		const dir: Facing = safe(m.facing) ? m.facing : m.facing === 1 ? -1 : 1;
+		if (!safe(dir)) return { drive: { moveX: 0, jump: false }, ai };
+		return {
+			drive: { moveX: dir, jump: true },
+			ai: { restT: SLIME_REST.patrol },
+		};
 	};
 }
 
@@ -107,7 +163,7 @@ function shooterBrain(p: RangedProfile): Brain {
 }
 
 export const BRAINS: Record<MonsterType, Brain> = {
-	slime: (m) => ({ drive: IDLE_DRIVE, ai: m.ai }),
+	slime: slimeBrain(ARCHETYPES.slime.melee),
 	chaser: meleeBrain(ARCHETYPES.chaser.melee),
 	brute: meleeBrain(ARCHETYPES.brute.melee),
 	shooter: shooterBrain(ARCHETYPES.shooter.ranged),

@@ -20,6 +20,7 @@ import {
 	spawnMonster,
 } from '../../src/entities';
 import { lootTableFor, rollDrop } from '../../src/items';
+import { parseTerrain } from '../../src/physics';
 import { CAPABILITY_UNLOCK, xpForKill } from '../../src/progression';
 import { decodeServerMessage, encodeServerMessage } from '../../src/protocol';
 import { addAvatar, removeAvatar, snapshotFor } from '../../src/world';
@@ -506,6 +507,57 @@ test('a Monster targets and chases the nearest Avatar', () => {
 		16,
 	);
 	expect(next.zone.monsters[0].x).toBeLessThan(50);
+});
+
+test('a Slime hopping on top of an Avatar is harmless: traversal hops carry no Strike', () => {
+	const m = spawnMonster('slime', 2, 20, y);
+	m.onGround = true;
+	const av = serverAvatar(7, 20);
+	const before = av.avatar.hp;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
+	for (let i = 0; i < 600; i++) {
+		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
+		expect(state.events ?? []).toEqual([]);
+	}
+	expect(state.avatars[0].avatar.hp).toBe(before);
+	expect(state.zone.monsters[0].attackT).toBe(0);
+});
+
+test('a Slime locomotes by hopping: it leaves the ground and travels', () => {
+	const m = spawnMonster('slime', 2, 100, y);
+	m.onGround = true;
+	const startX = m.x;
+	let state: ZoneState = { zone: zoneWith([m]), avatars: [], tick: 0 };
+	let airborne = false;
+	for (let i = 0; i < 600; i++) {
+		state = stepZone(state, [], 16);
+		if (!state.zone.monsters[0].onGround) airborne = true;
+	}
+	expect(airborne).toBe(true);
+	expect(state.zone.monsters[0].x).not.toBe(startX);
+	expect(state.zone.monsters[0].onGround).toBe(true);
+});
+
+test('a patrolling Slime never hops off its platform', () => {
+	const groundEnd = 30;
+	const rows: string[] = [];
+	for (let cy = 0; cy < GROUND_TOP; cy++) rows.push('.'.repeat(60));
+	for (let cy = GROUND_TOP; cy < GROUND_TOP + 3; cy++)
+		rows.push('#'.repeat(groundEnd + 1) + '.'.repeat(60 - groundEnd - 1));
+	const island = parseTerrain(rows);
+	const m = spawnMonster('slime', 2, 13, y);
+	m.onGround = true;
+	let state: ZoneState = {
+		zone: { ...zoneWith([m]), terrain: island },
+		avatars: [],
+		tick: 0,
+	};
+	for (let i = 0; i < 2000; i++) {
+		state = stepZone(state, [], 16);
+		const s = state.zone.monsters[0];
+		expect(s.y + BOX.h).toBeLessThanOrEqual(GROUND_TOP);
+		expect(s.x + BOX.w).toBeLessThanOrEqual(groundEnd + 1);
+	}
 });
 
 test('only the Avatar landing the kill is credited when two are present', () => {
