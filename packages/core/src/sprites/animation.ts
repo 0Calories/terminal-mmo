@@ -78,12 +78,20 @@ export interface MonsterBodyState {
 	airborne: boolean;
 }
 
+/** The Animations that ride an Attack phase and sample by its progress. */
+const PHASE_ANIMATIONS: readonly string[] = [
+	'windup',
+	'attack',
+	'recovery',
+] satisfies readonly MonsterAnimationName[];
+
+export function isPhaseAnimation(name: string): boolean {
+	return PHASE_ANIMATIONS.includes(name);
+}
+
 /**
- * The pure Monster body-Animation selector (ADR 0039): an Attack phase names
- * its telegraph Animation — the active phase reads `attack` — off-ground reads
- * `airborne`, everything else rests on `idle`. Resolving a missing Animation
- * back to `idle` is the sprite registry's job, so an idle-only Monster renders
- * exactly as before.
+ * Resolving a missing Animation back to `idle` is the sprite registry's job,
+ * so an idle-only Monster renders exactly as before.
  */
 export function monsterAnimation(s: MonsterBodyState): MonsterAnimationName {
 	if (s.move === 'basic' && s.phase !== null)
@@ -93,9 +101,9 @@ export function monsterAnimation(s: MonsterBodyState): MonsterAnimationName {
 }
 
 /**
- * Samples a phase-bound Animation by phase *progress*, never fps (the ADR 0036
- * weapon-swing rule): more frames smooth the telegraph but can never change
- * its duration or desync it from the hitbox timing.
+ * Samples a phase-bound Animation by phase progress rather than a frame rate,
+ * so authoring more frames smooths a telegraph without changing its duration
+ * or drifting from the hitbox timing.
  */
 export function phaseFrameIndex(progress: number, frameCount: number): number {
 	const count = Math.max(1, Math.floor(frameCount));

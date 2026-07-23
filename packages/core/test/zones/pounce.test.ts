@@ -1,67 +1,18 @@
 import { expect, test } from 'bun:test';
 import { attackPhaseAt, COMBAT, meleeKnockback } from '../../src/combat';
 import type { AttackPhase, Entity } from '../../src/entities';
-import {
-	ARCHETYPES,
-	BOX,
-	DEFAULT_COSMETICS,
-	spawnAvatar,
-	spawnMonster,
-} from '../../src/entities';
+import { ARCHETYPES, spawnMonster } from '../../src/entities';
 import { snapshotFor } from '../../src/world';
-import type { AvatarIntent, ServerAvatar, ZoneState } from '../../src/zones';
-import { GROUND_TOP, stepZone, type Zone } from '../../src/zones';
-import { flatTerrain } from '../helpers';
+import type { ServerAvatar, ZoneState } from '../../src/zones';
+import { stepZone } from '../../src/zones';
+import { holdAt, SPAWN_Y, serverAvatar, zoneWith } from '../helpers';
 
-const y = GROUND_TOP - BOX.h;
 const MELEE = ARCHETYPES.slime.melee;
 const POUNCE = MELEE.pounce;
 if (!POUNCE) throw new Error('the slime profile must author pounce timings');
 
-function serverAvatar(sessionId: number, x: number): ServerAvatar {
-	return {
-		sessionId,
-		handle: 'hero',
-		cosmetics: DEFAULT_COSMETICS,
-		avatar: { ...spawnAvatar(x, y), id: sessionId },
-		progress: { level: 1, xp: 0, gold: 0 },
-		inventory: [],
-		log: [],
-		nextId: 1,
-		rngState: 1,
-	};
-}
-
-function zoneWith(monsters: Entity[]): Zone {
-	return {
-		id: 'pounce-zone',
-		type: 'field',
-		terrain: flatTerrain(),
-		monsters,
-		projectiles: [],
-		nextProjectileId: 1,
-		spawns: [],
-		respawns: [],
-		portals: [],
-		nextMonsterId: 100,
-	};
-}
-
-function holdAt(sessionId: number, e: Entity): AvatarIntent {
-	return {
-		sessionId,
-		x: e.x,
-		y: e.y,
-		vx: 0,
-		vy: 0,
-		facing: e.facing,
-		onGround: e.onGround,
-		attack: false,
-	};
-}
-
 function groundedSlime(x: number): Entity {
-	const m = spawnMonster('slime', 2, x, y);
+	const m = spawnMonster('slime', 2, x, SPAWN_Y);
 	m.onGround = true;
 	return m;
 }

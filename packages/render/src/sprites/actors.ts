@@ -20,6 +20,7 @@ import {
 } from '@mmo/core/entities';
 import {
 	bodyFrame,
+	isPhaseAnimation,
 	MONSTER_SPRITE_REF,
 	mirrorAnchorX,
 	monsterAnimation,
@@ -275,8 +276,7 @@ function resolveBody(e: Entity, st: AnimState): Body {
 		doc.animations[0];
 	if (anim === undefined)
 		return { sprite: placeholder(), baseline: doc.baseline };
-	const phaseBound = anim.name !== 'idle' && anim.name !== 'airborne';
-	const frameIndex = phaseBound
+	const frameIndex = isPhaseAnimation(anim.name)
 		? phaseFrameIndex(st.progress, anim.frames.length)
 		: 0;
 	const label = frameLabelAt(anim, frameIndex);
@@ -286,19 +286,15 @@ function resolveBody(e: Entity, st: AnimState): Body {
 	};
 }
 
-const TELEGRAPH_ANIMATIONS = ['windup', 'attack', 'recovery'];
-
 /**
  * A Monster graduates off the overlay-glyph telegraph by authoring attack
- * Animations on its Body sprite (ADR 0039); until then the overlay renders
- * exactly as before.
+ * Animations on its Body sprite; until then the overlay renders exactly as
+ * before.
  */
 export function monsterAuthorsAttackFrames(type: EntityType): boolean {
 	if (type === 'player') return false;
 	const doc = monsterDocs.get(MONSTER_SPRITE_REF[type]);
-	return (
-		doc?.animations.some((a) => TELEGRAPH_ANIMATIONS.includes(a.name)) ?? false
-	);
+	return doc?.animations.some((a) => isPhaseAnimation(a.name)) ?? false;
 }
 
 function paintWeapon(
