@@ -1,70 +1,122 @@
-import { SWING_TOTAL, swingPhase, swingProgress } from '@mmo/core/combat';
+import { loadSpriteSources } from '@mmo/assets';
+import {
+	ACTION_FLAG,
+	bladeEdgeArc,
+	SWING_TOTAL,
+	swingPhase,
+	swingProgress,
+	weaponById,
+} from '@mmo/core/combat';
 import {
 	type ActionState,
+	type AttackPhase,
 	BOX,
 	DEFAULT_FORM_ID,
 	type Entity,
 	type EntityType,
 	type Facing,
+	type MoveId,
 	type RGBAQuad,
+	SCENE_COLORS,
+	SCENE_PALETTE,
 } from '@mmo/core/entities';
-import { spriteMetaFor } from '@mmo/core/sprites';
 import {
-	type BodySprite,
-	type CellBuffer,
-	type ColorFactory,
-	compileBodySprite,
-	compileWeaponSprite,
-	drawEntitySprite,
+	bodyFrame,
+	mirrorAnchorX,
+	spriteMetaFor,
+	swingFrameIndex,
+} from '@mmo/core/sprites';
+import {
 	FORM_IDS,
 	findFrame,
-	formById,
 	frameLabelAt,
 	frameLocations,
 	HAT_IDS,
-	type RenderStyle,
-	type Sprite,
+	parseSpriteFile,
 	type SpriteAnimationDoc,
 	type SpriteDoc,
-	type SpriteOverrides,
-	spriteFromDoc,
+	WEAPON_ACCENT_KEY,
 } from '@mmo/render';
+import { type Cell, Compositor, type RGBA } from '@mmo/render/compositor';
+import {
+	type CompiledSprite,
+	compileSprite,
+	paintSprite,
+	type SpritePalette,
+} from '@mmo/render/sprites';
 import { animationFps, playbackFrame, walkPreviewIndex } from './playback';
 import type { SpriteRole } from './templates';
 
 const PLAIN_TYPE: EntityType = 'chaser';
 
-function baseAvatar(facing: Facing, hue = 0): Entity {
-	return {
-		id: 1,
-		type: 'player',
-		x: 0,
-		y: 0,
-		vx: 0,
-		vy: 0,
-		speed: 0,
-		facing,
-		onGround: true,
-		hp: 10,
-		maxHp: 10,
-		hurtT: 0,
-		attackT: 0,
-		cosmetics: { hue, hat: '', nameplate: 0, form: DEFAULT_FORM_ID },
-	};
+const PALETTE_DEFAULT: RGBA = SCENE_COLORS.paletteDefault;
+
+/**
+ * The composite preview composes the sprite being edited through the SAME
+ * production compositor and {@link paintSprite} the live client uses (ADR 0038),
+ * so authored art cannot disagree with the game. Layers that are not being
+ * edited (the default body a hat sits on, the weapon a form holds) load from the
+ * shipped catalog; the edited layer is compiled straight from the working doc.
+ */
+
+// ── Shipped catalog docs (for the non-edited context layers) ──────────────────
+
+const shippedSources = [...loadSpriteSources().values()];
+
+function shippedDoc(role: string, id: string): SpriteDoc | undefined {
+	const source = shippedSources.find((s) => s.role === role && s.id === id);
+	if (!source) return undefined;
+	const { doc, diagnostics } = parseSpriteFile(source.text, source.id);
+	if (doc === null) return undefined;
+	if (diagnostics.some((d) => d.severity === 'error')) return undefined;
+	return doc;
 }
 
-function defaultBody(): BodySprite {
+function defaultFormDoc(): SpriteDoc | undefined {
 	const id = FORM_IDS.includes(DEFAULT_FORM_ID) ? DEFAULT_FORM_ID : FORM_IDS[0];
-	return formById(id);
+	return id ? shippedDoc('forms', id) : undefined;
 }
 
-function defaultHatId(): string {
-	return HAT_IDS[0] ?? '';
+function defaultHatDoc(): SpriteDoc | undefined {
+	const id = HAT_IDS[0];
+	return id ? shippedDoc('hats', id) : undefined;
 }
+
+function defaultWeaponDoc(): SpriteDoc | undefined {
+	return shippedDoc('weapons', weaponById(0).sprite);
+}
+
+// ── Palette / style (8-bit; the compositor's colour model) ────────────────────
+
+export interface CompositeStyle {
+	readonly palette: SpritePalette;
+	readonly paletteDefault: RGBA;
+}
+
+export function baseCompositeStyle(): CompositeStyle {
+	return { palette: SCENE_PALETTE, paletteDefault: PALETTE_DEFAULT };
+}
+
+/** Merge local colour-key overrides (doc colours, dynamic p/a previews) into a
+ *  style's palette without mutating the base. */
+export function styleWithLocalColors(
+	base: CompositeStyle,
+	colors: Readonly<Record<string, RGBAQuad>>,
+): CompositeStyle {
+	const keys = Object.keys(colors);
+	if (keys.length === 0) return base;
+	const palette: Record<string, RGBA> = { ...base.palette };
+	for (const key of keys) {
+		const q = colors[key];
+		if (q) palette[key] = [q[0], q[1], q[2], q[3]];
+	}
+	return { palette, paletteDefault: base.paletteDefault };
+}
+
+// ── Preview stances (which frames the preview cycles through) ─────────────────
 
 export interface PreviewStance {
 	id: string;
-
 	fps: number;
 }
 
@@ -175,101 +227,327 @@ function weaponAction(
 	};
 }
 
-function bodyShowingFrame(doc: SpriteDoc, frameName: string): BodySprite {
-	const full = compileBodySprite(doc);
+// ── Entity animation state (mirrors the production sprite pipeline) ───────────
+
+interface AnimState {
+	move: MoveId;
+	phase: AttackPhase | null;
+	progress: number;
+	staggered: boolean;
+	emote: string | null;
+	emoteT: number;
+}
+
+function animStateOf(e: Entity): AnimState {
+	if (e.action)
+		return {
+			move: e.action.move,
+			phase: e.action.phase,
+			progress: e.action.progress,
+			staggered: (e.action.flags & ACTION_FLAG.staggered) !== 0,
+			emote: e.action.emote,
+			emoteT: e.action.emoteT,
+		};
+	const phase = swingPhase(e.attackT);
 	return {
-		...full,
-		frames: { ...full.frames, idle: spriteFromDoc(doc, frameName) },
+		move: phase ? 'basic' : 'idle',
+		phase,
+		progress: phase ? swingProgress(e.attackT) : 0,
+		staggered: (e.stunT ?? 0) > 0,
+		emote: e.emoteId ?? null,
+		emoteT: e.emoteT ?? 0,
 	};
+}
+
+function fpsFor(doc: SpriteDoc): Record<string, number> {
+	const fps: Record<string, number> = {};
+	for (const a of doc.animations) if (a.fps !== undefined) fps[a.name] = a.fps;
+	return fps;
+}
+
+function walkFrameCount(doc: SpriteDoc): number {
+	return doc.animations.find((a) => a.name === 'walk')?.frames.length ?? 1;
+}
+
+function bodyFrameLabel(
+	doc: SpriteDoc,
+	animationId: string,
+	frameIndex: number,
+): string | undefined {
+	const anim =
+		doc.animations.find((a) => a.name === animationId) ??
+		doc.animations.find((a) => a.name === 'idle');
+	if (anim === undefined) return undefined;
+	const n = anim.frames.length;
+	const idx = ((frameIndex % n) + n) % n;
+	return frameLabelAt(anim, idx);
+}
+
+/** The body frame the production pipeline would show for this entity + doc. */
+function animatedBodyLabel(doc: SpriteDoc, e: Entity): string | undefined {
+	const st = animStateOf(e);
+	const anim = bodyFrame(
+		{
+			move: st.move,
+			phase: st.phase,
+			swingProgress: st.progress,
+			emote: st.emote,
+			emoteT: st.emoteT,
+			airborne: !e.onGround,
+			moving: e.vx !== 0,
+			distanceX: e.x,
+			staggered: st.staggered,
+		},
+		fpsFor(doc),
+		walkFrameCount(doc),
+	);
+	return bodyFrameLabel(doc, anim.animationId, anim.frameIndex);
+}
+
+// ── Composition plan ──────────────────────────────────────────────────────────
+
+interface Layer {
+	sprite: CompiledSprite;
+	cellX: number;
+	cellY: number;
+	facing: Facing;
+}
+
+interface Arc {
+	x: number;
+	y: number;
+	char: string;
+	color: RGBA;
 }
 
 export interface CompositeView {
 	facing: Facing;
-
 	stance: string;
-
 	elapsedS: number;
-
 	hue?: number;
 }
 
 export interface CompositeBuild {
 	entity: Entity;
-	overrides: SpriteOverrides;
+	layers: Layer[];
+	arcs: Arc[];
 }
 
-class BoundsBuffer implements CellBuffer<null> {
-	readonly width: number;
-	readonly height: number;
-	minX = Number.POSITIVE_INFINITY;
-	minY = Number.POSITIVE_INFINITY;
-	maxX = Number.NEGATIVE_INFINITY;
-	maxY = Number.NEGATIVE_INFINITY;
-	constructor(w: number, h: number) {
-		this.width = w;
-		this.height = h;
-	}
-	get any(): boolean {
-		return this.maxX >= this.minX;
-	}
-	clear(): void {}
-	setCell(x: number, y: number, ch: string): void {
-		if (ch === ' ') return;
-		this.minX = Math.min(this.minX, x);
-		this.minY = Math.min(this.minY, y);
-		this.maxX = Math.max(this.maxX, x);
-		this.maxY = Math.max(this.maxY, y);
-	}
-	setCellWithAlphaBlending(x: number, y: number, ch: string): void {
-		this.setCell(x, y, ch);
-	}
+function baseAvatar(facing: Facing, hue = 0): Entity {
+	return {
+		id: 1,
+		type: 'player',
+		x: 0,
+		y: 0,
+		vx: 0,
+		vy: 0,
+		speed: 0,
+		facing,
+		onGround: true,
+		hp: 10,
+		maxHp: 10,
+		hurtT: 0,
+		attackT: 0,
+		cosmetics: { hue, hat: '', nameplate: 0, form: DEFAULT_FORM_ID },
+	};
 }
 
-const MEASURE_STYLE: RenderStyle<null> = {
-	bg: null,
-	terrainFg: null,
-	terrainBg: null,
-	portal: null,
-	transparent: null,
-	hurt: null,
-	nameplate: null,
-	nameplateBg: null,
-	palette: {},
-	paletteDefault: null,
-	cosmetics: { hues: [], nameplates: [], nameplateBgs: [] },
-};
+/** The layers + primary sprite for a role, resolved as a function of the entity's
+ *  final placement so centring can re-derive them after measuring. */
+interface RoleContext {
+	entity: Entity;
+	primary: CompiledSprite;
+	baseline: number;
+	render(e: Entity, style: CompositeStyle): { layers: Layer[]; arcs: Arc[] };
+}
+
+function bodyOrigin(
+	e: Entity,
+	sprite: CompiledSprite,
+	baseline: number,
+): { sx: number; sy: number } {
+	const bodyW = sprite.widthCells;
+	return {
+		sx: Math.round(e.x - Math.floor((bodyW - BOX.w) / 2)),
+		sy: Math.round(e.y + BOX.h - sprite.heightCells + baseline),
+	};
+}
+
+function weaponLayerAndArc(
+	weaponDoc: SpriteDoc,
+	e: Entity,
+	body: CompiledSprite,
+	sx: number,
+	sy: number,
+	style: CompositeStyle,
+): { layer?: Layer; arcs: Arc[] } {
+	const grip = body.anchors.grip;
+	const wGrip = weaponDoc.anchors.grip;
+	if (!grip || !wGrip) return { arcs: [] };
+	const st = animStateOf(e);
+	const swinging = st.move === 'basic' && st.phase !== null;
+	const label = swinging
+		? `swing ${swingFrameIndex(st.phase as AttackPhase)}`
+		: frameLabelAt(weaponDoc.animations[0], 0);
+	const frame = compileSprite(weaponDoc, label);
+	const bodyW = body.widthCells;
+	const bodyGripX = sx + mirrorAnchorX(grip.x, bodyW, e.facing);
+	const bodyGripY = sy + grip.y;
+	const wgx = e.facing === 1 ? wGrip.x : frame.widthCells - 1 - wGrip.x;
+	const layer: Layer = {
+		sprite: frame,
+		cellX: bodyGripX - wgx,
+		cellY: bodyGripY - wGrip.y,
+		facing: e.facing,
+	};
+	const arcs: Arc[] = [];
+	if (st.phase === 'active') {
+		const accent = style.palette[WEAPON_ACCENT_KEY] ?? style.paletteDefault;
+		for (const c of bladeEdgeArc(st.progress, e.facing))
+			arcs.push({
+				x: bodyGripX + c.dx,
+				y: bodyGripY + c.dy,
+				char: c.glyph,
+				color: accent,
+			});
+	}
+	return { layer, arcs };
+}
+
+function hatLayer(
+	hat: CompiledSprite,
+	e: Entity,
+	body: CompiledSprite,
+	sx: number,
+	sy: number,
+): Layer {
+	const bodyW = body.widthCells;
+	const head = body.anchors.head;
+	const headX = head ? mirrorAnchorX(head.x, bodyW, e.facing) : (bodyW - 1) / 2;
+	return {
+		sprite: hat,
+		cellX: sx + Math.round(headX - (hat.widthCells - 1) / 2),
+		cellY: sy + (head?.y ?? 0) - hat.heightCells,
+		facing: e.facing,
+	};
+}
+
+function roleContext(
+	doc: SpriteDoc,
+	role: SpriteRole,
+	view: CompositeView,
+): RoleContext | undefined {
+	const { facing } = view;
+
+	if (role === 'hat') {
+		const bodyDoc = defaultFormDoc();
+		if (!bodyDoc) return undefined;
+		const e = baseAvatar(facing, view.hue ?? 0);
+		const body = compileSprite(bodyDoc, animatedBodyLabel(bodyDoc, e));
+		const hatFrame = resolveFrame(doc, view.stance, view.elapsedS);
+		return {
+			entity: e,
+			primary: body,
+			baseline: body.baseline,
+			render(entity) {
+				const { sx, sy } = bodyOrigin(entity, body, body.baseline);
+				const hat = compileSprite(doc, hatFrame);
+				return {
+					layers: [
+						{ sprite: body, cellX: sx, cellY: sy, facing },
+						hatLayer(hat, entity, body, sx, sy),
+					],
+					arcs: [],
+				};
+			},
+		};
+	}
+
+	if (role === 'weapon') {
+		const bodyDoc = defaultFormDoc();
+		if (!bodyDoc) return undefined;
+		const e = baseAvatar(facing, view.hue ?? 0);
+		e.weapon = 0;
+		const action = weaponAction(doc, view.stance, view.elapsedS);
+		if (action) e.action = action;
+		const body = compileSprite(bodyDoc, animatedBodyLabel(bodyDoc, e));
+		return {
+			entity: e,
+			primary: body,
+			baseline: body.baseline,
+			render(entity, style) {
+				const { sx, sy } = bodyOrigin(entity, body, body.baseline);
+				const { layer, arcs } = weaponLayerAndArc(
+					doc,
+					entity,
+					body,
+					sx,
+					sy,
+					style,
+				);
+				const layers: Layer[] = [
+					{ sprite: body, cellX: sx, cellY: sy, facing },
+				];
+				if (layer) layers.push(layer);
+				return { layers, arcs };
+			},
+		};
+	}
+
+	if (role === 'form') {
+		const frame = resolveFrame(doc, view.stance, view.elapsedS);
+		const body = compileSprite(doc, frame);
+		const e = baseAvatar(facing, view.hue ?? 0);
+		e.weapon = 0;
+		const hatDoc = defaultHatDoc();
+		const weaponDoc = defaultWeaponDoc();
+		return {
+			entity: e,
+			primary: body,
+			baseline: body.baseline,
+			render(entity, style) {
+				const { sx, sy } = bodyOrigin(entity, body, body.baseline);
+				const layers: Layer[] = [
+					{ sprite: body, cellX: sx, cellY: sy, facing },
+				];
+				let arcs: Arc[] = [];
+				if (weaponDoc) {
+					const w = weaponLayerAndArc(weaponDoc, entity, body, sx, sy, style);
+					if (w.layer) layers.push(w.layer);
+					arcs = w.arcs;
+				}
+				if (hatDoc) {
+					const hat = compileSprite(hatDoc);
+					layers.push(hatLayer(hat, entity, body, sx, sy));
+				}
+				return { layers, arcs };
+			},
+		};
+	}
+
+	// monster / npc: the edited sprite is the whole actor.
+	const frame = resolveFrame(doc, view.stance, view.elapsedS);
+	const base = compileSprite(doc, frame);
+	const baseline = spriteMetaFor(PLAIN_TYPE).baseline;
+	const e: Entity = { ...baseAvatar(facing), type: PLAIN_TYPE };
+	e.cosmetics = undefined;
+	return {
+		entity: e,
+		primary: base,
+		baseline,
+		render(entity) {
+			const { sx, sy } = bodyOrigin(entity, base, baseline);
+			return {
+				layers: [{ sprite: base, cellX: sx, cellY: sy, facing }],
+				arcs: [],
+			};
+		},
+	};
+}
+
+// ── Placement + centring ──────────────────────────────────────────────────────
 
 const MEASURE_MARGIN = 16;
-
-function centerByBounds(
-	build: CompositeBuild,
-	dims: { width: number; height: number },
-): CompositeBuild {
-	const measure = new BoundsBuffer(
-		dims.width + 2 * MEASURE_MARGIN,
-		dims.height + 2 * MEASURE_MARGIN,
-	);
-	drawEntitySprite(
-		measure,
-		build.entity,
-		{ x: -MEASURE_MARGIN, y: -MEASURE_MARGIN },
-		MEASURE_STYLE,
-		undefined,
-		undefined,
-		build.overrides,
-	);
-	if (!measure.any) return build;
-	const bw = measure.maxX - measure.minX + 1;
-	const bh = measure.maxY - measure.minY + 1;
-
-	const atX = measure.minX - MEASURE_MARGIN;
-	const atY = measure.minY - MEASURE_MARGIN;
-	const wantX = Math.floor((dims.width - bw) / 2);
-	const wantY = Math.floor((dims.height - bh) / 2);
-	build.entity.x += wantX - atX;
-	build.entity.y += wantY - atY;
-	return build;
-}
 
 function placeCentered(
 	w: number,
@@ -286,11 +564,69 @@ function placeCentered(
 	};
 }
 
-function primary(body: BodySprite): Sprite {
-	const idle = body.frames.idle;
-	if (idle === undefined)
-		throw new Error('composite body is missing its idle frame');
-	return Array.isArray(idle) ? idle[0] : (idle as Sprite);
+function paintLayers(
+	compositor: Compositor,
+	layers: readonly Layer[],
+	arcs: readonly Arc[],
+	style: CompositeStyle,
+): void {
+	for (const l of layers)
+		paintSprite(compositor, l.sprite, {
+			cellX: l.cellX,
+			cellY: l.cellY,
+			facing: l.facing,
+			palette: style.palette,
+			paletteDefault: style.paletteDefault,
+		});
+	for (const a of arcs) compositor.stampGlyph(a.x, a.y, a.char, a.color);
+}
+
+/** Ink bounds of a composed surface (non-space cells), or null when empty. */
+function inkBounds(
+	rows: readonly (readonly Cell[])[],
+): { minX: number; minY: number; maxX: number; maxY: number } | null {
+	let minX = Number.POSITIVE_INFINITY;
+	let minY = Number.POSITIVE_INFINITY;
+	let maxX = Number.NEGATIVE_INFINITY;
+	let maxY = Number.NEGATIVE_INFINITY;
+	for (let y = 0; y < rows.length; y++)
+		for (let x = 0; x < rows[y].length; x++)
+			if (rows[y][x].char !== ' ') {
+				if (x < minX) minX = x;
+				if (y < minY) minY = y;
+				if (x > maxX) maxX = x;
+				if (y > maxY) maxY = y;
+			}
+	return maxX >= minX ? { minX, minY, maxX, maxY } : null;
+}
+
+function centerByBounds(
+	ctx: RoleContext,
+	dims: { width: number; height: number },
+	style: CompositeStyle,
+): void {
+	const e = ctx.entity;
+	const measure = new Compositor(
+		dims.width + 2 * MEASURE_MARGIN,
+		dims.height + 2 * MEASURE_MARGIN,
+	);
+	const shifted: Entity = {
+		...e,
+		x: e.x + MEASURE_MARGIN,
+		y: e.y + MEASURE_MARGIN,
+	};
+	const { layers, arcs } = ctx.render(shifted, style);
+	paintLayers(measure, layers, arcs, style);
+	const bounds = inkBounds(measure.surface());
+	if (!bounds) return;
+	const bw = bounds.maxX - bounds.minX + 1;
+	const bh = bounds.maxY - bounds.minY + 1;
+	const atX = bounds.minX - MEASURE_MARGIN;
+	const atY = bounds.minY - MEASURE_MARGIN;
+	const wantX = Math.floor((dims.width - bw) / 2);
+	const wantY = Math.floor((dims.height - bh) / 2);
+	e.x += wantX - atX;
+	e.y += wantY - atY;
 }
 
 export function buildComposite(
@@ -298,188 +634,102 @@ export function buildComposite(
 	role: SpriteRole,
 	view: CompositeView,
 	dims: { width: number; height: number },
+	style: CompositeStyle = baseCompositeStyle(),
 ): CompositeBuild | null {
-	const { facing } = view;
 	try {
-		if (role === 'hat') {
-			const body = defaultBody();
-			const sprite = primary(body);
-			const e = baseAvatar(facing, view.hue ?? 0);
-			const pos = placeCentered(
-				sprite.w,
-				sprite.h,
-				body.baseline ?? 0,
-				dims.width,
-				dims.height,
-			);
-			e.x = pos.x;
-			e.y = pos.y;
-			const frame = resolveFrame(doc, view.stance, view.elapsedS);
-			return centerByBounds(
-				{ entity: e, overrides: { body, hat: spriteFromDoc(doc, frame) } },
-				dims,
-			);
-		}
-
-		if (role === 'weapon') {
-			const body = defaultBody();
-			const sprite = primary(body);
-			const e = baseAvatar(facing, view.hue ?? 0);
-			e.weapon = 0;
-			const action = weaponAction(doc, view.stance, view.elapsedS);
-			if (action) e.action = action;
-			const pos = placeCentered(
-				sprite.w,
-				sprite.h,
-				body.baseline ?? 0,
-				dims.width,
-				dims.height,
-			);
-			e.x = pos.x;
-			e.y = pos.y;
-			return centerByBounds(
-				{ entity: e, overrides: { body, weapon: compileWeaponSprite(doc) } },
-				dims,
-			);
-		}
-
-		if (role === 'form') {
-			const frame = resolveFrame(doc, view.stance, view.elapsedS);
-			const body = bodyShowingFrame(doc, frame);
-			const sprite = primary(body);
-			const e = baseAvatar(facing, view.hue ?? 0);
-			e.weapon = 0;
-			if (e.cosmetics) e.cosmetics.hat = defaultHatId();
-			const pos = placeCentered(
-				sprite.w,
-				sprite.h,
-				body.baseline ?? 0,
-				dims.width,
-				dims.height,
-			);
-			e.x = pos.x;
-			e.y = pos.y;
-			return centerByBounds({ entity: e, overrides: { body } }, dims);
-		}
-
-		const frame = resolveFrame(doc, view.stance, view.elapsedS);
-		const base = spriteFromDoc(doc, frame);
-		const baseline = spriteMetaFor(PLAIN_TYPE).baseline;
-		const e: Entity = { ...baseAvatar(facing), type: PLAIN_TYPE };
-		e.cosmetics = undefined;
+		const ctx = roleContext(doc, role, view);
+		if (!ctx) return null;
 		const pos = placeCentered(
-			base.w,
-			base.h,
-			baseline,
+			ctx.primary.widthCells,
+			ctx.primary.heightCells,
+			ctx.baseline,
 			dims.width,
 			dims.height,
 		);
-		e.x = pos.x;
-		e.y = pos.y;
-		return centerByBounds({ entity: e, overrides: { base } }, dims);
+		ctx.entity.x = pos.x;
+		ctx.entity.y = pos.y;
+		centerByBounds(ctx, dims, style);
+		const { layers, arcs } = ctx.render(ctx.entity, style);
+		return { entity: ctx.entity, layers, arcs };
 	} catch {
 		return null;
 	}
 }
 
-export function styleWithLocalColors<C>(
-	base: RenderStyle<C>,
-	colors: Readonly<Record<string, RGBAQuad>>,
-	toColor: ColorFactory<C>,
-): RenderStyle<C> {
-	const keys = Object.keys(colors);
-	if (keys.length === 0) return base;
-	const palette: Record<string, C> = { ...base.palette };
-	for (const key of keys) {
-		const q = colors[key];
-		if (q) palette[key] = toColor(q[0], q[1], q[2], q[3]);
-	}
-	return { ...base, palette };
-}
-
-export interface PlainFrameCell<C> {
-	ch: string;
-	fg: C;
-	bg: C | null;
-}
-
-export interface PlainFrame<C> {
-	w: number;
-	h: number;
-	at(cx: number, cy: number): PlainFrameCell<C> | null;
-}
-
-class PlainCapture<C> implements CellBuffer<C> {
-	readonly width: number;
-	readonly height: number;
-	private readonly cells: (PlainFrameCell<C> | null)[];
-	constructor(w: number, h: number) {
-		this.width = w;
-		this.height = h;
-		this.cells = new Array(Math.max(0, w * h)).fill(null);
-	}
-	clear(): void {}
-	private put(x: number, y: number, cell: PlainFrameCell<C> | null): void {
-		if (x < 0 || x >= this.width || y < 0 || y >= this.height) return;
-		this.cells[y * this.width + x] = cell;
-	}
-	setCell(x: number, y: number, ch: string, fg: C, bg: C): void {
-		this.put(x, y, ch === ' ' ? null : { ch, fg, bg });
-	}
-	setCellWithAlphaBlending(x: number, y: number, ch: string, fg: C): void {
-		this.put(x, y, ch === ' ' ? null : { ch, fg, bg: null });
-	}
-	at(cx: number, cy: number): PlainFrameCell<C> | null {
-		if (cx < 0 || cx >= this.width || cy < 0 || cy >= this.height) return null;
-		return this.cells[cy * this.width + cx];
-	}
-}
-
-export function renderPlainFrame<C>(
-	doc: SpriteDoc,
-	frameLabel: string | undefined,
-	style: RenderStyle<C>,
-): PlainFrame<C> | null {
-	let base: Sprite;
-	try {
-		base = spriteFromDoc(doc, frameLabel);
-	} catch {
-		return null;
-	}
-	const baseline = spriteMetaFor(PLAIN_TYPE).baseline;
-	const e: Entity = { ...baseAvatar(1), type: PLAIN_TYPE };
-	e.cosmetics = undefined;
-
-	const cam = {
-		x: -Math.floor((base.w - BOX.w) / 2),
-		y: BOX.h - base.h + baseline,
-	};
-	const buf = new PlainCapture<C>(base.w, base.h);
-	drawEntitySprite(buf, e, cam, style, undefined, undefined, { base });
-	return { w: base.w, h: base.h, at: (cx, cy) => buf.at(cx, cy) };
-}
-
-export function renderComposite<C>(
-	buf: CellBuffer<C>,
+/**
+ * Compose the whole preview into a fresh {@link Compositor} sized to `dims` and
+ * return its surface, or null when the sprite cannot composite yet. Callers
+ * encode the surface to their own target (OpenTUI or text).
+ */
+export function renderComposite(
 	doc: SpriteDoc,
 	role: SpriteRole,
-	style: RenderStyle<C>,
+	style: CompositeStyle,
 	view: CompositeView,
-): boolean {
-	buf.clear(style.bg);
-	const built = buildComposite(doc, role, view, {
-		width: buf.width,
-		height: buf.height,
+	dims: { width: number; height: number },
+): Cell[][] | null {
+	const built = buildComposite(doc, role, view, dims, style);
+	if (!built) return null;
+	const compositor = new Compositor(dims.width, dims.height);
+	paintLayers(compositor, built.layers, built.arcs, style);
+	return compositor.surface();
+}
+
+// ── Plain single-frame capture (canvas modal onion-skin) ──────────────────────
+
+export interface PlainFrameCell {
+	ch: string;
+	fg: RGBA;
+	bg: RGBA | null;
+}
+
+export interface PlainFrame {
+	w: number;
+	h: number;
+	at(cx: number, cy: number): PlainFrameCell | null;
+}
+
+/**
+ * Compose one plain frame of a doc (no body/hat/weapon assembly) into a
+ * Compositor sized to the frame and expose it cell-by-cell. Transparent cells
+ * read as null; a glyph with no composed backdrop reports `bg: null` so the
+ * caller can lay its own checkerboard beneath.
+ */
+export function renderPlainFrame(
+	doc: SpriteDoc,
+	frameLabel: string | undefined,
+	style: CompositeStyle,
+): PlainFrame | null {
+	let sprite: CompiledSprite;
+	try {
+		sprite = compileSprite(doc, frameLabel);
+	} catch {
+		return null;
+	}
+	const w = sprite.widthCells;
+	const h = sprite.heightCells;
+	if (w <= 0 || h <= 0) return { w: 0, h: 0, at: () => null };
+	const compositor = new Compositor(w, h);
+	paintSprite(compositor, sprite, {
+		cellX: 0,
+		cellY: 0,
+		facing: 1,
+		palette: style.palette,
+		paletteDefault: style.paletteDefault,
 	});
-	if (!built) return false;
-	drawEntitySprite(
-		buf,
-		built.entity,
-		{ x: 0, y: 0 },
-		style,
-		undefined,
-		undefined,
-		built.overrides,
-	);
-	return true;
+	const rows = compositor.surface();
+	return {
+		w,
+		h,
+		at(cx, cy) {
+			if (cx < 0 || cx >= w || cy < 0 || cy >= h) return null;
+			const cell = rows[cy][cx];
+			if (cell.char === ' ' && cell.fg[3] === 0) return null;
+			return {
+				ch: cell.char,
+				fg: cell.fg,
+				bg: cell.bg[3] > 0 ? cell.bg : null,
+			};
+		},
+	};
 }
