@@ -55,7 +55,6 @@ export class ParticleEngine {
 			compositor,
 			this.pool.specks,
 			cam,
-			this.terrain,
 			layer === 'airborne'
 				? (p) => p.stage === 'airborne'
 				: (p) => p.stage !== 'airborne',

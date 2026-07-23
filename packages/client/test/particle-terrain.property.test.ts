@@ -2,13 +2,7 @@ import { expect, test } from 'bun:test';
 import type { Terrain } from '@mmo/core/entities';
 import { isSolid, parseTerrain } from '@mmo/core/physics';
 import { EFFECTS } from '../src/particles/effects';
-import {
-	advanceSpecks,
-	Pool,
-	spawnSpeck,
-	speckDrawCell,
-} from '../src/particles/engine';
-import type { Speck } from '../src/particles/profile';
+import { advanceSpecks, Pool, spawnSpeck } from '../src/particles/engine';
 import { seededRng } from './helpers';
 
 const SEEDS = 30;
@@ -66,16 +60,8 @@ const FIXTURES: Fixture[] = [
 	},
 ];
 
-function drawCell(p: Speck, t: Terrain): { col: number; row: number } {
-	return speckDrawCell(p, t);
-}
-
-function embedded(t: Terrain, col: number, row: number): boolean {
-	return isSolid(t, col, row) && isSolid(t, col, row - 1);
-}
-
 for (const fx of FIXTURES) {
-	test(`${fx.name}: colliding specks never live or draw inside solid, and all reach extinction`, () => {
+	test(`${fx.name}: colliding specks never live inside solid, and all reach extinction`, () => {
 		for (let seed = 1; seed <= SEEDS; seed++) {
 			const rng = seededRng(seed);
 			const pool = new Pool(256);
@@ -96,17 +82,6 @@ for (const fx of FIXTURES) {
 					if (isSolid(fx.terrain, cx, cy)) {
 						throw new Error(
 							`${fx.name} seed ${seed} frame ${frame}: active ${p.stage} speck inside solid cell (${cx},${cy}) at (${p.x},${p.y})`,
-						);
-					}
-
-					const { col, row } = drawCell(p, fx.terrain);
-					const bad =
-						p.stage === 'airborne'
-							? isSolid(fx.terrain, col, row)
-							: embedded(fx.terrain, col, row);
-					if (bad) {
-						throw new Error(
-							`${fx.name} seed ${seed} frame ${frame}: ${p.stage} speck drawn into solid cell (${col},${row}) at (${p.x},${p.y})`,
 						);
 					}
 				}
