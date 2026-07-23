@@ -6,7 +6,7 @@ import {
 	type DepthKey,
 	sortActorsByDepth,
 } from '@mmo/render/scene';
-import { actorFootDepth, npcFootDepth } from '@mmo/render/sprites';
+import { actorDepthY, actorFootDepth, npcDepthY } from '@mmo/render/sprites';
 
 function key(footY: number, category: ActorCategory, id: number): DepthKey {
 	return { footY, category, id };
@@ -100,17 +100,24 @@ test('compareActorDepth is a consistent comparator (antisymmetric)', () => {
 	);
 });
 
-test('actorFootDepth plants feet at the box bottom shifted by the body baseline', () => {
-	// The default player Form (buddy) carries baseline 1, so the same box y plants
-	// a player one row deeper than a baseline-0 monster — raw y would tie them.
+test('actorFootDepth is the box bottom shifted by the sprite-doc baseline', () => {
+	// The buddy Form carries baseline 1 and the chaser doc baseline 0.5: their
+	// visually planted feet differ even at the same box y. This anchors
+	// nameplates, not depth order.
 	const player = monster({ id: 1, type: 'player', y: 4 });
 	const mon = monster({ id: 2, type: 'chaser', y: 4 });
-	expect(actorFootDepth(mon)).toBe(4 + BOX.h);
+	expect(actorFootDepth(mon)).toBe(4 + BOX.h + 0.5);
 	expect(actorFootDepth(player)).toBe(4 + BOX.h + 1);
-	expect(actorFootDepth(player)).toBeGreaterThan(actorFootDepth(mon));
 });
 
-test('npcFootDepth plants feet at the NPC box bottom', () => {
+test('depth keys are plain box bottoms: same-floor actors tie regardless of baseline', () => {
+	const player = monster({ id: 1, type: 'player', y: 4 });
+	const mon = monster({ id: 2, type: 'chaser', y: 4 });
+	expect(actorDepthY(player)).toBe(4 + BOX.h);
+	expect(actorDepthY(mon)).toBe(actorDepthY(player));
+});
+
+test('npcDepthY is the NPC box bottom, symmetric with actorDepthY', () => {
 	const npc: Npc = {
 		id: 1,
 		kind: 'vendor',
@@ -120,5 +127,5 @@ test('npcFootDepth plants feet at the NPC box bottom', () => {
 		w: 4,
 		h: 5,
 	};
-	expect(npcFootDepth(npc)).toBe(8 + 5);
+	expect(npcDepthY(npc)).toBe(8 + 5);
 });

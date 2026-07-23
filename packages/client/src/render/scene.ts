@@ -16,8 +16,8 @@ import {
 	sortActorsByDepth,
 } from '@mmo/render/scene';
 import {
-	actorFootDepth,
-	npcFootDepth,
+	actorDepthY,
+	npcDepthY,
 	paintActor,
 	paintNpc,
 } from '@mmo/render/sprites';
@@ -81,19 +81,19 @@ export function drawPlayfield(
 	// draws atomically.
 	const crowd = sortActorsByDepth([
 		...npcs.map((n) => ({
-			footY: npcFootDepth(n),
+			footY: npcDepthY(n),
 			category: 'npc' as const,
 			id: n.id,
 			paint: () => paintNpc(compositor, n, cam),
 		})),
 		...zone.monsters.map((m) => ({
-			footY: actorFootDepth(m),
+			footY: actorDepthY(m),
 			category: 'monster' as const,
 			id: m.id,
 			paint: () => paintActor(compositor, m, cam),
 		})),
 		...others.map((o) => ({
-			footY: actorFootDepth(o),
+			footY: actorDepthY(o),
 			category: 'avatar' as const,
 			id: o.id,
 			paint: () => paintActor(compositor, o, cam),

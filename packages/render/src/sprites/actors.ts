@@ -22,7 +22,6 @@ import {
 	MONSTER_SPRITE_REF,
 	mirrorAnchorX,
 	NPC_SPRITE_REF,
-	spriteMetaFor,
 	swingFrameIndex,
 } from '@mmo/core/sprites';
 import type { Compositor, RGBA } from '../compositor';
@@ -204,24 +203,33 @@ function formDocFor(e: Entity): SpriteDoc | undefined {
 	return formDocs.get(e.cosmetics?.form ?? '') ?? formDocs.get(DEFAULT_FORM_ID);
 }
 
-/** The body baseline {@link paintActor} plants feet with: Form-level for players,
- *  else the entity's sprite metadata. */
+/** The body baseline {@link paintActor} plants feet with — always the sprite
+ *  doc's, the single source of truth: the Form doc for players, else the
+ *  monster doc. */
 function bodyBaseline(e: Entity): number {
 	if (e.type === 'player') return formDocFor(e)?.baseline ?? 0;
-	return spriteMetaFor(e.type).baseline;
+	return monsterDocs.get(MONSTER_SPRITE_REF[e.type])?.baseline ?? 0;
 }
 
 /**
- * World-y of an actor's planted feet — the foot-depth key for pass-3 ordering.
- * Mirrors {@link paintActor}: feet sit at the collision box bottom shifted by the
- * body baseline, independent of sprite height (taller sprites extend upward).
+ * World-y of an actor's visually planted feet: the collision box bottom shifted
+ * by the body baseline, independent of sprite height (taller sprites extend
+ * upward). This is a visual anchor (nameplates), NOT the pass-3 sort key —
+ * baseline is foot-art idiom, not scene depth; ordering uses {@link actorDepthY}.
  */
 export function actorFootDepth(e: Entity): number {
 	return e.y + BOX.h + bodyBaseline(e);
 }
 
-/** World-y of an NPC's planted feet, mirroring {@link paintNpc}'s box-bottom plant. */
-export function npcFootDepth(n: Npc): number {
+/** Pass-3 depth key of an actor: the collision box bottom. Every planted
+ *  sprite's deepest ink lands half a cell below it regardless of baseline, so
+ *  box bottom alone orders the crowd and same-floor actors tie exactly. */
+export function actorDepthY(e: Entity): number {
+	return e.y + BOX.h;
+}
+
+/** Pass-3 depth key of an NPC: its box bottom, symmetric with {@link actorDepthY}. */
+export function npcDepthY(n: Npc): number {
 	return n.y + n.h;
 }
 
@@ -254,7 +262,7 @@ function resolveBody(e: Entity, st: AnimState): Body {
 	const doc = monsterDocs.get(ref);
 	return {
 		sprite: doc ? compiled(`monsters:${ref}:idle`, doc, 'idle') : placeholder(),
-		baseline: spriteMetaFor(e.type).baseline,
+		baseline: doc?.baseline ?? 0,
 	};
 }
 
@@ -420,7 +428,7 @@ export function paintNpc(
 		: placeholder();
 	// One combined-transform quantization into a Pixel origin (ADR 0038).
 	const worldX = n.x + Math.floor((n.w - sprite.widthCells) / 2);
-	const worldY = n.y + n.h - sprite.heightCells;
+	const worldY = n.y + n.h - sprite.heightCells + (doc?.baseline ?? 0);
 	const originPx = Math.round((worldX - cam.x) * 2);
 	const originPy = Math.round((worldY - cam.y) * 2);
 	paintSprite(compositor, sprite, {

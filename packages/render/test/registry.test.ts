@@ -42,7 +42,7 @@ test('every hat id resolves to art; an unknown/empty id is bareheaded', () => {
 	expect(hatById('nope')).toBeNull();
 });
 
-test("every entity's art defaultKey/baseline matches the @mmo/core sprite metadata", () => {
+test("every entity's art defaultKey matches the @mmo/core sprite metadata", () => {
 	const types: readonly EntityType[] = [
 		'player',
 		...(Object.keys(MONSTER_SPRITE_REF) as EntityType[]),
@@ -51,7 +51,6 @@ test("every entity's art defaultKey/baseline matches the @mmo/core sprite metada
 		const art = spriteFor(type);
 		const meta = spriteMetaFor(type);
 		expect(art.defaultKey).toBe(meta.defaultKey);
-		expect(art.baseline).toBe(meta.baseline);
 	}
 });
 

@@ -1,5 +1,6 @@
 {
 	"key": "o",
+	"baseline": 0.5,
 	"animations": [{ "name": "idle" }]
 }
 --- idle

@@ -3,8 +3,8 @@ import type { Entity, Npc } from '@mmo/core/entities';
 import { Compositor } from '@mmo/render/compositor';
 import { type ActorCategory, sortActorsByDepth } from '@mmo/render/scene';
 import {
-	actorFootDepth,
-	npcFootDepth,
+	actorDepthY,
+	npcDepthY,
 	paintActor,
 	paintNpc,
 } from '@mmo/render/sprites';
@@ -38,7 +38,7 @@ interface CrowdMember {
 
 function monsterMember(e: Entity): CrowdMember {
 	return {
-		footY: actorFootDepth(e),
+		footY: actorDepthY(e),
 		category: 'monster',
 		id: e.id,
 		paint: (comp) => paintActor(comp, e, NO_CAM),
@@ -46,7 +46,7 @@ function monsterMember(e: Entity): CrowdMember {
 }
 function avatarMember(e: Entity): CrowdMember {
 	return {
-		footY: actorFootDepth(e),
+		footY: actorDepthY(e),
 		category: 'avatar',
 		id: e.id,
 		paint: (comp) => paintActor(comp, e, NO_CAM),
@@ -54,7 +54,7 @@ function avatarMember(e: Entity): CrowdMember {
 }
 function npcMember(n: Npc): CrowdMember {
 	return {
-		footY: npcFootDepth(n),
+		footY: npcDepthY(n),
 		category: 'npc',
 		id: n.id,
 		paint: (comp) => paintNpc(comp, n, NO_CAM),
@@ -109,8 +109,8 @@ function anyBlankBecomesInk(combined: Compositor, front: Compositor): boolean {
 test('a forward actor draws atomically over a rear actor, hat and all', () => {
 	const W = 20;
 	const H = 14;
-	// Rear: a hatted player (baseline 1) whose feet sit at y+6. Front: a brute
-	// planted one row lower so its feet (y+5=9) land in front of the player (8).
+	// Rear: a hatted player. Front: a brute standing two rows lower, so its box
+	// bottom (the depth key) lands in front of the player's.
 	const rear = ent({
 		id: 1,
 		type: 'player',
@@ -119,7 +119,7 @@ test('a forward actor draws atomically over a rear actor, hat and all', () => {
 		cosmetics: { hue: 2, hat: 'cap', nameplate: 0, form: 'buddy' },
 	});
 	const front = ent({ id: 2, type: 'brute', x: 6, y: 4 });
-	expect(actorFootDepth(front)).toBeGreaterThan(actorFootDepth(rear));
+	expect(actorDepthY(front)).toBeGreaterThan(actorDepthY(rear));
 
 	const combined = new Compositor(W, H);
 	paintCrowd(combined, [avatarMember(front), monsterMember(rear)]);
@@ -149,8 +149,8 @@ test('at equal foot depth an NPC stays behind an overlapping monster', () => {
 		h: 5,
 	};
 	const mon = ent({ id: 2, type: 'brute', x: 6, y: 4 });
-	// Same planted foot depth: the tie must resolve by category, not by chance.
-	expect(npcFootDepth(npc)).toBe(actorFootDepth(mon));
+	// Same box-bottom depth: the tie must resolve by category, not by chance.
+	expect(npcDepthY(npc)).toBe(actorDepthY(mon));
 
 	const combined = new Compositor(W, H);
 	paintCrowd(combined, [monsterMember(mon), npcMember(npc)]);
@@ -173,7 +173,7 @@ test('the local avatar stays on top of a nearer-footed crowd actor', () => {
 		y: 2,
 		cosmetics: { hue: 4, hat: 'cap', nameplate: 0, form: 'buddy' },
 	});
-	expect(actorFootDepth(crowdBrute)).toBeGreaterThan(actorFootDepth(local));
+	expect(actorDepthY(crowdBrute)).toBeGreaterThan(actorDepthY(local));
 
 	const combined = new Compositor(W, H);
 	// Pass 3: the crowd.

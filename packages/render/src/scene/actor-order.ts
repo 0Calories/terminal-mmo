@@ -21,7 +21,8 @@ export const ACTOR_CATEGORY_RANK: Record<ActorCategory, number> = {
 };
 
 export interface DepthKey {
-	/** World-y of the actor's planted feet; larger draws later, nearer the front. */
+	/** World-y of the actor's collision-box bottom; larger draws later, nearer the
+	 *  front. Baseline is foot-art idiom, not depth, so it never enters this key. */
 	readonly footY: number;
 	readonly category: ActorCategory;
 	/** Stable per-actor id; final tie-break so equal-depth actors keep a fixed order. */

@@ -1,6 +1,7 @@
 export {
+	actorDepthY,
 	actorFootDepth,
-	npcFootDepth,
+	npcDepthY,
 	type PaintActorOptions,
 	paintActor,
 	paintNpc,

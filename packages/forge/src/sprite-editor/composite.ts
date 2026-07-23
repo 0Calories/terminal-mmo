@@ -20,12 +20,7 @@ import {
 	SCENE_COLORS,
 	SCENE_PALETTE,
 } from '@mmo/core/entities';
-import {
-	bodyFrame,
-	mirrorAnchorX,
-	spriteMetaFor,
-	swingFrameIndex,
-} from '@mmo/core/sprites';
+import { bodyFrame, mirrorAnchorX, swingFrameIndex } from '@mmo/core/sprites';
 import {
 	FORM_IDS,
 	findFrame,
@@ -528,7 +523,7 @@ function roleContext(
 	// monster / npc: the edited sprite is the whole actor.
 	const frame = resolveFrame(doc, view.stance, view.elapsedS);
 	const base = compileSprite(doc, frame);
-	const baseline = spriteMetaFor(PLAIN_TYPE).baseline;
+	const baseline = doc.baseline;
 	const e: Entity = { ...baseAvatar(facing), type: PLAIN_TYPE };
 	e.cosmetics = undefined;
 	return {
