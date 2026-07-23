@@ -511,6 +511,7 @@ test('a Monster targets and chases the nearest Avatar', () => {
 test('a Slime hopping on top of an Avatar is harmless: traversal hops carry no Strike', () => {
 	const m = spawnMonster('slime', 2, 20, y);
 	m.onGround = true;
+	m.attackCdT = 60;
 	const av = serverAvatar(7, 20);
 	const before = av.avatar.hp;
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
