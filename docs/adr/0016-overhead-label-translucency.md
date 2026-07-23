@@ -1,5 +1,5 @@
 ---
-status: accepted (nameplate-pill decisions superseded by ADR 0023)
+status: accepted (nameplate-pill decisions superseded by ADR 0023; backdrop sampling superseded by ADR 0038)
 ---
 
 # Overhead labels: a translucent nameplate pill; bubbles sit on the colour under them
@@ -7,7 +7,9 @@ status: accepted (nameplate-pill decisions superseded by ADR 0023)
 > **Note:** The **nameplate-pill** decisions below (the 2-row translucent pill, the
 > per-cell terrain-sampled wash, and the `nameplateWashes` catalog) are **superseded
 > by [ADR 0023](./0023-nameplate-text-overlay.md)**. The terrain-is-a-foreground-block
-> analysis and the **bubble + emote** decisions in this ADR still stand.
+> analysis and the **bubble + emote appearance** decisions in this ADR still stand.
+> [ADR 0038](./0038-sub-cell-scene-compositor.md) supersedes the manual per-cell
+> Terrain-sampling mechanism with composition against the actual scene.
 
 The three labels that float over an Avatar — its **nameplate** (the boxed Handle
 below the feet, #103), its **Speech bubble**, and its **Emote** (the last two share

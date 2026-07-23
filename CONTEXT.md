@@ -231,7 +231,9 @@ The ephemeral, bordered text that floats above a chatting Avatar's head, showing
 their latest Zone chat message to everyone who can see that Avatar. A purely
 client-side, decorative rendering of Zone chat (like a Sprite): it attaches to
 the Avatar by session id, tracks the Avatar as it moves, and expires on a timer —
-the chat log stays the durable record; a **Whisper** never produces one.
+the chat log stays the durable record; a **Whisper** never produces one. Text wraps
+by terminal display columns, not string length; a wide Unicode grapheme is one
+atomic overlay spanning its two cells.
 _Avoid_: Chat bubble, balloon, callout, tooltip
 
 **Emote**:
@@ -283,20 +285,24 @@ internals; the on-wire descriptor is now the CombatEvent), FX, animation, partic
 (that's the realization)
 
 **Particle**:
-A single client-side visual speck — one cell with a sub-cell position,
-velocity, and lifetime — simulated locally at render framerate. A client turns
-one VisualEffect into many Particles using local randomness, so the exact specks
+A single client-side visual speck with a sub-cell position, velocity, and lifetime,
+simulated locally at render framerate. Its look is either Pixel-authored and follows
+that position at half-cell resolution, or glyph-authored and snaps to the nearest
+terminal cell. A client turns one VisualEffect into many Particles using local
+randomness, so the exact specks
 differ harmlessly between clients; only the CombatEvent (and thus the VisualEffect it
 projects to) is shared. Each Particle's motion and look (gravity, bounce, whether it
-rests, glyphs, color-over-life) come from its named effect's **ParticleType** profile,
-not from hardcoded blood behavior. Purely decorative and client-side, like a Sprite.
+rests, visual primitives, color-over-life) come from its named effect's
+**ParticleType** profile, not from hardcoded blood behavior. Purely decorative and
+client-side, like a Sprite.
 _Avoid_: VisualEffect (that's the descriptor a Particle realizes), sprite, pixel (ambiguous), FX
 
 **ParticleType**:
 The visual profile a Particle belongs to (`blood`, `gore`, `impact`, `levelup`, later
 `dust`, `sparkle`…) — a declarative data entry defining its whole behavior: gravity,
-bounce, terrain collision, rest and fade durations, glyph sets, color-over-life,
-count-from-intensity. One generic client simulator reads the profile, so a new look is
+bounce, terrain collision, rest and fade durations, visual sets, color-over-life,
+count-from-intensity. A visual set may contain Pixel-authored or glyph-authored
+primitives. One generic client simulator reads the profile, so a new look is
 a new definition file, not new code — and since the ADR 0013 amendment the profile is
 **engine-internal**: the particle engine's only public surface is the *named effect*
 (`spawn('blood', at, dir, intensity)`); no caller can construct or pass a raw profile.
@@ -315,8 +321,9 @@ _Avoid_: pause, freeze-frame (the *sim* doesn't freeze), slow-mo, lag
 **Camera-kick**:
 A small, decaying viewport offset (≤2 cells, gone in <150ms) the client adds on a
 "big moment" — a Poise break in the foundation — layered on top of the follow
-camera as a single directional punch (not a rumble; micro-shake reads as jank at
-cell granularity). View-only and non-authoritative; keyed off the `impact`
+camera as a single directional punch, quantized to one **Pixel** (half a terminal
+cell) so its decay does not jump whole cells. It is not a rumble; repeated
+micro-shake still reads as jank. View-only and non-authoritative; keyed off the `impact`
 **VisualEffect** (from a break CombatEvent), so it fires for everyone who sees the
 break, attacker included.
 _Avoid_: screenshake, rumble, camera shake (it's a single decaying pop)
@@ -854,13 +861,17 @@ _Avoid_: Base frame, master frame, rest frame (a role concept, not a format one)
 The Sprite editor's atomic unit — one quadrant sub-cell, four per terminal cell
 (2×2), each either a color or transparent. What the artist paints; the glyph is
 derived. A cell carries at most two colors (fg + bg), which is the medium's
-grain, not an editor limit.
+grain, not an editor limit. Movement-capable Sprite roles (form, hat, weapon, and
+monster) are Pixel-only so their complete art can translate one Pixel at a time —
+half a terminal cell — without internal pieces snapping apart.
 _Avoid_: Cell (that's the 2×2 group), dot, subpixel
 
 **Glyph stamp**:
-The secondary Sprite-editor Tool that places one arbitrary character into a cell
-(`▲`, `╱`, `·`) for art the pixel model cannot express. A stamped cell is
-glyph-authored and immune to pixel painting until cleared.
+The secondary Sprite-editor Tool that places one arbitrary, single-column character
+into a cell (`▲`, `╱`, `·`) for art the pixel model cannot express. A stamped cell is
+glyph-authored, cell-aligned, and immune to pixel painting until cleared. A stamp
+without an authored background takes its backdrop from the composed scene; an
+authored background stays opaque.
 _Avoid_: Text tool, character brush
 
 **Anchor**:
