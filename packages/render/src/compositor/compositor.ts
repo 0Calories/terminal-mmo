@@ -1,10 +1,8 @@
 import { glyphFromQuadrants } from '../quadrant';
 import {
-	compareRGBA,
 	compositeOver,
-	equalRGBA,
+	type MutableRGBA,
 	type RGBA,
-	sqDistRGB,
 	TRANSPARENT,
 } from './rgba';
 
@@ -24,6 +22,25 @@ export interface Cell {
 }
 
 const EMPTY_CELL: Cell = { char: ' ', fg: TRANSPARENT, bg: TRANSPARENT };
+
+/**
+ * Caller-owned scratch a composed cell is decoded into on the allocation-light
+ * read path ({@link Compositor.readCellInto}). Its `fg`/`bg` are overwritten in
+ * place every read, so one instance serves an entire frame encode without
+ * allocating per cell. `wide` is `undefined` unless the cell is a wide
+ * grapheme's lead/continuation.
+ */
+export interface CellOut {
+	char: string;
+	fg: MutableRGBA;
+	bg: MutableRGBA;
+	wide: WideMark | undefined;
+}
+
+/** A fresh {@link CellOut} to reuse across an entire frame encode. */
+export function createCellOut(): CellOut {
+	return { char: ' ', fg: [0, 0, 0, 0], bg: [0, 0, 0, 0], wide: undefined };
+}
 
 /** Sub-pixel bit within a cell: bit = localX + 2 * localY (matches quadrant masks). */
 const NONE = -1;
@@ -68,6 +85,23 @@ export class Compositor {
 	private readonly glyphWide: Uint8Array;
 
 	private seq = 0;
+
+	/**
+	 * Per-read scratch for the allocation-light path: the four sub-pixel byte
+	 * offsets and submission orders of the cell under inspection, plus the
+	 * distinct-colour grouping (representative quad, order accumulator). A cell
+	 * has exactly four quadrants, so four slots suffice. Reused every read so a
+	 * whole frame reduces without allocating.
+	 */
+	private readonly quadOff = new Int32Array(4);
+	private readonly quadOrder = new Int32Array(4);
+	private readonly distRep = new Int32Array(4);
+	private readonly distOrder = new Int32Array(4);
+	private readonly distCount = new Int32Array(4);
+	/** Backdrop scratch for the stamp path's dominant-coverage derivation. */
+	private readonly scratchBackdrop: MutableRGBA = [0, 0, 0, 0];
+	/** Cell scratch backing the object-returning {@link cell}/{@link surface}. */
+	private readonly scratchOut = createCellOut();
 
 	constructor(widthCells: number, heightCells: number) {
 		assertPositiveInt('widthCells', widthCells);
@@ -151,7 +185,13 @@ export class Compositor {
 		) {
 			return;
 		}
-		const backdrop = bg ?? this.dominantBackdrop(cellX, cellY);
+		let backdrop: RGBA;
+		if (bg) {
+			backdrop = bg;
+		} else {
+			this.dominantBackdropInto(cellX, cellY, this.scratchBackdrop);
+			backdrop = this.scratchBackdrop;
+		}
 		// The glyph is atomic: flatten the Pixels beneath to its backdrop so later
 		// Pixels composite against it and cover only their own sub-cells.
 		this.flattenCell(cellX, cellY, backdrop, order);
@@ -186,7 +226,13 @@ export class Compositor {
 		const leadOrder = this.seq++;
 		const contOrder = this.seq++;
 
-		const leadBg = bg ?? this.dominantBackdrop(cellX, cellY);
+		let leadBg: RGBA;
+		if (bg) {
+			leadBg = bg;
+		} else {
+			this.dominantBackdropInto(cellX, cellY, this.scratchBackdrop);
+			leadBg = this.scratchBackdrop;
+		}
 		this.flattenCell(cellX, cellY, leadBg, leadOrder);
 		const li = cellY * this.widthCells + cellX;
 		this.glyphChar[li] = grapheme;
@@ -195,7 +241,13 @@ export class Compositor {
 		this.glyphOrder[li] = leadOrder;
 		this.glyphWide[li] = WIDE_LEAD;
 
-		const contBg = bg ?? this.dominantBackdrop(cellX + 1, cellY);
+		let contBg: RGBA;
+		if (bg) {
+			contBg = bg;
+		} else {
+			this.dominantBackdropInto(cellX + 1, cellY, this.scratchBackdrop);
+			contBg = this.scratchBackdrop;
+		}
 		this.flattenCell(cellX + 1, cellY, contBg, contOrder);
 		const ri = cellY * this.widthCells + cellX + 1;
 		this.glyphChar[ri] = ' ';
@@ -207,6 +259,33 @@ export class Compositor {
 
 	/** Finished terminal-neutral cell at cell coords. Throws if out of bounds. */
 	cell(cellX: number, cellY: number): Cell {
+		this.readCellInto(cellX, cellY, this.scratchOut);
+		return cellFromOut(this.scratchOut);
+	}
+
+	/** The whole surface as row-major rows of cells. */
+	surface(): Cell[][] {
+		const rows: Cell[][] = [];
+		for (let cy = 0; cy < this.heightCells; cy++) {
+			const row: Cell[] = [];
+			for (let cx = 0; cx < this.widthCells; cx++) {
+				this.readCellInto(cx, cy, this.scratchOut);
+				row.push(cellFromOut(this.scratchOut));
+			}
+			rows.push(row);
+		}
+		return rows;
+	}
+
+	/**
+	 * Allocation-light read: decode the composed cell at `(cellX, cellY)` into the
+	 * caller's `out` (glyph + fg + bg + wide written in place, never allocating).
+	 * This is the per-frame encode form — one `out` is reused across the whole
+	 * surface, so a frame decode allocates nothing while {@link cell}/{@link
+	 * surface} keep returning fresh objects atop it. Byte-identical to {@link
+	 * cell}. Throws if out of bounds.
+	 */
+	readCellInto(cellX: number, cellY: number, out: CellOut): void {
 		if (
 			cellX < 0 ||
 			cellX >= this.widthCells ||
@@ -215,19 +294,28 @@ export class Compositor {
 		) {
 			throw new RangeError(`cell (${cellX}, ${cellY}) is out of bounds`);
 		}
-		return this.computeCell(cellX, cellY);
-	}
-
-	/** The whole surface as row-major rows of cells. */
-	surface(): Cell[][] {
-		const rows: Cell[][] = [];
-		for (let cy = 0; cy < this.heightCells; cy++) {
-			const row: Cell[] = [];
-			for (let cx = 0; cx < this.widthCells; cx++)
-				row.push(this.computeCell(cx, cy));
-			rows.push(row);
+		this.loadQuads(cellX, cellY);
+		const ci = cellY * this.widthCells + cellX;
+		const gOrder = this.glyphOrder[ci];
+		if (gOrder !== NONE) {
+			let maxPix = NONE;
+			for (let quad = 0; quad < 4; quad++) {
+				const o = this.quadOrder[quad];
+				if (o > maxPix) maxPix = o;
+			}
+			// Frontmost representation owns the cell. No Pixel drawn after the glyph
+			// ⇒ the glyph overlay wins, over its own flattened backdrop.
+			if (maxPix <= gOrder) {
+				out.char = this.glyphChar[ci] as string;
+				this.copyStore(this.glyphFg, ci, out.fg);
+				this.copyStore(this.glyphBg, ci, out.bg);
+				const wide = this.glyphWide[ci];
+				out.wide =
+					wide === WIDE_LEAD ? 'lead' : wide === WIDE_CONT ? 'cont' : undefined;
+				return;
+			}
 		}
-		return rows;
+		this.reduceInto(out);
 	}
 
 	private writePixel(px: number, py: number, color: RGBA, order: number): void {
@@ -270,142 +358,229 @@ export class Compositor {
 		}
 	}
 
-	private cellPixel(cellX: number, cellY: number, quad: number): RGBA {
-		const lx = quad & 1;
-		const ly = (quad >> 1) & 1;
-		const off = ((cellY * 2 + ly) * this.subW + (cellX * 2 + lx)) * 4;
-		return [
-			this.pixels[off],
-			this.pixels[off + 1],
-			this.pixels[off + 2],
-			this.pixels[off + 3],
-		];
-	}
-
-	private cellPixelOrder(cellX: number, cellY: number, quad: number): number {
-		const lx = quad & 1;
-		const ly = (quad >> 1) & 1;
-		return this.pixelOrder[(cellY * 2 + ly) * this.subW + (cellX * 2 + lx)];
-	}
-
-	private dominantBackdrop(cellX: number, cellY: number): RGBA {
-		const groups: { color: RGBA; count: number; rearOrder: number }[] = [];
+	/** Cache the four sub-pixel byte offsets and orders of a cell into scratch. */
+	private loadQuads(cellX: number, cellY: number): void {
+		const baseX = cellX * 2;
+		const baseY = cellY * 2;
 		for (let quad = 0; quad < 4; quad++) {
-			const color = this.cellPixel(cellX, cellY, quad);
-			if (color[3] === 0) continue; // transparent sub-pixels cover nothing
-			const order = this.cellPixelOrder(cellX, cellY, quad);
-			const g = groups.find((it) => equalRGBA(it.color, color));
-			if (g) {
-				g.count++;
-				if (order < g.rearOrder) g.rearOrder = order;
+			const lx = quad & 1;
+			const ly = (quad >> 1) & 1;
+			const si = (baseY + ly) * this.subW + (baseX + lx);
+			this.quadOff[quad] = si * 4;
+			this.quadOrder[quad] = this.pixelOrder[si];
+		}
+	}
+
+	/**
+	 * Derive the dominant-coverage backdrop of a cell into `out` (allocation-free
+	 * mirror of the former `dominantBackdrop`): the colour covering the most
+	 * sub-pixels, ties to the rearmost then stable RGBA. Assumes nothing — loads
+	 * its own quads. Transparent when no sub-pixel is opaque.
+	 */
+	private dominantBackdropInto(
+		cellX: number,
+		cellY: number,
+		out: MutableRGBA,
+	): void {
+		this.loadQuads(cellX, cellY);
+		const p = this.pixels;
+		let n = 0;
+		for (let quad = 0; quad < 4; quad++) {
+			const off = this.quadOff[quad];
+			if (p[off + 3] === 0) continue; // transparent sub-pixels cover nothing
+			const order = this.quadOrder[quad];
+			let found = -1;
+			for (let j = 0; j < n; j++) {
+				if (this.pixelsEqual(off, this.quadOff[this.distRep[j]])) {
+					found = j;
+					break;
+				}
+			}
+			if (found >= 0) {
+				this.distCount[found]++;
+				if (order < this.distOrder[found]) this.distOrder[found] = order;
 			} else {
-				groups.push({ color, count: 1, rearOrder: order });
+				this.distRep[n] = quad;
+				this.distCount[n] = 1;
+				this.distOrder[n] = order;
+				n++;
 			}
 		}
-		if (groups.length === 0) return TRANSPARENT;
-		let best = groups[0];
-		for (let i = 1; i < groups.length; i++) {
-			const g = groups[i];
-			if (g.count > best.count) {
-				best = g;
-			} else if (g.count === best.count) {
+		if (n === 0) {
+			out[0] = 0;
+			out[1] = 0;
+			out[2] = 0;
+			out[3] = 0;
+			return;
+		}
+		let best = 0;
+		for (let j = 1; j < n; j++) {
+			if (this.distCount[j] > this.distCount[best]) {
+				best = j;
+			} else if (this.distCount[j] === this.distCount[best]) {
 				// Equal coverage prefers the rearmost colour, then stable RGBA order.
 				if (
-					g.rearOrder < best.rearOrder ||
-					(g.rearOrder === best.rearOrder &&
-						compareRGBA(g.color, best.color) < 0)
+					this.distOrder[j] < this.distOrder[best] ||
+					(this.distOrder[j] === this.distOrder[best] &&
+						this.pixelsCompare(
+							this.quadOff[this.distRep[j]],
+							this.quadOff[this.distRep[best]],
+						) < 0)
 				) {
-					best = g;
+					best = j;
 				}
 			}
 		}
-		return best.color;
+		this.copyPixels(this.quadOff[this.distRep[best]], out);
 	}
 
-	private computeCell(cellX: number, cellY: number): Cell {
-		const ci = cellY * this.widthCells + cellX;
-		const gOrder = this.glyphOrder[ci];
-		if (gOrder !== NONE) {
-			let maxPix = NONE;
-			for (let quad = 0; quad < 4; quad++) {
-				const o = this.cellPixelOrder(cellX, cellY, quad);
-				if (o > maxPix) maxPix = o;
-			}
-			// Frontmost representation owns the cell. No Pixel drawn after the glyph
-			// ⇒ the glyph overlay wins, over its own flattened backdrop.
-			if (maxPix <= gOrder) {
-				const wide = this.glyphWide[ci];
-				return {
-					char: this.glyphChar[ci] as string,
-					fg: this.readColor(this.glyphFg, ci),
-					bg: this.readColor(this.glyphBg, ci),
-					...(wide === WIDE_LEAD
-						? { wide: 'lead' as const }
-						: wide === WIDE_CONT
-							? { wide: 'cont' as const }
-							: {}),
-				};
-			}
-		}
-		return this.reducePixels(cellX, cellY);
-	}
-
-	private reducePixels(cellX: number, cellY: number): Cell {
-		const colors: RGBA[] = [
-			this.cellPixel(cellX, cellY, 0),
-			this.cellPixel(cellX, cellY, 1),
-			this.cellPixel(cellX, cellY, 2),
-			this.cellPixel(cellX, cellY, 3),
-		];
-		const orders = [
-			this.cellPixelOrder(cellX, cellY, 0),
-			this.cellPixelOrder(cellX, cellY, 1),
-			this.cellPixelOrder(cellX, cellY, 2),
-			this.cellPixelOrder(cellX, cellY, 3),
-		];
-
-		const distinct: { color: RGBA; frontOrder: number }[] = [];
+	/**
+	 * Reduce the four already-loaded quadrant Pixels into `out` (allocation-free
+	 * mirror of the former `reducePixels`): one colour ⇒ full block or empty; two
+	 * or more ⇒ the two frontmost distinct colours (recency, then stable RGBA)
+	 * with a quadrant glyph mapping each sub-pixel to the nearer survivor.
+	 */
+	private reduceInto(out: CellOut): void {
+		const p = this.pixels;
+		let n = 0;
 		for (let quad = 0; quad < 4; quad++) {
-			const color = colors[quad];
-			const order = orders[quad];
-			const g = distinct.find((it) => equalRGBA(it.color, color));
-			if (g) {
-				if (order > g.frontOrder) g.frontOrder = order;
+			const off = this.quadOff[quad];
+			const order = this.quadOrder[quad];
+			let found = -1;
+			for (let j = 0; j < n; j++) {
+				if (this.pixelsEqual(off, this.quadOff[this.distRep[j]])) {
+					found = j;
+					break;
+				}
+			}
+			if (found >= 0) {
+				if (order > this.distOrder[found]) this.distOrder[found] = order;
 			} else {
-				distinct.push({ color, frontOrder: order });
+				this.distRep[n] = quad;
+				this.distOrder[n] = order;
+				n++;
 			}
 		}
 
-		if (distinct.length === 1) {
-			const c = distinct[0].color;
-			if (c[3] === 0) return EMPTY_CELL;
-			return { char: '█', fg: c, bg: c };
+		out.wide = undefined;
+		if (n === 1) {
+			const off = this.quadOff[this.distRep[0]];
+			if (p[off + 3] === 0) {
+				out.char = ' ';
+				out.fg[0] = 0;
+				out.fg[1] = 0;
+				out.fg[2] = 0;
+				out.fg[3] = 0;
+				out.bg[0] = 0;
+				out.bg[1] = 0;
+				out.bg[2] = 0;
+				out.bg[3] = 0;
+				return;
+			}
+			out.char = '█';
+			this.copyPixels(off, out.fg);
+			this.copyPixels(off, out.bg);
+			return;
 		}
 
 		// Survivors are the two frontmost distinct colours (most recently written);
-		// stable RGBA order breaks any recency tie.
-		distinct.sort((a, b) => {
-			if (a.frontOrder !== b.frontOrder) return b.frontOrder - a.frontOrder;
-			return compareRGBA(a.color, b.color);
-		});
-		const fg = distinct[0].color;
-		const bg = distinct[1].color;
+		// stable RGBA order breaks any recency tie. Select the top two directly
+		// rather than sorting, so nothing is allocated.
+		let fgIdx = 0;
+		for (let j = 1; j < n; j++) if (this.distBetter(j, fgIdx)) fgIdx = j;
+		let bgIdx = -1;
+		for (let j = 0; j < n; j++) {
+			if (j === fgIdx) continue;
+			if (bgIdx < 0 || this.distBetter(j, bgIdx)) bgIdx = j;
+		}
+		const fgOff = this.quadOff[this.distRep[fgIdx]];
+		const bgOff = this.quadOff[this.distRep[bgIdx]];
 
 		let mask = 0;
 		for (let quad = 0; quad < 4; quad++) {
-			if (this.mapsToForeground(colors[quad], fg, bg)) mask |= 1 << quad;
+			if (this.mapsToForegroundAt(this.quadOff[quad], fgOff, bgOff))
+				mask |= 1 << quad;
 		}
-		return { char: glyphFromQuadrants(mask), fg, bg };
+		out.char = glyphFromQuadrants(mask);
+		this.copyPixels(fgOff, out.fg);
+		this.copyPixels(bgOff, out.bg);
 	}
 
-	private mapsToForeground(pc: RGBA, fg: RGBA, bg: RGBA): boolean {
-		if (equalRGBA(pc, fg)) return true;
-		if (equalRGBA(pc, bg)) return false;
-		const df = sqDistRGB(pc, fg);
-		const db = sqDistRGB(pc, bg);
+	/** distinct[a] outranks distinct[b] (order desc, then stable RGBA asc). */
+	private distBetter(a: number, b: number): boolean {
+		const oa = this.distOrder[a];
+		const ob = this.distOrder[b];
+		if (oa !== ob) return oa > ob;
+		return (
+			this.pixelsCompare(
+				this.quadOff[this.distRep[a]],
+				this.quadOff[this.distRep[b]],
+			) < 0
+		);
+	}
+
+	private mapsToForegroundAt(
+		pcOff: number,
+		fgOff: number,
+		bgOff: number,
+	): boolean {
+		if (this.pixelsEqual(pcOff, fgOff)) return true;
+		if (this.pixelsEqual(pcOff, bgOff)) return false;
+		const df = this.pixelsSqDist(pcOff, fgOff);
+		const db = this.pixelsSqDist(pcOff, bgOff);
 		if (df !== db) return df < db;
 		// Equal distance: map to whichever survivor is smaller in stable RGBA order.
-		return compareRGBA(fg, bg) <= 0;
+		return this.pixelsCompare(fgOff, bgOff) <= 0;
+	}
+
+	/** Equal RGBA of two sub-pixels by byte offset in the flat store. */
+	private pixelsEqual(o1: number, o2: number): boolean {
+		const p = this.pixels;
+		return (
+			p[o1] === p[o2] &&
+			p[o1 + 1] === p[o2 + 1] &&
+			p[o1 + 2] === p[o2 + 2] &&
+			p[o1 + 3] === p[o2 + 3]
+		);
+	}
+
+	/** Lexicographic RGBA order of two sub-pixels by byte offset. */
+	private pixelsCompare(o1: number, o2: number): number {
+		const p = this.pixels;
+		if (p[o1] !== p[o2]) return p[o1] - p[o2];
+		if (p[o1 + 1] !== p[o2 + 1]) return p[o1 + 1] - p[o2 + 1];
+		if (p[o1 + 2] !== p[o2 + 2]) return p[o1 + 2] - p[o2 + 2];
+		return p[o1 + 3] - p[o2 + 3];
+	}
+
+	/** Squared RGB distance of two sub-pixels by byte offset. */
+	private pixelsSqDist(o1: number, o2: number): number {
+		const p = this.pixels;
+		const dr = p[o1] - p[o2];
+		const dg = p[o1 + 1] - p[o2 + 1];
+		const db = p[o1 + 2] - p[o2 + 2];
+		return dr * dr + dg * dg + db * db;
+	}
+
+	/** Copy one sub-pixel colour (by byte offset) into a caller-owned RGBA. */
+	private copyPixels(off: number, out: MutableRGBA): void {
+		out[0] = this.pixels[off];
+		out[1] = this.pixels[off + 1];
+		out[2] = this.pixels[off + 2];
+		out[3] = this.pixels[off + 3];
+	}
+
+	/** Copy a per-cell store colour (by cell index) into a caller-owned RGBA. */
+	private copyStore(
+		store: Uint8ClampedArray,
+		index: number,
+		out: MutableRGBA,
+	): void {
+		const off = index * 4;
+		out[0] = store[off];
+		out[1] = store[off + 1];
+		out[2] = store[off + 2];
+		out[3] = store[off + 3];
 	}
 
 	private writeColor(
@@ -419,9 +594,14 @@ export class Compositor {
 		store[off + 2] = color[2];
 		store[off + 3] = color[3];
 	}
+}
 
-	private readColor(store: Uint8ClampedArray, index: number): RGBA {
-		const off = index * 4;
-		return [store[off], store[off + 1], store[off + 2], store[off + 3]];
-	}
+/** Freeze an allocation-light {@link CellOut} into an immutable {@link Cell}. */
+function cellFromOut(out: CellOut): Cell {
+	return {
+		char: out.char,
+		fg: [out.fg[0], out.fg[1], out.fg[2], out.fg[3]],
+		bg: [out.bg[0], out.bg[1], out.bg[2], out.bg[3]],
+		...(out.wide ? { wide: out.wide } : {}),
+	};
 }

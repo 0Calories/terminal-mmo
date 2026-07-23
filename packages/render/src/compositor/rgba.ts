@@ -5,6 +5,9 @@
  */
 export type RGBA = readonly [r: number, g: number, b: number, a: number];
 
+/** A caller-owned RGBA the compositor writes into on the allocation-light path. */
+export type MutableRGBA = [r: number, g: number, b: number, a: number];
+
 export const TRANSPARENT: RGBA = [0, 0, 0, 0];
 
 export function rgba(r: number, g: number, b: number, a = 255): RGBA {
@@ -56,4 +59,50 @@ export function compositeOver(src: RGBA, dst: RGBA): RGBA {
 		blend(src[2], dst[2]),
 		Math.round(outA * 255),
 	];
+}
+
+/**
+ * Allocation-light {@link compositeOver}: writes the source-over result into the
+ * caller's `out` (never allocates). Byte-identical to `compositeOver`, so it is
+ * the hot-path encode form. `out` may alias `src` — each channel reads its own
+ * index before writing it.
+ */
+export function compositeOverInto(
+	src: RGBA,
+	dst: RGBA,
+	out: MutableRGBA,
+): void {
+	const sa = src[3];
+	if (sa === 255) {
+		out[0] = src[0];
+		out[1] = src[1];
+		out[2] = src[2];
+		out[3] = 255;
+		return;
+	}
+	if (sa === 0) {
+		out[0] = dst[0];
+		out[1] = dst[1];
+		out[2] = dst[2];
+		out[3] = dst[3];
+		return;
+	}
+
+	const sA = sa / 255;
+	const dA = dst[3] / 255;
+	const outA = sA + dA * (1 - sA);
+	if (outA === 0) {
+		out[0] = 0;
+		out[1] = 0;
+		out[2] = 0;
+		out[3] = 0;
+		return;
+	}
+
+	const blend = (s: number, d: number): number =>
+		Math.round((s * sA + d * dA * (1 - sA)) / outA);
+	out[0] = blend(src[0], dst[0]);
+	out[1] = blend(src[1], dst[1]);
+	out[2] = blend(src[2], dst[2]);
+	out[3] = Math.round(outA * 255);
 }

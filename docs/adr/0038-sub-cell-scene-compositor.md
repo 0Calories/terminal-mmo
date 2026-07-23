@@ -95,6 +95,18 @@ Pixel. A crowded real-terminal stress scene must sustain at least 60 FPS, with a
 target composition/encoding cost around 4 ms for a representative viewport. Timing
 benchmarks are opt-in because CI timing is noisy.
 
+The per-frame encode reads composed cells through `Compositor.readCellInto`, which
+decodes a cell's glyph, foreground, and background into a caller-reused `CellOut`
+without allocating; the client and Forge OpenTUI adapters share it, so a frame
+encode allocates no per-cell intermediates (`cell()`/`surface()` still return fresh
+objects atop the same path). Two opt-in harnesses report timings and never assert a
+threshold:
+
+- `bun run packages/render/bench/compositor-bench.ts` — representative, wide, and
+  crowded stress scenes (many actors + particles).
+- `MMO_BENCH=1 bun test packages/render/test/compositor-bench.test.ts` — an
+  in-suite representative smoke, skipped by default.
+
 CI uses colour-aware semantic tests for transparent identity, opaque overwrite,
 source-over alpha, two-colour reduction, Glyph backdrops, representation precedence,
 half-cell translation, deterministic actor order, clipping, and pass order. Real
