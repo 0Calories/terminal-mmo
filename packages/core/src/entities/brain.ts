@@ -114,7 +114,12 @@ function slimeBrain(p: MeleeProfile): Brain {
 		const gap = gapTo(m, view.targetX);
 		if (gap && gap.adx <= p.range && (m.attackCdT ?? 0) <= 0)
 			return {
-				drive: { moveX: 0, jump: false, face: toward(gap.dx), commit: 'pounce' },
+				drive: {
+					moveX: 0,
+					jump: false,
+					face: toward(gap.dx),
+					commit: 'pounce',
+				},
 				ai: { restT: SLIME_REST.approach },
 			};
 		if (gap && gap.adx < p.aggro) {

@@ -195,7 +195,10 @@ test('an aggroed slime traversal-hops toward its target', () => {
 
 test('the slime commits a pounce in leap range once off cooldown, squaring up', () => {
 	const m = grounded('slime', 50);
-	const r = BRAINS.slime(m, view(targetLeftBy(m, ARCHETYPES.slime.melee.range)));
+	const r = BRAINS.slime(
+		m,
+		view(targetLeftBy(m, ARCHETYPES.slime.melee.range)),
+	);
 	expect(r.drive.commit).toBe('pounce');
 	expect(r.drive.face).toBe(-1);
 	expect(r.drive.jump).toBe(false);
