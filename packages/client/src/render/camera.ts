@@ -30,6 +30,14 @@ export const initCameraState = (): CameraState => ({
 	zoneId: null,
 });
 
+/**
+ * Follow the Avatar with a dead-band. The camera carries continuous world-space
+ * position — finer than a Pixel — and is NOT rounded here: the playfield feeds
+ * `baseCam + kick` into the paint transform, which quantizes the combined
+ * world-relative offset to Pixel (half-cell) resolution exactly once (ADR 0038).
+ * Rounding the camera here too would round camera and entity independently and
+ * reintroduce the shimmer the single combined-transform quantization avoids.
+ */
 export function stepCamera(
 	state: CameraState,
 	zoneId: string,
@@ -74,6 +82,12 @@ export const CAMERA_KICK = {
 	durationMs: 150,
 } as const;
 
+/**
+ * A combat-impact camera offset in continuous cells, added to the base camera
+ * before the paint transform. Because that transform quantizes at Pixel (half-
+ * cell) resolution, the kick now expresses sub-cell shifts as it decays instead
+ * of snapping in whole cells (ADR 0038) — impact reads without a jarring jump.
+ */
 export interface Kick {
 	x: number;
 	y: number;

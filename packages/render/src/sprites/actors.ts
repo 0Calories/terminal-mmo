@@ -261,8 +261,8 @@ function resolveBody(e: Entity, st: AnimState): Body {
 function paintWeapon(
 	compositor: Compositor,
 	e: Entity,
-	sx: number,
-	sy: number,
+	originPx: number,
+	originPy: number,
 	bodyW: number,
 	grip: { x: number; y: number },
 	st: AnimState,
@@ -285,15 +285,16 @@ function paintWeapon(
 		: frameLabelAt(doc.animations[0], 0);
 	const frame = compiled(`weapons:${ref}:${label}`, doc, label);
 
-	const bodyGripX = sx + mirrorAnchorX(grip.x, bodyW, e.facing);
-	const bodyGripY = sy + grip.y;
+	// The grip anchors are sprite-space cell offsets; the weapon shares the body's
+	// one Pixel origin so the assembled parts never separate at a half-cell offset.
+	const gripCellX = mirrorAnchorX(grip.x, bodyW, e.facing);
 	const wgx = e.facing === 1 ? wGrip.x : frame.widthCells - 1 - wGrip.x;
 	const recolor: SpritePalette = hurt
 		? hurtRecolor(frame)
 		: { [WEAPON_ACCENT_KEY]: accent };
 	paintSprite(compositor, frame, {
-		cellX: bodyGripX - wgx,
-		cellY: bodyGripY - wGrip.y,
+		originPx: originPx + (gripCellX - wgx) * 2,
+		originPy: originPy + (grip.y - wGrip.y) * 2,
 		facing: e.facing,
 		palette: PALETTE,
 		paletteDefault: PALETTE_DEFAULT,
@@ -302,10 +303,13 @@ function paintWeapon(
 	});
 
 	if (st.phase === 'active') {
+		// Blade-arc glyphs are cell-snapped to the body's nearest cell origin.
+		const gripScreenX = Math.round(originPx / 2) + gripCellX;
+		const gripScreenY = Math.round(originPy / 2) + grip.y;
 		for (const c of bladeEdgeArc(st.progress, e.facing))
 			compositor.stampGlyph(
-				bodyGripX + c.dx,
-				bodyGripY + c.dy,
+				gripScreenX + c.dx,
+				gripScreenY + c.dy,
 				c.glyph,
 				tint ?? accent,
 			);
@@ -315,8 +319,8 @@ function paintWeapon(
 function paintHat(
 	compositor: Compositor,
 	e: Entity,
-	sx: number,
-	sy: number,
+	originPx: number,
+	originPy: number,
 	bodyW: number,
 	head: { x: number; y: number } | undefined,
 	hurt: boolean,
@@ -328,13 +332,15 @@ function paintHat(
 	if (doc === undefined) return;
 	const hat = compiled(`hats:${hatId}`, doc, undefined);
 
+	// The head anchor is a sprite-space cell offset; the hat shares the body's one
+	// Pixel origin (a constant Pixel offset) so it never separates from the body.
 	const headX = head ? mirrorAnchorX(head.x, bodyW, e.facing) : (bodyW - 1) / 2;
-	const hx = sx + Math.round(headX - (hat.widthCells - 1) / 2);
-	const hy = sy + (head?.y ?? 0) - hat.heightCells;
+	const dxPx = Math.round((headX - (hat.widthCells - 1) / 2) * 2);
+	const dyPx = ((head?.y ?? 0) - hat.heightCells) * 2;
 	const recolor = hurt ? hurtRecolor(hat) : undefined;
 	paintSprite(compositor, hat, {
-		cellX: hx,
-		cellY: hy,
+		originPx: originPx + dxPx,
+		originPy: originPy + dyPx,
 		facing: e.facing,
 		palette: PALETTE,
 		paletteDefault: PALETTE_DEFAULT,
@@ -365,8 +371,13 @@ export function paintActor(
 	const st = animStateOf(e);
 	const { sprite, baseline } = resolveBody(e, st);
 	const bodyW = sprite.widthCells;
-	const sx = Math.round(e.x - Math.floor((bodyW - BOX.w) / 2) - cam.x);
-	const sy = Math.round(e.y + BOX.h - sprite.heightCells + baseline - cam.y);
+	// Quantize the combined world-relative offset ONCE into a Pixel origin (2 Pixels
+	// per cell) so camera and entity never round independently (ADR 0038). Body,
+	// weapon, and hat all share this origin, so the assembled actor moves as one.
+	const worldX = e.x - Math.floor((bodyW - BOX.w) / 2);
+	const worldY = e.y + BOX.h - sprite.heightCells + baseline;
+	const originPx = Math.round((worldX - cam.x) * 2);
+	const originPy = Math.round((worldY - cam.y) * 2);
 	const hurt = e.hurtT > 0.3;
 	const tint = opts?.tint;
 	const grip = sprite.anchors.grip;
@@ -380,8 +391,8 @@ export function paintActor(
 			? { p: hue }
 			: undefined;
 	paintSprite(compositor, sprite, {
-		cellX: sx,
-		cellY: sy,
+		originPx,
+		originPy,
 		facing: e.facing,
 		palette: PALETTE,
 		paletteDefault: PALETTE_DEFAULT,
@@ -389,8 +400,9 @@ export function paintActor(
 		...(tint ? { tint } : {}),
 	});
 
-	if (grip) paintWeapon(compositor, e, sx, sy, bodyW, grip, st, hurt, tint);
-	paintHat(compositor, e, sx, sy, bodyW, head, hurt, tint);
+	if (grip)
+		paintWeapon(compositor, e, originPx, originPy, bodyW, grip, st, hurt, tint);
+	paintHat(compositor, e, originPx, originPy, bodyW, head, hurt, tint);
 }
 
 /** Compose a stationary NPC's idle sprite, centred on its box like the sim. An
@@ -406,13 +418,14 @@ export function paintNpc(
 	const sprite = doc
 		? compiled(`npcs:${ref}:idle`, doc, 'idle')
 		: placeholder();
-	const sx = Math.round(
-		n.x + Math.floor((n.w - sprite.widthCells) / 2) - cam.x,
-	);
-	const sy = Math.round(n.y + n.h - sprite.heightCells - cam.y);
+	// One combined-transform quantization into a Pixel origin (ADR 0038).
+	const worldX = n.x + Math.floor((n.w - sprite.widthCells) / 2);
+	const worldY = n.y + n.h - sprite.heightCells;
+	const originPx = Math.round((worldX - cam.x) * 2);
+	const originPy = Math.round((worldY - cam.y) * 2);
 	paintSprite(compositor, sprite, {
-		cellX: sx,
-		cellY: sy,
+		originPx,
+		originPy,
 		facing: 1,
 		palette: PALETTE,
 		paletteDefault: PALETTE_DEFAULT,

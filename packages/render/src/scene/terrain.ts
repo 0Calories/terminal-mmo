@@ -19,23 +19,21 @@ export function drawTerrain(
 ): void {
 	const sw = compositor.widthCells;
 	const sh = compositor.heightCells;
-	const camX = Math.round(cam.x);
-	const camY = Math.round(cam.y);
+	// Quantize the camera to Pixel resolution ONCE so Terrain shifts with the
+	// half-cell camera and stays rigid relative to actors (ADR 0038). A world cell
+	// wx maps to screen Pixel `wx * 2 - camPx`; the shared `camPx` keeps the whole
+	// Terrain grid coherent instead of rounding each cell independently.
+	const camPx = Math.round(cam.x * 2);
+	const camPy = Math.round(cam.y * 2);
+	const wx0 = Math.floor(camPx / 2) - 1;
+	const wy0 = Math.floor(camPy / 2) - 1;
 
-	for (let sy = 0; sy < sh; sy++) {
-		const wy = sy + camY;
-		for (let sx = 0; sx < sw; sx++) {
-			const wx = sx + camX;
-			if (
-				!isSolid(terrain, wx, wy) ||
-				wx < 0 ||
-				wx >= terrain.w ||
-				wy < 0 ||
-				wy >= terrain.h
-			)
-				continue;
-			const px = sx * 2;
-			const py = sy * 2;
+	for (let wy = wy0; wy <= wy0 + sh + 1; wy++) {
+		if (wy < 0 || wy >= terrain.h) continue;
+		const py = wy * 2 - camPy;
+		for (let wx = wx0; wx <= wx0 + sw + 1; wx++) {
+			if (wx < 0 || wx >= terrain.w || !isSolid(terrain, wx, wy)) continue;
+			const px = wx * 2 - camPx;
 			// Surface cell: only the bottom half is ground; the top stays transparent.
 			if (!isSolid(terrain, wx, wy - 1))
 				compositor.fillPixelRect(px, py + 1, 2, 1, TERRAIN);
