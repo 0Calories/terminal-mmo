@@ -107,6 +107,7 @@ function shooterBrain(p: RangedProfile): Brain {
 }
 
 export const BRAINS: Record<MonsterType, Brain> = {
+	slime: (m) => ({ drive: IDLE_DRIVE, ai: m.ai }),
 	chaser: meleeBrain(ARCHETYPES.chaser.melee),
 	brute: meleeBrain(ARCHETYPES.brute.melee),
 	shooter: shooterBrain(ARCHETYPES.shooter.ranged),

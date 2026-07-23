@@ -19,7 +19,7 @@ export interface Input extends Control {
 	skill?: number;
 }
 
-export type EntityType = 'player' | 'chaser' | 'shooter' | 'brute';
+export type EntityType = 'player' | 'slime' | 'chaser' | 'shooter' | 'brute';
 
 export type MonsterType = Exclude<EntityType, 'player'>;
 

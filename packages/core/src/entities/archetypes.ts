@@ -52,6 +52,20 @@ const CHASER = {
 	},
 } as const satisfies ArchetypeProfile;
 
+const SLIME = {
+	hp: 24,
+	speed: 12,
+	mass: 0.85,
+	melee: {
+		damage: 8,
+		poise: 8,
+		range: 4,
+		aggro: 22,
+		deadzone: 2,
+		commitCd: 0,
+	},
+} as const satisfies ArchetypeProfile;
+
 const BRUTE = {
 	hp: 60,
 	speed: 6,
@@ -87,6 +101,7 @@ const SHOOTER = {
 } as const satisfies ArchetypeProfile;
 
 export const ARCHETYPES = {
+	slime: SLIME,
 	chaser: CHASER,
 	shooter: SHOOTER,
 	brute: BRUTE,

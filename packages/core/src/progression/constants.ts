@@ -10,6 +10,7 @@ export const PROGRESSION = {
 
 export const MONSTER_XP: Record<EntityType, number> = {
 	player: 0,
+	slime: 5,
 	chaser: 7,
 	shooter: 8,
 	brute: 14,
