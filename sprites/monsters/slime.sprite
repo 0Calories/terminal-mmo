@@ -1,7 +1,12 @@
 {
 	"key": "f",
 	"baseline": 0.5,
-	"animations": [{ "name": "idle" }]
+	"animations": [
+		{ "name": "idle" },
+		{ "name": "windup" },
+		{ "name": "attack" },
+		{ "name": "recovery" }
+	]
 }
 --- idle
 ·▗▄▄▄▖·
@@ -13,3 +18,63 @@
 fffffff
 fkfffkf
 ·fffff·
+--- windup 0
+·······
+▗▄▄▄▄▄▖
+███████
+▝▀▀▀▀▀▘
+@colors
+·······
+offffff
+fkfffkf
+·fffff·
+--- windup 1
+·······
+·······
+▄█████▄
+███████
+@colors
+·······
+·······
+fkfffkf
+fffffff
+--- attack 0
+·▗▄▄▄▖·
+▐█████▌
+▐█████▌
+·▀▀▀▀▀·
+@colors
+·offff·
+fkfffkf
+fffffff
+·fffff·
+--- attack 1
+·▄▄▄▄▄·
+▟█████▙
+▝█████▘
+··▀▀▀··
+@colors
+·offff·
+fkfffkf
+·fffff·
+··fff··
+--- recovery 0
+·······
+·······
+▟█████▙
+███████
+@colors
+·······
+·······
+fkfffkf
+fffffff
+--- recovery 1
+·······
+▗▄▄▄▄▄▖
+███████
+▀▀▀▀▀▀▀
+@colors
+·······
+offffff
+fkfffkf
+fffffff
