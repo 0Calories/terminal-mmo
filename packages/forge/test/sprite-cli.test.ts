@@ -202,15 +202,15 @@ describe('sprite CLI', () => {
 	function writeCompleteSet(): void {
 		const weapon = `{"anchors":{"grip":[0,0]},"animations":[{"name":"idle"},{"name":"swing"}]}
 --- idle
-AB
+██
 --- swing 0
-AB
+██
 --- swing 1
-AB
+██
 --- swing 2
-AB
+██
 `;
-		const idle = `{"animations":[{"name":"idle"}]}\n--- idle\nAB\n`;
+		const idle = `{"animations":[{"name":"idle"}]}\n--- idle\n██\n`;
 		for (const [dir, id] of [['weapons', 'sword']] as const) {
 			mkdirSync(join(root, dir), { recursive: true });
 			writeFileSync(join(root, dir, `${id}.sprite`), weapon);
@@ -237,7 +237,7 @@ AB
 		mkdirSync(join(root, 'hats'), { recursive: true });
 		writeFileSync(
 			join(root, 'hats', 'warn.sprite'),
-			`{"nope": 1, "animations":[{"name":"idle"}]}\n--- idle\nAB\n`,
+			`{"nope": 1, "animations":[{"name":"idle"}]}\n--- idle\n██\n`,
 		);
 		expect(runSprite(['check'], deps())).toBe(0);
 		const out = output();

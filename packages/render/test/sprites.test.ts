@@ -23,6 +23,13 @@ const O = q('o'); // shooter ink
 const Y = q('y'); // party-hat point
 const TRANSPARENT: RGBA = [0, 0, 0, 0];
 
+function docOf(text: string, id: string): SpriteDoc {
+	const { doc, diagnostics } = parseSpriteFile(text, id);
+	if (doc === null)
+		throw new Error(`parse failed: ${JSON.stringify(diagnostics)}`);
+	return doc;
+}
+
 const sources = loadSpriteSources();
 function shippedDoc(id: string): SpriteDoc {
 	const source = sources.get(id);
@@ -72,14 +79,31 @@ test('a front sprite’s transparent quadrants reveal the sprite behind it', () 
 	expect(c.cell(0, 1)).toEqual({ char: '▚', fg: M, bg: O });
 });
 
+const GLYPH_STAMP = `{
+	"animations": [{ "name": "idle" }]
+}
+--- idle
+··★··
+@colors
+··y··
+`;
+
 test('a transparent Glyph stamp inherits the dominant composed backdrop', () => {
 	const c = new Compositor(8, 6);
 	paintScene(c, shippedDoc('shooter'), 0, 0);
-	// party-hat's '▲' has no authored bg; over shooter's '▄' cell it takes the
-	// dominant underlying colour (o) as its backdrop.
-	paintScene(c, shippedDoc('party-hat'), 0, 0);
+	// The '★' Glyph stamp has no authored bg; over shooter's '▄' cell it takes
+	// the dominant underlying colour (o) as its backdrop.
+	paintScene(c, docOf(GLYPH_STAMP, 'stamp'), 0, 0);
 
-	expect(c.cell(2, 0)).toEqual({ char: '▲', fg: Y, bg: O });
+	expect(c.cell(2, 0)).toEqual({ char: '★', fg: Y, bg: O });
+});
+
+test('the converted party-hat tip is a quadrant Pixel, not a Glyph stamp', () => {
+	const c = new Compositor(8, 6);
+	paintScene(c, shippedDoc('party-hat'), 0, 0);
+	// The former '▲' point is now '▄': its lower quadrants ink 'y', its upper
+	// quadrants stay transparent.
+	expect(c.cell(2, 0)).toEqual({ char: '▄', fg: Y, bg: TRANSPARENT });
 });
 
 test('recolor overrides a colour key at paint time without recompiling', () => {
@@ -163,5 +187,27 @@ test('a Glyph stamp wider than one column is rejected at compile time', () => {
 });
 
 test('a one-column Glyph stamp compiles without error', () => {
-	expect(() => compileSprite(shippedDoc('party-hat'))).not.toThrow();
+	expect(() => compileSprite(docOf(GLYPH_STAMP, 'stamp'))).not.toThrow();
+});
+
+test('the converted sword swing arc reads as a quadrant blade band', () => {
+	const c = new Compositor(8, 6);
+	// The former eighth-block '▂'/'▔' slash is now a '▄'/'▀' half-block band that
+	// meets across the cell boundary as one continuous blade.
+	paintSprite(c, compileSprite(shippedDoc('sword'), 'swing 1'), {
+		cellX: 0,
+		cellY: 0,
+		palette: SCENE,
+		paletteDefault: DEFAULT,
+	});
+	// Row 1 col 2: lower-half blade Pixel; row 2 col 2: upper-half blade Pixel.
+	// The two meet across the boundary, and neither authors an opaque backdrop.
+	const upper = c.cell(2, 1);
+	const lower = c.cell(2, 2);
+	expect(upper.char).toBe('▄');
+	expect(upper.bg).toEqual(TRANSPARENT);
+	expect(lower.char).toBe('▀');
+	expect(lower.bg).toEqual(TRANSPARENT);
+	// The blade band shares one ink colour top and bottom.
+	expect(upper.fg).toEqual(lower.fg);
 });

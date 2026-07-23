@@ -2,28 +2,64 @@ import type { SpriteSource } from '@mmo/assets';
 import { WEAPONS } from '@mmo/core/combat';
 import { EMOTES } from '@mmo/core/entities';
 import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
+import { QUADRANT_GLYPHS } from './quadrant';
 import type {
 	SpriteAnimationDoc,
 	SpriteDiagnostic,
 	SpriteDoc,
 } from './sprite-file';
-import { parseSpriteFile } from './sprite-file';
+import { frameLabelAt, parseSpriteFile } from './sprite-file';
 
 const KNOWN_EMOTES = new Set<string>(EMOTES.map((e) => e.id));
+
+const QUADRANT_SET = new Set<string>(QUADRANT_GLYPHS);
 
 interface RoleProfile {
 	animations: readonly string[];
 
 	anchors: readonly string[];
+
+	/**
+	 * Movement-capable roles assemble into an actor that translates one Pixel at
+	 * a time, so every cell must be quadrant Pixel art — arbitrary Glyph stamps
+	 * are rejected (ADR 0038).
+	 */
+	pixelOnly: boolean;
 }
 
 export const ROLE_PROFILES: Readonly<Record<string, RoleProfile>> = {
-	forms: { animations: ['idle', 'walk'], anchors: ['grip', 'head'] },
-	weapons: { animations: ['swing'], anchors: ['grip'] },
-	hats: { animations: ['idle'], anchors: [] },
-	monsters: { animations: ['idle'], anchors: [] },
-	npcs: { animations: ['idle'], anchors: [] },
+	forms: {
+		animations: ['idle', 'walk'],
+		anchors: ['grip', 'head'],
+		pixelOnly: true,
+	},
+	weapons: { animations: ['swing'], anchors: ['grip'], pixelOnly: true },
+	hats: { animations: ['idle'], anchors: [], pixelOnly: true },
+	monsters: { animations: ['idle'], anchors: [], pixelOnly: true },
+	npcs: { animations: ['idle'], anchors: [], pixelOnly: false },
 };
+
+function validatePixelOnly(doc: SpriteDoc, role: string): SpriteDiagnostic[] {
+	const diagnostics: SpriteDiagnostic[] = [];
+	for (const animation of doc.animations) {
+		animation.frames.forEach((frame, index) => {
+			const label = frameLabelAt(animation, index);
+			frame.rows.forEach((row, y) => {
+				Array.from(row).forEach((ch, x) => {
+					if (ch === ' ' || QUADRANT_SET.has(ch)) return;
+					diagnostics.push({
+						severity: 'error',
+						spriteId: doc.id,
+						frame: label,
+						cell: { x, y },
+						message: `sprite '${doc.id}' (role '${role}') has an arbitrary Glyph stamp '${ch}' at frame '${label}' cell (${x}, ${y}) — movement-capable roles must be quadrant Pixel art only (ADR 0038)`,
+					});
+				});
+			});
+		});
+	}
+	return diagnostics;
+}
 
 export function validateSpriteRole(
 	doc: SpriteDoc,
@@ -103,6 +139,20 @@ export function validateSpriteRole(
 		}
 	}
 	return diagnostics;
+}
+
+/**
+ * Reject arbitrary Glyph stamps in movement-capable roles. Kept alongside the
+ * dangling-reference check in {@link validateSpriteSet} rather than in
+ * {@link validateSpriteRole}: it is a whole-catalog art constraint, not a
+ * per-load acceptance gate.
+ */
+export function validatePixelOnlyArt(
+	doc: SpriteDoc,
+	role: string,
+): SpriteDiagnostic[] {
+	if (!ROLE_PROFILES[role]?.pixelOnly) return [];
+	return validatePixelOnly(doc, role);
 }
 
 export function acceptSprite(
@@ -186,6 +236,7 @@ export function validateSpriteSet(
 
 		if (doc === null) continue;
 		diagnostics.push(...validateSpriteRole(doc, source.role));
+		diagnostics.push(...validatePixelOnlyArt(doc, source.role));
 	}
 
 	diagnostics.push(...validateReferences(list));
