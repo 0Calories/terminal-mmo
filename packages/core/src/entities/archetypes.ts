@@ -38,13 +38,13 @@ export interface ArchetypeProfile {
 }
 
 const CHASER = {
-	hp: 24,
-	speed: 12,
+	hp: 32,
+	speed: 13,
 	mass: DEFAULT_MASS,
 	melee: {
-		damage: 8,
+		damage: 11,
 
-		poise: 8,
+		poise: 10,
 		range: 4,
 		aggro: 22,
 		deadzone: 2,
