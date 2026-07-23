@@ -204,6 +204,12 @@ test('the slime commits a pounce in leap range once off cooldown, squaring up', 
 	expect(r.drive.jump).toBe(false);
 });
 
+test('a mid-hop slime holds its pounce: no commit while airborne', () => {
+	const m = spawnMonster('slime', 2, 50, y - 5);
+	const r = BRAINS.slime(m, view(targetLeftBy(m, 1)));
+	expect(r.drive.commit).toBeUndefined();
+});
+
 test('a cooling-down slime keeps traversal-hopping without committing', () => {
 	const m = grounded('slime', 50);
 	m.attackCdT = 1;

@@ -1,7 +1,11 @@
-import { ARCHETYPES } from '../src/entities/archetypes';
-import type { Projectile, Terrain } from '../src/entities/types';
+import { ARCHETYPES, BOX } from '../src/entities/archetypes';
+import { DEFAULT_COSMETICS } from '../src/entities/cosmetics';
+import { spawnAvatar } from '../src/entities/factory';
+import type { Entity, Projectile, Terrain } from '../src/entities/types';
 import { parseTerrain } from '../src/physics/terrain';
 import { GROUND_TOP, WORLD } from '../src/zones/constants';
+import type { Zone } from '../src/zones/types';
+import type { AvatarIntent, ServerAvatar } from '../src/zones/zone';
 
 export function makeProjectile(over: Partial<Projectile> = {}): Projectile {
 	return {
@@ -32,4 +36,53 @@ export function flatTerrain(w = WORLD.w, h = WORLD.h): Terrain {
 	for (let y = 0; y < h; y++)
 		rows.push((y >= GROUND_TOP ? '#' : '.').repeat(w));
 	return parseTerrain(rows);
+}
+
+export const SPAWN_Y = GROUND_TOP - BOX.h;
+
+export function serverAvatar(
+	sessionId: number,
+	x: number,
+	handle = 'hero',
+	level = 1,
+): ServerAvatar {
+	return {
+		sessionId,
+		handle,
+		cosmetics: DEFAULT_COSMETICS,
+		avatar: { ...spawnAvatar(x, SPAWN_Y), id: sessionId },
+		progress: { level, xp: 0, gold: 0 },
+		inventory: [],
+		log: [],
+		nextId: 1,
+		rngState: 1,
+	};
+}
+
+export function zoneWith(monsters: Entity[], id = 'test-zone'): Zone {
+	return {
+		id,
+		type: 'field',
+		terrain: flatTerrain(),
+		monsters,
+		projectiles: [],
+		nextProjectileId: 1,
+		spawns: [],
+		respawns: [],
+		portals: [],
+		nextMonsterId: 100,
+	};
+}
+
+export function holdAt(sessionId: number, e: Entity): AvatarIntent {
+	return {
+		sessionId,
+		x: e.x,
+		y: e.y,
+		vx: 0,
+		vy: 0,
+		facing: e.facing,
+		onGround: e.onGround,
+		attack: false,
+	};
 }

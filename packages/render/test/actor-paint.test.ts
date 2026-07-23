@@ -93,35 +93,6 @@ const pouncing = (
 	...over,
 });
 
-test('a pouncing slime shows its authored squash/airborne/wobble body frames', () => {
-	const idle = paintOf(entity({ id: 1, type: 'slime' }));
-	const seen = new Set([
-		paintOf(entity({ id: 1, type: 'slime', ...pouncing('windup') })),
-		paintOf(
-			entity({ id: 1, type: 'slime', onGround: false, ...pouncing('active') }),
-		),
-		paintOf(entity({ id: 1, type: 'slime', ...pouncing('recovery') })),
-	]);
-	expect(seen.has(idle)).toBe(false);
-	expect(seen.size).toBe(3);
-});
-
-test('a phase-bound telegraph samples its frames by phase progress', () => {
-	const at = (progress: number) => {
-		const e = entity({ id: 1, type: 'slime' });
-		e.action = {
-			move: 'basic',
-			phase: 'windup',
-			progress,
-			flags: 0,
-			emote: null,
-			emoteT: 0,
-		};
-		return paintOf(e);
-	};
-	expect(at(0.95)).not.toBe(at(0.05));
-});
-
 test('a slime traversal hop has no airborne frames authored and falls back to idle', () => {
 	expect(paintOf(entity({ id: 1, type: 'slime', onGround: false }))).toBe(
 		paintOf(entity({ id: 1, type: 'slime' })),

@@ -256,12 +256,16 @@ export function stepZone(
 
 		const melee = meleeProfileOf(m.type);
 		const pounce = melee?.pounce;
+		// Reads the CURRENT m.attackT — the commit and landing blocks below
+		// rewrite the timer mid-tick.
+		const pounceActive = () =>
+			pounce !== undefined && attackPhaseAt(m.attackT, pounce) === 'active';
 		// A committed pounce owns the body: the squash and wobble stand still,
 		// and the leap launches on the first active tick then rides its locked
 		// ballistic arc — the Brain is not consulted mid-attack.
 		const stepDrive =
 			pounce && m.attackT > 0
-				? attackPhaseAt(m.attackT, pounce) === 'active'
+				? pounceActive()
 					? { moveX: m.facing, jump: m.onGround }
 					: IDLE_DRIVE
 				: drive;
@@ -285,7 +289,7 @@ export function stepZone(
 
 		// Touching down cuts the active window short: landing IS the start of
 		// the wobble recovery, however early the arc ended.
-		if (pounce && m.onGround && attackPhaseAt(m.attackT, pounce) === 'active')
+		if (pounce && m.onGround && pounceActive())
 			m = { ...m, attackT: pounce.recovery };
 
 		const ranged = rangedProfileOf(m.type);
@@ -301,7 +305,7 @@ export function stepZone(
 		// A pounce strikes with its whole body for exactly the airborne arc; a
 		// swing strikes with its reach hitbox for the timed active window.
 		const striking = pounce
-			? attackPhaseAt(m.attackT, pounce) === 'active' && !m.onGround
+			? pounceActive() && !m.onGround
 			: meleeActive(m.attackT);
 		if (melee && striking)
 			hostileStrikes.push({
