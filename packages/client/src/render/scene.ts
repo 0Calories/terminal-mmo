@@ -23,8 +23,18 @@ import {
 	spriteForNpc,
 } from '@mmo/render';
 import type { Compositor } from '@mmo/render/compositor';
-import { drawDrops, drawPortals, drawTerrain } from '@mmo/render/scene';
-import { paintActor, paintNpc } from '@mmo/render/sprites';
+import {
+	drawDrops,
+	drawPortals,
+	drawTerrain,
+	sortActorsByDepth,
+} from '@mmo/render/scene';
+import {
+	actorFootDepth,
+	npcFootDepth,
+	paintActor,
+	paintNpc,
+} from '@mmo/render/sprites';
 import { type OptimizedBuffer, RGBA } from '@opentui/core';
 import type { ParticleEngine } from '../particles';
 import { COLORS as C, RARITY_RGBA } from '../theme';
@@ -152,12 +162,31 @@ export function drawPlayfield(
 	drawDrops(compositor, zone.drops ?? [], cam);
 	fx.dodges.draw(compositor, cam);
 
-	// Pass 3: NPCs, Monsters, and remote Avatars (native). NPCs draw behind the
-	// crowd; monsters and remote avatars are foot-depth sorted (full determinism
-	// is #444).
-	for (const n of npcs) paintNpc(compositor, n, cam);
-	const crowd = [...zone.monsters, ...others].sort((a, b) => a.y - b.y);
-	for (const e of crowd) paintActor(compositor, e, cam);
+	// Pass 3: NPCs, Monsters, and remote Avatars as one crowd sorted by logical
+	// foot depth (ADR 0038). Equal depth is deterministic — NPCs draw behind
+	// monsters and remote avatars, then a stable id breaks ties — and each actor
+	// draws atomically.
+	const crowd = sortActorsByDepth([
+		...npcs.map((n) => ({
+			footY: npcFootDepth(n),
+			category: 'npc' as const,
+			id: n.id,
+			paint: () => paintNpc(compositor, n, cam),
+		})),
+		...zone.monsters.map((m) => ({
+			footY: actorFootDepth(m),
+			category: 'monster' as const,
+			id: m.id,
+			paint: () => paintActor(compositor, m, cam),
+		})),
+		...others.map((o) => ({
+			footY: actorFootDepth(o),
+			category: 'avatar' as const,
+			id: o.id,
+			paint: () => paintActor(compositor, o, cam),
+		})),
+	]);
+	for (const actor of crowd) actor.paint();
 
 	// Pass 4: the local Avatar (native), kept at the top of the crowd.
 	paintActor(compositor, p, cam);

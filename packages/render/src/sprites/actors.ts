@@ -200,10 +200,34 @@ interface Body {
 	baseline: number;
 }
 
+function formDocFor(e: Entity): SpriteDoc | undefined {
+	return formDocs.get(e.cosmetics?.form ?? '') ?? formDocs.get(DEFAULT_FORM_ID);
+}
+
+/** The body baseline {@link paintActor} plants feet with: Form-level for players,
+ *  else the entity's sprite metadata. */
+function bodyBaseline(e: Entity): number {
+	if (e.type === 'player') return formDocFor(e)?.baseline ?? 0;
+	return spriteMetaFor(e.type).baseline;
+}
+
+/**
+ * World-y of an actor's planted feet — the foot-depth key for pass-3 ordering.
+ * Mirrors {@link paintActor}: feet sit at the collision box bottom shifted by the
+ * body baseline, independent of sprite height (taller sprites extend upward).
+ */
+export function actorFootDepth(e: Entity): number {
+	return e.y + BOX.h + bodyBaseline(e);
+}
+
+/** World-y of an NPC's planted feet, mirroring {@link paintNpc}'s box-bottom plant. */
+export function npcFootDepth(n: Npc): number {
+	return n.y + n.h;
+}
+
 function resolveBody(e: Entity, st: AnimState): Body {
 	if (e.type === 'player') {
-		const doc =
-			formDocs.get(e.cosmetics?.form ?? '') ?? formDocs.get(DEFAULT_FORM_ID);
+		const doc = formDocFor(e);
 		if (doc === undefined) return { sprite: placeholder(), baseline: 0 };
 		const anim = bodyFrame(
 			{
