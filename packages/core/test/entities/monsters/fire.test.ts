@@ -1,4 +1,7 @@
 import { expect, test } from 'bun:test';
+import { SWING_TOTAL } from '../../../src/combat/combat';
+import { COMBAT } from '../../../src/combat/constants';
+import { spawnProjectile } from '../../../src/combat/projectile';
 import {
 	ARCHETYPES,
 	BOX,
@@ -15,7 +18,8 @@ const { keepDist } = ARCHETYPES.shooter.ranged;
 const y = GROUND_TOP - BOX.h;
 const flat = flatTerrain();
 
-const fire = fireEngine({ keepDist });
+const { fireCooldown } = ARCHETYPES.shooter.ranged;
+const fire = fireEngine({ keepDist, cooldown: fireCooldown });
 const movement = walkEngine({ deadzone: 0 });
 
 function shooter(x: number): Entity {
@@ -105,4 +109,54 @@ test('reposition then attack: fire is committed only once the band is restored',
 		m = { ...m, x: m.x + 1 };
 	}
 	expect(committedFire).toBe(true);
+});
+
+const ACTIVE_T = COMBAT.swing.active / 2 + COMBAT.swing.recovery;
+
+test('a shot owns no body and needs no post-step correction', () => {
+	const m = shooter(30);
+	m.attackT = SWING_TOTAL;
+	expect(fire.committedDrive?.(m) ?? null).toBeNull();
+	expect(fire.afterStep?.(m).attackT ?? m.attackT).toBe(SWING_TOTAL);
+});
+
+test('the commit starts the swing timer and leaves the cooldown to the shot', () => {
+	const m = shooter(30);
+	m.attackCdT = 0;
+	const after = fire.commit?.(m);
+	expect(after?.attackT).toBe(SWING_TOTAL);
+	expect(after?.attackCdT ?? 0).toBe(0);
+});
+
+test('the release edge fires exactly one shot and starts the cooldown', () => {
+	const m = shooter(30);
+	m.attackT = ACTIVE_T;
+	m.facing = -1;
+	const projection = fire.project?.(m, {
+		attackTBefore: SWING_TOTAL,
+		nextProjectileId: 4,
+	});
+	expect(projection?.strikes ?? []).toEqual([]);
+	expect(projection?.shots).toEqual([spawnProjectile(4, m, -1)]);
+	expect(projection?.monster?.attackCdT).toBe(fireCooldown);
+});
+
+test('the shot is a one-shot edge: a window already active releases nothing', () => {
+	const m = shooter(30);
+	m.attackT = ACTIVE_T;
+	const projection = fire.project?.(m, {
+		attackTBefore: ACTIVE_T + 0.001,
+		nextProjectileId: 4,
+	});
+	expect(projection?.shots ?? []).toEqual([]);
+	expect(projection?.monster ?? null).toBeNull();
+});
+
+test('wind-up and recovery release nothing', () => {
+	const ctx = { attackTBefore: SWING_TOTAL, nextProjectileId: 4 };
+	for (const attackT of [SWING_TOTAL, COMBAT.swing.recovery / 2, 0]) {
+		const m = shooter(30);
+		m.attackT = attackT;
+		expect(fire.project?.(m, ctx)?.shots ?? []).toEqual([]);
+	}
 });

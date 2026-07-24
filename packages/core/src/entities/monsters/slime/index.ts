@@ -1,12 +1,15 @@
+import { meleeKnockback } from '../../../combat/combat';
 import { ARCHETYPES } from '../../archetypes';
 import type { Brain } from '../../brain';
+import type { MonsterSpec } from '../shared';
 import { skeletonBrain } from '../shared';
 import { hopEngine } from './hop';
 import { pounceEngine } from './pounce';
 
 const stats = ARCHETYPES.slime.melee;
+const leap = stats.pounce;
 
-export const slimeBrain: Brain = skeletonBrain({
+export const slimeSpec: MonsterSpec = {
 	vision: stats.aggro,
 	movement: hopEngine({
 		// Rests are counted in Brain calls — one per fixed 16ms zone tick.
@@ -16,8 +19,20 @@ export const slimeBrain: Brain = skeletonBrain({
 		speed: 1.35,
 		jump: 0.8,
 	}),
-	combat: pounceEngine({ range: stats.range }),
-});
+	combat: pounceEngine({
+		range: stats.range,
+		cooldown: stats.commitCd,
+		timings: leap,
+		leap: leap.leap,
+		strike: {
+			damage: stats.damage,
+			poiseDamage: stats.poise,
+			...meleeKnockback(stats),
+		},
+	}),
+};
+
+export const slimeBrain: Brain = skeletonBrain(slimeSpec);
 
 export { type HopCadence, type HopShape, hopEngine } from './hop';
 export { type PounceShape, pounceEngine } from './pounce';

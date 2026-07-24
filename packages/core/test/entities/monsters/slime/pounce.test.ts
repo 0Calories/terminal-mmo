@@ -1,16 +1,37 @@
 import { expect, test } from 'bun:test';
+import {
+	attackTotal,
+	entityBox,
+	meleeKnockback,
+} from '../../../../src/combat/combat';
 import type { BrainView, Entity } from '../../../../src/entities';
-import { spawnMonster } from '../../../../src/entities';
+import { ARCHETYPES, spawnMonster } from '../../../../src/entities';
 import type {
 	CombatContext,
 	MovementEngine,
 	Perception,
 } from '../../../../src/entities/monsters';
+import type { PounceShape } from '../../../../src/entities/monsters/slime';
 import { pounceEngine } from '../../../../src/entities/monsters/slime';
 import { flatTerrain, SPAWN_Y } from '../../../helpers';
 
 const RANGE = 12;
-const pounce = pounceEngine({ range: RANGE });
+const MELEE = ARCHETYPES.slime.melee;
+const TIMINGS = MELEE.pounce;
+if (!TIMINGS) throw new Error('the slime profile must author pounce timings');
+
+const SHAPE: PounceShape = {
+	range: RANGE,
+	cooldown: MELEE.commitCd,
+	timings: TIMINGS,
+	leap: TIMINGS.leap,
+	strike: {
+		damage: MELEE.damage,
+		poiseDamage: MELEE.poise,
+		...meleeKnockback(MELEE),
+	},
+};
+const pounce = pounceEngine(SHAPE);
 const flat = flatTerrain();
 const view: BrainView = { terrain: flat, targetX: null };
 
@@ -132,4 +153,104 @@ test('the gait keeps its own memory: the pounce hands it back untouched', () => 
 	};
 	const m = grounded(50);
 	expect(pounce.fight(context(m, m.x - RANGE, movement)).movement).toBe(memory);
+});
+
+const TOTAL = attackTotal(TIMINGS);
+
+/** Attack timers that sit squarely inside each phase of a committed leap. */
+const PHASE_T = {
+	windup: TOTAL,
+	active: TIMINGS.active / 2 + TIMINGS.recovery,
+	recovery: TIMINGS.recovery / 2,
+} as const;
+
+function committed(phase: keyof typeof PHASE_T, onGround: boolean): Entity {
+	const m = grounded(50);
+	m.facing = -1;
+	m.attackT = PHASE_T[phase];
+	m.onGround = onGround;
+	return m;
+}
+
+test('an uncommitted body is left to the Brain drive', () => {
+	expect(pounce.committedDrive?.(grounded(50)) ?? null).toBeNull();
+});
+
+test('the wind-up and the wobble stand still', () => {
+	expect(pounce.committedDrive?.(committed('windup', true))).toEqual({
+		moveX: 0,
+		jump: false,
+	});
+	expect(pounce.committedDrive?.(committed('recovery', true))).toEqual({
+		moveX: 0,
+		jump: false,
+	});
+});
+
+test('the active leap launches from the ground then rides its locked arc', () => {
+	expect(pounce.committedDrive?.(committed('active', true))).toEqual({
+		moveX: -1,
+		jump: true,
+		moveScale: TIMINGS.leap.speed,
+		jumpScale: TIMINGS.leap.jump,
+	});
+	expect(pounce.committedDrive?.(committed('active', false))).toEqual({
+		moveX: -1,
+		jump: false,
+		moveScale: TIMINGS.leap.speed,
+		jumpScale: TIMINGS.leap.jump,
+	});
+});
+
+test('the commit sets the leap timer, the cooldown and a fresh hit list', () => {
+	const m = grounded(50);
+	m.swingHits = [9];
+	const after = pounce.commit?.(m);
+	expect(after?.attackT).toBe(TOTAL);
+	expect(after?.attackCdT).toBe(MELEE.commitCd);
+	expect(after?.swingHits).toEqual([]);
+});
+
+test('touching down cuts the active window to the wobble recovery', () => {
+	expect(pounce.afterStep?.(committed('active', true)).attackT).toBe(
+		TIMINGS.recovery,
+	);
+});
+
+test('a leap still in the air and a grounded wind-up keep their timer', () => {
+	const airborne = committed('active', false);
+	expect(pounce.afterStep?.(airborne).attackT).toBe(airborne.attackT);
+	const windup = committed('windup', true);
+	expect(pounce.afterStep?.(windup).attackT).toBe(windup.attackT);
+});
+
+test('the airborne body is the hitbox for exactly the active arc', () => {
+	const airborne = committed('active', false);
+	const strikes = pounce.project?.(airborne, {
+		attackTBefore: airborne.attackT,
+		nextProjectileId: 1,
+	})?.strikes;
+	expect(strikes).toHaveLength(1);
+	expect(strikes?.[0]).toEqual({
+		attackerId: airborne.id,
+		attackerKind: 'monster',
+		hitbox: entityBox(airborne),
+		damage: MELEE.damage,
+		poiseDamage: MELEE.poise,
+		facing: -1,
+		faction: 'monsters',
+		attackerX: airborne.x,
+		...meleeKnockback(MELEE),
+	});
+});
+
+test('a grounded, winding-up or recovering pounce projects nothing', () => {
+	const ctx = { attackTBefore: 0, nextProjectileId: 1 };
+	for (const m of [
+		committed('active', true),
+		committed('windup', true),
+		committed('recovery', true),
+		grounded(50),
+	])
+		expect(pounce.project?.(m, ctx)?.strikes ?? []).toEqual([]);
 });

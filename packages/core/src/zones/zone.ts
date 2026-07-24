@@ -1,25 +1,17 @@
 import {
 	aabbOverlap,
-	attackPhaseAt,
-	attackTotal,
 	type CombatEvent,
 	deathEvent,
 	entityBox,
-	meleeActive,
-	meleeHitbox,
-	meleeKnockback,
 	regenPoise,
 	resolveHitsOnAvatars,
 	resolveHitsOnMonsters,
-	SWING_TOTAL,
 	stepAvatarCombat,
 	swatEvent,
-	swingPhase,
 } from '../combat/combat';
-import { projectileBox, spawnProjectile } from '../combat/projectile';
+import { projectileBox } from '../combat/projectile';
 import { type PlayerClass, skillForSlot } from '../combat/skills';
 import { weaponById } from '../combat/weapons';
-import { meleeProfileOf, rangedProfileOf } from '../entities/archetypes';
 import { BRAINS, type BrainView } from '../entities/brain';
 import {
 	emoteById,
@@ -28,6 +20,7 @@ import {
 	stepEmote,
 } from '../entities/emote';
 import { spawnMonster } from '../entities/factory';
+import { MONSTERS } from '../entities/monsters';
 import type {
 	Control,
 	Cosmetics,
@@ -254,76 +247,22 @@ export function stepZone(
 				: BRAINS[m.type](m, view);
 		m.ai = ai;
 
-		const melee = meleeProfileOf(m.type);
-		const pounce = melee?.pounce;
-		// Reads the CURRENT m.attackT — the commit and landing blocks below
-		// rewrite the timer mid-tick.
-		const pounceActive = () =>
-			pounce !== undefined && attackPhaseAt(m.attackT, pounce) === 'active';
-		// A committed pounce owns the body: the squash and wobble stand still,
-		// and the leap launches on the first active tick then rides its locked
-		// ballistic arc — the Brain is not consulted mid-attack.
-		const stepDrive =
-			pounce && m.attackT > 0
-				? pounceActive()
-					? {
-							moveX: m.facing,
-							jump: m.onGround,
-							moveScale: pounce.leap.speed,
-							jumpScale: pounce.leap.jump,
-						}
-					: IDLE_DRIVE
-				: drive;
-		m = stepEntity(t, m, stepDrive, dt).e;
+		// The tick knows only that a monster fights with some Combat engine; the
+		// engine's execution half owns every rule about how.
+		const combat = m.type === 'player' ? null : MONSTERS[m.type].combat;
 
-		if (drive.commit === 'swing' && melee)
-			m = {
-				...m,
-				attackT: SWING_TOTAL,
-				attackCdT: melee.commitCd,
-				swingHits: [],
-			};
-		else if (drive.commit === 'pounce' && melee && pounce)
-			m = {
-				...m,
-				attackT: attackTotal(pounce),
-				attackCdT: melee.commitCd,
-				swingHits: [],
-			};
-		else if (drive.commit === 'fire') m = { ...m, attackT: SWING_TOTAL };
+		m = stepEntity(t, m, combat?.committedDrive?.(m) ?? drive, dt).e;
+		if (drive.commit && combat?.commit) m = combat.commit(m);
+		if (combat?.afterStep) m = combat.afterStep(m);
 
-		// Touching down cuts the active window short: landing IS the start of
-		// the wobble recovery, however early the arc ended.
-		if (pounce && m.onGround && pounceActive())
-			m = { ...m, attackT: pounce.recovery };
-
-		const ranged = rangedProfileOf(m.type);
-		if (
-			ranged &&
-			swingPhase(attackTBefore) !== 'active' &&
-			meleeActive(m.attackT)
-		) {
-			fired.push(spawnProjectile(nextProjectileId++, m, m.facing));
-			m = { ...m, attackCdT: ranged.fireCooldown };
+		const projection =
+			combat?.project?.(m, { attackTBefore, nextProjectileId }) ?? {};
+		m = projection.monster ?? m;
+		hostileStrikes.push(...(projection.strikes ?? []));
+		for (const shot of projection.shots ?? []) {
+			fired.push(shot);
+			nextProjectileId++;
 		}
-
-		// A pounce strikes with its whole body for exactly the airborne arc; a
-		// swing strikes with its reach hitbox for the timed active window.
-		const striking = pounce
-			? pounceActive() && !m.onGround
-			: meleeActive(m.attackT);
-		if (melee && striking)
-			hostileStrikes.push({
-				attackerId: m.id,
-				attackerKind: 'monster',
-				hitbox: pounce ? entityBox(m) : meleeHitbox(m),
-				damage: melee.damage,
-				poiseDamage: melee.poise,
-				facing: m.facing,
-				faction: 'monsters',
-				attackerX: m.x,
-				...meleeKnockback(melee),
-			});
 
 		advanced.push(m);
 	}

@@ -1,6 +1,6 @@
 import { type Drive, IDLE_DRIVE } from '../../../physics/physics';
 import type { Brain, BrainResult, BrainView } from '../../brain';
-import type { Entity, Facing } from '../../types';
+import type { Entity, Facing, Projectile, Strike } from '../../types';
 
 export type MonsterState = 'patrol' | 'combat';
 
@@ -60,7 +60,44 @@ export interface CombatStep extends EngineStep {
 	movement?: EngineMemory;
 }
 
-export interface CombatEngine {
+export interface ProjectionContext {
+	/** The attack timer as it stood at the top of the tick, before its decay. */
+	attackTBefore: number;
+
+	/** The id the first shot of this projection takes. */
+	nextProjectileId: number;
+}
+
+export interface AttackProjection {
+	/** The monster after the projection's own bookkeeping; absent leaves it. */
+	monster?: Entity;
+
+	strikes?: Strike[];
+
+	shots?: Projectile[];
+}
+
+/**
+ * The execution half of a Combat engine: what the zone tick does around
+ * stepping a monster that has committed this engine's attack. The tick calls
+ * every hook the same way for every monster and never names an attack.
+ */
+export interface CombatExecution {
+	/** The drive a committed attack takes the body over with; null leaves the
+	 *  Brain's own drive standing. */
+	committedDrive?(m: Entity): Drive | null;
+
+	/** The timers a commit starts. */
+	commit?(m: Entity): Entity;
+
+	/** What the finished step forces on the attack timer. */
+	afterStep?(m: Entity): Entity;
+
+	/** The Strikes and shots this tick's phase projects. */
+	project?(m: Entity, ctx: ProjectionContext): AttackProjection;
+}
+
+export interface CombatEngine extends CombatExecution {
 	fight(ctx: CombatContext): CombatStep;
 }
 
