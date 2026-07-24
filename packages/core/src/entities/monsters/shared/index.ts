@@ -1,8 +1,9 @@
 export {
 	type CombatContext,
-	type CombatDecision,
 	type CombatEngine,
-	type CombatMemory,
+	type CombatStep,
+	type EngineMemory,
+	type EngineStep,
 	type MonsterMemory,
 	type MonsterSpec,
 	type MonsterState,

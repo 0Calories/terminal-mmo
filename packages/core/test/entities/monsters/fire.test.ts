@@ -6,7 +6,7 @@ import {
 	type Entity,
 	spawnMonster,
 } from '../../../src/entities';
-import type { CombatMemory, Perception } from '../../../src/entities/monsters';
+import type { EngineMemory, Perception } from '../../../src/entities/monsters';
 import { fireEngine, walkEngine } from '../../../src/entities/monsters';
 import { GROUND_TOP } from '../../../src/zones';
 import { flatTerrain } from '../../helpers';
@@ -30,14 +30,14 @@ function perceive(m: Entity, targetX: number): Perception {
 	return { targetX, dx, adx: Math.abs(dx), inVision: true };
 }
 
-function fight(m: Entity, targetX: number, memory?: CombatMemory) {
+function fight(m: Entity, targetX: number, memory?: EngineMemory) {
 	const view: BrainView = { terrain: flat, targetX };
 	return fire.fight({
 		monster: m,
 		view,
 		perception: perceive(m, targetX),
 		movement,
-		memory,
+		memory: { state: 'combat', combat: memory },
 	});
 }
 
@@ -90,7 +90,7 @@ test('the settle margin ends: far enough out the repositioning shooter settles a
 test('reposition then attack: fire is committed only once the band is restored', () => {
 	let m = shooter(30);
 	const targetX = m.x - (keepDist - 1);
-	let memory: CombatMemory | undefined;
+	let memory: EngineMemory | undefined;
 	let committedFire = false;
 
 	for (let i = 0; i < 30 && !committedFire; i++) {

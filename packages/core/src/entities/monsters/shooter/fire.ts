@@ -1,5 +1,5 @@
 import type { Drive } from '../../../physics/physics';
-import type { CombatEngine, CombatMemory } from '../shared';
+import type { CombatEngine, EngineMemory } from '../shared';
 import { toward } from '../shared';
 
 export interface FireShape {
@@ -7,7 +7,7 @@ export interface FireShape {
 	keepDist: number;
 }
 
-export interface FireMemory extends CombatMemory {
+export interface FireMemory extends EngineMemory {
 	kind: 'fire';
 
 	settling: boolean;
@@ -17,7 +17,7 @@ export interface FireMemory extends CombatMemory {
 // it cannot flip the shooter between retreating and firing every tick.
 const SETTLE_MARGIN = 2;
 
-function fireMemory(memory: CombatMemory | undefined): FireMemory | null {
+function fireMemory(memory: EngineMemory | undefined): FireMemory | null {
 	return memory?.kind === 'fire' ? (memory as FireMemory) : null;
 }
 
@@ -26,15 +26,16 @@ export function fireEngine(shape: FireShape): CombatEngine {
 	return {
 		fight: ({ monster, view, perception, movement, memory }) => {
 			const face = toward(perception.dx);
-			const settling = fireMemory(memory)?.settling ?? false;
+			const settling = fireMemory(memory.combat)?.settling ?? false;
 			const settleAt = shape.keepDist + (settling ? SETTLE_MARGIN : 0);
 			if (perception.adx < settleAt) {
 				const retreat = perception.dx > 0 ? -1 : 1;
 				const destX = (perception.targetX ?? monster.x) + retreat * settleAt;
-				const drive = movement.moveToward(monster, view, destX);
+				const step = movement.moveToward(monster, view, destX, memory.movement);
 				return {
-					drive: { ...drive, face },
+					drive: { ...step.drive, face },
 					memory: { kind: 'fire', settling: true },
+					movement: step.memory,
 				};
 			}
 			const drive: Drive = { moveX: 0, jump: false, face };

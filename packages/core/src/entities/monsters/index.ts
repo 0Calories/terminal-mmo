@@ -2,9 +2,10 @@ export { bruteBrain } from './brute';
 export { chaserBrain } from './chaser';
 export {
 	type CombatContext,
-	type CombatDecision,
 	type CombatEngine,
-	type CombatMemory,
+	type CombatStep,
+	type EngineMemory,
+	type EngineStep,
 	footProbe,
 	type MonsterMemory,
 	type MonsterSpec,
@@ -26,3 +27,10 @@ export {
 	fireEngine,
 	shooterBrain,
 } from './shooter';
+export {
+	type HopShape,
+	hopEngine,
+	type PounceShape,
+	pounceEngine,
+	slimeBrain,
+} from './slime';

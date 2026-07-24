@@ -4,15 +4,17 @@ import type { Entity, Facing } from '../../types';
 
 export type MonsterState = 'patrol' | 'combat';
 
-/** One kind-tagged slice per Combat engine; only its own engine narrows it. */
-export interface CombatMemory {
+/** An engine's own memory slice, tagged with the engine that narrows it. */
+export interface EngineMemory {
 	kind: string;
 }
 
 export interface MonsterMemory {
 	state: MonsterState;
 
-	combat?: CombatMemory;
+	movement?: EngineMemory;
+
+	combat?: EngineMemory;
 }
 
 export interface Perception {
@@ -27,10 +29,22 @@ export interface Perception {
 	inVision: boolean;
 }
 
-export interface MovementEngine {
-	wander(m: Entity, view: BrainView): Drive;
+export interface EngineStep {
+	drive: Drive;
 
-	moveToward(m: Entity, view: BrainView, destX: number): Drive;
+	/** The producing engine's own slice, absent when the engine keeps none. */
+	memory?: EngineMemory;
+}
+
+export interface MovementEngine {
+	wander(m: Entity, view: BrainView, memory?: EngineMemory): EngineStep;
+
+	moveToward(
+		m: Entity,
+		view: BrainView,
+		destX: number,
+		memory?: EngineMemory,
+	): EngineStep;
 }
 
 export interface CombatContext {
@@ -38,19 +52,16 @@ export interface CombatContext {
 	view: BrainView;
 	perception: Perception;
 	movement: MovementEngine;
-
-	/** The engine's own memory slice, as it left it last tick. */
-	memory?: CombatMemory;
+	memory: MonsterMemory;
 }
 
-export interface CombatDecision {
-	drive: Drive;
-
-	memory?: CombatMemory;
+export interface CombatStep extends EngineStep {
+	/** The slice returned by the Movement engine this fight commissioned. */
+	movement?: EngineMemory;
 }
 
 export interface CombatEngine {
-	fight(ctx: CombatContext): CombatDecision;
+	fight(ctx: CombatContext): CombatStep;
 }
 
 export interface MonsterSpec {
@@ -90,24 +101,32 @@ export function skeletonBrain(spec: MonsterSpec): Brain {
 		if (stunned(m) || committed(m)) return { drive: IDLE_DRIVE, ai: memory };
 
 		const perception = perceive(m, view, spec.vision);
-		if (!perception.inVision)
+		const state: MonsterState = perception.inVision ? 'combat' : 'patrol';
+		if (state === 'patrol') {
+			const step = spec.movement.wander(m, view, memory.movement);
+			// A gait is continuous across the transition, but a fight is not: the
+			// combat slice is dropped so the next one starts from a clean sheet.
+			const movement = step.memory ?? memory.movement;
 			return {
-				drive: spec.movement.wander(m, view),
-				ai: { state: 'patrol' },
+				drive: step.drive,
+				ai: movement ? { state, movement } : { state },
 			};
-
-		const decision = spec.combat.fight({
+		}
+		const step = spec.combat.fight({
 			monster: m,
 			view,
 			perception,
 			movement: spec.movement,
-			memory: memory.combat,
+			memory,
 		});
 		return {
-			drive: decision.drive,
-			ai: decision.memory
-				? { state: 'combat', combat: decision.memory }
-				: { state: 'combat' },
+			drive: step.drive,
+			ai: {
+				...memory,
+				state,
+				movement: step.movement ?? memory.movement,
+				combat: step.memory ?? memory.combat,
+			},
 		};
 	};
 }
