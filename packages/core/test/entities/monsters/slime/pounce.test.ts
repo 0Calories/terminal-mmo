@@ -1,38 +1,25 @@
 import { expect, test } from 'bun:test';
-import {
-	attackTotal,
-	entityBox,
-	meleeKnockback,
-} from '../../../../src/combat/combat';
+import { attackTotal, entityBox } from '../../../../src/combat/combat';
 import type { BrainView, Entity } from '../../../../src/entities';
-import { ARCHETYPES, spawnMonster } from '../../../../src/entities';
+import { MONSTERS, spawnMonster } from '../../../../src/entities';
 import type {
 	CombatContext,
 	HopMemory,
 	MovementEngine,
 	Perception,
 } from '../../../../src/entities/monsters';
-import type { PounceShape } from '../../../../src/entities/monsters/slime';
-import { pounceEngine } from '../../../../src/entities/monsters/slime';
+import { meleeKnockback } from '../../../../src/entities/monsters';
+import {
+	POUNCE_DEFAULTS,
+	pounceEngine,
+} from '../../../../src/entities/monsters/slime';
 import { flatTerrain, SPAWN_Y } from '../../../helpers';
 
-const RANGE = 12;
-const MELEE = ARCHETYPES.slime.melee;
-const TIMINGS = MELEE.pounce;
-if (!TIMINGS) throw new Error('the slime profile must author pounce timings');
-
-const SHAPE: PounceShape = {
-	range: RANGE,
-	cooldown: MELEE.commitCd,
-	timings: TIMINGS,
-	leap: TIMINGS.leap,
-	strike: {
-		damage: MELEE.damage,
-		poiseDamage: MELEE.poise,
-		...meleeKnockback(MELEE),
-	},
-};
-const pounce = pounceEngine(SHAPE);
+const STATS = MONSTERS.slime.stats;
+const RANGE = STATS.range;
+const SHAPE = POUNCE_DEFAULTS;
+const TIMINGS = SHAPE.timings;
+const pounce = pounceEngine()(STATS);
 const flat = flatTerrain();
 const view: BrainView = { terrain: flat, targetX: null };
 
@@ -192,14 +179,14 @@ test('the active leap launches from the ground then rides its locked arc', () =>
 	expect(pounce.committedDrive?.(committed('active', true))).toEqual({
 		moveX: -1,
 		jump: true,
-		moveScale: TIMINGS.leap.speed,
-		jumpScale: TIMINGS.leap.jump,
+		moveScale: SHAPE.leap.speed,
+		jumpScale: SHAPE.leap.jump,
 	});
 	expect(pounce.committedDrive?.(committed('active', false))).toEqual({
 		moveX: -1,
 		jump: false,
-		moveScale: TIMINGS.leap.speed,
-		jumpScale: TIMINGS.leap.jump,
+		moveScale: SHAPE.leap.speed,
+		jumpScale: SHAPE.leap.jump,
 	});
 });
 
@@ -208,7 +195,7 @@ test('the commit sets the leap timer, the cooldown and a fresh hit list', () => 
 	m.swingHits = [9];
 	const after = pounce.commit?.(m);
 	expect(after?.attackT).toBe(TOTAL);
-	expect(after?.attackCdT).toBe(MELEE.commitCd);
+	expect(after?.attackCdT).toBe(SHAPE.cooldown);
 	expect(after?.swingHits).toEqual([]);
 });
 
@@ -236,12 +223,12 @@ test('the airborne body is the hitbox for exactly the active arc', () => {
 		attackerId: airborne.id,
 		attackerKind: 'monster',
 		hitbox: entityBox(airborne),
-		damage: MELEE.damage,
-		poiseDamage: MELEE.poise,
+		damage: STATS.damage,
+		poiseDamage: SHAPE.poiseDamage,
 		facing: -1,
 		faction: 'monsters',
 		attackerX: airborne.x,
-		...meleeKnockback(MELEE),
+		...meleeKnockback(SHAPE.knockback),
 	});
 });
 

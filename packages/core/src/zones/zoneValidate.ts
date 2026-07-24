@@ -1,4 +1,4 @@
-import { BOX } from '../entities/archetypes';
+import { BOX } from '../entities/body';
 import type { Box, Terrain } from '../entities/types';
 import { isSolid } from '../physics/terrain';
 import type { Zone } from './types';

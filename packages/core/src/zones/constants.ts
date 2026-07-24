@@ -1,4 +1,4 @@
-import { BOX } from '../entities/archetypes';
+import { BOX } from '../entities/body';
 
 export const WORLD = { w: 240, h: 40 } as const;
 export const GROUND_TOP = WORLD.h - 3;

@@ -1,23 +1,15 @@
-import { meleeKnockback } from '../../combat/combat';
-import { ARCHETYPES } from '../archetypes';
-import type { Brain } from '../brain';
-import type { MonsterSpec } from './shared';
-import { skeletonBrain, swingEngine, walkEngine } from './shared';
+import { defineMonster, swingEngine, walkEngine } from './shared';
 
-const stats = ARCHETYPES.brute.melee;
-
-export const bruteSpec: MonsterSpec = {
-	vision: stats.aggro,
-	movement: walkEngine({ deadzone: stats.deadzone }),
-	combat: swingEngine({
-		range: stats.range,
-		cooldown: stats.commitCd,
-		strike: {
-			damage: stats.damage,
-			poiseDamage: stats.poise,
-			...meleeKnockback(stats),
-		},
-	}),
-};
-
-export const bruteBrain: Brain = skeletonBrain(bruteSpec);
+export const brute = defineMonster({
+	stats: {
+		hp: 60,
+		speed: 6,
+		mass: 4,
+		poise: 48,
+		damage: 18,
+		vision: 26,
+		range: 5,
+	},
+	movement: walkEngine(),
+	combat: swingEngine({ cooldown: 1.6, poiseDamage: 16 }),
+});

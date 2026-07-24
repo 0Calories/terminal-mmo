@@ -1,6 +1,7 @@
-import { ARCHETYPES, BOX } from '../src/entities/archetypes';
+import { BOX, MONSTERS } from '../src/entities';
 import { DEFAULT_COSMETICS } from '../src/entities/cosmetics';
 import { spawnAvatar } from '../src/entities/factory';
+import { PROJECTILE_DEFAULTS } from '../src/entities/monsters';
 import type { Entity, Projectile, Terrain } from '../src/entities/types';
 import { parseTerrain } from '../src/physics/terrain';
 import { GROUND_TOP, WORLD } from '../src/zones/constants';
@@ -15,10 +16,10 @@ export function makeProjectile(over: Partial<Projectile> = {}): Projectile {
 		vx: 0,
 		vy: 0,
 		life: 2,
-		damage: ARCHETYPES.shooter.ranged.projectile.damage,
-		poiseDamage: ARCHETYPES.shooter.ranged.projectile.poise,
-		knockback: ARCHETYPES.shooter.ranged.projectile.knockback,
-		knockbackUp: ARCHETYPES.shooter.ranged.projectile.knockbackUp,
+		damage: MONSTERS.shooter.stats.damage,
+		poiseDamage: PROJECTILE_DEFAULTS.poiseDamage,
+		knockback: PROJECTILE_DEFAULTS.knockback,
+		knockbackUp: PROJECTILE_DEFAULTS.knockbackUp,
 		...over,
 	};
 }

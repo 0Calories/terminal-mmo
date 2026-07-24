@@ -1,4 +1,4 @@
-import { BOX } from '../entities/archetypes';
+import { BOX } from '../entities/body';
 import type { Box, Facing } from '../entities/types';
 import { CAPABILITY_UNLOCK } from '../progression/progression';
 

@@ -4,20 +4,19 @@ import {
 	attackTotal,
 	COMBAT,
 	entityBox,
-	meleeKnockback,
 	resolveHitsOnMonsters,
 } from '../../src/combat';
 import type { AttackPhase, Entity, Strike } from '../../src/entities';
-import { ARCHETYPES, spawnMonster } from '../../src/entities';
+import { MONSTERS, spawnMonster } from '../../src/entities';
+import { meleeKnockback, POUNCE_DEFAULTS } from '../../src/entities/monsters';
 import { PHYS } from '../../src/physics/constants';
 import { snapshotFor } from '../../src/world';
 import type { ServerAvatar, ZoneState } from '../../src/zones';
 import { stepZone } from '../../src/zones';
 import { holdAt, SPAWN_Y, serverAvatar, zoneWith } from '../helpers';
 
-const MELEE = ARCHETYPES.slime.melee;
-const POUNCE = MELEE.pounce;
-if (!POUNCE) throw new Error('the slime profile must author pounce timings');
+const MELEE = MONSTERS.slime.stats;
+const POUNCE = POUNCE_DEFAULTS;
 
 function groundedSlime(x: number): Entity {
 	const m = spawnMonster('slime', 2, x, SPAWN_Y);
@@ -33,7 +32,7 @@ const step = (state: ZoneState) =>
 	stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
 
 const slimePhase = (m: Entity): AttackPhase | null =>
-	attackPhaseAt(m.attackT, POUNCE);
+	attackPhaseAt(m.attackT, POUNCE.timings);
 
 test('the slime pounce commits only within leap range and off cooldown', () => {
 	const inRange = stateWith(
@@ -179,7 +178,7 @@ test('a slime caught mid-rest pounces on sight instead of waiting out the rest',
 test('the wind-up starts at leap distance: the approach never closes to touch', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.hurtT = 100;
-	let state = stateWith(groundedSlime(20 + MELEE.aggro - 1), av);
+	let state = stateWith(groundedSlime(20 + MELEE.vision - 1), av);
 
 	let commitGap: number | null = null;
 	for (let i = 0; i < 600 && commitGap === null; i++) {
@@ -207,7 +206,7 @@ test('the leap is a flat lunge: pounce-scaled horizontal speed, shrunken arc', (
 		if (m.attackT > 0 && !m.onGround) {
 			launched = true;
 			expect(Math.abs(m.vx)).toBeCloseTo(
-				ARCHETYPES.slime.speed * POUNCE.leap.speed,
+				MONSTERS.slime.stats.speed * POUNCE.leap.speed,
 				5,
 			);
 			apexY = Math.min(apexY, m.y);
@@ -222,7 +221,7 @@ function airborneActiveSlime(x: number): Entity {
 	const m = spawnMonster('slime', 2, x, SPAWN_Y - 2);
 	m.onGround = false;
 	m.facing = -1;
-	m.attackT = POUNCE.active / 2 + POUNCE.recovery;
+	m.attackT = POUNCE.timings.active / 2 + POUNCE.timings.recovery;
 	return m;
 }
 
@@ -272,7 +271,7 @@ test('the swat outranks a poise break: launched, never stunned', () => {
 
 test('a grounded wind-up slime is not swattable: super armor holds', () => {
 	const m = groundedSlime(30);
-	m.attackT = attackTotal(POUNCE);
+	m.attackT = attackTotal(POUNCE.timings);
 	const { monsters, events } = resolveHitsOnMonsters(
 		[m],
 		[playerStrike(m)],
@@ -320,7 +319,10 @@ test('a connecting pounce shoves a poise-broken Avatar with the scaled knockback
 			shoved = true;
 			const ivx = state.avatars[0].avatar.ivx ?? 0;
 			expect(ivx).toBeLessThan(0);
-			expect(Math.abs(ivx)).toBeCloseTo(meleeKnockback(MELEE).knockback, 5);
+			expect(Math.abs(ivx)).toBeCloseTo(
+				meleeKnockback(POUNCE.knockback).knockback,
+				5,
+			);
 			expect(Math.abs(ivx)).toBeGreaterThan(COMBAT.knockback);
 		}
 	}

@@ -12,7 +12,7 @@ import {
 	weaponById,
 } from '../../src/combat';
 import type { Drop, Entity, Item } from '../../src/entities';
-import { ARCHETYPES, BOX, spawnAvatar, spawnMonster } from '../../src/entities';
+import { BOX, MONSTERS, spawnAvatar, spawnMonster } from '../../src/entities';
 import { lootTableFor, rollDrop } from '../../src/items';
 import { CAPABILITY_UNLOCK, xpForKill } from '../../src/progression';
 import { decodeServerMessage, encodeServerMessage } from '../../src/protocol';
@@ -83,7 +83,7 @@ test('no CombatEvent is emitted when the hit lands on an i-framed Monster', () =
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const intent: AvatarIntent = { ...holdAt(7, av.avatar), attack: true };
 	const next = stepZone(state, [intent], 16);
-	expect(next.zone.monsters[0].hp).toBe(ARCHETYPES.chaser.hp);
+	expect(next.zone.monsters[0].hp).toBe(MONSTERS.chaser.stats.hp);
 	expect(next.events ?? []).toEqual([]);
 });
 
@@ -140,8 +140,7 @@ test.each([
 	'chaser',
 	'brute',
 ] as const)('%s melee damage lands only in the active phase', (type) => {
-	const profile = ARCHETYPES[type].melee;
-	const m = spawnMonster(type, 2, 20 + profile.range, y);
+	const m = spawnMonster(type, 2, 20 + MONSTERS[type].stats.range, y);
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
 	av.avatar.hp = 999;
@@ -163,11 +162,11 @@ test.each([
 			damagedPhase = swingPhase(state.zone.monsters[0].attackT) ?? 'idle';
 	}
 	expect(damagedPhase).toBe('active');
-	expect(before - state.avatars[0].avatar.hp).toBe(profile.damage);
+	expect(before - state.avatars[0].avatar.hp).toBe(MONSTERS[type].stats.damage);
 });
 
 test('a committer cannot re-attack during its recovery — a punishable opening', () => {
-	const m = spawnMonster('chaser', 2, 20 + ARCHETYPES.chaser.melee.range, y);
+	const m = spawnMonster('chaser', 2, 20 + MONSTERS.chaser.stats.range, y);
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
@@ -181,7 +180,7 @@ test('a committer cannot re-attack during its recovery — a punishable opening'
 		if (swingPhase(mon.attackT) === 'recovery') {
 			sawRecovery = true;
 			const punisher = primeSwing(
-				serverAvatar(9, 20 + ARCHETYPES.chaser.melee.range - BOX.w),
+				serverAvatar(9, 20 + MONSTERS.chaser.stats.range - BOX.w),
 			);
 			punisher.avatar.facing = 1;
 			const hpBefore = mon.hp;
@@ -201,7 +200,7 @@ test('a committer cannot re-attack during its recovery — a punishable opening'
 });
 
 test('a committer in its active phase can Stagger a poise-broken Avatar (full hit-reaction payload)', () => {
-	const m = spawnMonster('chaser', 2, 20 + ARCHETYPES.chaser.melee.range, y);
+	const m = spawnMonster('chaser', 2, 20 + MONSTERS.chaser.stats.range, y);
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
 	av.avatar.poise = 1;
@@ -218,17 +217,18 @@ test('a committer in its active phase can Stagger a poise-broken Avatar (full hi
 
 test('the brute is a poise-tank: it spawns with a much larger Poise pool than the default', () => {
 	const m = spawnMonster('brute', 2, 30, y);
-	expect(m.poiseMax).toBe(ARCHETYPES.brute.poiseMax);
-	expect(ARCHETYPES.brute.poiseMax).toBeGreaterThan(COMBAT.poise.max);
+	const brutePoise = MONSTERS.brute.stats.poise ?? 0;
+	expect(m.poiseMax).toBe(brutePoise);
+	expect(brutePoise).toBeGreaterThan(COMBAT.poise.max);
 	const r = applyPoiseDamage(m, COMBAT.poiseDamage);
 	expect(r.broke).toBe(false);
-	expect(
-		Math.ceil(ARCHETYPES.brute.poiseMax / COMBAT.poiseDamage),
-	).toBeGreaterThan(Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage));
+	expect(Math.ceil(brutePoise / COMBAT.poiseDamage)).toBeGreaterThan(
+		Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage),
+	);
 });
 
 test('the brute attacks deliberately: a commit cool-down keeps it from re-swinging the instant it recovers', () => {
-	const m = spawnMonster('brute', 2, 20 + ARCHETYPES.brute.melee.range, y);
+	const m = spawnMonster('brute', 2, 20 + MONSTERS.brute.stats.range, y);
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
 
@@ -278,9 +278,7 @@ test('a Dodge in its recovery window does NOT grant i-frames — the hit connect
 	const before = av.avatar.hp;
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [holdAt(7, av.avatar)], 16);
-	expect(next.avatars[0].avatar.hp).toBe(
-		before - ARCHETYPES.chaser.melee.damage,
-	);
+	expect(next.avatars[0].avatar.hp).toBe(before - MONSTERS.chaser.stats.damage);
 });
 
 test('a Dodge slips a projectile during its active window but not its recovery', () => {
@@ -318,7 +316,7 @@ test('a Monster swing overlapping the Avatar across multiple active frames lands
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
 	expect(before - state.avatars[0].avatar.hp).toBe(
-		ARCHETYPES.chaser.melee.damage,
+		MONSTERS.chaser.stats.damage,
 	);
 
 	for (let i = 0; i < 3; i++) {
@@ -326,14 +324,14 @@ test('a Monster swing overlapping the Avatar across multiple active frames lands
 		state = stepZone(state, [holdAt(7, state.avatars[0].avatar)], 16);
 	}
 	expect(before - state.avatars[0].avatar.hp).toBe(
-		ARCHETYPES.chaser.melee.damage,
+		MONSTERS.chaser.stats.damage,
 	);
 	expect(state.events?.some((e) => e.kind === 'break')).toBe(false);
 	expect(state.avatars[0].avatar.stunT ?? 0).toBe(0);
 });
 
 test('each Monster swing gets a fresh strike-dedup ledger', () => {
-	const m = spawnMonster('chaser', 2, 20 + ARCHETYPES.chaser.melee.range, y);
+	const m = spawnMonster('chaser', 2, 20 + MONSTERS.chaser.stats.range, y);
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
 	av.avatar.hp = 999;
@@ -351,8 +349,8 @@ test('each Monster swing gets a fresh strike-dedup ledger', () => {
 	}
 
 	expect(drops).toEqual([
-		ARCHETYPES.chaser.melee.damage,
-		ARCHETYPES.chaser.melee.damage,
+		MONSTERS.chaser.stats.damage,
+		MONSTERS.chaser.stats.damage,
 	]);
 });
 
@@ -363,10 +361,10 @@ test('one active frame strikes every overlapping Avatar', () => {
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [a, b], tick: 0 };
 	state = stepZone(state, [holdAt(7, a.avatar), holdAt(8, b.avatar)], 16);
 	expect(state.avatars[0].avatar.hp).toBe(
-		a.avatar.maxHp - ARCHETYPES.chaser.melee.damage,
+		a.avatar.maxHp - MONSTERS.chaser.stats.damage,
 	);
 	expect(state.avatars[1].avatar.hp).toBe(
-		b.avatar.maxHp - ARCHETYPES.chaser.melee.damage,
+		b.avatar.maxHp - MONSTERS.chaser.stats.damage,
 	);
 });
 
@@ -389,9 +387,9 @@ test('a frontal Guard converts a strike to chip damage and drains Poise', () => 
 	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
 	const out = next.avatars[0].avatar;
 	expect(hpBefore - out.hp).toBe(
-		Math.ceil(ARCHETYPES.chaser.melee.damage * COMBAT.guard.blockChip),
+		Math.ceil(MONSTERS.chaser.stats.damage * COMBAT.guard.blockChip),
 	);
-	expect(hpBefore - out.hp).toBeLessThan(ARCHETYPES.chaser.melee.damage);
+	expect(hpBefore - out.hp).toBeLessThan(MONSTERS.chaser.stats.damage);
 	expect(out.poise ?? COMBAT.poise.max).toBeLessThan(poiseBefore);
 	expect(out.stunT ?? 0).toBe(0);
 	expect(next.events?.some((e) => e.kind === 'hit')).toBeFalsy();
@@ -431,7 +429,7 @@ test('a rear strike bypasses Guard', () => {
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [guardIntent(7, av.avatar)], 16);
 	const out = next.avatars[0].avatar;
-	expect(hpBefore - out.hp).toBe(ARCHETYPES.chaser.melee.damage);
+	expect(hpBefore - out.hp).toBe(MONSTERS.chaser.stats.damage);
 });
 
 test('a guarding Avatar replicates the guarding flag to observers', () => {
@@ -542,7 +540,7 @@ test('a landing hit records the attacker as a contributor on the Monster', () =>
 	const av = primeSwing(serverAvatar(7, 20));
 	const state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	const next = stepZone(state, [{ ...holdAt(7, av.avatar), attack: true }], 16);
-	expect(next.zone.monsters[0].hp).toBeLessThan(ARCHETYPES.chaser.hp);
+	expect(next.zone.monsters[0].hp).toBeLessThan(MONSTERS.chaser.stats.hp);
 	expect(next.zone.monsters[0].contributors).toEqual([7]);
 });
 
@@ -800,7 +798,7 @@ test('a crowded shooter repositions without firing inside its minimum range', ()
 });
 
 test('the shooter releases every shot from its comfort band, never closer than keepDist', () => {
-	const { keepDist } = ARCHETYPES.shooter.ranged;
+	const keepDist = MONSTERS.shooter.stats.range;
 	const m = spawnMonster('shooter', 2, 30, y);
 	m.onGround = true;
 	const av = serverAvatar(7, 20);
@@ -984,7 +982,7 @@ test('a single chip hit deals HP + Poise damage but does NOT Stagger a full-Pois
 		16,
 	);
 	const mon = next.zone.monsters[0];
-	expect(mon.hp).toBe(ARCHETYPES.chaser.hp - COMBAT.meleeDamage);
+	expect(mon.hp).toBe(MONSTERS.chaser.stats.hp - COMBAT.meleeDamage);
 	expect(mon.poise).toBe(COMBAT.poise.max - COMBAT.poiseDamage);
 	expect(mon.stunT ?? 0).toBe(0);
 	expect(mon.ivx ?? 0).toBe(0);
@@ -1020,7 +1018,7 @@ test('a Poise break Staggers: Hitstun + a Knockback impulse + a break CombatEven
 		16,
 	);
 	const mon = next.zone.monsters[0];
-	expect(mon.hp).toBe(ARCHETYPES.chaser.hp - COMBAT.meleeDamage);
+	expect(mon.hp).toBe(MONSTERS.chaser.stats.hp - COMBAT.meleeDamage);
 	expect(mon.stunT ?? 0).toBeGreaterThan(0);
 	expect(mon.ivx ?? 0).toBeGreaterThan(0);
 	const brk = next.events?.find((e) => e.kind === 'break');
@@ -1093,7 +1091,7 @@ test('a Staggered Monster surfaces the staggered action-flag in the snapshot', (
 
 test('a default chaser Poise-breaks strictly before it dies (the break is observable)', () => {
 	const hitsToBreak = Math.ceil(COMBAT.poise.max / COMBAT.poiseDamage);
-	const hitsToKill = Math.ceil(ARCHETYPES.chaser.hp / COMBAT.meleeDamage);
+	const hitsToKill = Math.ceil(MONSTERS.chaser.stats.hp / COMBAT.meleeDamage);
 	expect(hitsToBreak).toBeLessThan(hitsToKill);
 });
 

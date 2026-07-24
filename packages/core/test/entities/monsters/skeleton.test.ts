@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test';
+import { COMBAT } from '../../../src/combat';
 import {
 	BOX,
 	type BrainView,
 	type Entity,
+	MONSTERS,
 	spawnMonster,
 } from '../../../src/entities';
 import type {
@@ -40,6 +42,7 @@ function stubEngines() {
 		},
 	};
 	const combat: CombatEngine = {
+		timings: COMBAT.swing,
 		fight: (ctx) => {
 			calls.push('fight');
 			const step = ctx.movement.moveToward(
@@ -56,7 +59,8 @@ function stubEngines() {
 
 function stubbedBrain() {
 	const { calls, movement, combat } = stubEngines();
-	return { calls, brain: skeletonBrain({ vision: VISION, movement, combat }) };
+	const stats = { ...MONSTERS.chaser.stats, vision: VISION };
+	return { calls, brain: skeletonBrain({ stats, movement, combat }) };
 }
 
 function grounded(x: number): Entity {

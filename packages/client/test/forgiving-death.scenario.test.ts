@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { DEFAULT_WEAPON } from '@mmo/core/combat';
-import { meleeProfileOf, spawnMonster } from '@mmo/core/entities';
+import { MONSTERS, spawnMonster } from '@mmo/core/entities';
 import {
 	activeZone,
 	type GameState,
@@ -55,8 +55,7 @@ test('fatal authored Monster combat returns the last Dungeon occupant to a fresh
 	expect(client.loop.currentZone.id).toBe(DUNGEON_ID);
 
 	player.send(scenarioInput({ x: TOWN_SPAWN.x }));
-	const attack = meleeProfileOf('chaser');
-	if (attack === null) throw new Error('chaser must have a melee profile');
+	const attack = MONSTERS.chaser.stats;
 	let priorHp = scenarioAvatar(entered, player.sessionId).hp;
 	let lastDungeon = entered;
 	let defeated: Extract<ServerMessage, { t: 'snapshot' }> | undefined;

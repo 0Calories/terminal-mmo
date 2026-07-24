@@ -1,27 +1,18 @@
 import { expect, test } from 'bun:test';
-import {
-	meleeHitbox,
-	meleeKnockback,
-	SWING_TOTAL,
-} from '../../../src/combat/combat';
+import { meleeHitbox, SWING_TOTAL } from '../../../src/combat/combat';
 import { COMBAT } from '../../../src/combat/constants';
 import type { Entity } from '../../../src/entities';
-import { ARCHETYPES, spawnMonster } from '../../../src/entities';
-import type { SwingShape } from '../../../src/entities/monsters';
-import { swingEngine } from '../../../src/entities/monsters';
+import { MONSTERS, spawnMonster } from '../../../src/entities';
+import {
+	meleeKnockback,
+	SWING_DEFAULTS,
+	swingEngine,
+} from '../../../src/entities/monsters';
 import { SPAWN_Y } from '../../helpers';
 
-const MELEE = ARCHETYPES.chaser.melee;
-const SHAPE: SwingShape = {
-	range: MELEE.range,
-	cooldown: MELEE.commitCd,
-	strike: {
-		damage: MELEE.damage,
-		poiseDamage: MELEE.poise,
-		...meleeKnockback(MELEE),
-	},
-};
-const swing = swingEngine(SHAPE);
+const STATS = MONSTERS.chaser.stats;
+const SHAPE = SWING_DEFAULTS;
+const swing = swingEngine()(STATS);
 
 const ACTIVE_T = COMBAT.swing.active / 2 + COMBAT.swing.recovery;
 
@@ -42,7 +33,7 @@ test('the commit sets the swing timer, the cooldown and a fresh hit list', () =>
 	m.swingHits = [9];
 	const after = swing.commit?.(m);
 	expect(after?.attackT).toBe(SWING_TOTAL);
-	expect(after?.attackCdT).toBe(MELEE.commitCd);
+	expect(after?.attackCdT).toBe(SHAPE.cooldown);
 	expect(after?.swingHits).toEqual([]);
 });
 
@@ -63,12 +54,12 @@ test('the active window projects the reach hitbox', () => {
 			attackerId: m.id,
 			attackerKind: 'monster',
 			hitbox: meleeHitbox(m),
-			damage: MELEE.damage,
-			poiseDamage: MELEE.poise,
+			damage: STATS.damage,
+			poiseDamage: SHAPE.poiseDamage,
 			facing: -1,
 			faction: 'monsters',
 			attackerX: m.x,
-			...meleeKnockback(MELEE),
+			...meleeKnockback(SHAPE.knockback),
 		},
 	]);
 });
