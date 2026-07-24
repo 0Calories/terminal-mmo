@@ -9,14 +9,14 @@
       "target": "field-01",
       "arrival": [
         4,
-        30
+        32
       ]
     },
     "c": {
       "target": "field-02",
       "arrival": [
         4,
-        30
+        32
       ]
     }
   }
