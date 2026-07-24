@@ -85,7 +85,7 @@ const SLIME = {
 		poise: 8,
 		// Inside the flat lunge's ~13-column ground coverage: the whole airborne
 		// body is the hitbox, so an arc committed here crosses its target.
-		range: 10,
+		range: 12,
 		aggro: 22,
 		deadzone: 2,
 		commitCd: 2,
