@@ -13,8 +13,10 @@ export function swingEngine(shape: SwingShape): CombatEngine {
 			const destX = perception.targetX ?? monster.x;
 			const drive = movement.moveToward(monster, view, destX);
 			if (perception.adx > shape.range || (monster.attackCdT ?? 0) > 0)
-				return drive;
-			return { ...drive, face: toward(perception.dx), commit: 'swing' };
+				return { drive };
+			return {
+				drive: { ...drive, face: toward(perception.dx), commit: 'swing' },
+			};
 		},
 	};
 }

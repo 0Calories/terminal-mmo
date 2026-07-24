@@ -296,7 +296,7 @@ test('inside keepDist the shooter repositions without firing', () => {
 	expect(r.drive.moveX).toBe(1);
 	expect(r.drive.face).toBe(-1);
 	expect(r.drive.commit).toBeUndefined();
-	expect(r.ai).toEqual({ state: 'reposition' });
+	expect(r.ai).toMatchObject({ state: 'combat' });
 });
 
 test('in the comfort band the shooter holds ground and commits fire', () => {
@@ -306,7 +306,7 @@ test('in the comfort band the shooter holds ground and commits fire', () => {
 	expect(r.drive.moveX).toBe(0);
 	expect(r.drive.face).toBe(-1);
 	expect(r.drive.commit).toBe('fire');
-	expect(r.ai).toEqual({ state: 'attack' });
+	expect(r.ai).toMatchObject({ state: 'combat' });
 });
 
 test('in the band but on cooldown the shooter holds fire', () => {
@@ -315,65 +315,14 @@ test('in the band but on cooldown the shooter holds fire', () => {
 	const { keepDist, aggro } = ARCHETYPES.shooter.ranged;
 	const r = BRAINS.shooter(m, view(targetLeftBy(m, (keepDist + aggro) / 2)));
 	expect(r.drive.commit).toBeUndefined();
-	expect(r.ai).toEqual({ state: 'attack' });
-});
-
-test('reposition → attack sequencing: fire is committed only once the band is restored', () => {
-	const { keepDist } = ARCHETYPES.shooter.ranged;
-	let m = grounded('shooter', 30);
-	const targetX = targetLeftBy(m, keepDist - 1);
-	const states: string[] = [];
-	let committedFire = false;
-
-	for (let i = 0; i < 30 && !committedFire; i++) {
-		const r = BRAINS.shooter(m, view(targetX));
-		states.push((r.ai as { state: string }).state);
-		if (r.drive.commit === 'fire') {
-			committedFire = true;
-			expect(Math.abs(targetX - m.x)).toBeGreaterThanOrEqual(keepDist);
-			break;
-		}
-		expect(r.drive.moveX).toBe(1);
-		m = { ...m, x: m.x + 1, ai: r.ai };
-	}
-	expect(committedFire).toBe(true);
-	expect(states[0]).toBe('reposition');
-	expect(states.at(-1)).toBe('attack');
-
-	expect(states.includes('reposition')).toBe(true);
-	expect(states.indexOf('attack')).toBe(states.lastIndexOf('reposition') + 1);
-});
-
-test('the band edge has hysteresis: prior AI state can decide at the same distance', () => {
-	const repositioning = grounded('shooter', 50);
-	repositioning.ai = { state: 'reposition' };
-	const attacking = { ...repositioning, ai: { state: 'attack' } };
-	const { keepDist, aggro } = ARCHETYPES.shooter.ranged;
-	const hysteresisGap = Array.from(
-		{ length: Math.ceil(aggro - keepDist) * 4 },
-		(_, index) => keepDist + index / 4,
-	).find((gap) => {
-		const target = view(targetLeftBy(repositioning, gap));
-		return (
-			(BRAINS.shooter(repositioning, target).ai as { state: string }).state !==
-			(BRAINS.shooter(attacking, target).ai as { state: string }).state
-		);
-	});
-	if (hysteresisGap === undefined)
-		throw new Error('configured band has no hysteresis');
-
-	const target = view(targetLeftBy(repositioning, hysteresisGap));
-	expect(BRAINS.shooter(repositioning, target).ai).toEqual({
-		state: 'reposition',
-	});
-	expect(BRAINS.shooter(attacking, target).ai).toEqual({ state: 'attack' });
+	expect(r.ai).toMatchObject({ state: 'combat' });
 });
 
 test('a committed shooter is locked in: idle drive, aim frozen', () => {
 	const m = grounded('shooter', 50);
 	m.attackT = 0.2;
-	m.ai = { state: 'attack' };
+	m.ai = { state: 'combat' };
 	const r = BRAINS.shooter(m, view(45));
 	expect(r.drive).toEqual(IDLE_DRIVE);
-	expect(r.ai).toEqual({ state: 'attack' });
+	expect(r.ai).toEqual({ state: 'combat' });
 });

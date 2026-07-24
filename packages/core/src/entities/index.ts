@@ -13,7 +13,6 @@ export {
 	type Brain,
 	type BrainResult,
 	type BrainView,
-	type ShooterState,
 } from './brain';
 export {
 	clampCosmetics,

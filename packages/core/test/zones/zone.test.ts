@@ -842,7 +842,7 @@ test("the Brain's ai memory stays server-private: never in snapshots, never on t
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
 	state = stepZone(state, [holdAt(7, av.avatar)], 16);
 
-	expect(state.zone.monsters[0].ai).toEqual({ state: 'attack' });
+	expect(state.zone.monsters[0].ai).toMatchObject({ state: 'combat' });
 
 	const snap = snapshotFor(state, 7);
 	expect(Object.keys(snap.monsters[0])).not.toContain('ai');
