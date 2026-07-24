@@ -65,7 +65,7 @@ function grounded(x: number): Entity {
 	return m;
 }
 
-const stateOf = (ai: unknown) => (ai as MonsterMemory).state;
+const stateOf = (ai: MonsterMemory) => ai.state;
 
 test('the Skeleton gates before it perceives: a stunned monster idles, engines untouched', () => {
 	const { calls, brain } = stubbedBrain();
@@ -140,6 +140,16 @@ test('stored state never decides: entry is re-derived from vision every tick', (
 		brain(fighting, view(inVision)).drive,
 	);
 	expect(stateOf(brain(patrolling, view(inVision)).ai)).toBe('combat');
+});
+
+test('a spawned monster carries no memory, and the courier feeds back the typed shape', () => {
+	const { brain } = stubbedBrain();
+	const m = grounded(50);
+	expect(m.ai).toBeUndefined();
+	m.ai = brain(m, view(null)).ai;
+	expect(m.ai?.state).toBe('patrol');
+	m.ai = brain(m, view(m.x - 1)).ai;
+	expect(m.ai?.state).toBe('combat');
 });
 
 test('a targetless monster patrols', () => {

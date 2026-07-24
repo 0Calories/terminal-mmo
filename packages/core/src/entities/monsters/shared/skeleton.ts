@@ -1,13 +1,17 @@
 import { type Drive, IDLE_DRIVE } from '../../../physics/physics';
 import type { Brain, BrainResult, BrainView } from '../../brain';
 import type { Entity, Facing } from '../../types';
+import type { FireMemory } from '../shooter/fire';
+import type { HopMemory } from '../slime/hop';
 
 export type MonsterState = 'patrol' | 'combat';
 
-/** An engine's own memory slice, tagged with the engine that narrows it. */
-export interface EngineMemory {
-	kind: string;
-}
+/**
+ * Every engine's memory slice, tagged with the engine that narrows it. A slot
+ * holds any of them, so each engine checks its own tag and falls back when the
+ * slice it is handed belongs to someone else.
+ */
+export type EngineMemory = HopMemory | FireMemory;
 
 export interface MonsterMemory {
 	state: MonsterState;
@@ -72,11 +76,8 @@ export interface MonsterSpec {
 
 export const toward = (dx: number): Facing => (dx >= 0 ? 1 : -1);
 
-function memoryOf(ai: unknown): MonsterMemory {
-	return typeof ai === 'object' && ai !== null && 'state' in ai
-		? (ai as MonsterMemory)
-		: { state: 'patrol' };
-}
+const memoryOf = (ai: MonsterMemory | undefined): MonsterMemory =>
+	ai ?? { state: 'patrol' };
 
 function perceive(m: Entity, view: BrainView, vision: number): Perception {
 	const { targetX } = view;

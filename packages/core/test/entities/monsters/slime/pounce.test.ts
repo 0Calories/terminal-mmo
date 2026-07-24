@@ -3,6 +3,7 @@ import type { BrainView, Entity } from '../../../../src/entities';
 import { spawnMonster } from '../../../../src/entities';
 import type {
 	CombatContext,
+	HopMemory,
 	MovementEngine,
 	Perception,
 } from '../../../../src/entities/monsters';
@@ -125,7 +126,7 @@ test('a travelling approach keeps its heading; only a standstill squares up', ()
 });
 
 test('the gait keeps its own memory: the pounce hands it back untouched', () => {
-	const memory = { kind: 'hop' as const, restT: 3 };
+	const memory: HopMemory = { kind: 'hop', restT: 3, cadence: 'approach' };
 	const movement: MovementEngine = {
 		wander: () => ({ drive: { ...HOLD_DRIVE } }),
 		moveToward: () => ({ drive: { ...HOLD_DRIVE }, memory }),

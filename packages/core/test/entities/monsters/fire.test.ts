@@ -106,3 +106,10 @@ test('reposition then attack: fire is committed only once the band is restored',
 	}
 	expect(committedFire).toBe(true);
 });
+
+test("a foreign slice is not the shooter's: fire falls back to its unsettled initial state", () => {
+	const foreign: EngineMemory = { kind: 'hop', restT: 3, cadence: 'patrol' };
+	const m = shooter(50);
+	const targetX = m.x - (keepDist + 1);
+	expect(fight(m, targetX, foreign)).toEqual(fight(m, targetX, undefined));
+});

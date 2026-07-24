@@ -153,3 +153,14 @@ test('a patrol rest does not pace a chase: the gait moves off at once', () => {
 	expect(step.drive.jump).toBe(true);
 	expect(step.drive.moveX).toBe(-1);
 });
+
+test("a foreign slice is not the gait's: the hop falls back to its rested initial state", () => {
+	const foreign: EngineMemory = { kind: 'fire', settling: true };
+	const m = grounded(50);
+	expect(hop.wander(m, view(), foreign)).toEqual(
+		hop.wander(m, view(), undefined),
+	);
+	expect(hop.moveToward(m, view(), m.x - 40, foreign)).toEqual(
+		hop.moveToward(m, view(), m.x - 40, undefined),
+	);
+});

@@ -7,7 +7,7 @@ export interface FireShape {
 	keepDist: number;
 }
 
-export interface FireMemory extends EngineMemory {
+export interface FireMemory {
 	kind: 'fire';
 
 	settling: boolean;
@@ -18,7 +18,7 @@ export interface FireMemory extends EngineMemory {
 const SETTLE_MARGIN = 2;
 
 function fireMemory(memory: EngineMemory | undefined): FireMemory | null {
-	return memory?.kind === 'fire' ? (memory as FireMemory) : null;
+	return memory?.kind === 'fire' ? memory : null;
 }
 
 /** Ranged pattern: hold a comfort band, back out of it, shoot from inside it. */

@@ -17,7 +17,7 @@ export interface HopShape {
 	jump: number;
 }
 
-interface HopMemory extends EngineMemory {
+export interface HopMemory {
 	kind: 'hop';
 
 	restT: number;
@@ -36,7 +36,7 @@ interface HopStep extends EngineStep {
 const IDLE: HopMemory = { kind: 'hop', restT: 0, cadence: 'patrol' };
 
 function hopMemory(memory: EngineMemory | undefined): HopMemory {
-	return memory?.kind === 'hop' ? (memory as HopMemory) : IDLE;
+	return memory?.kind === 'hop' ? memory : IDLE;
 }
 
 /** Contiguous solid ground ahead of the leading foot, capped at one full hop. */
