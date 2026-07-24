@@ -12,13 +12,7 @@ import {
 	weaponById,
 } from '../../src/combat';
 import type { Drop, Entity, Item } from '../../src/entities';
-import {
-	ARCHETYPES,
-	BOX,
-	DEFAULT_COSMETICS,
-	spawnAvatar,
-	spawnMonster,
-} from '../../src/entities';
+import { ARCHETYPES, BOX, spawnAvatar, spawnMonster } from '../../src/entities';
 import { lootTableFor, rollDrop } from '../../src/items';
 import { CAPABILITY_UNLOCK, xpForKill } from '../../src/progression';
 import { decodeServerMessage, encodeServerMessage } from '../../src/protocol';
@@ -32,44 +26,17 @@ import {
 	stepZone,
 	type Zone,
 } from '../../src/zones';
-import { flatTerrain, islandTerrain, makeProjectile } from '../helpers';
+import {
+	flatTerrain,
+	holdAt,
+	islandTerrain,
+	makeProjectile,
+	serverAvatar,
+	zoneWith,
+} from '../helpers';
 
 const y = GROUND_TOP - BOX.h;
 const TEST_ZONE_ID = 'test-zone';
-
-function serverAvatar(
-	sessionId: number,
-	x: number,
-	handle = 'hero',
-	level = 1,
-): ServerAvatar {
-	return {
-		sessionId,
-		handle,
-		cosmetics: DEFAULT_COSMETICS,
-		avatar: { ...spawnAvatar(x, y), id: sessionId },
-		progress: { level, xp: 0, gold: 0 },
-		inventory: [],
-		log: [],
-		nextId: 1,
-		rngState: 1,
-	};
-}
-
-function zoneWith(monsters: Entity[], id = TEST_ZONE_ID): Zone {
-	return {
-		id,
-		type: 'field',
-		terrain: flatTerrain(),
-		monsters,
-		projectiles: [],
-		nextProjectileId: 1,
-		spawns: [],
-		respawns: [],
-		portals: [],
-		nextMonsterId: 100,
-	};
-}
 
 const MID_ACTIVE = SWING_TOTAL - COMBAT.swing.windup - COMBAT.swing.active / 2;
 function primeSwing(av: ServerAvatar): ServerAvatar {
@@ -83,19 +50,6 @@ function strikingCommitterAt20(): Entity {
 	m.facing = 1;
 	m.attackT = MID_ACTIVE;
 	return m;
-}
-
-function holdAt(sessionId: number, e: Entity): AvatarIntent {
-	return {
-		sessionId,
-		x: e.x,
-		y: e.y,
-		vx: 0,
-		vy: 0,
-		facing: e.facing,
-		onGround: e.onGround,
-		attack: false,
-	};
 }
 
 test('Player melee damage is confined to the active swing phase', () => {
@@ -511,6 +465,7 @@ test('a Monster targets and chases the nearest Avatar', () => {
 test('a Slime hopping on top of an Avatar is harmless: traversal hops carry no Strike', () => {
 	const m = spawnMonster('slime', 2, 20, y);
 	m.onGround = true;
+	m.attackCdT = 60;
 	const av = serverAvatar(7, 20);
 	const before = av.avatar.hp;
 	let state: ZoneState = { zone: zoneWith([m]), avatars: [av], tick: 0 };
@@ -534,6 +489,8 @@ test('a Slime locomotes by hopping: it leaves the ground and travels', () => {
 	}
 	expect(airborne).toBe(true);
 	expect(state.zone.monsters[0].x).not.toBe(startX);
+	for (let i = 0; i < 100 && !state.zone.monsters[0].onGround; i++)
+		state = stepZone(state, [], 16);
 	expect(state.zone.monsters[0].onGround).toBe(true);
 });
 

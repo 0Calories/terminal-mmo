@@ -11,6 +11,7 @@ import {
 	BOX,
 	DEFAULT_FORM_ID,
 	type Entity,
+	type EntityType,
 	HUES,
 	type MoveId,
 	type Npc,
@@ -19,9 +20,12 @@ import {
 } from '@mmo/core/entities';
 import {
 	bodyFrame,
+	isPhaseAnimation,
 	MONSTER_SPRITE_REF,
 	mirrorAnchorX,
+	monsterAnimation,
 	NPC_SPRITE_REF,
+	phaseFrameIndex,
 	swingFrameIndex,
 } from '@mmo/core/sprites';
 import type { Compositor, RGBA } from '../compositor';
@@ -260,10 +264,37 @@ function resolveBody(e: Entity, st: AnimState): Body {
 	}
 	const ref = MONSTER_SPRITE_REF[e.type];
 	const doc = monsterDocs.get(ref);
+	if (doc === undefined) return { sprite: placeholder(), baseline: 0 };
+	const name = monsterAnimation({
+		move: st.move,
+		phase: st.phase,
+		airborne: !e.onGround,
+	});
+	const anim =
+		doc.animations.find((a) => a.name === name) ??
+		doc.animations.find((a) => a.name === 'idle') ??
+		doc.animations[0];
+	if (anim === undefined)
+		return { sprite: placeholder(), baseline: doc.baseline };
+	const frameIndex = isPhaseAnimation(anim.name)
+		? phaseFrameIndex(st.progress, anim.frames.length)
+		: 0;
+	const label = frameLabelAt(anim, frameIndex);
 	return {
-		sprite: doc ? compiled(`monsters:${ref}:idle`, doc, 'idle') : placeholder(),
-		baseline: doc?.baseline ?? 0,
+		sprite: compiled(`monsters:${ref}:${label}`, doc, label),
+		baseline: doc.baseline,
 	};
+}
+
+/**
+ * A Monster graduates off the overlay-glyph telegraph by authoring attack
+ * Animations on its Body sprite; until then the overlay renders exactly as
+ * before.
+ */
+export function monsterAuthorsAttackFrames(type: EntityType): boolean {
+	if (type === 'player') return false;
+	const doc = monsterDocs.get(MONSTER_SPRITE_REF[type]);
+	return doc?.animations.some((a) => isPhaseAnimation(a.name)) ?? false;
 }
 
 function paintWeapon(

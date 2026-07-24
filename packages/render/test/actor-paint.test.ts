@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test';
 import { type Entity, SCENE_COLORS } from '@mmo/core/entities';
 import { Compositor, type RGBA } from '@mmo/render/compositor';
-import { paintActor } from '@mmo/render/sprites';
+import { monsterAuthorsAttackFrames, paintActor } from '@mmo/render/sprites';
 
 const NO_CAM = { x: 0, y: 0 };
 const HURT: RGBA = SCENE_COLORS.hurt;
@@ -70,4 +70,52 @@ test('seating a weapon adds inked cells beyond the bare body', () => {
 	paintActor(unarmed, buddy(undefined), NO_CAM);
 
 	expect(inked(armed)).toBeGreaterThan(inked(unarmed));
+});
+
+function paintOf(e: Entity): string {
+	const c = new Compositor(24, 16);
+	paintActor(c, e, NO_CAM);
+	return JSON.stringify(c.surface());
+}
+
+const pouncing = (
+	phase: 'windup' | 'active' | 'recovery',
+	over: Partial<Entity> = {},
+): Partial<Entity> => ({
+	action: {
+		move: 'basic',
+		phase,
+		progress: 0.1,
+		flags: 0,
+		emote: null,
+		emoteT: 0,
+	},
+	...over,
+});
+
+test('a slime traversal hop has no airborne frames authored and falls back to idle', () => {
+	expect(paintOf(entity({ id: 1, type: 'slime', onGround: false }))).toBe(
+		paintOf(entity({ id: 1, type: 'slime' })),
+	);
+});
+
+test('an idle-only monster renders exactly as today in every action state', () => {
+	const idle = paintOf(entity({ id: 1, type: 'chaser' }));
+	expect(
+		paintOf(entity({ id: 1, type: 'chaser', ...pouncing('windup') })),
+	).toBe(idle);
+	expect(
+		paintOf(entity({ id: 1, type: 'chaser', ...pouncing('active') })),
+	).toBe(idle);
+	expect(paintOf(entity({ id: 1, type: 'chaser', onGround: false }))).toBe(
+		idle,
+	);
+});
+
+test('authoring attack frames suppresses the overlay glyph; idle-only monsters keep it', () => {
+	expect(monsterAuthorsAttackFrames('slime')).toBe(true);
+	expect(monsterAuthorsAttackFrames('chaser')).toBe(false);
+	expect(monsterAuthorsAttackFrames('shooter')).toBe(false);
+	expect(monsterAuthorsAttackFrames('brute')).toBe(false);
+	expect(monsterAuthorsAttackFrames('player')).toBe(false);
 });
