@@ -25,6 +25,13 @@ export type MonsterType = Exclude<EntityType, 'player'>;
 
 export type AttackPhase = 'windup' | 'active' | 'recovery';
 
+/** Seconds an attack spends in each {@link AttackPhase}. */
+export interface AttackPhaseTimings {
+	windup: number;
+	active: number;
+	recovery: number;
+}
+
 export type MoveId = 'idle' | 'basic' | 'dodge';
 
 export interface ActionState {

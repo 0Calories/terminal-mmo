@@ -1,5 +1,5 @@
-import { DEFAULT_MASS } from '../physics/constants';
-import type { EntityType, MonsterType } from './types';
+import { DEFAULT_MASS, PHYS } from '../physics/constants';
+import type { AttackPhaseTimings, EntityType, MonsterType } from './types';
 
 export const BOX = { w: 5, h: 5 } as const;
 
@@ -10,6 +10,24 @@ export interface MeleeProfile {
 	aggro: number;
 	deadzone: number;
 	commitCd: number;
+
+	/** Scales the Strike impulse; unset leaves the shared knockback untouched. */
+	knockback?: number;
+
+	/**
+	 * Present on leapers: the commit is a pounce — grounded wind-up, a flat
+	 * lunge locked at commit whose whole airborne arc is the active hitbox, and
+	 * a landing-wobble recovery. Absent, the commit is a standard swing.
+	 */
+	pounce?: PounceProfile;
+}
+
+export interface PounceProfile extends AttackPhaseTimings {
+	/** Leap velocity, as scales over ground speed and the shared jump impulse. */
+	leap: { speed: number; jump: number };
+
+	/** Scales the attacker's knockback when a hit swats the leap mid-air. */
+	swat: number;
 }
 
 export interface ProjectileSpec {
@@ -51,6 +69,13 @@ const CHASER = {
 	},
 } as const satisfies ArchetypeProfile;
 
+// A full hop stays airborne for 2·jump/grav seconds; the leap's jump scale
+// shrinks that proportionally, and the active window pads it with a landing
+// tick so the arc is hitbox-live end to end.
+const HOP_AIRTIME = (2 * PHYS.jump) / PHYS.grav;
+
+const SLIME_LEAP = { speed: 2.6, jump: 0.55 } as const;
+
 const SLIME = {
 	hp: 24,
 	speed: 12,
@@ -58,10 +83,20 @@ const SLIME = {
 	melee: {
 		damage: 8,
 		poise: 8,
-		range: 4,
+		// Inside the flat lunge's ~13-column ground coverage: the whole airborne
+		// body is the hitbox, so an arc committed here crosses its target.
+		range: 12,
 		aggro: 22,
 		deadzone: 2,
-		commitCd: 0,
+		commitCd: 2,
+		knockback: 2.6,
+		pounce: {
+			windup: 0.45,
+			active: HOP_AIRTIME * SLIME_LEAP.jump + 0.05,
+			recovery: 0.5,
+			leap: SLIME_LEAP,
+			swat: 2.2,
+		},
 	},
 } as const satisfies ArchetypeProfile;
 

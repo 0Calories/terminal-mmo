@@ -1,10 +1,12 @@
-import { BOX } from '../entities/archetypes';
+import { BOX, type MeleeProfile, meleeProfileOf } from '../entities/archetypes';
 import { HUES, type RGBAQuad, SCENE_PALETTE } from '../entities/sceneStyle';
 import type {
 	ActionState,
 	AttackPhase,
+	AttackPhaseTimings,
 	Box,
 	Entity,
+	EntityType,
 	Facing,
 	MoveId,
 	Projectile,
@@ -28,6 +30,7 @@ const BODY_PALETTE: Record<string, RGBAQuad> = SCENE_PALETTE;
 
 export interface Combatant {
 	id: number;
+	type?: EntityType;
 	x: number;
 	y: number;
 	facing: Facing;
@@ -66,30 +69,67 @@ export function entityBox(e: Pick<Combatant, 'x' | 'y'>): Box {
 	return { x: e.x, y: e.y, w: BOX.w, h: BOX.h };
 }
 
-export const SWING_TOTAL =
-	COMBAT.swing.windup + COMBAT.swing.active + COMBAT.swing.recovery;
+export function attackTotal(tm: AttackPhaseTimings): number {
+	return tm.windup + tm.active + tm.recovery;
+}
 
-export function swingPhase(attackT: number): AttackPhase | null {
+export function attackPhaseAt(
+	attackT: number,
+	tm: AttackPhaseTimings,
+): AttackPhase | null {
 	if (attackT <= 0) return null;
-	const { windup, active } = COMBAT.swing;
-	const elapsed = SWING_TOTAL - attackT;
-	if (elapsed < windup) return 'windup';
-	if (elapsed < windup + active) return 'active';
+	const elapsed = attackTotal(tm) - attackT;
+	if (elapsed < tm.windup) return 'windup';
+	if (elapsed < tm.windup + tm.active) return 'active';
 	return 'recovery';
 }
 
-export function swingProgress(attackT: number): number {
-	const phase = swingPhase(attackT);
+export function attackProgressAt(
+	attackT: number,
+	tm: AttackPhaseTimings,
+): number {
+	const phase = attackPhaseAt(attackT, tm);
 	if (!phase) return 0;
-	const { windup, active, recovery } = COMBAT.swing;
-	const elapsed = SWING_TOTAL - attackT;
+	const { windup, active, recovery } = tm;
+	const elapsed = attackTotal(tm) - attackT;
 	if (phase === 'windup') return windup > 0 ? elapsed / windup : 1;
 	if (phase === 'active') return active > 0 ? (elapsed - windup) / active : 1;
 	return recovery > 0 ? (elapsed - windup - active) / recovery : 1;
 }
 
+/** The phase timings an entity's attack timer runs on: its pounce profile if
+ *  it leaps, else the shared swing. */
+export function attackTimingsOf(
+	type: EntityType | undefined,
+): AttackPhaseTimings {
+	return (
+		(type !== undefined ? meleeProfileOf(type)?.pounce : null) ?? COMBAT.swing
+	);
+}
+
+export const SWING_TOTAL = attackTotal(COMBAT.swing);
+
+export function swingPhase(attackT: number): AttackPhase | null {
+	return attackPhaseAt(attackT, COMBAT.swing);
+}
+
+export function swingProgress(attackT: number): number {
+	return attackProgressAt(attackT, COMBAT.swing);
+}
+
 export function meleeActive(attackT: number): boolean {
 	return swingPhase(attackT) === 'active';
+}
+
+export function meleeKnockback(p: MeleeProfile): {
+	knockback: number;
+	knockbackUp: number;
+} {
+	const scalar = p.knockback ?? 1;
+	return {
+		knockback: COMBAT.knockback * scalar,
+		knockbackUp: COMBAT.knockbackUp * scalar,
+	};
 }
 
 export const DODGE_TOTAL = COMBAT.dodge.active + COMBAT.dodge.recovery;
@@ -154,7 +194,7 @@ export const IDLE_ACTION: ActionState = {
 };
 
 export function superArmorActive(e: Combatant): boolean {
-	return swingPhase(e.attackT) === 'windup';
+	return attackPhaseAt(e.attackT, attackTimingsOf(e.type)) === 'windup';
 }
 
 export function applyPoiseDamage(
@@ -189,12 +229,13 @@ export function actionStateOf(e: Entity): ActionState {
 			emote,
 			emoteT,
 		};
-	const phase = swingPhase(e.attackT);
+	const tm = attackTimingsOf(e.type);
+	const phase = attackPhaseAt(e.attackT, tm);
 	if (!phase) return { ...IDLE_ACTION, flags, emote, emoteT };
 	return {
 		move: 'basic',
 		phase,
-		progress: swingProgress(e.attackT),
+		progress: attackProgressAt(e.attackT, tm),
 		flags,
 		emote,
 		emoteT,
@@ -522,7 +563,30 @@ export function resolveHitsOnMonsters<E extends Combatant>(
 				poiseT: COMBAT.poise.regenDelay,
 				contributors,
 			});
-			if (broke) {
+			// A leap caught mid-air is swatted regardless of poise: the pounce
+			// dies on the spot and the slime is launched, but never stunned.
+			const pounce =
+				m.type !== undefined ? meleeProfileOf(m.type)?.pounce : undefined;
+			const swatted =
+				pounce !== undefined &&
+				!m.onGround &&
+				attackPhaseAt(m.attackT, pounce) === 'active';
+			if (swatted) {
+				m = applyImpulse(
+					m,
+					s.knockback * pounce.swat * s.facing,
+					-s.knockbackUp * pounce.swat,
+				);
+				m = patch(m, { attackT: 0 });
+				events.push({
+					kind: 'swat',
+					targetId: m.id,
+					x: m.x + BOX.w / 2,
+					y: m.y + BOX.h / 2,
+					dir: s.facing,
+					intensity: s.damage,
+				});
+			} else if (broke) {
 				m = applyImpulse(m, s.knockback * s.facing, -s.knockbackUp);
 				m = patch(m, { stunT: COMBAT.hitstun });
 				events.push(combatEventAt('break', m, s.facing, s.damage));

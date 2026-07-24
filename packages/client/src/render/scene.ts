@@ -17,6 +17,7 @@ import {
 } from '@mmo/render/scene';
 import {
 	actorDepthY,
+	monsterAuthorsAttackFrames,
 	npcDepthY,
 	paintActor,
 	paintNpc,
@@ -112,7 +113,8 @@ export function drawPlayfield(
 		drawGuard(compositor, e, cam, COMBAT_GUARD);
 	}
 	for (const m of zone.monsters)
-		drawSwing(compositor, m, cam, COMBAT_TELEGRAPH);
+		if (!monsterAuthorsAttackFrames(m.type))
+			drawSwing(compositor, m, cam, COMBAT_TELEGRAPH);
 	drawSwing(compositor, p, cam, COMBAT_TELEGRAPH);
 	drawGuard(compositor, p, cam, COMBAT_GUARD);
 

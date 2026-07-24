@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { type Entity, type Npc } from '@mmo/core/entities';
+import type { Entity, Npc } from '@mmo/core/entities';
 import { Compositor } from '@mmo/render/compositor';
 import {
 	actorDepthY,
