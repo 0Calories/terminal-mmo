@@ -1,3 +1,5 @@
+import { meleeActive, SWING_TOTAL, swingPhase } from '../../../combat/combat';
+import { spawnProjectile } from '../../../combat/projectile';
 import type { Drive } from '../../../physics/physics';
 import type { CombatEngine, EngineMemory } from '../shared';
 import { toward } from '../shared';
@@ -5,6 +7,9 @@ import { toward } from '../shared';
 export interface FireShape {
 	/** The near edge of the comfort band: no shot is released inside it. */
 	keepDist: number;
+
+	/** Cooldown a released shot starts. */
+	cooldown: number;
 }
 
 export interface FireMemory {
@@ -43,5 +48,17 @@ export function fireEngine(shape: FireShape): CombatEngine {
 			if ((monster.attackCdT ?? 0) > 0) return { drive, memory: settled };
 			return { drive: { ...drive, commit: 'fire' }, memory: settled };
 		},
+
+		commit: (m) => ({ ...m, attackT: SWING_TOTAL }),
+
+		// The shot leaves on the edge into the active window, so a commit releases
+		// exactly one projectile however long the window runs.
+		project: (m, { attackTBefore, nextProjectileId }) =>
+			swingPhase(attackTBefore) !== 'active' && meleeActive(m.attackT)
+				? {
+						shots: [spawnProjectile(nextProjectileId, m, m.facing)],
+						monster: { ...m, attackCdT: shape.cooldown },
+					}
+				: {},
 	};
 }

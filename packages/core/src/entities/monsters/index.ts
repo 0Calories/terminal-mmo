@@ -1,17 +1,23 @@
-export { bruteBrain } from './brute';
-export { chaserBrain } from './chaser';
+export { bruteBrain, bruteSpec } from './brute';
+export { chaserBrain, chaserSpec } from './chaser';
+export { MONSTERS } from './registry';
 export {
+	type AttackProjection,
 	type CombatContext,
 	type CombatEngine,
+	type CombatExecution,
 	type CombatStep,
 	type EngineMemory,
 	type EngineStep,
 	footProbe,
+	type MeleeStrikeShape,
 	type MonsterMemory,
 	type MonsterSpec,
 	type MonsterState,
 	type MovementEngine,
+	monsterStrike,
 	type Perception,
+	type ProjectionContext,
 	patrolDrive,
 	type SwingShape,
 	skeletonBrain,
@@ -26,6 +32,7 @@ export {
 	type FireShape,
 	fireEngine,
 	shooterBrain,
+	shooterSpec,
 } from './shooter';
 export {
 	type HopMemory,
@@ -34,4 +41,5 @@ export {
 	type PounceShape,
 	pounceEngine,
 	slimeBrain,
+	slimeSpec,
 } from './slime';
