@@ -1,6 +1,6 @@
 import { DEFAULT_MASS, PHYS } from '../physics/constants';
 import { maxHpForLevel } from '../progression/progression';
-import { ARCHETYPES, type ArchetypeProfile } from './archetypes';
+import { MONSTERS } from './monsters';
 import type { Entity, MonsterType } from './types';
 
 export interface AvatarOptions {
@@ -40,7 +40,7 @@ export function spawnMonster(
 	y: number,
 	spawnIndex?: number,
 ): Entity {
-	const p: ArchetypeProfile = ARCHETYPES[type];
+	const { stats } = MONSTERS[type];
 	return {
 		id,
 		type,
@@ -48,15 +48,15 @@ export function spawnMonster(
 		y,
 		vx: 0,
 		vy: 0,
-		speed: p.speed,
+		speed: stats.speed,
 		facing: 1,
 		onGround: false,
-		hp: p.hp,
-		maxHp: p.hp,
+		hp: stats.hp,
+		maxHp: stats.hp,
 		hurtT: 0,
 		attackT: 0,
-		mass: p.mass,
-		...(p.poiseMax !== undefined ? { poiseMax: p.poiseMax } : {}),
+		mass: stats.mass,
+		...(stats.poise !== undefined ? { poiseMax: stats.poise } : {}),
 		spawnIndex,
 	};
 }

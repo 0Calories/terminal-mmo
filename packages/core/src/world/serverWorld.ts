@@ -1,5 +1,5 @@
 import { aabbOverlap } from '../combat/combat';
-import { BOX } from '../entities/archetypes';
+import { BOX } from '../entities/body';
 import type { Box, Cosmetics } from '../entities/types';
 import {
 	emptySave,

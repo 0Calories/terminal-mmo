@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { COMBAT, DEFAULT_WEAPON } from '@mmo/core/combat';
-import { type Input, meleeProfileOf, spawnMonster } from '@mmo/core/entities';
+import { type Input, MONSTERS, spawnMonster } from '@mmo/core/entities';
 import type { GameState } from '@mmo/core/protocol';
 import { GROUND_TOP, type Zone } from '@mmo/core/zones';
 import { createTestRenderer } from '@opentui/core/testing';
@@ -47,8 +47,7 @@ test('an authored Monster strike reconciles and presents once on the struck clie
 	stack.advanceTick(4);
 	const snapshot = latestScenarioSnapshot(player);
 	const avatar = scenarioAvatar(snapshot, player.sessionId);
-	const attack = meleeProfileOf('chaser');
-	if (attack === null) throw new Error('chaser must have a melee profile');
+	const attack = MONSTERS.chaser.stats;
 	expect(avatar.hp).toBe(avatar.maxHp - attack.damage);
 	expect(avatar.hurtT).toBe(COMBAT.iframes);
 	expect(snapshot.events).toEqual([

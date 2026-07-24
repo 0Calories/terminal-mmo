@@ -1,20 +1,4 @@
-export {
-	ARCHETYPES,
-	type ArchetypeProfile,
-	BOX,
-	type MeleeProfile,
-	meleeProfileOf,
-	type ProjectileSpec,
-	type RangedProfile,
-	rangedProfileOf,
-} from './archetypes';
-export {
-	BRAINS,
-	type Brain,
-	type BrainResult,
-	type BrainView,
-	type ShooterState,
-} from './brain';
+export { BOX } from './body';
 export {
 	clampCosmetics,
 	DEFAULT_COSMETICS,
@@ -42,6 +26,16 @@ export {
 	spawnAvatar,
 	spawnMonster,
 } from './factory';
+export type {
+	Brain,
+	BrainResult,
+	BrainView,
+	MonsterMemory,
+	MonsterSpec,
+	MonsterState,
+	MonsterStats,
+} from './monsters';
+export { MONSTERS } from './monsters';
 export type { Npc } from './npc';
 export {
 	darken,
@@ -56,6 +50,7 @@ export {
 export type {
 	ActionState,
 	AttackPhase,
+	AttackPhaseTimings,
 	Box,
 	Control,
 	Cosmetics,

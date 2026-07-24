@@ -11,9 +11,9 @@ import {
 } from '../../src/combat';
 import type { Entity, Input } from '../../src/entities';
 import {
-	ARCHETYPES,
 	BOX,
 	DEFAULT_COSMETICS,
+	MONSTERS,
 	spawnAvatar,
 	spawnMonster,
 } from '../../src/entities';
@@ -191,14 +191,14 @@ test('Ground Pound hitbox is the same regardless of which way the Avatar faces',
 
 test('Power Strike is locked below its unlock level — no effect, no cooldown', () => {
 	const g = step(skillGame(POWER_STRIKE.unlockLevel - 1), POWER, 16);
-	expect(g.zone.monsters[0].hp).toBe(ARCHETYPES.chaser.hp);
+	expect(g.zone.monsters[0].hp).toBe(MONSTERS.chaser.stats.hp);
 	expect(g.avatars[0].skillCooldowns?.[POWER_STRIKE.id]).toBeUndefined();
 });
 
 test('Power Strike fires at its unlock level, hitting harder than a basic swing', () => {
 	const g = step(skillGame(POWER_STRIKE.unlockLevel), POWER, 16);
 	expect(g.zone.monsters[0].hp).toBe(
-		ARCHETYPES.chaser.hp - POWER_STRIKE.damage,
+		MONSTERS.chaser.stats.hp - POWER_STRIKE.damage,
 	);
 	expect(POWER_STRIKE.damage).toBeGreaterThan(
 		weaponById(DEFAULT_WEAPON).damage,
@@ -232,8 +232,8 @@ test('Power Strike re-fires once its cooldown elapses', () => {
 test('Ground Pound is locked below its unlock level — no effect, no cooldown', () => {
 	const g = step(flankedGame(GROUND_POUND.unlockLevel - 1), POUND, 16);
 	const ms = g.zone.monsters;
-	expect(ms[0].hp).toBe(ARCHETYPES.chaser.hp);
-	expect(ms[1].hp).toBe(ARCHETYPES.chaser.hp);
+	expect(ms[0].hp).toBe(MONSTERS.chaser.stats.hp);
+	expect(ms[1].hp).toBe(MONSTERS.chaser.stats.hp);
 	expect(g.avatars[0].skillCooldowns?.[GROUND_POUND.id]).toBeUndefined();
 });
 
@@ -256,7 +256,7 @@ test('Ground Pound damages monsters on BOTH sides of the Avatar at once', () => 
 test('a frontal skill leaves the monster behind the Avatar untouched (contrast)', () => {
 	const g = step(flankedGame(POWER_STRIKE.unlockLevel), POWER, 16);
 	const back = g.zone.monsters.find((m) => m.id === 3);
-	expect(back?.hp).toBe(ARCHETYPES.chaser.hp);
+	expect(back?.hp).toBe(MONSTERS.chaser.stats.hp);
 });
 
 test('Ground Pound cannot re-fire while on cooldown', () => {
