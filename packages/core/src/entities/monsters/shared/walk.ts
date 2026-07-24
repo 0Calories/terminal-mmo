@@ -39,12 +39,16 @@ export function patrolDrive(m: Entity, t: Terrain): Drive {
 /** Ground gait: patrols a ledge-and-wall-probed line, walks straight at a destination. */
 export function walkEngine(shape: WalkShape): MovementEngine {
 	return {
-		wander: (m: Entity, view: BrainView) => patrolDrive(m, view.terrain),
+		wander: (m: Entity, view: BrainView) => ({
+			drive: patrolDrive(m, view.terrain),
+		}),
 		moveToward: (m: Entity, _view: BrainView, destX: number) => {
 			const dx = destX - m.x;
 			return {
-				moveX: Math.abs(dx) < shape.deadzone ? 0 : dx > 0 ? 1 : -1,
-				jump: false,
+				drive: {
+					moveX: Math.abs(dx) < shape.deadzone ? 0 : dx > 0 ? 1 : -1,
+					jump: false,
+				},
 			};
 		},
 	};

@@ -4,8 +4,17 @@ import type { Entity, Facing } from '../../types';
 
 export type MonsterState = 'patrol' | 'combat';
 
+/** An engine's own memory slice, tagged with the engine that narrows it. */
+export interface EngineMemory {
+	kind: string;
+}
+
 export interface MonsterMemory {
 	state: MonsterState;
+
+	movement?: EngineMemory;
+
+	combat?: EngineMemory;
 }
 
 export interface Perception {
@@ -20,10 +29,22 @@ export interface Perception {
 	inVision: boolean;
 }
 
-export interface MovementEngine {
-	wander(m: Entity, view: BrainView): Drive;
+export interface EngineStep {
+	drive: Drive;
 
-	moveToward(m: Entity, view: BrainView, destX: number): Drive;
+	/** The producing engine's own slice, absent when the engine keeps none. */
+	memory?: EngineMemory;
+}
+
+export interface MovementEngine {
+	wander(m: Entity, view: BrainView, memory?: EngineMemory): EngineStep;
+
+	moveToward(
+		m: Entity,
+		view: BrainView,
+		destX: number,
+		memory?: EngineMemory,
+	): EngineStep;
 }
 
 export interface CombatContext {
@@ -31,10 +52,16 @@ export interface CombatContext {
 	view: BrainView;
 	perception: Perception;
 	movement: MovementEngine;
+	memory: MonsterMemory;
+}
+
+export interface CombatStep extends EngineStep {
+	/** The slice returned by the Movement engine this fight commissioned. */
+	movement?: EngineMemory;
 }
 
 export interface CombatEngine {
-	fight(ctx: CombatContext): Drive;
+	fight(ctx: CombatContext): CombatStep;
 }
 
 export interface MonsterSpec {
@@ -75,15 +102,28 @@ export function skeletonBrain(spec: MonsterSpec): Brain {
 
 		const perception = perceive(m, view, spec.vision);
 		const state: MonsterState = perception.inVision ? 'combat' : 'patrol';
-		const drive =
-			state === 'combat'
-				? spec.combat.fight({
-						monster: m,
-						view,
-						perception,
-						movement: spec.movement,
-					})
-				: spec.movement.wander(m, view);
-		return { drive, ai: { ...memory, state } };
+		if (state === 'patrol') {
+			const step = spec.movement.wander(m, view, memory.movement);
+			return {
+				drive: step.drive,
+				ai: { ...memory, state, movement: step.memory ?? memory.movement },
+			};
+		}
+		const step = spec.combat.fight({
+			monster: m,
+			view,
+			perception,
+			movement: spec.movement,
+			memory,
+		});
+		return {
+			drive: step.drive,
+			ai: {
+				...memory,
+				state,
+				movement: step.movement ?? memory.movement,
+				combat: step.memory ?? memory.combat,
+			},
+		};
 	};
 }

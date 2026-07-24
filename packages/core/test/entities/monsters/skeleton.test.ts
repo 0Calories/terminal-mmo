@@ -32,22 +32,23 @@ function stubEngines() {
 	const movement: MovementEngine = {
 		wander: () => {
 			calls.push('wander');
-			return { ...WANDER_DRIVE };
+			return { drive: { ...WANDER_DRIVE } };
 		},
 		moveToward: (_m, _v, destX) => {
 			calls.push(`moveToward(${destX})`);
-			return { ...APPROACH_DRIVE };
+			return { drive: { ...APPROACH_DRIVE } };
 		},
 	};
 	const combat: CombatEngine = {
 		fight: (ctx) => {
 			calls.push('fight');
-			const drive = ctx.movement.moveToward(
+			const step = ctx.movement.moveToward(
 				ctx.monster,
 				ctx.view,
 				ctx.perception.targetX ?? ctx.monster.x,
+				ctx.memory.movement,
 			);
-			return { ...drive, commit: 'swing' };
+			return { drive: { ...step.drive, commit: 'swing' } };
 		},
 	};
 	return { calls, movement, combat };
