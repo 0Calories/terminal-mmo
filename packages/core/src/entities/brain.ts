@@ -139,14 +139,20 @@ function slimeBrain(p: MeleeProfile): Brain {
 			};
 		if (gap && gap.adx < p.aggro) {
 			if (gap.adx < p.deadzone) return { drive: { moveX: 0, jump: false }, ai };
+			// Approach hops close only to the lip of leap range: the wind-up
+			// should start at pouncing distance, never on top of the target.
+			const want = Math.max(0, gap.adx - (p.range - 1));
+			if (want === 0)
+				return { drive: { moveX: 0, jump: false, face: toward(gap.dx) }, ai };
+			const hopScale = SLIME_HOP.speed * Math.min(1, want / hopSpan(m.speed));
 			return {
 				drive: {
 					moveX: toward(gap.dx),
 					jump: true,
-					moveScale: SLIME_HOP.speed,
+					moveScale: hopScale,
 					jumpScale: SLIME_HOP.jump,
 				},
-				ai: { restT: SLIME_REST.approach, hopScale: SLIME_HOP.speed },
+				ai: { restT: SLIME_REST.approach, hopScale },
 			};
 		}
 		const t = view.terrain;

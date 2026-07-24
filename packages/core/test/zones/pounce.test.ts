@@ -150,6 +150,24 @@ test('landing begins the wobble recovery; the cooldown gates chaining', () => {
 	expect(gapTicks * 16).toBeGreaterThanOrEqual(500);
 });
 
+test('the wind-up starts at leap distance: the approach never closes to touch', () => {
+	const av = serverAvatar(7, 20);
+	av.avatar.hurtT = 100;
+	let state = stateWith(groundedSlime(20 + MELEE.aggro - 1), av);
+
+	let commitGap: number | null = null;
+	for (let i = 0; i < 600 && commitGap === null; i++) {
+		const before = state.zone.monsters[0].attackT;
+		state = step(state);
+		const m = state.zone.monsters[0];
+		if (before === 0 && m.attackT > 0)
+			commitGap = Math.abs(m.x - state.avatars[0].avatar.x);
+	}
+	if (commitGap === null) throw new Error('slime never pounced');
+	expect(commitGap).toBeGreaterThanOrEqual(MELEE.range - 3);
+	expect(commitGap).toBeLessThanOrEqual(MELEE.range);
+});
+
 test('the leap is a flat lunge: pounce-scaled horizontal speed, shrunken arc', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.hurtT = 100;
