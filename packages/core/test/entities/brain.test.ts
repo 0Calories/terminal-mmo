@@ -214,6 +214,37 @@ test('the slime commits a pounce in leap range once off cooldown, squaring up', 
 	expect(r.drive.jump).toBe(false);
 });
 
+test('spotting a target cancels a patrol rest: the slime gives chase at once', () => {
+	const m = grounded('slime', 50);
+	nextHop(m, view(null));
+	const { range, aggro } = ARCHETYPES.slime.melee;
+	const r = BRAINS.slime(m, view(targetLeftBy(m, (range + aggro) / 2)));
+	expect(r.drive.jump).toBe(true);
+	expect(r.drive.moveX).toBe(-1);
+});
+
+test('approach rests survive awareness: the chase stays paced, eyes on the target', () => {
+	const m = grounded('slime', 50);
+	const { range, aggro } = ARCHETYPES.slime.melee;
+	const targetX = targetLeftBy(m, (range + aggro) / 2);
+	nextHop(m, view(targetX));
+	const r = BRAINS.slime(m, view(targetX));
+	expect(r.drive.jump).toBe(false);
+	expect(r.drive.moveX).toBe(0);
+	expect(r.drive.face).toBe(-1);
+});
+
+test('a resting slime still pounces: rest never gates the commit', () => {
+	const m = grounded('slime', 50);
+	nextHop(m, view(null));
+	const r = BRAINS.slime(
+		m,
+		view(targetLeftBy(m, ARCHETYPES.slime.melee.range)),
+	);
+	expect(r.drive.commit).toBe('pounce');
+	expect(r.drive.face).toBe(-1);
+});
+
 test('a mid-hop slime holds its pounce: no commit while airborne', () => {
 	const m = spawnMonster('slime', 2, 50, y - 5);
 	const r = BRAINS.slime(m, view(targetLeftBy(m, 1)));

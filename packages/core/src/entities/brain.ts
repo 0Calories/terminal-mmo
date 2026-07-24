@@ -80,6 +80,9 @@ function meleeBrain(p: MeleeProfile): Brain {
 interface SlimeAi {
 	restT: number;
 
+	/** Which cadence the rest paces — a patrol rest breaks on detection. */
+	rest?: 'patrol' | 'approach';
+
 	/** Horizontal scale of the hop in flight — set by whichever drive launched it. */
 	hopScale?: number;
 }
@@ -124,8 +127,6 @@ function slimeBrain(p: MeleeProfile): Brain {
 				drive: { moveX: m.facing, jump: false, moveScale: ai.hopScale ?? 1 },
 				ai,
 			};
-		if (ai.restT > 0)
-			return { drive: { moveX: 0, jump: false }, ai: { restT: ai.restT - 1 } };
 		const gap = gapTo(m, view.targetX);
 		if (gap && gap.adx <= p.range && (m.attackCdT ?? 0) <= 0)
 			return {
@@ -135,8 +136,14 @@ function slimeBrain(p: MeleeProfile): Brain {
 					face: toward(gap.dx),
 					commit: 'pounce',
 				},
-				ai: { restT: SLIME_REST.approach },
+				ai: { restT: SLIME_REST.approach, rest: 'approach' },
 			};
+		const aware = gap !== null && gap.adx < p.aggro;
+		if (ai.restT > 0 && !(aware && ai.rest !== 'approach')) {
+			const drive: Drive = { moveX: 0, jump: false };
+			if (aware && gap) drive.face = toward(gap.dx);
+			return { drive, ai: { ...ai, restT: ai.restT - 1 } };
+		}
 		if (gap && gap.adx < p.aggro) {
 			if (gap.adx < p.deadzone) return { drive: { moveX: 0, jump: false }, ai };
 			// Approach hops close only to the lip of leap range: the wind-up
@@ -152,7 +159,7 @@ function slimeBrain(p: MeleeProfile): Brain {
 					moveScale: hopScale,
 					jumpScale: SLIME_HOP.jump,
 				},
-				ai: { restT: SLIME_REST.approach, hopScale },
+				ai: { restT: SLIME_REST.approach, rest: 'approach', hopScale },
 			};
 		}
 		const t = view.terrain;
@@ -173,7 +180,7 @@ function slimeBrain(p: MeleeProfile): Brain {
 				moveScale: hopScale,
 				jumpScale: SLIME_HOP.jump,
 			},
-			ai: { restT: SLIME_REST.patrol, hopScale },
+			ai: { restT: SLIME_REST.patrol, rest: 'patrol', hopScale },
 		};
 	};
 }
