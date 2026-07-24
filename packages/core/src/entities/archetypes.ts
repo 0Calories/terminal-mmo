@@ -15,11 +15,19 @@ export interface MeleeProfile {
 	knockback?: number;
 
 	/**
-	 * Present on leapers: the commit is a pounce — grounded wind-up, a ballistic
-	 * hop locked at commit whose whole airborne arc is the active hitbox, and a
-	 * landing-wobble recovery. Absent, the commit is a standard swing.
+	 * Present on leapers: the commit is a pounce — grounded wind-up, a flat
+	 * lunge locked at commit whose whole airborne arc is the active hitbox, and
+	 * a landing-wobble recovery. Absent, the commit is a standard swing.
 	 */
-	pounce?: AttackPhaseTimings;
+	pounce?: PounceProfile;
+}
+
+export interface PounceProfile extends AttackPhaseTimings {
+	/** Leap velocity, as scales over ground speed and the shared jump impulse. */
+	leap: { speed: number; jump: number };
+
+	/** Scales the attacker's knockback when a hit swats the leap mid-air. */
+	swat: number;
 }
 
 export interface ProjectileSpec {
@@ -61,9 +69,12 @@ const CHASER = {
 	},
 } as const satisfies ArchetypeProfile;
 
-// A full hop stays airborne for 2·jump/grav seconds; the pounce's active
-// window pads that with a landing tick so the arc is hitbox-live end to end.
+// A full hop stays airborne for 2·jump/grav seconds; the leap's jump scale
+// shrinks that proportionally, and the active window pads it with a landing
+// tick so the arc is hitbox-live end to end.
 const HOP_AIRTIME = (2 * PHYS.jump) / PHYS.grav;
+
+const SLIME_LEAP = { speed: 2.6, jump: 0.55 } as const;
 
 const SLIME = {
 	hp: 24,
@@ -72,16 +83,19 @@ const SLIME = {
 	melee: {
 		damage: 8,
 		poise: 8,
-		// Leap-sized: a whole hop's ground coverage, well past melee reach.
-		range: 9,
+		// Leap-sized: the flat lunge's ground coverage (scaled speed × airtime),
+		// so an edge-of-range target gets landed on rather than overshot.
+		range: 13,
 		aggro: 22,
 		deadzone: 2,
-		commitCd: 3,
+		commitCd: 2,
 		knockback: 2.6,
 		pounce: {
 			windup: 0.45,
-			active: HOP_AIRTIME + 0.05,
+			active: HOP_AIRTIME * SLIME_LEAP.jump + 0.05,
 			recovery: 0.5,
+			leap: SLIME_LEAP,
+			swat: 2.2,
 		},
 	},
 } as const satisfies ArchetypeProfile;
