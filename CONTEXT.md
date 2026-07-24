@@ -359,12 +359,50 @@ The decision function that controls a **Monster** each tick: it perceives a
 limited view of its Zone and produces a **Drive** — including whether to commit
 an attack — and nothing else. A Brain never applies damage, never moves
 anything, and never touches another entity; every consequence it initiates
-flows through the same **Strike** resolution as a Player's. Each Monster
-archetype (chaser, **Brute**, **Ranged poker**, the **Boss**) is one Brain, and
-a Brain may keep private memory that the rest of the simulation — and the wire
-— never sees.
+flows through the same **Strike** resolution as a Player's. A Brain is not
+hand-written per archetype: each Monster's brain is composed from the shared
+**Skeleton** plus its **Movement engine** and **Combat engine** (ADR 0040),
+and it may keep private, typed memory that the rest of the simulation — and
+the wire — never sees.
 _Avoid_: AI (too generic), behavior script, controller (reserve for the
 Player-side input path)
+
+**Skeleton**:
+The one Patrol/Combat state machine every Monster **Brain** runs, written
+once (ADR 0040): gates (stunned/committed) → perceive → transition →
+delegate. In Patrol it asks the **Movement engine** to wander; in Combat the
+**Combat engine** leads. It alone reads and writes the patrol/combat state —
+engines receive it, never set it. A Monster enters Combat when its target is
+within **vision** and (for now, deliberately) exits the moment it is not;
+sticky aggro/leashing is a future exit-condition change, not a given.
+_Avoid_: State machine (too generic), base brain, framework
+
+**Movement engine**:
+The pluggable gait half of a Monster's **Brain** (ADR 0040) — how it
+wanders and how it moves toward a destination: walking with wall/ledge
+probes, or the Slime's hopping with rest cadence and hops scaled to the
+ground that can catch them. It owns gait memory (rest timers, in-flight hop
+scale) but never chooses destinations in Combat — the **Combat engine**
+leads and calls it.
+_Avoid_: Locomotion, gait (retired working terms), movement AI
+
+**Combat engine**:
+The pluggable fighting half of a Monster's **Brain** (ADR 0040) — its
+attack pattern, leading while in Combat: it picks where to stand (close to
+**range**, hold **range**, stop at the pounce lip), calls the **Movement
+engine** to get there, and commits the attack. Two-sided: the decision half
+runs in the Brain and emits **Drive**s only (ADR 0034), while the execution
+half is the hooks the zone tick calls after a commit — committed-body
+control, timers, landing rules, and **Strike**/**Projectile** construction —
+so each pattern's hitbox rules live with the engine, not the tick. Swing
+(chaser, **Brute**), fire (**Ranged poker**), pounce (**Slime**). Each
+Monster's character sheet holds engine-independent stats — including
+**vision** (its perception radius, formerly "aggro") and **range** (the
+distance its attack cares about, which each engine interprets) — and
+overrides the engine's founding-monster defaults only where its feel
+differs.
+_Avoid_: Engagement (retired working term), attack script, combat AI;
+aggro (use vision), reach (use range)
 
 **Melee committer**:
 A Monster archetype that deals damage *only* through a telegraphed melee **Attack
