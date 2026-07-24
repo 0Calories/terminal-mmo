@@ -28,6 +28,7 @@ export {
 	shooterBrain,
 } from './shooter';
 export {
+	type HopMemory,
 	type HopShape,
 	hopEngine,
 	type PounceShape,

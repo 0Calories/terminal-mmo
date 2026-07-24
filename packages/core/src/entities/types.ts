@@ -1,3 +1,7 @@
+// Type-only: the Entity shape names the Brain's memory without pulling any
+// monster code in behind it.
+import type { MonsterMemory } from './monsters/shared/skeleton';
+
 export type Facing = 1 | -1;
 
 export interface Terrain {
@@ -79,7 +83,8 @@ export interface Entity {
 	guardT?: number;
 	swingHits?: number[];
 
-	ai?: unknown;
+	/** Brain scratch memory: server-private, never serialized onto the wire. */
+	ai?: MonsterMemory;
 	skillCooldowns?: Record<string, number>;
 	spawnIndex?: number;
 	contributors?: number[];

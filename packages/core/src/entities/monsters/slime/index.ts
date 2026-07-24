@@ -19,5 +19,10 @@ export const slimeBrain: Brain = skeletonBrain({
 	combat: pounceEngine({ range: stats.range }),
 });
 
-export { type HopCadence, type HopShape, hopEngine } from './hop';
+export {
+	type HopCadence,
+	type HopMemory,
+	type HopShape,
+	hopEngine,
+} from './hop';
 export { type PounceShape, pounceEngine } from './pounce';
