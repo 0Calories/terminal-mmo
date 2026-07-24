@@ -150,6 +150,32 @@ test('landing begins the wobble recovery; the cooldown gates chaining', () => {
 	expect(gapTicks * 16).toBeGreaterThanOrEqual(500);
 });
 
+test('a slime caught mid-rest pounces on sight instead of waiting out the rest', () => {
+	const av = serverAvatar(7, 90);
+	av.avatar.hurtT = 100;
+	let state = stateWith(groundedSlime(20), av);
+
+	let airborne = false;
+	let rested = false;
+	for (let i = 0; i < 400 && !rested; i++) {
+		state = step(state);
+		const m = state.zone.monsters[0];
+		if (!m.onGround) airborne = true;
+		else if (airborne) rested = true;
+	}
+	if (!rested) throw new Error('slime never finished a patrol hop');
+	expect(state.zone.monsters[0].attackT).toBe(0);
+
+	const ambushX = state.zone.monsters[0].x + MELEE.range - 4;
+	for (let i = 0; i < 2; i++)
+		state = stepZone(
+			state,
+			[{ ...holdAt(7, state.avatars[0].avatar), x: ambushX }],
+			16,
+		);
+	expect(state.zone.monsters[0].attackT).toBeGreaterThan(0);
+});
+
 test('the wind-up starts at leap distance: the approach never closes to touch', () => {
 	const av = serverAvatar(7, 20);
 	av.avatar.hurtT = 100;
