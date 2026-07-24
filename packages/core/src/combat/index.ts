@@ -34,7 +34,6 @@ export {
 	IDLE_ACTION,
 	meleeActive,
 	meleeHitbox,
-	meleeKnockback,
 	predictHits,
 	regenPoise,
 	resolveCombat,
@@ -58,6 +57,7 @@ export {
 	PROJECTILE,
 } from './constants';
 export {
+	type ProjectileSpec,
 	projectileBox,
 	spawnProjectile,
 } from './projectile';

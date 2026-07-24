@@ -12,7 +12,6 @@ import {
 import { projectileBox } from '../combat/projectile';
 import { type PlayerClass, skillForSlot } from '../combat/skills';
 import { weaponById } from '../combat/weapons';
-import { BRAINS, type BrainView } from '../entities/brain';
 import {
 	emoteById,
 	emoteInterrupted,
@@ -20,6 +19,7 @@ import {
 	stepEmote,
 } from '../entities/emote';
 import { spawnMonster } from '../entities/factory';
+import type { BrainView } from '../entities/monsters';
 import { MONSTERS } from '../entities/monsters';
 import type {
 	Control,
@@ -244,7 +244,7 @@ export function stepZone(
 		const { drive, ai } =
 			m.type === 'player'
 				? { drive: IDLE_DRIVE, ai: m.ai }
-				: BRAINS[m.type](m, view);
+				: MONSTERS[m.type].brain(m, view);
 		m.ai = ai;
 
 		// The tick knows only that a monster fights with some Combat engine; the

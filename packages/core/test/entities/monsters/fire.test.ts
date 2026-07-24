@@ -3,24 +3,28 @@ import { SWING_TOTAL } from '../../../src/combat/combat';
 import { COMBAT } from '../../../src/combat/constants';
 import { spawnProjectile } from '../../../src/combat/projectile';
 import {
-	ARCHETYPES,
 	BOX,
 	type BrainView,
 	type Entity,
+	MONSTERS,
 	spawnMonster,
 } from '../../../src/entities';
 import type { EngineMemory, Perception } from '../../../src/entities/monsters';
-import { fireEngine, walkEngine } from '../../../src/entities/monsters';
+import {
+	FIRE_DEFAULTS,
+	fireEngine,
+	walkEngine,
+} from '../../../src/entities/monsters';
 import { GROUND_TOP } from '../../../src/zones';
 import { flatTerrain } from '../../helpers';
 
-const { keepDist } = ARCHETYPES.shooter.ranged;
+const STATS = MONSTERS.shooter.stats;
+const keepDist = STATS.range;
 const y = GROUND_TOP - BOX.h;
 const flat = flatTerrain();
 
-const { fireCooldown } = ARCHETYPES.shooter.ranged;
-const fire = fireEngine({ keepDist, cooldown: fireCooldown });
-const movement = walkEngine({ deadzone: 0 });
+const fire = fireEngine()(STATS);
+const movement = walkEngine({ deadzone: 0 })(STATS);
 
 function shooter(x: number): Entity {
 	const m = spawnMonster('shooter', 2, x, y);
@@ -144,8 +148,13 @@ test('the release edge fires exactly one shot and starts the cooldown', () => {
 		nextProjectileId: 4,
 	});
 	expect(projection?.strikes ?? []).toEqual([]);
-	expect(projection?.shots).toEqual([spawnProjectile(4, m, -1)]);
-	expect(projection?.monster?.attackCdT).toBe(fireCooldown);
+	expect(projection?.shots).toEqual([
+		spawnProjectile(4, m, -1, {
+			...FIRE_DEFAULTS.projectile,
+			damage: STATS.damage,
+		}),
+	]);
+	expect(projection?.monster?.attackCdT).toBe(FIRE_DEFAULTS.cooldown);
 });
 
 test('the shot is a one-shot edge: a window already active releases nothing', () => {

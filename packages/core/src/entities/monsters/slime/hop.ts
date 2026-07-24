@@ -1,7 +1,12 @@
 import { PHYS } from '../../../physics/constants';
 import { isSolid } from '../../../physics/terrain';
 import type { Entity, Facing, Terrain } from '../../types';
-import type { EngineMemory, EngineStep, MovementEngine } from '../shared';
+import type {
+	EngineMemory,
+	EngineStep,
+	MovementBuild,
+	MovementEngine,
+} from '../shared';
 import { footProbe, toward, wallAhead } from '../shared';
 
 export type HopCadence = 'patrol' | 'approach';
@@ -16,6 +21,17 @@ export interface HopShape {
 	/** Jump impulse scale: hops ride flatter arcs than a full jump. */
 	jump: number;
 }
+
+/**
+ * Hop's founding monster is the slime. Rests are counted in Brain calls — one
+ * per fixed 16ms zone tick. Traversal hops ride flattened arcs: they under-jump
+ * the shared impulse and make up the ground with extra horizontal speed.
+ */
+export const HOP_DEFAULTS: HopShape = {
+	rest: { patrol: 25, approach: 6 },
+	speed: 1.35,
+	jump: 0.8,
+};
 
 export interface HopMemory {
 	kind: 'hop';
@@ -52,7 +68,9 @@ function groundAhead(m: Entity, t: Terrain, dir: Facing, span: number): number {
  * the ground that can catch them, and hold the scale they launched with until
  * they land.
  */
-export function hopEngine(shape: HopShape): MovementEngine {
+export function hopEngine(overrides: Partial<HopShape> = {}): MovementBuild {
+	const shape: HopShape = { ...HOP_DEFAULTS, ...overrides };
+
 	// Columns a full hop carries the monster (scaled speed × ballistic airtime of
 	// the scaled jump), plus one for the drift of the landing tick.
 	const span = (m: Entity) =>
@@ -79,7 +97,7 @@ export function hopEngine(shape: HopShape): MovementEngine {
 		memory: { kind: 'hop', restT: shape.rest[cadence], cadence, hopScale },
 	});
 
-	return {
+	const engine: MovementEngine = {
 		wander: (m, view, memory) => {
 			const mem = hopMemory(memory);
 			if (!m.onGround) return inFlight(m, mem);
@@ -118,4 +136,5 @@ export function hopEngine(shape: HopShape): MovementEngine {
 			);
 		},
 	};
+	return () => engine;
 }

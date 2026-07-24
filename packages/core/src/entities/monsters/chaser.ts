@@ -1,23 +1,16 @@
-import { meleeKnockback } from '../../combat/combat';
-import { ARCHETYPES } from '../archetypes';
-import type { Brain } from '../brain';
-import type { MonsterSpec } from './shared';
-import { skeletonBrain, swingEngine, walkEngine } from './shared';
+import { DEFAULT_MASS } from '../../physics/constants';
+import { defineMonster, swingEngine, walkEngine } from './shared';
 
-const stats = ARCHETYPES.chaser.melee;
-
-export const chaserSpec: MonsterSpec = {
-	vision: stats.aggro,
-	movement: walkEngine({ deadzone: stats.deadzone }),
-	combat: swingEngine({
-		range: stats.range,
-		cooldown: stats.commitCd,
-		strike: {
-			damage: stats.damage,
-			poiseDamage: stats.poise,
-			...meleeKnockback(stats),
-		},
-	}),
-};
-
-export const chaserBrain: Brain = skeletonBrain(chaserSpec);
+/** Walk and swing were founded here: the chaser hires both stock. */
+export const chaser = defineMonster({
+	stats: {
+		hp: 32,
+		speed: 13,
+		mass: DEFAULT_MASS,
+		damage: 11,
+		vision: 22,
+		range: 4,
+	},
+	movement: walkEngine(),
+	combat: swingEngine(),
+});

@@ -1,14 +1,17 @@
 import type { Drive } from '../../../physics/physics';
 import { isSolid, isWall } from '../../../physics/terrain';
-import { BOX } from '../../archetypes';
-import type { BrainView } from '../../brain';
+import { BOX } from '../../body';
 import type { Entity, Facing, Terrain } from '../../types';
-import type { MovementEngine } from './skeleton';
+import type { MovementBuild } from './sheet';
+import type { BrainView, MovementEngine } from './skeleton';
 
 export interface WalkShape {
 	/** How close to a destination the walk stands still. */
 	deadzone: number;
 }
+
+/** Walk's founding monster is the chaser. */
+export const WALK_DEFAULTS: WalkShape = { deadzone: 2 };
 
 export function wallAhead(m: Entity, t: Terrain, dir: Facing): boolean {
 	const top = Math.floor(m.y);
@@ -37,8 +40,9 @@ export function patrolDrive(m: Entity, t: Terrain): Drive {
 }
 
 /** Ground gait: patrols a ledge-and-wall-probed line, walks straight at a destination. */
-export function walkEngine(shape: WalkShape): MovementEngine {
-	return {
+export function walkEngine(overrides: Partial<WalkShape> = {}): MovementBuild {
+	const shape: WalkShape = { ...WALK_DEFAULTS, ...overrides };
+	const engine: MovementEngine = {
 		wander: (m: Entity, view: BrainView) => ({
 			drive: patrolDrive(m, view.terrain),
 		}),
@@ -52,4 +56,5 @@ export function walkEngine(shape: WalkShape): MovementEngine {
 			};
 		},
 	};
+	return () => engine;
 }

@@ -1,4 +1,4 @@
-import { BOX } from '../entities/archetypes';
+import { BOX } from '../entities/body';
 import type { Facing, Terrain } from '../entities/types';
 import { DEFAULT_MASS, PHYS } from './constants';
 import { sweepColumn, sweepRow } from './sweep';

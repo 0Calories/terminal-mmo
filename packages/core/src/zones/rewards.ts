@@ -1,7 +1,7 @@
 import type { CombatEvent } from '../combat/combat';
 import { deathEvent } from '../combat/combat';
 import { skillsUnlockedBetween } from '../combat/skills';
-import { BOX } from '../entities/archetypes';
+import { BOX } from '../entities/body';
 import type {
 	Drop,
 	Entity,

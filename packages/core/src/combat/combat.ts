@@ -1,4 +1,5 @@
-import { BOX, type MeleeProfile, meleeProfileOf } from '../entities/archetypes';
+import { BOX } from '../entities/body';
+import { combatOf } from '../entities/monsters/registry';
 import { HUES, type RGBAQuad, SCENE_PALETTE } from '../entities/sceneStyle';
 import type {
 	ActionState,
@@ -102,9 +103,7 @@ export function attackProgressAt(
 export function attackTimingsOf(
 	type: EntityType | undefined,
 ): AttackPhaseTimings {
-	return (
-		(type !== undefined ? meleeProfileOf(type)?.pounce : null) ?? COMBAT.swing
-	);
+	return combatOf(type)?.timings ?? COMBAT.swing;
 }
 
 export const SWING_TOTAL = attackTotal(COMBAT.swing);
@@ -119,17 +118,6 @@ export function swingProgress(attackT: number): number {
 
 export function meleeActive(attackT: number): boolean {
 	return swingPhase(attackT) === 'active';
-}
-
-export function meleeKnockback(p: MeleeProfile): {
-	knockback: number;
-	knockbackUp: number;
-} {
-	const scalar = p.knockback ?? 1;
-	return {
-		knockback: COMBAT.knockback * scalar,
-		knockbackUp: COMBAT.knockbackUp * scalar,
-	};
 }
 
 export const DODGE_TOTAL = COMBAT.dodge.active + COMBAT.dodge.recovery;
@@ -565,17 +553,18 @@ export function resolveHitsOnMonsters<E extends Combatant>(
 			});
 			// A leap caught mid-air is swatted regardless of poise: the pounce
 			// dies on the spot and the slime is launched, but never stunned.
-			const pounce =
-				m.type !== undefined ? meleeProfileOf(m.type)?.pounce : undefined;
+			const attack = combatOf(m.type);
+			const swat = attack?.swat;
 			const swatted =
-				pounce !== undefined &&
+				attack !== null &&
+				swat !== undefined &&
 				!m.onGround &&
-				attackPhaseAt(m.attackT, pounce) === 'active';
+				attackPhaseAt(m.attackT, attack.timings) === 'active';
 			if (swatted) {
 				m = applyImpulse(
 					m,
-					s.knockback * pounce.swat * s.facing,
-					-s.knockbackUp * pounce.swat,
+					s.knockback * swat * s.facing,
+					-s.knockbackUp * swat,
 				);
 				m = patch(m, { attackT: 0 });
 				events.push({

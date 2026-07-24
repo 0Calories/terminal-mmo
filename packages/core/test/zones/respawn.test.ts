@@ -2,9 +2,9 @@ import { expect, test } from 'bun:test';
 import { COMBAT, SWING_TOTAL } from '../../src/combat';
 import type { SpawnPoint } from '../../src/entities';
 import {
-	ARCHETYPES,
 	BOX,
 	DEFAULT_COSMETICS,
+	MONSTERS,
 	spawnAvatar,
 	spawnMonster,
 } from '../../src/entities';
@@ -85,7 +85,7 @@ test('a scheduled respawn restores the monster at full HP at its spawn point', (
 		if (zs.zone.monsters.length === 1) {
 			respawned = true;
 			const m = zs.zone.monsters[0];
-			expect(m.hp).toBe(ARCHETYPES.chaser.hp);
+			expect(m.hp).toBe(MONSTERS.chaser.stats.hp);
 			expect(m.hp).toBe(m.maxHp);
 			expect(m.x).toBe(20 + BOX.w);
 			expect(m.y).toBe(y);

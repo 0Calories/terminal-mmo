@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { BrainView, Entity, Terrain } from '../../../../src/entities';
-import { spawnMonster } from '../../../../src/entities';
+import { MONSTERS, spawnMonster } from '../../../../src/entities';
 import type { EngineMemory } from '../../../../src/entities/monsters';
 import { hopEngine } from '../../../../src/entities/monsters/slime';
 import { parseTerrain } from '../../../../src/physics';
@@ -13,7 +13,7 @@ const SHAPE = {
 	jump: 0.8,
 } as const;
 
-const hop = hopEngine(SHAPE);
+const hop = hopEngine(SHAPE)(MONSTERS.slime.stats);
 const flat = flatTerrain();
 
 function view(terrain: Terrain = flat): BrainView {

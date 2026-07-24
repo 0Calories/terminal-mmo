@@ -1,8 +1,28 @@
 import { type Drive, IDLE_DRIVE } from '../../../physics/physics';
-import type { Brain, BrainResult, BrainView } from '../../brain';
-import type { Entity, Facing, Projectile, Strike } from '../../types';
+import type {
+	AttackPhaseTimings,
+	Entity,
+	Facing,
+	Projectile,
+	Strike,
+	Terrain,
+} from '../../types';
 import type { FireMemory } from '../shooter/fire';
 import type { HopMemory } from '../slime/hop';
+
+export interface BrainView {
+	terrain: Terrain;
+
+	targetX: number | null;
+}
+
+export interface BrainResult {
+	drive: Drive;
+
+	ai: MonsterMemory;
+}
+
+export type Brain = (m: Entity, view: BrainView) => BrainResult;
 
 export type MonsterState = 'patrol' | 'combat';
 
@@ -19,6 +39,30 @@ export interface MonsterMemory {
 	movement?: EngineMemory;
 
 	combat?: EngineMemory;
+}
+
+/**
+ * A monster's character sheet: the numbers that mean the same thing whichever
+ * engines it composes, and so survive it swapping one for another.
+ */
+export interface MonsterStats {
+	hp: number;
+	speed: number;
+	mass: number;
+
+	/** Poise pool; unset leaves the shared one. */
+	poise?: number;
+
+	/** Damage a landed attack deals, however the attack is delivered. */
+	damage: number;
+
+	/** How far off the monster notices a target. */
+	vision: number;
+
+	/** Fighting distance, read by whichever Combat engine is composed: the
+	 *  swing's strike threshold, the pounce's commit distance, the shooter's
+	 *  keep-distance. */
+	range: number;
 }
 
 export interface Perception {
@@ -87,6 +131,13 @@ export interface AttackProjection {
  * every hook the same way for every monster and never names an attack.
  */
 export interface CombatExecution {
+	/** The phase timings the committed attack's timer runs on. */
+	timings: AttackPhaseTimings;
+
+	/** How hard a hit catching this attack mid-air swats it; unset means the
+	 *  attack cannot be swatted. */
+	swat?: number;
+
 	/** The drive a committed attack takes the body over with; null leaves the
 	 *  Brain's own drive standing. */
 	committedDrive?(m: Entity): Drive | null;
@@ -105,10 +156,15 @@ export interface CombatEngine extends CombatExecution {
 	fight(ctx: CombatContext): CombatStep;
 }
 
-export interface MonsterSpec {
-	vision: number;
+/** A character sheet with the two engines it configures. */
+export interface MonsterComposition {
+	stats: MonsterStats;
 	movement: MovementEngine;
 	combat: CombatEngine;
+}
+
+export interface MonsterSpec extends MonsterComposition {
+	brain: Brain;
 }
 
 export const toward = (dx: number): Facing => (dx >= 0 ? 1 : -1);
@@ -133,12 +189,12 @@ const committed = (m: Entity) => m.attackT > 0;
  * delegate. Only this function reads or writes the state; the engines it
  * delegates to are handed the perception and never touch memory.
  */
-export function skeletonBrain(spec: MonsterSpec): Brain {
+export function skeletonBrain(spec: MonsterComposition): Brain {
 	return (m, view): BrainResult => {
 		const memory = memoryOf(m.ai);
 		if (stunned(m) || committed(m)) return { drive: IDLE_DRIVE, ai: memory };
 
-		const perception = perceive(m, view, spec.vision);
+		const perception = perceive(m, view, spec.stats.vision);
 		const state: MonsterState = perception.inVision ? 'combat' : 'patrol';
 		if (state === 'patrol') {
 			const step = spec.movement.wander(m, view, memory.movement);

@@ -1,20 +1,28 @@
-import { ARCHETYPES } from '../../archetypes';
-import type { Brain } from '../../brain';
-import type { MonsterSpec } from '../shared';
-import { skeletonBrain, walkEngine } from '../shared';
+import { DEFAULT_MASS } from '../../../physics/constants';
+import { defineMonster, walkEngine } from '../shared';
 import { fireEngine } from './fire';
 
-export { type FireMemory, type FireShape, fireEngine } from './fire';
-
-const stats = ARCHETYPES.shooter.ranged;
-
-export const shooterSpec: MonsterSpec = {
-	vision: stats.aggro,
+/** Fire was founded here: the shooter hires it stock, and closes all the way
+ *  to its destination — the comfort band already is the standoff. */
+export const shooter = defineMonster({
+	stats: {
+		hp: 16,
+		speed: 9,
+		mass: DEFAULT_MASS,
+		damage: 7,
+		vision: 46,
+		range: 20,
+	},
 	movement: walkEngine({ deadzone: 0 }),
-	combat: fireEngine({
-		keepDist: stats.keepDist,
-		cooldown: stats.fireCooldown,
-	}),
-};
+	combat: fireEngine(),
+});
 
-export const shooterBrain: Brain = skeletonBrain(shooterSpec);
+export {
+	FIRE_DEFAULTS,
+	type FireMemory,
+	type FireOverrides,
+	type FireShape,
+	fireEngine,
+	PROJECTILE_DEFAULTS,
+	type ProjectileShape,
+} from './fire';

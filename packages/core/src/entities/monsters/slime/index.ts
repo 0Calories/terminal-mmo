@@ -1,43 +1,26 @@
-import { meleeKnockback } from '../../../combat/combat';
-import { ARCHETYPES } from '../../archetypes';
-import type { Brain } from '../../brain';
-import type { MonsterSpec } from '../shared';
-import { skeletonBrain } from '../shared';
+import { defineMonster } from '../shared';
 import { hopEngine } from './hop';
 import { pounceEngine } from './pounce';
 
-const stats = ARCHETYPES.slime.melee;
-const leap = stats.pounce;
-
-export const slimeSpec: MonsterSpec = {
-	vision: stats.aggro,
-	movement: hopEngine({
-		// Rests are counted in Brain calls — one per fixed 16ms zone tick.
-		rest: { patrol: 25, approach: 6 },
-		// Traversal hops ride flattened arcs: under-jump the shared impulse and
-		// make up the ground with extra horizontal speed.
-		speed: 1.35,
-		jump: 0.8,
-	}),
-	combat: pounceEngine({
-		range: stats.range,
-		cooldown: stats.commitCd,
-		timings: leap,
-		leap: leap.leap,
-		strike: {
-			damage: stats.damage,
-			poiseDamage: stats.poise,
-			...meleeKnockback(stats),
-		},
-	}),
-};
-
-export const slimeBrain: Brain = skeletonBrain(slimeSpec);
+/** Hop and pounce were founded here: the slime hires both stock. */
+export const slime = defineMonster({
+	stats: {
+		hp: 24,
+		speed: 12,
+		mass: 0.85,
+		damage: 8,
+		vision: 22,
+		range: 12,
+	},
+	movement: hopEngine(),
+	combat: pounceEngine(),
+});
 
 export {
+	HOP_DEFAULTS,
 	type HopCadence,
 	type HopMemory,
 	type HopShape,
 	hopEngine,
 } from './hop';
-export { type PounceShape, pounceEngine } from './pounce';
+export { POUNCE_DEFAULTS, type PounceShape, pounceEngine } from './pounce';

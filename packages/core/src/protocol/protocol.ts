@@ -1,6 +1,5 @@
 import type { CombatEvent, CombatEventKind } from '../combat/combat';
 import { DEFAULT_WEAPON } from '../combat/weapons';
-import { ARCHETYPES } from '../entities/archetypes';
 import {
 	clampCosmetics,
 	DEFAULT_COSMETICS,
@@ -9,6 +8,7 @@ import {
 	LEGACY_HAT_IDS,
 } from '../entities/cosmetics';
 import { EMOTES } from '../entities/emote';
+import { PROJECTILE_DEFAULTS } from '../entities/monsters';
 import type {
 	ActionState,
 	AttackPhase,
@@ -626,9 +626,9 @@ function readProjectile(r: Reader): Projectile {
 	if (r.remaining() < 1)
 		return {
 			...base,
-			poiseDamage: ARCHETYPES.shooter.ranged.projectile.poise,
-			knockback: ARCHETYPES.shooter.ranged.projectile.knockback,
-			knockbackUp: ARCHETYPES.shooter.ranged.projectile.knockbackUp,
+			poiseDamage: PROJECTILE_DEFAULTS.poiseDamage,
+			knockback: PROJECTILE_DEFAULTS.knockback,
+			knockbackUp: PROJECTILE_DEFAULTS.knockbackUp,
 		};
 	return {
 		...base,

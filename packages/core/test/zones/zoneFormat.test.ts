@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ARCHETYPES } from '../../src/entities';
+import { MONSTERS } from '../../src/entities';
 import {
 	type MonsterCatalogEntry,
 	NPC_BOX,
@@ -68,7 +68,7 @@ describe('Zone parsing laws', () => {
 				type: 'chaser',
 				x: 2,
 				y: 1,
-				hp: ARCHETYPES.chaser.hp,
+				hp: MONSTERS.chaser.stats.hp,
 				spawnIndex: 0,
 			},
 			{
@@ -76,7 +76,7 @@ describe('Zone parsing laws', () => {
 				type: 'shooter',
 				x: 7,
 				y: 1,
-				hp: ARCHETYPES.shooter.hp,
+				hp: MONSTERS.shooter.stats.hp,
 				spawnIndex: 1,
 			},
 		]);
