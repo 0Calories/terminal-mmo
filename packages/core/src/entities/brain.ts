@@ -93,10 +93,18 @@ function slimeAi(ai: unknown): SlimeAi {
 // Rests are counted in Brain calls — one per fixed 16ms zone tick.
 const SLIME_REST = { patrol: 25, approach: 6 } as const;
 
-// Columns a full hop can carry the slime (speed × ballistic airtime), plus
-// one for the drift of the landing tick.
+// Traversal hops ride flattened arcs: under-jump the shared impulse and make
+// up the ground with extra horizontal speed.
+const SLIME_HOP = { speed: 1.35, jump: 0.8 } as const;
+
+// Columns a full hop can carry the slime (scaled speed × ballistic airtime of
+// the scaled jump), plus one for the drift of the landing tick.
 function hopSpan(speed: number): number {
-	return Math.ceil((speed * 2 * PHYS.jump) / PHYS.grav) + 1;
+	return (
+		Math.ceil(
+			(speed * SLIME_HOP.speed * 2 * PHYS.jump * SLIME_HOP.jump) / PHYS.grav,
+		) + 1
+	);
 }
 
 // Contiguous solid ground ahead of the leading foot, capped at one full hop.
@@ -132,8 +140,13 @@ function slimeBrain(p: MeleeProfile): Brain {
 		if (gap && gap.adx < p.aggro) {
 			if (gap.adx < p.deadzone) return { drive: { moveX: 0, jump: false }, ai };
 			return {
-				drive: { moveX: toward(gap.dx), jump: true },
-				ai: { restT: SLIME_REST.approach, hopScale: 1 },
+				drive: {
+					moveX: toward(gap.dx),
+					jump: true,
+					moveScale: SLIME_HOP.speed,
+					jumpScale: SLIME_HOP.jump,
+				},
+				ai: { restT: SLIME_REST.approach, hopScale: SLIME_HOP.speed },
 			};
 		}
 		const t = view.terrain;
@@ -146,9 +159,15 @@ function slimeBrain(p: MeleeProfile): Brain {
 		// The hop is scaled to the ground that can catch it: a full stride in
 		// the open, shuffle-hops near an edge, in place when boxed in — but
 		// never a freeze.
+		const hopScale = (SLIME_HOP.speed * cols) / span;
 		return {
-			drive: { moveX: cols > 0 ? dir : 0, jump: true, moveScale: cols / span },
-			ai: { restT: SLIME_REST.patrol, hopScale: cols / span },
+			drive: {
+				moveX: cols > 0 ? dir : 0,
+				jump: true,
+				moveScale: hopScale,
+				jumpScale: SLIME_HOP.jump,
+			},
+			ai: { restT: SLIME_REST.patrol, hopScale },
 		};
 	};
 }

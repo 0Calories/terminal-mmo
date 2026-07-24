@@ -83,9 +83,9 @@ const SLIME = {
 	melee: {
 		damage: 8,
 		poise: 8,
-		// Leap-sized: the flat lunge's ground coverage (scaled speed × airtime),
-		// so an edge-of-range target gets landed on rather than overshot.
-		range: 13,
+		// Inside the flat lunge's ~13-column ground coverage: the whole airborne
+		// body is the hitbox, so an arc committed here crosses its target.
+		range: 10,
 		aggro: 22,
 		deadzone: 2,
 		commitCd: 2,
