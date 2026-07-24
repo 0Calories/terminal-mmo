@@ -79,6 +79,9 @@ function meleeBrain(p: MeleeProfile): Brain {
 
 interface SlimeAi {
 	restT: number;
+
+	/** Horizontal scale of the hop in flight — set by whichever drive launched it. */
+	hopScale?: number;
 }
 
 function slimeAi(ai: unknown): SlimeAi {
@@ -88,7 +91,7 @@ function slimeAi(ai: unknown): SlimeAi {
 }
 
 // Rests are counted in Brain calls — one per fixed 16ms zone tick.
-const SLIME_REST = { patrol: 45, approach: 15 } as const;
+const SLIME_REST = { patrol: 25, approach: 6 } as const;
 
 // Columns a full hop can carry the slime (speed × ballistic airtime), plus
 // one for the drift of the landing tick.
@@ -96,19 +99,23 @@ function hopSpan(speed: number): number {
 	return Math.ceil((speed * 2 * PHYS.jump) / PHYS.grav) + 1;
 }
 
-function hopLandsOnGround(m: Entity, t: Terrain, dir: Facing): boolean {
+// Contiguous solid ground ahead of the leading foot, capped at one full hop.
+function groundAhead(m: Entity, t: Terrain, dir: Facing, span: number): number {
 	const { lead, footY } = footProbe(m, dir);
-	const span = hopSpan(m.speed);
-	for (let step = 1; step <= span; step++)
-		if (!isSolid(t, lead + dir * step, footY)) return false;
-	return true;
+	let cols = 0;
+	while (cols < span && isSolid(t, lead + dir * (cols + 1), footY)) cols++;
+	return cols;
 }
 
 function slimeBrain(p: MeleeProfile): Brain {
 	return (m, view) => {
 		if (stunned(m) || committed(m)) return { drive: IDLE_DRIVE, ai: m.ai };
 		const ai = slimeAi(m.ai);
-		if (!m.onGround) return { drive: { moveX: m.facing, jump: false }, ai };
+		if (!m.onGround)
+			return {
+				drive: { moveX: m.facing, jump: false, moveScale: ai.hopScale ?? 1 },
+				ai,
+			};
 		if (ai.restT > 0)
 			return { drive: { moveX: 0, jump: false }, ai: { restT: ai.restT - 1 } };
 		const gap = gapTo(m, view.targetX);
@@ -126,17 +133,22 @@ function slimeBrain(p: MeleeProfile): Brain {
 			if (gap.adx < p.deadzone) return { drive: { moveX: 0, jump: false }, ai };
 			return {
 				drive: { moveX: toward(gap.dx), jump: true },
-				ai: { restT: SLIME_REST.approach },
+				ai: { restT: SLIME_REST.approach, hopScale: 1 },
 			};
 		}
 		const t = view.terrain;
-		const safe = (dir: Facing) =>
-			!wallAhead(m, t, dir) && hopLandsOnGround(m, t, dir);
-		const dir: Facing = safe(m.facing) ? m.facing : m.facing === 1 ? -1 : 1;
-		if (!safe(dir)) return { drive: { moveX: 0, jump: false }, ai };
+		const span = hopSpan(m.speed);
+		const room = (dir: Facing) =>
+			wallAhead(m, t, dir) ? 0 : groundAhead(m, t, dir, span);
+		const ahead = room(m.facing);
+		const dir: Facing = ahead > 0 ? m.facing : m.facing === 1 ? -1 : 1;
+		const cols = ahead > 0 ? ahead : room(dir);
+		// The hop is scaled to the ground that can catch it: a full stride in
+		// the open, shuffle-hops near an edge, in place when boxed in — but
+		// never a freeze.
 		return {
-			drive: { moveX: dir, jump: true },
-			ai: { restT: SLIME_REST.patrol },
+			drive: { moveX: cols > 0 ? dir : 0, jump: true, moveScale: cols / span },
+			ai: { restT: SLIME_REST.patrol, hopScale: cols / span },
 		};
 	};
 }

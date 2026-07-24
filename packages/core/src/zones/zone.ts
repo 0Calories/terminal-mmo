@@ -266,7 +266,12 @@ export function stepZone(
 		const stepDrive =
 			pounce && m.attackT > 0
 				? pounceActive()
-					? { moveX: m.facing, jump: m.onGround }
+					? {
+							moveX: m.facing,
+							jump: m.onGround,
+							moveScale: pounce.leap.speed,
+							jumpScale: pounce.leap.jump,
+						}
 					: IDLE_DRIVE
 				: drive;
 		m = stepEntity(t, m, stepDrive, dt).e;

@@ -563,7 +563,30 @@ export function resolveHitsOnMonsters<E extends Combatant>(
 				poiseT: COMBAT.poise.regenDelay,
 				contributors,
 			});
-			if (broke) {
+			// A leap caught mid-air is swatted regardless of poise: the pounce
+			// dies on the spot and the slime is launched, but never stunned.
+			const pounce =
+				m.type !== undefined ? meleeProfileOf(m.type)?.pounce : undefined;
+			const swatted =
+				pounce !== undefined &&
+				!m.onGround &&
+				attackPhaseAt(m.attackT, pounce) === 'active';
+			if (swatted) {
+				m = applyImpulse(
+					m,
+					s.knockback * pounce.swat * s.facing,
+					-s.knockbackUp * pounce.swat,
+				);
+				m = patch(m, { attackT: 0 });
+				events.push({
+					kind: 'swat',
+					targetId: m.id,
+					x: m.x + BOX.w / 2,
+					y: m.y + BOX.h / 2,
+					dir: s.facing,
+					intensity: s.damage,
+				});
+			} else if (broke) {
 				m = applyImpulse(m, s.knockback * s.facing, -s.knockbackUp);
 				m = patch(m, { stunT: COMBAT.hitstun });
 				events.push(combatEventAt('break', m, s.facing, s.damage));

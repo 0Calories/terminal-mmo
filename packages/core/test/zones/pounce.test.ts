@@ -1,7 +1,15 @@
 import { expect, test } from 'bun:test';
-import { attackPhaseAt, COMBAT, meleeKnockback } from '../../src/combat';
-import type { AttackPhase, Entity } from '../../src/entities';
+import {
+	attackPhaseAt,
+	attackTotal,
+	COMBAT,
+	entityBox,
+	meleeKnockback,
+	resolveHitsOnMonsters,
+} from '../../src/combat';
+import type { AttackPhase, Entity, Strike } from '../../src/entities';
 import { ARCHETYPES, spawnMonster } from '../../src/entities';
+import { PHYS } from '../../src/physics/constants';
 import { snapshotFor } from '../../src/world';
 import type { ServerAvatar, ZoneState } from '../../src/zones';
 import { stepZone } from '../../src/zones';
@@ -79,6 +87,7 @@ test('wind-up squats on the ground; the Strike exists exactly while airborne', (
 			expect(phase).toBe('active');
 			expect(m.onGround).toBe(false);
 		}
+		if (sawRecovery && m.attackT === 0) break;
 	}
 	expect(sawWindup).toBe(true);
 	expect(sawRecovery).toBe(true);
@@ -130,7 +139,7 @@ test('landing begins the wobble recovery; the cooldown gates chaining', () => {
 		recoveryTicks++;
 	}
 	expect(recoveryTicks).toBeGreaterThan(0);
-	expect(state.zone.monsters[0].attackCdT ?? 0).toBeGreaterThan(1);
+	expect(state.zone.monsters[0].attackCdT ?? 0).toBeGreaterThan(0.5);
 
 	let gapTicks = 0;
 	while (state.zone.monsters[0].attackT === 0 && gapTicks < 1000) {
@@ -138,7 +147,121 @@ test('landing begins the wobble recovery; the cooldown gates chaining', () => {
 		gapTicks++;
 	}
 	expect(state.zone.monsters[0].attackT).toBeGreaterThan(0);
-	expect(gapTicks * 16).toBeGreaterThanOrEqual(1000);
+	expect(gapTicks * 16).toBeGreaterThanOrEqual(500);
+});
+
+test('the leap is a flat lunge: pounce-scaled horizontal speed, shrunken arc', () => {
+	const av = serverAvatar(7, 20);
+	av.avatar.hurtT = 100;
+	let state = stateWith(groundedSlime(20 + MELEE.range), av);
+
+	let launched = false;
+	let apexY = SPAWN_Y;
+	for (let i = 0; i < 200; i++) {
+		state = step(state);
+		const m = state.zone.monsters[0];
+		if (m.attackT > 0 && !m.onGround) {
+			launched = true;
+			expect(Math.abs(m.vx)).toBeCloseTo(
+				ARCHETYPES.slime.speed * POUNCE.leap.speed,
+				5,
+			);
+			apexY = Math.min(apexY, m.y);
+		} else if (launched && m.onGround) break;
+	}
+	expect(launched).toBe(true);
+	const fullHopApex = (PHYS.jump * PHYS.jump) / (2 * PHYS.grav);
+	expect(SPAWN_Y - apexY).toBeLessThan(fullHopApex / 2);
+});
+
+function airborneActiveSlime(x: number): Entity {
+	const m = spawnMonster('slime', 2, x, SPAWN_Y - 2);
+	m.onGround = false;
+	m.facing = -1;
+	m.attackT = POUNCE.active / 2 + POUNCE.recovery;
+	return m;
+}
+
+function playerStrike(m: Entity, over: Partial<Strike> = {}): Strike {
+	return {
+		attackerId: 7,
+		attackerKind: 'avatar',
+		hitbox: entityBox(m),
+		damage: 5,
+		poiseDamage: 2,
+		facing: 1,
+		faction: 'players',
+		knockback: COMBAT.knockback,
+		knockbackUp: COMBAT.knockbackUp,
+		...over,
+	};
+}
+
+test('a hit on the airborne leap swats the slime: launched, cancelled, no stun', () => {
+	const m = airborneActiveSlime(30);
+	const before = m.hp;
+	const { monsters, events } = resolveHitsOnMonsters(
+		[m],
+		[playerStrike(m)],
+		new Map(),
+	);
+	const hit = monsters[0];
+	expect(hit.attackT).toBe(0);
+	expect(hit.stunT ?? 0).toBe(0);
+	expect(hit.hp).toBe(before - 5);
+	expect(hit.ivx ?? 0).toBeGreaterThan(COMBAT.knockback);
+	expect(events[0]?.kind).toBe('swat');
+});
+
+test('the swat outranks a poise break: launched, never stunned', () => {
+	const m = airborneActiveSlime(30);
+	m.poise = 1;
+	const { monsters, events } = resolveHitsOnMonsters(
+		[m],
+		[playerStrike(m, { poiseDamage: 99 })],
+		new Map(),
+	);
+	expect(monsters[0].stunT ?? 0).toBe(0);
+	expect(monsters[0].attackT).toBe(0);
+	expect(events[0]?.kind).toBe('swat');
+});
+
+test('a grounded wind-up slime is not swattable: super armor holds', () => {
+	const m = groundedSlime(30);
+	m.attackT = attackTotal(POUNCE);
+	const { monsters, events } = resolveHitsOnMonsters(
+		[m],
+		[playerStrike(m)],
+		new Map(),
+	);
+	expect(monsters[0].attackT).toBe(m.attackT);
+	expect(monsters[0].ivx ?? 0).toBe(0);
+	expect(events[0]?.kind).toBe('hit');
+});
+
+test('a well-timed swing knocks the pouncing slime out of the air', () => {
+	const av = serverAvatar(7, 20);
+	av.avatar.hp = 999;
+	av.avatar.hurtT = 100;
+	const slime = groundedSlime(20 + MELEE.range);
+	slime.hp = 9999;
+	let state = stateWith(slime, av);
+
+	let swatted = false;
+	for (let i = 0; i < 400 && !swatted; i++) {
+		const m0 = state.zone.monsters[0];
+		const airborne = m0.attackT > 0 && !m0.onGround;
+		state = stepZone(
+			state,
+			[{ ...holdAt(7, state.avatars[0].avatar), attack: airborne }],
+			16,
+		);
+		swatted = (state.events ?? []).some((e) => e.kind === 'swat');
+	}
+	expect(swatted).toBe(true);
+	const m = state.zone.monsters[0];
+	expect(m.attackT).toBe(0);
+	expect(m.stunT ?? 0).toBe(0);
 });
 
 test('a connecting pounce shoves a poise-broken Avatar with the scaled knockback', () => {

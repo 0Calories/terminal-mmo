@@ -489,6 +489,8 @@ test('a Slime locomotes by hopping: it leaves the ground and travels', () => {
 	}
 	expect(airborne).toBe(true);
 	expect(state.zone.monsters[0].x).not.toBe(startX);
+	for (let i = 0; i < 100 && !state.zone.monsters[0].onGround; i++)
+		state = stepZone(state, [], 16);
 	expect(state.zone.monsters[0].onGround).toBe(true);
 });
 

@@ -9,6 +9,12 @@ export interface Drive {
 	moveX: -1 | 0 | 1;
 	jump: boolean;
 
+	/** Scales moveX ground speed for this tick (leaps outrun the walk). */
+	moveScale?: number;
+
+	/** Scales the jump impulse when jump fires (flat leaps under-jump). */
+	jumpScale?: number;
+
 	face?: Facing;
 
 	commit?: AbilityId;
@@ -48,13 +54,13 @@ export function stepEntity<B extends MomentumBody>(
 ): { e: B; hitWall: boolean } {
 	let ivx = (src.ivx ?? 0) * Math.exp(-PHYS.drag * dt);
 	if (Math.abs(ivx) < PHYS.impulseEpsilon) ivx = 0;
-	let vx = drive.moveX * src.speed + ivx;
+	let vx = drive.moveX * src.speed * (drive.moveScale ?? 1) + ivx;
 	let facing = src.facing;
 	if (vx > 0) facing = 1;
 	else if (vx < 0) facing = -1;
 
 	let vy = src.vy;
-	if (drive.jump && src.onGround) vy = -PHYS.jump;
+	if (drive.jump && src.onGround) vy = -PHYS.jump * (drive.jumpScale ?? 1);
 
 	let hitWall = false;
 	let x = src.x + vx * dt;

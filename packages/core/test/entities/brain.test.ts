@@ -166,13 +166,22 @@ test('airborne the slime keeps its heading so the hop travels', () => {
 	expect(r.drive.jump).toBe(false);
 });
 
-test('slime patrol turns at a ledge: it never hops off a platform edge', () => {
+test('slime patrol turns at a ledge like a walker does', () => {
 	const t = islandTerrain();
-	const m = grounded('slime', 24);
+	const m = grounded('slime', 27);
 	m.facing = 1;
 	const hop = nextHop(m, view(null, t));
 	if (hop === null) throw new Error('slime never hopped');
 	expect(hop.drive.moveX).toBe(-1);
+});
+
+test('a platform too short for a full hop never freezes the slime', () => {
+	const t = islandTerrain(60, 8);
+	const m = grounded('slime', 1);
+	m.facing = 1;
+	const hop = nextHop(m, view(null, t));
+	if (hop === null) throw new Error('slime froze on a short platform');
+	expect(hop.drive.jump).toBe(true);
 });
 
 test('slime patrol turns at a wall', () => {
@@ -187,7 +196,8 @@ test('slime patrol turns at a wall', () => {
 test('an aggroed slime traversal-hops toward its target', () => {
 	const m = grounded('slime', 50);
 	m.facing = 1;
-	const targetX = targetLeftBy(m, ARCHETYPES.slime.melee.aggro / 2);
+	const { range, aggro } = ARCHETYPES.slime.melee;
+	const targetX = targetLeftBy(m, (range + aggro) / 2);
 	const hop = nextHop(m, view(targetX));
 	if (hop === null) throw new Error('slime never hopped');
 	expect(hop.drive.moveX).toBe(-1);
