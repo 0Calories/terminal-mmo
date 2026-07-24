@@ -288,8 +288,33 @@ test('handleOf returns a placed session handle, undefined otherwise', () => {
 });
 
 function townWorld(): ServerWorld {
+	// The authored town is WIP and may not carry a dungeon portal; these tests
+	// exercise instancing, not authored content, so synthesize one at the
+	// avatar's standing position when it is absent.
+	const zones = AUTHORED_ZONES.some((z) =>
+		z.id === TOWN_ID ? z.portals.some((p) => p.target === DUNGEON_ID) : false,
+	)
+		? AUTHORED_ZONES
+		: AUTHORED_ZONES.map((z) =>
+				z.id === TOWN_ID
+					? {
+							...z,
+							portals: [
+								...z.portals,
+								{
+									x: 60,
+									y,
+									w: BOX.w,
+									h: BOX.h,
+									target: DUNGEON_ID,
+									arrival: { x: 10, y: 32 },
+								},
+							],
+						}
+					: z,
+			);
 	return createServerWorld({
-		zones: AUTHORED_ZONES,
+		zones,
 		start: TOWN_ID,
 		town: TOWN_ID,
 	});
