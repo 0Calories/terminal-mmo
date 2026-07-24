@@ -4,8 +4,15 @@ import type { Entity, Facing } from '../../types';
 
 export type MonsterState = 'patrol' | 'combat';
 
+/** One kind-tagged slice per Combat engine; only its own engine narrows it. */
+export interface CombatMemory {
+	kind: string;
+}
+
 export interface MonsterMemory {
 	state: MonsterState;
+
+	combat?: CombatMemory;
 }
 
 export interface Perception {
@@ -31,10 +38,19 @@ export interface CombatContext {
 	view: BrainView;
 	perception: Perception;
 	movement: MovementEngine;
+
+	/** The engine's own memory slice, as it left it last tick. */
+	memory?: CombatMemory;
+}
+
+export interface CombatDecision {
+	drive: Drive;
+
+	memory?: CombatMemory;
 }
 
 export interface CombatEngine {
-	fight(ctx: CombatContext): Drive;
+	fight(ctx: CombatContext): CombatDecision;
 }
 
 export interface MonsterSpec {
@@ -74,16 +90,24 @@ export function skeletonBrain(spec: MonsterSpec): Brain {
 		if (stunned(m) || committed(m)) return { drive: IDLE_DRIVE, ai: memory };
 
 		const perception = perceive(m, view, spec.vision);
-		const state: MonsterState = perception.inVision ? 'combat' : 'patrol';
-		const drive =
-			state === 'combat'
-				? spec.combat.fight({
-						monster: m,
-						view,
-						perception,
-						movement: spec.movement,
-					})
-				: spec.movement.wander(m, view);
-		return { drive, ai: { ...memory, state } };
+		if (!perception.inVision)
+			return {
+				drive: spec.movement.wander(m, view),
+				ai: { state: 'patrol' },
+			};
+
+		const decision = spec.combat.fight({
+			monster: m,
+			view,
+			perception,
+			movement: spec.movement,
+			memory: memory.combat,
+		});
+		return {
+			drive: decision.drive,
+			ai: decision.memory
+				? { state: 'combat', combat: decision.memory }
+				: { state: 'combat' },
+		};
 	};
 }

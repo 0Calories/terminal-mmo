@@ -47,7 +47,7 @@ function stubEngines() {
 				ctx.view,
 				ctx.perception.targetX ?? ctx.monster.x,
 			);
-			return { ...drive, commit: 'swing' };
+			return { drive: { ...drive, commit: 'swing' } };
 		},
 	};
 	return { calls, movement, combat };
