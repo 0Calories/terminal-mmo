@@ -3,7 +3,7 @@ import type { BrainView, Entity, Terrain } from '../../src/entities';
 import { ARCHETYPES, BOX, BRAINS, spawnMonster } from '../../src/entities';
 import { IDLE_DRIVE, parseTerrain } from '../../src/physics';
 import { GROUND_TOP } from '../../src/zones';
-import { flatTerrain } from '../helpers';
+import { flatTerrain, islandTerrain } from '../helpers';
 
 const y = GROUND_TOP - BOX.h;
 const flat = flatTerrain();
@@ -12,21 +12,16 @@ function view(targetX: number | null, terrain: Terrain = flat): BrainView {
 	return { terrain, targetX };
 }
 
-function grounded(type: 'chaser' | 'brute' | 'shooter', x: number): Entity {
+function grounded(
+	type: 'slime' | 'chaser' | 'brute' | 'shooter',
+	x: number,
+): Entity {
 	const m = spawnMonster(type, 2, x, y);
 	m.onGround = true;
 	return m;
 }
 
 const targetLeftBy = (monster: Entity, gap: number) => monster.x - gap;
-
-function islandTerrain(w = 60, groundEnd = 30): Terrain {
-	const rows: string[] = [];
-	for (let cy = 0; cy < GROUND_TOP; cy++) rows.push('.'.repeat(w));
-	for (let cy = GROUND_TOP; cy < GROUND_TOP + 3; cy++)
-		rows.push('#'.repeat(groundEnd + 1) + '.'.repeat(w - groundEnd - 1));
-	return parseTerrain(rows);
-}
 
 function walledTerrain(w = 60, wallX = 30): Terrain {
 	const rows: string[] = [];
@@ -135,6 +130,84 @@ test('every melee Brain uses its own configured commit range', () => {
 				.commit,
 		).toBeUndefined();
 	}
+});
+
+function nextHop(m: Entity, v: BrainView, ticks = 200) {
+	for (let i = 0; i < ticks; i++) {
+		const r = BRAINS.slime(m, v);
+		m.ai = r.ai;
+		if (r.drive.jump) return r;
+		expect(r.drive.moveX).toBe(0);
+	}
+	return null;
+}
+
+test('the slime never walks: grounded drives either rest in place or hop', () => {
+	const m = grounded('slime', 50);
+	const hop = nextHop(m, view(null));
+	if (hop === null) throw new Error('slime never hopped');
+	expect(hop.drive.moveX).toBe(m.facing);
+});
+
+test('slime patrol hops are lazy: a rest separates consecutive hops', () => {
+	const m = grounded('slime', 50);
+	nextHop(m, view(null));
+	const r = BRAINS.slime(m, view(null));
+	m.ai = r.ai;
+	expect(r.drive.jump).toBe(false);
+	expect(r.drive.moveX).toBe(0);
+});
+
+test('airborne the slime keeps its heading so the hop travels', () => {
+	const m = spawnMonster('slime', 2, 50, y - 5);
+	m.facing = -1;
+	const r = BRAINS.slime(m, view(null));
+	expect(r.drive.moveX).toBe(-1);
+	expect(r.drive.jump).toBe(false);
+});
+
+test('slime patrol turns at a ledge: it never hops off a platform edge', () => {
+	const t = islandTerrain();
+	const m = grounded('slime', 24);
+	m.facing = 1;
+	const hop = nextHop(m, view(null, t));
+	if (hop === null) throw new Error('slime never hopped');
+	expect(hop.drive.moveX).toBe(-1);
+});
+
+test('slime patrol turns at a wall', () => {
+	const t = walledTerrain();
+	const m = grounded('slime', 24.5);
+	m.facing = 1;
+	const hop = nextHop(m, view(null, t));
+	if (hop === null) throw new Error('slime never hopped');
+	expect(hop.drive.moveX).toBe(-1);
+});
+
+test('an aggroed slime traversal-hops toward its target', () => {
+	const m = grounded('slime', 50);
+	m.facing = 1;
+	const targetX = targetLeftBy(m, ARCHETYPES.slime.melee.aggro / 2);
+	const hop = nextHop(m, view(targetX));
+	if (hop === null) throw new Error('slime never hopped');
+	expect(hop.drive.moveX).toBe(-1);
+});
+
+test('the slime Brain never commits an attack, even on top of its target', () => {
+	const m = grounded('slime', 50);
+	m.attackCdT = 0;
+	for (let i = 0; i < 200; i++) {
+		const r = BRAINS.slime(m, view(m.x + 1));
+		m.ai = r.ai;
+		expect(r.drive.commit).toBeUndefined();
+	}
+});
+
+test('a stunned slime Brain goes limp: idle drive', () => {
+	const m = grounded('slime', 50);
+	m.stunT = 0.2;
+	const r = BRAINS.slime(m, view(targetLeftBy(m, 1)));
+	expect(r.drive).toEqual(IDLE_DRIVE);
 });
 
 test('the shooter Brain patrols outside aggro', () => {

@@ -19,6 +19,14 @@ export function makeProjectile(over: Partial<Projectile> = {}): Projectile {
 	};
 }
 
+export function islandTerrain(w = 60, groundEnd = 30): Terrain {
+	const rows: string[] = [];
+	for (let cy = 0; cy < GROUND_TOP; cy++) rows.push('.'.repeat(w));
+	for (let cy = GROUND_TOP; cy < GROUND_TOP + 3; cy++)
+		rows.push('#'.repeat(groundEnd + 1) + '.'.repeat(w - groundEnd - 1));
+	return parseTerrain(rows);
+}
+
 export function flatTerrain(w = WORLD.w, h = WORLD.h): Terrain {
 	const rows: string[] = [];
 	for (let y = 0; y < h; y++)

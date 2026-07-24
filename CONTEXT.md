@@ -62,7 +62,10 @@ combat > airborne > walk > emote > idle` — where, deliberately, walking cancel
 **Emote**. Other roles' multi-frame art can also be Animations with their own
 selection logic — a **Weapon sprite**'s `swing` Animation is indexed by the
 replicated **Attack phase** (wind-up→0, active→1, recovery→2), never by fps
-(ADR 0036).
+(ADR 0036). A Monster's attack Animations (`windup`, `attack`, `recovery`)
+follow the same rule, each sampled by its phase's *progress* — more authored
+frames means a smoother telegraph, never a different duration — while its
+non-phase-bound Animations (`idle`, `airborne`) stay fps-or-static (ADR 0039).
 _Avoid_: Pose (retired term, ADR 0035), Frame (an Animation *contains* Frames;
 reserve Frame for one grid), stance (see **Preview stance**), animation state
 
@@ -372,6 +375,28 @@ it cannot re-commit or cancel). The reworked chaser is the first one. Monsters h
 incoming damage was dodgeable/punishable. See ADR 0017 §9.
 _Avoid_: Melee mob, contact damage, walk-into-you damage
 
+**Slime**:
+A Monster archetype — the introductory monster family — whose locomotion is
+hopping and whose *attack is a pounce*: a bigger, telegraphed leap running the
+standard **Attack phase** (a readable squash `windup` on the ground, an
+**active** window that emits a **Strike**, a wobbly `recovery` after landing —
+each phase read as body language via its own Animation, ADR 0039).
+Its small traversal hops are pure locomotion — no Strike, harmless even on
+overlap — so a Player can stand among idly bouncing Slimes; only the deep-squash
+pounce threatens, preserving "no passive contact damage" (ADR 0017 §9). The
+pounce is **ballistic**: its arc is locked at commit toward where the target
+stood, never adjusted mid-flight, and the leaping body is the live hitbox for
+the whole arc — sidestep the flight path, punish the landing wobble. Several
+Slime enemies may share this archetype; no non-Slime Monster ever uses it.
+_Avoid_: Pounce committer, leaper, jumper, blob
+
+**Chaser**:
+The walking **Melee committer** Monster — approach on foot, telegraphed swing.
+Both a specific Monster (player-facing name "Chaser", subject to rename) and the
+reusable ground-approach AI archetype. Formerly carried the display name
+"Slime", which now belongs to the **Slime** archetype.
+_Avoid_: Slime (that's the hopping archetype), walker
+
 **Brute**:
 The heavy **Melee committer** authored for the deep Field (Field 3) — a slow,
 high-**Poise**, hard-hitting bruiser (ADR 0024 §8). Deals damage **only** through the
@@ -492,8 +517,8 @@ floaty.
 _Avoid_: Pushback, recoil, impulse
 
 **Mass**:
-An entity's resistance to **Knockback** distance — the same **Launcher** rockets a
-light Slime across the screen but barely lifts a heavy Golem.
+An entity's resistance to **Knockback** distance — the same **Launcher** visibly
+pops a lighter Slime but barely lifts a heavy Golem.
 _Avoid_: Weight, heaviness
 
 **Momentum body**:

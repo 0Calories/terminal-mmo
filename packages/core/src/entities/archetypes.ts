@@ -38,12 +38,25 @@ export interface ArchetypeProfile {
 }
 
 const CHASER = {
-	hp: 24,
-	speed: 12,
+	hp: 32,
+	speed: 13,
 	mass: DEFAULT_MASS,
 	melee: {
-		damage: 8,
+		damage: 11,
+		poise: 10,
+		range: 4,
+		aggro: 22,
+		deadzone: 2,
+		commitCd: 0,
+	},
+} as const satisfies ArchetypeProfile;
 
+const SLIME = {
+	hp: 24,
+	speed: 12,
+	mass: 0.85,
+	melee: {
+		damage: 8,
 		poise: 8,
 		range: 4,
 		aggro: 22,
@@ -87,6 +100,7 @@ const SHOOTER = {
 } as const satisfies ArchetypeProfile;
 
 export const ARCHETYPES = {
+	slime: SLIME,
 	chaser: CHASER,
 	shooter: SHOOTER,
 	brute: BRUTE,

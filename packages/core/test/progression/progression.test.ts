@@ -41,6 +41,14 @@ describe('configured progression laws', () => {
 			);
 	});
 
+	test('the slime is the bottom rung of the reward ladder: lowest kill XP in the game', () => {
+		for (const [type, base] of Object.entries(MONSTER_XP)) {
+			if (type === 'slime' || type === 'player') continue;
+			expect(MONSTER_XP.slime).toBeLessThan(base);
+		}
+		expect(MONSTER_XP.slime).toBeGreaterThan(0);
+	});
+
 	test('XP banks below a threshold, rolls over at it, and can cross several levels', () => {
 		const start = { level: 1, xp: 0, gold: 7 };
 		const firstThreshold = xpToNext(start.level);

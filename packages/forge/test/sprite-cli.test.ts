@@ -215,7 +215,7 @@ describe('sprite CLI', () => {
 			mkdirSync(join(root, dir), { recursive: true });
 			writeFileSync(join(root, dir, `${id}.sprite`), weapon);
 		}
-		for (const id of ['chaser', 'shooter', 'brute']) {
+		for (const id of ['slime', 'chaser', 'shooter', 'brute']) {
 			mkdirSync(join(root, 'monsters'), { recursive: true });
 			writeFileSync(join(root, 'monsters', `${id}.sprite`), idle);
 		}

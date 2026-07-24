@@ -470,6 +470,7 @@ const ENTITY_TYPES: readonly EntityType[] = [
 	'chaser',
 	'shooter',
 	'brute',
+	'slime',
 ];
 
 const COMBAT_EVENT_KINDS: readonly CombatEventKind[] = [
