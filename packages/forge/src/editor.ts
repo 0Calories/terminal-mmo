@@ -6,6 +6,7 @@ import {
 	SCENE_COLORS,
 	spawnMonster,
 } from '@mmo/core/entities';
+import { CELL, terrainCell } from '@mmo/core/physics';
 import {
 	type Catalogs,
 	type Diagnostic,
@@ -34,7 +35,14 @@ import {
 } from './doc';
 import { canRedo, canUndo, initHistory, record, redo, undo } from './history';
 import { writeZone } from './io';
-import { buildPalette, erase, type Placeable, place } from './placeable';
+import {
+	buildPalette,
+	erase,
+	type Placeable,
+	place,
+	type TerrainCell,
+	terrainPalette,
+} from './placeable';
 import {
 	type Arrival,
 	defaultArrival,
@@ -277,8 +285,11 @@ export function placeableAt(
 	y: number,
 ): Placeable | undefined {
 	const ch = cellAt(doc, x, y);
-	if (ch === '.' || ch === ' ') return undefined;
-	if (ch === '#') return { kind: 'terrain' };
+	const cell = terrainCell(ch);
+	if (cell !== undefined)
+		return cell === CELL.empty
+			? undefined
+			: { kind: 'terrain', cell: cell as TerrainCell };
 	const spawn = readHeaderMap(doc, 'spawns')[ch];
 	if (spawn !== undefined) return { kind: 'monster', id: String(spawn) };
 	const npc = readHeaderMap(doc, 'npcs')[ch];
@@ -411,7 +422,8 @@ function gridSolid(
 	if (x < 0 || x >= ext.w) return true;
 	if (y < 0) return false;
 	if (y >= ext.h) return true;
-	return cellAt(doc, x, y) === '#';
+	const cell = terrainCell(cellAt(doc, x, y));
+	return cell !== undefined && cell !== CELL.empty;
 }
 
 function boxInBounds(b: FootBox, ext: { w: number; h: number }): boolean {
@@ -420,8 +432,10 @@ function boxInBounds(b: FootBox, ext: { w: number; h: number }): boolean {
 
 function boxClips(doc: EditorDoc, b: FootBox): boolean {
 	for (let y = b.y; y < b.y + b.h; y++)
-		for (let x = b.x; x < b.x + b.w; x++)
-			if (cellAt(doc, x, y) === '#') return true;
+		for (let x = b.x; x < b.x + b.w; x++) {
+			const cell = terrainCell(cellAt(doc, x, y));
+			if (cell !== undefined && cell !== CELL.empty) return true;
+		}
 	return false;
 }
 
@@ -540,7 +554,7 @@ const NAME_MAX = 48;
 const SCROLLOFF = 4;
 const ROAM_MARGIN = 16;
 
-const TERRAIN: Placeable = { kind: 'terrain' };
+const TERRAINS = terrainPalette();
 
 interface PickerEntry {
 	label: string;
@@ -616,6 +630,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	let pickerOpen = false;
 	let pickerIdx = 0;
 	let toolIdx = 0;
+	let terrainIdx = 0;
 	let anchor: Point | null = null;
 	let selection: { a: Point; b: Point } | null = null;
 	let clip: Clip | null = null;
@@ -870,7 +885,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 			const isStamp = TOOLS[toolIdx].id === 'stamp';
 			const status = editorStatusLine({
 				tool: TOOLS[toolIdx].label,
-				placeable: isStamp ? stampLabel || '— pick (p)' : 'Terrain',
+				placeable: isStamp ? stampLabel || '— pick (p)' : activeTerrain().label,
 				cursor,
 				dirty,
 				diags,
@@ -883,7 +898,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				? stampP
 					? `Stamp: ${stampLabel} · space/click place · p re-pick`
 					: 'Stamp: press p (or click the tool) to pick an entity'
-				: 'Brush/Rect/Line terrain · Eraser removes · Stamp (p) entities · n name · t type · i issues';
+				: `Brush/Rect/Line ${activeTerrain().label.toLowerCase()} (tab cycles) · Eraser removes · Stamp (p) entities · n name · t type · i issues`;
 			buf.drawText(hint.slice(0, W), 0, hintRow, C.dimFg, C.chromeBg);
 			const px = Math.min(hint.length + 2, W - 1);
 			if (pendingTownToggle && px < W)
@@ -1226,6 +1241,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 	};
 
 	const activeTool = () => TOOLS[toolIdx];
+	const activeTerrain = () => TERRAINS[terrainIdx];
 
 	const openPicker = () => {
 		if (picker.length === 0) return;
@@ -1243,7 +1259,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 
 	const paintAt = (x: number, y: number) => {
 		commit(
-			place(growToInclude(doc, x, y), x, y, TERRAIN),
+			place(growToInclude(doc, x, y), x, y, activeTerrain().placeable),
 			strokeTag ?? undefined,
 		);
 	};
@@ -1338,9 +1354,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 		const b = { x: cursor.x, y: cursor.y };
 		const t = activeTool();
 		if (t.id === 'rectangle') {
-			commit(paintCells(doc, rectCells(a, b), TERRAIN));
+			commit(paintCells(doc, rectCells(a, b), activeTerrain().placeable));
 		} else if (t.id === 'line') {
-			commit(paintCells(doc, lineCells(a, b), TERRAIN));
+			commit(paintCells(doc, lineCells(a, b), activeTerrain().placeable));
 		} else if (t.id === 'select') {
 			selection = { a, b };
 		}
@@ -1629,6 +1645,9 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				return;
 			case 'f':
 				freePlace = !freePlace;
+				return;
+			case 'tab':
+				terrainIdx = (terrainIdx + 1) % TERRAINS.length;
 				return;
 			case 'i':
 				diagPanel = true;

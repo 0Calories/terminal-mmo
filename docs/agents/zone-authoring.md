@@ -36,7 +36,7 @@ ground, catalog refs resolve. The authored set is also asserted clean in
 
 ## Judging a build *without* a terminal
 
-`forge zone render` gives a schematic ASCII dump (terrain `#` + single-letter glyphs).
+`forge zone render` gives a schematic ASCII dump (terrain `#`/`=` + single-letter glyphs).
 `forge zone preview` / `forge zone play` give the real, colored, animated view — but they take
 over the TTY, so **an agent cannot see their output** (there's no screenshot to
 read, and a subagent has the same Bash/file tools — it's just as blind).

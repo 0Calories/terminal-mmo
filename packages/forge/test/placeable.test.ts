@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { CELL } from '@mmo/core/physics';
 import { type Catalogs, findOrphanGlyphs, parseZone } from '@mmo/core/zones';
 import { cellAt, type EditorDoc, serializeDoc } from '../src/doc';
-import { buildPalette, erase, place } from '../src/placeable';
+import { buildPalette, erase, place, terrainPalette } from '../src/placeable';
 
 const CATALOGS: Catalogs = {
 	monsters: [
@@ -20,7 +21,7 @@ function blank(): EditorDoc {
 
 describe('completed Placeable operations', () => {
 	test('placing a mixed Zone produces a parseable document with semantic entities and no orphan glyphs', () => {
-		let doc = place(blank(), 0, 0, { kind: 'terrain' });
+		let doc = place(blank(), 0, 0, { kind: 'terrain', cell: CELL.wall });
 		doc = place(doc, 1, 1, { kind: 'monster', id: 'chaser' });
 		doc = place(doc, 2, 1, { kind: 'monster', id: 'chaser' });
 		doc = place(doc, 3, 1, { kind: 'monster', id: 'shooter' });
@@ -102,5 +103,31 @@ describe('Palette model', () => {
 			),
 		).toEqual(['merchant']);
 		expect(items.some((item) => item.placeable?.kind === 'terrain')).toBe(true);
+	});
+
+	test('terrain Placeables are derived from the core cell model, one per solid cell type', () => {
+		expect(terrainPalette()).toEqual([
+			{ label: 'Wall', placeable: { kind: 'terrain', cell: CELL.wall } },
+			{
+				label: 'Platform',
+				placeable: { kind: 'terrain', cell: CELL.platform },
+			},
+		]);
+	});
+});
+
+describe('terrain cell operations', () => {
+	test('placing writes the glyph of the chosen cell type', () => {
+		let doc = place(blank(), 0, 0, { kind: 'terrain', cell: CELL.wall });
+		doc = place(doc, 1, 0, { kind: 'terrain', cell: CELL.platform });
+		expect(cellAt(doc, 0, 0)).toBe('#');
+		expect(cellAt(doc, 1, 0)).toBe('=');
+	});
+
+	test('erasing a platform clears the cell without touching the header', () => {
+		const doc = place(blank(), 1, 0, { kind: 'terrain', cell: CELL.platform });
+		const erased = erase(doc, 1, 0);
+		expect(cellAt(erased, 1, 0)).toBe('.');
+		expect(erased.header).toEqual(doc.header);
 	});
 });
