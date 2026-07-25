@@ -66,13 +66,22 @@ fact; the client owns the pixels and the audio.
   clean shutdown, never blocking exit.
 
 - **World sounds are spatialized; self sounds are flat.** At `play()` time, an
-  Effect/death-sourced (world) SoundEffect computes `pan` from the source's
-  horizontal offset from camera center and `volume` from a distance falloff with a
-  hard cutoff radius (past it, skip entirely — mirroring "off-camera Effects
-  skipped" in ADR 0013); **y is ignored** (vertical barely reads in stereo for a
-  side-scroller). Distance attenuation doubles as the auto-mixer for a busy Zone's
-  many Effects. Self/UI SoundEffects play **centered at full volume** — they are
-  "you," not "the world," so they must not drift in the stereo field.
+  Effect/death-sourced (world) SoundEffect computes `pan` and `volume` from the
+  source's horizontal offset from **the player's predicted position** (a linear
+  falloff with a hard cutoff radius; past it, skip entirely); **y is ignored**
+  (vertical barely reads in stereo for a side-scroller). Distance attenuation
+  doubles as the auto-mixer for a busy Zone's many Effects. Self/UI SoundEffects
+  play **centered at full volume** — they are "you," not "the world," so they
+  must not drift in the stereo field.
+
+  *Amended 2026-07-24:* the listener was originally the camera center with pan
+  normalized to half the screen width. Because the camera clamps at zone bounds
+  while the player doesn't, combat at a zone edge sat up to half a screen from
+  the "listener" and faded out or cut off entirely — the player is the listener,
+  the camera is not. One constant (the audible radius, now 100 cells) governs
+  both falloff and stereo spread, so behavior no longer depends on terminal
+  width, and audibility no longer coincides with the viewport: off-screen combat
+  within the radius is faintly heard by design.
 
 - **Buses, default-on, with live control.** Voices are tagged into named groups —
   `combat`, `movement`, `ui`, plus a reserved-but-empty `ambient` so the structure

@@ -153,12 +153,8 @@ export class PlayfieldRenderable extends Renderable {
 		this.dodges.update([a, ...(this.game.others ?? [])], dt);
 
 		if (this.sound && presentation.effects.length) {
-			const centerX = cam.x + buffer.width / 2;
-			const cues = effectSoundCues(
-				presentation.effects,
-				centerX,
-				buffer.width / 2,
-			);
+			const listenerX = a.x + BOX.w / 2;
+			const cues = effectSoundCues(presentation.effects, listenerX);
 			for (const cue of cues)
 				this.sound.play(cue.kind, { volume: cue.volume, pan: cue.pan });
 		}

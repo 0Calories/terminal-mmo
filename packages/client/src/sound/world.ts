@@ -7,7 +7,7 @@ export const EFFECT_SOUND_MAP: Record<VisualEffectKind, SoundKind> = {
 	impact: 'hit',
 };
 
-export const AUDIBLE_RADIUS = 60;
+export const AUDIBLE_RADIUS = 100;
 
 export interface SpatialCue {
 	pan: number;
@@ -20,22 +20,20 @@ export interface SoundCue extends SpatialCue {
 
 export function spatialize(
 	x: number,
-	centerX: number,
-	halfWidth: number,
+	listenerX: number,
 	radius = AUDIBLE_RADIUS,
 ): SpatialCue | null {
-	const dx = x - centerX;
+	const dx = x - listenerX;
 	const dist = Math.abs(dx);
 	if (dist > radius) return null;
-	const pan = halfWidth > 0 ? Math.max(-1, Math.min(1, dx / halfWidth)) : 0;
+	const pan = Math.max(-1, Math.min(1, dx / radius));
 	const volume = 1 - dist / radius;
 	return { pan, volume };
 }
 
 export function effectSoundCues(
 	effects: readonly VisualEffect[],
-	centerX: number,
-	halfWidth: number,
+	listenerX: number,
 	radius = AUDIBLE_RADIUS,
 ): SoundCue[] {
 	const deathSites = new Set<string>();
@@ -45,7 +43,7 @@ export function effectSoundCues(
 	const cues: SoundCue[] = [];
 	for (const fx of effects) {
 		if (fx.kind === 'blood' && deathSites.has(`${fx.x},${fx.y}`)) continue;
-		const cue = spatialize(fx.x, centerX, halfWidth, radius);
+		const cue = spatialize(fx.x, listenerX, radius);
 		if (cue) cues.push({ kind: EFFECT_SOUND_MAP[fx.kind], ...cue });
 	}
 	return cues;
