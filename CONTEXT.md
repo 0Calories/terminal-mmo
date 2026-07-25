@@ -335,9 +335,10 @@ _Avoid_: screenshake, rumble, camera shake (it's a single decaying pop)
 The client-side *audible* realization of a moment — the audio twin of a Particle.
 Where a Particle answers *what it looks like*, a SoundEffect answers *what it
 sounds like*. Two sources feed it: an authoritative **CombatEvent** (so a
-nearby Avatar's hit or death is heard, spatialized by position — realized by the same
+nearby Avatar's hit or death is heard from the Player's position — the Player is
+the listener, regardless of where the camera sits — realized by the same
 client `present` routing that produces VisualEffects) and a purely local interaction (your
-own jump, a menu blip — never on the wire). Always
+own jump, a menu blip — never on the wire, always heard flat and centred). Always
 best-effort and non-authoritative: if there is no audio device, every SoundEffect
 is a silent no-op and the World behaves identically. The shared sim never
 references one — like a Sprite or Particle, it is the client's business alone.
