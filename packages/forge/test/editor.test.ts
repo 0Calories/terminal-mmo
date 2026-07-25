@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { CELL } from '@mmo/core/physics';
 import {
 	type Catalogs,
 	findOrphanGlyphs,
@@ -241,7 +242,7 @@ describe('paintCells', () => {
 		const doc = paintCells(
 			field(['.....', '.....', '#####']),
 			rectCells({ x: 0, y: 0 }, { x: 1, y: 4 }),
-			{ kind: 'terrain' },
+			{ kind: 'terrain', cell: CELL.wall },
 		);
 		expect(doc.rows.length).toBe(5);
 		for (const c of rectCells({ x: 0, y: 0 }, { x: 1, y: 4 }))
@@ -290,7 +291,17 @@ describe('placeableAt (eyedropper)', () => {
 	};
 
 	test('adopts terrain under a `#`', () => {
-		expect(placeableAt(doc, 1, 0)).toEqual({ kind: 'terrain' });
+		expect(placeableAt(doc, 1, 0)).toEqual({
+			kind: 'terrain',
+			cell: CELL.wall,
+		});
+	});
+
+	test('adopts terrain under a `=`', () => {
+		expect(placeableAt({ ...doc, rows: ['=...', '####'] }, 0, 0)).toEqual({
+			kind: 'terrain',
+			cell: CELL.platform,
+		});
 	});
 
 	test('adopts the catalog Placeable behind a declared glyph', () => {
@@ -370,7 +381,7 @@ describe('Placeable footprint laws', () => {
 	});
 
 	test('terrain is a single cell (no real footprint)', () => {
-		expect(footprintBox({ kind: 'terrain' }, 7, 4)).toEqual({
+		expect(footprintBox({ kind: 'terrain', cell: CELL.wall }, 7, 4)).toEqual({
 			x: 7,
 			y: 4,
 			w: 1,
@@ -542,7 +553,21 @@ describe('Placeable ground snap', () => {
 	});
 
 	test('terrain is never snapped', () => {
-		expect(groundSnap(tall, { kind: 'terrain' }, 4, 1)).toEqual({ x: 4, y: 1 });
+		expect(
+			groundSnap(tall, { kind: 'terrain', cell: CELL.wall }, 4, 1),
+		).toEqual({ x: 4, y: 1 });
+	});
+
+	test('a platform counts as ground, matching zone validation', () => {
+		const rows = Array(12).fill('..........');
+		rows[8] = '==========';
+		const platformed: EditorDoc = {
+			header: { id: 'z', type: 'field', spawns: {}, npcs: {} },
+			rows,
+		};
+		expect(
+			groundSnap(platformed, { kind: 'monster', id: 'chaser' }, 0, 1),
+		).toEqual({ x: 0, y: 3 });
 	});
 
 	test('a cursor far above any surface stays put rather than falling to it', () => {
@@ -599,7 +624,7 @@ describe('cursor-to-anchor placement', () => {
 	});
 
 	test('terrain (1×1) maps the cursor straight to the anchor either way', () => {
-		const terrain = { kind: 'terrain' } as const;
+		const terrain = { kind: 'terrain', cell: CELL.wall } as const;
 		expect(cursorToAnchor(field, terrain, 4, 6, true)).toEqual({ x: 4, y: 6 });
 		expect(cursorToAnchor(field, terrain, 4, 6, false)).toEqual({ x: 4, y: 6 });
 	});

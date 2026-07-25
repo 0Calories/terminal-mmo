@@ -1,13 +1,19 @@
+import { CELL, cellGlyph } from '@mmo/core/physics';
 import type { Catalogs } from '@mmo/core/zones';
 import { cellAt, type EditorDoc, setCell } from './doc';
 
+export type TerrainCell = Exclude<
+	(typeof CELL)[keyof typeof CELL],
+	typeof CELL.empty
+>;
+
 export type Placeable =
-	| { kind: 'terrain' }
+	| { kind: 'terrain'; cell: TerrainCell }
 	| { kind: 'monster'; id: string }
 	| { kind: 'npc'; id: string }
 	| { kind: 'portal'; target: string; arrival: [number, number] };
 
-const RESERVED = new Set(['#', '.', ' ']);
+const RESERVED = new Set([' ', ...Object.values(CELL).map(cellGlyph)]);
 
 const ALLOC_ALPHABET =
 	'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -82,7 +88,7 @@ export function place(
 	p: Placeable,
 ): EditorDoc {
 	if (x < 0 || y < 0 || y >= doc.rows.length) return doc;
-	if (p.kind === 'terrain') return setCell(doc, x, y, '#');
+	if (p.kind === 'terrain') return setCell(doc, x, y, cellGlyph(p.cell));
 
 	const slot = slotOf(p);
 	if (!slot) return doc;
@@ -132,11 +138,20 @@ export interface PaletteGroup {
 	items: PaletteItem[];
 }
 
+export function terrainPalette(): { label: string; placeable: Placeable }[] {
+	return Object.entries(CELL)
+		.filter(([, cell]) => cell !== CELL.empty)
+		.map(([name, cell]) => ({
+			label: name[0].toUpperCase() + name.slice(1),
+			placeable: { kind: 'terrain', cell: cell as TerrainCell },
+		}));
+}
+
 export function buildPalette(catalogs: Catalogs): PaletteGroup[] {
 	return [
 		{
 			label: 'Terrain',
-			items: [{ label: 'Solid', placeable: { kind: 'terrain' } }],
+			items: terrainPalette(),
 		},
 		{
 			label: 'Monsters',

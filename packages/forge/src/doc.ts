@@ -48,10 +48,6 @@ export function setCell(
 	return { header: doc.header, rows };
 }
 
-export function toggleSolid(doc: EditorDoc, x: number, y: number): EditorDoc {
-	return setCell(doc, x, y, cellAt(doc, x, y) === '#' ? '.' : '#');
-}
-
 export function clearCell(doc: EditorDoc, x: number, y: number): EditorDoc {
 	return setCell(doc, x, y, '.');
 }

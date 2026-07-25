@@ -843,7 +843,8 @@ renderer the game uses. Operates on the lossless document, never a parsed Zone.
 _Avoid_: Level editor, map editor, painter
 
 **Placeable**:
-A thing the Zone editor can place into a Zone: a Terrain type (solid), a catalog
+A thing the Zone editor can place into a Zone: a Terrain tile kind (Wall or
+Platform), a catalog
 entity (a Monster or NPC, by catalog id), or a Structure (Portal; later Spawn /
 Respawn markers). The author works in Placeables, not glyphs — the editor owns
 the glyph↔Placeable mapping in the header, so undeclared/orphan glyphs are

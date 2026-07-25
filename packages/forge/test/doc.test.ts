@@ -9,7 +9,6 @@ import {
 	serializeDoc,
 	setZoneName,
 	setZoneType,
-	toggleSolid,
 	zoneName,
 	zoneType,
 } from '../src/doc';
@@ -29,7 +28,6 @@ describe('Zone document transformations', () => {
 	test('completed metadata and grid edits survive serialization and parsing', () => {
 		let authored = setZoneName(sample(), '  Sunny Meadow  ');
 		authored = setZoneType(authored, 'town');
-		authored = toggleSolid(authored, 1, 0);
 		authored = placeGlyph(authored, 3, 0, 'c');
 		authored = clearCell(authored, 1, 0);
 
