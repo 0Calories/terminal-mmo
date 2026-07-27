@@ -1,5 +1,5 @@
-import { meleeActive, meleeHitbox, SWING_TOTAL } from '../../../combat/combat';
 import { COMBAT } from '../../../combat/constants';
+import { meleeActive, meleeHitbox, SWING_TOTAL } from '../../../combat/melee';
 import type { CombatBuild } from './sheet';
 import type { CombatEngine } from './skeleton';
 import { toward } from './skeleton';

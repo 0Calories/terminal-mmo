@@ -19,6 +19,14 @@ import { capabilityUnlocked } from '../progression/progression';
 import { spriteMetaFor } from '../sprites';
 import { COMBAT } from './constants';
 import {
+	attackPhaseAt,
+	attackProgressAt,
+	entityBox,
+	meleeActive,
+	meleeHitbox,
+	SWING_TOTAL,
+} from './melee';
+import {
 	type PlayerClass,
 	type Skill,
 	skillForSlot,
@@ -66,38 +74,6 @@ export function entityTint(e: Entity): Tint {
 	return { r: quad[0], g: quad[1], b: quad[2] };
 }
 
-export function entityBox(e: Pick<Combatant, 'x' | 'y'>): Box {
-	return { x: e.x, y: e.y, w: BOX.w, h: BOX.h };
-}
-
-export function attackTotal(tm: AttackPhaseTimings): number {
-	return tm.windup + tm.active + tm.recovery;
-}
-
-export function attackPhaseAt(
-	attackT: number,
-	tm: AttackPhaseTimings,
-): AttackPhase | null {
-	if (attackT <= 0) return null;
-	const elapsed = attackTotal(tm) - attackT;
-	if (elapsed < tm.windup) return 'windup';
-	if (elapsed < tm.windup + tm.active) return 'active';
-	return 'recovery';
-}
-
-export function attackProgressAt(
-	attackT: number,
-	tm: AttackPhaseTimings,
-): number {
-	const phase = attackPhaseAt(attackT, tm);
-	if (!phase) return 0;
-	const { windup, active, recovery } = tm;
-	const elapsed = attackTotal(tm) - attackT;
-	if (phase === 'windup') return windup > 0 ? elapsed / windup : 1;
-	if (phase === 'active') return active > 0 ? (elapsed - windup) / active : 1;
-	return recovery > 0 ? (elapsed - windup - active) / recovery : 1;
-}
-
 /** The phase timings an entity's attack timer runs on: its pounce profile if
  *  it leaps, else the shared swing. */
 export function attackTimingsOf(
@@ -106,19 +82,17 @@ export function attackTimingsOf(
 	return combatOf(type)?.timings ?? COMBAT.swing;
 }
 
-export const SWING_TOTAL = attackTotal(COMBAT.swing);
-
-export function swingPhase(attackT: number): AttackPhase | null {
-	return attackPhaseAt(attackT, COMBAT.swing);
-}
-
-export function swingProgress(attackT: number): number {
-	return attackProgressAt(attackT, COMBAT.swing);
-}
-
-export function meleeActive(attackT: number): boolean {
-	return swingPhase(attackT) === 'active';
-}
+export {
+	attackPhaseAt,
+	attackProgressAt,
+	attackTotal,
+	entityBox,
+	meleeActive,
+	meleeHitbox,
+	SWING_TOTAL,
+	swingPhase,
+	swingProgress,
+} from './melee';
 
 export const DODGE_TOTAL = COMBAT.dodge.active + COMBAT.dodge.recovery;
 
@@ -401,16 +375,6 @@ export function swatEvent(pr: Projectile, dir: Facing): CombatEvent {
 		y: pr.y,
 		dir,
 		intensity: pr.damage,
-	};
-}
-
-export function meleeHitbox(p: Pick<Combatant, 'x' | 'y' | 'facing'>): Box {
-	const w = COMBAT.meleeReach;
-	return {
-		x: p.facing === 1 ? p.x + BOX.w : p.x - w,
-		y: p.y,
-		w,
-		h: BOX.h,
 	};
 }
 
