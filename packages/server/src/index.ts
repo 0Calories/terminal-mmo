@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import { loadZones, spriteIds } from '@mmo/assets/meta';
+import { computeContractHash, loadZones, spriteIds } from '@mmo/assets/meta';
 import { NONCE_LEN } from '@mmo/core/persistence';
 import { encodeServerMessage } from '@mmo/core/protocol';
 import type { ServerWebSocket } from 'bun';
@@ -122,6 +122,7 @@ if (import.meta.main) {
 		zones: loadZones(),
 		store: openPlayerStore(process.env.MMO_DB_PATH ?? 'mmo-state.sqlite'),
 		releaseVersion: SERVER_VERSION,
+		contractHash: computeContractHash(),
 		nonce: () => new Uint8Array(randomBytes(NONCE_LEN)),
 		validHatIds: spriteIds('hats'),
 		validFormIds: spriteIds('forms'),
