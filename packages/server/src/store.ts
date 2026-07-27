@@ -1,5 +1,6 @@
 import { Database } from 'bun:sqlite';
 import type { PlayerSave, PlayerStore } from '@mmo/core/persistence';
+import { snapshotPlayerDb } from './snapshot';
 
 interface Row {
 	key: string;
@@ -7,6 +8,7 @@ interface Row {
 }
 
 export function openPlayerStore(path = ':memory:'): PlayerStore {
+	snapshotPlayerDb(path);
 	const db = new Database(path);
 	db.run('PRAGMA journal_mode = WAL;');
 	db.run(
