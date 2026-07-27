@@ -11,6 +11,7 @@
 		"./physics": "./src/physics/index.ts",
 		"./progression": "./src/progression/index.ts",
 		"./protocol": "./src/protocol/index.ts",
+		"./release": "./src/release/index.ts",
 		"./sprites": "./src/sprites/index.ts",
 		"./world": "./src/world/index.ts",
 		"./zones": "./src/zones/index.ts"
