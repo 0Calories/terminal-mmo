@@ -1,7 +1,7 @@
 import type { CombatEvent } from '../combat/combat';
 import { deathEvent } from '../combat/combat';
 import { skillsUnlockedBetween } from '../combat/skills';
-import { BOX } from '../entities/body';
+import { boxOf } from '../entities/boxes';
 import type {
 	Drop,
 	Entity,
@@ -86,12 +86,13 @@ function grantXp(
 }
 
 function spawnDrop(id: number, owner: number, m: Entity, item: Item): Drop {
+	const box = boxOf(m.type);
 	return {
 		id,
 		owner,
 		item,
-		x: m.x + BOX.w / 2 - LOOT.pickup.w / 2,
-		y: m.y + BOX.h - LOOT.pickup.h,
+		x: m.x + box.w / 2 - LOOT.pickup.w / 2,
+		y: m.y + box.h - LOOT.pickup.h,
 		w: LOOT.pickup.w,
 		h: LOOT.pickup.h,
 		ttl: LOOT.ttlSec,

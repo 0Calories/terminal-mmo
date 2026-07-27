@@ -1,4 +1,4 @@
-import { BOX } from '../entities/body';
+import { boxOf } from '../entities/boxes';
 import type { Box, Entity, Facing, Projectile } from '../entities/types';
 import { PROJECTILE } from './constants';
 
@@ -22,10 +22,11 @@ export function spawnProjectile(
 	dir: Facing,
 	spec: ProjectileSpec,
 ): Projectile {
+	const box = boxOf(owner.type);
 	return {
 		id,
-		x: dir === 1 ? owner.x + BOX.w : owner.x - PROJECTILE.w,
-		y: owner.y + Math.floor((BOX.h - PROJECTILE.h) / 2),
+		x: dir === 1 ? owner.x + box.w : owner.x - PROJECTILE.w,
+		y: owner.y + Math.floor((box.h - PROJECTILE.h) / 2),
 		vx: dir * spec.speed,
 		vy: 0,
 		life: spec.life,

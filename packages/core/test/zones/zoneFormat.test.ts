@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { MONSTERS } from '../../src/entities';
+import {
+	clearSpriteBoxes,
+	MONSTERS,
+	registerSpriteBoxes,
+} from '../../src/entities';
 import {
 	type MonsterCatalogEntry,
 	NPC_BOX,
@@ -96,6 +100,19 @@ describe('Zone parsing laws', () => {
 		expect(zone.npcs).toEqual([
 			{ id: 1, kind: 'vendor', name: 'Vendor', x: 13, y: 1, ...NPC_BOX },
 		]);
+	});
+
+	test('a registered derived box replaces the NPC slot with feet kept on its floor', () => {
+		registerSpriteBoxes({ npcs: new Map([['merchant', { w: 6, h: 4 }]]) });
+		try {
+			const derived = parseZone(FIELD, catalogs, 'path-id');
+			const n = (derived.npcs ?? [])[0];
+			expect(n).toMatchObject({ w: 6, h: 4 });
+			expect(n.y + n.h).toBe(1 + NPC_BOX.h);
+			expect(n.x).toBe(13 + Math.floor((NPC_BOX.w - 6) / 2));
+		} finally {
+			clearSpriteBoxes();
+		}
 	});
 
 	test('runtime-only collections initialize empty and parsing is deterministic', () => {

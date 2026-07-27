@@ -1,6 +1,6 @@
 import type { Drive } from '../../../physics/physics';
 import { isSolid, isWall } from '../../../physics/terrain';
-import { BOX } from '../../body';
+import { boxOf } from '../../boxes';
 import type { Entity, Facing, Terrain } from '../../types';
 import type { MovementBuild } from './sheet';
 import type { BrainView, MovementEngine } from './skeleton';
@@ -14,9 +14,10 @@ export interface WalkShape {
 export const WALK_DEFAULTS: WalkShape = { deadzone: 2 };
 
 export function wallAhead(m: Entity, t: Terrain, dir: Facing): boolean {
+	const box = boxOf(m.type);
 	const top = Math.floor(m.y);
-	const bot = Math.ceil(m.y + BOX.h) - 1;
-	const wallCol = dir === 1 ? Math.ceil(m.x + BOX.w) : Math.floor(m.x) - 1;
+	const bot = Math.ceil(m.y + box.h) - 1;
+	const wallCol = dir === 1 ? Math.ceil(m.x + box.w) : Math.floor(m.x) - 1;
 	for (let cy = top; cy <= bot; cy++) if (isWall(t, wallCol, cy)) return true;
 	return false;
 }
@@ -25,9 +26,10 @@ export function footProbe(
 	m: Entity,
 	dir: Facing,
 ): { lead: number; footY: number } {
+	const box = boxOf(m.type);
 	return {
-		lead: dir === 1 ? Math.ceil(m.x + BOX.w) - 1 : Math.floor(m.x),
-		footY: Math.ceil(m.y + BOX.h),
+		lead: dir === 1 ? Math.ceil(m.x + box.w) - 1 : Math.floor(m.x),
+		footY: Math.ceil(m.y + box.h),
 	};
 }
 

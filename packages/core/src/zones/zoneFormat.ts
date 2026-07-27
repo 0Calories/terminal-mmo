@@ -1,3 +1,4 @@
+import { npcBoxOf } from '../entities/boxes';
 import { spawnMonster } from '../entities/factory';
 import type { Npc } from '../entities/npc';
 import type {
@@ -130,14 +131,17 @@ export function parseZone(text: string, catalogs: Catalogs, id: string): Zone {
 				spawns.push({ type, x, y });
 			} else if (g.kind === 'npc') {
 				const entry = resolveNpc(catalogs.npcs, g.ref);
+				// The glyph marks an NPC_BOX-sized slot; the derived box is centred
+				// in it with feet kept on the slot's floor, like a monster spawn.
+				const nb = npcBoxOf(entry.kind);
 				npcs.push({
 					id: nextNpcId++,
 					kind: entry.kind,
 					name: entry.name,
-					x,
-					y,
-					w: NPC_BOX.w,
-					h: NPC_BOX.h,
+					x: x + Math.floor((NPC_BOX.w - nb.w) / 2),
+					y: y + NPC_BOX.h - nb.h,
+					w: nb.w,
+					h: nb.h,
 				});
 			} else {
 				portals.push({

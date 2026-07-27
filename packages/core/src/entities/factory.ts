@@ -1,5 +1,7 @@
 import { DEFAULT_MASS, PHYS } from '../physics/constants';
 import { maxHpForLevel } from '../progression/progression';
+import { BOX } from './body';
+import { boxOf } from './boxes';
 import { MONSTERS } from './monsters';
 import type { Entity, MonsterType } from './types';
 
@@ -33,6 +35,11 @@ export function spawnAvatar(
 	};
 }
 
+/**
+ * (x, y) is the authored {@link BOX}-sized spawn slot; the monster's derived
+ * box is centred in it with feet kept on the slot's floor, so authored zones
+ * stay valid whatever box a monster's sprite derives.
+ */
 export function spawnMonster(
 	type: MonsterType,
 	id: number,
@@ -41,11 +48,12 @@ export function spawnMonster(
 	spawnIndex?: number,
 ): Entity {
 	const { stats } = MONSTERS[type];
+	const box = boxOf(type);
 	return {
 		id,
 		type,
-		x,
-		y,
+		x: x + Math.floor((BOX.w - box.w) / 2),
+		y: y + BOX.h - box.h,
 		vx: 0,
 		vy: 0,
 		speed: stats.speed,

@@ -1,5 +1,13 @@
 export { BOX } from './body';
 export {
+	type BoxDims,
+	boxOf,
+	clearSpriteBoxes,
+	npcBoxOf,
+	registerSpriteBoxes,
+	type SpriteBoxCatalog,
+} from './boxes';
+export {
 	clampCosmetics,
 	DEFAULT_COSMETICS,
 	DEFAULT_FORM_ID,
