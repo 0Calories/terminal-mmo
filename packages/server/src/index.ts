@@ -94,7 +94,13 @@ export function startBunHost(runtime: ServerRuntime) {
 	setInterval(() => runtime.advanceTick(), MS_PER_TICK);
 	setInterval(() => runtime.flush(), FLUSH_MS);
 	installShutdownHooks({
+		announce: () =>
+			runtime.announce('The server is restarting for an update — hang tight.'),
 		flushAll: () => runtime.flush(),
+		closeSessions: () =>
+			runtime.closeSessions(
+				'The server is restarting for an update — reconnect in a few moments.',
+			),
 		close: () => runtime.close(),
 	});
 

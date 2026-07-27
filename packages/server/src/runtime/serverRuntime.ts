@@ -51,6 +51,8 @@ export interface ServerRuntime {
 	advanceTick(): void;
 	disconnect(sessionId: number): void;
 	flush(): void;
+	announce(text: string): void;
+	closeSessions(reason: string): void;
 	close(): void;
 	health(): { status: 'ok'; version: string };
 }
@@ -443,6 +445,17 @@ export function createServerRuntime(
 		},
 		flush() {
 			for (const sessionId of spawnedSessions) flushSession(sessionId);
+		},
+		announce(text) {
+			const frame = encodeServerMessage({ t: 'notice', text });
+			for (const session of sessions.values()) {
+				try {
+					session.send(frame);
+				} catch {}
+			}
+		},
+		closeSessions(reason) {
+			for (const sessionId of [...sessions.keys()]) reject(sessionId, reason);
 		},
 		close() {
 			options.store.close();

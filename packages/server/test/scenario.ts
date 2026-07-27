@@ -39,6 +39,7 @@ export interface AuthenticateOptions {
 
 export interface ScenarioClient {
 	readonly sessionId: number;
+	readonly closed: boolean;
 	authenticate(
 		options: AuthenticateOptions,
 	): Extract<ServerMessage, { t: 'welcome' }>;
@@ -51,6 +52,8 @@ export interface ScenarioClient {
 export interface StackScenario {
 	connect(): ScenarioClient;
 	advanceTick(count?: number): void;
+	announce(text: string): void;
+	closeSessions(reason: string): void;
 	restart(): void;
 }
 
@@ -94,30 +97,32 @@ export function createStackScenario(
 		all: () => [...saves].map(([key, save]) => [key, clone(save)]),
 		close: () => {},
 	};
-	const createServer = () =>
-		createInMemoryServer(
-			createServerRuntime({
-				zones: options.zones ?? loadZones(),
-				store,
-				releaseVersion: 'dev',
-				nonce: () => new Uint8Array(32).fill(7),
-				validHatIds: spriteIds('hats'),
-				validFormIds: spriteIds('forms'),
-				startZone: options.startZone,
-				townZone: options.townZone,
-				tickRate: options.tickRate,
-				log: () => {},
-				logError: () => {},
-			}),
-		);
-	let server = createServer();
+	const createStack = () => {
+		const runtime = createServerRuntime({
+			zones: options.zones ?? loadZones(),
+			store,
+			releaseVersion: 'dev',
+			nonce: () => new Uint8Array(32).fill(7),
+			validHatIds: spriteIds('hats'),
+			validFormIds: spriteIds('forms'),
+			startZone: options.startZone,
+			townZone: options.townZone,
+			tickRate: options.tickRate,
+			log: () => {},
+			logError: () => {},
+		});
+		return { runtime, server: createInMemoryServer(runtime) };
+	};
+	let stack = createStack();
 	return {
-		connect: () => scenarioClient(server.connect()),
+		connect: () => scenarioClient(stack.server.connect()),
 		advanceTick(count = 1) {
-			for (let tick = 0; tick < count; tick++) server.advanceTick();
+			for (let tick = 0; tick < count; tick++) stack.server.advanceTick();
 		},
+		announce: (text) => stack.runtime.announce(text),
+		closeSessions: (reason) => stack.runtime.closeSessions(reason),
 		restart() {
-			server = createServer();
+			stack = createStack();
 		},
 	};
 }
@@ -256,6 +261,9 @@ function scenarioClient(session: InMemorySession): ScenarioClient {
 		session.send(encodeClientMessage(message));
 	return {
 		sessionId: session.sessionId,
+		get closed() {
+			return session.closed;
+		},
 		authenticate(options) {
 			send({
 				t: 'hello',
