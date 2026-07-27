@@ -31,9 +31,9 @@ keep it actionable.
 
 ## Deployment
 
-The server runs as a single always-on container on **Railway** (ADR 0009). It's
-stateless — the alpha World is in-memory, so a redeploy just wipes everyone's
-progress (expected, for now).
+The server runs as a single always-on container on **Railway** (ADR 0009). The
+live World is in-memory, but player saves are durable: a Release restarts the
+process and drops sessions, but never destroys player state (ADR 0042).
 
 - **Build: a `oven/bun` Dockerfile** (not Nixpacks — see ADR 0009 for why). Build
   and run it locally exactly as Railway does:
@@ -44,8 +44,43 @@ progress (expected, for now).
   ```
 - **Redeploy** happens on merge to `main` (Railway tracks the branch). The
   `/health` endpoint must return `200` or Railway fails the deploy.
-- **Config**: `PORT` is injected by Railway. Optional overrides: `MMO_MAX_CONN`
-  (default 200), `MMO_MAX_PER_IP` (default 10).
+- **Config**: `PORT` is injected by Railway. `MMO_DB_PATH` must point into the
+  mounted volume (below). Optional overrides: `MMO_MAX_CONN` (default 200),
+  `MMO_MAX_PER_IP` (default 10).
+
+### Durable player saves (operator runbook)
+
+**Volume setup** (one-time, per environment):
+
+1. Mount a Railway volume on the service, e.g. at `/data`.
+2. Set the service variable `MMO_DB_PATH=/data/mmo-state.sqlite`.
+3. Delete the `MMO_VERSION` service variable — retired by the ADR 0042 release
+   pipeline redesign; the build stamp replaces it.
+
+**Boot snapshots.** Before opening the database, the server copies it to a
+timestamped sibling on the same volume — `mmo-state.sqlite.<ISO timestamp>.bak`,
+lexicographic order is chronological order — and prunes to the last 5. A `-wal`
+sidecar, if present, is copied alongside as `<snapshot>-wal` (`-shm` is
+transient and never copied; a clean shutdown checkpoints the WAL anyway, so the
+sidecar only matters after a crash). A first boot with no DB file snapshots
+nothing. A failed snapshot is logged loudly (`FAILED to snapshot player DB …`)
+and the server **boots anyway** — a full volume must not take the game down,
+but check the logs for that line after every deploy that touched storage.
+
+**Save-schema policy.** Saves are JSON blobs that now outlive code: schema
+changes must be additive (new fields only), readers must tolerate absent
+fields, and a field's meaning is never repurposed. There are no migrations.
+
+**Bad-data recovery** (a Release corrupted saves): roll code forward or back
+first — rollback never touches the volume. If the *data* itself is bad:
+
+1. Stop the service (scale to zero or pause deploys).
+2. Pick the newest good snapshot on the volume and copy it over the DB path:
+   `cp mmo-state.sqlite.<stamp>.bak mmo-state.sqlite` (plus its `-wal` sidecar
+   if one exists; delete any stale `mmo-state.sqlite-wal` / `-shm` files).
+3. Restart the service.
+
+This accepts losing every save written since the boot that took the snapshot.
 
 ## Local development
 
