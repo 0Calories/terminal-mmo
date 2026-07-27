@@ -212,7 +212,8 @@ test('a committer in its active phase can Stagger a poise-broken Avatar (full hi
 	}
 	expect(staggered).toBe(true);
 	expect(state.avatars[0].avatar.ivx ?? 0).not.toBe(0);
-	expect(state.events?.some((e) => e.kind === 'break')).toBe(true);
+	const brk = state.events?.find((e) => e.kind === 'break');
+	expect(brk?.kind === 'break' && brk.source).toBe(m.id);
 });
 
 test('the brute is a poise-tank: it spawns with a much larger Poise pool than the default', () => {
@@ -967,6 +968,31 @@ test('snapshotFor suppresses hit CombatEvents back to their originator and strip
 	expect(forB.events[0]).not.toHaveProperty('source');
 });
 
+test('snapshotFor never suppresses a break — the originator receives it with its source intact', () => {
+	const a = serverAvatar(7, 20, 'morpheus');
+	const state: ZoneState = {
+		zone: zoneWith([]),
+		avatars: [a],
+		tick: 3,
+		events: [
+			{
+				kind: 'break',
+				targetId: 1,
+				x: 1,
+				y: 1,
+				intensity: 8,
+				dir: 1,
+				source: 7,
+			},
+		],
+	};
+
+	const forA = snapshotFor(state, 7);
+	expect(forA.events).toEqual([
+		{ kind: 'break', targetId: 1, x: 1, y: 1, intensity: 8, dir: 1, source: 7 },
+	]);
+});
+
 function attackRight(av: ServerAvatar): AvatarIntent {
 	av.avatar.facing = 1;
 	av.avatar.hurtT = 5;
@@ -1023,6 +1049,7 @@ test('a Poise break Staggers: Hitstun + a Knockback impulse + a break CombatEven
 	expect(mon.ivx ?? 0).toBeGreaterThan(0);
 	const brk = next.events?.find((e) => e.kind === 'break');
 	expect(brk?.dir).toBe(1);
+	expect(brk?.kind === 'break' && brk.source).toBe(7);
 	expect(next.events?.some((e) => e.kind === 'hit')).toBe(false);
 });
 
