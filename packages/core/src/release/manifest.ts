@@ -10,6 +10,7 @@ const EXACT: Readonly<Record<string, PathKind>> = {
 	'CONTRIBUTING.md': 'neither',
 	'README.md': 'neither',
 	'biome.json': 'neither',
+	'build-info.json': 'neither',
 	'bun.lock': 'contract',
 	'bunfig.toml': 'neither',
 	Dockerfile: 'server-only',
@@ -33,6 +34,24 @@ const PREFIX: readonly (readonly [string, PathKind])[] = [
 	['sprites/', 'client-only'],
 	['zones/', 'contract'],
 ];
+
+// The directories and files a contract-hash computation must read: every
+// contract-classified root plus sprites/ (client-only bodies, but the id sets
+// feed the hash). Derived from the manifest so the walk can never drift from
+// the classification.
+export function contractRoots(): {
+	prefixes: readonly string[];
+	files: readonly string[];
+} {
+	const prefixes = PREFIX.filter(([, kind]) => kind === 'contract').map(
+		([prefix]) => prefix,
+	);
+	if (!prefixes.includes('sprites/')) prefixes.push('sprites/');
+	const files = Object.entries(EXACT)
+		.filter(([, kind]) => kind === 'contract')
+		.map(([path]) => path);
+	return { prefixes, files };
+}
 
 export function classifyPath(path: string): PathKind | undefined {
 	const exact = EXACT[path];

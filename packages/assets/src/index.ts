@@ -1,3 +1,4 @@
+export { computeContractHash, loadContractEntries } from './contract';
 export { loadZones, spriteIds } from './meta';
 export {
 	loadSpriteSources,
