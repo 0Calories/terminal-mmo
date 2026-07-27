@@ -42,8 +42,9 @@ process and drops sessions, but never destroys player state (ADR 0042).
   docker run --rm -p 8090:8080 -e PORT=8080 mmo
   curl localhost:8090/health   # -> ok
   ```
-- **Redeploy** happens on merge to `main` (Railway tracks the branch). The
-  `/health` endpoint must return `200` or Railway fails the deploy.
+- **Deploys are explicit.** The service's watch paths are cleared; only the
+  release pipeline's `railway up` (or the break-glass procedure below) deploys.
+  The `/health` endpoint must return `200` or Railway fails the deploy.
 - **Config**: `PORT` is injected by Railway. `MMO_DB_PATH` must point into the
   mounted volume (below). Optional overrides: `MMO_MAX_CONN` (default 200),
   `MMO_MAX_PER_IP` (default 10).
@@ -81,6 +82,33 @@ first — rollback never touches the volume. If the *data* itself is bad:
 3. Restart the service.
 
 This accepts losing every save written since the boot that took the snapshot.
+
+### Break-glass (manual deploy and rollback)
+
+**Manual deploy** (the pipeline is down or distrusted):
+
+```bash
+bun run stamp                       # writes build-info.json from this checkout
+bunx @railway/cli up --ci -y --no-gitignore --service <service>
+```
+
+Stamping first is mandatory: the boot guard refuses to start on Railway without
+a stamp, so an unstamped `railway up` deploys a container that will not boot.
+`--no-gitignore` is what carries the gitignored `build-info.json` into the
+upload (`.railwayignore` holds the real exclusions).
+
+**Rollback** is paired or single depending on whether the bad Release changed
+the contract — `curl <prod>/health` and compare `contractHash` between the bad
+and previous Releases to find out:
+
+- **Contract changed:** the Railway rollback and
+  `npm dist-tag add terminal-mmo@<prev> latest` must move **together**. A
+  half-rollback fails the contract gate loudly for every player — better than
+  silent drift, but still an outage.
+- **Contract unchanged:** either side rolls back alone; the other keeps working.
+
+Rollback never touches the volume. Bad *data* is recovered from the boot
+snapshots per the runbook above.
 
 ## Local development
 

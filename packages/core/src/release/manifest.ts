@@ -4,6 +4,7 @@ const EXACT: Readonly<Record<string, PathKind>> = {
 	'.dependency-cruiser.cjs': 'neither',
 	'.dockerignore': 'server-only',
 	'.gitignore': 'neither',
+	'.railwayignore': 'server-only',
 	'AGENTS.md': 'neither',
 	'CLAUDE.md': 'neither',
 	'CONTEXT.md': 'neither',
