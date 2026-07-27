@@ -1,5 +1,5 @@
-import { BOX } from '../entities/body';
-import type { Facing, Terrain } from '../entities/types';
+import { boxOf } from '../entities/boxes';
+import type { EntityType, Facing, Terrain } from '../entities/types';
 import { DEFAULT_MASS, PHYS } from './constants';
 import { sweepColumn, sweepRow } from './sweep';
 
@@ -29,6 +29,7 @@ export interface ImpulseBody {
 }
 
 export interface MomentumBody extends ImpulseBody {
+	type?: EntityType;
 	x: number;
 	y: number;
 	vx: number;
@@ -52,6 +53,7 @@ export function stepEntity<B extends MomentumBody>(
 	drive: Drive,
 	dt: number,
 ): { e: B; hitWall: boolean } {
+	const box = boxOf(src.type);
 	let ivx = (src.ivx ?? 0) * Math.exp(-PHYS.drag * dt);
 	if (Math.abs(ivx) < PHYS.impulseEpsilon) ivx = 0;
 	let vx = drive.moveX * src.speed * (drive.moveScale ?? 1) + ivx;
@@ -65,15 +67,15 @@ export function stepEntity<B extends MomentumBody>(
 	let hitWall = false;
 	let x = src.x + vx * dt;
 	const top = Math.floor(src.y);
-	const bot = Math.ceil(src.y + BOX.h) - 1;
+	const bot = Math.ceil(src.y + box.h) - 1;
 	if (vx > 0) {
 		let wall: number | null = null;
 		for (let cy = top; cy <= bot; cy++) {
-			const hit = sweepRow(t, cy, src.x + BOX.w, x + BOX.w);
+			const hit = sweepRow(t, cy, src.x + box.w, x + box.w);
 			if (hit !== null && (wall === null || hit < wall)) wall = hit;
 		}
 		if (wall !== null) {
-			x = wall - BOX.w;
+			x = wall - box.w;
 			vx = 0;
 			ivx = 0;
 			hitWall = true;
@@ -93,19 +95,19 @@ export function stepEntity<B extends MomentumBody>(
 	}
 
 	vy += PHYS.grav * dt;
-	const prevFeet = src.y + BOX.h;
+	const prevFeet = src.y + box.h;
 	let y = src.y + vy * dt;
 	let onGround = false;
 	if (vy > 0) {
 		const l = Math.floor(x);
-		const r = Math.ceil(x + BOX.w) - 1;
+		const r = Math.ceil(x + box.w) - 1;
 		let land: number | null = null;
 		for (let cx = l; cx <= r; cx++) {
-			const hit = sweepColumn(t, cx, prevFeet, y + BOX.h);
+			const hit = sweepColumn(t, cx, prevFeet, y + box.h);
 			if (hit !== null && (land === null || hit < land)) land = hit;
 		}
 		if (land !== null) {
-			y = land - BOX.h;
+			y = land - box.h;
 			vy = 0;
 			onGround = true;
 		}

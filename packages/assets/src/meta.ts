@@ -5,6 +5,11 @@ import {
 	SPRITE_EXT,
 } from './store';
 
+export {
+	defaultFrameBox,
+	registerDerivedBoxes,
+	spriteBoxes,
+} from './sprite-box';
 export { loadZones } from './zones';
 
 export function spriteIds(

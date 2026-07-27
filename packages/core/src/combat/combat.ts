@@ -1,4 +1,4 @@
-import { BOX } from '../entities/body';
+import { boxOf } from '../entities/boxes';
 import { combatOf } from '../entities/monsters/registry';
 import { HUES, type RGBAQuad, SCENE_PALETTE } from '../entities/sceneStyle';
 import type {
@@ -247,7 +247,7 @@ export function resolveGuard(
 }
 
 export function guardOverlayCell(e: Entity): { x: number; y: number } {
-	return { x: e.facing === 1 ? e.x + BOX.w : e.x - 1, y: e.y + 1 };
+	return { x: e.facing === 1 ? e.x + boxOf(e.type).w : e.x - 1, y: e.y + 1 };
 }
 
 export function guardOverlayGlyph(): string {
@@ -264,9 +264,10 @@ export function swingOverlayCell(
 	e: Entity,
 	phase: AttackPhase,
 ): { x: number; y: number } {
-	const lead = e.facing === 1 ? e.x + BOX.w : e.x - 1;
+	const box = boxOf(e.type);
+	const lead = e.facing === 1 ? e.x + box.w : e.x - 1;
 	const row =
-		phase === 'windup' ? e.y : phase === 'active' ? e.y + 1 : e.y + BOX.h - 1;
+		phase === 'windup' ? e.y : phase === 'active' ? e.y + 1 : e.y + box.h - 1;
 	return { x: lead, y: row };
 }
 
@@ -338,16 +339,17 @@ export type CombatEvent =
 
 export function combatEventAt(
 	kind: 'hit' | 'break',
-	target: Pick<Combatant, 'id' | 'x' | 'y'>,
+	target: Pick<Combatant, 'id' | 'x' | 'y' | 'type'>,
 	dir: -1 | 0 | 1,
 	intensity: number,
 	source?: number,
 ): CombatEvent {
+	const box = boxOf(target.type);
 	const e = {
 		kind,
 		targetId: target.id,
-		x: target.x + BOX.w / 2,
-		y: target.y + BOX.h / 2,
+		x: target.x + box.w / 2,
+		y: target.y + box.h / 2,
 		dir,
 		intensity,
 	} as CombatEvent;
@@ -357,11 +359,12 @@ export function combatEventAt(
 }
 
 export function deathEvent(e: Entity): CombatEvent {
+	const box = boxOf(e.type);
 	return {
 		kind: 'death',
 		targetId: e.id,
-		x: e.x + BOX.w / 2,
-		y: e.y + BOX.h / 2,
+		x: e.x + box.w / 2,
+		y: e.y + box.h / 2,
 		dir: 0,
 		intensity: COMBAT.deathBurstIntensity,
 		tint: entityTint(e),
@@ -388,7 +391,7 @@ export function aabbOverlap(a: Box, b: Box): boolean {
 export function swingHitsTarget(
 	hitbox: Box | null,
 	swingHits: ReadonlySet<number>,
-	target: Pick<Combatant, 'id' | 'x' | 'y'>,
+	target: Pick<Combatant, 'id' | 'x' | 'y' | 'type'>,
 ): boolean {
 	return (
 		hitbox !== null &&
@@ -402,7 +405,7 @@ export function predictHits(
 	attackerFacing: Facing,
 	damage: number,
 	swingHits: ReadonlySet<number>,
-	monsters: readonly Pick<Combatant, 'id' | 'x' | 'y'>[],
+	monsters: readonly Pick<Combatant, 'id' | 'x' | 'y' | 'type'>[],
 	source?: number,
 ): CombatEvent[] {
 	if (!hitbox) return [];
@@ -533,11 +536,12 @@ export function resolveHitsOnMonsters<E extends Combatant>(
 					-s.knockbackUp * swat,
 				);
 				m = patch(m, { attackT: 0 });
+				const mBox = boxOf(m.type);
 				events.push({
 					kind: 'swat',
 					targetId: m.id,
-					x: m.x + BOX.w / 2,
-					y: m.y + BOX.h / 2,
+					x: m.x + mBox.w / 2,
+					y: m.y + mBox.h / 2,
 					dir: s.facing,
 					intensity: s.damage,
 				});

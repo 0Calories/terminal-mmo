@@ -1,4 +1,4 @@
-import type { SpriteSource } from '@mmo/assets';
+import { defaultFrameBox, type SpriteSource } from '@mmo/assets';
 import { WEAPONS } from '@mmo/core/combat';
 import { EMOTES } from '@mmo/core/entities';
 import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
@@ -25,6 +25,13 @@ interface RoleProfile {
 	 * are rejected (ADR 0038).
 	 */
 	pixelOnly: boolean;
+
+	/**
+	 * Roles whose logical box derives from the Default frame (ADR 0042) keep
+	 * one sizing per sprite: every frame's grid must match the Default frame's,
+	 * so squash and stretch are drawn within the grid, never by resizing it.
+	 */
+	derivedBox?: boolean;
 }
 
 export const ROLE_PROFILES: Readonly<Record<string, RoleProfile>> = {
@@ -35,8 +42,18 @@ export const ROLE_PROFILES: Readonly<Record<string, RoleProfile>> = {
 	},
 	weapons: { animations: ['swing'], anchors: ['grip'], pixelOnly: true },
 	hats: { animations: ['idle'], anchors: [], pixelOnly: true },
-	monsters: { animations: ['idle'], anchors: [], pixelOnly: true },
-	npcs: { animations: ['idle'], anchors: [], pixelOnly: false },
+	monsters: {
+		animations: ['idle'],
+		anchors: [],
+		pixelOnly: true,
+		derivedBox: true,
+	},
+	npcs: {
+		animations: ['idle'],
+		anchors: [],
+		pixelOnly: false,
+		derivedBox: true,
+	},
 };
 
 function validatePixelOnly(doc: SpriteDoc, role: string): SpriteDiagnostic[] {
@@ -56,6 +73,80 @@ function validatePixelOnly(doc: SpriteDoc, role: string): SpriteDiagnostic[] {
 					});
 				});
 			});
+		});
+	}
+	return diagnostics;
+}
+
+interface VisibleBounds {
+	w: number;
+	h: number;
+}
+
+function visibleBounds(rows: readonly string[]): VisibleBounds | null {
+	let minX = Number.POSITIVE_INFINITY;
+	let maxX = -1;
+	let minY = Number.POSITIVE_INFINITY;
+	let maxY = -1;
+	rows.forEach((row, y) => {
+		for (let x = 0; x < row.length; x++) {
+			if (row[x] === ' ') continue;
+			if (x < minX) minX = x;
+			if (x > maxX) maxX = x;
+			if (y < minY) minY = y;
+			if (y > maxY) maxY = y;
+		}
+	});
+	if (maxX < 0) return null;
+	return { w: maxX - minX + 1, h: maxY - minY + 1 };
+}
+
+function gridDims(rows: readonly string[]): VisibleBounds {
+	return { w: rows[0]?.length ?? 0, h: rows.length };
+}
+
+/** How far past the Default frame's visible extent a frame may reach before
+ *  the check calls it wild — attack lunges stretch a little, not double. */
+const VISIBLE_EXTENT_SLACK = 2;
+
+function validateDerivedBoxFrames(
+	doc: SpriteDoc,
+	role: string,
+): SpriteDiagnostic[] {
+	const diagnostics: SpriteDiagnostic[] = [];
+	const defaultFrame = doc.animations[0]?.frames[0];
+	if (defaultFrame === undefined) return diagnostics;
+	const grid = gridDims(defaultFrame.rows);
+	const visible = visibleBounds(defaultFrame.rows);
+
+	for (const animation of doc.animations) {
+		animation.frames.forEach((frame, index) => {
+			if (frame === defaultFrame) return;
+			const label = frameLabelAt(animation, index);
+			const g = gridDims(frame.rows);
+			if (g.w !== grid.w || g.h !== grid.h) {
+				diagnostics.push({
+					severity: 'error',
+					spriteId: doc.id,
+					frame: label,
+					message: `sprite '${doc.id}' (role '${role}') frame '${label}' is ${g.w}x${g.h} but the Default frame's grid is ${grid.w}x${grid.h} — a derived-box sprite keeps one sizing, so draw squash/stretch within the grid instead of resizing it`,
+				});
+				return;
+			}
+			const v = visibleBounds(frame.rows);
+			if (
+				visible !== null &&
+				v !== null &&
+				(v.w > visible.w + VISIBLE_EXTENT_SLACK ||
+					v.h > visible.h + VISIBLE_EXTENT_SLACK)
+			) {
+				diagnostics.push({
+					severity: 'warning',
+					spriteId: doc.id,
+					frame: label,
+					message: `sprite '${doc.id}' (role '${role}') frame '${label}' has visible art ${v.w}x${v.h}, wildly past the Default frame's ${visible.w}x${visible.h} the logical box derives from — the extra art will overhang the box`,
+				});
+			}
 		});
 	}
 	return diagnostics;
@@ -137,6 +228,10 @@ export function validateSpriteRole(
 				message: `sprite '${doc.id}' (role '${role}') should lead with the 'idle' animation — its Default frame is currently '${doc.animations[0].name}' frame 0`,
 			});
 		}
+	}
+
+	if (profile.derivedBox) {
+		diagnostics.push(...validateDerivedBoxFrames(doc, role));
 	}
 	return diagnostics;
 }
@@ -237,8 +332,35 @@ export function validateSpriteSet(
 		if (doc === null) continue;
 		diagnostics.push(...validateSpriteRole(doc, source.role));
 		diagnostics.push(...validatePixelOnlyArt(doc, source.role));
+		diagnostics.push(...validateDerivationParity(source, doc));
 	}
 
 	diagnostics.push(...validateReferences(list));
 	return diagnostics;
+}
+
+/**
+ * The runtime derives a monster's logical box from the raw sprite text in
+ * assets, without this parser; prove here that both derivations see the same
+ * Default frame, so the box the sim uses is the box the art parser would
+ * report.
+ */
+function validateDerivationParity(
+	source: SpriteSource,
+	doc: SpriteDoc,
+): SpriteDiagnostic[] {
+	if (!ROLE_PROFILES[source.role]?.derivedBox) return [];
+	const derived = defaultFrameBox(source.text);
+	const frame = doc.animations[0]?.frames[0];
+	const parsed = frame === undefined ? null : visibleBounds(frame.rows);
+	if (derived?.w === parsed?.w && derived?.h === parsed?.h) return [];
+	const show = (b: { w: number; h: number } | null | undefined) =>
+		b ? `${b.w}x${b.h}` : 'none';
+	return [
+		{
+			severity: 'error',
+			spriteId: doc.id,
+			message: `sprite '${doc.id}' (role '${source.role}'): the asset-load box derivation sees ${show(derived)} where the parser sees ${show(parsed)} for the Default frame — the sim and the art disagree about this sprite's logical box`,
+		},
+	];
 }

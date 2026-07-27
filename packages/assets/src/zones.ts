@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { type Catalogs, parseZone, type Zone } from '@mmo/core/zones';
+import { registerDerivedBoxes } from './sprite-box';
 import { type AssetEntries, entryId, loadAssetEntries } from './store';
 
 const ZONE_EXT = '.zone';
@@ -17,6 +18,9 @@ export function catalogsFromEntries(entries: AssetEntries): Catalogs {
 }
 
 export function zonesFromEntries(entries: AssetEntries): Zone[] {
+	// Zone parsing places monsters and NPCs, so their derived boxes must be on
+	// the core catalog before the first spawn is stamped.
+	registerDerivedBoxes(entries);
 	const catalogs = catalogsFromEntries(entries);
 	const zones = Object.keys(entries)
 		.filter((k) => k.startsWith('zones/') && k.endsWith(ZONE_EXT))

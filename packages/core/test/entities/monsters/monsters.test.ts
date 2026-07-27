@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { BrainView, Entity, Terrain } from '../../../src/entities';
-import { BOX, MONSTERS, spawnMonster } from '../../../src/entities';
+import { BOX, boxOf, MONSTERS, spawnMonster } from '../../../src/entities';
 import { WALK_DEFAULTS } from '../../../src/entities/monsters';
 import { IDLE_DRIVE, parseTerrain } from '../../../src/physics';
 import { GROUND_TOP } from '../../../src/zones';
@@ -192,6 +192,8 @@ test('a platform too short for a full hop never freezes the slime', () => {
 test('slime patrol turns at a wall', () => {
 	const t = walledTerrain();
 	const m = grounded('slime', 24.5);
+	// Leading edge half a cell short of the wall at 30, whatever box derives.
+	m.x = 30 - boxOf('slime').w - 0.5;
 	m.facing = 1;
 	const hop = nextHop(m, view(null, t));
 	if (hop === null) throw new Error('slime never hopped');

@@ -8,7 +8,7 @@ import {
 } from '@mmo/core/combat';
 import {
 	type AttackPhase,
-	BOX,
+	boxOf,
 	DEFAULT_FORM_ID,
 	type Entity,
 	type EntityType,
@@ -222,14 +222,14 @@ function bodyBaseline(e: Entity): number {
  * baseline is foot-art idiom, not scene depth; ordering uses {@link actorDepthY}.
  */
 export function actorFootDepth(e: Entity): number {
-	return e.y + BOX.h + bodyBaseline(e);
+	return e.y + boxOf(e.type).h + bodyBaseline(e);
 }
 
 /** Pass-3 depth key of an actor: the collision box bottom. Every planted
  *  sprite's deepest ink lands half a cell below it regardless of baseline, so
  *  box bottom alone orders the crowd and same-floor actors tie exactly. */
 export function actorDepthY(e: Entity): number {
-	return e.y + BOX.h;
+	return e.y + boxOf(e.type).h;
 }
 
 /**
@@ -239,7 +239,7 @@ export function actorDepthY(e: Entity): number {
  */
 export function actorSpriteTop(e: Entity): number {
 	const { sprite, baseline } = resolveBody(e, animStateOf(e));
-	return e.y + BOX.h - sprite.heightCells + baseline;
+	return e.y + boxOf(e.type).h - sprite.heightCells + baseline;
 }
 
 /** Pass-3 depth key of an NPC: its box bottom, symmetric with {@link actorDepthY}. */
@@ -423,8 +423,9 @@ export function paintActor(
 	// Quantize the combined world-relative offset ONCE into a Pixel origin (2 Pixels
 	// per cell) so camera and entity never round independently (ADR 0038). Body,
 	// weapon, and hat all share this origin, so the assembled actor moves as one.
-	const worldX = e.x - Math.floor((bodyW - BOX.w) / 2);
-	const worldY = e.y + BOX.h - sprite.heightCells + baseline;
+	const box = boxOf(e.type);
+	const worldX = e.x - Math.floor((bodyW - box.w) / 2);
+	const worldY = e.y + box.h - sprite.heightCells + baseline;
 	const originPx = Math.round((worldX - cam.x) * 2);
 	const originPy = Math.round((worldY - cam.y) * 2);
 	const hurt = e.hurtT > 0.3;

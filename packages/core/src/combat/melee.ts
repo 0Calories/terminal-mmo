@@ -1,8 +1,9 @@
-import { BOX } from '../entities/body';
+import { boxOf } from '../entities/boxes';
 import type {
 	AttackPhase,
 	AttackPhaseTimings,
 	Box,
+	EntityType,
 	Facing,
 } from '../entities/types';
 import { COMBAT } from './constants';
@@ -49,16 +50,24 @@ export function meleeActive(attackT: number): boolean {
 	return swingPhase(attackT) === 'active';
 }
 
-export function entityBox(e: { x: number; y: number }): Box {
-	return { x: e.x, y: e.y, w: BOX.w, h: BOX.h };
+export function entityBox(e: { x: number; y: number; type?: EntityType }): Box {
+	const box = boxOf(e.type);
+	return { x: e.x, y: e.y, w: box.w, h: box.h };
 }
 
-export function meleeHitbox(p: { x: number; y: number; facing: Facing }): Box {
+/** The authored melee reach, swung beside the attacker's own logical box. */
+export function meleeHitbox(p: {
+	x: number;
+	y: number;
+	facing: Facing;
+	type?: EntityType;
+}): Box {
+	const box = boxOf(p.type);
 	const w = COMBAT.meleeReach;
 	return {
-		x: p.facing === 1 ? p.x + BOX.w : p.x - w,
+		x: p.facing === 1 ? p.x + box.w : p.x - w,
 		y: p.y,
 		w,
-		h: BOX.h,
+		h: box.h,
 	};
 }

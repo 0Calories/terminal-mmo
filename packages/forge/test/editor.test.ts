@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { npcBoxOf, spawnMonster } from '@mmo/core/entities';
 import { CELL } from '@mmo/core/physics';
 import {
 	type Catalogs,
@@ -401,8 +402,9 @@ describe('Placeable preview projection', () => {
 		expect(g?.kind).toBe('entity');
 		if (g?.kind !== 'entity') throw new Error('expected entity');
 		expect(g.entity.type).toBe('chaser');
-		expect(g.entity.x).toBe(3);
-		expect(g.entity.y).toBe(2);
+		const spawned = spawnMonster('chaser', g.entity.id, 3, 2);
+		expect(g.entity.x).toBe(spawned.x);
+		expect(g.entity.y).toBe(spawned.y);
 	});
 
 	test('an NPC ghost carries the catalog kind + box at the anchor', () => {
@@ -410,10 +412,11 @@ describe('Placeable preview projection', () => {
 		expect(g?.kind).toBe('npc');
 		if (g?.kind !== 'npc') throw new Error('expected npc');
 		expect(g.npc.kind).toBe('vendor');
-		expect(g.npc.x).toBe(1);
-		expect(g.npc.y).toBe(4);
-		expect(g.npc.w).toBe(NPC_BOX.w);
-		expect(g.npc.h).toBe(NPC_BOX.h);
+		const nb = npcBoxOf('vendor');
+		expect(g.npc.x).toBe(1 + Math.floor((NPC_BOX.w - nb.w) / 2));
+		expect(g.npc.y).toBe(4 + NPC_BOX.h - nb.h);
+		expect(g.npc.w).toBe(nb.w);
+		expect(g.npc.h).toBe(nb.h);
 	});
 
 	test('kinds with no sprite preview yet (portal, unknown id) return undefined', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { BOX, spawnMonster } from '@mmo/core/entities';
+import { BOX, boxOf, spawnMonster } from '@mmo/core/entities';
 import { Compositor } from '@mmo/render/compositor';
 import { actorSpriteTop } from '@mmo/render/sprites';
 import {
@@ -85,7 +85,8 @@ describe('DamageNumberTracker overlap jitter', () => {
 describe('DamageNumberTracker spawn height', () => {
 	function spawnOn(type: 'slime' | 'brute', resolve: boolean): number {
 		const target = spawnMonster(type, 9, 20, 8);
-		const event = num({ y: target.y + BOX.h / 2 });
+		// The event carries the per-entity box centre, as combatEventAt emits.
+		const event = num({ y: target.y + boxOf(type).h / 2 });
 		const t = new DamageNumberTracker();
 		t.spawn([event], 0, resolve ? () => target : () => undefined);
 		return t.numbers()[0].py;
@@ -107,8 +108,10 @@ describe('DamageNumberTracker spawn height', () => {
 	});
 
 	test('an unresolvable target falls back to the event position, so the number is never lost', () => {
+		const target = spawnMonster('brute', 9, 20, 8);
+		const eventY = target.y + boxOf('brute').h / 2;
 		expect(spawnOn('brute', false)).toBe(
-			Math.round((8 + BOX.h / 2 - BOX.h / 2) * 2) - DAMAGE_NUMBER.headGapPx,
+			Math.round((eventY - BOX.h / 2) * 2) - DAMAGE_NUMBER.headGapPx,
 		);
 	});
 });
