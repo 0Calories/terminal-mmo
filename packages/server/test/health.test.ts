@@ -18,6 +18,7 @@ function setup(overrides: Partial<ServerRuntimeOptions> = {}) {
 		zones: loadZones(),
 		store: openPlayerStore(':memory:'),
 		releaseVersion: 'dev',
+		contractHash: 'dev',
 		nonce: () => new Uint8Array(32).fill(7),
 		validHatIds: spriteIds('hats'),
 		validFormIds: spriteIds('forms'),
