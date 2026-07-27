@@ -1,5 +1,5 @@
-import { meleeActive, SWING_TOTAL, swingPhase } from '../../../combat/combat';
 import { COMBAT } from '../../../combat/constants';
+import { meleeActive, SWING_TOTAL, swingPhase } from '../../../combat/melee';
 import type { ProjectileSpec } from '../../../combat/projectile';
 import { spawnProjectile } from '../../../combat/projectile';
 import type { Drive } from '../../../physics/physics';

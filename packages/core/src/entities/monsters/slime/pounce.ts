@@ -1,4 +1,4 @@
-import { attackPhaseAt, attackTotal, entityBox } from '../../../combat/combat';
+import { attackPhaseAt, attackTotal, entityBox } from '../../../combat/melee';
 import { PHYS } from '../../../physics/constants';
 import type { Drive } from '../../../physics/physics';
 import { IDLE_DRIVE } from '../../../physics/physics';
