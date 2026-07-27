@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { BOX, spawnMonster } from '@mmo/core/entities';
 import { Compositor } from '@mmo/render/compositor';
+import { actorSpriteTop } from '@mmo/render/sprites';
 import {
 	DAMAGE_NUMBER,
 	DamageNumberTracker,
@@ -77,6 +79,37 @@ describe('DamageNumberTracker overlap jitter', () => {
 		t.clear();
 		t.spawn([num()], 1);
 		expect(t.numbers()[0].px).toBe(Math.round(num().x * 2));
+	});
+});
+
+describe('DamageNumberTracker spawn height', () => {
+	function spawnOn(type: 'slime' | 'brute', resolve: boolean): number {
+		const target = spawnMonster(type, 9, 20, 8);
+		const event = num({ y: target.y + BOX.h / 2 });
+		const t = new DamageNumberTracker();
+		t.spawn([event], 0, resolve ? () => target : () => undefined);
+		return t.numbers()[0].py;
+	}
+
+	test('a resolved target hangs the number over its drawn art top, not the logical box top', () => {
+		for (const type of ['slime', 'brute'] as const) {
+			const target = spawnMonster(type, 9, 20, 8);
+			expect(spawnOn(type, true)).toBe(
+				Math.round(actorSpriteTop(target) * 2) - DAMAGE_NUMBER.headGapPx,
+			);
+		}
+	});
+
+	test('a short slime pulls the number below the box top — no mid-air gap', () => {
+		const slime = spawnMonster('slime', 9, 20, 8);
+		expect(actorSpriteTop(slime)).toBeGreaterThan(slime.y);
+		expect(spawnOn('slime', true)).toBeGreaterThan(spawnOn('slime', false));
+	});
+
+	test('an unresolvable target falls back to the event position, so the number is never lost', () => {
+		expect(spawnOn('brute', false)).toBe(
+			Math.round((8 + BOX.h / 2 - BOX.h / 2) * 2) - DAMAGE_NUMBER.headGapPx,
+		);
 	});
 });
 

@@ -1,7 +1,12 @@
-import { BOX } from '@mmo/core/entities';
+import { BOX, type Entity } from '@mmo/core/entities';
 import type { Compositor, RGBA } from '@mmo/render/compositor';
 import { rgba } from '@mmo/render/compositor';
+import { actorSpriteTop } from '@mmo/render/sprites';
 import type { DamageNumber, DamageNumberStyle } from './present';
+
+/** Resolves a CombatEvent target to the entity the client currently renders;
+ *  undefined when it is already gone (e.g. removed the tick it was hit). */
+export type TargetResolver = (targetId: number) => Entity | undefined;
 
 export const DAMAGE_NUMBER = {
 	durMs: 600,
@@ -187,24 +192,39 @@ export class DamageNumberTracker {
 		this.cycle.clear();
 	}
 
-	spawn(numbers: readonly DamageNumber[], now: number): void {
+	spawn(
+		numbers: readonly DamageNumber[],
+		now: number,
+		resolveTarget?: TargetResolver,
+	): void {
 		this.expire(now);
-		for (const n of numbers) this.spawnOne(n, now);
+		for (const n of numbers) this.spawnOne(n, now, resolveTarget);
 	}
 
-	private spawnOne(n: DamageNumber, now: number): void {
+	private spawnOne(
+		n: DamageNumber,
+		now: number,
+		resolveTarget?: TargetResolver,
+	): void {
 		if (n.style === 'break' && n.own && this.convert(n, now)) return;
 		const contested = this.live.some((l) => l.targetId === n.targetId);
 		if (!contested) this.cycle.set(n.targetId, 0);
 		const idx = this.cycle.get(n.targetId) ?? 0;
 		this.cycle.set(n.targetId, idx + 1);
 		const [dx, dy] = JITTER_CYCLE[idx % JITTER_CYCLE.length];
+		// The head the number sits on is the drawn art's top row, not the logical
+		// box top — a short sprite (slime) doesn't fill the box, and a tall one
+		// (brute) extends above it. The event y is the fallback for a target
+		// already gone by spawn time.
+		const target = resolveTarget?.(n.targetId);
+		const topY =
+			target !== undefined ? actorSpriteTop(target) : n.y - BOX.h / 2;
 		this.live.push({
 			value: n.value,
 			style: n.style,
 			targetId: n.targetId,
 			px: Math.round(n.x * 2) + dx,
-			py: Math.round((n.y - BOX.h / 2) * 2) - DAMAGE_NUMBER.headGapPx + dy,
+			py: Math.round(topY * 2) - DAMAGE_NUMBER.headGapPx + dy,
 			born: now,
 			pending: n.style === 'hit' && n.own,
 		});

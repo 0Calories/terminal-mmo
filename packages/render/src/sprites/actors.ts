@@ -232,6 +232,16 @@ export function actorDepthY(e: Entity): number {
 	return e.y + BOX.h;
 }
 
+/**
+ * World-y of the top row of an actor's currently drawn body art — the same
+ * origin {@link paintActor} plants, for overlays that must sit on the visible
+ * head rather than the logical box (which a short sprite doesn't fill).
+ */
+export function actorSpriteTop(e: Entity): number {
+	const { sprite, baseline } = resolveBody(e, animStateOf(e));
+	return e.y + BOX.h - sprite.heightCells + baseline;
+}
+
 /** Pass-3 depth key of an NPC: its box bottom, symmetric with {@link actorDepthY}. */
 export function npcDepthY(n: Npc): number {
 	return n.y + n.h;

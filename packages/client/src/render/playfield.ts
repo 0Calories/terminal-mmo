@@ -149,7 +149,16 @@ export class PlayfieldRenderable extends Renderable {
 			selfId: this.sessionId ?? undefined,
 			avatarIds,
 		});
-		this.numbers.spawn(presentation.numbers, now);
+		if (presentation.numbers.length) {
+			const game = this.game;
+			this.numbers.spawn(presentation.numbers, now, (id) => {
+				if (id === this.sessionId) return game.player.avatar;
+				return (
+					zone.monsters.find((m) => m.id === id) ??
+					game.others?.find((o) => o.id === id)
+				);
+			});
+		}
 
 		for (const dir of presentation.kicks)
 			this.kick = applyKick(this.kick, dir * CAMERA_KICK.maxCells, -1);
