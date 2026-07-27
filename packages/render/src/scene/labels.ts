@@ -1,5 +1,5 @@
 import {
-	BOX,
+	boxOf,
 	darken,
 	type Entity,
 	NAMEPLATE_COLORS,
@@ -79,7 +79,7 @@ export function drawNameplates(
 			(idx !== undefined ? NAMEPLATE_INKS[idx] : undefined) ?? NAMEPLATE_INK;
 		const bg =
 			(idx !== undefined ? NAMEPLATE_BGS[idx] : undefined) ?? NAMEPLATE_BG;
-		const cx = e.x + BOX.w / 2 - cam.x;
+		const cx = e.x + boxOf(e.type).w / 2 - cam.x;
 		const left = Math.round(cx - textColumns(e.name) / 2);
 		const py = Math.round(actorFootDepth(e) - cam.y);
 		stampText(compositor, left, py, e.name, ink, bg);

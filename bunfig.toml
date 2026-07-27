@@ -1,3 +1,8 @@
 [test]
-# The preload prevents leaked native render threads from degrading the test suite.
-preload = ["./packages/forge/test/destroy-renderers.preload.ts"]
+# destroy-renderers prevents leaked native render threads from degrading the
+# test suite; register-derived-boxes makes every test file see the same
+# sprite-derived logical boxes the game registers at asset load.
+preload = [
+	"./packages/forge/test/destroy-renderers.preload.ts",
+	"./scripts/register-derived-boxes.preload.ts",
+]

@@ -1,4 +1,9 @@
-import { BOX, type Drop, type Entity, SCENE_COLORS } from '@mmo/core/entities';
+import {
+	boxOf,
+	type Drop,
+	type Entity,
+	SCENE_COLORS,
+} from '@mmo/core/entities';
 import { RARITY_COLOR } from '@mmo/core/items';
 import type { Portal } from '@mmo/core/zones';
 import type { Compositor, RGBA } from '../compositor';
@@ -74,8 +79,9 @@ export function drawDodgeEchoes(
 		const col: RGBA = [ECHO_RGB[0], ECHO_RGB[1], ECHO_RGB[2], alpha];
 		const sprite = spriteFor(echo.type);
 		const rows = sprite.rows(echo.facing);
-		const baseX = echo.x - Math.floor((sprite.w - BOX.w) / 2);
-		const baseY = echo.y + BOX.h - sprite.h;
+		const box = boxOf(echo.type);
+		const baseX = echo.x - Math.floor((sprite.w - box.w) / 2);
+		const baseY = echo.y + box.h - sprite.h;
 		for (let ry = 0; ry < rows.length; ry++) {
 			const row = rows[ry];
 			for (let rx = 0; rx < row.length; rx++) {

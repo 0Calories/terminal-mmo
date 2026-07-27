@@ -139,16 +139,16 @@ test('a forward actor draws atomically over a rear actor, hat and all', () => {
 test('at equal foot depth an NPC stays behind an overlapping monster', () => {
 	const W = 20;
 	const H = 14;
+	const mon = ent({ id: 2, type: 'brute', x: 6, y: 4 });
 	const npc: Npc = {
 		id: 1,
 		kind: 'vendor',
 		name: 'Mira',
 		x: 4,
-		y: 4,
+		y: actorDepthY(mon) - 5,
 		w: 4,
 		h: 5,
 	};
-	const mon = ent({ id: 2, type: 'brute', x: 6, y: 4 });
 	// Same box-bottom depth: the tie must resolve by category, not by chance.
 	expect(npcDepthY(npc)).toBe(actorDepthY(mon));
 

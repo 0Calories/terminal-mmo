@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import {
-	BOX,
+	boxOf,
 	type Drop,
 	darken,
 	type Entity,
@@ -244,7 +244,7 @@ test('a nameplate centres its text on the actor box at the planted foot depth', 
 	drawNameplates(c, [e], NO_CAM);
 
 	const row = Math.round(actorFootDepth(e));
-	const left = Math.round(e.x + BOX.w / 2 - name.length / 2);
+	const left = Math.round(e.x + boxOf(e.type).w / 2 - name.length / 2);
 	const text = [0, 1, 2].map((i) => c.cell(left + i, row).char).join('');
 	expect(text).toBe('neo');
 	// The cell just left of the centred text is untouched (blank sky), proving the
@@ -265,7 +265,7 @@ test('a nameplate cosmetic index selects its ink and darkened plate colour', () 
 	drawNameplates(c, [e], NO_CAM);
 
 	const row = Math.round(actorFootDepth(e));
-	const left = Math.round(e.x + BOX.w / 2 - name.length / 2);
+	const left = Math.round(e.x + boxOf(e.type).w / 2 - name.length / 2);
 	const cell = c.cell(left, row);
 	expect(cell.char).toBe('x');
 	expect(eq(cell.fg, NAMEPLATE_COLORS[1])).toBe(true);
@@ -307,7 +307,7 @@ test('a nameplate with wide graphemes centres and sizes by displayed columns', (
 	drawNameplates(c, [e], NO_CAM);
 
 	const row = Math.round(actorFootDepth(e));
-	const cx = e.x + BOX.w / 2;
+	const cx = e.x + boxOf(e.type).w / 2;
 	const left = Math.round(cx - 4 / 2); // centred on 4 columns, not 2 code units
 	const lead = c.cell(left, row);
 	expect(lead.char).toBe('道');

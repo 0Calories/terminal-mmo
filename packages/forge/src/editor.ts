@@ -3,6 +3,7 @@ import {
 	BOX,
 	type Entity,
 	type Npc,
+	npcBoxOf,
 	SCENE_COLORS,
 	spawnMonster,
 } from '@mmo/core/entities';
@@ -397,16 +398,19 @@ export function ghostEntity(
 	if (p.kind === 'npc') {
 		const n = catalogs.npcs.find((e) => e.id === p.id);
 		if (!n) return undefined;
+		// Mirror parseZone: the anchor is an NPC_BOX slot the derived box is
+		// centred in, feet on the slot's floor.
+		const nb = npcBoxOf(n.kind);
 		return {
 			kind: 'npc',
 			npc: {
 				id: -1,
 				kind: n.kind,
 				name: n.name,
-				x,
-				y,
-				w: NPC_BOX.w,
-				h: NPC_BOX.h,
+				x: x + Math.floor((NPC_BOX.w - nb.w) / 2),
+				y: y + NPC_BOX.h - nb.h,
+				w: nb.w,
+				h: nb.h,
 			},
 		};
 	}

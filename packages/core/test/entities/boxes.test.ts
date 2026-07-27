@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { loadAssetEntries, registerDerivedBoxes } from '@mmo/assets';
 import { combatEventAt, entityBox, meleeHitbox } from '../../src/combat/combat';
 import { spawnProjectile } from '../../src/combat/projectile';
 import { BOX } from '../../src/entities/body';
 import {
+	type BoxDims,
 	boxOf,
 	clearSpriteBoxes,
 	npcBoxOf,
@@ -27,7 +29,7 @@ const BRUTE_BOX = { w: 7, h: 6 } as const;
 
 function registerFixtures(): void {
 	registerSpriteBoxes({
-		monsters: new Map([
+		monsters: new Map<string, BoxDims>([
 			[MONSTER_SPRITE_REF.slime, SLIME_BOX],
 			[MONSTER_SPRITE_REF.brute, BRUTE_BOX],
 		]),
@@ -35,7 +37,10 @@ function registerFixtures(): void {
 	});
 }
 
-afterEach(() => clearSpriteBoxes());
+// The suite preload registers the real derived boxes; these laws own the
+// registry for their duration and hand the real ones back when done.
+beforeEach(() => clearSpriteBoxes());
+afterAll(() => registerDerivedBoxes(loadAssetEntries()));
 
 describe('boxOf', () => {
 	test('defaults to the uniform BOX before registration', () => {
