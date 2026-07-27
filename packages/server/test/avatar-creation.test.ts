@@ -13,6 +13,7 @@ import {
 	encodeClientMessage,
 	type ServerMessage,
 } from '@mmo/core/protocol';
+import { contractHash } from '@mmo/core/release';
 import {
 	createInMemoryServer,
 	createServerRuntime,
@@ -22,6 +23,7 @@ import {
 import { openPlayerStore } from '../src/store';
 
 const NONCE = new Uint8Array(32).fill(7);
+const CONTRACT_HASH = 'test-contract-hash';
 const runtimes: ServerRuntime[] = [];
 
 afterEach(() => {
@@ -50,6 +52,7 @@ function setup(
 		zones: loadZones(),
 		store: openPlayerStore(':memory:'),
 		releaseVersion: 'dev',
+		contractHash: CONTRACT_HASH,
 		nonce: () => new Uint8Array(NONCE),
 		validHatIds: spriteIds('hats'),
 		validFormIds: spriteIds('forms'),
@@ -79,15 +82,16 @@ function sendHello(
 	session: InMemorySession,
 	publicKey: string,
 	handle = 'placeholder',
-	version = '',
+	contractHash = CONTRACT_HASH,
 ): void {
 	send(session, {
 		t: 'hello',
 		handle,
-		version,
+		version: '',
 		cosmetics: DEFAULT_COSMETICS,
 		weapon: 0,
 		publicKey,
+		contractHash,
 	});
 }
 
@@ -130,17 +134,44 @@ function snapshotAfterTick(
 }
 
 describe('authentication trust boundaries', () => {
-	test('release servers reject mismatched versions before issuing a challenge', () => {
+	test('a mismatched contract hash is rejected before issuing a challenge', () => {
 		const { server } = setup({ releaseVersion: '1.2.3' });
 		const session = server.connect();
-		sendHello(session, identity().line, 'Player', '1.2.2');
+		sendHello(session, identity().line, 'Player', 'stale-contract-hash');
 
 		const rejection = onlyMessage(session);
 		expect(rejection).toMatchObject({ t: 'reject' });
 		expect(rejection.t === 'reject' && rejection.reason).toContain(
 			'bunx terminal-mmo@latest',
 		);
+		expect(rejection.t === 'reject' && rejection.reason).toContain('1.2.3');
 		expect(session.closed).toBe(true);
+	});
+
+	test('the contract gate runs even on dev servers', () => {
+		const { server } = setup({ releaseVersion: 'dev' });
+		const session = server.connect();
+		sendHello(session, identity().line, 'Player', 'stale-contract-hash');
+
+		expect(onlyMessage(session)).toMatchObject({ t: 'reject' });
+		expect(session.closed).toBe(true);
+	});
+
+	test('a zone edit shifts the contract hash and rejects unrebuilt clients', () => {
+		const entries = { 'zones/field-01.zone': '....\n####\n' };
+		const edited = { 'zones/field-01.zone': '.^..\n####\n' };
+		const serverHash = contractHash(entries);
+		expect(contractHash(edited)).not.toBe(serverHash);
+
+		const { server } = setup({ contractHash: serverHash });
+		const stale = server.connect();
+		sendHello(stale, identity().line, 'Player', contractHash(edited));
+		expect(onlyMessage(stale)).toMatchObject({ t: 'reject' });
+		expect(stale.closed).toBe(true);
+
+		const fresh = server.connect();
+		sendHello(fresh, identity().line, 'Player', serverHash);
+		expect(onlyMessage(fresh).t).toBe('challenge');
 	});
 
 	test('malformed public keys and invalid proofs fail closed', () => {

@@ -1,5 +1,11 @@
 import { expect, test } from 'bun:test';
-import { type Projectile, spawnMonster } from '@mmo/core/entities';
+import { join } from 'node:path';
+import { computeContractHash } from '@mmo/assets/meta';
+import {
+	DEFAULT_COSMETICS,
+	type Projectile,
+	spawnMonster,
+} from '@mmo/core/entities';
 import { GROUND_TOP, type Zone } from '@mmo/core/zones';
 import {
 	createScenarioIdentity,
@@ -38,6 +44,46 @@ test('server runtime authenticates a new Player, creates an Avatar, and enters t
 			handle: 'Neo',
 		}),
 	);
+});
+
+test('a client and server hashing the same checkout connect with zero configuration', () => {
+	const checkoutRoot = join(import.meta.dir, '..', '..', '..');
+	const stack = createStackScenario({
+		zones: lifecycleZones(),
+		startZone: 'town-a',
+		townZone: 'town-a',
+		contractHash: computeContractHash(checkoutRoot),
+	});
+	const client = stack.connect();
+	const welcome = client.authenticate({
+		identity: createScenarioIdentity(),
+		handle: 'Neo',
+		cosmetics: DEFAULT_COSMETICS,
+		contractHash: computeContractHash(checkoutRoot),
+	});
+	expect(welcome.handle).toBe('Neo');
+});
+
+test('a hello carrying a stale contract hash is rejected with the upgrade message', () => {
+	const stack = createStackScenario({
+		zones: lifecycleZones(),
+		startZone: 'town-a',
+		townZone: 'town-a',
+	});
+	const client = stack.connect();
+	client.send({
+		t: 'hello',
+		handle: 'Stale',
+		version: '0.7.0',
+		cosmetics: DEFAULT_COSMETICS,
+		weapon: 0,
+		publicKey: createScenarioIdentity().publicKey,
+		contractHash: 'stale-contract-hash',
+	});
+	const rejection = client.take('reject');
+	expect(rejection.reason).toContain('bunx terminal-mmo@latest');
+	expect(rejection.reason).toContain('0.7.0');
+	expect(client.closed).toBe(true);
 });
 
 test('server runtime restores durable state in the last safe Town without transient Field state', () => {

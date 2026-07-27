@@ -18,7 +18,6 @@ import {
 	type ClientMessage,
 	decodeClientMessage,
 	encodeServerMessage,
-	isReleaseVersion,
 } from '@mmo/core/protocol';
 import {
 	addSession,
@@ -61,6 +60,7 @@ export interface ServerRuntimeOptions {
 	zones: Zone[];
 	store: PlayerStore;
 	releaseVersion: string;
+	contractHash: string;
 	nonce: () => Uint8Array;
 	validHatIds: ReadonlySet<string>;
 	validFormIds: ReadonlySet<string>;
@@ -145,10 +145,7 @@ export function createServerRuntime(
 
 	function handleMessage(sessionId: number, msg: ClientMessage): void {
 		if (msg.t === 'hello') {
-			if (
-				isReleaseVersion(options.releaseVersion) &&
-				msg.version !== options.releaseVersion
-			) {
+			if (msg.contractHash !== options.contractHash) {
 				reject(
 					sessionId,
 					`Your client is out of date — run \`bunx terminal-mmo@latest\` (server ${options.releaseVersion}, your client ${msg.version || 'unknown'}).`,

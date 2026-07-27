@@ -162,6 +162,7 @@ export type ClientMessage =
 			cosmetics: Cosmetics;
 			weapon: number;
 			publicKey: string;
+			contractHash: string;
 	  }
 	| { t: 'proof'; signature: Uint8Array }
 	| {
@@ -241,6 +242,7 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 			w.str(msg.publicKey);
 			w.str(msg.cosmetics.hat);
 			w.str(msg.cosmetics.form);
+			w.str(msg.contractHash);
 			break;
 		case 'proof':
 			w.u8(CLIENT_TAG.proof);
@@ -311,6 +313,7 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			const publicKey = r.remaining() >= 4 ? r.str() : '';
 			const hat = readTrailingId(r, quad.hat);
 			const form = readTrailingId(r, quad.form);
+			const contractHash = r.remaining() >= 4 ? r.str() : '';
 			return {
 				t: 'hello',
 				handle,
@@ -318,6 +321,7 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 				cosmetics: mergeTrailingCosmetics(quad, hat, form),
 				weapon,
 				publicKey,
+				contractHash,
 			};
 		}
 		case CLIENT_TAG.proof:

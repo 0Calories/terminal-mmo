@@ -15,6 +15,7 @@ import {
 	type ServerMessage,
 } from '@mmo/core/protocol';
 import type { Zone } from '@mmo/core/zones';
+import { CLIENT_CONTRACT_HASH } from '../contract-hash';
 import type { SshIdentity } from '../ssh-auth';
 import { bubbleTtl } from '../ui/bubble';
 import { CLIENT_VERSION } from '../version';
@@ -68,6 +69,7 @@ export class NetClient {
 					cosmetics,
 					weapon,
 					publicKey: this.identity.publicKey,
+					contractHash: CLIENT_CONTRACT_HASH,
 				}),
 			);
 		};

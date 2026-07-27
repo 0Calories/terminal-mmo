@@ -35,6 +35,7 @@ export interface AuthenticateOptions {
 	handle: string;
 	cosmetics: Cosmetics;
 	weapon?: number;
+	contractHash?: string;
 }
 
 export interface ScenarioClient {
@@ -63,6 +64,7 @@ export interface StackScenarioOptions {
 	townZone?: string;
 	tickRate?: number;
 	seedSaves?: readonly { publicKey: string; save: PlayerSave }[];
+	contractHash?: string;
 }
 
 export interface JoinScenarioPlayerOptions {
@@ -97,11 +99,13 @@ export function createStackScenario(
 		all: () => [...saves].map(([key, save]) => [key, clone(save)]),
 		close: () => {},
 	};
+	const contractHash = options.contractHash ?? SCENARIO_CONTRACT_HASH;
 	const createStack = () => {
 		const runtime = createServerRuntime({
 			zones: options.zones ?? loadZones(),
 			store,
 			releaseVersion: 'dev',
+			contractHash,
 			nonce: () => new Uint8Array(32).fill(7),
 			validHatIds: spriteIds('hats'),
 			validFormIds: spriteIds('forms'),
@@ -115,7 +119,7 @@ export function createStackScenario(
 	};
 	let stack = createStack();
 	return {
-		connect: () => scenarioClient(stack.server.connect()),
+		connect: () => scenarioClient(stack.server.connect(), contractHash),
 		advanceTick(count = 1) {
 			for (let tick = 0; tick < count; tick++) stack.server.advanceTick();
 		},
@@ -243,7 +247,12 @@ function persistenceKey(publicKey: string): string {
 	return canonicalPublicKey(parsed);
 }
 
-function scenarioClient(session: InMemorySession): ScenarioClient {
+export const SCENARIO_CONTRACT_HASH = 'scenario-contract-hash';
+
+function scenarioClient(
+	session: InMemorySession,
+	contractHash: string,
+): ScenarioClient {
 	const receive = () => session.receive().map(decodeServerMessage);
 	const take = <T extends ServerMessage['t']>(type: T) => {
 		const messages = receive();
@@ -272,6 +281,7 @@ function scenarioClient(session: InMemorySession): ScenarioClient {
 				cosmetics: options.cosmetics,
 				weapon: options.weapon ?? 0,
 				publicKey: options.identity.publicKey,
+				contractHash: options.contractHash ?? contractHash,
 			});
 			const challenge = take('challenge');
 			send({

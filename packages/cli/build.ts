@@ -1,7 +1,7 @@
 import { chmodSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { loadAssetEntries } from '@mmo/assets';
+import { computeContractHash, loadAssetEntries } from '@mmo/assets';
 
 const here = import.meta.dir;
 const outdir = join(here, 'dist');
@@ -21,6 +21,9 @@ const result = await Bun.build({
 	define: {
 		'process.env.MMO_VERSION': JSON.stringify(version),
 		MMO_EMBEDDED_ASSETS: JSON.stringify(embeddedAssets),
+		MMO_CONTRACT_HASH: JSON.stringify(
+			computeContractHash(join(here, '..', '..')),
+		),
 	},
 	banner: '#!/usr/bin/env bun',
 });
