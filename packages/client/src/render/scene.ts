@@ -27,6 +27,7 @@ import type { ParticleEngine } from '../particles';
 import { COLORS as C } from '../theme';
 import { drawSpeechBubble } from '../ui/speech-bubble';
 import { encodeToBuffer } from './compositor-sink';
+import type { DamageNumberTracker } from './damage-numbers';
 import type { DodgeTracker } from './dodge-echo';
 
 // Combat glyph colours as the compositor's 8-bit model. The client theme stays
@@ -53,7 +54,12 @@ export function drawPlayfield(
 	compositor: Compositor,
 	game: GameState,
 	cam: { x: number; y: number },
-	fx: { particles: ParticleEngine; dodges: DodgeTracker },
+	fx: {
+		particles: ParticleEngine;
+		dodges: DodgeTracker;
+		numbers?: DamageNumberTracker;
+		now?: number;
+	},
 ) {
 	const { player } = game;
 	const zone = activeZone(game.world, player.zoneId);
@@ -130,6 +136,9 @@ export function drawPlayfield(
 	fx.particles.draw(compositor, cam, 'airborne');
 
 	drawProjectiles(compositor, zone.projectiles, cam, COMBAT_PROJECTILE);
+
+	// Damage numbers overprint the actors beneath them, before labels/bubbles.
+	fx.numbers?.draw(compositor, cam, fx.now ?? 0);
 
 	// Pass 6: identity, drop, and interaction labels, composed natively so each
 	// glyph derives its backdrop from the scene beneath. Nameplates keep their

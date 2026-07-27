@@ -332,7 +332,7 @@ interface CombatEventBase {
 
 export type CombatEvent =
 	| (CombatEventBase & { kind: 'hit'; dir: -1 | 0 | 1; source?: number })
-	| (CombatEventBase & { kind: 'break'; dir: -1 | 0 | 1 })
+	| (CombatEventBase & { kind: 'break'; dir: -1 | 0 | 1; source?: number })
 	| (CombatEventBase & { kind: 'swat'; dir: Facing })
 	| (CombatEventBase & { kind: 'death'; dir: 0; tint?: Tint });
 
@@ -351,7 +351,8 @@ export function combatEventAt(
 		dir,
 		intensity,
 	} as CombatEvent;
-	if (e.kind === 'hit' && source !== undefined) e.source = source;
+	if ((e.kind === 'hit' || e.kind === 'break') && source !== undefined)
+		e.source = source;
 	return e;
 }
 
@@ -402,12 +403,13 @@ export function predictHits(
 	damage: number,
 	swingHits: ReadonlySet<number>,
 	monsters: readonly Pick<Combatant, 'id' | 'x' | 'y'>[],
+	source?: number,
 ): CombatEvent[] {
 	if (!hitbox) return [];
 	const events: CombatEvent[] = [];
 	for (const m of monsters)
 		if (swingHitsTarget(hitbox, swingHits, m))
-			events.push(combatEventAt('hit', m, attackerFacing, damage));
+			events.push(combatEventAt('hit', m, attackerFacing, damage, source));
 	return events;
 }
 
@@ -542,7 +544,9 @@ export function resolveHitsOnMonsters<E extends Combatant>(
 			} else if (broke) {
 				m = applyImpulse(m, s.knockback * s.facing, -s.knockbackUp);
 				m = patch(m, { stunT: COMBAT.hitstun });
-				events.push(combatEventAt('break', m, s.facing, s.damage));
+				events.push(
+					combatEventAt('break', m, s.facing, s.damage, s.attackerId),
+				);
 			} else {
 				events.push(combatEventAt('hit', m, s.facing, s.damage, s.attackerId));
 			}
@@ -589,7 +593,9 @@ export function resolveHitsOnAvatars<E extends Combatant>(
 			if (broke) {
 				na = applyImpulse(na, s.knockback * s.facing, -s.knockbackUp);
 				na = patch(na, { stunT: COMBAT.hitstun });
-				events.push(combatEventAt('break', a, s.facing, s.damage));
+				events.push(
+					combatEventAt('break', a, s.facing, s.damage, s.attackerId),
+				);
 			} else if (g.result !== 'block') {
 				const away: -1 | 0 | 1 =
 					a.x === attackerX ? 0 : a.x > attackerX ? 1 : -1;

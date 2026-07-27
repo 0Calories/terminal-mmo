@@ -268,7 +268,9 @@ VisualEffects/SoundEffects — no site emits presentation inline, and the server
 presentation knowledge. The originator is suppressed from its own broadcast (it already
 predicted its `hit`). Modeled as a discriminated union on `kind`, so each kind carries
 only the fields it can mean — `source` on a predicted `hit`, `tint` (the dead body's
-colour) on a `death`.
+colour) on a `death`. A `break` also carries `source`, but is *never*
+suppression-filtered: the tag exists so the attacker's client can convert its
+predicted **Damage number** instead of double-spawning one (ADR 0041).
 _Avoid_: Effect (retired — see VisualEffect), HitEvent, Outcome
 
 **VisualEffect**:
@@ -312,6 +314,27 @@ a new definition file, not new code — and since the ADR 0013 amendment the pro
 Distinct from a **CombatEvent**'s `kind`: that is the *semantic game event* (`hit`),
 mapped client-side (via a **VisualEffect**) to a named effect.
 _Avoid_: CombatEvent.kind, ParticleKind, sprite
+
+**Damage number**:
+The floating glyph-art digits that pop off an entity when a **CombatEvent** deals
+damage — the client-side *numeric* realization of a `hit`/`break`, sibling of the
+**Particle** (what it looked like) and the **SoundEffect** (what it sounded like):
+what it *cost*. Produced by the `present` routing layer; purely client-side, never
+on the wire, and deterministic — every observer sees the same digits at the same
+spot (unlike a Particle, no local randomness). Spawns above the target's head and
+drifts up on the render clock without tracking the target; an uncontested number
+spawns dead-centre, and only while earlier numbers on that target are still
+alive do later ones spread through a short deterministic offset cycle keyed to
+hit order (the cycle resets once the target has no live numbers) — free
+overprint was prototyped and read as unreadable soup. Three styles — hit-on-Monster, **break** (heavier digits), and
+damage-on-**Avatar** — and never a fourth for other Players' hits (de-noising those
+relative to your own is a parked exploration). The attacker's own number is
+predicted with its optimistic `hit`; when the authority resolves that swing as a
+`break` (tagged with `source`), the client *converts* the pending number rather
+than double-spawning (ADR 0041). `death` and `swat` produce no number, and a
+**Block**'s chip damage shows none (a block emits no CombatEvent). Digits are a
+pixel-font authored in client code, not Sprite files.
+_Avoid_: Floating combat text, damage popup, hit marker, FX
 
 **Hitstop**:
 A client-side, render-only freeze of a few dozen milliseconds on a meaty hit (a

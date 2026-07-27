@@ -416,4 +416,24 @@ describe('snapshot wire contract', () => {
 			dir: 1,
 		});
 	});
+
+	test('a break CombatEvent carries its source across the wire', () => {
+		const message = comprehensiveSnapshot();
+		message.events = [
+			{
+				kind: 'break',
+				targetId: 4,
+				x: 3,
+				y: 9,
+				intensity: 6,
+				dir: -1,
+				source: 7,
+			},
+			{ kind: 'break', targetId: 5, x: 1, y: 2, intensity: 6, dir: 1 },
+		];
+		const decoded = decodeServerMessage(encodeServerMessage(message));
+		if (decoded.t !== 'snapshot') throw new Error('expected a snapshot');
+		expect(decoded.events[0]).toEqual(message.events[0]);
+		expect(decoded.events[1]).not.toHaveProperty('source');
+	});
 });

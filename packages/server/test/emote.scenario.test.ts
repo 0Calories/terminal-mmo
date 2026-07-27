@@ -56,6 +56,7 @@ test('an emote command predicts immediately and replicates once through the serv
 		},
 		playfield: {
 			game: null,
+			sessionId: null,
 			emitPredicted: () => {},
 			levelUpBurst: () => {},
 		},

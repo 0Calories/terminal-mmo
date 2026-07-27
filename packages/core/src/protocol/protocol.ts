@@ -652,6 +652,11 @@ function writeCombatEvent(w: Writer, e: CombatEvent) {
 		w.u8(tint.g);
 		w.u8(tint.b);
 	}
+	// Only a break's source crosses the wire; a hit's stays server-internal
+	// (stripped with the originator suppression before encoding).
+	const source = e.kind === 'break' ? e.source : undefined;
+	w.bool(source !== undefined);
+	if (source !== undefined) w.u32(source);
 }
 
 function readCombatEvent(r: Reader): CombatEvent {
@@ -663,11 +668,15 @@ function readCombatEvent(r: Reader): CombatEvent {
 	const rawDir = r.i8();
 	const hasTint = r.bool();
 	const tint = hasTint ? { r: r.u8(), g: r.u8(), b: r.u8() } : undefined;
+	const hasSource = r.bool();
+	const source = hasSource ? r.u32() : undefined;
 	switch (kind) {
 		case 'hit':
 			return { kind, targetId, x, y, intensity, dir: rawDir as -1 | 0 | 1 };
 		case 'break':
-			return { kind, targetId, x, y, intensity, dir: rawDir as -1 | 0 | 1 };
+			return source !== undefined
+				? { kind, targetId, x, y, intensity, dir: rawDir as -1 | 0 | 1, source }
+				: { kind, targetId, x, y, intensity, dir: rawDir as -1 | 0 | 1 };
 		case 'swat':
 			return { kind, targetId, x, y, intensity, dir: (rawDir || 1) as Facing };
 		case 'death':

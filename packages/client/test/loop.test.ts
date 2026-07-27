@@ -111,6 +111,7 @@ function rig(over: Partial<GameLoopDeps> = {}): Rig {
 		},
 		playfield: {
 			game: null,
+			sessionId: null,
 			emitPredicted: () => {},
 			levelUpBurst: () => {
 				t.bursts++;
