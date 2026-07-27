@@ -2,8 +2,9 @@ import { expect, test } from 'bun:test';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createShutdown } from '../src/shutdown';
+import { createShutdown, DRAIN_GRACE_MS } from '../src/shutdown';
 import { openPlayerStore } from '../src/store';
+import { createStackScenario, joinScenarioPlayer } from './scenario';
 
 const richSave = () => ({
 	handle: 'Trinity',
@@ -15,63 +16,151 @@ const richSave = () => ({
 	bossDefeated: true,
 });
 
-test('shutdown flushes dirty state, then closes the store, then exits 0', () => {
-	const calls: string[] = [];
-	const shutdown = createShutdown({
+interface DrainOverrides {
+	announce?: () => void;
+	flushAll?: () => void;
+	closeSessions?: () => void;
+	close?: () => void;
+	delay?: (ms: number) => Promise<void>;
+	logError?: (msg: string, err: unknown) => void;
+}
+
+const recordedShutdown = (calls: string[], overrides: DrainOverrides = {}) =>
+	createShutdown({
+		announce: () => calls.push('announce'),
 		flushAll: () => calls.push('flush'),
+		closeSessions: () => calls.push('closeSessions'),
 		close: () => calls.push('close'),
+		delay: (ms) => {
+			calls.push(`delay:${ms}`);
+			return Promise.resolve();
+		},
 		exit: (code) => calls.push(`exit:${code}`),
 		log: () => {},
+		...overrides,
 	});
 
-	shutdown('SIGTERM');
+test('shutdown drains in order: announce, grace, flush, close sessions, close store, exit 0', async () => {
+	const calls: string[] = [];
+	await recordedShutdown(calls)('SIGTERM');
 
-	expect(calls).toEqual(['flush', 'close', 'exit:0']);
+	expect(calls).toEqual([
+		'announce',
+		`delay:${DRAIN_GRACE_MS}`,
+		'flush',
+		'closeSessions',
+		'close',
+		'exit:0',
+	]);
 });
 
-test('a repeated / cross signal is idempotent — never double-flush or double-close', () => {
-	let flushes = 0;
-	let closes = 0;
-	let exits = 0;
-	const shutdown = createShutdown({
-		flushAll: () => flushes++,
-		close: () => closes++,
-		exit: () => exits++,
-		log: () => {},
+test('the default grace period fits inside Railway stop grace window (~10s)', () => {
+	expect(DRAIN_GRACE_MS).toBeLessThan(10_000);
+	expect(DRAIN_GRACE_MS).toBeGreaterThan(0);
+});
+
+test('a second signal during the grace delay does not restart the drain', async () => {
+	const calls: string[] = [];
+	let releaseGrace = () => {};
+	const shutdown = recordedShutdown(calls, {
+		delay: () =>
+			new Promise((resolve) => {
+				releaseGrace = resolve;
+			}),
 	});
 
-	shutdown('SIGINT');
-	shutdown('SIGTERM');
-	shutdown('SIGINT');
+	const draining = shutdown('SIGTERM');
+	await shutdown('SIGTERM');
+	await shutdown('SIGINT');
+	expect(calls).toEqual(['announce']);
 
-	expect(flushes).toBe(1);
-	expect(closes).toBe(1);
-	expect(exits).toBe(1);
+	releaseGrace();
+	await draining;
+
+	expect(calls).toEqual([
+		'announce',
+		'flush',
+		'closeSessions',
+		'close',
+		'exit:0',
+	]);
 });
 
-test('a throwing flush still closes the store and exits — no stranded handle', () => {
+test('a throwing announce still flushes, closes, and exits', async () => {
 	const calls: string[] = [];
 	let loggedError = false;
-	const shutdown = createShutdown({
-		flushAll: () => {
-			calls.push('flush');
-			throw new Error('one bad save');
+	const shutdown = recordedShutdown(calls, {
+		announce: () => {
+			calls.push('announce');
+			throw new Error('broadcast blew up');
 		},
-		close: () => calls.push('close'),
-		exit: (code) => calls.push(`exit:${code}`),
-		log: () => {},
 		logError: () => {
 			loggedError = true;
 		},
 	});
 
-	shutdown('SIGTERM');
+	await shutdown('SIGTERM');
 
-	expect(calls).toEqual(['flush', 'close', 'exit:0']);
+	expect(calls).toEqual([
+		'announce',
+		`delay:${DRAIN_GRACE_MS}`,
+		'flush',
+		'closeSessions',
+		'close',
+		'exit:0',
+	]);
 	expect(loggedError).toBe(true);
 });
 
-test('no progress loss: state flushed only at shutdown survives via close()', () => {
+test('a throwing flush still closes sessions and the store — no stranded handle', async () => {
+	const calls: string[] = [];
+	let loggedError = false;
+	const shutdown = recordedShutdown(calls, {
+		flushAll: () => {
+			calls.push('flush');
+			throw new Error('one bad save');
+		},
+		logError: () => {
+			loggedError = true;
+		},
+	});
+
+	await shutdown('SIGTERM');
+
+	expect(calls).toEqual([
+		'announce',
+		`delay:${DRAIN_GRACE_MS}`,
+		'flush',
+		'closeSessions',
+		'close',
+		'exit:0',
+	]);
+	expect(loggedError).toBe(true);
+});
+
+test('a throwing session close still closes the store and exits', async () => {
+	const calls: string[] = [];
+	const shutdown = recordedShutdown(calls, {
+		closeSessions: () => {
+			calls.push('closeSessions');
+			throw new Error('socket already gone');
+		},
+		logError: () => {},
+	});
+
+	await shutdown('SIGTERM');
+
+	expect(calls).toEqual([
+		'announce',
+		`delay:${DRAIN_GRACE_MS}`,
+		'flush',
+		'closeSessions',
+		'close',
+		'exit:0',
+	]);
+});
+
+test('no progress loss: state flushed only at shutdown survives via close()', async () => {
 	const dir = mkdtempSync(join(tmpdir(), 'mmo-shutdown-'));
 	const path = join(dir, 'state.sqlite');
 	try {
@@ -79,12 +168,15 @@ test('no progress loss: state flushed only at shutdown survives via close()', ()
 		const key = 'ssh-ed25519 AAAAtestkeyblob';
 
 		const shutdown = createShutdown({
+			announce: () => {},
 			flushAll: () => store.save(key, richSave()),
+			closeSessions: () => {},
 			close: () => store.close(),
+			delay: () => Promise.resolve(),
 			exit: () => {},
 			log: () => {},
 		});
-		shutdown('SIGTERM');
+		await shutdown('SIGTERM');
 
 		expect(existsSync(path)).toBe(true);
 
@@ -94,4 +186,23 @@ test('no progress loss: state flushed only at shutdown survives via close()', ()
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
+});
+
+test('draining the runtime announces the restart, then closes every session with the upgrade reason', () => {
+	const stack = createStackScenario();
+	const { client: first } = joinScenarioPlayer(stack, 'Neo');
+	const { client: second } = joinScenarioPlayer(stack, 'Morpheus');
+	stack.advanceTick();
+	first.receive();
+	second.receive();
+
+	stack.announce('The server is restarting for an update — hang tight.');
+	expect(first.take('notice').text).toContain('restarting for an update');
+	expect(second.take('notice').text).toContain('restarting for an update');
+
+	stack.closeSessions('Reconnect in a few moments.');
+	expect(first.take('reject').reason).toBe('Reconnect in a few moments.');
+	expect(second.take('reject').reason).toBe('Reconnect in a few moments.');
+	expect(first.closed).toBe(true);
+	expect(second.closed).toBe(true);
 });
