@@ -53,13 +53,20 @@ export interface ServerRuntime {
 	announce(text: string): void;
 	closeSessions(reason: string): void;
 	close(): void;
-	health(): { status: 'ok'; version: string };
+	health(): {
+		status: 'ok';
+		version: string;
+		gitSha: string;
+		contractHash: string;
+	};
 }
 
 export interface ServerRuntimeOptions {
 	zones: Zone[];
 	store: PlayerStore;
 	releaseVersion: string;
+	gitSha?: string;
+	// Recomputed from loaded content at boot — never echoed from a stamp file.
 	contractHash: string;
 	nonce: () => Uint8Array;
 	validHatIds: ReadonlySet<string>;
@@ -458,7 +465,12 @@ export function createServerRuntime(
 			options.store.close();
 		},
 		health() {
-			return { status: 'ok', version: options.releaseVersion };
+			return {
+				status: 'ok',
+				version: options.releaseVersion,
+				gitSha: options.gitSha ?? 'dev',
+				contractHash: options.contractHash,
+			};
 		},
 	};
 }

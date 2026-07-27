@@ -1,15 +1,20 @@
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 import { computeContractHash, loadZones, spriteIds } from '@mmo/assets/meta';
 import { NONCE_LEN } from '@mmo/core/persistence';
 import { encodeServerMessage } from '@mmo/core/protocol';
+import {
+	assertBootIdentity,
+	type BuildStamp,
+	parseStamp,
+} from '@mmo/core/release';
 import type { ServerWebSocket } from 'bun';
 import { createServerRuntime, type ServerRuntime } from './runtime';
 import { installShutdownHooks } from './shutdown';
 import { openPlayerStore } from './store';
 
 const PORT = Number(process.env.PORT) || Number(process.env.MMO_PORT) || 8080;
-const SERVER_VERSION = process.env.MMO_VERSION ?? 'dev';
 const TICK_RATE = 20;
 const MS_PER_TICK = 1000 / TICK_RATE;
 const MAX_CONNECTIONS = Number(process.env.MMO_MAX_CONN) || 200;
@@ -105,7 +110,7 @@ export function startBunHost(runtime: ServerRuntime) {
 	});
 
 	console.log(
-		`@mmo/server (${SERVER_VERSION}) ticking the world at ${TICK_RATE} Hz on ws://localhost:${server.port}`,
+		`@mmo/server (${runtime.health().version}) ticking the world at ${TICK_RATE} Hz on ws://localhost:${server.port}`,
 	);
 	return server;
 }
@@ -117,12 +122,37 @@ function rejectTransport(ws: ServerWebSocket<WsData>, reason: string): void {
 	ws.close();
 }
 
+function readStamp(): BuildStamp | undefined {
+	let json: string;
+	try {
+		json = readFileSync('build-info.json', 'utf8');
+	} catch {
+		return undefined;
+	}
+	return parseStamp(json);
+}
+
 if (import.meta.main) {
+	const stamp = readStamp();
+	const contractHash = computeContractHash();
+	try {
+		assertBootIdentity({
+			railwayEnv: process.env.RAILWAY_ENVIRONMENT,
+			stamp,
+			recomputedHash: contractHash,
+		});
+	} catch (error) {
+		console.error(
+			`refusing to boot: ${error instanceof Error ? error.message : error}`,
+		);
+		process.exit(1);
+	}
 	const runtime = createServerRuntime({
 		zones: loadZones(),
 		store: openPlayerStore(process.env.MMO_DB_PATH ?? 'mmo-state.sqlite'),
-		releaseVersion: SERVER_VERSION,
-		contractHash: computeContractHash(),
+		releaseVersion: stamp?.version ?? 'dev',
+		gitSha: stamp?.gitSha ?? 'dev',
+		contractHash,
 		nonce: () => new Uint8Array(randomBytes(NONCE_LEN)),
 		validHatIds: spriteIds('hats'),
 		validFormIds: spriteIds('forms'),
