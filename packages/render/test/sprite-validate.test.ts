@@ -423,3 +423,98 @@ test('validateSpriteSet: reserved p/a redefinition surfaces as an aggregated err
 		),
 	).toBe(true);
 });
+
+const MONSTER_UNIFORM = `{"key":"f","animations":[{"name":"idle"},{"name":"windup"}]}
+--- idle
+·▄▄·
+████
+--- windup 0
+····
+████
+--- windup 1
+▄▄▄▄
+████
+`;
+
+test('validateSpriteRole: a derived-box sprite with uniform frame grids passes', () => {
+	expect(
+		validateSpriteRole(docOf(MONSTER_UNIFORM, 'blob'), 'monsters'),
+	).toEqual([]);
+});
+
+const MONSTER_RESIZED = `{"key":"f","animations":[{"name":"idle"},{"name":"windup"}]}
+--- idle
+·▄▄·
+████
+--- windup
+▄▄▄▄▄▄
+██████
+`;
+
+test('validateSpriteRole: a frame grid differing from the Default frame is an error', () => {
+	const diags = validateSpriteRole(docOf(MONSTER_RESIZED, 'blob'), 'monsters');
+	const bad = diags.find((d) => d.frame === 'windup');
+	expect(bad?.severity).toBe('error');
+	expect(bad?.message).toContain('one sizing');
+	expect(bad?.message).toContain('6x2');
+	expect(bad?.message).toContain('4x2');
+});
+
+test('validateSpriteRole: the uniform-grid rule gates acceptance, so a resized monster is refused', () => {
+	expect(
+		acceptSprite(
+			{ id: 'blob', role: 'monsters', text: MONSTER_RESIZED },
+			'monsters',
+		),
+	).toBeNull();
+});
+
+const MONSTER_WILD = `{"key":"f","animations":[{"name":"idle"},{"name":"attack"}]}
+--- idle
+··········
+··▄▄▄▄····
+··········
+--- attack 0
+··········
+··██████··
+··········
+--- attack 1
+██████████
+██████████
+██████████
+`;
+
+test('validateSpriteRole: visible art wildly past the Default frame warns; a modest stretch does not', () => {
+	const diags = validateSpriteRole(docOf(MONSTER_WILD, 'blob'), 'monsters');
+	expect(diags.filter((d) => d.frame === 'attack 0')).toEqual([]);
+	const wild = diags.find((d) => d.frame === 'attack 1');
+	expect(wild?.severity).toBe('warning');
+	expect(wild?.message).toContain('wildly');
+});
+
+test('validateSpriteRole: non-derived roles may resize freely between frames', () => {
+	const form = `{
+	"anchors": { "grip": [0, 0], "head": [0, 0] },
+	"animations": [{ "name": "idle" }, { "name": "walk" }]
+}
+--- idle
+AB
+--- walk 0
+ABCD
+EFGH
+--- walk 1
+AB
+`;
+	expect(
+		validateSpriteRole(docOf(form, 'buddy'), 'forms').filter(
+			(d) => d.severity === 'error',
+		),
+	).toEqual([]);
+});
+
+test('validateSpriteSet: the shipped set has no uniform-grid or box-derivation complaints', () => {
+	const diags = validateSpriteSet(loadSpriteSources().values());
+	expect(diags.some((d) => d.message.includes('logical box'))).toBe(false);
+	expect(diags.some((d) => d.message.includes('one sizing'))).toBe(false);
+	expect(diags.some((d) => d.message.includes('wildly'))).toBe(false);
+});
