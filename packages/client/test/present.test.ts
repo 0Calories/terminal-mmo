@@ -115,3 +115,76 @@ describe('present routes a CombatEvent to client presentation', () => {
 		expect(show.hitstop).toBe(true);
 	});
 });
+
+describe('present routes hit/break CombatEvents to Damage numbers', () => {
+	test('a hit yields a hit-styled number at the event spot showing the damage dealt', () => {
+		const event = combatEventAt('hit', TARGET, 1, 7);
+		const show = present([event]);
+
+		expect(show.numbers).toEqual([
+			{
+				style: 'hit',
+				targetId: TARGET.id,
+				x: event.x,
+				y: event.y,
+				value: 7,
+				own: false,
+			},
+		]);
+	});
+
+	test('a break yields a break-styled number at the raw damage, not the impact intensity', () => {
+		const event = combatEventAt('break', TARGET, -1, 5);
+		const [n] = present([event]).numbers;
+
+		expect(n.style).toBe('break');
+		expect(n.value).toBe(5);
+	});
+
+	test('death and swat produce no number', () => {
+		const pr = makeProjectile({ id: 3, x: 20, y: 8, vx: -9 });
+		const show = present([
+			deathEvent(entity({ id: 9, type: 'brute', x: 20, y: 8 })),
+			swatEvent(pr, -1),
+		]);
+
+		expect(show.numbers).toEqual([]);
+	});
+
+	test('an Avatar target flips both kinds to the avatar style', () => {
+		const avatarIds = new Set([TARGET.id]);
+		const show = present(
+			[
+				combatEventAt('hit', TARGET, 1, 7),
+				combatEventAt('break', TARGET, 1, 5),
+			],
+			{ avatarIds },
+		);
+
+		expect(show.numbers.map((n) => n.style)).toEqual(['avatar', 'avatar']);
+	});
+
+	test('a source matching the own session marks the number as own — for the predicted hit and the converting break alike', () => {
+		const show = present(
+			[
+				combatEventAt('hit', TARGET, 1, 7, 3),
+				combatEventAt('break', TARGET, 1, 5, 3),
+			],
+			{ selfId: 3 },
+		);
+
+		expect(show.numbers.map((n) => n.own)).toEqual([true, true]);
+	});
+
+	test('a foreign or absent source never marks a number as own', () => {
+		const show = present(
+			[
+				combatEventAt('break', TARGET, 1, 5, 8),
+				combatEventAt('break', TARGET, 1, 5),
+			],
+			{ selfId: 3 },
+		);
+
+		expect(show.numbers.map((n) => n.own)).toEqual([false, false]);
+	});
+});

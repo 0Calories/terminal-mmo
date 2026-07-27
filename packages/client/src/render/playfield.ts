@@ -29,6 +29,7 @@ import {
 	stepCamera,
 	stepKick,
 } from './camera';
+import { DamageNumberTracker } from './damage-numbers';
 import { DodgeTracker } from './dodge-echo';
 import { present } from './present';
 import { drawPlayfield } from './scene';
@@ -46,6 +47,8 @@ export interface PlayfieldOptions extends RenderableOptions {
 export class PlayfieldRenderable extends Renderable {
 	game: GameState | null = null;
 
+	sessionId: number | null = null;
+
 	sound: SoundSink | null = null;
 
 	private camState: CameraState = initCameraState();
@@ -53,6 +56,7 @@ export class PlayfieldRenderable extends Renderable {
 	private hitstop: Hitstop = NO_HITSTOP;
 	private readonly particles: ParticleEngine;
 	private readonly dodges = new DodgeTracker();
+	private readonly numbers = new DamageNumberTracker();
 	private compositor: Compositor | null = null;
 	private lastParticleTick = -1;
 	private lastZoneId: string | null = null;
@@ -83,7 +87,10 @@ export class PlayfieldRenderable extends Renderable {
 		if (zoneId !== this.lastZoneId) {
 			this.lastParticleTick = -1;
 
-			if (this.lastZoneId !== null) this.particles.clear();
+			if (this.lastZoneId !== null) {
+				this.particles.clear();
+				this.numbers.clear();
+			}
 			this.lastZoneId = zoneId;
 		}
 		const fresh = tick !== this.lastParticleTick ? events : [];
@@ -136,7 +143,13 @@ export class PlayfieldRenderable extends Renderable {
 			: snapshotEvents;
 		this.predicted = [];
 
-		const presentation = present(fresh);
+		const avatarIds = new Set((this.game.others ?? []).map((o) => o.id));
+		if (this.sessionId !== null) avatarIds.add(this.sessionId);
+		const presentation = present(fresh, {
+			selfId: this.sessionId ?? undefined,
+			avatarIds,
+		});
+		this.numbers.spawn(presentation.numbers, now);
 
 		for (const dir of presentation.kicks)
 			this.kick = applyKick(this.kick, dir * CAMERA_KICK.maxCells, -1);
@@ -162,6 +175,8 @@ export class PlayfieldRenderable extends Renderable {
 		drawPlayfield(buffer, this.compositorFor(buffer), this.game, cam, {
 			particles: this.particles,
 			dodges: this.dodges,
+			numbers: this.numbers,
+			now,
 		});
 	}
 

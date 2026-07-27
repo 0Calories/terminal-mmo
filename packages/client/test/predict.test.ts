@@ -133,6 +133,26 @@ test('a swing hits a monster once, and the same swing cannot hit it again', () =
 	expect(second).toEqual([]);
 });
 
+test('a predicted hit is tagged with the own session as its source', () => {
+	const r = swingToStrike(grounded({ x: 10, facing: 1, weapon: undefined }));
+	if (!r.hitbox) throw new Error('expected a strike');
+	const monster = entity({
+		id: 99,
+		type: 'chaser',
+		x: r.hitbox.x,
+		y: r.hitbox.y,
+	});
+
+	const [event] = predictSwingEvents(
+		{ ...r.avatar },
+		r.hitbox,
+		r.hitDamage,
+		[monster],
+		7,
+	);
+	expect(event.kind === 'hit' && event.source).toBe(7);
+});
+
 test('applyEmote leaves the Avatar untouched for an unknown emote', () => {
 	const base = grounded();
 	expect(applyEmote(base, 'not-an-emote')).toBe(base);

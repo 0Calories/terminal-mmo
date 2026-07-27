@@ -108,6 +108,7 @@ export function predictSwingEvents(
 	hitbox: Box,
 	hitDamage: number,
 	monsters: Entity[],
+	source?: number,
 ): CombatEvent[] {
 	const swung = new Set(predicted.swingHits ?? []);
 	const events = predictHits(
@@ -116,6 +117,7 @@ export function predictSwingEvents(
 		hitDamage,
 		swung,
 		monsters,
+		source,
 	);
 	for (const e of events) swung.add(e.targetId);
 	predicted.swingHits = [...swung];

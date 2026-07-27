@@ -47,6 +47,7 @@ interface NetView {
 
 interface PlayfieldView {
 	game: GameState | null;
+	sessionId: number | null;
 	emitPredicted(events: CombatEvent[]): void;
 	levelUpBurst(): void;
 }
@@ -177,6 +178,7 @@ export class GameLoop {
 			net.bubbles,
 		);
 		playfield.game = game;
+		playfield.sessionId = net.sessionId;
 
 		const snapLevel = net.latest?.progress.level;
 		if (snapLevel != null) {
@@ -196,6 +198,7 @@ export class GameLoop {
 					step.hitbox,
 					step.hitDamage,
 					monsters,
+					net.sessionId,
 				),
 			);
 		}

@@ -74,6 +74,7 @@ test('a Player strike predicts one hit immediately, damages the Monster, and pre
 		},
 		playfield: {
 			game: null,
+			sessionId: null,
 			emitPredicted: (events) => predicted.push(present(events)),
 			levelUpBurst: () => {},
 		},

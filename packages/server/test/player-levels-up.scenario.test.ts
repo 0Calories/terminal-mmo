@@ -94,6 +94,7 @@ test('authoritative Combat levels a Player and the client celebrates exactly onc
 		},
 		playfield: {
 			game: null,
+			sessionId: null,
 			emitPredicted: () => {},
 			levelUpBurst: () => bursts++,
 		},
