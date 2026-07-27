@@ -5,6 +5,7 @@ import {
 	SPRITE_EXT,
 } from './store';
 
+export { computeContractHash } from './contract';
 export { loadZones } from './zones';
 
 export function spriteIds(

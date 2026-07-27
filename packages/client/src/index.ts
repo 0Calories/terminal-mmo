@@ -11,7 +11,12 @@ import { resolveServerUrl } from './server-url';
 import { SoundSystem } from './sound/system';
 import { Hud } from './ui/hud';
 import { NoKittyNotice, NoticeGate } from './ui/no-kitty-notice';
-import { CLIENT_VERSION } from './version';
+import { CLIENT_GIT_SHA, CLIENT_VERSION } from './version';
+
+if (process.argv.includes('--version')) {
+	console.log(`terminal-mmo ${CLIENT_VERSION} (${CLIENT_GIT_SHA})`);
+	process.exit(0);
+}
 
 const RENDER_FPS = Number(process.env.MMO_FPS) || 60;
 const SERVER = resolveServerUrl(process.env.MMO_SERVER, CLIENT_VERSION);

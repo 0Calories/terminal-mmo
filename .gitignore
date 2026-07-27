@@ -9,3 +9,6 @@ dist/
 *.sqlite-shm
 
 progress.txt
+
+# Build stamp derived by scripts/stamp-build.ts — never committed.
+build-info.json

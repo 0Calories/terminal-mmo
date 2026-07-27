@@ -1,13 +1,26 @@
-import { chmodSync } from 'node:fs';
+import { chmodSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { loadAssetEntries } from '@mmo/assets';
+import { type BuildStamp, parseStamp } from '@mmo/core/release';
 
 const here = import.meta.dir;
 const outdir = join(here, 'dist');
 const outfile = join(outdir, 'cli.js');
 
-const version = process.env.MMO_VERSION ?? 'dev';
+function readStamp(): BuildStamp | undefined {
+	let json: string;
+	try {
+		json = readFileSync(join(here, '..', '..', 'build-info.json'), 'utf8');
+	} catch {
+		return undefined;
+	}
+	return parseStamp(json);
+}
+
+const stamp = readStamp();
+const version = stamp?.version ?? 'dev';
+const gitSha = stamp?.gitSha ?? 'dev';
 
 const embeddedAssets = loadAssetEntries();
 
@@ -20,6 +33,7 @@ const result = await Bun.build({
 	external: ['@opentui/core'],
 	define: {
 		'process.env.MMO_VERSION': JSON.stringify(version),
+		'process.env.MMO_GIT_SHA': JSON.stringify(gitSha),
 		MMO_EMBEDDED_ASSETS: JSON.stringify(embeddedAssets),
 	},
 	banner: '#!/usr/bin/env bun',

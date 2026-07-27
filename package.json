@@ -14,6 +14,7 @@
 		"forge": "bun run packages/forge/bin/forge.ts",
 		"zones:check": "bun run packages/forge/bin/forge.ts zone check",
 		"release:check": "bun run scripts/check-release-manifest.ts",
+		"stamp": "bun run scripts/stamp-build.ts",
 		"sprites:check": "bun run packages/forge/bin/forge.ts sprite check",
 		"zones:preview": "bun run packages/forge/bin/forge.ts zone preview",
 		"zones:play": "bun run packages/forge/bin/forge.ts zone play",
