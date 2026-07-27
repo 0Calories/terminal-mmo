@@ -35,10 +35,13 @@ plays identically whatever its Form (ADR 0020). Forms live in a registry selecte
 _Avoid_: Race, species, class, skin (a Form is the body, not a recolor)
 
 **Sprite**:
-The visual ASCII-art representation of an entity (Avatar, Monster, NPC). Purely
-decorative and client-side; deliberately decoupled from the entity's small
-logical collision/hitbox footprint (see ADR on visual architecture). A single,
-static frame; the animated, multi-frame body is a **Body sprite**.
+The visual ASCII-art representation of an entity (Avatar, Monster, NPC).
+Presentation stays decorative and client-side — the simulation sees only
+position + box — but a Monster's (and NPC's) logical box is *derived from* its
+sprite at asset load: the visible pixel bounds of the **Default frame** (ADR
+0042). An Avatar's box stays the canonical uniform one whatever its **Form**
+(ADR 0020); attack hitboxes stay authored, never derived. A single, static
+frame; the animated, multi-frame body is a **Body sprite**.
 _Avoid_: Art, model, skin
 
 **Body sprite**:

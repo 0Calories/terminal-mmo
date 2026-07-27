@@ -1,5 +1,7 @@
 ---
-status: accepted
+status: accepted, partially superseded by ADR 0042 (Monster/NPC logical boxes
+  now derive from their sprite's Default frame; the sprite-decoupled
+  *presentation* philosophy and the Avatar's uniform box stand)
 ---
 
 # Visual architecture: rich ASCII sprites, decoupled from logical entities
