@@ -96,11 +96,14 @@ export function stepPrediction(
 
 export function reconcileHealth(
 	predicted: Entity,
-	own: Pick<Entity, 'hp' | 'maxHp' | 'hurtT'>,
+	own: Pick<Entity, 'hp' | 'maxHp' | 'hurtT'> & { offhand?: number | null },
 ): void {
 	predicted.hp = own.hp;
 	predicted.maxHp = own.maxHp;
 	predicted.hurtT = own.hurtT;
+	if (own.offhand === null || own.offhand === undefined)
+		delete predicted.offhand;
+	else predicted.offhand = own.offhand;
 }
 
 export function predictSwingEvents(
