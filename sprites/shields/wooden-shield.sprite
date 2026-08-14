@@ -1,0 +1,20 @@
+{
+	"key": "w",
+	"anchors": { "grip": [1, 0] },
+	"animations": [
+		{ "name": "idle" },
+		{ "name": "block", "anchors": { "0": { "grip": [0, 1] } } }
+	]
+}
+--- idle
+▟█▙
+▜█▛
+@colors
+wsw
+www
+--- block
+▟█▙
+▜█▛
+@colors
+wsw
+www

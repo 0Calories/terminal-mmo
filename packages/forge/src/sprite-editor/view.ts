@@ -14,6 +14,7 @@ import type { SpriteRole } from './templates';
 const ROLE_DIRS: Record<SpriteRole, string> = {
 	form: 'forms',
 	weapon: 'weapons',
+	shield: 'shields',
 	hat: 'hats',
 	monster: 'monsters',
 	npc: 'npcs',

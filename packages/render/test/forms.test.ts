@@ -8,7 +8,7 @@ function formSource(id = 'form'): SpriteSource {
 }
 
 const MINIMAL = `{
-	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"anchors": { "grip": [1, 0], "head": [0, 0], "offhand": [0, 1] },
 	"animations": [{ "name": "idle" }, { "name": "walk" }]
 }
 --- idle
@@ -63,7 +63,7 @@ AB
 
 test('a source authoring an unregistered emote animation is skipped (role error)', () => {
 	const withBadEmote = `{
-	"anchors": { "grip": [0, 0], "head": [0, 0] },
+	"anchors": { "grip": [0, 0], "head": [0, 0], "offhand": [0, 1] },
 	"animations": [{ "name": "idle" }, { "name": "walk" }, { "name": "emote:boogie" }]
 }
 --- idle

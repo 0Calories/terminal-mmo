@@ -3,6 +3,7 @@ import { parseSpriteFile, type SpriteDoc, WEAPON_ACCENT_KEY } from '../src';
 import type { Sprite } from '../src/sprite';
 import {
 	compileBodySprite,
+	compileShieldSprite,
 	compileWeaponSprite,
 	spriteFromDoc,
 } from '../src/sprite-compile';
@@ -146,7 +147,7 @@ test('omitted colors/bg default to doc key on inked cells', () => {
 
 const BODY = `{
 	"baseline": 1,
-	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"anchors": { "grip": [1, 0], "head": [0, 0], "offhand": [0, 1] },
 	"animations": [
 		{ "name": "idle" },
 		{ "name": "walk", "fps": 8, "anchors": { "1": { "grip": [1, 1] } } }
@@ -273,4 +274,53 @@ test('compileWeaponSprite: throws when the grip anchor or the 3-frame swing is m
 		'noswing',
 	);
 	expect(() => compileWeaponSprite(noswing as SpriteDoc)).toThrow();
+});
+
+const SHIELD = `{
+	"key": "w",
+	"anchors": { "grip": [1, 0] },
+	"animations": [
+		{ "name": "idle" },
+		{ "name": "block", "anchors": { "0": { "grip": [0, 1] } } }
+	]
+}
+--- idle
+AB
+--- block
+CD
+`;
+
+test('compileShieldSprite: the default frame is the rest carry and block carries its frames', () => {
+	const { doc, diagnostics } = parseSpriteFile(SHIELD, 'wooden-shield');
+	expect(diagnostics.some((d) => d.severity === 'error')).toBe(false);
+	const ss = compileShieldSprite(doc as SpriteDoc);
+
+	expect(ss.frames.rest.rows(1)).toEqual(['AB']);
+	expect(ss.frames.block).toHaveLength(1);
+	expect(ss.frames.block[0].rows(1)).toEqual(['CD']);
+	expect(ss.grip).toEqual({ x: 1, y: 0 });
+
+	// The block frame's per-frame grip override (the authored raise) survives.
+	expect(ss.frames.block[0].anchors.grip).toEqual({ x: 0, y: 1 });
+});
+
+test('compileShieldSprite: throws when the grip anchor or block animation is missing', () => {
+	const { doc: nogrip } = parseSpriteFile(
+		`{ "animations": [{ "name": "idle" }, { "name": "block" }] }\n--- idle\nAB\n--- block\nAB\n`,
+		'nogrip',
+	);
+	expect(() => compileShieldSprite(nogrip as SpriteDoc)).toThrow();
+	const { doc: noblock } = parseSpriteFile(
+		`{ "anchors": { "grip": [0, 0] }, "animations": [{ "name": "idle" }] }\n--- idle\nAB\n`,
+		'noblock',
+	);
+	expect(() => compileShieldSprite(noblock as SpriteDoc)).toThrow();
+});
+
+test('compileBodySprite: throws when the offhand anchor is missing', () => {
+	const { doc } = parseSpriteFile(
+		`{ "anchors": { "grip": [0, 0], "head": [0, 0] }, "animations": [{ "name": "idle" }] }\n--- idle\nAB\n`,
+		'nooffhand',
+	);
+	expect(() => compileBodySprite(doc as SpriteDoc)).toThrow("'offhand'");
 });

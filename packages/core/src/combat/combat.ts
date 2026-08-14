@@ -246,14 +246,6 @@ export function resolveGuard(
 	};
 }
 
-export function guardOverlayCell(e: Entity): { x: number; y: number } {
-	return { x: e.facing === 1 ? e.x + boxOf(e.type).w : e.x - 1, y: e.y + 1 };
-}
-
-export function guardOverlayGlyph(): string {
-	return '┃';
-}
-
 export function swingOverlayGlyph(phase: AttackPhase, facing: Facing): string {
 	const right = phase === 'windup' ? '╲' : phase === 'active' ? '─' : '╱';
 	if (facing === 1) return right;

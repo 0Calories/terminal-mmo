@@ -5,12 +5,7 @@ export {
 	type DepthKey,
 	sortActorsByDepth,
 } from './actor-order';
-export {
-	drawGuard,
-	drawProjectiles,
-	drawSkillTelegraphs,
-	drawSwing,
-} from './combat';
+export { drawProjectiles, drawSkillTelegraphs, drawSwing } from './combat';
 export { drawLabel, drawNameplates } from './labels';
 export { drawTerrain } from './terrain';
 export {

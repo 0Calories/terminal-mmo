@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import { loadSpriteSources, type SpriteSource } from '@mmo/assets';
 import { WEAPONS } from '@mmo/core/combat';
+import { SHIELDS } from '@mmo/core/items';
 import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
 import { parseSpriteFile, type SpriteDoc } from '../src';
 import {
@@ -18,7 +19,7 @@ function docOf(text: string, id = 's'): SpriteDoc {
 }
 
 const FORMS_OK = `{
-	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"anchors": { "grip": [1, 0], "head": [0, 0], "offhand": [0, 1] },
 	"animations": [{ "name": "idle" }, { "name": "walk" }]
 }
 --- idle
@@ -58,8 +59,30 @@ test('validateSpriteRole: forms fails naming missing animation and anchor', () =
 	expect(joined).not.toContain("'idle'");
 });
 
-const FORMS_KNOWN_EMOTE = `{
+const FORMS_NO_OFFHAND = `{
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"animations": [{ "name": "idle" }, { "name": "walk" }]
+}
+--- idle
+AB
+CD
+--- walk 0
+AB
+CD
+--- walk 1
+AB
+CD
+`;
+
+test('validateSpriteRole: a form without the offhand anchor is an error', () => {
+	const diags = validateSpriteRole(docOf(FORMS_NO_OFFHAND, 'buddy'), 'forms');
+	expect(diags.length).toBe(1);
+	expect(diags[0].severity).toBe('error');
+	expect(diags[0].message).toContain("'offhand'");
+});
+
+const FORMS_KNOWN_EMOTE = `{
+	"anchors": { "grip": [1, 0], "head": [0, 0], "offhand": [0, 1] },
 	"animations": [{ "name": "idle" }, { "name": "walk" }, { "name": "emote:wave" }]
 }
 --- idle
@@ -79,7 +102,7 @@ test('validateSpriteRole: forms accepts an emote animation for a registered emot
 });
 
 const FORMS_UNKNOWN_EMOTE = `{
-	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"anchors": { "grip": [1, 0], "head": [0, 0], "offhand": [0, 1] },
 	"animations": [{ "name": "idle" }, { "name": "walk" }, { "name": "emote:boogie" }]
 }
 --- idle
@@ -104,7 +127,7 @@ test('validateSpriteRole: forms rejects an emote animation for an unregistered e
 });
 
 const FORMS_NON_IDLE_LEAD = `{
-	"anchors": { "grip": [1, 0], "head": [0, 0] },
+	"anchors": { "grip": [1, 0], "head": [0, 0], "offhand": [0, 1] },
 	"animations": [{ "name": "walk" }, { "name": "idle" }]
 }
 --- walk 0
@@ -205,6 +228,90 @@ test('validateSpriteRole: a weapon whose first animation is swing has no rest fr
 	expect(diags[0].message).toContain('swing');
 });
 
+const SHIELD_OK = `{
+	"anchors": { "grip": [0, 0] },
+	"animations": [{ "name": "idle" }, { "name": "block" }]
+}
+--- idle
+AB
+--- block
+AB
+`;
+
+test('validateSpriteRole: shields passes with a rest Default frame, block, and grip', () => {
+	expect(validateSpriteRole(docOf(SHIELD_OK, 'shield'), 'shields')).toEqual([]);
+});
+
+const SHIELD_BAD = `{
+	"animations": [{ "name": "idle" }]
+}
+--- idle
+AB
+`;
+
+test('validateSpriteRole: shields fails on missing block animation and grip anchor', () => {
+	const diags = validateSpriteRole(docOf(SHIELD_BAD, 'shield'), 'shields');
+	expect(diags.length).toBe(2);
+	const joined = diags.map((d) => d.message).join('\n');
+	expect(joined).toContain("'block'");
+	expect(joined).toContain("'grip'");
+});
+
+const SHIELD_PHASED_BLOCK = `{
+	"anchors": { "grip": [0, 0] },
+	"animations": [{ "name": "idle" }, { "name": "block" }]
+}
+--- idle
+AB
+--- block 0
+AB
+--- block 1
+AB
+`;
+
+test('validateSpriteRole: a multi-frame block without fps is phase-shaped and fails', () => {
+	const diags = validateSpriteRole(
+		docOf(SHIELD_PHASED_BLOCK, 'shield'),
+		'shields',
+	);
+	expect(diags.length).toBe(1);
+	expect(diags[0].severity).toBe('error');
+	expect(diags[0].message).toContain('held state');
+});
+
+const SHIELD_LOOPED_BLOCK = `{
+	"anchors": { "grip": [0, 0] },
+	"animations": [{ "name": "idle" }, { "name": "block", "fps": 4 }]
+}
+--- idle
+AB
+--- block 0
+AB
+--- block 1
+AB
+`;
+
+test('validateSpriteRole: a multi-frame block with fps is a held loop and passes', () => {
+	expect(
+		validateSpriteRole(docOf(SHIELD_LOOPED_BLOCK, 'shield'), 'shields'),
+	).toEqual([]);
+});
+
+const SHIELD_NO_REST = `{
+	"anchors": { "grip": [0, 0] },
+	"animations": [{ "name": "block" }]
+}
+--- block
+AB
+`;
+
+test('validateSpriteRole: a shield whose first animation is block has no rest carry', () => {
+	const diags = validateSpriteRole(docOf(SHIELD_NO_REST, 'shield'), 'shields');
+	expect(diags.length).toBe(1);
+	expect(diags[0].severity).toBe('error');
+	expect(diags[0].message).toContain('rest-carry');
+});
+
 const idleText = `{ "animations": [{ "name": "idle" }] }\n--- idle\n██\n`;
 const nonIdleText = `{ "animations": [{ "name": "x" }] }\n--- x\n██\n`;
 
@@ -293,11 +400,28 @@ function idleSource(id: string, role: string): SpriteSource {
 	return { id, role, text: idleText };
 }
 
+function shieldSource(id: string): SpriteSource {
+	return {
+		id,
+		role: 'shields',
+		text: `{
+	"anchors": { "grip": [0, 0] },
+	"animations": [{ "name": "idle" }, { "name": "block" }]
+}
+--- idle
+AB
+--- block
+AB
+`,
+	};
+}
+
 test('validateSpriteSet: dangling weapon/monster/npc catalog references are errors', () => {
 	const diags = validateSpriteSet([]);
 	const errs = diags.filter((d) => d.severity === 'error');
 	const referenced = new Set([
 		...WEAPONS.map((weapon) => weapon.sprite),
+		...SHIELDS.map((shield) => shield.sprite),
 		...Object.values(MONSTER_SPRITE_REF),
 		...Object.values(NPC_SPRITE_REF),
 	]);
@@ -312,6 +436,10 @@ test('validateSpriteSet: resolved catalog references produce no dangling-referen
 	const sourcesByRoleAndId = new Map<string, SpriteSource>();
 	for (const weapon of WEAPONS) {
 		const source = weaponSource(weapon.sprite);
+		sourcesByRoleAndId.set(`${source.role}:${source.id}`, source);
+	}
+	for (const shield of SHIELDS) {
+		const source = shieldSource(shield.sprite);
 		sourcesByRoleAndId.set(`${source.role}:${source.id}`, source);
 	}
 	for (const id of Object.values(MONSTER_SPRITE_REF)) {
@@ -494,7 +622,7 @@ test('validateSpriteRole: visible art wildly past the Default frame warns; a mod
 
 test('validateSpriteRole: non-derived roles may resize freely between frames', () => {
 	const form = `{
-	"anchors": { "grip": [0, 0], "head": [0, 0] },
+	"anchors": { "grip": [0, 0], "head": [0, 0], "offhand": [0, 1] },
 	"animations": [{ "name": "idle" }, { "name": "walk" }]
 }
 --- idle

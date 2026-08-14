@@ -1,8 +1,4 @@
 import {
-	ACTION_FLAG,
-	guardOverlayCell,
-	guardOverlayGlyph,
-	guardRaised,
 	type PlayerClass,
 	skillForSlot,
 	skillHitbox,
@@ -50,31 +46,6 @@ export function drawSwing(
 		Math.round(cell.x - cam.x),
 		Math.round(cell.y - cam.y),
 		overlay.glyph,
-		color,
-	);
-}
-
-function isGuarding(e: Entity): boolean {
-	if (e.action) return (e.action.flags & ACTION_FLAG.guarding) !== 0;
-	return guardRaised(e.guardT ?? 0);
-}
-
-/**
- * Raised-guard overlay (ADR 0038, pass 5). Draws over composed actors and
- * derives its backdrop from the scene beneath. Clipped by the compositor.
- */
-export function drawGuard(
-	compositor: Compositor,
-	e: Entity,
-	cam: { x: number; y: number },
-	color: RGBA,
-): void {
-	if (!isGuarding(e)) return;
-	const cell = guardOverlayCell(e);
-	compositor.stampGlyph(
-		Math.round(cell.x - cam.x),
-		Math.round(cell.y - cam.y),
-		guardOverlayGlyph(),
 		color,
 	);
 }
