@@ -37,6 +37,7 @@ import {
 } from '@mmo/core/world';
 import type { AvatarIntent, Zone } from '@mmo/core/zones';
 import { applyCosmetics } from '../cosmetics';
+import { applyEquip, applyUnequip } from '../equipment';
 import { foldPendingEdges } from '../intents';
 import { applyBuy, applySell } from '../vendor';
 
@@ -340,7 +341,16 @@ export function createServerRuntime(
 		}
 		if (msg.t === 'sell') {
 			const result = applySell(world, sessionId, msg.itemId);
-			if (result.sold) {
+			world = result.world;
+			if (result.sold) flushSession(sessionId);
+			return;
+		}
+		if (msg.t === 'equip' || msg.t === 'unequip') {
+			const result =
+				msg.t === 'equip'
+					? applyEquip(world, sessionId, msg.itemId)
+					: applyUnequip(world, sessionId, msg.slot);
+			if (result.changed) {
 				world = result.world;
 				flushSession(sessionId);
 			}

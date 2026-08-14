@@ -47,6 +47,7 @@ export const CONTROL_ROWS: readonly ControlRow[] = [
 		mouseKeys: 'r',
 		capability: 'ground-pound',
 	},
+	{ label: 'Inventory', keys: 'b' },
 	{ label: 'Interact', keys: 'e', mouseKeys: 'f' },
 	{ label: 'Chat', keys: '↵   (/w whisper)' },
 	{ label: 'Emote', keys: '/wave · /dance · /sit' },

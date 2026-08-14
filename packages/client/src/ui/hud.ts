@@ -15,7 +15,7 @@ const BANNER_MS = 1000;
 const BANNER_TEXT = '★  LEVEL UP!  ★';
 
 const HINT =
-	'move ←/→ a/d  jump ␣/↑  attack j/x  block k  dodge l  skills u/i  interact e  chat ⏎  ? controls  quit q';
+	'move ←/→ a/d  jump ␣/↑  attack j/x  block k  dodge l  skills u/i  bag b  interact e  chat ⏎  ? controls  quit q';
 const Z = 10;
 const BAR_WIDTH = 10;
 const BAR_FILL = '█';

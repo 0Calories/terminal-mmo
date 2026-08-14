@@ -8,7 +8,7 @@ import {
 	LEGACY_FORM_IDS,
 	LEGACY_HAT_IDS,
 } from '../../src/entities';
-import { STARTER_SHIELD } from '../../src/items';
+import { STARTER_SHIELD, starterShieldItem } from '../../src/items';
 import {
 	emptySave,
 	migrateSaveCosmetics,
@@ -38,8 +38,9 @@ describe('Save schema', () => {
 		expect(emptySave('Neo', 'safe-town')).toEqual({
 			handle: 'Neo',
 			progress: { level: 1, xp: 0, gold: 0 },
-			inventory: [],
+			inventory: [starterShieldItem(1)],
 			equippedWeapon: DEFAULT_WEAPON,
+			equippedOffhand: STARTER_SHIELD,
 			cosmetics: DEFAULT_COSMETICS,
 			lastTown: 'safe-town',
 			bossDefeated: false,
@@ -57,6 +58,7 @@ describe('Save schema', () => {
 				rarity: 'rare',
 				affixes: [],
 			},
+			starterShieldItem(8),
 		];
 		avatar.avatar.weapon = 9;
 		avatar.cosmetics = {
@@ -116,17 +118,25 @@ describe('Save schema', () => {
 		expect(respawned?.avatar.offhand).toBe(STARTER_SHIELD);
 	});
 
-	test('a Save without an Offhand round-trips as unequipped', () => {
-		const save = emptySave('Neo', 'town');
-		expect(save).not.toHaveProperty('equippedOffhand');
+	test('a deliberately unequipped Shield stays unequipped through restore', () => {
+		const { equippedOffhand: _unequipped, ...save } = emptySave('Neo', 'town');
 		const restored = restoredFromSave(save);
 		expect(restored).not.toHaveProperty('equippedOffhand');
+		expect(restored.inventory).toEqual(save.inventory);
 
 		const avatar = freshAvatar();
 		expect(avatar.avatar.offhand).toBeUndefined();
 		expect(saveFromAvatar(avatar, 'fallback-town')).not.toHaveProperty(
 			'equippedOffhand',
 		);
+	});
+
+	test('a legacy Save with no offhand Item is granted the starter Shield equipped', () => {
+		const { equippedOffhand: _legacy, ...save } = emptySave('Neo', 'town');
+		const legacy = { ...save, inventory: [] };
+		const restored = restoredFromSave(legacy);
+		expect(restored.equippedOffhand).toBe(STARTER_SHIELD);
+		expect(restored.inventory).toEqual([starterShieldItem(1)]);
 	});
 
 	test('the spawn Town wins over the flush fallback', () => {
@@ -217,8 +227,8 @@ test('restored inventories retain Items and mint ids beyond the durable maximum'
 		restored,
 	);
 	const avatar = zoneStateOf(world, 1)?.avatars.find((a) => a.sessionId === 1);
-	expect(avatar?.inventory).toEqual(items);
-	expect(avatar?.nextId).toBe(Math.max(...items.map((item) => item.id)) + 1);
+	expect(avatar?.inventory).toEqual([...items, starterShieldItem(10)]);
+	expect(avatar?.nextId).toBe(11);
 });
 
 test('registry restoration indexes Handles case-insensitively', () => {

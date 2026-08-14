@@ -1,7 +1,12 @@
 import { expect, test } from 'bun:test';
 import { loadZones } from '@mmo/assets/meta';
 import type { Item, Npc } from '@mmo/core/entities';
-import { STARTER_GOODS, saleValue } from '@mmo/core/items';
+import {
+	STARTER_GOODS,
+	saleValue,
+	sellItem,
+	starterShieldItem,
+} from '@mmo/core/items';
 import { emptySave, restoredFromSave } from '@mmo/core/persistence';
 import {
 	addSession,
@@ -98,7 +103,7 @@ test('applySell removes the Item and credits its re-derived sale value to Gold',
 	const res = applySell(w, 1, 7);
 	expect(res.sold).toBe(true);
 	const sa = avatarOf(res.world, 1);
-	expect(sa?.inventory.map((i) => i.id)).toEqual([8]);
+	expect(sa?.inventory.map((i) => i.id)).toEqual([8, 9]);
 	expect(sa?.progress.gold).toBe(100 + saleValue(item));
 	expect(sa?.log.at(-1)).toContain('Sold');
 });
@@ -108,7 +113,7 @@ test('selling an unowned id is a no-op — Gold and inventory unchanged', () => 
 	const res = applySell(w, 1, 999);
 	expect(res.sold).toBe(false);
 	const sa = avatarOf(res.world, 1);
-	expect(sa?.inventory.map((i) => i.id)).toEqual([7]);
+	expect(sa?.inventory.map((i) => i.id)).toEqual([7, 8]);
 	expect(sa?.progress.gold).toBe(100);
 });
 
@@ -127,13 +132,32 @@ test('a sell away from any Merchant is refused — never trust the client', () =
 	const res = applySell(w, 1, 7);
 	expect(res.sold).toBe(false);
 	const sa = avatarOf(res.world, 1);
-	expect(sa?.inventory.map((i) => i.id)).toEqual([7]);
+	expect(sa?.inventory.map((i) => i.id)).toEqual([7, 8]);
 	expect(sa?.progress.gold).toBe(100);
 });
 
 test('applySell for an unplaced session is a no-op', () => {
 	const res = applySell(townWorld(), 999, 1);
 	expect(res.sold).toBe(false);
+});
+
+test('the Merchant refuses the starter Shield — inventory and Gold unchanged, refusal logged', () => {
+	const { w } = sellWorld([], 100);
+	const shield = avatarOf(w, 1)?.inventory.find((i) => i.slot === 'offhand');
+	if (!shield) throw new Error('starter Shield missing from a fresh Save');
+	const res = applySell(w, 1, shield.id);
+	expect(res.sold).toBe(false);
+	const sa = avatarOf(res.world, 1);
+	expect(sa?.inventory).toEqual([shield]);
+	expect(sa?.progress.gold).toBe(100);
+	expect(sa?.log.at(-1)).toContain("won't buy");
+});
+
+test('core sellItem refuses offhand Items independently of the server guard', () => {
+	const shield = starterShieldItem(3);
+	const res = sellItem({ level: 1, xp: 0, gold: 5 }, [shield], 3);
+	expect(res.inventory).toEqual([shield]);
+	expect(res.progress.gold).toBe(5);
 });
 
 test('applyBuy deducts the re-derived price, appends the good, and logs it', () => {
@@ -158,7 +182,7 @@ test('two buys mint distinct Item ids', () => {
 	expect(second.bought).toBe(true);
 	const ids = avatarOf(second.world, 1)?.inventory.map((i) => i.id) ?? [];
 	expect(new Set(ids).size).toBe(ids.length);
-	expect(ids.length).toBe(2);
+	expect(ids.length).toBe(3);
 });
 
 test('buying when unaffordable is a no-op — Gold and inventory unchanged', () => {
@@ -168,7 +192,7 @@ test('buying when unaffordable is a no-op — Gold and inventory unchanged', () 
 	expect(res.bought).toBe(false);
 	const sa = avatarOf(res.world, 1);
 	expect(sa?.progress.gold).toBe(good.price - 1);
-	expect(sa?.inventory).toEqual([]);
+	expect(sa?.inventory).toEqual([starterShieldItem(1)]);
 });
 
 test('buying an out-of-range catalog index is refused', () => {
@@ -183,7 +207,7 @@ test('a buy away from any Merchant is refused — never trust the client', () =>
 	const res = applyBuy(w, 1, 0);
 	expect(res.bought).toBe(false);
 	const sa = avatarOf(res.world, 1);
-	expect(sa?.inventory).toEqual([]);
+	expect(sa?.inventory).toEqual([starterShieldItem(1)]);
 	expect(sa?.progress.gold).toBe(1000);
 });
 
