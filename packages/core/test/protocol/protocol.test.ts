@@ -62,6 +62,8 @@ describe('wire message round-trips', () => {
 		{ t: 'emote', emote: 'wave' },
 		{ t: 'sell', itemId: 4242 },
 		{ t: 'buy', index: 2 },
+		{ t: 'equip', itemId: 17 },
+		{ t: 'unequip', slot: 'offhand' },
 		{ t: 'createAvatar', handle: 'Neo', cosmetics },
 		{ t: 'setCosmetics', cosmetics },
 	];

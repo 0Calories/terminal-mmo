@@ -1,3 +1,4 @@
+import type { BagView } from '../ui/bag';
 import type { ShopView } from '../ui/shop';
 import type { Scheme } from './movement';
 
@@ -70,6 +71,15 @@ export interface GameKeyDeps {
 	openShop(): void;
 	merchantUnder(): boolean;
 
+	bag: Overlay & {
+		count(view: BagView): number;
+		move(delta: number, count: number): void;
+		update(view: BagView): void;
+	};
+	bagView(): BagView;
+	toggleEquipSelected(): void;
+	openBag(): void;
+
 	recustomize(): Overlay | null;
 	submitRecustomize(k: Key): void;
 	openRecustomize(): void;
@@ -112,8 +122,32 @@ function shopKeyHandler(deps: GameKeyDeps): (name: string) => void {
 	};
 }
 
+function bagKeyHandler(deps: GameKeyDeps): (name: string) => void {
+	return (name) => {
+		if (isMenuBlipKey(name)) deps.blip();
+		const count = deps.bag.count(deps.bagView());
+		switch (name) {
+			case 'up':
+				deps.bag.move(-1, count);
+				break;
+			case 'down':
+				deps.bag.move(1, count);
+				break;
+			case 'return':
+				deps.toggleEquipSelected();
+				break;
+			case 'b':
+			case 'escape':
+				deps.bag.hide();
+				break;
+		}
+		if (deps.bag.open) deps.bag.update(deps.bagView());
+	};
+}
+
 export function gameKeyHandler(deps: GameKeyDeps): (k: Key) => void {
 	const handleShopKey = shopKeyHandler(deps);
+	const handleBagKey = bagKeyHandler(deps);
 	return (k) => {
 		if (deps.noKittyNotice.open) {
 			deps.dismissNoKittyNotice();
@@ -140,6 +174,10 @@ export function gameKeyHandler(deps: GameKeyDeps): (k: Key) => void {
 			handleShopKey(k.name);
 			return;
 		}
+		if (deps.bag.open) {
+			handleBagKey(k.name);
+			return;
+		}
 		const recustomize = deps.recustomize();
 		if (recustomize?.open) {
 			if (isMenuBlipKey(k.name)) deps.blip();
@@ -156,6 +194,11 @@ export function gameKeyHandler(deps: GameKeyDeps): (k: Key) => void {
 		}
 		if (k.name === 'o') {
 			deps.options.show();
+			return;
+		}
+		if (k.name === 'b') {
+			deps.clearHeldKeys();
+			deps.openBag();
 			return;
 		}
 		if (k.name === 'c') {

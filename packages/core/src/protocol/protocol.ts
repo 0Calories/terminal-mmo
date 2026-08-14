@@ -183,6 +183,8 @@ export type ClientMessage =
 	| { t: 'emote'; emote: string }
 	| { t: 'sell'; itemId: number }
 	| { t: 'buy'; index: number }
+	| { t: 'equip'; itemId: number }
+	| { t: 'unequip'; slot: Slot }
 	| { t: 'createAvatar'; handle: string; cosmetics: Cosmetics }
 	| { t: 'setCosmetics'; cosmetics: Cosmetics };
 
@@ -227,6 +229,8 @@ const CLIENT_TAG = {
 	buy: 8,
 	createAvatar: 9,
 	setCosmetics: 10,
+	equip: 11,
+	unequip: 12,
 } as const;
 
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
@@ -280,6 +284,14 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 		case 'buy':
 			w.u8(CLIENT_TAG.buy);
 			w.u32(msg.index);
+			break;
+		case 'equip':
+			w.u8(CLIENT_TAG.equip);
+			w.u32(msg.itemId);
+			break;
+		case 'unequip':
+			w.u8(CLIENT_TAG.unequip);
+			w.u8(SLOTS.indexOf(msg.slot));
 			break;
 		case 'createAvatar':
 			w.u8(CLIENT_TAG.createAvatar);
@@ -360,6 +372,10 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			return { t: 'sell', itemId: r.u32() };
 		case CLIENT_TAG.buy:
 			return { t: 'buy', index: r.u32() };
+		case CLIENT_TAG.equip:
+			return { t: 'equip', itemId: r.u32() };
+		case CLIENT_TAG.unequip:
+			return { t: 'unequip', slot: SLOTS[r.u8()] ?? 'offhand' };
 		case CLIENT_TAG.createAvatar: {
 			const quad = readCosmetics(r);
 			const handle = r.remaining() >= 4 ? r.str() : '';

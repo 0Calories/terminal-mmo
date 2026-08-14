@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { generateKeyPairSync, type KeyObject, sign } from 'node:crypto';
 import { loadZones, spriteIds } from '@mmo/assets/meta';
 import { DEFAULT_COSMETICS } from '@mmo/core/entities';
+import { STARTER_SHIELD } from '@mmo/core/items';
 import {
 	challengePayload,
 	encodePublicKeyLine,
@@ -230,6 +231,21 @@ describe('Avatar claim boundaries', () => {
 				(avatar) => avatar.sessionId === contender.sessionId,
 			)?.handle,
 		).toBe('Available');
+	});
+
+	test('a created Avatar starts with the starter Shield granted and equipped', () => {
+		const { server } = setup();
+		const session = server.connect();
+		authenticate(session, identity(), 'shielded');
+		createAvatar(session, 'Shielded');
+		const snapshot = snapshotAfterTick(server, session);
+		const own = snapshot.avatars.find(
+			(avatar) => avatar.sessionId === session.sessionId,
+		);
+		expect(own?.offhand).toBe(STARTER_SHIELD);
+		expect(
+			snapshot.inventory.filter((item) => item.slot === 'offhand'),
+		).toHaveLength(1);
 	});
 
 	test('dangling cosmetic ids are sanitized on creation and update', () => {

@@ -13,6 +13,7 @@ import type { PlayfieldRenderable } from '../render/playfield';
 import type { SoundSystem } from '../sound/system';
 import { discoverSshIdentity } from '../ssh-auth';
 import { AudioOptions } from '../ui/audio-options-view';
+import { Bag, type BagView } from '../ui/bag';
 import { CharacterCreator } from '../ui/character-creator';
 import { Controls } from '../ui/controls';
 import type { Hud } from '../ui/hud';
@@ -134,11 +135,18 @@ export async function runSession(deps: SessionDeps): Promise<void> {
 		controls.attach(renderer.root);
 		const shop = new Shop(renderer);
 		shop.attach(renderer.root);
+		const bag = new Bag(renderer);
+		bag.attach(renderer.root);
 		let recustomize: CharacterCreator | null = null;
 
 		const shopView = (): ShopView => ({
 			inventory: net.latest?.inventory ?? [],
 			progress: net.latest?.progress ?? { level: 1, xp: 0, gold: 0 },
+		});
+
+		const bagView = (): BagView => ({
+			inventory: net.latest?.inventory ?? [],
+			offhand: net.ownAvatar()?.offhand ?? null,
 		});
 
 		const loop = new GameLoop({
@@ -153,11 +161,13 @@ export async function runSession(deps: SessionDeps): Promise<void> {
 				hud.chatOpen ||
 				controls.open ||
 				shop.open ||
+				bag.open ||
 				options.open ||
 				(recustomize?.open ?? false) ||
 				noKittyNotice.open,
 			syncViews: () => {
 				if (shop.open) shop.update(shopView());
+				if (bag.open) bag.update(bagView());
 			},
 		});
 
@@ -202,6 +212,19 @@ export async function runSession(deps: SessionDeps): Promise<void> {
 			openShop: () => {
 				shop.show();
 				shop.update(shopView());
+			},
+			bag,
+			bagView,
+			toggleEquipSelected: () => {
+				const view = bagView();
+				const item = view.inventory[bag.selected];
+				if (!item || item.slot !== 'offhand') return;
+				if (view.offhand !== null) net.send({ t: 'unequip', slot: 'offhand' });
+				else net.send({ t: 'equip', itemId: item.id });
+			},
+			openBag: () => {
+				bag.show();
+				bag.update(bagView());
 			},
 			merchantUnder: () => {
 				const box = entityBox(loop.avatar);

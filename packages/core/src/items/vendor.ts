@@ -26,13 +26,19 @@ export const STARTER_GOODS: readonly StarterGood[] = [
 	{ base: 'Copper Ring', slot: 'accessory', price: 20 },
 ];
 
+// Offhand Items are granted and never re-obtainable, so a sale would
+// permanently delete the Block verb.
+export function sellable(item: Item): boolean {
+	return item.slot !== 'offhand';
+}
+
 export function sellItem(
 	progress: PlayerProgress,
 	inventory: Item[],
 	itemId: number,
 ): { progress: PlayerProgress; inventory: Item[] } {
 	const item = inventory.find((i) => i.id === itemId);
-	if (!item) return { progress, inventory };
+	if (!item || !sellable(item)) return { progress, inventory };
 	return {
 		progress: { ...progress, gold: progress.gold + saleValue(item) },
 		inventory: inventory.filter((i) => i.id !== itemId),
