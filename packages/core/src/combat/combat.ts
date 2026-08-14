@@ -57,6 +57,7 @@ export interface Combatant {
 	dodgeT?: number;
 	dodgeCdT?: number;
 	guardT?: number;
+	offhand?: number;
 	swingHits?: number[];
 	skillCooldowns?: Record<string, number>;
 	contributors?: number[];
@@ -457,7 +458,7 @@ export function resolveCombat(
 		? DODGE_LOCKOUT
 		: Math.max(0, (avatar.dodgeCdT ?? 0) - dt);
 
-	const guarding = intent.guard === true && capabilityUnlocked('block', level);
+	const guarding = intent.guard === true && avatar.offhand !== undefined;
 	const starting =
 		(intent.attack ?? false) && attackT <= 0 && dodgeT <= 0 && !guarding;
 	const nextAttackT = starting ? SWING_TOTAL : attackT;
