@@ -54,6 +54,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 				maxHp: 80,
 				hurtT: 0,
 				weapon: 0,
+				offhand: null,
 				action: IDLE_ACTION,
 			},
 		],
@@ -111,6 +112,7 @@ function withOther(): Extract<ServerMessage, { t: 'snapshot' }> {
 		maxHp: 80,
 		hurtT: 0.5,
 		weapon: 2,
+		offhand: null,
 		action: IDLE_ACTION,
 	});
 	return s;

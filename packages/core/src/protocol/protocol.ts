@@ -399,6 +399,7 @@ export interface AvatarSnapshot {
 	maxHp: number;
 	hurtT: number;
 	weapon: number;
+	offhand: number | null;
 	action: ActionState;
 }
 
@@ -483,6 +484,7 @@ const MOVE_IDS: readonly MoveId[] = ['idle', 'basic', 'dodge'];
 const ATTACK_PHASES: readonly AttackPhase[] = ['windup', 'active', 'recovery'];
 const EMOTE_IDS: readonly string[] = EMOTES.map((e) => e.id);
 const NO_EMOTE = 0xff;
+const NO_OFFHAND = 0xff;
 
 function writeAction(w: Writer, a: ActionState) {
 	w.u8(MOVE_IDS.indexOf(a.move));
@@ -504,7 +506,7 @@ function readAction(r: Reader): ActionState {
 		emoteT: r.f64(),
 	};
 }
-const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory'];
+const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory', 'offhand'];
 const RARITIES: readonly Rarity[] = [
 	'common',
 	'uncommon',
@@ -527,6 +529,7 @@ function writeAvatar(w: Writer, a: AvatarSnapshot) {
 	w.f64(a.maxHp);
 	w.f64(a.hurtT);
 	w.u8(a.weapon);
+	w.u8(a.offhand ?? NO_OFFHAND);
 	writeAction(w, a.action);
 
 	w.str(a.cosmetics.hat);
@@ -547,6 +550,8 @@ function readAvatar(r: Reader): AvatarSnapshot {
 	const maxHp = r.f64();
 	const hurtT = r.f64();
 	const weapon = r.u8();
+	const offhandByte = r.u8();
+	const offhand = offhandByte === NO_OFFHAND ? null : offhandByte;
 	const action = readAction(r);
 	const hat = readTrailingId(r, quad.hat);
 	const form = readTrailingId(r, quad.form);
@@ -564,6 +569,7 @@ function readAvatar(r: Reader): AvatarSnapshot {
 		maxHp,
 		hurtT,
 		weapon,
+		offhand,
 		action,
 	};
 }

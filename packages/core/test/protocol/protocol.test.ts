@@ -245,6 +245,7 @@ function avatar(
 		maxHp: 100,
 		hurtT: 0,
 		weapon: DEFAULT_WEAPON,
+		offhand: null,
 		action: IDLE_ACTION,
 		...overrides,
 	};
@@ -267,6 +268,7 @@ function comprehensiveSnapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 				},
 			}),
 			avatar(2, {
+				offhand: 0,
 				action: {
 					...IDLE_ACTION,
 					move: 'basic',
@@ -389,6 +391,28 @@ describe('snapshot wire contract', () => {
 			log: [],
 		};
 		expect(decodeServerMessage(encodeServerMessage(message))).toEqual(message);
+	});
+
+	test('round-trips an offhand-slot Item', () => {
+		const message = comprehensiveSnapshot();
+		message.inventory = [
+			{
+				id: 3,
+				base: 'Wooden Shield',
+				slot: 'offhand',
+				rarity: 'common',
+				affixes: [],
+			},
+		];
+		expect(decodeServerMessage(encodeServerMessage(message))).toEqual(message);
+	});
+
+	test('round-trips equipped and empty Avatar offhand ids', () => {
+		const message = comprehensiveSnapshot();
+		message.avatars = [avatar(1, { offhand: 0 }), avatar(2, { offhand: null })];
+		const decoded = decodeServerMessage(encodeServerMessage(message));
+		if (decoded.t !== 'snapshot') throw new Error('expected a snapshot');
+		expect(decoded.avatars.map((a) => a.offhand)).toEqual([0, null]);
 	});
 
 	test('strips the server-internal CombatEvent source field', () => {

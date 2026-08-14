@@ -16,6 +16,7 @@ export interface PlayerSave {
 	progress: PlayerProgress;
 	inventory: Item[];
 	equippedWeapon: number;
+	equippedOffhand?: number;
 	cosmetics: Cosmetics;
 	lastTown: ZoneId;
 	bossDefeated: boolean;
@@ -49,6 +50,9 @@ export function saveFromAvatar(
 		progress: sa.progress,
 		inventory: sa.inventory,
 		equippedWeapon: sa.avatar.weapon ?? DEFAULT_WEAPON,
+		...(sa.avatar.offhand !== undefined
+			? { equippedOffhand: sa.avatar.offhand }
+			: {}),
 		cosmetics: sa.cosmetics,
 		lastTown: sa.lastTown ?? fallbackTown,
 		bossDefeated: sa.bossDefeated ?? false,
@@ -59,6 +63,7 @@ export interface RestoredAvatar {
 	progress: PlayerProgress;
 	inventory: Item[];
 	equippedWeapon: number;
+	equippedOffhand?: number;
 	cosmetics: Cosmetics;
 	lastTown: ZoneId;
 	bossDefeated: boolean;
@@ -99,6 +104,9 @@ export function restoredFromSave(save: PlayerSave): RestoredAvatar {
 		progress: save.progress,
 		inventory: save.inventory,
 		equippedWeapon: save.equippedWeapon,
+		...(save.equippedOffhand !== undefined
+			? { equippedOffhand: save.equippedOffhand }
+			: {}),
 		cosmetics: clampCosmetics(migrateSaveCosmetics(save.cosmetics)),
 		lastTown: save.lastTown,
 		bossDefeated: save.bossDefeated,

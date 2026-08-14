@@ -8,6 +8,7 @@ import {
 	LEGACY_FORM_IDS,
 	LEGACY_HAT_IDS,
 } from '../../src/entities';
+import { STARTER_SHIELD } from '../../src/items';
 import {
 	emptySave,
 	migrateSaveCosmetics,
@@ -88,6 +89,44 @@ describe('Save schema', () => {
 			lastTown: save.lastTown,
 			bossDefeated: save.bossDefeated,
 		});
+	});
+
+	test('an equipped Offhand survives save, restore, and respawn', () => {
+		const avatar = freshAvatar();
+		avatar.avatar.offhand = STARTER_SHIELD;
+		const save = saveFromAvatar(avatar, 'fallback-town');
+		expect(save.equippedOffhand).toBe(STARTER_SHIELD);
+		const restored = restoredFromSave(save);
+		expect(restored.equippedOffhand).toBe(STARTER_SHIELD);
+
+		const zones = loadZones();
+		const town = zones.find((zone) => zone.type === 'town')?.id;
+		if (!town) throw new Error('authored assets need a Town fixture');
+		const world = addSession(
+			createServerWorld({ zones, start: town, town }),
+			2,
+			'Trinity',
+			undefined,
+			undefined,
+			restored,
+		);
+		const respawned = zoneStateOf(world, 2)?.avatars.find(
+			(a) => a.sessionId === 2,
+		);
+		expect(respawned?.avatar.offhand).toBe(STARTER_SHIELD);
+	});
+
+	test('a Save without an Offhand round-trips as unequipped', () => {
+		const save = emptySave('Neo', 'town');
+		expect(save).not.toHaveProperty('equippedOffhand');
+		const restored = restoredFromSave(save);
+		expect(restored).not.toHaveProperty('equippedOffhand');
+
+		const avatar = freshAvatar();
+		expect(avatar.avatar.offhand).toBeUndefined();
+		expect(saveFromAvatar(avatar, 'fallback-town')).not.toHaveProperty(
+			'equippedOffhand',
+		);
 	});
 
 	test('the spawn Town wins over the flush fallback', () => {
