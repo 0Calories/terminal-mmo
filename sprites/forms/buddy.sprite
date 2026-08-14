@@ -1,6 +1,6 @@
 {
 	"baseline": 1,
-	"anchors": { "grip": [7, 1], "head": [4, 0] },
+	"anchors": { "grip": [7, 1], "head": [4, 0], "offhand": [1, 1] },
 	"animations": [
 		{ "name": "idle" },
 		{ "name": "walk" },
@@ -9,7 +9,7 @@
 		{ "name": "emote:dance" },
 		{
 			"name": "emote:sit",
-			"anchors": { "0": { "head": [4, 1], "grip": [7, 2] } }
+			"anchors": { "0": { "head": [4, 1], "grip": [7, 2], "offhand": [1, 2] } }
 		}
 	]
 }

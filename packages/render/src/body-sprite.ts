@@ -5,6 +5,7 @@ export interface BodySprite {
 	frames: Partial<Record<AnimationId, Sprite | readonly Sprite[]>>;
 	grip: { x: number; y: number };
 	head: { x: number; y: number };
+	offhand: { x: number; y: number };
 	baseline?: number;
 
 	fps?: Readonly<Record<string, number>>;

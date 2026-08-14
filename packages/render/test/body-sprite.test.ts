@@ -16,7 +16,14 @@ describe('the Form registry', () => {
 	});
 
 	test('Forms contain cosmetic rendering data rather than gameplay stats', () => {
-		const allowed = new Set(['frames', 'grip', 'head', 'baseline', 'fps']);
+		const allowed = new Set([
+			'frames',
+			'grip',
+			'head',
+			'offhand',
+			'baseline',
+			'fps',
+		]);
 		for (const id of FORM_IDS)
 			for (const key of Object.keys(formById(id)))
 				expect(allowed.has(key)).toBe(true);
@@ -31,6 +38,7 @@ describe('formFrame', () => {
 		frames: { idle, walk: [walkA, walkB] },
 		grip: { x: 0, y: 0 },
 		head: { x: 0, y: 0 },
+		offhand: { x: 0, y: 0 },
 	};
 
 	test('resolves single and repeating multi-frame animations', () => {
