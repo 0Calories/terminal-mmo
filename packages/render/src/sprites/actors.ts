@@ -128,6 +128,16 @@ function walkFrameCount(doc: SpriteDoc): number {
 	return doc.animations.find((a) => a.name === 'walk')?.frames.length ?? 1;
 }
 
+/** Held states have no phase or per-entity timer, so an fps-looped animation
+ *  samples wall time — every viewer sees the same frame. */
+export function heldLoopFrameIndex(
+	anim: { frames: readonly unknown[]; fps?: number },
+	tMs: number,
+): number {
+	if (anim.fps === undefined || anim.frames.length <= 1) return 0;
+	return Math.floor((tMs / 1000) * anim.fps) % anim.frames.length;
+}
+
 function bodyFrameLabel(
 	doc: SpriteDoc,
 	animationId: string,
@@ -392,7 +402,7 @@ function paintShield(
 	const block = doc.animations.find((a) => a.name === 'block');
 	const label =
 		isGuarding(e) && block !== undefined
-			? frameLabelAt(block, 0)
+			? frameLabelAt(block, heldLoopFrameIndex(block, performance.now()))
 			: frameLabelAt(doc.animations[0], 0);
 	const frame = compiled(`shields:${ref}:${label}`, doc, label);
 	// The frame's effective grip (per-frame overrides author the block raise).

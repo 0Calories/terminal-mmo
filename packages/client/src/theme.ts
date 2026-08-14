@@ -10,7 +10,6 @@ export const COLORS = {
 	hurt: RGBA.fromInts(255, 240, 120, 255),
 	telegraph: RGBA.fromInts(255, 245, 200, 255),
 	dodge: RGBA.fromInts(150, 220, 255, 255),
-	guard: RGBA.fromInts(150, 200, 255, 255),
 	projectile: RGBA.fromInts(255, 120, 80, 255),
 	portal: RGBA.fromInts(180, 130, 255, 255),
 	vendor: RGBA.fromInts(255, 200, 90, 255),
