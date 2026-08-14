@@ -85,9 +85,13 @@ export const LOOT_TABLES: Record<string, LootTable> = {
 };
 
 for (const [id, table] of Object.entries(LOOT_TABLES))
-	for (const name of table.bases)
-		if (!BASES.some((b) => b.name === name))
+	for (const name of table.bases) {
+		const base = BASES.find((b) => b.name === name);
+		if (!base)
 			throw new Error(`loot table '${id}' references unknown base '${name}'`);
+		if (base.slot === 'offhand')
+			throw new Error(`loot table '${id}' drops offhand base '${name}'`);
+	}
 
 export function lootTableFor(zoneId: string): LootTable {
 	return LOOT_TABLES[zoneId] ?? DEFAULT_LOOT_TABLE;
