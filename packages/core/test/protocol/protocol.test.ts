@@ -41,6 +41,7 @@ describe('wire message round-trips', () => {
 			cosmetics,
 			weapon: 2,
 			publicKey: 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakeKeyForWire',
+			contractHash: 'a'.repeat(64),
 		},
 		{ t: 'proof', signature },
 		{
@@ -121,6 +122,7 @@ describe('required legacy and truncated wire compatibility', () => {
 			cosmetics: DEFAULT_COSMETICS,
 			weapon: DEFAULT_WEAPON,
 			publicKey: '',
+			contractHash: '',
 		});
 	});
 
@@ -134,6 +136,7 @@ describe('required legacy and truncated wire compatibility', () => {
 			cosmetics: { hue: 1, hat: 'wizard', nameplate: 1, form: 'buddy' },
 			weapon: DEFAULT_WEAPON,
 			publicKey: '',
+			contractHash: '',
 		});
 		expect(decodeClientMessage(craftBytes(9, 1, 3, 1, 0, 'Neo'))).toEqual({
 			t: 'createAvatar',
@@ -174,6 +177,23 @@ describe('required legacy and truncated wire compatibility', () => {
 		});
 	});
 
+	test('a pre-contract-hash hello decodes with an empty hash', () => {
+		const hash = 'b'.repeat(64);
+		const full = encodeClientMessage({
+			t: 'hello',
+			handle: 'neo',
+			version: '0.8.0',
+			cosmetics: DEFAULT_COSMETICS,
+			weapon: DEFAULT_WEAPON,
+			publicKey: '',
+			contractHash: hash,
+		});
+		const legacy = full.subarray(0, full.length - 4 - hash.length);
+		expect(decodeClientMessage(legacy)).toEqual(
+			expect.objectContaining({ t: 'hello', contractHash: '' }),
+		);
+	});
+
 	test('a welcome without appended identity fields receives old-client defaults', () => {
 		const encoded = encodeServerMessage({
 			t: 'welcome',
@@ -205,6 +225,7 @@ describe('required legacy and truncated wire compatibility', () => {
 			cosmetics: { ...DEFAULT_COSMETICS, hue: 999 },
 			weapon: DEFAULT_WEAPON,
 			publicKey: '',
+			contractHash: '',
 		});
 		expect(decodeClientMessage(hello)).toEqual(
 			expect.objectContaining({ cosmetics: DEFAULT_COSMETICS }),

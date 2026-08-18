@@ -35,10 +35,12 @@ export interface AuthenticateOptions {
 	handle: string;
 	cosmetics: Cosmetics;
 	weapon?: number;
+	contractHash?: string;
 }
 
 export interface ScenarioClient {
 	readonly sessionId: number;
+	readonly closed: boolean;
 	authenticate(
 		options: AuthenticateOptions,
 	): Extract<ServerMessage, { t: 'welcome' }>;
@@ -51,6 +53,8 @@ export interface ScenarioClient {
 export interface StackScenario {
 	connect(): ScenarioClient;
 	advanceTick(count?: number): void;
+	announce(text: string): void;
+	closeSessions(reason: string): void;
 	restart(): void;
 }
 
@@ -60,6 +64,7 @@ export interface StackScenarioOptions {
 	townZone?: string;
 	tickRate?: number;
 	seedSaves?: readonly { publicKey: string; save: PlayerSave }[];
+	contractHash?: string;
 }
 
 export interface JoinScenarioPlayerOptions {
@@ -94,30 +99,34 @@ export function createStackScenario(
 		all: () => [...saves].map(([key, save]) => [key, clone(save)]),
 		close: () => {},
 	};
-	const createServer = () =>
-		createInMemoryServer(
-			createServerRuntime({
-				zones: options.zones ?? loadZones(),
-				store,
-				releaseVersion: 'dev',
-				nonce: () => new Uint8Array(32).fill(7),
-				validHatIds: spriteIds('hats'),
-				validFormIds: spriteIds('forms'),
-				startZone: options.startZone,
-				townZone: options.townZone,
-				tickRate: options.tickRate,
-				log: () => {},
-				logError: () => {},
-			}),
-		);
-	let server = createServer();
+	const contractHash = options.contractHash ?? SCENARIO_CONTRACT_HASH;
+	const createStack = () => {
+		const runtime = createServerRuntime({
+			zones: options.zones ?? loadZones(),
+			store,
+			releaseVersion: 'dev',
+			contractHash,
+			nonce: () => new Uint8Array(32).fill(7),
+			validHatIds: spriteIds('hats'),
+			validFormIds: spriteIds('forms'),
+			startZone: options.startZone,
+			townZone: options.townZone,
+			tickRate: options.tickRate,
+			log: () => {},
+			logError: () => {},
+		});
+		return { runtime, server: createInMemoryServer(runtime) };
+	};
+	let stack = createStack();
 	return {
-		connect: () => scenarioClient(server.connect()),
+		connect: () => scenarioClient(stack.server.connect(), contractHash),
 		advanceTick(count = 1) {
-			for (let tick = 0; tick < count; tick++) server.advanceTick();
+			for (let tick = 0; tick < count; tick++) stack.server.advanceTick();
 		},
+		announce: (text) => stack.runtime.announce(text),
+		closeSessions: (reason) => stack.runtime.closeSessions(reason),
 		restart() {
-			server = createServer();
+			stack = createStack();
 		},
 	};
 }
@@ -238,7 +247,12 @@ function persistenceKey(publicKey: string): string {
 	return canonicalPublicKey(parsed);
 }
 
-function scenarioClient(session: InMemorySession): ScenarioClient {
+export const SCENARIO_CONTRACT_HASH = 'scenario-contract-hash';
+
+function scenarioClient(
+	session: InMemorySession,
+	contractHash: string,
+): ScenarioClient {
 	const receive = () => session.receive().map(decodeServerMessage);
 	const take = <T extends ServerMessage['t']>(type: T) => {
 		const messages = receive();
@@ -256,6 +270,9 @@ function scenarioClient(session: InMemorySession): ScenarioClient {
 		session.send(encodeClientMessage(message));
 	return {
 		sessionId: session.sessionId,
+		get closed() {
+			return session.closed;
+		},
 		authenticate(options) {
 			send({
 				t: 'hello',
@@ -264,6 +281,7 @@ function scenarioClient(session: InMemorySession): ScenarioClient {
 				cosmetics: options.cosmetics,
 				weapon: options.weapon ?? 0,
 				publicKey: options.identity.publicKey,
+				contractHash: options.contractHash ?? contractHash,
 			});
 			const challenge = take('challenge');
 			send({

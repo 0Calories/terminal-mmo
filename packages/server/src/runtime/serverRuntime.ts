@@ -18,7 +18,6 @@ import {
 	type ClientMessage,
 	decodeClientMessage,
 	encodeServerMessage,
-	isReleaseVersion,
 } from '@mmo/core/protocol';
 import {
 	addSession,
@@ -52,14 +51,24 @@ export interface ServerRuntime {
 	advanceTick(): void;
 	disconnect(sessionId: number): void;
 	flush(): void;
+	announce(text: string): void;
+	closeSessions(reason: string): void;
 	close(): void;
-	health(): { status: 'ok'; version: string };
+	health(): {
+		status: 'ok';
+		version: string;
+		gitSha: string;
+		contractHash: string;
+	};
 }
 
 export interface ServerRuntimeOptions {
 	zones: Zone[];
 	store: PlayerStore;
 	releaseVersion: string;
+	gitSha?: string;
+	// Recomputed from loaded content at boot — never echoed from a stamp file.
+	contractHash: string;
 	nonce: () => Uint8Array;
 	validHatIds: ReadonlySet<string>;
 	validFormIds: ReadonlySet<string>;
@@ -144,10 +153,7 @@ export function createServerRuntime(
 
 	function handleMessage(sessionId: number, msg: ClientMessage): void {
 		if (msg.t === 'hello') {
-			if (
-				isReleaseVersion(options.releaseVersion) &&
-				msg.version !== options.releaseVersion
-			) {
+			if (msg.contractHash !== options.contractHash) {
 				reject(
 					sessionId,
 					`Your client is out of date — run \`bunx terminal-mmo@latest\` (server ${options.releaseVersion}, your client ${msg.version || 'unknown'}).`,
@@ -454,11 +460,27 @@ export function createServerRuntime(
 		flush() {
 			for (const sessionId of spawnedSessions) flushSession(sessionId);
 		},
+		announce(text) {
+			const frame = encodeServerMessage({ t: 'notice', text });
+			for (const session of sessions.values()) {
+				try {
+					session.send(frame);
+				} catch {}
+			}
+		},
+		closeSessions(reason) {
+			for (const sessionId of [...sessions.keys()]) reject(sessionId, reason);
+		},
 		close() {
 			options.store.close();
 		},
 		health() {
-			return { status: 'ok', version: options.releaseVersion };
+			return {
+				status: 'ok',
+				version: options.releaseVersion,
+				gitSha: options.gitSha ?? 'dev',
+				contractHash: options.contractHash,
+			};
 		},
 	};
 }

@@ -1,0 +1,13 @@
+# Upload filter for `railway up --no-gitignore`. The release pipeline must ship
+# the gitignored build-info.json stamp, and `railway up` honours .gitignore by
+# default — so the pipeline passes --no-gitignore and this file re-lists every
+# exclusion EXCEPT the stamp. Keep in sync with .gitignore.
+.git/
+node_modules/
+dist/
+*.log
+.DS_Store
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+progress.txt

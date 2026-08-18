@@ -1,8 +1,17 @@
-# Release pipeline (ADR 0012). Fires on a `v*` tag — the only thing that ships.
-# Atomic, deploy-first/publish-last: gate → deploy the server → assert /health
-# reports the tag → publish the client. npm publish is the irreversible step and
-# runs LAST, gated on a healthy, correctly-versioned deploy, so a failed deploy
-# never burns an npm version.
+# Selective release pipeline (ADR 0042, amending ADR 0012). Fires on a `v*` tag
+# (or manual dispatch of one) and ships ONLY what the tag changed: the diff since
+# the previous release is classified by @mmo/core's release manifest into a shape
+# — both | server | client | none — and each artifact ships or stays put
+# accordingly. A client-only release never restarts the server; a doc-only
+# release ships nothing.
+#
+# The gates are content-derived, not configured: every checkout is stamped
+# (build-info.json: version/gitSha/contractHash) before anything ships, and
+# - server-shipping shapes deploy first, then assert /health.gitSha equals the
+#   tagged commit before the irreversible npm publish (deploy-first/publish-last);
+# - the client-only shape deploys nothing and instead asserts the live server's
+#   /health.contractHash equals the hash this checkout would bake into the client.
+# The workflow_dispatch force input is the escape hatch: ship everything.
 #
 # npm auth uses npm Trusted Publishing (OIDC) — NO npm token. The job requests an
 # OIDC identity token (`id-token: write`) that npm exchanges for a short-lived,
@@ -14,6 +23,17 @@ name: release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to ship (vX.Y.Z; must already exist)'
+        required: true
+        type: string
+      force_ship_everything:
+        description: 'Escape hatch: ignore the computed shape and ship both artifacts'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write # create the GitHub Release at the end
@@ -25,12 +45,18 @@ env:
   # code. (HEALTH_URL is derived at runtime from the client's single source of
   # truth — see the "Derive health URL" step below.)
   RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
+  # Tag push: the pushed tag. Manual dispatch: the tag input.
+  RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          # Full history + tags: the shape step diffs against the previous release.
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
@@ -45,13 +71,16 @@ jobs:
       - name: Install
         run: bun install --frozen-lockfile
 
-      # The tag is the single source of truth for the Version. `v0.3.0` -> `0.3.0`.
-      - name: Derive version from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      # The tag is the single source of truth for the Version (`v0.3.0` -> `0.3.0`)
+      # and for the commit every identity gate below compares against.
+      - name: Derive version and commit from tag
+        run: |
+          echo "VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+          echo "RELEASE_SHA=$(git rev-parse "$RELEASE_TAG^{commit}")" >> "$GITHUB_ENV"
 
       # The prod host has ONE definition — packages/client/src/server-url.ts, which
       # the client also bakes into its bundle. Read it by path (no workspace install
-      # needed) so the /health gate can never target a different host than players do.
+      # needed) so the /health gates can never target a different host than players do.
       - name: Derive health URL from the client's single source of truth
         run: |
           HOST="$(bun -e 'import { PROD_SERVER_HOST } from "./packages/client/src/server-url.ts"; process.stdout.write(PROD_SERVER_HOST)')"
@@ -61,81 +90,70 @@ jobs:
       - name: CI gate
         run: bun run ci
 
-      # --- Deploy the server FIRST (reversible step) -----------------------------
+      # build-info.json (gitignored) rides the `railway up` upload into the image
+      # and is read by the client bundle build — both artifacts get one identity.
+      - name: Stamp the build
+        run: bun run stamp --version "$VERSION"
+
+      # All classification logic lives in scripts/release-shape.ts (unit-tested);
+      # this step is a dumb caller.
+      - name: Compute release shape
+        run: |
+          SHAPE="$(bun run scripts/release-shape.ts --tag "$RELEASE_TAG" ${{ inputs.force_ship_everything && '--force' || '' }})"
+          echo "SHAPE=$SHAPE" >> "$GITHUB_ENV"
+          echo "release shape: $SHAPE" >> "$GITHUB_STEP_SUMMARY"
+
+      # --- Server artifact (shapes: both, server) --------------------------------
+      # --ci streams the build and fails fast — safe now that the service's watch
+      # paths are cleared, so an upload always builds. --no-gitignore ships the
+      # gitignored stamp; .railwayignore re-lists the real exclusions.
       - name: Deploy server to Railway
+        if: env.SHAPE == 'both' || env.SHAPE == 'server'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-        run: |
-          # Stamp this release's Version onto the service first, WITHOUT redeploying
-          # the old code (--skip-deploys), then build+deploy the tagged commit
-          # (Dockerfile) with the variable already in place.
-          #
-          # Use --detach, NOT --ci: when the tagged commit changes nothing under the
-          # service's watch paths (e.g. a client-only release, or a re-tag that only
-          # touches CI), Railway skips the build — and `up --ci` then hangs forever
-          # waiting to stream a deployment that was never created. --detach uploads,
-          # triggers the deploy, and returns immediately; the /health gate below is
-          # what actually confirms the new container is live and serving $VERSION (and
-          # refuses to publish if a real build fails to come up in time).
-          bunx @railway/cli variables set "MMO_VERSION=$VERSION" \
-            --service "$RAILWAY_SERVICE" \
-            --skip-deploys
-          bunx @railway/cli up --detach -y --service "$RAILWAY_SERVICE"
-          # SERVER_VERSION is read from the MMO_VERSION env var at process start
-          # (packages/server/src/index.ts), so /health only reports $VERSION once a
-          # container actually (re)starts with the staged variable. On a client-only
-          # release the `up` above skips the build (no watch-path change), so NO new
-          # container ever starts and /health would report the old Version forever —
-          # the health gate could never pass. Force a redeploy so the current
-          # deployment restarts with the staged MMO_VERSION regardless of whether a
-          # build ran. On a server-change release this is a cheap redundant restart
-          # of the just-deployed code; on a client-only release it is what applies
-          # the new Version at all.
-          #
-          # `up --detach` returns the moment it triggers the deployment, before that
-          # deployment settles — so a bare redeploy races it and Railway errors with
-          # "the latest deployment ... cannot be redeployed ... currently building,
-          # deploying, or was removed". Retry until Railway accepts it (the up-created
-          # deployment reaches a redeployable state); fail hard if it never does so we
-          # never fall through to a /health gate that can't pass.
-          for i in $(seq 1 30); do
-            if bunx @railway/cli redeploy -y --service "$RAILWAY_SERVICE"; then
-              echo "redeploy accepted on attempt $i"
-              exit 0
-            fi
-            echo "redeploy not yet accepted (attempt $i) — deployment still settling, retrying in 10s"
-            sleep 10
-          done
-          echo "::error::redeploy never accepted after 30 attempts (~5 min)"
-          exit 1
+        run: bunx @railway/cli up --ci -y --no-gitignore --service "$RAILWAY_SERVICE"
 
-      # --- Gate: the live server must report exactly this Version ----------------
-      # Now that the deploy is detached, this gate spans the whole build → deploy →
-      # healthy cycle (not just container startup), so it polls generously: 90 × 5s
-      # ≈ 7.5 min. The forced redeploy above restarts the container with the staged
-      # MMO_VERSION even when the build is skipped, so this gate passes once that
-      # restart is healthy; a real build that never comes up trips the refuse-to-publish.
-      - name: Assert /health reports the tag
+      # Unforgeable identity gate: the running process reports the gitSha stamped
+      # into the image it booted from — a stale container can never pass. Polls
+      # generously (90 × 5s ≈ 7.5 min) to span build → deploy → healthy.
+      - name: Assert /health reports the tagged commit
+        if: env.SHAPE == 'both' || env.SHAPE == 'server'
         run: |
           for i in $(seq 1 90); do
             body="$(curl -fsS "$HEALTH_URL" || true)"
-            got="$(printf '%s' "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).version' 2>/dev/null || true)"
-            echo "attempt $i: server reports '${got}', want '${VERSION}'"
-            if [ "$got" = "$VERSION" ]; then
-              echo "deploy confirmed at $VERSION"
+            got="$(printf '%s' "$body" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).gitSha' 2>/dev/null || true)"
+            echo "attempt $i: server reports '${got}', want '${RELEASE_SHA}'"
+            if [ "$got" = "$RELEASE_SHA" ]; then
+              echo "deploy confirmed at $RELEASE_SHA"
               exit 0
             fi
             sleep 5
           done
-          echo "::error::server never reported version $VERSION — refusing to publish"
+          echo "::error::server never reported gitSha $RELEASE_SHA — refusing to publish"
           exit 1
 
-      # --- Publish the client LAST (irreversible step), via OIDC -----------------
+      # --- Client-only compatibility gate (shape: client) ------------------------
+      # No deploy, no restart, nobody kicked. Instead prove the client this
+      # checkout is about to bake is compatible with the server already running:
+      # the local contract hash must equal the live /health.contractHash.
+      - name: Assert live server matches this client's contract hash
+        if: env.SHAPE == 'client'
+        run: |
+          LOCAL="$(bun -e 'import { computeContractHash } from "./packages/assets/src/index.ts"; process.stdout.write(computeContractHash())')"
+          LIVE="$(curl -fsS "$HEALTH_URL" | node -pe 'JSON.parse(require("fs").readFileSync(0,"utf8")).contractHash')"
+          echo "local contract hash: $LOCAL"
+          echo "live  contract hash: $LIVE"
+          if [ "$LOCAL" != "$LIVE" ]; then
+            echo "::error::contract hash mismatch — the live server would reject this client. A client-only shape should be impossible here (a contract change ships both); refusing to publish. Investigate, or force-ship everything via workflow_dispatch."
+            exit 1
+          fi
+
+      # --- Client artifact (shapes: both, client), via OIDC ----------------------
+      # prepublishOnly runs build.ts, which reads build-info.json for
+      # version/gitSha and bakes the contract hash itself.
       - name: Publish terminal-mmo to npm (Trusted Publishing)
+        if: env.SHAPE == 'both' || env.SHAPE == 'client'
         working-directory: packages/cli
-        env:
-          # Baked into the bundle by build.ts (prepublishOnly) as the client's Version.
-          MMO_VERSION: ${{ env.VERSION }}
         run: |
           # Drop the workspace-only devDependencies (@mmo/client, @mmo/core,
           # `workspace:*`): npm can't parse that protocol, and they're build-time
@@ -151,7 +169,22 @@ jobs:
           npm publish --access public
 
       # --- Record the release on GitHub (notes + history) ------------------------
+      # Always states which artifacts actually shipped; a 'none' release is a
+      # recorded no-op. Edits instead of failing when the release already exists
+      # (a forced re-run of a tag).
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+        run: |
+          case "$SHAPE" in
+            both)   SHIPPED="server @ $RELEASE_SHA; client v$VERSION on npm" ;;
+            server) SHIPPED="server @ $RELEASE_SHA; client not republished" ;;
+            client) SHIPPED="client v$VERSION on npm; server not restarted" ;;
+            none)   SHIPPED="nothing — no shippable paths changed" ;;
+          esac
+          BODY="**Shape: $SHAPE.** Shipped: $SHIPPED."
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" --notes "$BODY"
+          else
+            gh release create "$RELEASE_TAG" --title "$RELEASE_TAG" --generate-notes --notes "$BODY"
+          fi
