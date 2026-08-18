@@ -1,6 +1,7 @@
 import { defaultFrameBox, type SpriteSource } from '@mmo/assets';
 import { WEAPONS } from '@mmo/core/combat';
 import { EMOTES } from '@mmo/core/entities';
+import { SHIELDS } from '@mmo/core/items';
 import { MONSTER_SPRITE_REF, NPC_SPRITE_REF } from '@mmo/core/sprites';
 import { QUADRANT_GLYPHS } from './quadrant';
 import type {
@@ -37,10 +38,11 @@ interface RoleProfile {
 export const ROLE_PROFILES: Readonly<Record<string, RoleProfile>> = {
 	forms: {
 		animations: ['idle', 'walk'],
-		anchors: ['grip', 'head'],
+		anchors: ['grip', 'head', 'offhand'],
 		pixelOnly: true,
 	},
 	weapons: { animations: ['swing'], anchors: ['grip'], pixelOnly: true },
+	shields: { animations: ['block'], anchors: ['grip'], pixelOnly: true },
 	hats: { animations: ['idle'], anchors: [], pixelOnly: true },
 	monsters: {
 		animations: ['idle'],
@@ -198,6 +200,28 @@ export function validateSpriteRole(
 		}
 	}
 
+	if (role === 'shields') {
+		const block = byName.get('block');
+		if (
+			block !== undefined &&
+			block.frames.length > 1 &&
+			block.fps === undefined
+		) {
+			diagnostics.push({
+				severity: 'error',
+				spriteId: doc.id,
+				message: `sprite '${doc.id}' (role 'shields') has a ${block.frames.length}-frame 'block' animation with no fps — Block is a held state, so 'block' must be static or fps-looped, never phase-indexed`,
+			});
+		}
+		if (doc.animations[0]?.name === 'block') {
+			diagnostics.push({
+				severity: 'error',
+				spriteId: doc.id,
+				message: `sprite '${doc.id}' (role 'shields') must open with a rest-carry Default frame — its first animation is the block animation`,
+			});
+		}
+	}
+
 	for (const anchor of profile.anchors) {
 		if (!(anchor in doc.anchors)) {
 			diagnostics.push({
@@ -284,6 +308,15 @@ function validateReferences(sources: SpriteSource[]): SpriteDiagnostic[] {
 				severity: 'error',
 				spriteId: weapon.sprite,
 				message: `weapon '${weapon.name}' references sprite '${weapon.sprite}', but no valid weapons sprite with that id resolves — the weapon would render with no art`,
+			});
+		}
+	}
+	for (const shield of SHIELDS) {
+		if (!resolvesInRole(sources, 'shields', shield.sprite)) {
+			out.push({
+				severity: 'error',
+				spriteId: shield.sprite,
+				message: `shield '${shield.name}' references sprite '${shield.sprite}', but no valid shields sprite with that id resolves — the shield would render with no art`,
 			});
 		}
 	}

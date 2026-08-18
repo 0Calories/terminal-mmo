@@ -57,6 +57,7 @@ export interface Combatant {
 	dodgeT?: number;
 	dodgeCdT?: number;
 	guardT?: number;
+	offhand?: number;
 	swingHits?: number[];
 	skillCooldowns?: Record<string, number>;
 	contributors?: number[];
@@ -244,14 +245,6 @@ export function resolveGuard(
 		defenderPoise: poise,
 		guardBroke: broke,
 	};
-}
-
-export function guardOverlayCell(e: Entity): { x: number; y: number } {
-	return { x: e.facing === 1 ? e.x + boxOf(e.type).w : e.x - 1, y: e.y + 1 };
-}
-
-export function guardOverlayGlyph(): string {
-	return '┃';
 }
 
 export function swingOverlayGlyph(phase: AttackPhase, facing: Facing): string {
@@ -457,7 +450,7 @@ export function resolveCombat(
 		? DODGE_LOCKOUT
 		: Math.max(0, (avatar.dodgeCdT ?? 0) - dt);
 
-	const guarding = intent.guard === true && capabilityUnlocked('block', level);
+	const guarding = intent.guard === true && avatar.offhand !== undefined;
 	const starting =
 		(intent.attack ?? false) && attackT <= 0 && dodgeT <= 0 && !guarding;
 	const nextAttackT = starting ? SWING_TOTAL : attackT;

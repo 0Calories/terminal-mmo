@@ -28,8 +28,6 @@ export {
 	entityTint,
 	facingToward,
 	type GuardOutcome,
-	guardOverlayCell,
-	guardOverlayGlyph,
 	guardRaised,
 	IDLE_ACTION,
 	meleeActive,

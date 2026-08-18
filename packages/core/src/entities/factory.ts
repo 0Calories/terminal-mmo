@@ -9,6 +9,7 @@ export interface AvatarOptions {
 	id?: number;
 
 	weapon?: number;
+	offhand?: number;
 }
 
 export function spawnAvatar(
@@ -32,6 +33,7 @@ export function spawnAvatar(
 		attackT: 0,
 		mass: DEFAULT_MASS,
 		...(opts.weapon !== undefined ? { weapon: opts.weapon } : {}),
+		...(opts.offhand !== undefined ? { offhand: opts.offhand } : {}),
 	};
 }
 

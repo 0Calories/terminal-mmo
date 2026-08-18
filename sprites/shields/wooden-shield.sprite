@@ -1,0 +1,17 @@
+{
+	"key": "w",
+	"anchors": { "grip": [2, 1] },
+	"animations": [
+		{ "name": "idle" },
+		{ "name": "block", "anchors": { "0": { "grip": [1, 0] } } }
+	]
+}
+--- idle
+···
+···
+--- block
+▟▀▙
+▜█▛
+@bg
+·s·
+···

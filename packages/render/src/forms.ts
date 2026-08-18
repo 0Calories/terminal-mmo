@@ -9,6 +9,7 @@ const PLACEHOLDER_BODY: BodySprite = {
 	frames: { idle: new Sprite('·', { defaultKey: 'p' }) },
 	grip: { x: 0, y: 0 },
 	head: { x: 0, y: 0 },
+	offhand: { x: 0, y: 0 },
 };
 
 export function buildFormRegistry(

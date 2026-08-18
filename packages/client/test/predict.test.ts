@@ -111,6 +111,14 @@ test('reconcileHealth takes the server health and leaves position alone', () => 
 	expect(predicted.x).toBe(42);
 });
 
+test('reconcileHealth carries the authoritative offhand into prediction', () => {
+	const predicted = grounded({ hp: 20, maxHp: 20, hurtT: 0 });
+	reconcileHealth(predicted, { hp: 20, maxHp: 20, hurtT: 0, offhand: 0 });
+	expect(predicted.offhand).toBe(0);
+	reconcileHealth(predicted, { hp: 20, maxHp: 20, hurtT: 0, offhand: null });
+	expect(predicted.offhand).toBeUndefined();
+});
+
 test('a swing hits a monster once, and the same swing cannot hit it again', () => {
 	const r = swingToStrike(grounded({ x: 10, facing: 1, weapon: undefined }));
 	if (!r.hitbox) throw new Error('expected a strike');

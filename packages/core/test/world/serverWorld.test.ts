@@ -3,6 +3,7 @@ import { loadZones } from '@mmo/assets';
 import { DEFAULT_WEAPON } from '../../src/combat';
 import type { Cosmetics } from '../../src/entities';
 import { BOX, DEFAULT_COSMETICS } from '../../src/entities';
+import { STARTER_SHIELD, starterShieldItem } from '../../src/items';
 import type { ServerWorld } from '../../src/world';
 import {
 	addSession,
@@ -179,7 +180,9 @@ test('spawnNewAvatar spawns into the starting Town with the chosen look, and min
 	expect(save.equippedWeapon).toBe(DEFAULT_WEAPON);
 	expect(save.lastTown).toBe(TOWN_ID);
 	expect(save.progress).toEqual({ level: 1, xp: 0, gold: 0 });
-	expect(save.inventory).toEqual([]);
+	expect(save.inventory).toEqual([starterShieldItem(1)]);
+	expect(save.equippedOffhand).toBe(STARTER_SHIELD);
+	expect(sa?.avatar.offhand).toBe(STARTER_SHIELD);
 });
 
 test('spawnNewAvatar is pure — it never mutates the world passed in', () => {

@@ -91,6 +91,7 @@ export interface Entity {
 	name?: string;
 	cosmetics?: Cosmetics;
 	weapon?: number;
+	offhand?: number;
 	bubble?: string;
 	emoteId?: string;
 	emoteT?: number;
@@ -152,7 +153,7 @@ export interface Projectile {
 }
 
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
-export type Slot = 'weapon' | 'armor' | 'accessory';
+export type Slot = 'weapon' | 'armor' | 'accessory' | 'offhand';
 
 export interface ItemAffix {
 	stat: string;

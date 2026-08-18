@@ -5,7 +5,6 @@ import { spriteForNpc } from '@mmo/render';
 import type { Compositor, RGBA as RGBA8 } from '@mmo/render/compositor';
 import {
 	drawDrops,
-	drawGuard,
 	drawLabel,
 	drawNameplates,
 	drawPortals,
@@ -34,7 +33,6 @@ import type { DodgeTracker } from './dodge-echo';
 // the single source of truth (the HUD reads the same colours); pass 5 threads
 // these into the native scene draws instead of guessing a background.
 const COMBAT_TELEGRAPH: RGBA8 = C.telegraph.toInts();
-const COMBAT_GUARD: RGBA8 = C.guard.toInts();
 const COMBAT_PROJECTILE: RGBA8 = C.projectile.toInts();
 
 // Interaction-label colours in the compositor's 8-bit model (pass 6).
@@ -111,18 +109,14 @@ export function drawPlayfield(
 	// Pass 4: the local Avatar (native), kept at the top of the crowd.
 	paintActor(compositor, p, cam);
 
-	// Pass 5: combat — swings, guards, skill telegraphs, airborne particles, and
+	// Pass 5: combat — swings, skill telegraphs, airborne particles, and
 	// projectiles, composed natively so each glyph reveals the actors and Terrain
 	// beneath it.
-	for (const e of others) {
-		drawSwing(compositor, e, cam, COMBAT_TELEGRAPH);
-		drawGuard(compositor, e, cam, COMBAT_GUARD);
-	}
+	for (const e of others) drawSwing(compositor, e, cam, COMBAT_TELEGRAPH);
 	for (const m of zone.monsters)
 		if (!monsterAuthorsAttackFrames(m.type))
 			drawSwing(compositor, m, cam, COMBAT_TELEGRAPH);
 	drawSwing(compositor, p, cam, COMBAT_TELEGRAPH);
-	drawGuard(compositor, p, cam, COMBAT_GUARD);
 
 	drawSkillTelegraphs(
 		compositor,

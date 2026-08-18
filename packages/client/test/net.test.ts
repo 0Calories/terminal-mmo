@@ -54,6 +54,7 @@ function snapshot(): Extract<ServerMessage, { t: 'snapshot' }> {
 				maxHp: 80,
 				hurtT: 0,
 				weapon: 0,
+				offhand: null,
 				action: IDLE_ACTION,
 			},
 		],
@@ -111,6 +112,7 @@ function withOther(): Extract<ServerMessage, { t: 'snapshot' }> {
 		maxHp: 80,
 		hurtT: 0.5,
 		weapon: 2,
+		offhand: null,
 		action: IDLE_ACTION,
 	});
 	return s;
@@ -293,4 +295,23 @@ test('NetClient surfaces a signer failure as a rejection', async () => {
 	expect(saw.reason).toBe('ssh-agent refused to sign');
 	expect(net.rejected).toBe('ssh-agent refused to sign');
 	net.close();
+});
+
+test('snapshotToGame threads the offhand shield id onto own and observed entities', () => {
+	const field = loadField();
+	const s = withOther();
+	s.avatars[0].offhand = 0;
+	if (s.avatars[1]) s.avatars[1].offhand = 0;
+	const predicted = spawnAvatar(33, y);
+	const game = snapshotToGame(field, predicted, 1, s, {});
+	expect(game.player.avatar.offhand).toBe(0);
+	expect(game.others?.[0]?.offhand).toBe(0);
+});
+
+test('snapshotToGame drops a stale predicted offhand when the wire says none', () => {
+	const field = loadField();
+	const predicted = { ...spawnAvatar(33, y), offhand: 0 };
+	const game = snapshotToGame(field, predicted, 1, snapshot(), {});
+	expect(game.player.avatar.offhand).toBeUndefined();
+	expect(game.others?.length ?? 0).toBe(0);
 });

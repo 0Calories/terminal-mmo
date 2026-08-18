@@ -47,16 +47,11 @@ export function xpProgress(level: number, xp: number): XpProgress {
 	return { current, needed, ratio: fillRatio(xp, needed), atCap: false };
 }
 
-export type Capability =
-	| 'attack'
-	| 'block'
-	| 'power-strike'
-	| 'dodge'
-	| 'ground-pound';
+export type Capability = 'attack' | 'power-strike' | 'dodge' | 'ground-pound';
 
+// Level 2 is a deliberate hole: Block is gated by an equipped Shield, not level.
 export const CAPABILITY_UNLOCK: Record<Capability, number> = {
 	attack: 1,
-	block: 2,
 	'power-strike': 3,
 	dodge: 4,
 	'ground-pound': 5,

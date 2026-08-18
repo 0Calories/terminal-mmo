@@ -13,6 +13,7 @@ export const BASES: BaseType[] = [
 	{ name: 'Chain Mail', slot: 'armor' },
 	{ name: 'Copper Ring', slot: 'accessory' },
 	{ name: 'Jade Amulet', slot: 'accessory' },
+	{ name: 'Wooden Shield', slot: 'offhand' },
 ];
 
 export interface RarityDef {
@@ -44,8 +45,13 @@ export interface LootTable {
 	rarities?: RarityDef[];
 }
 
+// Shields are granted, never dropped, so offhand bases stay out of every table.
+const DROPPABLE_BASES = BASES.filter((b) => b.slot !== 'offhand').map(
+	(b) => b.name,
+);
+
 export const DEFAULT_LOOT_TABLE: LootTable = {
-	bases: BASES.map((b) => b.name),
+	bases: DROPPABLE_BASES,
 	dropChance: 1,
 };
 
@@ -67,21 +73,25 @@ export const LOOT_TABLES: Record<string, LootTable> = {
 		dropChance: 0.45,
 	},
 	'field-03': {
-		bases: BASES.map((b) => b.name),
+		bases: DROPPABLE_BASES,
 		dropChance: 0.5,
 		rarities: RICH_RARITIES,
 	},
 	'dungeon-01': {
-		bases: BASES.map((b) => b.name),
+		bases: DROPPABLE_BASES,
 		dropChance: 1,
 		rarities: RICH_RARITIES,
 	},
 };
 
 for (const [id, table] of Object.entries(LOOT_TABLES))
-	for (const name of table.bases)
-		if (!BASES.some((b) => b.name === name))
+	for (const name of table.bases) {
+		const base = BASES.find((b) => b.name === name);
+		if (!base)
 			throw new Error(`loot table '${id}' references unknown base '${name}'`);
+		if (base.slot === 'offhand')
+			throw new Error(`loot table '${id}' drops offhand base '${name}'`);
+	}
 
 export function lootTableFor(zoneId: string): LootTable {
 	return LOOT_TABLES[zoneId] ?? DEFAULT_LOOT_TABLE;
