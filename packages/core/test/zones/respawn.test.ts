@@ -87,8 +87,9 @@ test('a scheduled respawn restores the monster at full HP at its spawn point', (
 			const m = zs.zone.monsters[0];
 			expect(m.hp).toBe(MONSTERS.chaser.stats.hp);
 			expect(m.hp).toBe(m.maxHp);
-			expect(m.x).toBe(20 + BOX.w);
-			expect(m.y).toBe(y);
+			const fresh = spawnMonster('chaser', m.id, 20 + BOX.w, y, 0);
+			expect(m.x).toBe(fresh.x);
+			expect(m.y).toBe(fresh.y);
 			expect(m.spawnIndex).toBe(0);
 			expect(zs.zone.respawns.length).toBe(0);
 		}

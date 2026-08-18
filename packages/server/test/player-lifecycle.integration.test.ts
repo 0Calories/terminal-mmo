@@ -107,7 +107,7 @@ test('server runtime restores durable state in the last safe Town without transi
 	stack.advanceTick(4);
 	let before = latestScenarioSnapshot(first);
 	expect(before.progress.xp).toBeGreaterThan(0);
-	expect(before.inventory).toHaveLength(1);
+	expect(before.inventory).toHaveLength(2);
 	const durableProgress = before.progress;
 
 	first.send(scenarioInput({ x: 22 }));

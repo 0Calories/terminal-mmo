@@ -111,6 +111,14 @@ test('reconcileHealth takes the server health and leaves position alone', () => 
 	expect(predicted.x).toBe(42);
 });
 
+test('reconcileHealth carries the authoritative offhand into prediction', () => {
+	const predicted = grounded({ hp: 20, maxHp: 20, hurtT: 0 });
+	reconcileHealth(predicted, { hp: 20, maxHp: 20, hurtT: 0, offhand: 0 });
+	expect(predicted.offhand).toBe(0);
+	reconcileHealth(predicted, { hp: 20, maxHp: 20, hurtT: 0, offhand: null });
+	expect(predicted.offhand).toBeUndefined();
+});
+
 test('a swing hits a monster once, and the same swing cannot hit it again', () => {
 	const r = swingToStrike(grounded({ x: 10, facing: 1, weapon: undefined }));
 	if (!r.hitbox) throw new Error('expected a strike');
@@ -131,6 +139,26 @@ test('a swing hits a monster once, and the same swing cannot hit it again', () =
 		monster,
 	]);
 	expect(second).toEqual([]);
+});
+
+test('a predicted hit is tagged with the own session as its source', () => {
+	const r = swingToStrike(grounded({ x: 10, facing: 1, weapon: undefined }));
+	if (!r.hitbox) throw new Error('expected a strike');
+	const monster = entity({
+		id: 99,
+		type: 'chaser',
+		x: r.hitbox.x,
+		y: r.hitbox.y,
+	});
+
+	const [event] = predictSwingEvents(
+		{ ...r.avatar },
+		r.hitbox,
+		r.hitDamage,
+		[monster],
+		7,
+	);
+	expect(event.kind === 'hit' && event.source).toBe(7);
 });
 
 test('applyEmote leaves the Avatar untouched for an unknown emote', () => {

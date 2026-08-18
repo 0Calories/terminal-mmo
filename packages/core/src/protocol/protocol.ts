@@ -184,6 +184,8 @@ export type ClientMessage =
 	| { t: 'emote'; emote: string }
 	| { t: 'sell'; itemId: number }
 	| { t: 'buy'; index: number }
+	| { t: 'equip'; itemId: number }
+	| { t: 'unequip'; slot: Slot }
 	| { t: 'createAvatar'; handle: string; cosmetics: Cosmetics }
 	| { t: 'setCosmetics'; cosmetics: Cosmetics };
 
@@ -228,6 +230,8 @@ const CLIENT_TAG = {
 	buy: 8,
 	createAvatar: 9,
 	setCosmetics: 10,
+	equip: 11,
+	unequip: 12,
 } as const;
 
 export function encodeClientMessage(msg: ClientMessage): Uint8Array {
@@ -282,6 +286,14 @@ export function encodeClientMessage(msg: ClientMessage): Uint8Array {
 		case 'buy':
 			w.u8(CLIENT_TAG.buy);
 			w.u32(msg.index);
+			break;
+		case 'equip':
+			w.u8(CLIENT_TAG.equip);
+			w.u32(msg.itemId);
+			break;
+		case 'unequip':
+			w.u8(CLIENT_TAG.unequip);
+			w.u8(SLOTS.indexOf(msg.slot));
 			break;
 		case 'createAvatar':
 			w.u8(CLIENT_TAG.createAvatar);
@@ -364,6 +376,10 @@ export function decodeClientMessage(buf: Uint8Array): ClientMessage {
 			return { t: 'sell', itemId: r.u32() };
 		case CLIENT_TAG.buy:
 			return { t: 'buy', index: r.u32() };
+		case CLIENT_TAG.equip:
+			return { t: 'equip', itemId: r.u32() };
+		case CLIENT_TAG.unequip:
+			return { t: 'unequip', slot: SLOTS[r.u8()] ?? 'offhand' };
 		case CLIENT_TAG.createAvatar: {
 			const quad = readCosmetics(r);
 			const handle = r.remaining() >= 4 ? r.str() : '';
@@ -403,6 +419,7 @@ export interface AvatarSnapshot {
 	maxHp: number;
 	hurtT: number;
 	weapon: number;
+	offhand: number | null;
 	action: ActionState;
 }
 
@@ -487,6 +504,7 @@ const MOVE_IDS: readonly MoveId[] = ['idle', 'basic', 'dodge'];
 const ATTACK_PHASES: readonly AttackPhase[] = ['windup', 'active', 'recovery'];
 const EMOTE_IDS: readonly string[] = EMOTES.map((e) => e.id);
 const NO_EMOTE = 0xff;
+const NO_OFFHAND = 0xff;
 
 function writeAction(w: Writer, a: ActionState) {
 	w.u8(MOVE_IDS.indexOf(a.move));
@@ -508,7 +526,7 @@ function readAction(r: Reader): ActionState {
 		emoteT: r.f64(),
 	};
 }
-const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory'];
+const SLOTS: readonly Slot[] = ['weapon', 'armor', 'accessory', 'offhand'];
 const RARITIES: readonly Rarity[] = [
 	'common',
 	'uncommon',
@@ -531,6 +549,7 @@ function writeAvatar(w: Writer, a: AvatarSnapshot) {
 	w.f64(a.maxHp);
 	w.f64(a.hurtT);
 	w.u8(a.weapon);
+	w.u8(a.offhand ?? NO_OFFHAND);
 	writeAction(w, a.action);
 
 	w.str(a.cosmetics.hat);
@@ -551,6 +570,8 @@ function readAvatar(r: Reader): AvatarSnapshot {
 	const maxHp = r.f64();
 	const hurtT = r.f64();
 	const weapon = r.u8();
+	const offhandByte = r.u8();
+	const offhand = offhandByte === NO_OFFHAND ? null : offhandByte;
 	const action = readAction(r);
 	const hat = readTrailingId(r, quad.hat);
 	const form = readTrailingId(r, quad.form);
@@ -568,6 +589,7 @@ function readAvatar(r: Reader): AvatarSnapshot {
 		maxHp,
 		hurtT,
 		weapon,
+		offhand,
 		action,
 	};
 }
@@ -656,6 +678,11 @@ function writeCombatEvent(w: Writer, e: CombatEvent) {
 		w.u8(tint.g);
 		w.u8(tint.b);
 	}
+	// Only a break's source crosses the wire; a hit's stays server-internal
+	// (stripped with the originator suppression before encoding).
+	const source = e.kind === 'break' ? e.source : undefined;
+	w.bool(source !== undefined);
+	if (source !== undefined) w.u32(source);
 }
 
 function readCombatEvent(r: Reader): CombatEvent {
@@ -667,11 +694,15 @@ function readCombatEvent(r: Reader): CombatEvent {
 	const rawDir = r.i8();
 	const hasTint = r.bool();
 	const tint = hasTint ? { r: r.u8(), g: r.u8(), b: r.u8() } : undefined;
+	const hasSource = r.bool();
+	const source = hasSource ? r.u32() : undefined;
 	switch (kind) {
 		case 'hit':
 			return { kind, targetId, x, y, intensity, dir: rawDir as -1 | 0 | 1 };
 		case 'break':
-			return { kind, targetId, x, y, intensity, dir: rawDir as -1 | 0 | 1 };
+			return source !== undefined
+				? { kind, targetId, x, y, intensity, dir: rawDir as -1 | 0 | 1, source }
+				: { kind, targetId, x, y, intensity, dir: rawDir as -1 | 0 | 1 };
 		case 'swat':
 			return { kind, targetId, x, y, intensity, dir: (rawDir || 1) as Facing };
 		case 'death':

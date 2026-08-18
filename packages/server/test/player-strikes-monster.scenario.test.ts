@@ -74,6 +74,7 @@ test('a Player strike predicts one hit immediately, damages the Monster, and pre
 		},
 		playfield: {
 			game: null,
+			sessionId: null,
 			emitPredicted: (events) => predicted.push(present(events)),
 			levelUpBurst: () => {},
 		},
@@ -172,7 +173,10 @@ function combatField(): Zone {
 	return scenarioZone('field-01', 'field', {
 		monsters: [
 			{
+				// Pinned at x=15: inside the attacker's reach, outside its own
+				// commit range, whatever box its sprite derives.
 				...spawnMonster('chaser', MONSTER_ID, 15, GROUND_TOP - 5),
+				x: 15,
 				speed: 0,
 			},
 		],

@@ -35,10 +35,13 @@ plays identically whatever its Form (ADR 0020). Forms live in a registry selecte
 _Avoid_: Race, species, class, skin (a Form is the body, not a recolor)
 
 **Sprite**:
-The visual ASCII-art representation of an entity (Avatar, Monster, NPC). Purely
-decorative and client-side; deliberately decoupled from the entity's small
-logical collision/hitbox footprint (see ADR on visual architecture). A single,
-static frame; the animated, multi-frame body is a **Body sprite**.
+The visual ASCII-art representation of an entity (Avatar, Monster, NPC).
+Presentation stays decorative and client-side — the simulation sees only
+position + box — but a Monster's (and NPC's) logical box is *derived from* its
+sprite at asset load: the visible pixel bounds of the **Default frame** (ADR
+0042). An Avatar's box stays the canonical uniform one whatever its **Form**
+(ADR 0020); attack hitboxes stay authored, never derived. A single, static
+frame; the animated, multi-frame body is a **Body sprite**.
 _Avoid_: Art, model, skin
 
 **Body sprite**:
@@ -322,9 +325,11 @@ damage — the client-side *numeric* realization of a `hit`/`break`, sibling of 
 what it *cost*. Produced by the `present` routing layer; purely client-side, never
 on the wire, and deterministic — every observer sees the same digits at the same
 spot (unlike a Particle, no local randomness). Spawns above the target's head and
-drifts up on the render clock without tracking the target; rapid numbers on one
-target spread through a short deterministic offset cycle keyed to hit order —
-free overprint was prototyped and read as unreadable soup. Three styles — hit-on-Monster, **break** (heavier digits), and
+drifts up on the render clock without tracking the target; an uncontested number
+spawns dead-centre, and only while earlier numbers on that target are still
+alive do later ones spread through a short deterministic offset cycle keyed to
+hit order (the cycle resets once the target has no live numbers) — free
+overprint was prototyped and read as unreadable soup. Three styles — hit-on-Monster, **break** (heavier digits), and
 damage-on-**Avatar** — and never a fourth for other Players' hits (de-noising those
 relative to your own is a parked exploration). The attacker's own number is
 predicted with its optimistic `hit`; when the authority resolves that swing as a
@@ -621,14 +626,35 @@ self-terminates back to neutral — never infinite.
 _Avoid_: Air combo, loop, infinite
 
 **Guard**:
-The unified, frontal-arc defensive stance. Any raised Guard is a **Block** (Parry
-removed, ADR 0024). Hits from behind ignore it.
-_Avoid_: Defend, stance, shield
+The unified, frontal-arc defensive stance — raisable only with a **Shield**
+equipped (ADR 0043). Any raised Guard is a **Block** (Parry removed, ADR 0024).
+Hits from behind ignore it.
+_Avoid_: Defend, stance, shield (that's the Item that enables it)
 
 **Block**:
 Holding **Guard** to absorb a frontal hit for chip damage, draining **Poise** toward
 a guard-break. The safe defense; the only Guard behaviour (Parry removed, ADR 0024).
-_Avoid_: Shield, brace
+Gated solely by having a **Shield** equipped — no level unlock (ADR 0043).
+_Avoid_: Shield (that's the enabling Item, not the act), brace
+
+**Shield**:
+The **Offhand** Item whose being equipped is what lets **Guard** raise — the
+only gate on **Block**, working from level 1 (ADR 0043). Exactly one basic
+shield exists for now: granted and equipped at Avatar creation (and migrated
+onto existing Saves), unequippable from inventory, but unsellable and
+untradeable while it is the only one. Deliberately stat-less — fixed common
+rarity, no affixes; block numbers stay shared combat constants. It contributes
+only the gate and its art: a rest carry composited onto the Avatar every frame
+at the Form's `offhand` **Anchor** (present at rest, like the **Weapon
+sprite**), switching to a held-state `block` **Animation** while guarding. The
+one deliberate exception to "loot never changes playstyle."
+_Avoid_: Offhand weapon (it never attacks), buckler, guard/block (the stance
+and the act, not the Item)
+
+**Offhand**:
+The fourth equipment Slot (`weapon | armor | accessory | offhand`), holding a
+**Shield**; nothing else fits it yet (ADR 0043).
+_Avoid_: Shield slot, left hand
 
 **Guard-break**:
 The **Stagger** a **Block** suffers when sustained chip drains its **Poise** pool to a
@@ -638,7 +664,7 @@ _Avoid_: Shield-break, stun
 
 **Dodge**:
 A short horizontal hop granting brief invulnerability (i-frames) with committal
-recovery — the mobility-defense, available from level 1.
+recovery — the mobility-defense, unlocked at level 4.
 _Avoid_: Roll, dash, evade
 
 **Dodge after-image (echo)**:
@@ -667,7 +693,9 @@ rolled **Affixes**, and its visuals — the **Weapon sprite** and that sprite's
 **Weapon accent** colour. Nothing else: every weapon swings the one
 sword-and-shield **Moveset** with the one shared animation set (phase durations,
 arc/reach, **Poise** damage, and **Knockback** are shared COMBAT constants), so a
-weapon can never change playstyle — loot variety is stats and looks. The weapon's
+weapon can never change playstyle — loot variety is stats and looks. (The
+**Shield** is the one deliberate exception to that rule: equipping it is what
+enables **Block**, ADR 0043.) The weapon's
 catalog id joins the Avatar's replicated appearance, so others see your weapon.
 _Avoid_: Weapon type, weapon class (reserve **Class** for the Avatar archetype);
 per-weapon feel / phase-speed / arc (removed with the demo scope freeze)
@@ -731,8 +759,8 @@ _Avoid_: Job, profession, role, build
 An equippable piece of gear = **base type** (e.g. `Iron Sword`) + **rarity tier**
 + a small set of **randomized affixes** (rolled stats). Rarity is shown as color
 — the core visual language of loot. Dropped by Monsters or bought from NPC
-vendors. MVP slots: Weapon, Armor, Accessory. (Non-gear items like consumables
-may come later.)
+vendors. MVP slots: Weapon, Armor, Accessory, Offhand (ADR 0043). (Non-gear
+items like consumables may come later.)
 _Avoid_: Equip, gear, drop, loot (use "Item")
 
 **Drop**:
@@ -903,13 +931,14 @@ at runtime — the file, not code, is where art lives.
 _Avoid_: Asset (too generic), art file, sprite sheet (there is no atlas)
 
 **Sprite role**:
-What a Sprite file is *for* — form, hat, weapon, monster — named by the
+What a Sprite file is *for* — form, hat, weapon, shield, monster — named by the
 directory it lives in, and driving which validation profile applies (a form must
-author `idle`/`walk` and `grip`/`head`; a weapon a **Default frame** plus an
-exactly-3-frame `swing` Animation and grip). Cosmetic roles (form, hat) are
-registered by scan — the file existing is
-what makes it pickable; combat-entity roles (weapon, monster) are the *art half*
-of a catalog entry that references the Sprite file by id.
+author `idle`/`walk` and `grip`/`head`/`offhand`; a weapon a **Default frame**
+plus an exactly-3-frame `swing` Animation and grip; a shield a Default frame —
+the rest carry — plus a held-state `block` Animation, ADR 0043). Cosmetic roles
+(form, hat) are registered by scan — the file existing is
+what makes it pickable; combat-entity roles (weapon, shield, monster) are the
+*art half* of a catalog entry that references the Sprite file by id.
 _Avoid_: Type, kind, category
 
 **Sprite editor**:
@@ -947,8 +976,8 @@ _Avoid_: Base frame, master frame, rest frame (a role concept, not a format one)
 The Sprite editor's atomic unit — one quadrant sub-cell, four per terminal cell
 (2×2), each either a color or transparent. What the artist paints; the glyph is
 derived. A cell carries at most two colors (fg + bg), which is the medium's
-grain, not an editor limit. Movement-capable Sprite roles (form, hat, weapon, and
-monster) are Pixel-only so their complete art can translate one Pixel at a time —
+grain, not an editor limit. Movement-capable Sprite roles (form, hat, weapon,
+shield, and monster) are Pixel-only so their complete art can translate one Pixel at a time —
 half a terminal cell — without internal pieces snapping apart.
 _Avoid_: Cell (that's the 2×2 group), dot, subpixel
 
@@ -962,8 +991,8 @@ _Avoid_: Text tool, character brush
 
 **Anchor**:
 A named cell a Sprite file declares for attaching overlays — `grip` hangs the
-Weapon sprite, `head` seats the hat; names are open, so new overlay kinds are
-new names, not a format change. The file-level anchors live on the **Default
+Weapon sprite, `head` seats the hat, `offhand` seats the **Shield**; names are
+open, so new overlay kinds are new names, not a format change. The file-level anchors live on the **Default
 frame**: editing an anchor there edits the file's default; editing one on any
 other Frame authors a per-frame override (an Animation that raises the arm
 carries the weapon with it), cleared back to the default per frame (ADR 0036).

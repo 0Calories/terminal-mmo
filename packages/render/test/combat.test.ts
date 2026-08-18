@@ -4,7 +4,6 @@ import { BOX, type Entity, type Projectile } from '@mmo/core/entities';
 import { parseTerrain } from '@mmo/core/physics';
 import { Compositor, type RGBA } from '@mmo/render/compositor';
 import {
-	drawGuard,
 	drawProjectiles,
 	drawSkillTelegraphs,
 	drawSwing,
@@ -14,7 +13,6 @@ import { paintActor } from '@mmo/render/sprites';
 
 const NO_CAM = { x: 0, y: 0 };
 const TELEGRAPH: RGBA = [255, 245, 200, 255];
-const GUARD: RGBA = [150, 200, 255, 255];
 const PROJECTILE: RGBA = [255, 120, 80, 255];
 
 function eq(a: RGBA, b: RGBA): boolean {
@@ -108,19 +106,6 @@ test('combat sits above pass 3-4 actors: a telegraph wins a cell the actor occup
 
 	// Pass 5 drew after pass 3-4, so the telegraph owns the once-actor cell.
 	expect(scene.cell(occupied.x, occupied.y).char).toBe('✦');
-});
-
-test('a guard glyph composes over an actor and derives its backdrop from the scene', () => {
-	const c = solidField(24, 12);
-	const guarding = chaser({ id: 1, x: 8, y: 4, facing: 1, guardT: 5 });
-	paintActor(c, guarding, NO_CAM);
-
-	drawGuard(c, guarding, NO_CAM, GUARD);
-
-	const at = findGlyph(c, '┃');
-	const cell = c.cell(at.x, at.y);
-	expect(eq(cell.fg, GUARD)).toBe(true);
-	expect(cell.bg[3]).toBeGreaterThan(0);
 });
 
 test('skill telegraphs stamp over the actor and reveal the terrain beneath', () => {

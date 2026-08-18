@@ -61,6 +61,7 @@ test('an authored Monster strike reconciles and presents once on the struck clie
 	let latest = snapshot;
 	const playfieldView = {
 		game: null as GameState | null,
+		sessionId: null as number | null,
 		emitPredicted: () => {},
 		levelUpBurst: () => {},
 	};

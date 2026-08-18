@@ -1,5 +1,6 @@
 import type { AnimationId } from '@mmo/core/sprites';
 import type { BodySprite } from './body-sprite';
+import type { ShieldSprite } from './shield-sprite';
 import { SENTINEL, Sprite } from './sprite';
 import {
 	defaultFrame,
@@ -51,9 +52,10 @@ export function spriteFromDoc(doc: SpriteDoc, label?: string): Sprite {
 export function compileBodySprite(doc: SpriteDoc): BodySprite {
 	const grip = doc.anchors.grip;
 	const head = doc.anchors.head;
-	if (grip === undefined || head === undefined)
+	const offhand = doc.anchors.offhand;
+	if (grip === undefined || head === undefined || offhand === undefined)
 		throw new Error(
-			`sprite doc '${doc.id}' (role 'forms') requires doc-level anchors 'grip' and 'head'`,
+			`sprite doc '${doc.id}' (role 'forms') requires doc-level anchors 'grip', 'head', and 'offhand'`,
 		);
 
 	const frames: Partial<Record<AnimationId, Sprite | readonly Sprite[]>> = {};
@@ -69,6 +71,7 @@ export function compileBodySprite(doc: SpriteDoc): BodySprite {
 		frames,
 		grip,
 		head,
+		offhand,
 		baseline: doc.baseline,
 		...(Object.keys(fps).length > 0 ? { fps } : {}),
 	};
@@ -99,5 +102,29 @@ export function compileWeaponSprite(doc: SpriteDoc): WeaponSprite {
 		},
 		grip,
 		accent: doc.accent ?? WEAPON_ACCENT_KEY,
+	};
+}
+
+export function compileShieldSprite(doc: SpriteDoc): ShieldSprite {
+	const grip = doc.anchors.grip;
+	if (grip === undefined)
+		throw new Error(
+			`sprite doc '${doc.id}' (role 'shields') requires a doc-level anchor 'grip'`,
+		);
+	const rest = defaultFrame(doc);
+	if (rest === undefined)
+		throw new Error(`sprite doc '${doc.id}' has no frames`);
+	const block = doc.animations.find((a) => a.name === 'block');
+	if (block === undefined || block.frames.length === 0)
+		throw new Error(
+			`sprite doc '${doc.id}' (role 'shields') requires a 'block' animation`,
+		);
+	return {
+		frames: {
+			rest: frameSprite(doc, rest, true),
+			block: block.frames.map((f) => frameSprite(doc, f, true)),
+		},
+		grip,
+		...(block.fps !== undefined ? { blockFps: block.fps } : {}),
 	};
 }

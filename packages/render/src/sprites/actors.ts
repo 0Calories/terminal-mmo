@@ -2,13 +2,14 @@ import { loadSpriteSources } from '@mmo/assets';
 import {
 	ACTION_FLAG,
 	bladeEdgeArc,
+	guardRaised,
 	swingPhase,
 	swingProgress,
 	weaponById,
 } from '@mmo/core/combat';
 import {
 	type AttackPhase,
-	BOX,
+	boxOf,
 	DEFAULT_FORM_ID,
 	type Entity,
 	type EntityType,
@@ -18,6 +19,7 @@ import {
 	SCENE_COLORS,
 	SCENE_PALETTE,
 } from '@mmo/core/entities';
+import { shieldById } from '@mmo/core/items';
 import {
 	bodyFrame,
 	isPhaseAnimation,
@@ -68,6 +70,7 @@ const formDocs = docsForRole('forms');
 const monsterDocs = docsForRole('monsters');
 const npcDocs = docsForRole('npcs');
 const weaponDocs = docsForRole('weapons');
+const shieldDocs = docsForRole('shields');
 
 const hatDocs = ((): Map<string, SpriteDoc> => {
 	const docs = new Map<string, SpriteDoc>();
@@ -123,6 +126,16 @@ function fpsFor(doc: SpriteDoc): Record<string, number> {
 
 function walkFrameCount(doc: SpriteDoc): number {
 	return doc.animations.find((a) => a.name === 'walk')?.frames.length ?? 1;
+}
+
+/** Held states have no phase or per-entity timer, so an fps-looped animation
+ *  samples wall time — every viewer sees the same frame. */
+export function heldLoopFrameIndex(
+	anim: { frames: readonly unknown[]; fps?: number },
+	tMs: number,
+): number {
+	if (anim.fps === undefined || anim.frames.length <= 1) return 0;
+	return Math.floor((tMs / 1000) * anim.fps) % anim.frames.length;
 }
 
 function bodyFrameLabel(
@@ -222,14 +235,24 @@ function bodyBaseline(e: Entity): number {
  * baseline is foot-art idiom, not scene depth; ordering uses {@link actorDepthY}.
  */
 export function actorFootDepth(e: Entity): number {
-	return e.y + BOX.h + bodyBaseline(e);
+	return e.y + boxOf(e.type).h + bodyBaseline(e);
 }
 
 /** Pass-3 depth key of an actor: the collision box bottom. Every planted
  *  sprite's deepest ink lands half a cell below it regardless of baseline, so
  *  box bottom alone orders the crowd and same-floor actors tie exactly. */
 export function actorDepthY(e: Entity): number {
-	return e.y + BOX.h;
+	return e.y + boxOf(e.type).h;
+}
+
+/**
+ * World-y of the top row of an actor's currently drawn body art — the same
+ * origin {@link paintActor} plants, for overlays that must sit on the visible
+ * head rather than the logical box (which a short sprite doesn't fill).
+ */
+export function actorSpriteTop(e: Entity): number {
+	const { sprite, baseline } = resolveBody(e, animStateOf(e));
+	return e.y + boxOf(e.type).h - sprite.heightCells + baseline;
 }
 
 /** Pass-3 depth key of an NPC: its box bottom, symmetric with {@link actorDepthY}. */
@@ -355,6 +378,53 @@ function paintWeapon(
 	}
 }
 
+function isGuarding(e: Entity): boolean {
+	if (e.action) return (e.action.flags & ACTION_FLAG.guarding) !== 0;
+	return guardRaised(e.guardT ?? 0);
+}
+
+function paintShield(
+	compositor: Compositor,
+	e: Entity,
+	originPx: number,
+	originPy: number,
+	bodyW: number,
+	offhand: { x: number; y: number },
+	hurt: boolean,
+	tint: RGBA | undefined,
+): void {
+	if (e.offhand === undefined) return;
+	const ref = shieldById(e.offhand)?.sprite;
+	if (ref === undefined) return;
+	const doc = shieldDocs.get(ref);
+	if (doc === undefined) return;
+
+	const block = doc.animations.find((a) => a.name === 'block');
+	const label =
+		isGuarding(e) && block !== undefined
+			? frameLabelAt(block, heldLoopFrameIndex(block, performance.now()))
+			: frameLabelAt(doc.animations[0], 0);
+	const frame = compiled(`shields:${ref}:${label}`, doc, label);
+	// The frame's effective grip (per-frame overrides author the block raise).
+	const sGrip = frame.anchors.grip;
+	if (sGrip === undefined) return;
+
+	// Like the weapon, the shield shares the body's one Pixel origin, seated so
+	// its grip lands on the body's offhand anchor.
+	const offhandCellX = mirrorAnchorX(offhand.x, bodyW, e.facing);
+	const sgx = e.facing === 1 ? sGrip.x : frame.widthCells - 1 - sGrip.x;
+	const recolor = hurt ? hurtRecolor(frame) : undefined;
+	paintSprite(compositor, frame, {
+		originPx: originPx + (offhandCellX - sgx) * 2,
+		originPy: originPy + (offhand.y - sGrip.y) * 2,
+		facing: e.facing,
+		palette: PALETTE,
+		paletteDefault: PALETTE_DEFAULT,
+		...(recolor ? { recolor } : {}),
+		...(tint ? { tint } : {}),
+	});
+}
+
 function paintHat(
 	compositor: Compositor,
 	e: Entity,
@@ -396,7 +466,8 @@ export interface PaintActorOptions {
 
 /**
  * Compose one actor (local Avatar, remote Avatar, or Monster) atomically into
- * the shared surface: body, then grip-anchored weapon and blade arc, then hat.
+ * the shared surface: body, then grip-anchored weapon and blade arc, then the
+ * offhand-anchored shield, then hat.
  * Hurt tint and cosmetic hue thread through {@link paintSprite}'s recolor. An
  * optional {@link PaintActorOptions.tint} paints the whole actor as one flat
  * silhouette.
@@ -413,8 +484,9 @@ export function paintActor(
 	// Quantize the combined world-relative offset ONCE into a Pixel origin (2 Pixels
 	// per cell) so camera and entity never round independently (ADR 0038). Body,
 	// weapon, and hat all share this origin, so the assembled actor moves as one.
-	const worldX = e.x - Math.floor((bodyW - BOX.w) / 2);
-	const worldY = e.y + BOX.h - sprite.heightCells + baseline;
+	const box = boxOf(e.type);
+	const worldX = e.x - Math.floor((bodyW - box.w) / 2);
+	const worldY = e.y + box.h - sprite.heightCells + baseline;
 	const originPx = Math.round((worldX - cam.x) * 2);
 	const originPy = Math.round((worldY - cam.y) * 2);
 	const hurt = e.hurtT > 0.3;
@@ -441,6 +513,9 @@ export function paintActor(
 
 	if (grip)
 		paintWeapon(compositor, e, originPx, originPy, bodyW, grip, st, hurt, tint);
+	const offhand = sprite.anchors.offhand;
+	if (offhand)
+		paintShield(compositor, e, originPx, originPy, bodyW, offhand, hurt, tint);
 	paintHat(compositor, e, originPx, originPy, bodyW, head, hurt, tint);
 }
 

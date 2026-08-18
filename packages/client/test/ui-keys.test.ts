@@ -37,6 +37,7 @@ interface Trace {
 	calls: string[];
 	deps: GameKeyDeps;
 	shop: ReturnType<typeof overlay> & { mode: 'sell' | 'buy' };
+	bag: ReturnType<typeof overlay>;
 	controls: ReturnType<typeof overlay>;
 	options: ReturnType<typeof overlay>;
 	recustomize: ReturnType<typeof overlay> | null;
@@ -56,6 +57,7 @@ function harness(over: Partial<GameKeyDeps> = {}): Trace {
 	const controls = overlay();
 	const options = overlay();
 	const shop = Object.assign(overlay(), { mode: 'sell' as 'sell' | 'buy' });
+	const bag = overlay();
 	const trace: Trace = {
 		calls,
 		notice,
@@ -63,6 +65,7 @@ function harness(over: Partial<GameKeyDeps> = {}): Trace {
 		controls,
 		options,
 		shop,
+		bag,
 		recustomize: null,
 		deps: undefined as unknown as GameKeyDeps,
 	};
@@ -92,6 +95,14 @@ function harness(over: Partial<GameKeyDeps> = {}): Trace {
 		sellSelected: record('sell'),
 		openShop: record('openShop'),
 		merchantUnder: () => false,
+		bag: Object.assign(bag, {
+			count: () => 0,
+			move: record('moveBag'),
+			update: record('updateBag'),
+		}),
+		bagView: () => ({ inventory: [], offhand: null }),
+		toggleEquipSelected: record('toggleEquip'),
+		openBag: record('openBag'),
 		recustomize: () => trace.recustomize,
 		submitRecustomize: () => calls.push('submitRecustomize'),
 		openRecustomize: record('openRecustomize'),
@@ -174,6 +185,20 @@ test('shop and recustomize modals own their actions and dismissal', () => {
 	customizeKeys(key('escape'));
 	expect(customize.calls).toContain('submitRecustomize');
 	expect(customize.recustomize.open).toBe(false);
+});
+
+test('the bag opens on b, owns its keys while open, and toggles equip on enter', () => {
+	const closed = harness();
+	gameKeyHandler(closed.deps)(key('b'));
+	expect(closed.calls).toEqual(['clearHeld', 'openBag']);
+
+	const open = harness();
+	open.bag.open = true;
+	const bagKeys = gameKeyHandler(open.deps);
+	bagKeys(key('return'));
+	expect(open.calls).toContain('toggleEquip');
+	bagKeys(key('b'));
+	expect(open.bag.open).toBe(false);
 });
 
 test('global commands act only when no modal owns the key', () => {

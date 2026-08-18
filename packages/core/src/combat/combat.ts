@@ -1,4 +1,4 @@
-import { BOX } from '../entities/body';
+import { boxOf } from '../entities/boxes';
 import { combatOf } from '../entities/monsters/registry';
 import { HUES, type RGBAQuad, SCENE_PALETTE } from '../entities/sceneStyle';
 import type {
@@ -57,6 +57,7 @@ export interface Combatant {
 	dodgeT?: number;
 	dodgeCdT?: number;
 	guardT?: number;
+	offhand?: number;
 	swingHits?: number[];
 	skillCooldowns?: Record<string, number>;
 	contributors?: number[];
@@ -246,14 +247,6 @@ export function resolveGuard(
 	};
 }
 
-export function guardOverlayCell(e: Entity): { x: number; y: number } {
-	return { x: e.facing === 1 ? e.x + BOX.w : e.x - 1, y: e.y + 1 };
-}
-
-export function guardOverlayGlyph(): string {
-	return '┃';
-}
-
 export function swingOverlayGlyph(phase: AttackPhase, facing: Facing): string {
 	const right = phase === 'windup' ? '╲' : phase === 'active' ? '─' : '╱';
 	if (facing === 1) return right;
@@ -264,9 +257,10 @@ export function swingOverlayCell(
 	e: Entity,
 	phase: AttackPhase,
 ): { x: number; y: number } {
-	const lead = e.facing === 1 ? e.x + BOX.w : e.x - 1;
+	const box = boxOf(e.type);
+	const lead = e.facing === 1 ? e.x + box.w : e.x - 1;
 	const row =
-		phase === 'windup' ? e.y : phase === 'active' ? e.y + 1 : e.y + BOX.h - 1;
+		phase === 'windup' ? e.y : phase === 'active' ? e.y + 1 : e.y + box.h - 1;
 	return { x: lead, y: row };
 }
 
@@ -332,35 +326,38 @@ interface CombatEventBase {
 
 export type CombatEvent =
 	| (CombatEventBase & { kind: 'hit'; dir: -1 | 0 | 1; source?: number })
-	| (CombatEventBase & { kind: 'break'; dir: -1 | 0 | 1 })
+	| (CombatEventBase & { kind: 'break'; dir: -1 | 0 | 1; source?: number })
 	| (CombatEventBase & { kind: 'swat'; dir: Facing })
 	| (CombatEventBase & { kind: 'death'; dir: 0; tint?: Tint });
 
 export function combatEventAt(
 	kind: 'hit' | 'break',
-	target: Pick<Combatant, 'id' | 'x' | 'y'>,
+	target: Pick<Combatant, 'id' | 'x' | 'y' | 'type'>,
 	dir: -1 | 0 | 1,
 	intensity: number,
 	source?: number,
 ): CombatEvent {
+	const box = boxOf(target.type);
 	const e = {
 		kind,
 		targetId: target.id,
-		x: target.x + BOX.w / 2,
-		y: target.y + BOX.h / 2,
+		x: target.x + box.w / 2,
+		y: target.y + box.h / 2,
 		dir,
 		intensity,
 	} as CombatEvent;
-	if (e.kind === 'hit' && source !== undefined) e.source = source;
+	if ((e.kind === 'hit' || e.kind === 'break') && source !== undefined)
+		e.source = source;
 	return e;
 }
 
 export function deathEvent(e: Entity): CombatEvent {
+	const box = boxOf(e.type);
 	return {
 		kind: 'death',
 		targetId: e.id,
-		x: e.x + BOX.w / 2,
-		y: e.y + BOX.h / 2,
+		x: e.x + box.w / 2,
+		y: e.y + box.h / 2,
 		dir: 0,
 		intensity: COMBAT.deathBurstIntensity,
 		tint: entityTint(e),
@@ -387,7 +384,7 @@ export function aabbOverlap(a: Box, b: Box): boolean {
 export function swingHitsTarget(
 	hitbox: Box | null,
 	swingHits: ReadonlySet<number>,
-	target: Pick<Combatant, 'id' | 'x' | 'y'>,
+	target: Pick<Combatant, 'id' | 'x' | 'y' | 'type'>,
 ): boolean {
 	return (
 		hitbox !== null &&
@@ -401,13 +398,14 @@ export function predictHits(
 	attackerFacing: Facing,
 	damage: number,
 	swingHits: ReadonlySet<number>,
-	monsters: readonly Pick<Combatant, 'id' | 'x' | 'y'>[],
+	monsters: readonly Pick<Combatant, 'id' | 'x' | 'y' | 'type'>[],
+	source?: number,
 ): CombatEvent[] {
 	if (!hitbox) return [];
 	const events: CombatEvent[] = [];
 	for (const m of monsters)
 		if (swingHitsTarget(hitbox, swingHits, m))
-			events.push(combatEventAt('hit', m, attackerFacing, damage));
+			events.push(combatEventAt('hit', m, attackerFacing, damage, source));
 	return events;
 }
 
@@ -452,7 +450,7 @@ export function resolveCombat(
 		? DODGE_LOCKOUT
 		: Math.max(0, (avatar.dodgeCdT ?? 0) - dt);
 
-	const guarding = intent.guard === true && capabilityUnlocked('block', level);
+	const guarding = intent.guard === true && avatar.offhand !== undefined;
 	const starting =
 		(intent.attack ?? false) && attackT <= 0 && dodgeT <= 0 && !guarding;
 	const nextAttackT = starting ? SWING_TOTAL : attackT;
@@ -531,18 +529,21 @@ export function resolveHitsOnMonsters<E extends Combatant>(
 					-s.knockbackUp * swat,
 				);
 				m = patch(m, { attackT: 0 });
+				const mBox = boxOf(m.type);
 				events.push({
 					kind: 'swat',
 					targetId: m.id,
-					x: m.x + BOX.w / 2,
-					y: m.y + BOX.h / 2,
+					x: m.x + mBox.w / 2,
+					y: m.y + mBox.h / 2,
 					dir: s.facing,
 					intensity: s.damage,
 				});
 			} else if (broke) {
 				m = applyImpulse(m, s.knockback * s.facing, -s.knockbackUp);
 				m = patch(m, { stunT: COMBAT.hitstun });
-				events.push(combatEventAt('break', m, s.facing, s.damage));
+				events.push(
+					combatEventAt('break', m, s.facing, s.damage, s.attackerId),
+				);
 			} else {
 				events.push(combatEventAt('hit', m, s.facing, s.damage, s.attackerId));
 			}
@@ -589,7 +590,9 @@ export function resolveHitsOnAvatars<E extends Combatant>(
 			if (broke) {
 				na = applyImpulse(na, s.knockback * s.facing, -s.knockbackUp);
 				na = patch(na, { stunT: COMBAT.hitstun });
-				events.push(combatEventAt('break', a, s.facing, s.damage));
+				events.push(
+					combatEventAt('break', a, s.facing, s.damage, s.attackerId),
+				);
 			} else if (g.result !== 'block') {
 				const away: -1 | 0 | 1 =
 					a.x === attackerX ? 0 : a.x > attackerX ? 1 : -1;

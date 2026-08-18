@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import type { BrainView, Entity, Terrain } from '../../../../src/entities';
-import { MONSTERS, spawnMonster } from '../../../../src/entities';
+import { boxOf, MONSTERS, spawnMonster } from '../../../../src/entities';
 import type { EngineMemory } from '../../../../src/entities/monsters';
 import { hopEngine } from '../../../../src/entities/monsters/slime';
 import { parseTerrain } from '../../../../src/physics';
@@ -97,7 +97,12 @@ test('a patrol turns away from a ledge rather than hopping off it', () => {
 
 test('boxed in the gait hops in place: shortened, never frozen', () => {
 	const m = grounded(10);
-	const step = hop.wander(m, view(cellTerrain(9, 15)), undefined);
+	// Walls flush against both edges of the slime's own box, whatever derives.
+	const box = cellTerrain(
+		Math.floor(m.x) - 1,
+		Math.ceil(m.x + boxOf('slime').w),
+	);
+	const step = hop.wander(m, view(box), undefined);
 	expect(step.drive.jump).toBe(true);
 	expect(step.drive.moveScale).toBe(0);
 	expect(step.drive.moveX).toBe(0);

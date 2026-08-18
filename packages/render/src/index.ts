@@ -16,9 +16,11 @@ export {
 	spriteForNpc,
 } from './registry';
 export type { ZoneScene } from './scene';
+export type { ShieldSprite } from './shield-sprite';
 export { mirrorGlyph, SENTINEL, Sprite } from './sprite';
 export {
 	compileBodySprite,
+	compileShieldSprite,
 	compileWeaponSprite,
 	spriteFromDoc,
 } from './sprite-compile';

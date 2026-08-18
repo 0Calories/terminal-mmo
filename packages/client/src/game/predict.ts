@@ -96,11 +96,14 @@ export function stepPrediction(
 
 export function reconcileHealth(
 	predicted: Entity,
-	own: Pick<Entity, 'hp' | 'maxHp' | 'hurtT'>,
+	own: Pick<Entity, 'hp' | 'maxHp' | 'hurtT'> & { offhand?: number | null },
 ): void {
 	predicted.hp = own.hp;
 	predicted.maxHp = own.maxHp;
 	predicted.hurtT = own.hurtT;
+	if (own.offhand === null || own.offhand === undefined)
+		delete predicted.offhand;
+	else predicted.offhand = own.offhand;
 }
 
 export function predictSwingEvents(
@@ -108,6 +111,7 @@ export function predictSwingEvents(
 	hitbox: Box,
 	hitDamage: number,
 	monsters: Entity[],
+	source?: number,
 ): CombatEvent[] {
 	const swung = new Set(predicted.swingHits ?? []);
 	const events = predictHits(
@@ -116,6 +120,7 @@ export function predictSwingEvents(
 		hitDamage,
 		swung,
 		monsters,
+		source,
 	);
 	for (const e of events) swung.add(e.targetId);
 	predicted.swingHits = [...swung];

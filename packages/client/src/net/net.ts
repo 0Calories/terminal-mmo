@@ -206,6 +206,7 @@ function avatarEntity(a: AvatarSnapshot): Entity {
 		name: a.handle,
 		cosmetics: a.cosmetics,
 		weapon: a.weapon,
+		...(a.offhand !== null ? { offhand: a.offhand } : {}),
 		x: a.x,
 		y: a.y,
 		vx: a.vx,
@@ -266,7 +267,11 @@ export function snapshotToGame(
 	const ownCosmetics = ownSnap?.cosmetics;
 	let avatar = predicted;
 	if (ownCosmetics) avatar = { ...avatar, cosmetics: ownCosmetics };
-	if (ownSnap) avatar = { ...avatar, weapon: ownSnap.weapon };
+	if (ownSnap) {
+		avatar = { ...avatar, weapon: ownSnap.weapon };
+		if (ownSnap.offhand !== null) avatar.offhand = ownSnap.offhand;
+		else delete avatar.offhand;
+	}
 	if (ownBubble) avatar = { ...avatar, bubble: ownBubble };
 	const progress = snapshot?.progress ?? { level: 1, xp: 0, gold: 0 };
 	const inventory: Item[] = snapshot?.inventory ?? [];

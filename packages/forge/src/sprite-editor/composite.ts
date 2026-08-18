@@ -20,6 +20,7 @@ import {
 	SCENE_COLORS,
 	SCENE_PALETTE,
 } from '@mmo/core/entities';
+import { STARTER_SHIELD, shieldById } from '@mmo/core/items';
 import { bodyFrame, mirrorAnchorX, swingFrameIndex } from '@mmo/core/sprites';
 import {
 	FORM_IDS,
@@ -79,6 +80,11 @@ function defaultHatDoc(): SpriteDoc | undefined {
 
 function defaultWeaponDoc(): SpriteDoc | undefined {
 	return shippedDoc('weapons', weaponById(0).sprite);
+}
+
+function defaultShieldDoc(): SpriteDoc | undefined {
+	const ref = shieldById(STARTER_SHIELD)?.sprite;
+	return ref !== undefined ? shippedDoc('shields', ref) : undefined;
 }
 
 // ── Palette / style (8-bit; the compositor's colour model) ────────────────────
@@ -409,6 +415,31 @@ function weaponLayerAndArc(
 	return { layer, arcs };
 }
 
+function shieldLayer(
+	shieldDoc: SpriteDoc,
+	frameLabel: string,
+	e: Entity,
+	body: CompiledSprite,
+	sx: number,
+	sy: number,
+): Layer | undefined {
+	const offhand = body.anchors.offhand;
+	if (!offhand) return undefined;
+	const frame = compileSprite(shieldDoc, frameLabel);
+	// The frame's effective grip (per-frame overrides author the block raise).
+	const sGrip = frame.anchors.grip;
+	if (!sGrip) return undefined;
+	const bodyW = body.widthCells;
+	const offhandX = sx + mirrorAnchorX(offhand.x, bodyW, e.facing);
+	const sgx = e.facing === 1 ? sGrip.x : frame.widthCells - 1 - sGrip.x;
+	return {
+		sprite: frame,
+		cellX: offhandX - sgx,
+		cellY: sy + offhand.y - sGrip.y,
+		facing: e.facing,
+	};
+}
+
 function hatLayer(
 	hat: CompiledSprite,
 	e: Entity,
@@ -489,6 +520,28 @@ function roleContext(
 		};
 	}
 
+	if (role === 'shield') {
+		const bodyDoc = defaultFormDoc();
+		if (!bodyDoc) return undefined;
+		const e = baseAvatar(facing, view.hue ?? 0);
+		const body = compileSprite(bodyDoc, animatedBodyLabel(bodyDoc, e));
+		const shieldFrame = resolveFrame(doc, view.stance, view.elapsedS);
+		return {
+			entity: e,
+			primary: body,
+			baseline: body.baseline,
+			render(entity) {
+				const { sx, sy } = bodyOrigin(entity, body, body.baseline);
+				const layers: Layer[] = [
+					{ sprite: body, cellX: sx, cellY: sy, facing },
+				];
+				const layer = shieldLayer(doc, shieldFrame, entity, body, sx, sy);
+				if (layer) layers.push(layer);
+				return { layers, arcs: [] };
+			},
+		};
+	}
+
 	if (role === 'form') {
 		const frame = resolveFrame(doc, view.stance, view.elapsedS);
 		const body = compileSprite(doc, frame);
@@ -496,6 +549,7 @@ function roleContext(
 		e.weapon = 0;
 		const hatDoc = defaultHatDoc();
 		const weaponDoc = defaultWeaponDoc();
+		const shieldDoc = defaultShieldDoc();
 		return {
 			entity: e,
 			primary: body,
@@ -510,6 +564,17 @@ function roleContext(
 					const w = weaponLayerAndArc(weaponDoc, entity, body, sx, sy, style);
 					if (w.layer) layers.push(w.layer);
 					arcs = w.arcs;
+				}
+				if (shieldDoc) {
+					const layer = shieldLayer(
+						shieldDoc,
+						defaultFrameLabel(shieldDoc),
+						entity,
+						body,
+						sx,
+						sy,
+					);
+					if (layer) layers.push(layer);
 				}
 				if (hatDoc) {
 					const hat = compileSprite(hatDoc);

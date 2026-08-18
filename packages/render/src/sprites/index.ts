@@ -1,6 +1,8 @@
 export {
 	actorDepthY,
 	actorFootDepth,
+	actorSpriteTop,
+	heldLoopFrameIndex,
 	monsterAuthorsAttackFrames,
 	npcDepthY,
 	type PaintActorOptions,

@@ -6,6 +6,11 @@ import {
 } from './store';
 
 export { computeContractHash } from './contract';
+export {
+	defaultFrameBox,
+	registerDerivedBoxes,
+	spriteBoxes,
+} from './sprite-box';
 export { loadZones } from './zones';
 
 export function spriteIds(

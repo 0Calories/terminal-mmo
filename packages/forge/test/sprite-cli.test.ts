@@ -210,11 +210,19 @@ describe('sprite CLI', () => {
 --- swing 2
 ██
 `;
+		const shield = `{"anchors":{"grip":[0,0]},"animations":[{"name":"idle"},{"name":"block"}]}
+--- idle
+██
+--- block
+██
+`;
 		const idle = `{"animations":[{"name":"idle"}]}\n--- idle\n██\n`;
 		for (const [dir, id] of [['weapons', 'sword']] as const) {
 			mkdirSync(join(root, dir), { recursive: true });
 			writeFileSync(join(root, dir, `${id}.sprite`), weapon);
 		}
+		mkdirSync(join(root, 'shields'), { recursive: true });
+		writeFileSync(join(root, 'shields', 'wooden-shield.sprite'), shield);
 		for (const id of ['slime', 'chaser', 'shooter', 'brute']) {
 			mkdirSync(join(root, 'monsters'), { recursive: true });
 			writeFileSync(join(root, 'monsters', `${id}.sprite`), idle);

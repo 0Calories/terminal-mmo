@@ -19,9 +19,18 @@ export {
 	rngNext,
 } from './rng';
 export {
+	SHIELDS,
+	type Shield,
+	STARTER_SHIELD,
+	shieldById,
+	shieldIdByName,
+	starterShieldItem,
+} from './shields';
+export {
 	buyItem,
 	STARTER_GOODS,
 	type StarterGood,
 	saleValue,
+	sellable,
 	sellItem,
 } from './vendor';

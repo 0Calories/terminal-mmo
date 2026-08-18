@@ -4,6 +4,7 @@ import {
 	itemLabel,
 	STARTER_GOODS,
 	saleValue,
+	sellable,
 	sellItem,
 } from '@mmo/core/items';
 import {
@@ -37,6 +38,16 @@ export function applySell(
 	if (sa === undefined) return { world, sold: false };
 	const item = sa.inventory.find((i) => i.id === itemId);
 	if (item === undefined) return { world, sold: false };
+	if (!sellable(item)) {
+		const refused = updateAvatar(world, sessionId, (a) => ({
+			...a,
+			log: [
+				...a.log.slice(-5),
+				`The Merchant won't buy your ${itemLabel(item)}.`,
+			],
+		}));
+		return { world: refused, sold: false };
+	}
 	const { progress, inventory } = sellItem(sa.progress, sa.inventory, itemId);
 	const next = updateAvatar(world, sessionId, (a) => ({
 		...a,

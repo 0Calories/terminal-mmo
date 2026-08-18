@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { MONSTERS } from '../../src/entities';
+import type { MonsterType } from '../../src/entities';
+import { BOX, boxOf, MONSTERS, npcBoxOf } from '../../src/entities';
 import {
 	type MonsterCatalogEntry,
 	NPC_BOX,
@@ -53,6 +54,14 @@ describe('Zone parsing laws', () => {
 			{ type: 'chaser', x: 2, y: 1 },
 			{ type: 'shooter', x: 7, y: 1 },
 		]);
+		// A spawn glyph marks a BOX-sized slot; the monster's derived box is
+		// centred in it with feet on the slot's floor.
+		const placed = (type: MonsterType, slotX: number, slotY: number) => ({
+			type,
+			x: slotX + Math.floor((BOX.w - boxOf(type).w) / 2),
+			y: slotY + BOX.h - boxOf(type).h,
+			hp: MONSTERS[type].stats.hp,
+		});
 		expect(
 			zone.monsters.map(({ id, type, x, y, hp, spawnIndex }) => ({
 				id,
@@ -63,22 +72,8 @@ describe('Zone parsing laws', () => {
 				spawnIndex,
 			})),
 		).toEqual([
-			{
-				id: 2,
-				type: 'chaser',
-				x: 2,
-				y: 1,
-				hp: MONSTERS.chaser.stats.hp,
-				spawnIndex: 0,
-			},
-			{
-				id: 3,
-				type: 'shooter',
-				x: 7,
-				y: 1,
-				hp: MONSTERS.shooter.stats.hp,
-				spawnIndex: 1,
-			},
+			{ id: 2, spawnIndex: 0, ...placed('chaser', 2, 1) },
+			{ id: 3, spawnIndex: 1, ...placed('shooter', 7, 1) },
 		]);
 		expect(zone.nextMonsterId).toBe(2 + zone.monsters.length);
 	});
@@ -93,8 +88,19 @@ describe('Zone parsing laws', () => {
 				arrival: { x: 12, y: 32 },
 			},
 		]);
+		// The NPC glyph marks an NPC_BOX-sized slot; the derived box is centred
+		// in it with feet on the slot's floor.
+		const nb = npcBoxOf('vendor');
 		expect(zone.npcs).toEqual([
-			{ id: 1, kind: 'vendor', name: 'Vendor', x: 13, y: 1, ...NPC_BOX },
+			{
+				id: 1,
+				kind: 'vendor',
+				name: 'Vendor',
+				x: 13 + Math.floor((NPC_BOX.w - nb.w) / 2),
+				y: 1 + NPC_BOX.h - nb.h,
+				w: nb.w,
+				h: nb.h,
+			},
 		]);
 	});
 

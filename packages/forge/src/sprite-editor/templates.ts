@@ -5,7 +5,13 @@ import type {
 	SpriteFrameDoc,
 } from '@mmo/render';
 
-export type SpriteRole = 'form' | 'weapon' | 'hat' | 'monster' | 'npc';
+export type SpriteRole =
+	| 'form'
+	| 'weapon'
+	| 'shield'
+	| 'hat'
+	| 'monster'
+	| 'npc';
 
 const CANVAS_W = 6;
 const CANVAS_H = 4;
@@ -27,7 +33,7 @@ const ROLE_TEMPLATES: Record<SpriteRole, RoleTemplate> = {
 			{ name: 'idle', frameCount: 1 },
 			{ name: 'walk', frameCount: 2 },
 		],
-		anchors: { grip: [4, 2], head: [2, 0] },
+		anchors: { grip: [4, 2], head: [2, 0], offhand: [1, 2] },
 	},
 	weapon: {
 		animations: [
@@ -35,6 +41,13 @@ const ROLE_TEMPLATES: Record<SpriteRole, RoleTemplate> = {
 			{ name: 'swing', frameCount: 3 },
 		],
 		anchors: { grip: [1, 2] },
+	},
+	shield: {
+		animations: [
+			{ name: 'idle', frameCount: 1 },
+			{ name: 'block', frameCount: 1 },
+		],
+		anchors: { grip: [1, 1] },
 	},
 	hat: { animations: [{ name: 'idle', frameCount: 1 }], anchors: {} },
 	monster: { animations: [{ name: 'idle', frameCount: 1 }], anchors: {} },

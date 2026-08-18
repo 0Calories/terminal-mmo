@@ -28,12 +28,7 @@ export const CONTROL_ROWS: readonly ControlRow[] = [
 		mouseKeys: 'left-click',
 		capability: 'attack',
 	},
-	{
-		label: 'Block',
-		keys: 'k',
-		mouseKeys: 'k  ·  right-click',
-		capability: 'block',
-	},
+	{ label: 'Block', keys: 'k', mouseKeys: 'k  ·  right-click' },
 	{ label: 'Dodge', keys: 'l', capability: 'dodge' },
 	{
 		label: 'Power Strike',
@@ -47,6 +42,7 @@ export const CONTROL_ROWS: readonly ControlRow[] = [
 		mouseKeys: 'r',
 		capability: 'ground-pound',
 	},
+	{ label: 'Inventory', keys: 'b' },
 	{ label: 'Interact', keys: 'e', mouseKeys: 'f' },
 	{ label: 'Chat', keys: '↵   (/w whisper)' },
 	{ label: 'Emote', keys: '/wave · /dance · /sit' },

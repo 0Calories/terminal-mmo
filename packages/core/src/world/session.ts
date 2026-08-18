@@ -34,6 +34,9 @@ export function addAvatar(
 	const avatar: Entity = spawnAvatar(SPAWN.x, SPAWN.y, {
 		id: sessionId,
 		weapon: wpn,
+		...(restore?.equippedOffhand !== undefined
+			? { offhand: restore.equippedOffhand }
+			: {}),
 	});
 	if (restore) {
 		const mhp = maxHpForLevel(restore.progress.level);
@@ -98,6 +101,7 @@ export function snapshotFor(
 		maxHp: a.avatar.maxHp,
 		hurtT: a.avatar.hurtT,
 		weapon: a.avatar.weapon ?? DEFAULT_WEAPON,
+		offhand: a.avatar.offhand ?? null,
 		action: actionStateOf(a.avatar),
 	}));
 	const monsters: MonsterSnapshot[] = state.zone.monsters.map((m) => ({

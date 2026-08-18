@@ -1,7 +1,12 @@
-import { expect, test } from 'bun:test';
+import { describe, expect, test } from 'bun:test';
+import { ACTION_FLAG, IDLE_ACTION } from '@mmo/core/combat';
 import { type Entity, SCENE_COLORS } from '@mmo/core/entities';
 import { Compositor, type RGBA } from '@mmo/render/compositor';
-import { monsterAuthorsAttackFrames, paintActor } from '@mmo/render/sprites';
+import {
+	heldLoopFrameIndex,
+	monsterAuthorsAttackFrames,
+	paintActor,
+} from '@mmo/render/sprites';
 
 const NO_CAM = { x: 0, y: 0 };
 const HURT: RGBA = SCENE_COLORS.hurt;
@@ -72,6 +77,42 @@ test('seating a weapon adds inked cells beyond the bare body', () => {
 	expect(inked(armed)).toBeGreaterThan(inked(unarmed));
 });
 
+describe('shield compositing', () => {
+	const buddy = (over: Partial<Entity> = {}): Entity =>
+		entity({
+			id: 1,
+			type: 'player',
+			cosmetics: { hue: 0, hat: '', nameplate: 0, form: 'buddy' },
+			...over,
+		});
+
+	const guarding: Partial<Entity> = {
+		action: { ...IDLE_ACTION, flags: ACTION_FLAG.guarding },
+	};
+
+	function paint(e: Entity): string {
+		const c = new Compositor(24, 16);
+		paintActor(c, e, NO_CAM);
+		return JSON.stringify(c.surface());
+	}
+
+	test('guarding with a shield equipped paints the block frame', () => {
+		expect(paint(buddy({ offhand: 0, ...guarding }))).not.toBe(
+			paint(buddy(guarding)),
+		);
+	});
+
+	test('no offhand paints exactly the bare body and does not crash', () => {
+		expect(paint(buddy({ offhand: undefined }))).toBe(paint(buddy()));
+	});
+
+	test('an unknown offhand id paints nothing rather than crashing', () => {
+		expect(paint(buddy({ offhand: 999, ...guarding }))).toBe(
+			paint(buddy(guarding)),
+		);
+	});
+});
+
 function paintOf(e: Entity): string {
 	const c = new Compositor(24, 16);
 	paintActor(c, e, NO_CAM);
@@ -118,4 +159,14 @@ test('authoring attack frames suppresses the overlay glyph; idle-only monsters k
 	expect(monsterAuthorsAttackFrames('shooter')).toBe(false);
 	expect(monsterAuthorsAttackFrames('brute')).toBe(false);
 	expect(monsterAuthorsAttackFrames('player')).toBe(false);
+});
+
+test('a held-state fps loop cycles with wall time; static block stays put', () => {
+	const looped = { frames: [{}, {}, {}], fps: 4 };
+	expect(heldLoopFrameIndex(looped, 0)).toBe(0);
+	expect(heldLoopFrameIndex(looped, 250)).toBe(1);
+	expect(heldLoopFrameIndex(looped, 500)).toBe(2);
+	expect(heldLoopFrameIndex(looped, 750)).toBe(0);
+	expect(heldLoopFrameIndex({ frames: [{}] }, 9999)).toBe(0);
+	expect(heldLoopFrameIndex({ frames: [{}, {}] }, 9999)).toBe(0);
 });

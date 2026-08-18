@@ -179,3 +179,56 @@ test('the view hue is propagated to the composite entity', () => {
 		0,
 	);
 });
+
+function shieldDoc(): SpriteDoc {
+	return doc(
+		'shield',
+		[
+			{ name: 'idle', frames: [frame(['S'])] },
+			{
+				name: 'block',
+				frames: [frame(['R'], { grip: { x: 0, y: 1 } })],
+			},
+		],
+		{ grip: { x: 0, y: 0 } },
+	);
+}
+
+test('a shield composite hangs the edited shield on the mannequin body', () => {
+	const built = buildComposite(shieldDoc(), 'shield', VIEW, DIMS);
+	expect(built?.layers.length).toBe(2);
+	const left = buildComposite(
+		shieldDoc(),
+		'shield',
+		{ ...VIEW, facing: -1 as const },
+		DIMS,
+	);
+	expect(left?.layers.length).toBe(2);
+});
+
+test('the block stance renders the raised frame, distinct from the rest carry', () => {
+	const rest = renderComposite(shieldDoc(), 'shield', STYLE, VIEW, DIMS);
+	const block = renderComposite(
+		shieldDoc(),
+		'shield',
+		STYLE,
+		{ ...VIEW, stance: 'block' },
+		DIMS,
+	);
+	expect(charsOf(rest ?? [])).toContain('S');
+	expect(charsOf(block ?? [])).toContain('R');
+});
+
+test('a form with an offhand anchor seats the shipped shield beside the weapon', () => {
+	const withOffhand = doc(
+		'form',
+		[
+			{ name: 'idle', frames: [frame(['B'])] },
+			{ name: 'walk', frames: [frame(['B']), frame(['b'])] },
+		],
+		{ grip: { x: 0, y: 0 }, head: { x: 0, y: 0 }, offhand: { x: 0, y: 0 } },
+	);
+	const bare = buildComposite(formDoc(), 'form', VIEW, DIMS);
+	const armed = buildComposite(withOffhand, 'form', VIEW, DIMS);
+	expect(armed?.layers.length ?? 0).toBe((bare?.layers.length ?? 0) + 1);
+});

@@ -24,6 +24,7 @@ function avatar(sessionId: number, x: number, y: number): AvatarSnapshot {
 		maxHp: 80,
 		hurtT: 0,
 		weapon: 0,
+		offhand: null,
 		action: IDLE_ACTION,
 	};
 }

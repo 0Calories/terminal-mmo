@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { join } from 'node:path';
+import { loadAssetEntries, registerDerivedBoxes } from '@mmo/assets';
 import { run } from '../src/cli';
 import { runEdit } from '../src/editor';
 import { runPicker } from '../src/picker';
@@ -7,6 +8,10 @@ import { runPlay } from '../src/play';
 import { runPreview } from '../src/preview';
 import { runSprite } from '../src/sprite-cli';
 import { runSpriteEdit } from '../src/sprite-editor';
+
+// Zones parsed from a dir root skip the asset store's registration, so the
+// forge editors and checks derive the same monster/NPC boxes the game does.
+registerDerivedBoxes(loadAssetEntries());
 
 const zonesRoot = join(process.cwd(), 'zones');
 const spritesRoot = join(process.cwd(), 'sprites');

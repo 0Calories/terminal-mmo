@@ -1,6 +1,11 @@
 export { computeContractHash, loadContractEntries } from './contract';
 export { loadZones, spriteIds } from './meta';
 export {
+	defaultFrameBox,
+	registerDerivedBoxes,
+	spriteBoxes,
+} from './sprite-box';
+export {
 	loadSpriteSources,
 	readSpriteSourcesFromDir,
 	type SpriteSource,
