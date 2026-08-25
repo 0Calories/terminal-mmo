@@ -317,10 +317,7 @@ function parseHeaderObject(
 	}
 
 	if ('id' in header) {
-		report(
-			'error',
-			"header 'id' is ignored (identity is the filename, ADR 0011)",
-		);
+		report('error', "header 'id' is ignored (identity is the filename)");
 	}
 
 	let key = DEFAULT_KEY;

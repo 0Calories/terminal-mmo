@@ -22,7 +22,7 @@ export interface DamageNumber {
 	value: number;
 	/** This number resolves the local Player's own swing: a predicted `hit`
 	 *  spawns pending, and a `break` tagged with the own session converts the
-	 *  pending number instead of spawning a second (ADR 0041 is the decision). */
+	 *  pending number instead of spawning a second. */
 	own: boolean;
 }
 

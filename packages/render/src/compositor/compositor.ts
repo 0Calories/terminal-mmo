@@ -86,7 +86,7 @@ function assertPositiveInt(name: string, value: number): void {
 
 /**
  * Composes ordered RGBA Pixel and Glyph primitives into deterministic,
- * terminal-neutral cells (ADR 0038). Each terminal cell is backed by four
+ * terminal-neutral cells. Each terminal cell is backed by four
  * sub-cell Pixels stored in flat, reusable typed-array buffers; no per-Pixel
  * object is allocated. Every write is clipped to bounds. Output cells are the
  * only observable surface.
@@ -242,7 +242,7 @@ export class Compositor {
 
 	/**
 	 * Stamp a two-column grapheme as one atomic overlay across cell X and X+1
-	 * (ADR 0038: dynamic world text is display-width-aware). The lead cell carries
+	 * (dynamic world text is display-width-aware). The lead cell carries
 	 * the grapheme; the continuation cell is blanked so the terminal renders the
 	 * wide glyph once and the neighbour is never a stray half. If the pair would
 	 * straddle the right edge (only the first column fits), the whole grapheme is

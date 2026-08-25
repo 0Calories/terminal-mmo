@@ -49,7 +49,7 @@ const PALETTE_DEFAULT: RGBA = SCENE_COLORS.paletteDefault;
 
 /**
  * The composite preview composes the sprite being edited through the SAME
- * production compositor and {@link paintSprite} the live client uses (ADR 0038),
+ * production compositor and {@link paintSprite} the live client uses,
  * so authored art cannot disagree with the game. Layers that are not being
  * edited (the default body a hat sits on, the weapon a form holds) load from the
  * shipped catalog; the edited layer is compiled straight from the working doc.

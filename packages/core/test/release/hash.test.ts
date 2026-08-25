@@ -7,7 +7,7 @@ const BASE = {
 	'sprites/hats/wizard.sprite': 'wizard art v1',
 	'sprites/forms/buddy.sprite': 'buddy art v1',
 	'packages/client/src/index.ts': 'render loop',
-	'docs/adr/0001-world-topology-and-authority.md': 'prose',
+	'docs/adr/0001-premise-and-stack.md': 'prose',
 };
 
 test('deterministic and insensitive to entry order', () => {
@@ -42,7 +42,7 @@ test('client-only code edit does not change the hash', () => {
 test('neither-classified edit does not change the hash', () => {
 	const edited = {
 		...BASE,
-		'docs/adr/0001-world-topology-and-authority.md': 'rewritten',
+		'docs/adr/0001-premise-and-stack.md': 'rewritten',
 	};
 	expect(contractHash(edited)).toBe(contractHash(BASE));
 });

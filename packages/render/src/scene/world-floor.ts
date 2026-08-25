@@ -12,7 +12,7 @@ import { spriteFor } from '../registry';
 const PORTAL: RGBA = SCENE_COLORS.portal;
 
 /**
- * Portal glyphs (ADR 0038, pass 2). A `▒` shade stamp with no authored
+ * Portal glyphs (pass 2). A `▒` shade stamp with no authored
  * background derives its backdrop from the composed Terrain beneath — the
  * translucent portal look, never a guessed colour. Clipped by the compositor.
  */
@@ -29,7 +29,7 @@ export function drawPortals(
 				compositor.stampGlyph(pr.x + xx - camX, pr.y + yy - camY, '▒', PORTAL);
 }
 
-/** Ground Drop glyphs coloured by rarity (ADR 0038, pass 2). Clipped. */
+/** Ground Drop glyphs coloured by rarity (pass 2). Clipped. */
 export function drawDrops(
 	compositor: Compositor,
 	drops: readonly Drop[],
@@ -62,7 +62,7 @@ export interface DodgeEcho {
 export const DODGE_ECHO_LIFE_MS = FADE_MS;
 
 /**
- * Fading dodge after-images (ADR 0038, pass 2, behind actors). Each echo stamps
+ * Fading dodge after-images (pass 2, behind actors). Each echo stamps
  * the actor's idle silhouette with a translucent tint whose backdrop derives
  * from the composed scene beneath. Clipped by the compositor.
  */

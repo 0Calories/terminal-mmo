@@ -1,4 +1,4 @@
-# Server image for Railway (ADR 0009). The official Bun image gives a controlled
+# Server image for Railway (ADR 0004). The official Bun image gives a controlled
 # runtime with no Node toolchain — sidestepping Nixpacks' Bun provider, which
 # pulls in an EOL Node and fails to build. The shared World is stateless
 # (ephemeral alpha), so this is a plain single-process container.

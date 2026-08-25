@@ -712,7 +712,7 @@ export async function runEdit(args: string[], deps: CliDeps): Promise<void> {
 				y: cam.y - RULER_H,
 			});
 			// Placement ghost: the about-to-be-placed actor/NPC as a translucent
-			// silhouette composed into the scene before the single encode (ADR 0038).
+			// silhouette composed into the scene before the single encode.
 			// Colour tracks whether the anchor is grounded, airborne, or blocked.
 			const ghostP = stampP;
 			const ghost =

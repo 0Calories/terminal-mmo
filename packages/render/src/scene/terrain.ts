@@ -5,7 +5,7 @@ import type { Compositor, RGBA } from '../compositor';
 const TERRAIN: RGBA = SCENE_COLORS.terrainFg;
 
 /**
- * Draw Terrain as the composed backdrop with sub-cell Pixels (ADR 0038, pass 1).
+ * Draw Terrain as the composed backdrop with sub-cell Pixels (pass 1).
  * Every solid cell fills all four quadrants, so the visible ground top lands on
  * a cell boundary: a planted actor's foot row overwrites the ground's top half
  * and every foot cell mixes at most two colours at any half-cell offset. (The
@@ -21,7 +21,7 @@ export function drawTerrain(
 	const sw = compositor.widthCells;
 	const sh = compositor.heightCells;
 	// Quantize the camera to Pixel resolution ONCE so Terrain shifts with the
-	// half-cell camera and stays rigid relative to actors (ADR 0038). A world cell
+	// half-cell camera and stays rigid relative to actors. A world cell
 	// wx maps to screen Pixel `wx * 2 - camPx`; the shared `camPx` keeps the whole
 	// Terrain grid coherent instead of rounding each cell independently.
 	const camPx = Math.round(cam.x * 2);

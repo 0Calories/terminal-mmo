@@ -1,5 +1,5 @@
 /**
- * OPT-IN compositor performance harness (ADR 0038: "Performance and
+ * OPT-IN compositor performance harness ("Performance and
  * verification"). Times composition + the allocation-light read/flatten encode
  * for a representative viewport (~4 ms target) and a crowded stress scene (many
  * actors + particles). It is NOT wired into `bun test`: CI timing is noisy, so

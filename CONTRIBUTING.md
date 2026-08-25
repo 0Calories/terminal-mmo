@@ -6,36 +6,37 @@ The client ships as `bunx terminal-mmo` and is **cached** on players' machines, 
 a returning player can run an old client against a freshly-deployed server. The
 wire protocol is hand-rolled binary frames — a mismatch doesn't fail cleanly, it
 silently mis-decodes bytes into garbage. To prevent that, `hello` carries the
-client's release **Version** (sourced from the git tag — ADR
-[0012](./docs/adr/0012-release-versioning-and-cicd.md), which replaced the old
-hand-bumped `PROTOCOL_VERSION` integer) and a deployed server rejects a mismatch
-loudly (ADR [0009](./docs/adr/0009-live-hosting-and-bunx-delivery.md)).
+client's **contract hash** — computed from the release contract: `@mmo/core`
+sources, zone data, and server-consumed sprite metadata (ADR
+[0004](./docs/adr/0004-hosting-and-releases.md)) — and the server rejects a
+mismatch loudly.
 
 **Any time you change the wire format** — add/remove/reorder a field, change a
 type, add a message — keep to these rules:
 
-1. **No manual version bump.** The gate is intrinsic to cutting a release tag:
-   the pipeline deploys the server first and only publishes the client once
-   `/health` reports the new Version (ADR 0012). A dev server (`MMO_VERSION`
-   unset) skips the gate, so local dev is never rejected.
+1. **No manual version bump.** Protocol sources live inside the contract, so
+   any wire change shifts the hash on both sides automatically, and the release
+   pipeline ships client and server together whenever the contract changed. The
+   same hash-equality check runs in every environment; a client and server
+   built from the same checkout always match, so local dev is never rejected.
 2. **Append, don't reorder.** A new field goes at the END of its message (and a
    new catalog entry at the end of its table), with a `remaining()` guard on
-   decode — so an old frame still decodes cleanly and the version gate, not a
+   decode — so an old frame still decodes cleanly and the contract gate, not a
    garbled read, is what refuses a stale peer.
 3. **Round-trip test every change** in `packages/core/test/protocol/protocol.test.ts`,
    including the truncated legacy form wherever a trailing field is optional.
 
 A stale client is bounced with: *"Your client is out of date — run
-`bunx terminal-mmo@latest`."* That message is the whole point of the version gate —
-keep it actionable.
+`bunx terminal-mmo@latest`."* That message is the whole point of the contract
+gate — keep it actionable.
 
 ## Deployment
 
-The server runs as a single always-on container on **Railway** (ADR 0009). The
+The server runs as a single always-on container on **Railway** (ADR 0004). The
 live World is in-memory, but player saves are durable: a Release restarts the
-process and drops sessions, but never destroys player state (ADR 0042).
+process and drops sessions, but never destroys player state (ADR 0004).
 
-- **Build: a `oven/bun` Dockerfile** (not Nixpacks — see ADR 0009 for why). Build
+- **Build: a `oven/bun` Dockerfile** (not Nixpacks — see ADR 0004 for why). Build
   and run it locally exactly as Railway does:
   ```bash
   docker build -t mmo .
@@ -55,7 +56,7 @@ process and drops sessions, but never destroys player state (ADR 0042).
 
 1. Mount a Railway volume on the service, e.g. at `/data`.
 2. Set the service variable `MMO_DB_PATH=/data/mmo-state.sqlite`.
-3. Delete the `MMO_VERSION` service variable — retired by the ADR 0042 release
+3. Delete the `MMO_VERSION` service variable — retired by the ADR 0004 release
    pipeline redesign; the build stamp replaces it.
 
 **Boot snapshots.** Before opening the database, the server copies it to a
@@ -120,9 +121,10 @@ MMO_SERVER=ws://host:port bun run dev:client   # ...or point at another server
 bun test && bun run typecheck && bun run ci
 ```
 
-A from-source (`dev`) client defaults to the local dev server, since a deployed
-server rejects a `dev` client at its version gate (ADR 0012). Set `MMO_SERVER` to
-override the target.
+A from-source (`dev`) client defaults to the local dev server: a deployed
+server accepts it only when the checkout's contract content matches what is
+live (ADR 0004), which a mid-development checkout usually doesn't. Set
+`MMO_SERVER` to override the target.
 
 ## Engineering test strategy
 
@@ -178,5 +180,5 @@ rendering tests semantic—do not add component-level pixel snapshots.
 - Game logic is pure/deterministic in `@mmo/core` so client and server can't
   diverge. Test behavior there, not rendering.
 - Design docs are the source of truth: [`CONTEXT.md`](./CONTEXT.md) (glossary)
-  and accepted [`docs/adr/`](./docs/adr/) (product scope and architecture
+  and [`docs/adr/`](./docs/adr/) (product scope and architecture
   decisions).

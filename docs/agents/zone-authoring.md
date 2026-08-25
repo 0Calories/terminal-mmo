@@ -1,11 +1,11 @@
 # Authoring & previewing Zones
 
-How an agent designs `.zone` content (ADR 0008) and **judges how it looks** —
+How an agent designs `.zone` content (ADR 0007) and **judges how it looks** —
 including the parts that don't need a real terminal.
 
 > Zones are data. The repo-root `zones/` dir is the single source of truth: the
 > `.zone` files (a JSON header + an ASCII grid) plus `catalogs.json` (the
-> monster + NPC definitions glyphs resolve against). See ADR 0008 and #50.
+> monster + NPC definitions glyphs resolve against). See ADR 0007 and #50.
 
 ## The authoring loop
 
@@ -87,7 +87,7 @@ const buf = new TextBuffer(z.terrain.w, z.terrain.h); // whole Zone in one frame
 renderZoneScene(buf, {
   terrain: z.terrain, portals: z.portals, npcs: z.npcs ?? [], entities: z.monsters,
 }, { x: 0, y: 0 }, style);
-drawEntitySprite(buf, localAvatar(lw)!.avatar, { x: 0, y: 0 }, style, z.terrain); // Avatar on top (ADR 0003)
+drawEntitySprite(buf, localAvatar(lw)!.avatar, { x: 0, y: 0 }, style, z.terrain); // Avatar on top
 console.log(buf.dump());
 ```
 

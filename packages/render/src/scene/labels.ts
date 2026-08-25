@@ -44,7 +44,7 @@ const NAMEPLATE_INKS: readonly RGBA[] = NAMEPLATE_COLORS;
 const NAMEPLATE_BGS: readonly RGBA[] = NAMEPLATE_COLORS.map(darken);
 
 /**
- * Cell-aligned world text (ADR 0038, pass 6). Each grapheme cluster stamps as one
+ * Cell-aligned world text (pass 6). Each grapheme cluster stamps as one
  * atomic cell with no authored background, so the compositor derives its backdrop
  * from the composed scene beneath — the label reveals the real pixels it sits
  * over, never a guessed colour. Text advances by displayed columns; a two-column
@@ -61,7 +61,7 @@ export function drawLabel(
 }
 
 /**
- * Identity nameplates for the given actors (ADR 0038, pass 6). Each name draws on
+ * Identity nameplates for the given actors (pass 6). Each name draws on
  * an opaque plate — ink and darkened background from the actor's chosen nameplate
  * cosmetic — planted at the actor's foot depth so it tracks exactly where
  * {@link actorFootDepth} places the body. The plate is a deliberate solid chip,

@@ -25,9 +25,9 @@ test('server-only plus client-only ships both', () => {
 });
 
 test('neither-only changes ship nothing', () => {
-	expect(releaseShape(['docs/adr/0002-tech-stack.md', 'biome.json'])).toBe(
-		'none',
-	);
+	expect(
+		releaseShape(['docs/adr/0002-world-authority-and-wire.md', 'biome.json']),
+	).toBe('none');
 	expect(releaseShape([])).toBe('none');
 });
 

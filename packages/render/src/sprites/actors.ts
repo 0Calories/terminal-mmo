@@ -42,7 +42,7 @@ import {
 import { paintSprite } from './paint';
 
 /**
- * Actors composed natively into the sub-cell {@link Compositor} (ADR 0038):
+ * Actors composed natively into the sub-cell {@link Compositor}:
  * body, weapon, and hat assemble through {@link paintSprite} so overlapping
  * quadrants reveal the real scene beneath instead of a guessed backdrop. The
  * registries retain the parsed docs and memoize one {@link CompiledSprite} per
@@ -482,7 +482,7 @@ export function paintActor(
 	const { sprite, baseline } = resolveBody(e, st);
 	const bodyW = sprite.widthCells;
 	// Quantize the combined world-relative offset ONCE into a Pixel origin (2 Pixels
-	// per cell) so camera and entity never round independently (ADR 0038). Body,
+	// per cell) so camera and entity never round independently. Body,
 	// weapon, and hat all share this origin, so the assembled actor moves as one.
 	const box = boxOf(e.type);
 	const worldX = e.x - Math.floor((bodyW - box.w) / 2);
@@ -532,7 +532,7 @@ export function paintNpc(
 	const sprite = doc
 		? compiled(`npcs:${ref}:idle`, doc, 'idle')
 		: placeholder();
-	// One combined-transform quantization into a Pixel origin (ADR 0038).
+	// One combined-transform quantization into a Pixel origin.
 	const worldX = n.x + Math.floor((n.w - sprite.widthCells) / 2);
 	const worldY = n.y + n.h - sprite.heightCells + (doc?.baseline ?? 0);
 	const originPx = Math.round((worldX - cam.x) * 2);
