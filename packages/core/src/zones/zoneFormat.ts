@@ -186,7 +186,7 @@ function parseHeader(text: string): ZoneHeader {
 	if ('id' in header)
 		throw new ZoneParseError(
 			'bad-header',
-			"header must not carry an 'id' — a Zone's id is its filename (ADR 0011)",
+			"header must not carry an 'id' — a Zone's id is its filename",
 		);
 	if (
 		header.type !== 'field' &&

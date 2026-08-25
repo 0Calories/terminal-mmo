@@ -1,14 +1,13 @@
 # Terminal Side-Scroller MMO
 
-A persistent **PvE side-scrolling MMORPG** played entirely inside a terminal (TUI).
-One shared, persistent World whose social hubs (**Towns**) and ambient combat zones
-(**Fields**) are common to all Players; progression happens in **instanced Dungeons**
-entered solo or with a friend. Players control customizable avatars, fight Monsters for
-XP / levels / loot, and gather in social town hubs. Real-time combat is a first-class pillar. PvP and faction-war are
-out of the core (parked). The audience is developers and CLI-native users.
-Mental-model reference point: "MapleStory in a terminal." Built as a pet project to
-experiment, have fun, and show off — so the guiding value is coolness-per-unit-effort
-and a demoable slice, not feature completeness.
+A persistent **PvE side-scrolling MMORPG** played entirely inside a terminal
+(TUI). One shared, persistent World whose social hubs (**Towns**) and ambient
+combat zones (**Fields**) are common to all Players; progression happens in
+**instanced Dungeons**. Players control customizable avatars, fight Monsters
+for XP / levels / loot, and gather in Towns. Real-time combat is a first-class
+pillar. PvP and faction-war are parked. The audience is developers and
+CLI-native users. Mental-model: "MapleStory in a terminal." A pet project —
+the guiding value is coolness-per-unit-effort, not feature completeness.
 
 ## Language
 
@@ -17,1004 +16,598 @@ A human participant / account. The person at the keyboard.
 _Avoid_: User, gamer
 
 **Avatar**:
-The in-world character a Player controls and customizes; one Avatar per Player.
-Rendered as an **expressive multi-row ASCII-art figure** (~4–6 rows, roughly the
-level of detail of the Claude mascot), NOT a single glyph or 2-cell blob.
-Customizable via: a chosen **Form**, a color/hue, one cosmetic accessory slot (e.g.
-hat; cosmetic-only, separate from gear stats), and the **Nameplate** colour (whose
-text is the Player's **Handle**, not a separate name).
+The in-world character a Player controls and customizes; one per Player.
+Rendered as an expressive multi-row ASCII-art figure. Customizable via a
+**Form**, a hue, a cosmetic hat, and the **Nameplate** colour.
 _Avoid_: Character, hero
 
 **Form**:
-The cosmetic appearance identity a Player picks for their Avatar — a variation within
-the shared humanoid body plan (build, silhouette, physical quirks); players are always
-humanoid, never a different creature. Purely visual: a Form changes only the **Body
-sprite**, never the logical collision box, stats, or combat numbers, so every Avatar
-plays identically whatever its Form (ADR 0020). Forms live in a registry selected by a
-`cosmetics.form` id, alongside hue/hat/nameplate. Not a gameplay class.
-_Avoid_: Race, species, class, skin (a Form is the body, not a recolor)
+The cosmetic appearance identity a Player picks for their Avatar — a variation
+within the shared humanoid body plan. Purely visual: a Form changes only the
+**Body sprite**, never the collision box, stats, or combat numbers.
+_Avoid_: Race, species, class, skin
 
 **Sprite**:
-The visual ASCII-art representation of an entity (Avatar, Monster, NPC).
-Presentation stays decorative and client-side — the simulation sees only
-position + box — but a Monster's (and NPC's) logical box is *derived from* its
-sprite at asset load: the visible pixel bounds of the **Default frame** (ADR
-0042). An Avatar's box stays the canonical uniform one whatever its **Form**
-(ADR 0020); attack hitboxes stay authored, never derived. A single, static
-frame; the animated, multi-frame body is a **Body sprite**.
+The visual ASCII-art representation of an entity. Presentation is decorative
+and client-side — the simulation sees only position + box — but a Monster's
+(and NPC's) logical box is *derived from* the visible pixel bounds of its
+sprite's **Default frame** at asset load. An Avatar's box stays the canonical
+uniform one whatever its Form; attack hitboxes stay authored, never derived.
 _Avoid_: Art, model, skin
 
 **Body sprite**:
 The animated ASCII-art of an entity's body — a named set of whole-frame
-**Animation**s (`idle`, `walk`, `jump`, the emote frames, …), the body's analogue
-of the **Weapon sprite** (ADR 0020). Each Avatar **Form** is one Body sprite; the
-type is entity-agnostic, so Monsters become a consumer when they animate later. An
-animation frame is a *whole grid*, not a composited skeleton — at terminal fidelity
-a limb is a cell or two, so animating is redrawing the grid. Every Body sprite must
-author the core `idle` and `walk`; any missing animation falls back to `idle`.
-_Avoid_: Body model, rig, skeleton (frames are whole grids, there is no rig)
+**Animation**s. Each Form is one Body sprite. A frame is a *whole grid*, not a
+composited skeleton — at terminal fidelity a limb is a cell or two. Must author
+`idle` and `walk`; anything missing falls back to `idle`.
+_Avoid_: Body model, rig, skeleton
 
 **Animation**:
-A named, selectable unit of the player's **Body sprite** — Animations exist
-specifically for players, handling the special frames of states
-(`walk`, `jump`, attack) and **Emote**s. An ordered list of **Frame**s played at
-a per-Animation fps, where a single Frame is the common case. Which Animation shows
-is chosen each render by a pure, shared function of replicated state so owner and
-observers agree. Body-animation priority is a fixed ladder — `hurt/stagger >
-combat > airborne > walk > emote > idle` — where, deliberately, walking cancels an
-**Emote**. Other roles' multi-frame art can also be Animations with their own
-selection logic — a **Weapon sprite**'s `swing` Animation is indexed by the
-replicated **Attack phase** (wind-up→0, active→1, recovery→2), never by fps
-(ADR 0036). A Monster's attack Animations (`windup`, `attack`, `recovery`)
-follow the same rule, each sampled by its phase's *progress* — more authored
-frames means a smoother telegraph, never a different duration — while its
-non-phase-bound Animations (`idle`, `airborne`) stay fps-or-static (ADR 0039).
-_Avoid_: Pose (retired term, ADR 0035), Frame (an Animation *contains* Frames;
-reserve Frame for one grid), stance (see **Preview stance**), animation state
+A named, ordered run of **Frame**s in a sprite, selected each render by a pure
+shared function of replicated state so owner and observers agree. Body priority
+is a fixed ladder — `hurt/stagger > combat > airborne > walk > emote > idle`
+(walking cancels an **Emote**). Phase-bound animations (a weapon's `swing`, a
+Monster's `windup`/`attack`/`recovery`) are indexed by the replicated **Attack
+phase** and its progress, never by fps — more frames smooth a telegraph but
+can never change its duration.
+_Avoid_: Pose (retired), stance, animation state
 
 **Walk cycle**:
-The `walk` **Animation** advanced by **accumulated horizontal distance travelled**
-(not a clock) — the shown frame is `stride % frameCount`, so it costs no wire
-data, quickens with speed, stays identical for owner and observers, and an artist
-can author any number of gait frames (ADR 0020, generalized by ADR 0035). Freezes
-when idle or airborne.
-_Avoid_: walkA/walkB (retired split, ADR 0035), gait timer (it is
-distance-driven, not timed)
+The `walk` Animation advanced by accumulated horizontal distance travelled
+(`stride % frameCount`), not a clock — free on the wire, identical for owner
+and observers, quickens with speed. Freezes when idle or airborne.
+_Avoid_: gait timer
 
 **World**:
-The single, persistent, shared space that all Players inhabit. There is one
-*logical* World, **funnelled, not channelled** (ADR 0024): each Zone runs exactly
-one shared instance, so whoever is online is guaranteed to share one set of
-Towns/Fields — the soft-cap Channel split of ADR 0001 is removed. The only
-instancing left is the Dungeon (entered solo or with a friend). The World is
-partitioned into Zones.
-_Avoid_: Server, realm, map (reserve "map" for nothing — it's too overloaded),
-Channel (the parallel-instance split, removed for the demo)
+The single, persistent, shared space all Players inhabit — **funnelled, not
+channelled**: each Zone runs exactly one shared instance, so whoever is online
+shares one set of Towns/Fields. The only instancing is the Dungeon.
+_Avoid_: Server, realm, map, Channel (removed parallel-instance split)
 
 **Zone**:
-A discrete, bounded area of the World — a side-scrolling locale that may span
-several screens (a camera follows the Avatar). An Avatar occupies one Zone at a
-time and moves between Zones via connections (portals/edges). The unit of "place"
-AND the unit of server simulation (each Zone runs its own tick; Zones are
-independent, enabling later distribution across processes). It is also the unit of
-*interest*: a Player only receives real-time updates about entities in their own
-Zone. Three kinds (`ZoneType`): **Town** and **Field** each run one shared
-simulation (the funnel); the **Dungeon** is the *instanced* kind — it has no shared
-simulation, only a private **Instance** spun up per entry.
+A discrete, bounded side-scrolling locale that may span several screens. The
+unit of place, of server simulation (each Zone ticks independently), and of
+interest (a Player only receives updates about their own Zone). Kinds: **Town**
+and **Field** run one shared simulation; a **Dungeon** spins up a private
+**Instance** per entry.
 _Avoid_: Map, level, room, screen
 
 **Zone id**:
-A Zone's stable identity — derived from its filename (`zones/<id>.zone`), NOT a
-field stored in the file. It is what every Portal `target` references. Renaming a
-Zone means renaming the file (and rewriting referencing Portals); identity is the
-path, so it can never drift from a duplicated header field.
-_Avoid_: Name, slug (reserve "name" for the display label)
+A Zone's stable identity — derived from its filename (`zones/<id>.zone`),
+never a header field. What every Portal `target` references.
+_Avoid_: Name, slug
 
 **Zone name**:
-A Zone's human-facing display label ("Verdant Field"), distinct from its id — a
-label, not an identity (cf. Handle). Optional, decorative, editable in the Zone
-editor. Never used to address or resolve a Zone.
+A Zone's human-facing display label — optional, decorative, never used to
+address a Zone.
 _Avoid_: Title, id
 
 **Town**:
-A safe social Zone with no monsters — where Players gather, show off avatars,
-trade, and regroup. The "hub."
+A safe social Zone with no monsters — the hub.
 _Avoid_: City, hub, lobby
 
 **Field**:
-A shared, persistent combat Zone populated by Monsters — the **open-world exploration
-space** and the *progression spine*. Fields radiate outward from a Town with **difficulty
-gated by distance**: the further from the hub, the stronger the Monsters, so a Player's
-level naturally gates how deep they can venture. This is where a Player *spends* power
-(venturing further is the reward), as distinct from the **Dungeon**, where they *gain* it.
-Fields still drop some XP/loot, so fighting out there is never pointless — they are just
-not the *efficient* path. Funnelled, not channelled, for the demo (one shared set of
-Fields, no parallel Channels).
+A shared, persistent combat Zone populated by Monsters — the exploration
+spine, difficulty gated by distance from Town. Where a Player *spends* power;
+the **Dungeon** is where they *gain* it.
 _Avoid_: Hunting map, dungeon, level
 
 **Dungeon**:
-An **instanced**, repeatable, fixed-difficulty combat Zone entered from a Town — run
-**solo or with a friend**, never shared with strangers — that is the **reliable engine
-of progression**: the efficient, dependable XP/loot faucet a Player runs to level up so
-they can survive deeper **Fields**. Deliberately plain: **no difficulty tiers, no
-procedural generation, no matchmaking or instance-lifecycle machinery, and no Boss**
-(the climax lives at the edge of the field-world). The demo ships **one** handcrafted
-Dungeon. Where the Field is the *space* you spend power, the Dungeon is the *lever* you
-pull to gain it. It is a **Zone kind** (a place you author, `type: "dungeon"`),
-distinct from an **Instance** (the live private simulation of it) — the Dungeon is
-authored once; each entry spins up its own Instance.
-_Avoid_: Instance (that's the runtime simulation of a Dungeon, not the Dungeon
-itself), raid, level, stage, tier
+An instanced, repeatable, fixed-difficulty combat Zone entered from Town, run
+solo or with a friend — the reliable XP/loot faucet. Deliberately plain: no
+tiers, no procgen, no matchmaking, no Boss inside. A Zone kind (authored
+once); each entry spins up its own **Instance**.
+_Avoid_: Instance (the runtime simulation, not the place), raid, stage
 
 **Instance**:
-The private, live **ZoneState** the server spins up when a Player (or **Party**)
-enters the **Dungeon** from **Town** (#240) — the *only* instancing left in the
-funnelled World (ADR 0024). Keyed by the entering Party (`<zoneId>#<leader>`): a Party
-shares one Instance, so a friend co-locates, while every stranger keys their own — two
-unrelated Players entering the same Dungeon get *separate* Instances and never see each
-other. Created on entry, **torn down the moment its last occupant leaves** (a Portal out
-or a forgiving death), so a re-entered Dungeon is always a fresh run. Shared **Town** and
-**Field** Zones have no Instances — each is one funnelled simulation. Lives in
-`ServerWorld.instances`, addressed by `instanceOf[sessionId]`; contrast the shared
-`ServerWorld.zones`.
-_Avoid_: Channel (the removed parallel-World split), instance in the Dungeon-the-place
-sense, session, shard
+The private, live ZoneState spun up when a Player (or **Party**) enters the
+Dungeon. Keyed by the entering Party (`<zoneId>#<leader>`); torn down the
+moment its last occupant leaves, so a re-entry is always a fresh run.
+_Avoid_: Channel, session, shard
 
 **Party**:
-A small group of Players who run a **Dungeon** together — the minimal "with a friend"
-seam (#240). Each session has a party leader (itself when solo); joining another's Party
-means sharing that leader's key, so the group co-locates in one **Instance**. Kept
-deliberately thin for the demo: it exists to route co-op Dungeon entry (never to share a
-**Field**/**Town**, which are already common to all), not as a full social system with
-invites, chat scoping, or shared loot.
-_Avoid_: Group, raid, guild, team, Faction (that is the PvE damage filter)
+A small group who run a Dungeon together — a session's leader key routes co-op
+entry into one shared Instance. Deliberately thin: not a social system.
+_Avoid_: Group, raid, guild, Faction (that's the PvE damage filter)
 
 **Boss**:
-The single authored, telegraphing **Monster** that gates the **deepest Field** at the
-edge of the explorable world — the combat showcase's payoff and the demo's **terminal
-state**: defeating it *is* "you have completed the demo." It lives in the open
-field-world (not the Dungeon), so that venturing deeper pays off climactically in the
-same space the Player has been exploring.
-_Avoid_: Raid boss, elite, miniboss, dungeon boss
+The single authored, telegraphing Monster gating the deepest Field — the
+combat showcase's payoff and the demo's terminal state.
+_Avoid_: Raid boss, elite, dungeon boss
 
 **Identity Key**:
-The ed25519 public key that identifies an account (ADR 0004). Normally the
-Player's own external SSH key (via ssh-agent or `~/.ssh/id_ed25519`); when they
-have none, a game-generated key minted on first launch and kept in the config dir
-so the demo is playable without any SSH setup. A per-machine **anchor** records
-which key won last, so a returning Player always resolves to the same one — a
-momentarily-unreachable external key is refused with guidance, never silently
-replaced (which would orphan the Save).
-_Avoid_: SSH key (it may be generated), guest key, throwaway key
+The ed25519 public key that identifies an account — the Player's own SSH key,
+or a game-generated fallback minted on first keyless launch. A per-machine
+**anchor** records which key won last; an unreachable external key is refused
+with guidance, never silently replaced (that would orphan the Save).
+_Avoid_: SSH key (it may be generated), guest key
 
 **Handle**:
-The durable, unique username a Player **types and claims at Avatar creation**, bound
-to their **Identity Key** (ADR 0004, #235 — revising the ephemeral per-connection
-label of ADR 0006). It **is** the text on the Player's **Nameplate** and the
-attribution on each Chat message; set **once** at creation and durable — a returning
-key always resolves to the same Handle.
-Unique case-insensitively (2–16 of `[A-Za-z0-9_-]`), so `/w <handle>` is
-unambiguous — but entities are still *addressed* by session id at runtime: the
-Handle names the account, not the connection.
+The durable, unique username a Player types and claims at Avatar creation,
+bound to their Identity Key. It is the Nameplate text and Chat attribution.
+Unique case-insensitively (2–16 of `[A-Za-z0-9_-]`); entities are still
+*addressed* by session id at runtime — the Handle names the account.
 _Avoid_: Username, nick, name, label
 
 **Nameplate**:
-The floating label showing an **Avatar**'s **Handle**, tinted by a chosen palette
-colour — rendered *below* the Avatar's feet (deliberately, not over the head, to keep
-the headroom clear for the **Speech bubble**; ADR 0023). Its text is *always* the
-Handle, never a separate string; the only customizable part is the **colour** (a
-palette index).
-_Avoid_: Name tag, label, tag, title (the text is the Handle, not a free label)
+The floating label showing an Avatar's Handle, tinted by a chosen palette
+colour, rendered *below* the feet (headroom stays clear for the **Speech
+bubble**). Only the colour is customizable.
+_Avoid_: Name tag, label, title
 
 **Save**:
-The durable per-account snapshot persisted across sessions (#236, bun:sqlite),
-keyed by the account's **Identity Key** (ADR 0004). It holds *only* progression and
-identity state: the Avatar's level / XP / **Gold**, its inventory + equipped
-**Item**, its **Cosmetics** (**Form** / hue / hat / nameplate), the last safe
-**Town**, and a **boss-defeated flag** (the demo's terminal state — see **Boss**;
-plumbing today, the trigger lands with the Boss epic). Deliberately excludes
-**Monster**s, transient **Zone** state, and exact position — login restores a Save
-and returns the Avatar to its last Town, never its logged-off spot. Written on
-significant events + a periodic flush, never per-tick, behind a pure store seam so
-the simulation stays IO-free.
-_Avoid_: Snapshot (that's the per-tick wire frame), checkpoint, profile, savegame
+The durable per-account snapshot (bun:sqlite), keyed by Identity Key. Holds
+progression and identity only: level/XP/**Gold**, inventory + equipment,
+Cosmetics, last safe Town, boss-defeated flag. Never Monsters, transient Zone
+state, or exact position — login returns you to your last Town. Written on
+significant events + periodic flush behind a pure store seam.
+_Avoid_: Snapshot (the per-tick wire frame), checkpoint, profile
 
 **Chat**:
-Real-time text communication between Players. **Zone chat** is relayed to every
-session in the sender's Zone and shown in each recipient's chat log, attributed
-to the sender's Handle; **Whisper** is its private form. **Emote** is a separate,
-body-animation mechanism.
+Real-time text between Players. Zone chat relays to every session in the
+sender's Zone; **Whisper** is its private form.
 _Avoid_: Say, talk, message
 
 **Whisper**:
-Private **Chat** addressed by the recipient's **Handle** and delivered only to
-the sender and recipient. A Whisper appears in their chat logs and never produces
-a **Speech bubble**.
-_Avoid_: Direct message, DM, tell, private message
+Private Chat addressed by the recipient's Handle; never produces a Speech
+bubble.
+_Avoid_: DM, tell, private message
 
 **Speech bubble**:
-The ephemeral, bordered text that floats above a chatting Avatar's head, showing
-their latest Zone chat message to everyone who can see that Avatar. A purely
-client-side, decorative rendering of Zone chat (like a Sprite): it attaches to
-the Avatar by session id, tracks the Avatar as it moves, and expires on a timer —
-the chat log stays the durable record; a **Whisper** never produces one. Text wraps
-by terminal display columns, not string length; a wide Unicode grapheme is one
-atomic overlay spanning its two cells.
-_Avoid_: Chat bubble, balloon, callout, tooltip
+The ephemeral bordered text floating above a chatting Avatar's head — a purely
+client-side rendering of Zone chat, attached by session id, expiring on a
+timer. Wraps by terminal display columns, not string length.
+_Avoid_: Chat bubble, balloon, tooltip
 
 **Emote**:
-A motion the Avatar's own body performs to express itself (e.g. `wave`, `dance`,
-`sit`) — an **Animation** played on the **Body sprite**, triggered by typing the
-emote's name as a chat command (`/wave`; ADR 0020). Each emote has a **lifetime mode**: `oneshot` (plays once,
-then returns to idle), `loop` (cycles until interrupted), or `hold` (one sustained
-frame). The active emote is replicated in the per-entity action-state, so a late
-arrival still sees a held or looping emote; movement or combat clears it. *Not* the
-retired overhead face-glyph popup, which it replaced.
-_Avoid_: Emoji, reaction, gesture (one word — an emote is a body animation, not a
-popup icon)
+A motion the Avatar's own body performs (`/wave`, `/dance`, `/sit`) — an
+Animation on the Body sprite with a lifetime mode (`oneshot` / `loop` /
+`hold`). Replicated in action-state so a late arrival still sees a held emote;
+movement or combat clears it.
+_Avoid_: Emoji, reaction, gesture
 
 **CombatEvent**:
-The resolved, *semantic* fact of a combat interaction — "target T was **hit** /
-**broke** (poise) / **died** / **swatted**, at (x,y), facing →, intensity
-N." It is what Combat resolution produces; a **VisualEffect** is its client-side
-presentation projection (via the `present` routing layer), and a **Particle** is that VisualEffect's
-realization. The authority *produces* a CombatEvent by applying damage/poise (the poise
-result is what makes a contact a hit vs a break vs a death); the local Player *predicts*
-only the optimistic `hit` event from its own outgoing swing, for zero-latency feedback.
-`break`/`death`/`swat` are authority-only, and so is *incoming* hurt — an
-Avatar-target `hit` is never predicted (ADR 0013 §3). The kinds map `hit → blood`,
-`break → impact` (heavier), `death → gore` (tinted), `swat → impact` (a light clink — a
-melee frame shattering a shot, ADR 0017 §8 — at the shot's own damage, no poise bump).
-It **is** the wire payload (ADR 0029, superseding ADR 0019 §B): the server broadcasts
-CombatEvents and each client runs the `present` routing layer locally to project them to
-VisualEffects/SoundEffects — no site emits presentation inline, and the server holds no
-presentation knowledge. The originator is suppressed from its own broadcast (it already
-predicted its `hit`). Modeled as a discriminated union on `kind`, so each kind carries
-only the fields it can mean — `source` on a predicted `hit`, `tint` (the dead body's
-colour) on a `death`. A `break` also carries `source`, but is *never*
-suppression-filtered: the tag exists so the attacker's client can convert its
-predicted **Damage number** instead of double-spawning one (ADR 0041).
-_Avoid_: Effect (retired — see VisualEffect), HitEvent, Outcome
+The resolved, semantic fact of a combat interaction — "target T was **hit** /
+**broke** (poise) / **died** / was **swatted**, at (x,y), facing →, intensity
+N". It **is** the wire payload: the server broadcasts CombatEvents and each
+client projects them to presentation locally; the server holds no presentation
+knowledge. The local Player predicts only its own optimistic `hit` (and is
+suppressed from the broadcast); `break`/`death`/`swat` and incoming hurt are
+authority-only. A discriminated union on `kind` — `source` rides a predicted
+`hit` (and a `break`, solely so the attacker converts its predicted **Damage
+number** instead of doubling it); `tint` rides a `death`.
+_Avoid_: Effect (retired), HitEvent, Outcome
 
 **VisualEffect**:
-The client-side *visual* realization of a **CombatEvent** (later: other event kinds) —
-e.g. "a blood-hit at (x,y), facing →, intensity N." Produced by the client-side
-`present` routing layer (ADR 0013 amendment — the one stateless place projection and
-realization meet) the moment a CombatEvent arrives from the wire *or* is predicted
-locally; it is **not** authoritative and **never on the wire** (ADR 0029 — the shared,
-authoritative thing is the CombatEvent). One VisualEffect realizes into **Particle**s
-(a named effect through the particle engine's spawn door), and the same routing decides
-when a moment also carries a **Camera-kick** and **Hitstop**; its audio twin is the
-**SoundEffect**. The visual half of presentation, owned entirely by the client — the
-server has no concept of it. Replaces the retired on-wire **Effect** (ADR 0013/0019, now
-0029).
-_Avoid_: Effect (retired — collided with the effect-ts library and with combat
-internals; the on-wire descriptor is now the CombatEvent), FX, animation, particle
-(that's the realization)
+The client-side visual realization of a CombatEvent, produced by the `present`
+routing layer — the one stateless place that knows a `break` means impact +
+**Camera-kick** + **Hitstop** together. Never authoritative, never on the
+wire.
+_Avoid_: Effect (retired), FX, particle (that's the realization)
 
 **Particle**:
-A single client-side visual speck with a sub-cell position, velocity, and lifetime,
-simulated locally at render framerate. Its look is either Pixel-authored and follows
-that position at half-cell resolution, or glyph-authored and snaps to the nearest
-terminal cell. A client turns one VisualEffect into many Particles using local
-randomness, so the exact specks
-differ harmlessly between clients; only the CombatEvent (and thus the VisualEffect it
-projects to) is shared. Each Particle's motion and look (gravity, bounce, whether it
-rests, visual primitives, color-over-life) come from its named effect's
-**ParticleType** profile, not from hardcoded blood behavior. Purely decorative and
-client-side, like a Sprite.
-_Avoid_: VisualEffect (that's the descriptor a Particle realizes), sprite, pixel (ambiguous), FX
+A single client-side visual speck with sub-cell position, velocity, and
+lifetime, simulated at render framerate. One VisualEffect spawns many using
+local randomness — specks differ harmlessly between clients. Behaviour comes
+from its **ParticleType** profile.
+_Avoid_: sprite, pixel, FX
 
 **ParticleType**:
-The visual profile a Particle belongs to (`blood`, `gore`, `impact`, `levelup`, later
-`dust`, `sparkle`…) — a declarative data entry defining its whole behavior: gravity,
-bounce, terrain collision, rest and fade durations, visual sets, color-over-life,
-count-from-intensity. A visual set may contain Pixel-authored or glyph-authored
-primitives. One generic client simulator reads the profile, so a new look is
-a new definition file, not new code — and since the ADR 0013 amendment the profile is
-**engine-internal**: the particle engine's only public surface is the *named effect*
-(`spawn('blood', at, dir, intensity)`); no caller can construct or pass a raw profile.
-Distinct from a **CombatEvent**'s `kind`: that is the *semantic game event* (`hit`),
-mapped client-side (via a **VisualEffect**) to a named effect.
-_Avoid_: CombatEvent.kind, ParticleKind, sprite
+The declarative profile behind a named particle effect (`blood`, `gore`,
+`impact`, `levelup`…): gravity, bounce, rest/fade, visuals, count. Engine-
+internal — the particle engine's only public surface is the named effect
+(`spawn('blood', at, dir, intensity)`).
+_Avoid_: CombatEvent.kind, ParticleKind
 
 **Damage number**:
-The floating glyph-art digits that pop off an entity when a **CombatEvent** deals
-damage — the client-side *numeric* realization of a `hit`/`break`, sibling of the
-**Particle** (what it looked like) and the **SoundEffect** (what it sounded like):
-what it *cost*. Produced by the `present` routing layer; purely client-side, never
-on the wire, and deterministic — every observer sees the same digits at the same
-spot (unlike a Particle, no local randomness). Spawns above the target's head and
-drifts up on the render clock without tracking the target; an uncontested number
-spawns dead-centre, and only while earlier numbers on that target are still
-alive do later ones spread through a short deterministic offset cycle keyed to
-hit order (the cycle resets once the target has no live numbers) — free
-overprint was prototyped and read as unreadable soup. Three styles — hit-on-Monster, **break** (heavier digits), and
-damage-on-**Avatar** — and never a fourth for other Players' hits (de-noising those
-relative to your own is a parked exploration). The attacker's own number is
-predicted with its optimistic `hit`; when the authority resolves that swing as a
-`break` (tagged with `source`), the client *converts* the pending number rather
-than double-spawning (ADR 0041). `death` and `swat` produce no number, and a
-**Block**'s chip damage shows none (a block emits no CombatEvent). Digits are a
-pixel-font authored in client code, not Sprite files.
-_Avoid_: Floating combat text, damage popup, hit marker, FX
+The floating digits popped by a damaging `hit`/`break` — client-side,
+deterministic (no local randomness), drifting up from the target. The
+attacker's own number comes from its predicted `hit` and is *converted* when
+the authority resolves that swing as a `break`. Block chip shows no number.
+_Avoid_: Floating combat text, damage popup, hit marker
 
 **Hitstop**:
-A client-side, render-only freeze of a few dozen milliseconds on a meaty hit (a
-Poise break), holding the last drawn frame so the blow lands with weight. The
-**sim never pauses** — the shared step keeps advancing authoritatively; only the
-playfield's redraw is gated, so positions catch up the instant the freeze drains.
-View-only and non-authoritative, like a Particle; the server has no concept of it.
-_Avoid_: pause, freeze-frame (the *sim* doesn't freeze), slow-mo, lag
+A render-only freeze of a few dozen milliseconds on a Poise break — the sim
+never pauses; only the redraw is gated.
+_Avoid_: pause, freeze-frame, slow-mo
 
 **Camera-kick**:
-A small, decaying viewport offset (≤2 cells, gone in <150ms) the client adds on a
-"big moment" — a Poise break in the foundation — layered on top of the follow
-camera as a single directional punch, quantized to one **Pixel** (half a terminal
-cell) so its decay does not jump whole cells. It is not a rumble; repeated
-micro-shake still reads as jank. View-only and non-authoritative; keyed off the `impact`
-**VisualEffect** (from a break CombatEvent), so it fires for everyone who sees the
-break, attacker included.
-_Avoid_: screenshake, rumble, camera shake (it's a single decaying pop)
+A small decaying viewport offset (≤2 cells, <150ms) on a big moment, quantized
+to one Pixel. A single directional punch, not a rumble.
+_Avoid_: screenshake, rumble
 
 **SoundEffect**:
-The client-side *audible* realization of a moment — the audio twin of a Particle.
-Where a Particle answers *what it looks like*, a SoundEffect answers *what it
-sounds like*. Two sources feed it: an authoritative **CombatEvent** (so a
-nearby Avatar's hit or death is heard from the Player's position — the Player is
-the listener, regardless of where the camera sits — realized by the same
-client `present` routing that produces VisualEffects) and a purely local interaction (your
-own jump, a menu blip — never on the wire, always heard flat and centred). Always
-best-effort and non-authoritative: if there is no audio device, every SoundEffect
-is a silent no-op and the World behaves identically. The shared sim never
-references one — like a Sprite or Particle, it is the client's business alone.
-_Avoid_: Cue, sound, audio (reserve for the engine/files), CombatEvent (that's the
-authoritative trigger, not the audible result), VisualEffect (that's its visual twin), FX
+The client-side audible realization of a moment — fed by CombatEvents
+(spatialized from the *Player's* position, not the camera) or purely local
+interactions (your own jump; flat and centred). Best-effort: with no audio
+device every SoundEffect is a silent no-op.
+_Avoid_: Cue, audio (reserve for the engine/files)
 
 **Monster**:
-A hostile, server-controlled entity that Players fight for XP and loot. Lives in
-Fields.
+A hostile, server-controlled entity Players fight for XP and loot.
 _Avoid_: Mob, enemy, NPC, creature
 
 **NPC**:
-A non-hostile, server-controlled character (shopkeeper, quest-giver, etc.).
-Distinct from Monster — NPCs are never fought.
+A non-hostile, server-controlled character. Never fought.
 _Avoid_: Vendor, bot
 
 **Brain**:
-The decision function that controls a **Monster** each tick: it perceives a
-limited view of its Zone and produces a **Drive** — including whether to commit
-an attack — and nothing else. A Brain never applies damage, never moves
-anything, and never touches another entity; every consequence it initiates
-flows through the same **Strike** resolution as a Player's. A Brain is not
-hand-written per archetype: each Monster's brain is composed from the shared
-**Skeleton** plus its **Movement engine** and **Combat engine** (ADR 0040),
-and it may keep private, typed memory that the rest of the simulation — and
-the wire — never sees.
-_Avoid_: AI (too generic), behavior script, controller (reserve for the
-Player-side input path)
+The decision function controlling a Monster each tick: it perceives a limited
+view and produces a **Drive** — nothing else. Never applies damage or moves
+anything; every consequence flows through **Strike** resolution. Composed
+from the shared **Skeleton** plus a **Movement engine** and **Combat engine**,
+with private typed memory the wire never sees.
+_Avoid_: AI, behavior script, controller
 
 **Skeleton**:
-The one Patrol/Combat state machine every Monster **Brain** runs, written
-once (ADR 0040): gates (stunned/committed) → perceive → transition →
-delegate. In Patrol it asks the **Movement engine** to wander; in Combat the
-**Combat engine** leads. It alone reads and writes the patrol/combat state —
-engines receive it, never set it. A Monster enters Combat when its target is
-within **vision** and (for now, deliberately) exits the moment it is not;
-sticky aggro/leashing is a future exit-condition change, not a given.
-_Avoid_: State machine (too generic), base brain, framework
+The one Patrol/Combat state machine every Brain runs: gates → perceive →
+transition → delegate. It alone reads/writes the state; engines receive it.
+A Monster enters Combat within **vision** and (deliberately, for now) exits
+the moment outside it.
+_Avoid_: State machine (too generic), base brain
 
 **Movement engine**:
-The pluggable gait half of a Monster's **Brain** (ADR 0040) — how it
-wanders and how it moves toward a destination: walking with wall/ledge
-probes, or the Slime's hopping with rest cadence and hops scaled to the
-ground that can catch them. It owns gait memory (rest timers, in-flight hop
-scale) but never chooses destinations in Combat — the **Combat engine**
-leads and calls it.
-_Avoid_: Locomotion, gait (retired working terms), movement AI
+The pluggable gait half of a Brain — wandering and moving toward a
+destination (walking with wall/ledge probes; the Slime's hopping). Never
+chooses destinations in Combat; the Combat engine leads and calls it.
+_Avoid_: Locomotion, movement AI
 
 **Combat engine**:
-The pluggable fighting half of a Monster's **Brain** (ADR 0040) — its
-attack pattern, leading while in Combat: it picks where to stand (close to
-**range**, hold **range**, stop at the pounce lip), calls the **Movement
-engine** to get there, and commits the attack. Two-sided: the decision half
-runs in the Brain and emits **Drive**s only (ADR 0034), while the execution
-half is the hooks the zone tick calls after a commit — committed-body
-control, timers, landing rules, and **Strike**/**Projectile** construction —
-so each pattern's hitbox rules live with the engine, not the tick. Swing
-(chaser, **Brute**), fire (**Ranged poker**), pounce (**Slime**). Each
-Monster's character sheet holds engine-independent stats — including
-**vision** (its perception radius, formerly "aggro") and **range** (the
-distance its attack cares about, which each engine interprets) — and
-overrides the engine's founding-monster defaults only where its feel
-differs.
-_Avoid_: Engagement (retired working term), attack script, combat AI;
-aggro (use vision), reach (use range)
+The pluggable fighting half of a Brain — its attack pattern. Two-sided: the
+decision half emits Drives; the execution half is the hooks the zone tick
+calls after a commit (committed-body control, timers, Strike/Projectile
+construction). Swing (chaser, **Brute**), fire (**Ranged poker**), pounce
+(**Slime**). Stats include **vision** (perception radius) and **range**
+(interpreted per engine).
+_Avoid_: attack script, combat AI; aggro (use vision), reach (use range)
 
 **Melee committer**:
-A Monster archetype that deals damage *only* through a telegraphed melee **Attack
-phase** — approach/space → **wind-up** (committed, replicated for the Player to
-read) → **active** (the one damaging window) → **recovery** (a punishable opening,
-it cannot re-commit or cancel). The reworked chaser is the first one. Monsters have
-**no passive contact damage**: overlapping a Monster does nothing, so every point of
-incoming damage was dodgeable/punishable. See ADR 0017 §9.
-_Avoid_: Melee mob, contact damage, walk-into-you damage
+A Monster archetype dealing damage *only* through a telegraphed melee Attack
+phase. Monsters have **no passive contact damage**: overlap does nothing, so
+every point of incoming damage was dodgeable/punishable.
+_Avoid_: Melee mob, contact damage
 
 **Slime**:
-A Monster archetype — the introductory monster family — whose locomotion is
-hopping and whose *attack is a pounce*: a bigger, telegraphed leap running the
-standard **Attack phase** (a readable squash `windup` on the ground, an
-**active** window that emits a **Strike**, a wobbly `recovery` after landing —
-each phase read as body language via its own Animation, ADR 0039).
-Its small traversal hops are pure locomotion — no Strike, harmless even on
-overlap — so a Player can stand among idly bouncing Slimes; only the deep-squash
-pounce threatens, preserving "no passive contact damage" (ADR 0017 §9). The
-pounce is **ballistic**: its arc is locked at commit toward where the target
-stood, never adjusted mid-flight, and the leaping body is the live hitbox for
-the whole arc — sidestep the flight path, punish the landing wobble. Several
-Slime enemies may share this archetype; no non-Slime Monster ever uses it.
-_Avoid_: Pounce committer, leaper, jumper, blob
+The introductory hopping archetype whose attack is a ballistic **pounce** —
+arc locked at commit, the leaping body is the live hitbox, punishable landing
+wobble. Traversal hops are harmless locomotion.
+_Avoid_: Leaper, blob
 
 **Chaser**:
-The walking **Melee committer** Monster — approach on foot, telegraphed swing.
-Both a specific Monster (player-facing name "Chaser", subject to rename) and the
-reusable ground-approach AI archetype. Formerly carried the display name
-"Slime", which now belongs to the **Slime** archetype.
+The walking Melee committer — approach on foot, telegraphed swing.
 _Avoid_: Slime (that's the hopping archetype), walker
 
 **Brute**:
-The heavy **Melee committer** authored for the deep Field (Field 3) — a slow,
-high-**Poise**, hard-hitting bruiser (ADR 0024 §8). Deals damage **only** through the
-same telegraphed **wind-up** → **active** → **recovery** swing as the chaser (no passive
-contact damage), but its whole profile is the chaser's opposite: it lumbers at half the
-chaser's speed, carries a much larger Poise pool and heavy **Mass** (so it shrugs off a
-flurry and barely flinches from **Knockback**), hits far harder, and attacks
-*deliberately* — a long cool-down between commits leaves a wide, punishable opening
-between heavy blows. Read it and punish the recovery; don't trade with it.
-_Avoid_: Tank, Golem (that is only its player-facing Sprite/name), heavy mob, boss
-(the Boss is its own single authored Monster)
+The heavy Melee committer of the deep Field — slow, high-**Poise**, heavy
+**Mass**, hits hard, long punishable openings between deliberate commits.
+_Avoid_: Tank, heavy mob, boss
 
 **Ranged poker**:
-A Monster archetype that fights at distance — the reworked shooter. Like the **melee
-committer** it deals damage *only* through a telegraphed **Attack phase**: it
-maintains distance, and on a commit runs the same **wind-up** → **active** →
-**recovery** swing, **firing exactly one Projectile on the active frame** (never
-auto-firing). The wind-up is the Player's cue to **Dodge**/**Block**/**swat** the
-shot or close in to punish the recovery. See ADR 0017 §8.
-_Avoid_: Archer, turret, auto-shooter, hitscan mob
+A Monster archetype fighting at distance, firing exactly one Projectile on
+its active frame — never auto-firing. The wind-up is the cue to Dodge, Block,
+swat, or close in.
+_Avoid_: Archer, turret, hitscan mob
 
 **Projectile**:
-A **first-class hit that travels** — not a special-case ranged poke. It carries the
-*same* hit-reaction payload a melee swing does (**HP damage** + **poise damage** +
-**Knockback**), so a heavy shot **Staggers** on a **Poise** break exactly like a
-melee connect while a pebble only chips, and it resolves through the same hit path.
-It travels at a **reactable** speed (not hitscan). Every shot is hostile and countered
-by the defensive kit: **Dodge** through it (i-frames), **Block** it (chip + poise
-drain), or **swat** it with a melee active frame (**Parry**/**Reflect** removed, ADR
-0024). As a travelling attack it emits a **Strike** into the *resolve* pass, the same
-handoff a melee swing uses. See ADR 0017 §8, ADR 0022, ADR 0024.
+A first-class hit that travels — same hit-reaction payload as a melee swing
+(damage + poise + Knockback), reactable speed, resolved through the same
+Strike path. Countered by **Dodge**, **Block**, or **swat**.
 _Avoid_: Bullet, missile, hitscan
 
 **swat**:
-Destroying a hostile **Projectile** with a melee active frame — a Player's live swing
-or skill hitbox overlapping the shot shatters it (a light clink, no **Poise** break).
-The shot is simply gone; nothing is reflected back. The kept ranged counter alongside
-**Dodge** and **Block** (**Parry**/**Reflect** removed, ADR 0024). See ADR 0017 §8.
-_Avoid_: Deflect, parry, reflect, bounce
+Destroying a hostile Projectile with a melee active frame — a light clink,
+nothing reflected.
+_Avoid_: Deflect, parry, reflect
 
 **Combat**:
-Real-time PvE (Player vs Monster) fighting — a first-class pillar, not flavor.
-Built on **commitment**: an attack is not instant but occupies time in **phases**,
-so *when* you commit is itself a skill. **Positional / directional hitbox** model;
-melee aim is **contextual and forgiving** (a wide frontal arc, plus a vertical
-**Launcher**/**Spike**), ranged is **precise** (directional projectiles; mouse-aimed
-for ranged Classes later). Skill expression lives in timing (**Dodge**, reading
-telegraphs) and **Knockback**-driven **Juggles**, all regulated by **Poise**. Clients send
-*intents* and predict their own actions; the server resolves every outcome
-authoritatively (hit, damage, kills, loot). The combat slice of an Intent
-(attack/skill) is gated by a single shared resolver (`resolveCombat`) that both
-the authoritative server step and the client's optimistic telegraph run, so they
-can never gate a swing or skill differently. The tick itself is **project-then-
-resolve** (ADR 0022): per-entity passes advance state and emit **Strike**s, and one
-resolve pass lands every Strike by the **Faction**-gated uniform rule. See ADR 0017,
-ADR 0022.
-_Avoid_: Fighting, battle, PvE, tab-target (use "Combat")
+Real-time PvE fighting built on **commitment**: an attack occupies time in
+phases, so *when* you commit is itself a skill. Clients send intents and
+predict their own actions; the server resolves every outcome. The tick is
+**project-then-resolve**: per-entity passes advance state and emit
+**Strike**s; one resolve pass lands every Strike by the **Faction**-gated
+uniform rule.
+_Avoid_: Fighting, battle, tab-target
 
 **Strike**:
-A **projected attack** handed from a per-entity *project* pass to the *resolve* pass
-of the combat tick (ADR 0022) — _"this hitbox deals this HP + **Poise** damage, facing
-→, on behalf of this **Faction**."_ It is a projection,
-never applied where it is made: an Avatar swing, a **Melee committer**'s strike, and a
-travelling **Projectile** all emit Strikes, and `resolveCombat` resolves every one by a
-single rule — against overlapping, **hittable**, opposing-**Faction**, not-already-hit
-victims. The per-swing dedup ledger (`swingHits`, ADR 0017 §2) is *not* part of a
-Strike; it lives on the attacking entity (a multi-contact attack instance), so a
-single-contact Projectile carries none.
-_Avoid_: Hit (reserve for the resolved contact), Attack, Hitbox (a Strike is more)
+A projected attack handed from a project pass to the resolve pass — "this
+hitbox deals this HP + Poise damage, facing →, for this Faction." Never
+applied where it is made; resolved against overlapping, hittable,
+opposing-Faction, not-already-hit victims. The per-swing dedup ledger lives
+on the attacking entity, not the Strike.
+_Avoid_: Hit (the resolved contact), Attack, Hitbox
 
 **Faction**:
-The allegiance key — `players` | `monsters` — that decides which entities a **Strike**
-may resolve against: opposing-Faction only. It makes **PvE** hold *by construction*
-rather than by scattered checks: two **Avatar**s share a Faction, so no Avatar ever
-damages an Avatar — PvP stays parked. See ADR 0022.
-_Avoid_: Team, side, alliance, allegiance (in the PvP/guild sense — Faction is the
-PvE damage filter, not a social group)
+The allegiance key — `players` | `monsters` — gating which entities a Strike
+may resolve against. Makes PvE hold by construction: Avatars share a Faction,
+so no Avatar ever damages an Avatar.
+_Avoid_: Team, side, alliance
 
 **Attack phase**:
-The three stages every attack — Player or Monster — passes through: **wind-up**
-(committed, telegraphed, interruptible), **active** (hitbox live), **recovery**
-(vulnerable, no act except a combo cancel). A "wind-up attack" is just the
-long-wind-up end of the spectrum, not a separate kind of attack.
+The three stages of every attack: **wind-up** (committed, telegraphed) →
+**active** (hitbox live) → **recovery** (vulnerable).
 _Avoid_: Animation, frame, swing-state
 
 **Poise**:
-An entity's accumulating resistance to being staggered. Attacks deal **poise
-damage**; only when the pool *breaks* does a hit **Stagger**. It regenerates under
-no pressure and spikes during a wind-up (**Super-armor**). This is why weak
-Monsters never stagger you and strong ones only occasionally do.
-_Avoid_: Posture, stability, balance, stagger meter
+An entity's accumulating resistance to being staggered. Attacks deal poise
+damage; only a *break* staggers. Regenerates under no pressure; spikes during
+a wind-up (**Super-armor**).
+_Avoid_: Posture, stability, stagger meter
 
 **Stagger**:
-The reaction state an entity enters the moment its **Poise** breaks — **Hitstun**
-plus **Knockback** — leaving it open to a combo. Triggered by a poise break, never
-by damage alone.
-_Avoid_: Stun, flinch, stunlock
-
-**Stamina** _(stretch goal — not in the frozen demo; see ADR 0024 amendment)_:
-A souls-model **action budget** consumed by **attacking, dodging, and Active skills**,
-regenerating automatically when unspent — run dry and those actions lock until it refills,
-so *when* you act becomes a resource decision. Deliberately distinct from **Poise**: Poise
-is passive *resistance to being staggered*, Stamina is your active *budget to act*; the two
-never overlap, and **Block** stays on the Poise/guard-break system (it costs no Stamina).
-Absent from the codebase today; to be scoped and planned separately before any build.
-_Avoid_: Energy, mana, endurance, poise (that is the stagger resource, not the action budget)
+The reaction state on a Poise break — **Hitstun** plus **Knockback**.
+Triggered by a break, never by damage alone.
+_Avoid_: Stun, flinch
 
 **Hitstun**:
-How long a **Staggered** entity is locked out of action. Control is locked but
-physics is not — the body still flies under **Knockback** and gravity, which is
-what being comboed feels like.
+How long a Staggered entity is locked out of action. Control is locked,
+physics is not.
 _Avoid_: Stun, freeze, lock
 
 **Knockback**:
-The impulse a hit imparts to the victim's momentum on **Stagger** — a shove, a
-launch, or a spike. Scaled by the victim's **Mass**. Tuned snappy/arcade, not
-floaty.
-_Avoid_: Pushback, recoil, impulse
+The impulse a hit imparts on Stagger, scaled by the victim's **Mass**. Tuned
+snappy/arcade, not floaty.
+_Avoid_: Pushback, recoil
 
 **Mass**:
-An entity's resistance to **Knockback** distance — the same **Launcher** visibly
-pops a lighter Slime but barely lifts a heavy Golem.
-_Avoid_: Weight, heaviness
+An entity's resistance to Knockback distance.
+_Avoid_: Weight
 
 **Momentum body**:
-The single physics body every entity — Avatar and Monster alike — integrates each
-tick (`position + velocity + Mass`): input drive + external impulses + gravity −
-drag, then the shared axis-separated Terrain collision. **Knockback** is just an
-impulse fed into it, so a shove decays under drag and a launch arcs under gravity
-on the same path that walks and jumps. Monsters are airborne-capable on it with no
-special case (`stepEntity` in `physics.ts`).
-_Avoid_: Rigidbody, actor, character controller
+The single physics body every entity integrates each tick (`position +
+velocity + Mass`): drive + impulses + gravity − drag, then shared
+axis-separated Terrain collision. Monsters are airborne-capable on it with no
+special case.
+_Avoid_: Rigidbody, character controller
 
 **Drive**:
-The per-tick movement decision an entity's controller feeds into the physics
-step — move direction, jump, and optionally an attack commit. Produced from the
-Player's **Intent** for an Avatar and by a **Brain** for a Monster; the
-simulation consumes Drives without knowing or caring who is driving. The seam
-that makes Avatars and Monsters move through one shared path.
-_Avoid_: Input (raw client keys), Intent (the client→server bundle a Drive is
-derived from), command, controls
+The per-tick movement decision fed into the physics step — move direction,
+jump, optionally an attack commit. Produced from a Player's **Intent** or a
+Monster's **Brain**; the simulation doesn't care who is driving.
+_Avoid_: Input (raw keys), Intent (the client→server bundle), command
 
 **Super-armor**:
-The temporary **Poise** spike an entity holds during a wind-up, letting a heavy
-attack shrug off light hits without being interrupted.
-_Avoid_: Hyper-armor, armor (reserve for gear)
-
-**Launcher**:
-An attack (`up` + attack) that **Knocks** a poise-broken target upward and pops the
-attacker up to follow — the entry into an aerial **Juggle**.
-_Avoid_: Uppercut, pop-up
-
-**Spike**:
-An airborne attack (`down` + attack) that drives a **Juggled** target back down to
-the ground.
-_Avoid_: Slam, down-air, ground-pound (that is an active skill)
-
-**Juggle**:
-Keeping a **Staggered** target airborne with successive hits. Bounded by **combo
-decay** (each hit adds less **Hitstun** and the target falls faster) so it
-self-terminates back to neutral — never infinite.
-_Avoid_: Air combo, loop, infinite
+The temporary Poise spike held during a wind-up.
+_Avoid_: Hyper-armor
 
 **Guard**:
-The unified, frontal-arc defensive stance — raisable only with a **Shield**
-equipped (ADR 0043). Any raised Guard is a **Block** (Parry removed, ADR 0024).
-Hits from behind ignore it.
-_Avoid_: Defend, stance, shield (that's the Item that enables it)
+The unified frontal-arc defensive stance — raisable only with a **Shield**
+equipped. Any raised Guard is a **Block**. Hits from behind ignore it.
+_Avoid_: Defend, stance
 
 **Block**:
-Holding **Guard** to absorb a frontal hit for chip damage, draining **Poise** toward
-a guard-break. The safe defense; the only Guard behaviour (Parry removed, ADR 0024).
-Gated solely by having a **Shield** equipped — no level unlock (ADR 0043).
-_Avoid_: Shield (that's the enabling Item, not the act), brace
+Holding Guard to absorb a frontal hit for chip damage, draining Poise toward
+a guard-break. Gated solely by an equipped Shield — no level unlock.
+_Avoid_: Shield (the Item), brace
 
 **Shield**:
-The **Offhand** Item whose being equipped is what lets **Guard** raise — the
-only gate on **Block**, working from level 1 (ADR 0043). Exactly one basic
-shield exists for now: granted and equipped at Avatar creation (and migrated
-onto existing Saves), unequippable from inventory, but unsellable and
-untradeable while it is the only one. Deliberately stat-less — fixed common
-rarity, no affixes; block numbers stay shared combat constants. It contributes
-only the gate and its art: a rest carry composited onto the Avatar every frame
-at the Form's `offhand` **Anchor** (present at rest, like the **Weapon
-sprite**), switching to a held-state `block` **Animation** while guarding. The
-one deliberate exception to "loot never changes playstyle."
-_Avoid_: Offhand weapon (it never attacks), buckler, guard/block (the stance
-and the act, not the Item)
+The **Offhand** Item whose being equipped enables Guard — the one deliberate
+exception to "loot never changes playstyle." Stat-less for now; composited
+onto the Avatar at the Form's `offhand` **Anchor**, switching to a held-state
+`block` Animation while guarding.
+_Avoid_: Offhand weapon, buckler
 
 **Offhand**:
 The fourth equipment Slot (`weapon | armor | accessory | offhand`), holding a
-**Shield**; nothing else fits it yet (ADR 0043).
-_Avoid_: Shield slot, left hand
+Shield.
+_Avoid_: Shield slot
 
 **Guard-break**:
-The **Stagger** a **Block** suffers when sustained chip drains its **Poise** pool to a
-break — turtling punished by the same accumulating-Poise system as any other break, not
-a separate guard meter.
-_Avoid_: Shield-break, stun
+The Stagger a Block suffers when sustained chip drains its Poise — turtling
+punished by the same accumulating-Poise system, not a separate meter.
+_Avoid_: Shield-break
 
 **Dodge**:
-A short horizontal hop granting brief invulnerability (i-frames) with committal
-recovery — the mobility-defense, unlocked at level 4.
+A short horizontal hop granting brief i-frames, with committal recovery.
 _Avoid_: Roll, dash, evade
 
 **Dodge after-image (echo)**:
-The cyan ghost trail a **Dodge** leaves at its launch spot — a short string of
-fading silhouettes of the Avatar's own sprite, planted where the hop began and
-trailing opposite the hop. Purely a **client visual effect** with its own render
-clock: spawned on the dodge-start edge and decoupled from the i-frame timing it
-illustrates (ADR 0017 §13). Not part of the sim and never on the wire.
-_Avoid_: Trail, smear, blur (reserve "echo" for this)
-
-**Moveset ability**:
-A passive, no-cooldown extension of what the attack button does — string
-extensions, the **Launcher**, aerials, the **Spike**, cancels —
-unlocked by level (and later **Class**). Distinct from an **Active skill**; it is
-*how your character moves*, not a thing you fire.
-_Avoid_: Skill (reserve for active), passive, combo move
+The cyan ghost trail a Dodge leaves at its launch spot — a client visual on
+its own render clock, decoupled from the i-frame timing it illustrates.
+_Avoid_: Trail, smear
 
 **Active skill**:
-A slotted, cooldown-bound special move (e.g. Power Strike, Ground Pound) fired on
-its own input. Distinct from a passive **Moveset ability**.
-_Avoid_: Ability, spell, move
+A slotted, cooldown-bound special move (Power Strike, Ground Pound) fired on
+its own input.
+_Avoid_: Ability, spell
 
 **Weapon stat block**:
-The data an equipped Weapon **Item** contributes (ADR 0024): **damage**, its
-rolled **Affixes**, and its visuals — the **Weapon sprite** and that sprite's
-**Weapon accent** colour. Nothing else: every weapon swings the one
-sword-and-shield **Moveset** with the one shared animation set (phase durations,
-arc/reach, **Poise** damage, and **Knockback** are shared COMBAT constants), so a
-weapon can never change playstyle — loot variety is stats and looks. (The
-**Shield** is the one deliberate exception to that rule: equipping it is what
-enables **Block**, ADR 0043.) The weapon's
-catalog id joins the Avatar's replicated appearance, so others see your weapon.
-_Avoid_: Weapon type, weapon class (reserve **Class** for the Avatar archetype);
-per-weapon feel / phase-speed / arc (removed with the demo scope freeze)
+What an equipped Weapon Item contributes: **damage**, rolled **Affixes**, and
+visuals (Weapon sprite + accent colour). Every weapon swings the one shared
+moveset — a weapon never changes playstyle (the Shield is the sole
+exception); loot variety is stats and looks.
+_Avoid_: Weapon type, weapon class; per-weapon feel (removed)
 
 **Weapon sprite**:
-The animated ASCII-art of an equipped **Weapon**, composited onto the **Avatar**
-every frame at its **grip anchor** — present at rest, not only when swinging (ADR
-0018). Unlike a single-frame **Sprite**, it is a named frame set: `idle`, `windup`,
-`active` (an ordered sweep sampled by **Attack phase** progress), `recovery`. The
-frame is a pure function of `(move, phase, progress)`, so the owner's prediction and
-every observer's render agree. Heft comes from phase *durations*, not frame count.
-_Avoid_: Weapon overlay, swing effect (it is part of the Avatar, not an effect)
+The animated art of an equipped Weapon, composited at its **grip anchor**
+every frame — present at rest, not only when swinging. Its `swing` Animation
+is exactly three frames indexed by Attack phase.
+_Avoid_: Weapon overlay, swing effect
 
 **Grip anchor**:
-The named "hand" cell a body template declares for hanging a **Weapon sprite** —
-the weapon's own grip cell aligns to it, and it mirrors with facing, the same
-data-driven anchor mechanism the cosmetic hat uses for the head cell (ADR 0018).
-Keeps weapon placement out of imperative draw code.
-_Avoid_: Hand slot, mount point, hardpoint
-
-**Blade-edge arc**:
-The short, fading smear of curve glyphs that traces a **Weapon**'s blade *tip*
-through its **active** phase, so the eye reads a swing's speed and direction (ADR
-0018). Authored as part of the **Weapon sprite** animation, not a hitbox overlay —
-it replaces the retired `///` **hitbox** box-fill, which is no longer drawn.
-_Avoid_: Slash-arc, slash, swing fill (the legacy hitbox-fill, now retired)
+The named "hand" cell a body declares for hanging a Weapon sprite; mirrors
+with facing. Keeps weapon placement in data, not draw code.
+_Avoid_: Mount point, hardpoint
 
 **Weapon accent**:
-The single per-**Weapon** colour that drives its blade highlight and **Blade-edge
-arc**, so a weapon reads as a distinct object even at rest (ADR 0018). The
-rarity-ready seam: when loot rolls rarity tiers, the tier colour feeds this same
-channel with no rework. The weapon's structural palette (grip, guard) is authored
-separately on the sprite; the accent is the one dynamic channel.
-_Avoid_: Tint, weapon colour (reserve for the static sprite palette)
+The single per-Weapon colour driving its blade highlight and swing arc — the
+rarity-ready seam: tier colours feed this channel with no rework.
+_Avoid_: Tint
 
 **Intent**:
 The per-tick bundle of what an Avatar is trying to do, reported by the client
-and resolved authoritatively by the server (ADR 0001): the Avatar's reported
-kinematics (position/velocity/facing/onGround) plus its combat (attack, skill)
-and interact requests for that tick. Continuously sampled and idempotently
-gated each tick (cooldowns / i-frames stop a double-apply). Distinct from a
-discrete request action — Chat, Trade, item use — which is a one-shot, apply-
-exactly-once message with its own authoritative handler, never a per-tick Intent
-field.
-_Avoid_: Command, action, input (reserve "input" for the raw client-side keys)
+and resolved authoritatively: kinematics plus attack/skill/interact requests.
+Distinct from a discrete request (Chat, sell/buy) — a one-shot message with
+its own handler.
+_Avoid_: Command, action, input
 
 **Authority model**:
-Client owns its Avatar's movement (broadcast + loose server sanity-check, safe
-because positions are uncontested). Server owns every *consequence* — Monster
-HP, hit resolution, loot, XP, inventory, currency, trades. Cheating the economy
-requires breaking the server, not the client.
+Client owns its Avatar's movement (uncontested, loosely sanity-checked);
+server owns every consequence — Monster HP, hit resolution, loot, XP,
+inventory, Gold. Cheating the economy requires breaking the server.
 
 **Class**:
-An Avatar's role archetype, chosen at creation, determining its skills, stat
-focus, and combat style. Planned set: Warrior (forgiving melee), Archer (precise
-ranged), Mage (ranged AoE/utility). MVP ships **Warrior only**; the others come
-once the loop is fun.
-_Avoid_: Job, profession, role, build
+An Avatar's role archetype determining skills and combat style. Warrior only
+for now; Archer/Mage planned.
+_Avoid_: Job, profession, build
 
 **Item**:
-An equippable piece of gear = **base type** (e.g. `Iron Sword`) + **rarity tier**
-+ a small set of **randomized affixes** (rolled stats). Rarity is shown as color
-— the core visual language of loot. Dropped by Monsters or bought from NPC
-vendors. MVP slots: Weapon, Armor, Accessory, Offhand (ADR 0043). (Non-gear
-items like consumables may come later.)
-_Avoid_: Equip, gear, drop, loot (use "Item")
+Equippable gear = base type + rarity tier + randomized affixes. Rarity is
+shown as colour — the core visual language of loot. Slots: Weapon, Armor,
+Accessory, Offhand.
+_Avoid_: Equip, gear, loot
 
 **Drop**:
-An **Item** left resting in the world where a **Monster** died, rather than teleported
-straight into the bag (#238, ADR 0024 §2). It is **collected on touch** — walk your
-**Avatar** over it and it enters your inventory — and it **fades** after a while if left
-uncollected (grab it before it vanishes). A Drop is **private**: because loot is
-**instanced**, only its owner ever sees or can pick it up, so the server streams each
-Player only its own Drops. Rendered in the world as a **rarity-coloured** glyph with a
-floating rarity+name label, so a tier reads at a glance both where it lies and as you grab
-it. Shared XP still lands immediately on the kill; only the Item becomes a Drop.
-_Avoid_: Loot pile, drop table (that is the Loot table), pickup item (it is an Item)
+An Item resting in the world where a Monster died — collected on touch, fades
+if left. Private: loot is instanced, so only its owner ever sees it. Rendered
+as a rarity-coloured glyph with a floating label.
+_Avoid_: Loot pile, pickup item
 
 **Loot table**:
-The per-**Field**/**Dungeon** drop rules (#238, ADR 0024 §2/§3), keyed by **Zone id**:
-which **base** types that Zone can drop, the **drop chance** that gates whether a kill
-drops at all (the "when" lever — the **Dungeon** is the reliable faucet at 100%, **Fields**
-drop only occasionally so hunting out there is a bonus, not the efficient path), and an
-optional rarity re-weighting (deeper Zones tilt toward higher tiers). Pure data over the
-shared, seeded roll logic (bases / rarity weights / affixes / `rollItem`); an unauthored
-Zone falls back to the default full-pool table.
-_Avoid_: Drop table (ambiguous), spawn table, loot list
+The per-Zone drop rules, keyed by Zone id: droppable bases, drop chance (the
+Dungeon is the 100% faucet; Fields drop occasionally), optional rarity
+re-weighting. Pure data over the shared seeded roll logic.
+_Avoid_: Drop table, spawn table
 
 **Gold**:
-The single currency. Drops from Monsters; earned by selling Items to NPC vendors.
-Spent on Trade, the Auction House, and NPC purchases.
-_Avoid_: Coins, money, currency, credits
-
-**Trade**:
-A direct, face-to-face, both-sides-confirm Item/Gold swap between two Players in a
-Town. Server-authoritative and atomic.
-_Avoid_: Swap, exchange, deal
+The single currency. Drops from Monsters; earned by selling to Merchants.
+_Avoid_: Coins, money, credits
 
 **Server-authoritative economy**:
-Every Gold-and-Item transaction (selling loot to a **Merchant**, and later **Trade** /
-**Auction House** / NPC purchases) is resolved on the server and never trusted from the
-client (#267, ADR 0025). A client sends only an *intent* — e.g. "sell item #7" — and the
-server re-derives the price (`saleValue`), verifies the Item is in that Player's own
-inventory, and gates the transaction on the Player standing at the relevant NPC; an
-unowned/unknown id or a request from afar is a silent no-op. The whole rule lives in a
-pure `@mmo/core` function so the (removed) offline loop and the live server can't
-diverge, and the authoritative Gold/inventory ride the **snapshot** back — the client
-never mutates its own balance optimistically. Successful transactions are durable
-(persisted as a significant event).
-_Avoid_: Client-side shop, optimistic economy, trusting the client price
+Every Gold-and-Item transaction resolves on the server, never trusted from
+the client. A client sends only an intent ("sell item #7"); the server
+re-derives the price, verifies ownership, and gates on proximity — invalid
+requests are silent no-ops. Authoritative Gold/inventory ride the snapshot;
+the client never mutates its balance optimistically.
+_Avoid_: Client-side shop, optimistic economy
 
 **Merchant**:
-The Town **NPC** a Player interacts with (walk over, press interact) to open the
-shop overlay and **sell** loot for **Gold** (buying starter goods is a later slice).
-Reads the Player's Gold + inventory from the **snapshot** and issues `sell` intents;
-the server owns the outcome (see Server-authoritative economy).
-_Avoid_: Shopkeeper (when you mean the mechanic), store, vendor UI
-
-**Auction House**:
-A global asynchronous market where Players list Items for Gold; the server escrows
-listed Items and Gold. Coexists with Trade. Post-MVP. Bots/RMT are explicitly a
-non-concern (open-source, for-fun).
-_Avoid_: Market, AH, marketplace, exchange
+The Town NPC whose interact opens the shop overlay to sell loot and buy
+starter goods. Prices sit above sale value so the shop is a sink, never a
+faucet.
+_Avoid_: Shopkeeper (the mechanic), store
 
 **Instanced loot**:
-When multiple Players damage a Monster, every contributor earns XP and rolls their
-*own* private Item **Drop**s — there is no shared loot pile. Each contributor's Drop is
-seeded off its own RNG (so loot never crosses between Players) and rests in the world for
-that Player alone to collect on touch. Eliminates kill-stealing and makes other hunters in
-a Field feel like help, not competition. (Player death is forgiving: respawn in Town, no
-XP or Item loss at MVP.)
-_Avoid_: Loot share, drop table (per-player), kill credit
+Every contributor to a kill earns XP and rolls its own private Drops — no
+shared pile, no kill-stealing; other hunters are help, not competition.
+Player death is forgiving: respawn in Town, no XP or Item loss.
+_Avoid_: Loot share, kill credit
 
 **Terrain**:
-The solid geometry of the world (platforms, walls, ground, ropes/ladders) — the
-only thing Avatars physically collide with. Avatars do NOT collide with each
-other; they pass through one another freely. Movement is a real-time platformer
-(gravity + jumping). Two solid tile kinds: **Wall** and **One-way platform**.
-_Avoid_: Tiles, level, collision map
+The solid geometry — the only thing entities collide with (Avatars pass
+through each other). Real-time platformer movement. Two solid tile kinds:
+**Wall** and **One-way platform**.
+_Avoid_: Tiles, collision map
 
 **Wall**:
-A fully solid Terrain tile — glyph `#`, cell value `1`. Blocks every side: you land
-on its top, and it stops horizontal motion beside it. The world bounds read as walls
-too, so an Avatar can never leave its Zone sideways. Ground and vertical posts are
-walls.
+A fully solid tile — glyph `#`, cell value `1`. Blocks every side; the world
+bounds read as walls.
 _Avoid_: Solid, block
 
 **One-way platform**:
-A Terrain tile you can stand on but also pass through — glyph `=`, cell value `2`
-(ADR 0026). Vertically it behaves like any solid: a descending body lands on its top
-surface, a rising body passes through it (the global one-way rule, #262).
-Horizontally it is **transparent** — unlike a Wall it never halts sideways motion, so
-jumping up through a platform while moving left/right feels smooth. Authored per tile,
-distinct from a Wall so a structure can mix posts (walls) and ledges (platforms).
-_Avoid_: Ledge, floor, semisolid
+A tile you can stand on but also pass through — glyph `=`, cell value `2`.
+Vertically like any solid (land on top, rise through); horizontally
+transparent. Authored per tile.
+_Avoid_: Ledge, semisolid
 
 **Sweep**:
-The physics module's terrain-collision primitive: what does a point travelling
-from A to B hit? Bidirectional and axis-separated (x leg, then y leg), it checks
-every cell crossed so fast travel cannot tunnel, and it carries the global
-one-way rule — a One-way platform stops only descending travel; a Wall blocks
-point travel in every direction. The ascending leg exists for point travellers:
-rising Particle specks used to embed inside thick solids (ADR 0013 amendment).
-Rising *bodies* still pass any solid vertically — the **Momentum body** step
-keeps ADR 0026's no-head-bonk by never sweeping upward. Both integrators (the
-Momentum-body step and the projectile step) resolve terrain through it, and the
-client **Particle** simulation rebuilds on it, so "what blocks a moving point"
-has exactly one answer (ADR 0032).
-_Avoid_: Raycast, trace, sweep test (physics-engine jargon; this is cell-grid
-point travel)
+The physics module's terrain-collision primitive: what does a point
+travelling A→B hit? Axis-separated, checks every crossed cell (no
+tunneling), carries the one-way rule. Both integrators and the Particle sim
+resolve terrain through it — one answer to "what blocks a moving point."
+_Avoid_: Raycast, trace
 
 **Interact edge**:
-The `interact` intent as a one-shot **edge**, not a held flag (ADR 0027): a single
-physical press of the interact key yields exactly one true reading, used to enter a
-**Portal** or open a **Merchant**. Latched on the client until the next network send
-(so a fast render poll can't lose it) and consumed once per server tick via a
-pending-edge queue (so it can't re-fire) — the reason a press enters a Portal exactly
-once even though the arrival can overlap the return Portal (#90).
-_Avoid_: Interact flag, use key, action button
-
-**Hacking (sub-theme)**:
-Developer/hacker-culture flavor that may inspire some mechanics. Explicitly NOT
-the core verb of the game — parked until the core spine exists.
+The `interact` intent as a one-shot edge: latched on the client until the
+next send, consumed once per server tick — a press enters a Portal exactly
+once even when the arrival overlaps the return Portal.
+_Avoid_: Interact flag, use key
 
 ## Zone authoring
 
-Vocabulary for the human-facing tools that design Zones (the `zone edit` TUI).
-Distinct from the game-world language above — these are authoring concepts.
-
 **Zone editor**:
-The interactive TUI (`zone edit <id>`) for authoring a Zone — painting Terrain
-and placing entities over the raw `.zone` document, rendered through the same
-renderer the game uses. Operates on the lossless document, never a parsed Zone.
-_Avoid_: Level editor, map editor, painter
+The forge TUI (`zone edit <id>`) for painting Terrain and placing entities,
+rendered through the same renderer the game uses. Operates on the lossless
+raw document, never a parsed Zone.
+_Avoid_: Level editor, map editor
 
 **Placeable**:
-A thing the Zone editor can place into a Zone: a Terrain tile kind (Wall or
-Platform), a catalog
-entity (a Monster or NPC, by catalog id), or a Structure (Portal; later Spawn /
-Respawn markers). The author works in Placeables, not glyphs — the editor owns
-the glyph↔Placeable mapping in the header, so undeclared/orphan glyphs are
-unrepresentable, not merely validated.
-_Avoid_: Glyph, stamp, tile, entity (when you mean the editor-facing thing)
+A thing the Zone editor places: a Terrain kind, a catalog entity (by id), or
+a Structure (Portal). The author works in Placeables, never glyphs — the
+editor owns the glyph↔Placeable mapping, so orphan glyphs are
+unrepresentable.
+_Avoid_: Glyph, stamp, tile
 
 **Palette**:
-The set of Placeables the editor offers, generated from `catalogs.json` plus the
-structural primitives — never a hand-maintained list. Grouped Terrain / Monsters
-/ NPCs / Structures. The editor consumes the catalog; it never edits it (a
-separate creature/NPC-authoring tool will own that later).
-_Avoid_: Toolbar, inventory, brushes
+The set of Placeables on offer, generated from the catalogs — never
+hand-maintained. The editor consumes the catalog; it never edits it.
+_Avoid_: Toolbar, brushes
 
 **Tool**:
-The interaction verb bound to the pointer/cursor in the modal editor — what a
-click or drag *does*. The active Tool plus the active Palette selection together
-determine each edit.
-_Avoid_: Mode, brush (reserve "brush" for the specific paint Tool)
+The interaction verb bound to the cursor — what a click or drag does.
+_Avoid_: Mode
 
 ## Sprite authoring
 
-Vocabulary for authoring sprite art (the `sprite edit` TUI and the `.sprite`
-asset file). Like Zone authoring, these are authoring concepts, distinct from
-the game-world language above.
-
 **Sprite file**:
-The `.sprite` asset file that *is* a sprite's source of truth — human-readable
-art (glyph grids you can see in a text editor, zone-style) plus its metadata:
-an ordered array of named **Animation**s, each an ordered run of unnamed
-**Frame**s, plus **Anchor**s, colors, per-Animation fps (ADR 0037). One format
-covers every sprite shape (a hat is the degenerate single-frame case; a Form and
-a Weapon are richer profiles of the same format). Identity is the filename
-(cf. Zone id), and the containing directory names its **Sprite role**. Consumed
-at runtime — the file, not code, is where art lives.
-_Avoid_: Asset (too generic), art file, sprite sheet (there is no atlas)
+The `.sprite` asset file that *is* a sprite's source of truth: visible glyph
+art plus metadata — an ordered array of named Animations of unnamed Frames,
+Anchors, colors, per-Animation fps. One format for every sprite shape;
+identity is the filename, the directory names the **Sprite role**.
+_Avoid_: Asset, sprite sheet
 
 **Sprite role**:
-What a Sprite file is *for* — form, hat, weapon, shield, monster — named by the
-directory it lives in, and driving which validation profile applies (a form must
-author `idle`/`walk` and `grip`/`head`/`offhand`; a weapon a **Default frame**
-plus an exactly-3-frame `swing` Animation and grip; a shield a Default frame —
-the rest carry — plus a held-state `block` Animation, ADR 0043). Cosmetic roles
-(form, hat) are registered by scan — the file existing is
-what makes it pickable; combat-entity roles (weapon, shield, monster) are the
-*art half* of a catalog entry that references the Sprite file by id.
-_Avoid_: Type, kind, category
+What a Sprite file is for — form, hat, weapon, shield, monster — named by its
+directory and driving its validation profile. Cosmetic roles register by
+directory scan (the file existing makes it pickable); combat-entity roles are
+the art half of a catalog entry referencing the file by id.
+_Avoid_: Type, kind
 
 **Sprite editor**:
-The interactive forge TUI (`sprite edit`) for drawing sprite art in **Pixel**s —
-the author paints sub-cell pixel art and the editor compiles it to half-block
-glyph grids, so nobody hand-XORs quadrant glyphs. WYSIWYG against the shared
-renderer: mirrored facing, animation playback, and the **Composited preview**
-are part of drawing, not a separate check. An **inexpressible cell** (more
-colors than a terminal cell can carry) is auto-resolved at paint time — the ink
-wins the touched Pixel and the cell coerces to the nearest legal state, with
-status-line feedback; never refused, never merely validated after the fact
-(cf. Placeable).
-_Avoid_: Paint program, pixel editor (it edits Sprite files, pixels are the means)
+The forge TUI (`sprite edit`) for drawing art in **Pixel**s, compiled to
+half-block glyph grids — WYSIWYG through the shared renderer, with playback
+and the **Composited preview** built in. An inexpressible cell is
+auto-resolved at paint time with feedback, never silently quantized at
+export.
+_Avoid_: Paint program
 
 **Frame**:
-One glyph grid in a Sprite file — the unit the Sprite editor paints and the
-thing an **Animation** orders into playback. Frames are unnamed: a frame is
-identified by its Animation plus index (`frame 0`, `frame 1`), which is also how
-every UI surface labels it (ADR 0037). A single-frame Animation (`jump`) is the
-degenerate case, not a special one.
-_Avoid_: Cel, image, page, frame name (retired, ADR 0037)
+One glyph grid — the unit the editor paints and an Animation orders. Frames
+are unnamed, identified by animation + index.
+_Avoid_: Cel, frame name (retired)
 
 **Default frame**:
-Frame 0 of the first **Animation** in a Sprite file's animation array — every
-sprite's first-class citizen, one universal rule for all roles (a form's `idle`,
-a weapon's rest/hold frame, a hat's only frame; the ordered array makes it so
-explicitly, ADR 0037, and `sprites:check` warns when a form's first animation
-isn't `idle`). It is where
-the file-level **Anchor**s are authored: anchor edits on the Default frame set
-the file's defaults, anchor edits on any other Frame author that frame's
-override (ADR 0036). The editor badges it.
-_Avoid_: Base frame, master frame, rest frame (a role concept, not a format one)
+Frame 0 of the first Animation — every sprite's first-class citizen (a form's
+`idle`, a weapon's rest frame, a hat's only frame). It owns the file-level
+Anchors; edits on any other frame author per-frame overrides. Monster/NPC
+logical boxes derive from its visible pixel bounds.
+_Avoid_: Base frame, rest frame
 
 **Pixel**:
-The Sprite editor's atomic unit — one quadrant sub-cell, four per terminal cell
-(2×2), each either a color or transparent. What the artist paints; the glyph is
-derived. A cell carries at most two colors (fg + bg), which is the medium's
-grain, not an editor limit. Movement-capable Sprite roles (form, hat, weapon,
-shield, and monster) are Pixel-only so their complete art can translate one Pixel at a time —
-half a terminal cell — without internal pieces snapping apart.
-_Avoid_: Cell (that's the 2×2 group), dot, subpixel
+The editor's atomic unit — one quadrant sub-cell, four per terminal cell,
+each a color or transparent. A cell carries at most two colors (fg + bg) —
+the medium's grain. Movement-capable roles are Pixel-only so their art
+translates at half-cell resolution without snapping apart.
+_Avoid_: Cell (the 2×2 group), dot
 
 **Glyph stamp**:
-The secondary Sprite-editor Tool that places one arbitrary, single-column character
-into a cell (`▲`, `╱`, `·`) for art the pixel model cannot express. A stamped cell is
-glyph-authored, cell-aligned, and immune to pixel painting until cleared. A stamp
-without an authored background takes its backdrop from the composed scene; an
-authored background stays opaque.
-_Avoid_: Text tool, character brush
+The secondary Tool placing one arbitrary single-column character into a cell
+for art the pixel model cannot express. Cell-aligned, immune to pixel
+painting until cleared.
+_Avoid_: Text tool
 
 **Anchor**:
-A named cell a Sprite file declares for attaching overlays — `grip` hangs the
-Weapon sprite, `head` seats the hat, `offhand` seats the **Shield**; names are
-open, so new overlay kinds are new names, not a format change. The file-level anchors live on the **Default
-frame**: editing an anchor there edits the file's default; editing one on any
-other Frame authors a per-frame override (an Animation that raises the arm
-carries the weapon with it), cleared back to the default per frame (ADR 0036).
-Mirrors with facing. Generalizes the **Grip anchor**.
-An anchor is an **offset**, not an in-bounds cell reference: any integer is
-valid, including negatives, so a weapon grip legitimately sits one cell left of
-its art (`grip: [-1, 2]` on the sword). A value outside the art bounds (either
-direction) is a *warning* only — a typo guard that grip-style anchors on weapons
-legitimately trip — never a rejection (ADR 0031).
-_Avoid_: Mount point, slot, hardpoint
+A named cell for attaching overlays — `grip` hangs the Weapon sprite, `head`
+the hat, `offhand` the Shield; names are open. An anchor is an *offset* (any
+integer, negatives legal; out-of-bounds is a warning, never an error).
+File-level anchors live on the Default frame; other frames may override.
+_Avoid_: Mount point, slot
 
 **Composited preview**:
-The in-context render of a sprite as the game will actually draw it — a hat
-seated on a body, a weapon in the hand across its swing, a Form wearing hat and
-weapon — against the game's real background, through the shared renderer. Two
-surfaces show it: the Sprite editor's always-visible pane, and a headless dump
-for eyes that cannot read a terminal. The forge analogue of the Zone editor's
-"faithful render" promise.
-_Avoid_: Mannequin, dress-up view, test render
+The in-context render of a sprite as the game will draw it — hat on body,
+weapon in hand across its swing — through the shared renderer.
+_Avoid_: Mannequin, test render
 
 **Preview stance**:
-The **Composited preview**'s scenario — the facing plus what the mannequin is
-doing (which body Animation, which weapon swing phase). A selection *across*
-multiple sprites at once, which is why it is not itself an **Animation**.
-_Avoid_: Animation (a stance picks animations, plural), preview mode
+The Composited preview's scenario — facing plus what the mannequin is doing.
+A selection *across* sprites, which is why it is not itself an Animation.
+_Avoid_: preview mode

@@ -25,7 +25,7 @@ function scene(monster: Entity): ZoneScene {
 }
 
 // A Sprite scene must compose to the same terminal cells no matter which
-// consumer draws it (ADR 0038). Forge's preview/playtest `composeZone` and a
+// consumer draws it. Forge's preview/playtest `composeZone` and a
 // direct compose through the production `@mmo/render/scene` + `sprites`
 // functions the live client uses must agree cell-for-cell.
 test('Forge preview composes a scene to the same cells as the production passes', () => {

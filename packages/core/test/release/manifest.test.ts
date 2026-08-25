@@ -42,7 +42,7 @@ test('client-only: client, cli, render, sprite art', () => {
 
 test('neither: docs, CI, dev tooling, repo config', () => {
 	for (const path of [
-		'docs/adr/0042-content-derived-releases-and-durable-saves.md',
+		'docs/adr/0004-hosting-and-releases.md',
 		'.github/workflows/ci.yml',
 		'README.md',
 		'CONTEXT.md',

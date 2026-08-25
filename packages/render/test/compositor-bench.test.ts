@@ -8,7 +8,7 @@ import {
 } from '../src/compositor';
 
 /**
- * OPT-IN timing block (ADR 0038). Skipped unless MMO_BENCH is set, because CI
+ * OPT-IN timing block. Skipped unless MMO_BENCH is set, because CI
  * timing is noisy — it reports numbers and NEVER asserts a threshold, so it can
  * never fail `bun test` on a slow machine. The standalone harness at
  * `packages/render/bench/compositor-bench.ts` covers the crowded stress scene;

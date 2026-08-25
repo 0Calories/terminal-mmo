@@ -1,5 +1,5 @@
 /**
- * Deterministic pass-3 crowd ordering (ADR 0038). NPCs, Monsters, and remote
+ * Deterministic pass-3 crowd ordering. NPCs, Monsters, and remote
  * Avatars share one back-to-front list keyed by logical foot depth; equal depth
  * resolves by actor category — keeping NPCs behind monsters and avatars — and
  * then a stable id, so equal-depth actors never flicker frame to frame. This is

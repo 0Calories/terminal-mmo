@@ -9,7 +9,7 @@ const BUBBLE_FG: RGBA = C.bubbleFg.toInts();
 const BUBBLE_BORDER: RGBA = C.bubbleBorder.toInts();
 // Translucent frost (alpha 128) laid over the composed scene, and the opaque
 // `▒` shade for empty interior cells. Both read as the same frosted tone over
-// terrain (ADR 0016).
+// terrain.
 const BUBBLE_BG: RGBA = C.bubbleBg.toInts();
 const BUBBLE_SHADE: RGBA = C.bubbleShade.toInts();
 
@@ -96,9 +96,9 @@ function drawOverheadBox(
 			if (c) {
 				// Frost the interior as translucent sub-cell pixels over the composed
 				// scene, then stamp the glyph so it derives that frosted backdrop —
-				// ADR 0016's look composed against the real pixels (ADR 0038), never a
-				// sampled-terrain guess. A two-column grapheme frosts and stamps as one
-				// atomic overlay across both cells.
+				// composed against the real pixels, never a sampled-terrain guess. A
+				// two-column grapheme frosts and stamps as one atomic overlay across
+				// both cells.
 				compositor.fillPixelRect(px * 2, py * 2, c.cols * 2, 2, BUBBLE_BG);
 				if (c.cols === 2) compositor.stampWideGlyph(px, py, c.ch, c.fg);
 				else compositor.stampGlyph(px, py, c.ch, c.fg);

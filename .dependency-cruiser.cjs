@@ -5,7 +5,7 @@ module.exports = {
 			name: 'server-no-render',
 			comment:
 				'The server simulates but never draws: it must not depend on @mmo/render ' +
-				'(ADR 0030). Presentation is provably unreachable from the sim — the build ' +
+				'(ADR 0008). Presentation is provably unreachable from the sim — the build ' +
 				'graph enforces it (server does not list @mmo/render), and this rule backstops ' +
 				'it against someone adding the dependency by hand.',
 			severity: 'error',
@@ -16,7 +16,7 @@ module.exports = {
 			name: 'server-assets-meta-only',
 			comment:
 				'The server may see asset identity (ids/roles/zone-list) but never sprite ' +
-				'sources: it imports @mmo/assets/meta only, never the full door (ADR 0033). ' +
+				'sources: it imports @mmo/assets/meta only, never the full door (ADR 0007). ' +
 				'Art data stays inert text behind /meta; art code stays in @mmo/render.',
 			severity: 'error',
 			from: { path: '^packages/server' },
@@ -30,7 +30,7 @@ module.exports = {
 			comment:
 				'@mmo/assets holds inert asset text (+ parsed zones via core); it must not ' +
 				'reach @mmo/render, or sprite code would become reachable from the server ' +
-				'through the /meta door (ADR 0030/0033).',
+				'through the /meta door (ADR 0007/0008).',
 			severity: 'error',
 			from: { path: '^packages/assets' },
 			to: { path: '(^packages/render|^@mmo/render$)' },
@@ -39,7 +39,7 @@ module.exports = {
 			name: 'core-modules-via-barrels-only',
 			comment:
 				'@mmo/core is a set of deep modules; each module directory is entered only ' +
-				'through its curated barrel (ADR 0032). The package.json exports map already ' +
+				'through its curated barrel (ADR 0008). The package.json exports map already ' +
 				'fails unlisted subpaths at resolve time — this rule backstops it (and the ' +
 				'removed root barrel) against someone re-adding an export or a deep path.',
 			severity: 'error',

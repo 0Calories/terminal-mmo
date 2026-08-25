@@ -5,7 +5,7 @@ import type { CompiledSprite, SpritePalette } from './compile';
 export interface PaintOptions {
 	/**
 	 * Top-left origin in sub-cell Pixels (2 Pixels per cell), placing the sprite at
-	 * half-cell resolution on both axes (ADR 0038). Pixel primitives land at the
+	 * half-cell resolution on both axes. Pixel primitives land at the
 	 * exact Pixel; Glyph primitives snap to the nearest cell of this origin.
 	 * Takes precedence over {@link cellX}/{@link cellY} when provided.
 	 */

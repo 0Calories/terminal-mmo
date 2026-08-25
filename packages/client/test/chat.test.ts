@@ -26,7 +26,7 @@ test('parseChatCommand reports a usage error when the Whisper has no text', () =
 	expect(parseChatCommand('/w').kind).toBe('error');
 });
 
-test('parseChatCommand parses /<name> into a body-emote trigger (ADR 0020 §9)', () => {
+test('parseChatCommand parses /<name> into a body-emote trigger', () => {
 	expect(parseChatCommand('/wave')).toEqual({ kind: 'emote', emote: 'wave' });
 	expect(parseChatCommand('  /sit  ')).toEqual({ kind: 'emote', emote: 'sit' });
 });
@@ -46,7 +46,7 @@ test('parseChatCommand reserves the slash namespace: unknown commands are a loca
 	expect(parseChatCommand('/').kind).toBe('error');
 });
 
-test('parseChatCommand lists the available emotes for /emotes (ADR 0020 §9)', () => {
+test('parseChatCommand lists the available emotes for /emotes', () => {
 	const cmd = parseChatCommand('/emotes');
 	expect(cmd.kind).toBe('error');
 	if (cmd.kind === 'error') expect(cmd.message).toContain('wave');

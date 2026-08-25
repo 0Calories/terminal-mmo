@@ -35,7 +35,7 @@ function takeColumns(
 }
 
 /**
- * Word-wrap Chat text to a bounded number of displayed columns (ADR 0038: bubbles
+ * Word-wrap Chat text to a bounded number of displayed columns (bubbles
  * wrap by terminal display columns, not string length). A wide grapheme counts as
  * two columns and never splits across lines.
  */

@@ -41,7 +41,7 @@ const LABEL_VENDOR: RGBA8 = C.vendor.toInts();
 
 /**
  * Compose one live playfield frame into the shared sub-cell {@link Compositor}
- * in the accepted back-to-front pass order (ADR 0038), then encode to OpenTUI
+ * in the accepted back-to-front pass order, then encode to OpenTUI
  * exactly once. Every pass — Terrain, world-floor, actors, combat, Particles,
  * labels, and Speech bubbles — composes natively via the `@mmo/render/scene`
  * module, {@link paintActor}, and the {@link ParticleEngine}, so nothing but the
@@ -81,7 +81,7 @@ export function drawPlayfield(
 	fx.dodges.draw(compositor, cam);
 
 	// Pass 3: NPCs, Monsters, and remote Avatars as one crowd sorted by logical
-	// foot depth (ADR 0038). Equal depth is deterministic — NPCs draw behind
+	// foot depth. Equal depth is deterministic — NPCs draw behind
 	// monsters and remote avatars, then a stable id breaks ties — and each actor
 	// draws atomically.
 	const crowd = sortActorsByDepth([

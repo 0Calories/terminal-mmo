@@ -24,7 +24,7 @@ function swingRenderState(
 }
 
 /**
- * Melee swing overlay (ADR 0038, pass 5). The swing glyph stamps atop the
+ * Melee swing overlay (pass 5). The swing glyph stamps atop the
  * composed actors and Terrain with no authored background, so the compositor
  * derives its backdrop from the scene beneath — the swing reveals the real
  * pixels it arcs over, never a guessed colour. Clipped by the compositor.
@@ -51,7 +51,7 @@ export function drawSwing(
 }
 
 /**
- * Skill-hitbox telegraphs for the local Avatar (ADR 0038, pass 5). Each unlocked
+ * Skill-hitbox telegraphs for the local Avatar (pass 5). Each unlocked
  * slot whose cooldown is freshly spent stamps `✦` across its hitbox, composing
  * over actors and revealing the scene beneath. Combat geometry (which slots
  * exist, their hitboxes) stays in `@mmo/core/combat`; only the glyph placement
@@ -83,9 +83,9 @@ export function drawSkillTelegraphs(
 }
 
 /**
- * In-flight Projectiles (ADR 0038, pass 5). A directional glyph derived from the
+ * In-flight Projectiles (pass 5). A directional glyph derived from the
  * horizontal velocity, composing over actors and revealing the scene beneath —
- * no longer bypassing the pass order to draw last (ADR 0023). Clipped by the
+ * no longer bypassing the pass order to draw last. Clipped by the
  * compositor.
  */
 export function drawProjectiles(

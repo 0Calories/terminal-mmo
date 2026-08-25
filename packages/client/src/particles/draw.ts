@@ -4,7 +4,7 @@ import type { Speck } from './profile';
 
 /**
  * Compose the matching specks natively into the shared {@link Compositor}
- * (ADR 0038). Each speck's on-screen origin comes from quantizing the combined
+ *. Each speck's on-screen origin comes from quantizing the combined
  * world-relative transform once — `round((world - cam) * scale)`, never rounding
  * camera and speck apart — the discipline actors and terrain share (#451), so
  * particles never shimmer against them.

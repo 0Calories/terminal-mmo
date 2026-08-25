@@ -16,7 +16,7 @@ import {
 
 /**
  * Compose a static Zone scene into the shared sub-cell {@link Compositor} using
- * the same production passes as the live client (ADR 0038): Terrain, Portals,
+ * the same production passes as the live client: Terrain, Portals,
  * then the NPC/Monster crowd sorted by logical foot depth, an optional local
  * Avatar on top, and identity nameplates. Forge preview and playtest encode this
  * surface to OpenTUI, so authored zones cannot disagree with the live renderer.

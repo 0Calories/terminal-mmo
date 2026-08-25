@@ -1,4 +1,4 @@
-# Selective release pipeline (ADR 0042, amending ADR 0012). Fires on a `v*` tag
+# Selective release pipeline (ADR 0004). Fires on a `v*` tag
 # (or manual dispatch of one) and ships ONLY what the tag changed: the diff since
 # the previous release is classified by @mmo/core's release manifest into a shape
 # — both | server | client | none — and each artifact ships or stays put

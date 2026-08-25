@@ -23,12 +23,12 @@ interface RoleProfile {
 	/**
 	 * Movement-capable roles assemble into an actor that translates one Pixel at
 	 * a time, so every cell must be quadrant Pixel art — arbitrary Glyph stamps
-	 * are rejected (ADR 0038).
+	 * are rejected.
 	 */
 	pixelOnly: boolean;
 
 	/**
-	 * Roles whose logical box derives from the Default frame (ADR 0042) keep
+	 * Roles whose logical box derives from the Default frame keep
 	 * one sizing per sprite: every frame's grid must match the Default frame's,
 	 * so squash and stretch are drawn within the grid, never by resizing it.
 	 */
@@ -71,7 +71,7 @@ function validatePixelOnly(doc: SpriteDoc, role: string): SpriteDiagnostic[] {
 						spriteId: doc.id,
 						frame: label,
 						cell: { x, y },
-						message: `sprite '${doc.id}' (role '${role}') has an arbitrary Glyph stamp '${ch}' at frame '${label}' cell (${x}, ${y}) — movement-capable roles must be quadrant Pixel art only (ADR 0038)`,
+						message: `sprite '${doc.id}' (role '${role}') has an arbitrary Glyph stamp '${ch}' at frame '${label}' cell (${x}, ${y}) — movement-capable roles must be quadrant Pixel art only`,
 					});
 				});
 			});

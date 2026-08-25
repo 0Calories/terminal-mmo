@@ -1,4 +1,4 @@
-# CI gate (ADR 0012). Runs on every PR to `main` and on push to `main`. One job,
+# CI gate (ADR 0004). Runs on every PR to `main` and on push to `main`. One job,
 # one checkout/install — each check is its own step (so the run UI shows which
 # dimension failed) and runs even if an earlier check failed (`!cancelled()`), so a
 # single push surfaces every failure at once. Required as a status check on `main`.

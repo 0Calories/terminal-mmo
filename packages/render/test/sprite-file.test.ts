@@ -133,7 +133,7 @@ test('a multi-section animation with a bare (indexless) section is a parse error
 	).toBe(true);
 });
 
-test('serializer emits one line per animation object when the array overflows the budget (ADR 0036/0037)', () => {
+test('serializer emits one line per animation object when the array overflows the budget', () => {
 	const text = `{
 	"baseline": 1,
 	"anchors": { "grip": [1, 0], "head": [0, 0] },
@@ -163,7 +163,7 @@ AB
 	expect(serializeSpriteFile(doc as SpriteDoc)).toBe(text);
 });
 
-test('serializer keeps a short animations array inline (compact discipline, ADR 0036)', () => {
+test('serializer keeps a short animations array inline (compact discipline)', () => {
 	const text = `{
 	"animations": [{ "name": "idle" }, { "name": "swing" }]
 }
@@ -181,7 +181,7 @@ AB
 	expect(serializeSpriteFile(doc as SpriteDoc)).toBe(text);
 });
 
-test('serializer omits fps entries equal to the default 5 (ADR 0035/0037)', () => {
+test('serializer omits fps entries equal to the default 5', () => {
 	const { doc } = parseSpriteFile(
 		'{ "animations": [{ "name": "idle" }, { "name": "walk", "fps": 5 }] }\n--- idle\nGH\n--- walk 0\nCD\n--- walk 1\nEF\n',
 		'dflt',

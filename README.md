@@ -21,10 +21,10 @@ if you don't have it yet:
 curl -fsSL https://bun.sh/install | bash   # then: bunx terminal-mmo@latest
 ```
 
-> ⚠️ **Alpha.** The World is ephemeral — there is no login and no saved progress
-> yet. When the server restarts, everyone starts fresh. Identity (SSH-key auth)
-> and persistence are the next milestone. See
-> [ADR 0009](./docs/adr/0009-live-hosting-and-bunx-delivery.md).
+> First launch authenticates with your SSH key (or mints a local game identity
+> if you have none) and claims your username; progress persists across sessions
+> and server restarts. See
+> [ADR 0003](./docs/adr/0003-identity-and-persistence.md).
 
 Environment overrides: `MMO_SERVER=ws://localhost:8080` to point at your own
 server.
@@ -32,7 +32,7 @@ server.
 In-game: press `m` to mute and `o` to open the audio options (master + per-bus
 volume). These prefs persist to `~/.config/terminal-mmo/config.json` (honoring
 `XDG_CONFIG_HOME`) — the only thing the client writes to your disk
-([ADR 0015](./docs/adr/0015-client-config-file.md)).
+([ADR 0003](./docs/adr/0003-identity-and-persistence.md)).
 
 ## Layout
 
@@ -42,13 +42,13 @@ packages/
   render/     @mmo/render — presentation: sprite art + drawing (client + forge, never the server)
   client/     @mmo/client — OpenTUI terminal client (rendering + input + netcode)
   server/     @mmo/server — authoritative Bun WebSocket world (M2)
-  cli/        terminal-mmo — the published bundle for `bunx` (ADR 0009)
+  cli/        terminal-mmo — the published bundle for `bunx` (ADR 0001)
   forge/      @mmo/forge — content authoring suite: zones now; sprites/NPCs/quests next
 ```
 
 The `core` package holds all simulation (physics, combat, loot, progression) as
 pure, deterministic functions so client and server can never diverge; `render`
-holds the sprite art and drawing code on top of it (ADR 0030).
+holds the sprite art and drawing code on top of it (ADR 0008).
 
 ## Commands
 
@@ -63,12 +63,11 @@ bun run format         # format in place with Biome
 bun run check          # lint + format + organize imports, write fixes (Biome)
 ```
 
-## Status: M2 (multiplayer foundation), going live
+## Status: live
 
-Playable in a shared World over WebSocket: Warrior movement/jumping, forgiving
-melee, chaser + shooter monsters, kill → XP → level → instanced loot, forgiving
-death, Town + NPC vendor, Zone-local chat with speech bubbles, portal travel.
-
-Going live now (ADR 0009): the server deploys to Railway and the client ships as
-`bunx terminal-mmo`. This first cut is an **ephemeral, anonymous alpha** — no
-accounts, no persistence. Next milestone: SSH-key identity + saved progress.
+Playable in a shared, persistent World over WebSocket: commitment-based melee
+combat (phased attacks, poise, dodge, shield-gated block), telegraphing monster
+archetypes, kill → XP → level → instanced loot, Town + merchant, Zone-local
+chat with speech bubbles, portal travel, SSH-key identity, durable saves. The
+server deploys to Railway and the client ships as `bunx terminal-mmo`
+(releases: [ADR 0004](./docs/adr/0004-hosting-and-releases.md)).

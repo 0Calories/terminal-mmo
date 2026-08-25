@@ -32,7 +32,7 @@ describe('renderZone', () => {
 		expect(out).not.toContain('one-way platform');
 	});
 
-	test('a one-way platform round-trips through parse → render as = (ADR 0026)', () => {
+	test('a one-way platform round-trips through parse → render as =', () => {
 		const text = ['{"type":"field"}', '---', '..==..', '......', '######'].join(
 			'\n',
 		);
